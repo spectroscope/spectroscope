@@ -431,6 +431,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.emptyTitle": { de: "frag spectroscope.", en: "ask spectroscope." },
   "chat.emptyTag": { de: "Der Agent liest Dateien, führt Tools aus und streamt hier jeden Schritt seiner Arbeit.", en: "The agent reads files, runs tools, and streams every step of its work here." },
   "chat.emptyHint": { de: "Tipp: Das Zahnrad oben wechselt das Design (auch spectro white) und stellt die Partikel ein.", en: "Tip: the gear up top switches the design (spectro white included) and tunes the particles." },
+  "img.noKey": { de: "kein Key in .env", en: "no key in .env" },
   "chat.recording": { de: "Aufnahme {t}", en: "Recording {t}" },
   "chat.attach": { de: "Bild anhängen (oder eins in den Chat ziehen)", en: "Attach image (or drag one into the chat)" },
   "chat.attachAria": { de: "Bild anhängen", en: "Attach image" },

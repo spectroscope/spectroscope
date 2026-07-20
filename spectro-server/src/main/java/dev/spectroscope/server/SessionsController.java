@@ -115,7 +115,21 @@ public class SessionsController {
         // Settings page (additive): the boot log level, read-only in the UI —
         // changing it stays a config/env decision .
         out.put("logLevel", c.logLevel() == null ? "" : c.logLevel());
+        // Image-backend key PRESENCE (never values): the gallery picker uses
+        // this to pre-select a backend that can actually generate and to mark
+        // the keyless ones in the dropdown.
+        out.put("geminiKey", String.valueOf(envKeySet("GEMINI_API_KEY")));
+        out.put("openaiKey", String.valueOf(envKeySet("OPENAI_API_KEY")));
         return out;
+    }
+
+    /** Whether an env-provided key is present and non-blank — presence only,
+     *  the value never leaves the process.
+     *  @param name the environment variable to probe
+     *  @return true when set and non-blank */
+    private static boolean envKeySet(String name) {
+        String v = System.getenv(name);
+        return v != null && !v.isBlank();
     }
 
     /**

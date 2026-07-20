@@ -90,6 +90,9 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false); // design drawer
   const [doctorOpen, setDoctorOpen] = useState(false); // calibration/status page
   const [serverCfg, setServerCfg] = useState<{ provider: string; model: string } | null>(null); // /api/config boot truth
+  // Key PRESENCE per image backend (from /api/config, never values). Drives
+  // the gallery dropdown's "no key in .env" hints and the smart default below.
+  const [imageKeys, setImageKeys] = useState<{ gemini: boolean; openai: boolean } | null>(null);
   // Latches to true the FIRST time this tab's own thinking toggle or image-
   // backend picker is touched (manually, this session) — from then on the
   // settings-hydration effect below must never clobber the user's choice,
@@ -239,6 +242,11 @@ export function App() {
       .then((r) => (r.ok ? r.json() : null))
       .then((c) => {
         if (alive && c && typeof c.provider === "string") setServerCfg({ provider: c.provider, model: c.model ?? "" });
+        // Older servers do not report key presence — leave null (no hints)
+        // rather than claiming "no key" against a server that never said so.
+        if (alive && c && typeof c.geminiKey === "string") {
+          setImageKeys({ gemini: c.geminiKey === "true", openai: c.openaiKey === "true" });
+        }
       })
       .catch(() => {});
     return () => {
@@ -265,6 +273,23 @@ export function App() {
       })
       .catch(() => {});
   }, [conn.status]);
+
+  // Smart image-backend default (owner 2026-07-20): when the user has not
+  // touched the picker and the configured backend has NO key while the other
+  // one has, pre-select the one that can actually generate — session-only
+  // (no settings write, controlsTouched stays false so hydration still wins
+  // if the server later reports a real choice). Both keyless: leave as is,
+  // the dropdown labels carry the hint.
+  useEffect(() => {
+    if (imageKeys === null || controlsTouched.current) return;
+    const other = imageProvider === "gemini" ? "openai" : "gemini";
+    const has = (p: string): boolean => (p === "gemini" ? imageKeys.gemini : imageKeys.openai);
+    if (!has(imageProvider) && has(other)) {
+      setImageProvider(other);
+      sendClient({ type: "set_image_provider", provider: other });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageKeys, imageProvider, conn.status]);
 
   // Replay: fetch the stored events and push them through the SAME reducer.
   const openSession = async (id: string): Promise<void> => {
@@ -557,6 +582,7 @@ export function App() {
               <ImagePanel
                 images={view.images}
                 provider={imageProvider}
+                keys={imageKeys}
                 onProviderChange={changeImageProvider}
                 onClose={() => setImagesOpen(false)}
                 sessionId={viewingLive ? live.workspace?.sessionId : undefined}

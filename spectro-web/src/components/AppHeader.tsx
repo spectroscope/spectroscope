@@ -22,7 +22,8 @@ export function AppHeader(props: {
   /** True while the live view continues a stored session (resume). */
   resumed?: boolean;
   title: string;
-  /** Gallery: the toggle appears only once images exist (calm header). */
+  /** Gallery: the toggle is always visible; the count badge appears once
+   *  images exist (owner 2026-07-20 — discoverable even in an empty chat). */
   imageCount: number;
   imagesOpen: boolean;
   onToggleImages: () => void;
@@ -86,14 +87,13 @@ export function AppHeader(props: {
         {props.title}
       </h1>
 
-      {props.imageCount > 0 && (
-        <button
-          type="button"
-          className="icon-button image-toggle"
-          aria-label={props.imagesOpen ? t(lang, "hdr.imagesHide") : t(lang, "hdr.imagesShow")}
-          aria-expanded={props.imagesOpen}
-          onClick={props.onToggleImages}
-        >
+      <button
+        type="button"
+        className="icon-button image-toggle"
+        aria-label={props.imagesOpen ? t(lang, "hdr.imagesHide") : t(lang, "hdr.imagesShow")}
+        aria-expanded={props.imagesOpen}
+        onClick={props.onToggleImages}
+      >
           <svg
             viewBox="0 0 16 16"
             width="16"
@@ -109,11 +109,12 @@ export function AppHeader(props: {
             <circle cx="6" cy="6.5" r="1" fill="currentColor" stroke="none" />
             <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
           </svg>
+        {props.imageCount > 0 && (
           <span className="image-toggle-count tabular" aria-hidden="true">
             {props.imageCount}
           </span>
-        </button>
-      )}
+        )}
+      </button>
 
       {props.showPanelToggle && (
         <button

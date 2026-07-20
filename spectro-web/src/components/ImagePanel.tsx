@@ -17,6 +17,9 @@ const COPY_FEEDBACK_MS = 1600;
 export function ImagePanel(props: {
   images: GeneratedImage[];
   provider: string;
+  /** Key PRESENCE per backend (from /api/config); null until known. A
+   *  keyless backend stays selectable but says so in its option label. */
+  keys: { gemini: boolean; openai: boolean } | null;
   onProviderChange: (provider: string) => void;
   onClose: () => void;
   /** The live session whose workspace receives copies — absent hides the button (replays). */
@@ -64,8 +67,12 @@ export function ImagePanel(props: {
             value={props.provider}
             onChange={(e) => props.onProviderChange(e.target.value)}
           >
-            <option value="gemini">gemini</option>
-            <option value="openai">openai</option>
+            <option value="gemini">
+              gemini{props.keys && !props.keys.gemini ? ` · ${t(lang, "img.noKey")}` : ""}
+            </option>
+            <option value="openai">
+              openai{props.keys && !props.keys.openai ? ` · ${t(lang, "img.noKey")}` : ""}
+            </option>
           </select>
         </label>
 
