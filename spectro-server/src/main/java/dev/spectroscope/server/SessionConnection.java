@@ -38,6 +38,9 @@ import dev.spectroscope.core.tools.WebFetchTool;
 import dev.spectroscope.core.web.BrowsePageTool;
 import dev.spectroscope.core.web.DefaultChromeRunner;
 import dev.spectroscope.core.web.WebSearchTool;
+import dev.spectroscope.orchestrator.BusEnvelope;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
@@ -49,6 +52,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -62,6 +66,11 @@ import java.util.concurrent.atomic.AtomicReference;
  * JSONL files, no shared state.
  */
 public final class SessionConnection {
+
+    private static final Logger log = LoggerFactory.getLogger(SessionConnection.class);
+
+    /** Fleet frames a slow browser may buffer before the oldest is dropped. */
+    private static final int FLEET_QUEUE = 1024;
 
     /** The CLI's base system prompt, verbatim. */
     // Shared with ContextDescriber: /api/context must show EXACTLY this assembly.
@@ -158,6 +167,25 @@ public final class SessionConnection {
     private final AtomicReference<SpectroConfig> activeConfig;
     private SwitchableProvider switchable;   // the agent's provider indirection
 
+    /** The server-hosted fleet hub, or null/disabled — then no fleet frames ever. */
+    private FleetAggregator fleet;
+    /** This connection's fleet tap; registered on start, removed on close. */
+    private FleetAggregator.Listener fleetListener;
+    /** Pending fleet frames, drained to the socket on this connection's OWN
+     *  thread so the aggregator's hub reader/tap threads never block on I/O. */
+    private final ArrayBlockingQueue<FleetFrame> fleetQueue = new ArrayBlockingQueue<>(FLEET_QUEUE);
+    private volatile Thread fleetDrain;
+
+    /** One pending fleet frame: a full roster snapshot or a single event. */
+    private sealed interface FleetFrame permits FleetRosterFrame, FleetEventFrame {
+    }
+
+    private record FleetRosterFrame(List<FleetAggregator.NodeState> roster) implements FleetFrame {
+    }
+
+    private record FleetEventFrame(BusEnvelope envelope) implements FleetFrame {
+    }
+
     /**
      * Captures the per-connection collaborators; nothing heavy happens here —
      * the agent is built lazily on the first prompt.
@@ -169,10 +197,18 @@ public final class SessionConnection {
      */
     public SessionConnection(WebSocketSession socket, ObjectMapper mapper,
                              SpectroConfig config, String resumeId) {
+        this(socket, mapper, config, resumeId, null);
+    }
+
+    /** The fleet form: {@code fleet} may be null or disabled — then this
+     *  connection behaves exactly like the pre-fleet one, frame for frame. */
+    public SessionConnection(WebSocketSession socket, ObjectMapper mapper,
+                             SpectroConfig config, String resumeId, FleetAggregator fleet) {
         this.socket = socket;
         this.mapper = mapper;
         this.config = config;
         this.resumeId = resumeId;
+        this.fleet = fleet;
         this.activeConfig = new AtomicReference<>(config);
         this.imageProviderName.set(config.imageProvider());
         this.thinking.set(config.thinking());
@@ -185,6 +221,30 @@ public final class SessionConnection {
         // chip and the trace host column start from wire truth, not a guess.
         sendProviderInfo();
         sendPermissionModeInfo();
+        // Fleet frames exist ONLY when the operator opted the hub in — with
+        // the hub off, this connection is frame-for-frame the pre-fleet one.
+        if (fleet != null && fleet.enabled()) {
+            // The blocking socket writes happen on THIS connection's own drain
+            // thread; the listener — invoked on the hub's reader/tap threads —
+            // only offers to a bounded queue, so a slow browser can never stall
+            // a joining node's ingest or another tab's fleet feed.
+            fleetDrain = Thread.ofVirtual().name("spectro-fleet-drain").start(this::drainFleet);
+            fleetListener = new FleetAggregator.Listener() {
+                @Override
+                public void onRoster(List<FleetAggregator.NodeState> roster) {
+                    offerFleet(new FleetRosterFrame(roster));
+                }
+
+                @Override
+                public void onFleetEvent(BusEnvelope envelope) {
+                    offerFleet(new FleetEventFrame(envelope));
+                }
+            };
+            // addListener delivers the connect-time roster into the queue
+            // ATOMICALLY with registration: no join can slip through a gap
+            // between snapshotting and listening.
+            fleet.addListener(fleetListener);
+        }
         if (resumeId == null) {
             return;
         }
@@ -445,6 +505,12 @@ public final class SessionConnection {
     public void onClose() {
         onAbort();
         releasePending();
+        if (fleet != null && fleetListener != null) {
+            fleet.removeListener(fleetListener); // no fleet frames to a dead socket
+            if (fleetDrain != null) {
+                fleetDrain.interrupt(); // stop draining; the abandoned queue is collected
+            }
+        }
         McpServerRegistry current = this.mcp;
         if (current != null) {
             current.close(); // tear down this connection's MCP server processes/connections
@@ -743,6 +809,63 @@ public final class SessionConnection {
             socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
                     "type", "permission_mode_info",
                     "mode", permissionMode == null ? "ask" : permissionMode))));
+        } catch (Exception ignored) {
+            // A dead socket just misses the hint — the next frame retries nothing.
+        }
+    }
+
+    /**
+     * Queues a fleet frame for this connection, NEVER blocking the caller: the
+     * listener runs on the hub's reader/tap threads, so a blocking socket write
+     * here would stall a joining node and every other browser. On overflow the
+     * OLDEST pending frame is dropped, not the newest — a roster is latest-wins,
+     * and a dropped event is logged, never silent. The node's own session JSONL
+     * remains the durable copy of every event regardless.
+     */
+    private void offerFleet(FleetFrame frame) {
+        if (fleetQueue.offer(frame)) {
+            return;
+        }
+        FleetFrame dropped = fleetQueue.poll();
+        log.warn("fleet frame dropped for a slow socket: {}",
+                dropped == null ? "?" : dropped.getClass().getSimpleName());
+        fleetQueue.offer(frame);
+    }
+
+    /** Drains the fleet queue on this connection's own thread until interrupted
+     *  (onClose) — the only place fleet frames touch the blocking socket. */
+    private void drainFleet() {
+        try {
+            while (true) {
+                sendFleet(fleetQueue.take());
+            }
+        } catch (InterruptedException stopped) {
+            Thread.currentThread().interrupt(); // the connection is closing — done
+        }
+    }
+
+    /**
+     * Serializes and sends ONE fleet frame as a socket-only UI frame, never
+     * appended to this session's JSONL. Runs on the fleet drain thread and, like
+     * every other send, holds the connection monitor so it never interleaves
+     * with a concurrent run-event write. A roster mirrors {@code provider_info}
+     * (full latest state); an event rides in its canonical line form — the one
+     * serialization the wire, the JSONL import and this frame all share.
+     */
+    private synchronized void sendFleet(FleetFrame frame) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = switch (frame) {
+                case FleetRosterFrame roster -> Map.of(
+                        "type", "fleet_roster",
+                        "nodes", roster.roster().stream().map(FleetAggregator::nodeJson).toList());
+                case FleetEventFrame event -> Map.of(
+                        "type", "fleet_event",
+                        "frame", mapper.readTree(event.envelope().toLine(mapper)));
+            };
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
         } catch (Exception ignored) {
             // A dead socket just misses the hint — the next frame retries nothing.
         }

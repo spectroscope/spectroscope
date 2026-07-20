@@ -173,11 +173,27 @@ everything the outbox accepted; the session JSONL is complete
 regardless). The hub's `roster()` lists the cards of currently connected
 nodes — registration is the handshake, liveness is the connection.
 
+The server side closes the loop: spectro-server hosts the hub as an
+OPT-IN bean (`SPECTRO_HUB_PORT`; default off — no listener, no attack
+surface for non-fleet users; an invalid value disables it LOUDLY). The
+aggregator taps every card-announced topic through the hub's own
+local-subscriber discipline, folds joins/leaves/last-seen, and surfaces
+the fleet as `GET /api/fleet`, per-node ring replay under
+`GET /api/fleet/{node}/events` (ring-bounded, and flagging `truncated`
+when the ring already evicted earlier frames), and two socket-only UI
+frames — `fleet_roster` and `fleet_event` (the envelope in its canonical
+line form). Each browser drains those frames on its own bounded queue, so
+a slow tab never stalls a joining node or another tab's feed. With the
+hub off, the web socket is frame-for-frame the pre-fleet one.
+
 Honest limit: the facade's `Spectro.panel()` still runs its fleet on the
-in-memory bus — the server-side aggregator that drinks from this
-transport is the next leg. `OrchestratorPanel(BusTransport)` remains the
+in-memory bus — panel-over-ProcessBus is a deliberate non-goal until a
+use case demands it. `OrchestratorPanel(BusTransport)` remains the
 constructor seam an aggregator (or a test) uses to watch a fleet on its
-own bus.
+own bus. Fleet persistence to disk deliberately does not exist: the hub
+ring is the whole replay story, and the opt-in hub keeps every context's
+ring and tap for its uptime — a development and observation tool, not a
+long-lived multi-tenant service.
 
 ## Tests
 

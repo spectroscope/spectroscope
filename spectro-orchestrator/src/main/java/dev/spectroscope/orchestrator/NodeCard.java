@@ -20,6 +20,13 @@ public record NodeCard(String id, String role, List<String> capabilities, String
 
     public NodeCard {
         Objects.requireNonNull(id, "id");
+        // The id is a single REST path segment (/api/fleet/{node}/events) and a
+        // roster key, so it must be URL-safe: a slash would make the node's own
+        // replay URL unroutable, and "."/".." are reserved path segments.
+        if (!id.matches("[A-Za-z0-9._-]+") || id.equals(".") || id.equals("..")) {
+            throw new IllegalArgumentException(
+                    "node id must be URL-safe [A-Za-z0-9._-] and not \".\"/\"..\", was: \"" + id + "\"");
+        }
         Objects.requireNonNull(role, "role");
         capabilities = List.copyOf(Objects.requireNonNull(capabilities, "capabilities"));
         Objects.requireNonNull(topic, "topic");

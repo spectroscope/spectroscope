@@ -95,4 +95,16 @@ class DoctorCommandTest {
         assertTrue(DoctorCommand.hubProbe("no-port-here").contains("invalid"),
                 "a malformed $SPECTRO_HUB names itself invalid instead of dialing");
     }
+
+    @Test
+    void theHubHostingLineNamesTheBoundPortOrTheTypo() {
+        // The server-side twin of the probe (block C): SPECTRO_HUB_PORT is
+        // what spectro-server BINDS, not what a node dials — the line says
+        // which, and a typo is named instead of silently keeping the hub off.
+        assertTrue(DoctorCommand.hubHostingLine("7331").contains("7331"));
+        assertTrue(DoctorCommand.hubHostingLine("7331").contains("binds"),
+                "the line explains the server will bind it");
+        assertTrue(DoctorCommand.hubHostingLine("um-what").contains("invalid"),
+                "a typo is named — the operator must not believe the fleet is on");
+    }
 }

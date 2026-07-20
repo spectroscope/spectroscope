@@ -193,11 +193,17 @@ public final class DoctorCommand implements Callable<Integer> {
             default -> report(false, "unknown provider " + config.provider());
         }
 
-        // Fleet hub — optional infrastructure: nodes are opt-in, so the line
-        // informs when $SPECTRO_HUB is set and never fails the doctor.
+        // Fleet hub — optional infrastructure: nodes are opt-in, so the lines
+        // inform when the env names a hub and never fail the doctor.
+        // $SPECTRO_HUB is the node side (what a node DIALS);
+        // $SPECTRO_HUB_PORT is the server side (what spectro-server BINDS).
         String hubEnv = System.getenv("SPECTRO_HUB");
         if (hubEnv != null && !hubEnv.isBlank()) {
             info(hubProbe(hubEnv));
+        }
+        String hubHosting = System.getenv("SPECTRO_HUB_PORT");
+        if (hubHosting != null && !hubHosting.isBlank()) {
+            info(hubHostingLine(hubHosting));
         }
 
         // Image provider — a missing key is not unhealthy: generate_image
@@ -350,6 +356,25 @@ public final class DoctorCommand implements Callable<Integer> {
             return "hub: " + address + " reachable — fleet nodes can join";
         } catch (java.io.IOException dead) {
             return "hub: " + address + " unreachable — is the aggregator up?";
+        }
+    }
+
+    /**
+     * The hosting twin of {@link #hubProbe}: what {@code SPECTRO_HUB_PORT}
+     * will make spectro-server BIND on boot — or the typo, named loudly, so
+     * the operator never believes a fleet is on that silently is not.
+     *
+     * @param value the raw $SPECTRO_HUB_PORT value
+     * @return the info line to print
+     */
+    static String hubHostingLine(String value) {
+        try {
+            int port = Integer.parseInt(value.strip());
+            return "hub hosting: SPECTRO_HUB_PORT=" + port
+                    + " — spectro-server binds loopback:" + port + " on boot";
+        } catch (NumberFormatException invalid) {
+            return "hub hosting: SPECTRO_HUB_PORT invalid (\"" + value
+                    + "\") — the server keeps the hub OFF";
         }
     }
 

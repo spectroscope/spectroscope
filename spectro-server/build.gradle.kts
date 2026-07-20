@@ -19,6 +19,9 @@ dependencies {
     // Boot's BOM pins every Spring version — no versions on the starters below.
     implementation(platform(org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES))
     implementation(project(":spectro-core"))
+    // The fleet aggregator: the server hosts the ProcessBusHub (opt-in) and
+    // folds the fleet for /api/fleet and the socket frames.
+    implementation(project(":spectro-orchestrator"))
     // Bonus 2: the web /api/transcribe endpoint reuses the CLI's voice.Transcriber
     // (deliberate, pragmatic reuse — the audio channel lives in spectroscope.cli.voice, the
     // core stays audio-free). Boot finds its own @SpringBootApplication for the jar.

@@ -25,8 +25,15 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
     /** One shared configured mapper for the whole module (module convention). */
     private final ObjectMapper mapper = new ObjectMapper();
 
+    /** The server-hosted fleet hub (opt-in) — every connection may tap it. */
+    private final FleetAggregator fleet;
+
     /** Per-connection state, keyed by the Spring session id. */
     private final Map<String, SessionConnection> connections = new ConcurrentHashMap<>();
+
+    SpectroSocketHandler(FleetAggregator fleet) {
+        this.fleet = fleet;
+    }
 
     /**
      * A new socket becomes a new SessionConnection — config is loaded fresh per
@@ -40,7 +47,7 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
         String resumeId = queryParam(socket, "resume");
         // Config + provider + system prompt exactly as the CLI builds them.
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
-        SessionConnection connection = new SessionConnection(socket, mapper, config, resumeId);
+        SessionConnection connection = new SessionConnection(socket, mapper, config, resumeId, fleet);
         connections.put(socket.getId(), connection);
         // A resume that cannot load its session closes the socket itself.
         connection.start();

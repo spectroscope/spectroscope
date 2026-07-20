@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
@@ -432,6 +433,82 @@ class ProcessBusWireTest {
             }
             assertEquals(List.of(), hub.roster(), "a departed node leaves the roster");
         }
+    }
+
+    @Test
+    void theRingReplaysAsAReadOnlySnapshot() throws Exception {
+        // The aggregator's per-node replay (block C): a plain read of what
+        // the ring still holds — no subscription, no cursor mutation, and a
+        // second read sees the same world.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            BusPublisher nodeA = new BusPublisher(hub, "node-a", CTX);
+            Collector witness = new Collector();
+            CountDownLatch three = witness.expect(3);
+            hub.subscribe(TOPIC, witness);
+            for (int i = 0; i < 3; i++) {
+                nodeA.onEvent(delta("a" + i));
+            }
+            assertTrue(three.await(10, TimeUnit.SECONDS), "the hub holds all three");
+
+            List<String> snapshot = hub.replay(TOPIC).frames().stream().map(BusEnvelope::id).toList();
+            assertEquals(List.of("node-a#0#0", "node-a#0#1", "node-a#0#2"), snapshot);
+            assertEquals(snapshot, hub.replay(TOPIC).frames().stream().map(BusEnvelope::id).toList(),
+                    "reading is not consuming — the snapshot repeats");
+            assertEquals(List.of(), hub.replay("unknown.topic").frames(),
+                    "an unknown topic is an empty world, not an error");
+            assertEquals(List.of(), hub.replay(TOPIC).gaps(),
+                    "nothing was evicted — no gaps, a complete replay");
+        }
+    }
+
+    @Test
+    void aRosterChangeFiresOnJoinAndLeaveOffTheHubLock() throws Exception {
+        // Block C: the aggregator wants a change signal, not a poll loop.
+        // The listener is user code — it must fire off the hub lock, so a
+        // slow listener can never freeze a concurrent publish. It must also
+        // fire EXACTLY once per join and once per leave: the connections.remove
+        // guard blocks the several cleanup paths (reader death, writer death,
+        // hub close) from double-firing, and a plain latch cannot count a
+        // surplus fire, so an AtomicInteger pins the exact tally.
+        AtomicInteger fires = new AtomicInteger();
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            CountDownLatch joined = new CountDownLatch(1);
+            CountDownLatch left = new CountDownLatch(2);
+            CountDownLatch parked = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            hub.onRosterChange(() -> {
+                fires.incrementAndGet();
+                joined.countDown();
+                left.countDown();
+                parked.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            NodeCard card = new NodeCard("node-a", "worker", List.of("read_file"), TOPIC);
+            try (ProcessBus node = new ProcessBus("127.0.0.1", hub.port(), "node-a", 1024, card)) {
+                assertTrue(parked.await(10, TimeUnit.SECONDS), "the join fired the listener");
+                // With the listener parked, a publish must still get through —
+                // proof the listener does not run under the hub lock.
+                Collector collector = new Collector();
+                CountDownLatch one = collector.expect(1);
+                hub.subscribe(TOPIC, collector);
+                new BusPublisher(hub, "node-l", CTX).onEvent(delta("l0"));
+                assertTrue(one.await(10, TimeUnit.SECONDS),
+                        "a parked roster listener never blocks the bus");
+                release.countDown();
+                assertTrue(joined.await(10, TimeUnit.SECONDS));
+            }
+            assertTrue(left.await(10, TimeUnit.SECONDS),
+                    "the departure fires the listener too");
+        }
+        // The hub is closed now — its roster executor has drained, so the tally
+        // is settled. Exactly one join and one leave, never a double-fire.
+        assertEquals(2, fires.get(),
+                "the roster listener fired exactly twice — one join, one leave, no double");
     }
 
     @Test

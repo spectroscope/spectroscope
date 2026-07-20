@@ -51,7 +51,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * the config/session files written here never touch the real home.</p>
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "server.address=127.0.0.1")
+        // SPECTRO_HUB_PORT is pinned blank here: an inlined property wins over
+        // the OS environment, so a developer or CI shell that happens to export
+        // SPECTRO_HUB_PORT cannot silently turn the hub ON and break the
+        // hub-off frame-order assertions below.
+        properties = {"server.address=127.0.0.1", "SPECTRO_HUB_PORT="})
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class SpectroServerIntegrationTest {
 

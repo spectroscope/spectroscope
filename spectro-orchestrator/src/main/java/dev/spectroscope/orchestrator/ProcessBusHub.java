@@ -21,6 +21,10 @@ import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 
 /**
@@ -63,6 +67,14 @@ public final class ProcessBusHub implements BusTransport {
     private final ServerSocket server;
     private volatile Consumer<BusGap> onGap =
             gap -> log.warn("bus history lost before a local subscriber saw it: {}", gap);
+    /** Fired on carded join/leave; null until someone cares. */
+    private volatile Runnable onRosterChange;
+    /** Roster signals run here, never on the caller — off the hub lock, in order. */
+    private final ExecutorService rosterSignals = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "spectro-bus-roster");
+        thread.setDaemon(true);
+        return thread;
+    });
     private volatile boolean closed = false;
 
     /** @param port the loopback port to bind, 0 for an ephemeral one */
@@ -109,6 +121,81 @@ public final class ProcessBusHub implements BusTransport {
     public ProcessBusHub onGap(Consumer<BusGap> handler) {
         this.onGap = handler;
         return this;
+    }
+
+    /**
+     * A read-only snapshot of what the ring still holds for one topic, in
+     * arrival order — the aggregator's replay source. Reading is not
+     * consuming: no cursor moves, no subscription is created, and an unknown
+     * topic is an empty world, not an error. The snapshot also carries the
+     * gaps the ring has already evicted, so a caller can tell a complete
+     * replay from a truncated one instead of guessing.
+     *
+     * @param topic the topic to snapshot
+     * @return the ring's held frames (oldest first) and its evicted gaps
+     */
+    public RingReplay replay(String topic) {
+        synchronized (lock) {
+            HubCore.Replay replay = core.subscribe(topic, Map.of());
+            return new RingReplay(replay.frames(), replay.gaps());
+        }
+    }
+
+    /**
+     * A read-only ring snapshot: the frames the ring still holds, plus the
+     * gaps naming what it has already evicted.
+     *
+     * @param frames the ring's current frames for the topic, oldest first
+     * @param gaps   the evicted stretches (empty when nothing was lost)
+     */
+    public record RingReplay(List<BusEnvelope> frames, List<BusGap> gaps) {
+    }
+
+    /**
+     * Registers the roster-change signal: fired after a node's card joined
+     * (its hello was processed) and after a carded connection left. The
+     * listener is user code — it runs OFF the hub lock on the connection's
+     * own thread, is guarded like the gap handler, and receives no payload:
+     * pull {@link #roster()} for the current truth.
+     *
+     * @param listener called on every join and leave of a carded node
+     * @return this hub, for fluent construction
+     */
+    public ProcessBusHub onRosterChange(Runnable listener) {
+        this.onRosterChange = listener;
+        return this;
+    }
+
+    /**
+     * The roster listener is user code — guard it, log it, never die of it,
+     * and NEVER run it on the caller's thread. A leave is signalled from
+     * {@link Connection#shutDown()}, which is reachable from the fan-out path
+     * with the hub lock held (a slow subscriber overflowing mid-publish, see
+     * {@link Connection#enqueue}). Running the listener inline there would put
+     * user code — and, through the aggregator, a second hub-lock acquisition —
+     * under the lock, inverting lock order against a concurrent carded join
+     * and deadlocking the hub. The single-thread signal executor keeps every
+     * fire off the lock and in submission order.
+     */
+    private void fireRosterChange() {
+        if (onRosterChange == null) {
+            return;
+        }
+        try {
+            rosterSignals.execute(() -> {
+                Runnable listener = onRosterChange;
+                if (listener == null) {
+                    return;
+                }
+                try {
+                    listener.run();
+                } catch (RuntimeException broken) {
+                    log.warn("roster listener failed: {}", broken.toString());
+                }
+            });
+        } catch (RejectedExecutionException closing) {
+            // the hub is shutting down — a roster signal no longer matters
+        }
     }
 
     /**
@@ -196,6 +283,14 @@ public final class ProcessBusHub implements BusTransport {
         synchronized (lock) {
             localSubscribers.values().forEach(list -> list.forEach(LocalSubscriber::shutDown));
             localSubscribers.clear();
+        }
+        rosterSignals.shutdown();
+        try {
+            // let any in-flight roster signal drain — a caller that closes the
+            // hub then reads the roster count sees a settled tally, not a race.
+            rosterSignals.awaitTermination(5, TimeUnit.SECONDS);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -372,6 +467,11 @@ public final class ProcessBusHub implements BusTransport {
                 case Wire.Hello(String id, java.util.Optional<NodeCard> helloCard) -> {
                     clientId = id;
                     card = helloCard.orElse(null);
+                    if (card != null) {
+                        // Reader thread, no hub lock held — the listener
+                        // discipline every callback here follows.
+                        fireRosterChange();
+                    }
                 }
                 case Wire.Sub(String topic, Map<String, Map<Long, Long>> cursor) -> {
                     synchronized (lock) {
@@ -426,7 +526,12 @@ public final class ProcessBusHub implements BusTransport {
             if (writer != null) {
                 writer.interrupt();
             }
-            connections.remove(this);
+            // remove() answers exactly once per connection — the guard that
+            // keeps the roster signal from double-firing out of the several
+            // paths (reader death, writer death, hub close) that land here.
+            if (connections.remove(this) && card != null) {
+                fireRosterChange();
+            }
         }
     }
 }
