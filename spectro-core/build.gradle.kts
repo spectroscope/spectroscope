@@ -3,6 +3,7 @@
 
 plugins {
     `java-library`
+    alias(libs.plugins.maven.central.publish)
 }
 
 group = "dev.spectroscope"
@@ -60,4 +61,38 @@ tasks.test {
     // SessionStore/SpectroConfig resolve ~/.spectro from user.home at class-load time;
     // pointing user.home into the build directory keeps tests off the real home.
     systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
+}
+
+// Maven Central (card 23): this library publishes through the Central
+// Portal as dev.spectroscope:spectro-core — sources and javadoc jars ride
+// along, every artifact is signed (RELEASING.md documents the key and
+// token setup; without them only the local tasks run).
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+    pom {
+        name.set("spectro-core")
+        description.set("Transparent, local-first coding-agent harness for the JVM (Java 21): "
+                + "the five-lines Spectro facade, a typed RunEvent stream, tools, MCP, "
+                + "sessions and replay — the stream is the observability.")
+        url.set("https://spectroscope.dev")
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://github.com/spectroscope/spectroscope/blob/main/LICENSE")
+            }
+        }
+        developers {
+            developer {
+                id.set("chris")
+                name.set("Christopher Ezell")
+                email.set("chris@spectroscope.ai")
+            }
+        }
+        scm {
+            url.set("https://github.com/spectroscope/spectroscope")
+            connection.set("scm:git:git://github.com/spectroscope/spectroscope.git")
+            developerConnection.set("scm:git:ssh://git@github.com/spectroscope/spectroscope.git")
+        }
+    }
 }

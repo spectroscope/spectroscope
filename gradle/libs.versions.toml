@@ -30,3 +30,9 @@ cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cronutils" }
 # faces run Logback — console stays WARN-quiet, diagnostics go to the file.
 slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }
+
+[plugins]
+# Maven Central via the Central Portal (the only path since OSSRH's 2025
+# sunset); no official Gradle plugin exists — this one is the community
+# standard and bundles sources/javadoc jars, signing and the upload.
+maven-central-publish = { id = "com.vanniktech.maven.publish", version = "0.37.0" }

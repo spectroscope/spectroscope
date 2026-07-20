@@ -6,6 +6,7 @@
 
 plugins {
     `java-library`
+    alias(libs.plugins.maven.central.publish)
 }
 
 group = "dev.spectroscope"
@@ -39,5 +40,37 @@ tasks.test {
     useJUnitPlatform()
     testLogging {
         events("failed", "skipped")
+    }
+}
+
+// Maven Central (card 23): publishes as dev.spectroscope:spectro-orchestrator
+// next to spectro-core — same portal, same signing, same RELEASING.md.
+mavenPublishing {
+    publishToMavenCentral()
+    signAllPublications()
+    pom {
+        name.set("spectro-orchestrator")
+        description.set("The spectroscope fleet: agents on a bus, one merged spectrum — "
+                + "BusEnvelope wire format, in-memory bus and a TCP ProcessBus with "
+                + "reconnect, at-least-once delivery and a bounded replay ring.")
+        url.set("https://spectroscope.dev")
+        licenses {
+            license {
+                name.set("MIT License")
+                url.set("https://github.com/spectroscope/spectroscope/blob/main/LICENSE")
+            }
+        }
+        developers {
+            developer {
+                id.set("chris")
+                name.set("Christopher Ezell")
+                email.set("chris@spectroscope.ai")
+            }
+        }
+        scm {
+            url.set("https://github.com/spectroscope/spectroscope")
+            connection.set("scm:git:git://github.com/spectroscope/spectroscope.git")
+            developerConnection.set("scm:git:ssh://git@github.com/spectroscope/spectroscope.git")
+        }
     }
 }

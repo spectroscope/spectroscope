@@ -45,7 +45,7 @@ import java.util.function.Function;
  * (gitignored by convention) machine-specific. All fields are optional at
  * every layer; missing fields fall through to the layer below.
  *
- * @param provider            "anthropic", "ollama" or "openai" (LM Studio & friends)
+ * @param provider            "anthropic", "ollama" or "openai" (LM Studio &amp; friends)
  * @param model               model id for the chosen provider
  * @param baseUrl             base URL for ollama/openai (ignored for anthropic)
  * @param compactionThreshold input-token threshold that triggers compaction
