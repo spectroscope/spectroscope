@@ -13,6 +13,7 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.TracingPort;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.ToolRegistry;
@@ -46,9 +47,16 @@ public final class HeadlessRunner {
                     + "and summarize the result briefly at the end. If a tool is denied, do not "
                     + "retry it — state the denial in your result.";
 
+    /** The default identity of a headless run — the solo agent. */
+    private static final String DEFAULT_AGENT_ID = "main";
+
     private final ObjectMapper mapper;
     private final SpectroConfig config;
     private final LlmProvider providerOverride;
+    /** The agent id every event of a run carries (fleet nodes override it). */
+    private final String agentId;
+    /** An extra REGISTERED port next to the required JSONL sink; null = none. */
+    private final TracingPort auxiliaryPort;
 
     /**
      * The production constructor — the provider is built fresh from config per run.
@@ -68,9 +76,45 @@ public final class HeadlessRunner {
      * @param providerOverride the scripted provider, or null to build from config
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
+        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null);
+    }
+
+    private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
+                           String agentId, TracingPort auxiliaryPort) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
+        this.agentId = agentId;
+        this.auxiliaryPort = auxiliaryPort;
+    }
+
+    /**
+     * A copy of this runner whose runs carry {@code agentId} instead of
+     * "main" — identity at the source: a fleet node's events, session JSONL
+     * and any auxiliary port all agree on who ran, with no downstream
+     * relabeling.
+     *
+     * @param agentId the fleet identity (a node id) every event will carry
+     * @return the re-identified runner; this instance is unchanged
+     */
+    public HeadlessRunner withIdentity(String agentId) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort);
+    }
+
+    /**
+     * A copy of this runner that REGISTERS {@code port} next to the required
+     * JSONL sink: durability first — the session file sees every event before
+     * the auxiliary port, and the port's THROWN failures are isolated
+     * (warn-once), never the run's. Isolation cannot cover blocking: the port
+     * runs on the run loop's thread, so a port that might stall (a network
+     * transport) must decouple itself behind its own bounded queue and
+     * thread, turning a stall into counted loss instead of a hang.
+     *
+     * @param port the auxiliary consumer (a bus publisher, a metrics tap, …)
+     * @return the extended runner; this instance is unchanged
+     */
+    public HeadlessRunner withAuxiliaryPort(TracingPort port) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, port);
     }
 
     /**
@@ -143,7 +187,7 @@ public final class HeadlessRunner {
                 .cwd(cwd)                              // path sandbox = the run's working directory
                 .providerName(config.provider())       // run_start metadatum
                 .onPermission(broker)
-                .agentId("main")
+                .agentId(agentId)                      // "main", or a fleet node's identity
                 .thinking(config.thinking())           // surface reasoning in the NDJSON stream too
                 .build());
 
@@ -151,8 +195,13 @@ public final class HeadlessRunner {
                 ? providedStore
                 : new SessionStore(); // canonical sessionId + JSONL append
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
-        // headless failure behaviour stays exactly the inline sink's.
+        // headless failure behaviour stays exactly the inline sink's. An
+        // auxiliary port (a node's bus publisher) is REGISTERED: durability
+        // first, isolation for the extra consumer.
         TracingPorts tracing = new TracingPorts().require(new JsonlSink(store));
+        if (auxiliaryPort != null) {
+            tracing.register(auxiliaryPort);
+        }
         CancelSignal signal = new CancelSignal();
         StringBuilder finalText = new StringBuilder();
         String stopReason = "error";

@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
+import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 
@@ -74,5 +76,23 @@ class DoctorCommandTest {
                         + " whenever config.json existed, got:\n" + out);
         assertTrue(out.contains("legacy config.json also present"),
                 "the legacy file's presence must not be swallowed, got:\n" + out);
+    }
+
+    @Test
+    void theHubProbeTellsReachableFromUnreachableFromInvalid() throws IOException {
+        // The fleet-hub line (node binary wave): a TCP dial, never a wire
+        // handshake — doctor informs, it does not join the fleet.
+        try (ServerSocket hub = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            String live = DoctorCommand.hubProbe("127.0.0.1:" + hub.getLocalPort());
+            assertTrue(live.contains("reachable") && !live.contains("unreachable"),
+                    "a listening hub port reports reachable, got: " + live);
+        }
+        // Port 1 (tcpmux) needs root to bind: nothing listens there on a dev
+        // or CI host, and the refusal is instant — no freed-ephemeral-port
+        // race with the parallel socket-heavy suites.
+        assertTrue(DoctorCommand.hubProbe("127.0.0.1:1").contains("unreachable"),
+                "a dead port reports unreachable");
+        assertTrue(DoctorCommand.hubProbe("no-port-here").contains("invalid"),
+                "a malformed $SPECTRO_HUB names itself invalid instead of dialing");
     }
 }

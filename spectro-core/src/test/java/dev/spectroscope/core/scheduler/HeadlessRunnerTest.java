@@ -97,6 +97,59 @@ class HeadlessRunnerTest {
     }
 
     @Test
+    void aFleetIdentityAndAnAuxiliaryPortRideTheRun(@TempDir Path cwd) {
+        // The node-binary seam (additive): the run carries a fleet identity
+        // instead of "main", and an extra REGISTERED port sees every event
+        // next to the required JSONL sink. Identity at the source — Spectrum
+        // lanes, trace filtering and JSONL agree without special-casing.
+        ScriptedProvider provider = new ScriptedProvider();
+        provider.turns.add(List.of(
+                new LlmProvider.PTextDelta("Node answer."),
+                new LlmProvider.PUsage(10, 4),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+        List<RunEvent> published = new ArrayList<>();
+        HeadlessRunner.Outcome outcome = runner(provider)
+                .withIdentity("node-7")
+                .withAuxiliaryPort(published::add)
+                .runOnce("Check logs", cwd, false, null, null, line -> { });
+
+        assertTrue(outcome.exitOk());
+        RunEvent.RunStart start = (RunEvent.RunStart) published.get(0);
+        assertEquals("node-7", start.agentId(),
+                "the run opens under the node's identity, not \"main\"");
+        List<RunEvent.TextDelta> deltas = published.stream()
+                .filter(RunEvent.TextDelta.class::isInstance)
+                .map(RunEvent.TextDelta.class::cast)
+                .toList();
+        assertFalse(deltas.isEmpty(), "the scripted answer streamed — the check below is not vacuous");
+        assertTrue(deltas.stream().allMatch(delta -> "node-7".equals(delta.agentId())),
+                "every delta carries the fleet identity");
+        Path sessionFile = Path.of(System.getProperty("user.home"), ".spectro", "sessions",
+                outcome.sessionId() + ".jsonl");
+        assertTrue(Files.exists(sessionFile),
+                "durability first: the JSONL session exists next to the auxiliary port");
+    }
+
+    @Test
+    void aBrokenAuxiliaryPortNeverCostsTheRun(@TempDir Path cwd) {
+        ScriptedProvider provider = new ScriptedProvider();
+        provider.turns.add(List.of(
+                new LlmProvider.PTextDelta("Still fine."),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+        HeadlessRunner.Outcome outcome = runner(provider)
+                .withAuxiliaryPort(event -> {
+                    throw new IllegalStateException("bus on fire");
+                })
+                .runOnce("Check logs", cwd, false, null, null, line -> { });
+
+        assertTrue(outcome.exitOk(),
+                "a registered port is isolated — its failure never fails the run");
+        assertEquals("Still fine.", outcome.finalText());
+    }
+
+    @Test
     void autoApprovesGuardedTools(@TempDir Path cwd) {
         ScriptedProvider provider = new ScriptedProvider();
         provider.turns.add(List.of(

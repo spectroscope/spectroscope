@@ -405,6 +405,36 @@ class ProcessBusWireTest {
     }
 
     @Test
+    void aNodesCardRidesItsHelloIntoTheHubRoster() throws Exception {
+        // Block-B decision: registration IS the connection — the card rides
+        // the hello op, liveness is the connection state, no heartbeat
+        // bookkeeping. Ops on one connection are processed in order, so a
+        // delivered frame proves the hello (sent first) was handled.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            NodeCard card = new NodeCard("node-a", "worker",
+                    List.of("read_file", "run_command"), TOPIC);
+            try (ProcessBus node = new ProcessBus("127.0.0.1", hub.port(), "node-a", 1024, card)) {
+                Collector collector = new Collector();
+                CountDownLatch one = collector.expect(1);
+                hub.subscribe(TOPIC, collector);
+                new BusPublisher(node, "node-a", CTX).onEvent(delta("a0"));
+                assertTrue(one.await(10, TimeUnit.SECONDS), "the node's frame arrived");
+                assertEquals(List.of(card), hub.roster(),
+                        "the hello's card is live in the roster while the node is connected");
+            }
+            // Liveness = connection: after close the reader sees EOF and the
+            // connection leaves the list. The teardown is asynchronous, so
+            // poll bounded — this can only pass when the removal truly
+            // happened, never spuriously.
+            long deadline = System.currentTimeMillis() + 10_000;
+            while (!hub.roster().isEmpty() && System.currentTimeMillis() < deadline) {
+                Thread.sleep(10);
+            }
+            assertEquals(List.of(), hub.roster(), "a departed node leaves the roster");
+        }
+    }
+
+    @Test
     void aSlowLocalSubscriberLosesLoudlyAndPrecisely() throws Exception {
         // The overflow path (card-25 review finding #11, deterministic since
         // the local queue became injectable): a blocked local consumer with a

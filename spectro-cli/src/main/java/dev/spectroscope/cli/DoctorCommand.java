@@ -193,6 +193,13 @@ public final class DoctorCommand implements Callable<Integer> {
             default -> report(false, "unknown provider " + config.provider());
         }
 
+        // Fleet hub — optional infrastructure: nodes are opt-in, so the line
+        // informs when $SPECTRO_HUB is set and never fails the doctor.
+        String hubEnv = System.getenv("SPECTRO_HUB");
+        if (hubEnv != null && !hubEnv.isBlank()) {
+            info(hubProbe(hubEnv));
+        }
+
         // Image provider — a missing key is not unhealthy: generate_image
         // explains itself when used. Doctor just says what would happen.
         String imageKeyVar = "gemini".equals(config.imageProvider())
@@ -321,6 +328,29 @@ public final class DoctorCommand implements Callable<Integer> {
                 ? ansi.green("\nEverything looks good.")
                 : ansi.red("\nSome checks failed — see above."));
         return healthy ? 0 : 1;
+    }
+
+    /**
+     * One human line about the configured fleet hub: a plain TCP dial with a
+     * short timeout — reachable, unreachable, or an invalid address. Never a
+     * wire handshake: doctor informs, it does not join the fleet.
+     *
+     * @param address the raw $SPECTRO_HUB value (host:port)
+     * @return the info line to print, naming the state unambiguously
+     */
+    static String hubProbe(String address) {
+        NodeCommand.HubAddress hub;
+        try {
+            hub = NodeCommand.parseHub(address);
+        } catch (IllegalArgumentException invalid) {
+            return "hub: $SPECTRO_HUB invalid — " + invalid.getMessage();
+        }
+        try (java.net.Socket socket = new java.net.Socket()) {
+            socket.connect(new java.net.InetSocketAddress(hub.host(), hub.port()), 500);
+            return "hub: " + address + " reachable — fleet nodes can join";
+        } catch (java.io.IOException dead) {
+            return "hub: " + address + " unreachable — is the aggregator up?";
+        }
     }
 
     /**

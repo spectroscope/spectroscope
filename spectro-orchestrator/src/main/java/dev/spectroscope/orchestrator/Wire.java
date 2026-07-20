@@ -2,11 +2,15 @@ package dev.spectroscope.orchestrator;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * The ProcessBus wire protocol (card 22): one op = one JSON line, version
@@ -33,7 +37,8 @@ final class Wire {
     sealed interface Msg permits Hello, Sub, Pub, Ack, Gap {
     }
 
-    record Hello(String clientId) implements Msg {
+    /** The card is optional handshake metadata — plain clients send none. */
+    record Hello(String clientId, Optional<NodeCard> card) implements Msg {
     }
 
     /** The cursor names each incarnation it consumed: sender → epoch → seq. */
@@ -50,8 +55,26 @@ final class Wire {
     }
 
     static String hello(String clientId) {
+        return hello(clientId, null);
+    }
+
+    /**
+     * The node form: the {@link NodeCard} rides the handshake, so
+     * registration needs no sixth op and liveness is the connection itself.
+     * The card is optional METADATA — the delivery dialect (sub/pub/ack/gap)
+     * is untouched, which is why adding it did not bump the version.
+     */
+    static String hello(String clientId, NodeCard card) {
         ObjectNode node = base("hello");
         node.put("clientId", clientId);
+        if (card != null) {
+            ObjectNode cardNode = node.putObject("card");
+            cardNode.put("id", card.id());
+            cardNode.put("role", card.role());
+            ArrayNode caps = cardNode.putArray("capabilities");
+            card.capabilities().forEach(caps::add);
+            cardNode.put("topic", card.topic());
+        }
         return write(node);
     }
 
@@ -123,7 +146,7 @@ final class Wire {
         }
         String op = node.path("op").asText("");
         return switch (op) {
-            case "hello" -> new Hello(node.path("clientId").asText());
+            case "hello" -> new Hello(node.path("clientId").asText(), parseCard(node.path("card")));
             case "sub" -> {
                 Map<String, Map<Long, Long>> cursor = new LinkedHashMap<>();
                 node.path("cursor").fields().forEachRemaining(sender -> {
@@ -142,6 +165,23 @@ final class Wire {
                     node.path("fromSeq").asLong(), node.path("toSeq").asLong());
             default -> throw new IllegalArgumentException("unknown op '" + op + "': " + line);
         };
+    }
+
+    /** An absent or malformed card is simply no card — hello stays a hello.
+     *  Malformed includes an object missing its identity: a card without id
+     *  and topic would haunt rosters as an empty-string ghost. */
+    private static Optional<NodeCard> parseCard(JsonNode card) {
+        if (!card.isObject()) {
+            return Optional.empty();
+        }
+        String id = card.path("id").asText("");
+        String topic = card.path("topic").asText("");
+        if (id.isBlank() || topic.isBlank()) {
+            return Optional.empty();
+        }
+        List<String> capabilities = new ArrayList<>();
+        card.path("capabilities").forEach(cap -> capabilities.add(cap.asText()));
+        return Optional.of(new NodeCard(id, card.path("role").asText(), capabilities, topic));
     }
 
     private static ObjectNode base(String op) {

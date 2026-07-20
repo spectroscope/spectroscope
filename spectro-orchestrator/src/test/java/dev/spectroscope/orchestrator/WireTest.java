@@ -13,8 +13,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The ProcessBus wire protocol (card 22): newline-framed JSON ops, version
- * pinned to 1 from day one. The codec is pure — no sockets here — so every
- * protocol rule is provable without timing.
+ * pinned from day one (2 since epochs entered the dialect). The codec is
+ * pure — no sockets here — so every protocol rule is provable without
+ * timing.
  */
 class WireTest {
 
@@ -74,6 +75,44 @@ class WireTest {
             assertTrue(line.contains("\"v\":2"),
                     "the protocol wears its version — v2 since epochs changed the dialect: " + line);
         }
+    }
+
+    @Test
+    void aNodeCardRidesTheHelloOp() {
+        // Block-B decision: registration rides the connection op — no sixth
+        // wire op, no heartbeat bookkeeping. The card is optional metadata on
+        // hello; the delivery dialect (sub/pub/ack/gap) is untouched, which is
+        // why the version stays 2.
+        NodeCard card = new NodeCard("node-a", "worker",
+                java.util.List.of("read_file", "write_file"), "ctx-1.events");
+        Wire.Hello parsed = assertInstanceOf(Wire.Hello.class,
+                Wire.parse(Wire.hello("node-a", card), JSON));
+        assertEquals("node-a", parsed.clientId());
+        assertEquals(java.util.Optional.of(card), parsed.card(),
+                "the card survives the round-trip whole");
+    }
+
+    @Test
+    void aMalformedCardObjectIsNoCardNotAGhost() {
+        // A card without id and topic must not become an empty-string ghost
+        // in rosters — "malformed card is simply no card" is the contract.
+        Wire.Hello parsed = assertInstanceOf(Wire.Hello.class, Wire.parse(
+                "{\"v\":2,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{}}", JSON));
+        assertEquals(java.util.Optional.empty(), parsed.card());
+
+        Wire.Hello topicless = assertInstanceOf(Wire.Hello.class, Wire.parse(
+                "{\"v\":2,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{\"id\":\"n\"}}", JSON));
+        assertEquals(java.util.Optional.empty(), topicless.card(),
+                "id without topic is still no card");
+    }
+
+    @Test
+    void aCardlessHelloStaysAHello() {
+        Wire.Hello parsed = assertInstanceOf(Wire.Hello.class,
+                Wire.parse(Wire.hello("client-7"), JSON));
+        assertEquals("client-7", parsed.clientId());
+        assertEquals(java.util.Optional.empty(), parsed.card(),
+                "the card is optional — a plain client (panel, test, tap) sends none");
     }
 
     @Test

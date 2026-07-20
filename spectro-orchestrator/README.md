@@ -158,12 +158,26 @@ building block the process transport leans on.
 `BusPublisher` is this module's port: the panel's lanes publish through it
 (sharing the lane's pen, so choreography frames and agent events stay ONE
 causal chain), and a solo session uses the public constructor
-(`taskId = contextId`, the degenerate one-task case). Honest limit: the
-facade's `Spectro.panel()` still runs its fleet on the in-memory bus —
-the process transport is here, but the node binary that publishes over
-it and the server-side aggregator that drinks from it are the next legs.
-`OrchestratorPanel(BusTransport)` remains the constructor seam an
-aggregator (or a test) uses to watch a fleet on its own bus.
+(`taskId = contextId`, the degenerate one-task case).
+
+`spectroscope node` (in spectro-cli) is the operator-facing leg: one
+headless run whose whole event stream rides this transport to a hub —
+identity at the source (events, envelopes and the `NodeCard` on the
+connection handshake all carry the node id), a fresh wall-clock epoch per
+process start, JSONL durability first. The bus hangs behind a bounded
+queue on its own thread (`AsyncBusPort`): a dead or stalled hub never
+blocks the run — events beyond the buffers are dropped from the BUS VIEW
+only, counted and warned loudly, and the drops happen before the stamper
+so the on-wire sequence stays contiguous (at-least-once still holds for
+everything the outbox accepted; the session JSONL is complete
+regardless). The hub's `roster()` lists the cards of currently connected
+nodes — registration is the handshake, liveness is the connection.
+
+Honest limit: the facade's `Spectro.panel()` still runs its fleet on the
+in-memory bus — the server-side aggregator that drinks from this
+transport is the next leg. `OrchestratorPanel(BusTransport)` remains the
+constructor seam an aggregator (or a test) uses to watch a fleet on its
+own bus.
 
 ## Tests
 

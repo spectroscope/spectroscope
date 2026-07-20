@@ -112,6 +112,25 @@ public final class ProcessBusHub implements BusTransport {
     }
 
     /**
+     * The cards of every currently connected node, in connection order:
+     * registration rides the hello, liveness is the connection — a vanished
+     * node's card leaves with its socket. Card-less clients (panel taps,
+     * plain subscribers) are not listed.
+     *
+     * @return the live fleet roster, newest connection last
+     */
+    public List<NodeCard> roster() {
+        List<NodeCard> cards = new ArrayList<>();
+        for (Connection connection : connections) {
+            NodeCard card = connection.card;
+            if (card != null) {
+                cards.add(card);
+            }
+        }
+        return List.copyOf(cards);
+    }
+
+    /**
      * Forgets one topic — ring, high-waters, everything. The aggregator
      * calls this after a fleet session ended; without retirement a
      * long-lived hub pins every run's ring forever.
@@ -303,6 +322,8 @@ public final class ProcessBusHub implements BusTransport {
         private final java.util.Set<String> topics = ConcurrentHashMap.newKeySet();
         private Thread writer;
         private volatile String clientId = "?";
+        /** The node's self-description from its hello; null for plain clients. */
+        private volatile NodeCard card;
 
         private Connection(Socket socket) {
             this.socket = socket;
@@ -348,7 +369,10 @@ public final class ProcessBusHub implements BusTransport {
 
         private void handle(Wire.Msg msg) {
             switch (msg) {
-                case Wire.Hello(String id) -> clientId = id;
+                case Wire.Hello(String id, java.util.Optional<NodeCard> helloCard) -> {
+                    clientId = id;
+                    card = helloCard.orElse(null);
+                }
                 case Wire.Sub(String topic, Map<String, Map<Long, Long>> cursor) -> {
                     synchronized (lock) {
                         HubCore.Replay replay = core.subscribe(topic, cursor);

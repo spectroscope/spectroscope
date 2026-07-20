@@ -22,6 +22,7 @@ show_help() {
     printf '%s\n\n' "${CORAL}◆${RESET} ${BOLD}spectroscope${RESET}"
     row 'repl' 'interactive agent REPL — /voice push-to-talk, --speak reads aloud' './gradlew -q --console=plain :spectro-cli:run --args="..."'
     row 'run' 'headless run: ./spectro run -p "task" [--json] [--image path] [--speak]' './gradlew -q --console=plain :spectro-cli:run --args="run -p ..."'
+    row 'node' 'fleet node: ./spectro node -p "task" --hub host:port --context <fleet>' './gradlew -q --console=plain :spectro-cli:run --args="node -p ..."'
     row 'cron' 'scheduler: list / status / run <id> (~/.spectro/jobs.json)' './gradlew -q --console=plain :spectro-cli:run --args="cron list"'
     row 'sessions' 'list the stored JSONL sessions (~/.spectro/sessions)' './gradlew -q --console=plain :spectro-cli:run --args="sessions"'
     row 'resume' 'continue a session by id: ./spectro resume <id>' './gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"'
@@ -98,6 +99,7 @@ case "$task" in
     -h|--help|help) show_help ;;
     repl)          gradle :spectro-cli:run --args="$args_str" ;;
     run)           gradle :spectro-cli:run --args="run $args_str" ;;
+    node)          gradle :spectro-cli:run --args="node $args_str" ;;
     cron)          gradle :spectro-cli:run --args="cron $args_str" ;;
     sessions)      gradle :spectro-cli:run --args="sessions" ;;
     resume)

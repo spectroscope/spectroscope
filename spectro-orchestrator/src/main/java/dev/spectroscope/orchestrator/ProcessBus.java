@@ -41,6 +41,8 @@ public final class ProcessBus implements BusTransport {
     private final String host;
     private final int port;
     private final String clientId;
+    /** This node's self-description, re-announced on every (re)connect; null for plain clients. */
+    private final NodeCard card;
     private final ObjectMapper mapper = new ObjectMapper();
 
     /** One lock guards core state, the subscriber map and the socket pair. */
@@ -71,9 +73,21 @@ public final class ProcessBus implements BusTransport {
 
     /** @param outboxCapacity unacked frames held before publishers block */
     public ProcessBus(String host, int port, String clientId, int outboxCapacity) {
+        this(host, port, clientId, outboxCapacity, null);
+    }
+
+    /**
+     * The node form: a {@link NodeCard} announced on every (re)connect —
+     * registration rides the handshake, and the hub's roster lists this
+     * client for exactly as long as its connection lives.
+     *
+     * @param card the node's self-description, or null for a plain client
+     */
+    public ProcessBus(String host, int port, String clientId, int outboxCapacity, NodeCard card) {
         this.host = host;
         this.port = port;
         this.clientId = clientId;
+        this.card = card;
         this.core = new ClientCore(outboxCapacity);
         this.manager = Thread.ofVirtual()
                 .name("spectro-bus-client-" + clientId)
@@ -222,7 +236,7 @@ public final class ProcessBus implements BusTransport {
                     socket = attempt;
                     out = new BufferedWriter(
                             new OutputStreamWriter(attempt.getOutputStream(), StandardCharsets.UTF_8));
-                    sendLine(Wire.hello(clientId));
+                    sendLine(Wire.hello(clientId, card));
                     for (String topic : subscribers.keySet()) {
                         sendLine(Wire.sub(topic, core.cursor(topic)));
                     }

@@ -15,6 +15,9 @@ repositories {
 
 dependencies {
     implementation(project(":spectro-core"))
+    // The fleet node: `spectroscope node` publishes a headless run over the
+    // ProcessBus. Clean DAG: cli -> orchestrator -> core.
+    implementation(project(":spectro-orchestrator"))
     implementation(libs.picocli)
     // Logging night: Logback replaces the old slf4j-nop void — the shared
     // logback.xml keeps the console WARN-quiet (the ANSI face stays pristine)
