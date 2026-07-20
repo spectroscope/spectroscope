@@ -52,10 +52,18 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
 
     const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
     const cs = getComputedStyle(document.documentElement);
-    const accent = (cs.getPropertyValue("--accent") || "#ffffff").trim();
-    const sand = (cs.getPropertyValue("--sand") || accent).trim();
     const neutral = (cs.getPropertyValue("--text-faint") || "#8d8a84").trim() || "#8d8a84";
-    const rays = [accent, sand];
+    // The rays wear ALL brand line colors (owner 2026-07-20) — the same
+    // spectral palette the landing page reads: red, amber, teal, ocean, violet.
+    const line = (name: string, fallback: string): string =>
+      (cs.getPropertyValue(name) || fallback).trim() || fallback;
+    const rays = [
+      line("--sp-red", "#C05A4C"),
+      line("--sp-amber", "#CE9440"),
+      line("--sp-teal", "#2DD4A7"),
+      line("--sp-ocean", "#2CB1C4"),
+      line("--sp-violet", "#8B7CF0"),
+    ];
     // The brand drift runs at half tempo (owner 2026-07-20).
     const speed = 0.5;
 
