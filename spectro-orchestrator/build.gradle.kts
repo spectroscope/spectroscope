@@ -18,6 +18,9 @@ repositories {
 dependencies {
     // The whole module speaks core types: RunEvent, EventStream, AgentOptions.
     api(project(":spectro-core"))
+    // Same discipline as the core (logging night): the module speaks the
+    // slf4j API only — whoever embeds it picks the backend.
+    implementation(libs.slf4j.api)
 
     testImplementation(libs.junit.jupiter)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
