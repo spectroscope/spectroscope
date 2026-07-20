@@ -24,10 +24,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.function.Consumer;
 
 /**
- * The process-boundary transport, hub side (card 22, KONZEPT §9 P1): a TCP
- * server for {@link ProcessBus} clients that is ALSO a local
- * {@link BusTransport} — the aggregator process subscribes in-process while
- * remote nodes ride the wire, and neither knows the difference.
+ * The process-boundary transport, hub side: a TCP server for
+ * {@link ProcessBus} clients that is ALSO a local {@link BusTransport} —
+ * the aggregator process subscribes in-process while remote nodes ride the
+ * wire, and neither knows the difference.
  *
  * <p>Delivery semantics live in {@link HubCore} (bounded replay ring,
  * per-sender dedup, loud {@link BusGap}s); this shell adds the sockets and
@@ -37,8 +37,8 @@ import java.util.function.Consumer;
  * misread as history). NO consumer callback ever runs under that lock —
  * local subscribers drain their own bounded queue on their own thread
  * (review finding: a blocking local consumer must never freeze the fleet),
- * and a too-slow local consumer loses frames LOUDLY (per-sender gap), never
- * silently. Slow remote subscribers are disconnected instead — they
+ * and a too-slow local consumer loses frames LOUDLY (a gap per incarnation,
+ * naming only sequences actually lost), never silently. Slow remote subscribers are disconnected instead — they
  * reconnect and heal from the ring. A line the hub cannot parse kills that
  * connection: skipping it would let the next cumulative ack trim a frame
  * nobody accepted.</p>
@@ -56,6 +56,7 @@ public final class ProcessBusHub implements BusTransport {
     private final ObjectMapper mapper = new ObjectMapper();
     /** One lock serializes core access and fan-out enqueue order. */
     private final Object lock = new Object();
+    private final int localQueue;
     private final HubCore core;
     private final Map<String, List<LocalSubscriber>> localSubscribers = new LinkedHashMap<>();
     private final List<Connection> connections = new CopyOnWriteArrayList<>();
@@ -71,6 +72,12 @@ public final class ProcessBusHub implements BusTransport {
 
     /** @param ringCapacity frames each topic retains for late subscribers */
     public ProcessBusHub(int port, int ringCapacity) throws IOException {
+        this(port, ringCapacity, LOCAL_QUEUE);
+    }
+
+    /** @param localQueue frames a local subscriber may buffer before it loses loudly */
+    public ProcessBusHub(int port, int ringCapacity, int localQueue) throws IOException {
+        this.localQueue = localQueue;
         this.core = new HubCore(ringCapacity);
         this.server = new ServerSocket();
         try {
@@ -129,14 +136,18 @@ public final class ProcessBusHub implements BusTransport {
     @Override
     public AutoCloseable subscribe(String topic, Consumer<BusEnvelope> onFrame) {
         LocalSubscriber subscriber = new LocalSubscriber(onFrame);
+        List<BusGap> replayGaps;
         synchronized (lock) {
             HubCore.Replay replay = core.subscribe(topic, Map.of());
-            replay.gaps().forEach(this::announceGap);
+            replayGaps = replay.gaps();
             for (BusEnvelope env : replay.frames()) {
                 subscriber.enqueue(env);
             }
             localSubscribers.computeIfAbsent(topic, t -> new ArrayList<>()).add(subscriber);
         }
+        // The gap handler is user code — it runs AFTER the lock, like every
+        // other callback here, or a blocking handler freezes the fleet.
+        replayGaps.forEach(this::announceGap);
         return () -> {
             synchronized (lock) {
                 List<LocalSubscriber> list = localSubscribers.get(topic);
@@ -221,17 +232,17 @@ public final class ProcessBusHub implements BusTransport {
     /**
      * One local (in-process) subscriber: a bounded queue drained on its own
      * virtual thread, so no consumer ever runs under the hub lock. When the
-     * queue overflows, frames are dropped LOUDLY — the dropped stretch is
-     * coalesced per sender and announced through the gap handler.
+     * queue overflows, frames are dropped LOUDLY — the dropped stretches are
+     * tracked per incarnation in a {@link DropLedger} and announced through
+     * the gap handler, naming only sequences that were actually lost.
      */
     private final class LocalSubscriber {
 
         private final Consumer<BusEnvelope> consumer;
-        private final ArrayBlockingQueue<BusEnvelope> queue = new ArrayBlockingQueue<>(LOCAL_QUEUE);
-        /** sender → [firstDropped, lastDropped]; guarded by this. */
-        private final Map<String, long[]> dropped = new LinkedHashMap<>();
+        private final ArrayBlockingQueue<BusEnvelope> queue = new ArrayBlockingQueue<>(localQueue);
+        /** Contiguous dropped stretches per (topic, sender, epoch); guarded by this. */
+        private final DropLedger dropped = new DropLedger();
         private final Thread drain;
-        private String droppedTopic;
         private boolean warnedBroken = false;
 
         private LocalSubscriber(Consumer<BusEnvelope> consumer) {
@@ -245,10 +256,7 @@ public final class ProcessBusHub implements BusTransport {
                 return;
             }
             synchronized (this) {
-                droppedTopic = env.topic();
-                long[] range = dropped.computeIfAbsent(env.sender(),
-                        sender -> new long[] {env.sequence(), env.sequence()});
-                range[1] = env.sequence();
+                dropped.record(env.topic(), env.sender(), env.epoch(), env.sequence());
             }
         }
 
@@ -276,14 +284,7 @@ public final class ProcessBusHub implements BusTransport {
 
         private List<BusGap> pendingGaps() {
             synchronized (this) {
-                if (dropped.isEmpty()) {
-                    return List.of();
-                }
-                List<BusGap> gaps = new ArrayList<>();
-                dropped.forEach((sender, range) ->
-                        gaps.add(new BusGap(droppedTopic, sender, range[0], range[1])));
-                dropped.clear();
-                return gaps;
+                return dropped.drain();
             }
         }
 
@@ -348,12 +349,13 @@ public final class ProcessBusHub implements BusTransport {
         private void handle(Wire.Msg msg) {
             switch (msg) {
                 case Wire.Hello(String id) -> clientId = id;
-                case Wire.Sub(String topic, Map<String, Long> cursor) -> {
+                case Wire.Sub(String topic, Map<String, Map<Long, Long>> cursor) -> {
                     synchronized (lock) {
                         HubCore.Replay replay = core.subscribe(topic, cursor);
                         topics.add(topic);
                         for (BusGap gap : replay.gaps()) {
-                            enqueue(Wire.gap(gap.topic(), gap.sender(), gap.fromSeq(), gap.toSeq()));
+                            enqueue(Wire.gap(gap.topic(), gap.sender(), gap.epoch(),
+                                    gap.fromSeq(), gap.toSeq()));
                         }
                         for (BusEnvelope env : replay.frames()) {
                             enqueue(Wire.pub(env, mapper));
@@ -364,8 +366,8 @@ public final class ProcessBusHub implements BusTransport {
                     synchronized (lock) {
                         var fresh = core.publish(frame);
                         // Ack even a duplicate — redelivery deserves its trim.
-                        enqueue(Wire.ack(frame.topic(), frame.sender(),
-                                core.highWater(frame.topic(), frame.sender())));
+                        enqueue(Wire.ack(frame.topic(), frame.sender(), frame.epoch(),
+                                core.highWater(frame.topic(), frame.sender(), frame.epoch())));
                         fresh.ifPresent(ProcessBusHub.this::fanOutLocked);
                     }
                 }

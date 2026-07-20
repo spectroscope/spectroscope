@@ -52,6 +52,24 @@ class BusPublisherTest {
     }
 
     @Test
+    void aNodeIncarnationStampsItsEpochOnEveryEnvelope() {
+        // A node binary passes its process incarnation; a panel lane keeps the
+        // degenerate epoch 0 (one incarnation by construction). The epoch is
+        // identity, not policy — nothing downstream drops on it.
+        InMemoryBus bus = new InMemoryBus();
+        List<BusEnvelope> seen = new ArrayList<>();
+        bus.subscribe(BusEnvelope.topicFor("sess-1"), seen::add);
+
+        new BusPublisher(bus, "node-a", "sess-1", 7L).onEvent(delta("a", 1));
+        new BusPublisher(bus, "node-a", "sess-1").onEvent(delta("b", 2));
+
+        assertEquals(7L, seen.get(0).epoch());
+        assertEquals("node-a#7#0", seen.get(0).id());
+        assertEquals(0L, seen.get(1).epoch(), "the solo ctor keeps the degenerate epoch");
+        assertEquals("node-a#0#0", seen.get(1).id());
+    }
+
+    @Test
     void topicFollowsTheSessionIsolationConvention() {
         assertEquals("fleet-4c21.events", BusEnvelope.topicFor("fleet-4c21"));
     }
@@ -65,7 +83,7 @@ class BusPublisherTest {
         // The lane's life: a choreography frame from the pen, the agent's
         // events through the publisher, a closing frame from the pen again —
         // ONE chain, because both write with the same pen.
-        EnvelopeStamper pen = new EnvelopeStamper("lane", "ctx", "ctx.events");
+        EnvelopeStamper pen = new EnvelopeStamper("lane", 0L, "ctx", "ctx.events");
         BusPublisher publisher = new BusPublisher(bus, pen, "task-1");
 
         bus.publish(pen.stamp("task-1", new RunEvent.AgentMessage(

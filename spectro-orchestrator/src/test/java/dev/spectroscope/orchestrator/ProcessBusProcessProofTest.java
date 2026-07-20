@@ -57,7 +57,7 @@ class ProcessBusProcessProofTest {
             assertEquals(childPid, child.pid(), "the frame carries the child's own PID");
             assertNotEquals(ProcessHandle.current().pid(), childPid,
                     "two distinct PIDs — the boundary is real, not simulated");
-            assertEquals(List.of("node-child#0", "node-child#1"),
+            assertEquals(List.of("node-child#0#0", "node-child#0#1"),
                     seen.stream().map(BusEnvelope::id).toList(),
                     "per-sender order survives the boundary");
         }

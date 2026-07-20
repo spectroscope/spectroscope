@@ -15,7 +15,7 @@ class BusEnvelopeTest {
     private final ObjectMapper mapper = new ObjectMapper();
 
     private static BusEnvelope sample() {
-        return new BusEnvelope("worker-1", "fleet-1", "task-7f3a", 42, "worker-1#41",
+        return new BusEnvelope("worker-1", 3L, "fleet-1", "task-7f3a", 42, "worker-1#3#41",
                 "fleet-1.events", 1721400000000L,
                 new RunEvent.AgentMessage("worker-1", "panel", "status", "working",
                         "checking queries", null, 1721400000000L));
@@ -35,7 +35,9 @@ class BusEnvelopeTest {
         BusEnvelope env = sample();
         BusEnvelope back = BusEnvelope.fromLine(env.toLine(mapper), mapper);
         assertEquals(env, back);
-        assertEquals("worker-1#42", back.id());
+        assertEquals(3L, back.epoch(), "the incarnation survives the wire");
+        assertEquals("worker-1#3#42", back.id(),
+                "the id is unambiguous across restarts: sender#epoch#sequence");
     }
 
     @Test

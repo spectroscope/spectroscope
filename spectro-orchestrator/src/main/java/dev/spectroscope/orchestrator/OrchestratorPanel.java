@@ -122,7 +122,7 @@ public final class OrchestratorPanel implements FleetPanel {
             // The aggregator: ONE subscriber unwraps the fleet's envelopes into
             // the merged stream, in publication order (per lane: causal order).
             AutoCloseable subscription = bus.subscribe(topic, env -> sink.accept(env.payload()));
-            EnvelopeStamper panelPen = new EnvelopeStamper(PANEL_AGENT_ID, contextId, topic);
+            EnvelopeStamper panelPen = new EnvelopeStamper(PANEL_AGENT_ID, 0L, contextId, topic);
             try {
                 bus.publish(panelPen.stamp(contextId, new RunEvent.RunStart(
                         contextId, PANEL_AGENT_ID, null,
@@ -171,7 +171,7 @@ public final class OrchestratorPanel implements FleetPanel {
      *  onto the bus verbatim, close with the recorded outcome. Never throws —
      *  a broken lane becomes an error event plus a failed result. */
     private void runLane(Lane lane, String taskId, String contextId, String topic, CancelSignal signal) {
-        EnvelopeStamper pen = new EnvelopeStamper(lane.id, contextId, topic);
+        EnvelopeStamper pen = new EnvelopeStamper(lane.id, 0L, contextId, topic);
         // The lane publishes its agent's events through the tracing port —
         // sharing the pen, so choreography frames and pumped events stay ONE
         // causal chain. The core-side drain sites register the same port type.

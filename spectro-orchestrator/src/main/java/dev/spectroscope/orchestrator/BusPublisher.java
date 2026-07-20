@@ -6,13 +6,13 @@ import dev.spectroscope.core.trace.TracingPort;
 import java.util.Objects;
 
 /**
- * The bus as a {@link TracingPort} (KONZEPT §4.3): whoever drains an agent's
- * events — a CLI, a server connection, a panel lane — registers this port and
- * the whole run rides the bus as stamped envelopes. Deliberately thin and
+ * The bus as a {@link TracingPort}: whoever drains an agent's events — a
+ * CLI, a server connection, a panel lane — registers this port and the
+ * whole run rides the bus as stamped envelopes. Deliberately thin and
  * non-swallowing: isolation is the registry's job
  * ({@code TracingPorts.register}), a direct caller gets the transport's raw
- * failure behaviour on purpose (a lane whose bus dies must fail loudly, the
- * autogen trap).
+ * failure behaviour on purpose (a lane whose bus dies must fail loudly,
+ * never keep generating into the void).
  */
 public final class BusPublisher implements TracingPort {
 
@@ -22,14 +22,37 @@ public final class BusPublisher implements TracingPort {
 
     /**
      * The solo-session form: one node, one context, the degenerate one-task
-     * case ({@code taskId = contextId}, like the panel's own frames).
+     * case ({@code taskId = contextId}, like the panel's own frames). Uses
+     * epoch 0 — a single incarnation by construction (panel lanes, tests).
+     *
+     * <p><strong>Never use this form for a process that can restart.</strong>
+     * A restart reusing epoch 0 restarts its sequence at 0 too, and the
+     * hub's dedup reads the entire fresh stream as redelivery: acked,
+     * delivered to no one. That silent loss is exactly what epochs exist to
+     * prevent — a restartable node must stamp a fresh, monotonically
+     * increasing epoch per incarnation via
+     * {@link #BusPublisher(BusTransport, String, String, long)}.</p>
      *
      * @param bus       the transport every envelope rides
      * @param sender    the publishing node's agent id
      * @param contextId the session — also the topic root and the taskId
      */
     public BusPublisher(BusTransport bus, String sender, String contextId) {
-        this(bus, new EnvelopeStamper(sender, contextId, BusEnvelope.topicFor(contextId)), contextId);
+        this(bus, sender, contextId, 0L);
+    }
+
+    /**
+     * The node-incarnation form: a node binary stamps its process
+     * incarnation so a restart is a new stream, never a redelivery.
+     *
+     * @param bus       the transport every envelope rides
+     * @param sender    the publishing node's agent id
+     * @param contextId the session — also the topic root and the taskId
+     * @param epoch     this process's incarnation, monotonic across restarts
+     */
+    public BusPublisher(BusTransport bus, String sender, String contextId, long epoch) {
+        this(bus, new EnvelopeStamper(sender, epoch, contextId,
+                BusEnvelope.topicFor(contextId)), contextId);
     }
 
     /**

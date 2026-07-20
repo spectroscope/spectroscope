@@ -14,22 +14,30 @@ import java.util.Objects;
  * {@code parentId} (the previous envelope of the same sender).
  *
  * @param sender    the publishing node's agent id (= the lane's event identity)
+ * @param epoch     the sender's incarnation: a restarted process stamps a
+ *                  higher epoch, so its restarted sequence is a new stream,
+ *                  never a redelivery. An identity qualifier, not a fence —
+ *                  every incarnation delivers; what counts as "current" is
+ *                  the roster's business, not the bus's.
  * @param contextId the fleet session — every lane of one panel run shares it
  * @param taskId    correlates every envelope of one assignment ("task-…")
- * @param sequence  monotonic per sender — per-node order survives any transport
+ * @param sequence  monotonic per (sender, epoch) — per-incarnation order
+ *                  survives any transport
  * @param parentId  the sender's previous envelope id, "-" at its chain root
+ *                  (each incarnation starts its own causal chain)
  * @param topic     session isolation: subscribers pick one fleet's stream
  * @param ts        epoch millis of publication
  * @param payload   the wrapped RunEvent, carried verbatim
  */
-public record BusEnvelope(String sender, String contextId, String taskId, long sequence,
-                          String parentId, String topic, long ts, RunEvent payload) {
+public record BusEnvelope(String sender, long epoch, String contextId, String taskId,
+                          long sequence, String parentId, String topic, long ts,
+                          RunEvent payload) {
 
     /** Chain root marker for the first envelope of a sender. */
     public static final String CHAIN_ROOT = "-";
 
     /**
-     * The topic convention (KONZEPT §3.1): topic = session, isolation for free.
+     * The topic convention: topic = session, isolation for free.
      *
      * @param contextId the session id
      * @return the topic every envelope of that session rides on
@@ -47,9 +55,10 @@ public record BusEnvelope(String sender, String contextId, String taskId, long s
         Objects.requireNonNull(payload, "payload");
     }
 
-    /** @return the envelope's natural id — {@code sender#sequence} */
+    /** @return the envelope's natural id — {@code sender#epoch#sequence},
+     *  unambiguous across restarts */
     public String id() {
-        return sender + "#" + sequence;
+        return sender + "#" + epoch + "#" + sequence;
     }
 
     /**
@@ -64,6 +73,7 @@ public record BusEnvelope(String sender, String contextId, String taskId, long s
         try {
             ObjectNode node = mapper.createObjectNode();
             node.put("sender", sender);
+            node.put("epoch", epoch);
             node.put("contextId", contextId);
             node.put("taskId", taskId);
             node.put("sequence", sequence);
@@ -93,6 +103,7 @@ public record BusEnvelope(String sender, String contextId, String taskId, long s
             var node = mapper.readTree(line);
             return new BusEnvelope(
                     node.path("sender").asText(),
+                    node.path("epoch").asLong(),
                     node.path("contextId").asText(),
                     node.path("taskId").asText(),
                     node.path("sequence").asLong(),

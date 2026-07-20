@@ -21,9 +21,9 @@ import java.util.Set;
 import java.util.function.Consumer;
 
 /**
- * The process-boundary transport, client side (card 22, KONZEPT §9 P1): one
- * TCP connection to a {@link ProcessBusHub}, newline-framed {@link Wire} ops,
- * and the three day-one guarantees the autogen trap demands (§8.1) —
+ * The process-boundary transport, client side: one TCP connection to a
+ * {@link ProcessBusHub}, newline-framed wire ops, and three day-one
+ * guarantees no distributed fleet should launch without —
  * auto-reconnect with capped backoff, at-least-once via a bounded outbox
  * that reflushes on reconnect (a full outbox blocks the publisher: the
  * EventStream discipline, never a silent drop), and a per-sender cursor
@@ -141,8 +141,8 @@ public final class ProcessBus implements BusTransport {
     private static final long DRAIN_GRACE_MS = 5_000;
 
     /**
-     * Idempotent. Drains first: a closing node must not strand its tail (the
-     * bus-proof's close-without-drain is the shortcut we refused) — close
+     * Idempotent. Drains first: a closing node must not strand its tail
+     * (close-without-drain is the shortcut this transport refuses) — close
      * waits up to {@value #DRAIN_GRACE_MS} ms for the hub's acks, and frames
      * that still could not be delivered are counted LOUDLY, never silently.
      */
@@ -208,7 +208,8 @@ public final class ProcessBus implements BusTransport {
     }
 
     /** The connection manager: connect, replay state, read until the wire
-     *  dies, back off, repeat — reconnect is the point (§8 trap 1). */
+     *  dies, back off, repeat — a fleet that loses its bus must heal itself,
+     *  because nobody restarts a background node by hand. */
     private void runManager() {
         long backoff = 50;
         while (!closed) {
@@ -266,14 +267,21 @@ public final class ProcessBus implements BusTransport {
             try {
                 switch (Wire.parse(line, mapper)) {
                     case Wire.Pub(BusEnvelope frame) -> deliver(frame);
-                    case Wire.Ack(String topic, String sender, long highWater) -> {
+                    case Wire.Ack(String topic, String sender, long epoch, long highWater) -> {
                         synchronized (lock) {
-                            core.ack(topic, sender, highWater);
+                            core.ack(topic, sender, epoch, highWater);
                             lock.notifyAll(); // a blocked publisher may proceed
                         }
                     }
-                    case Wire.Gap(String topic, String sender, long fromSeq, long toSeq) ->
-                            announceGap(new BusGap(topic, sender, fromSeq, toSeq));
+                    case Wire.Gap(String topic, String sender, long epoch,
+                                  long fromSeq, long toSeq) -> {
+                        synchronized (lock) {
+                            // The gap is consumed history: without this advance
+                            // the next resume cursor re-earns the same gap.
+                            core.noteGap(topic, sender, epoch, toSeq);
+                        }
+                        announceGap(new BusGap(topic, sender, epoch, fromSeq, toSeq));
+                    }
                     default -> log.warn("unexpected op from hub: {}", line);
                 }
             } catch (RuntimeException poison) {

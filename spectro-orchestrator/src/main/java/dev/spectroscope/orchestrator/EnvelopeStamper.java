@@ -3,10 +3,11 @@ package dev.spectroscope.orchestrator;
 import dev.spectroscope.core.events.RunEvent;
 
 /**
- * One stamper per sender: wraps RunEvents into envelopes with a monotonic
- * sequence and the causal chain (each envelope's parent is the sender's
- * previous envelope — the bus-proof's publish-time chain, provable by
- * walking parentId back to the root marker).
+ * One stamper per sender incarnation: wraps RunEvents into envelopes with a
+ * monotonic sequence and the causal chain (each envelope's parent is the
+ * sender's previous envelope — the bus-proof's publish-time chain, provable
+ * by walking parentId back to the root marker). The epoch is fixed at
+ * construction (card 25): one stamper = one incarnation = one chain.
  *
  * <p>Not thread-safe on purpose: a sender is one lane on one virtual
  * thread; two threads sharing a stamper would interleave one causal chain.</p>
@@ -14,13 +15,15 @@ import dev.spectroscope.core.events.RunEvent;
 final class EnvelopeStamper {
 
     private final String sender;
+    private final long epoch;
     private final String contextId;
     private final String topic;
     private long sequence = 0;
     private String lastId = BusEnvelope.CHAIN_ROOT;
 
-    EnvelopeStamper(String sender, String contextId, String topic) {
+    EnvelopeStamper(String sender, long epoch, String contextId, String topic) {
         this.sender = sender;
+        this.epoch = epoch;
         this.contextId = contextId;
         this.topic = topic;
     }
@@ -35,7 +38,7 @@ final class EnvelopeStamper {
      */
     BusEnvelope stamp(String taskId, RunEvent event) {
         BusEnvelope env = new BusEnvelope(
-                sender, contextId, taskId, sequence++, lastId, topic,
+                sender, epoch, contextId, taskId, sequence++, lastId, topic,
                 System.currentTimeMillis(), event);
         lastId = env.id();
         return env;

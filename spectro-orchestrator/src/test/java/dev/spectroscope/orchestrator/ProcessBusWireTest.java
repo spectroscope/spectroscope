@@ -85,7 +85,7 @@ class ProcessBusWireTest {
             assertEquals(List.of(0L, 1L, 2L), collector.sequencesOf("node-a"));
             assertEquals(List.of(0L, 1L, 2L), collector.sequencesOf("node-b"));
             BusEnvelope first = collector.seen.stream()
-                    .filter(env -> env.id().equals("node-a#0")).findFirst().orElseThrow();
+                    .filter(env -> env.id().equals("node-a#0#0")).findFirst().orElseThrow();
             assertEquals(delta("a0"), first.payload(), "the payload rides verbatim");
         }
     }
@@ -113,7 +113,7 @@ class ProcessBusWireTest {
             lateSide.subscribe(TOPIC, late);
 
             assertTrue(replay.await(10, TimeUnit.SECONDS), "the ring replays for latecomers");
-            assertEquals(List.of("node-a#0", "node-a#1", "node-a#2"), late.ids());
+            assertEquals(List.of("node-a#0#0", "node-a#0#1", "node-a#0#2"), late.ids());
         }
     }
 
@@ -137,7 +137,7 @@ class ProcessBusWireTest {
 
             assertTrue(twoMore.await(20, TimeUnit.SECONDS),
                     "the reconnect cursor resumes exactly where the drop cut");
-            assertEquals(List.of("node-a#0", "node-a#1", "node-a#2", "node-a#3"),
+            assertEquals(List.of("node-a#0#0", "node-a#0#1", "node-a#0#2", "node-a#0#3"),
                     collector.ids(), "no loss, no duplicates");
         }
     }
@@ -158,7 +158,7 @@ class ProcessBusWireTest {
 
             assertTrue(both.await(20, TimeUnit.SECONDS),
                     "the outbox reflushes on reconnect — a dead hub moment loses nothing");
-            assertEquals(List.of("node-a#0", "node-a#1"), collector.ids());
+            assertEquals(List.of("node-a#0#0", "node-a#0#1"), collector.ids());
         }
     }
 
@@ -190,9 +190,51 @@ class ProcessBusWireTest {
 
             assertTrue(gapHeard.await(10, TimeUnit.SECONDS), "the eviction is announced");
             assertTrue(survivors.await(10, TimeUnit.SECONDS));
-            assertEquals(List.of(new BusGap(TOPIC, "node-a", 0L, 2L)), gaps,
+            assertEquals(List.of(new BusGap(TOPIC, "node-a", 0L, 0L, 2L)), gaps,
                     "the missing stretch is named precisely — trap 1 refused");
-            assertEquals(List.of("node-a#3", "node-a#4"), late.ids());
+            assertEquals(List.of("node-a#0#3", "node-a#0#4"), late.ids());
+        }
+    }
+
+    @Test
+    void aReconnectDoesNotReAnnounceAHealedGap() throws Exception {
+        // Card-25 review finding #5, end to end: a sender whose ENTIRE
+        // history was evicted never appears in the replay, so nothing but the
+        // gap itself can move the cursor past the loss. Without that advance
+        // the reconnect resends the same stale cursor and hears the same gap
+        // again — one eviction, announced on every reconnect.
+        try (ProcessBusHub hub = new ProcessBusHub(0, 2);
+             ProcessBus publisherSide = new ProcessBus("127.0.0.1", hub.port(), "pub-1");
+             ProcessBus lateSide = new ProcessBus("127.0.0.1", hub.port(), "late-1")) {
+            BusPublisher nodeA = new BusPublisher(publisherSide, "node-a", CTX);
+            BusPublisher nodeB = new BusPublisher(publisherSide, "node-b", CTX);
+            Collector witness = new Collector();
+            CountDownLatch three = witness.expect(3);
+            try (ProcessBus witnessSide = new ProcessBus("127.0.0.1", hub.port(), "witness")) {
+                witnessSide.subscribe(TOPIC, witness);
+                nodeA.onEvent(delta("a0")); // ring cap 2: b0/b1 below evict this
+                nodeB.onEvent(delta("b0"));
+                nodeB.onEvent(delta("b1"));
+                assertTrue(three.await(10, TimeUnit.SECONDS), "the hub saw all three");
+            }
+
+            List<BusGap> gaps = Collections.synchronizedList(new ArrayList<>());
+            lateSide.onGap(gaps::add);
+            Collector late = new Collector();
+            CountDownLatch survivors = late.expect(2);
+            lateSide.subscribe(TOPIC, late);
+            assertTrue(survivors.await(10, TimeUnit.SECONDS), "the ring's survivors replay");
+
+            CountDownLatch fresh = late.expect(1);
+            lateSide.dropConnectionForTest();
+            nodeB.onEvent(delta("b2"));
+
+            assertTrue(fresh.await(20, TimeUnit.SECONDS),
+                    "the reconnect resumes and delivers the new frame");
+            assertEquals(List.of("node-b#0#0", "node-b#0#1", "node-b#0#2"), late.ids(),
+                    "no loss, no duplicates across the reconnect");
+            assertEquals(List.of(new BusGap(TOPIC, "node-a", 0L, 0L, 0L)), gaps,
+                    "the loss is announced exactly once — the cursor advanced over it");
         }
     }
 
@@ -307,7 +349,7 @@ class ProcessBusWireTest {
             subscriberSide.subscribe(TOPIC, late);
             assertTrue(replay.await(10, TimeUnit.SECONDS),
                     "the frames nobody consumed replay for the later consumer");
-            assertEquals(List.of("node-a#1", "node-a#2"), late.ids());
+            assertEquals(List.of("node-a#0#1", "node-a#0#2"), late.ids());
         }
     }
 
@@ -357,8 +399,152 @@ class ProcessBusWireTest {
             assertTrue(localSecond.await(10, TimeUnit.SECONDS),
                     "the local drain delivers the local publish too");
             // A topic subscriber hears EVERYTHING on the topic, local included.
-            assertEquals(List.of("node-r#0", "node-l#0"), local.ids());
-            assertEquals(List.of("node-r#0", "node-l#0"), remote.ids());
+            assertEquals(List.of("node-r#0#0", "node-l#0#0"), local.ids());
+            assertEquals(List.of("node-r#0#0", "node-l#0#0"), remote.ids());
+        }
+    }
+
+    @Test
+    void aSlowLocalSubscriberLosesLoudlyAndPrecisely() throws Exception {
+        // The overflow path (card-25 review finding #11, deterministic since
+        // the local queue became injectable): a blocked local consumer with a
+        // full queue loses frames — announced as a gap naming EXACTLY the
+        // dropped stretch, never the delivered neighbours.
+        try (ProcessBusHub hub = new ProcessBusHub(0, 4096, 1)) {
+            List<BusGap> gaps = Collections.synchronizedList(new ArrayList<>());
+            CountDownLatch gapHeard = new CountDownLatch(1);
+            hub.onGap(gap -> {
+                gaps.add(gap);
+                gapHeard.countDown();
+            });
+
+            CountDownLatch entered = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            List<String> delivered = Collections.synchronizedList(new ArrayList<>());
+            CountDownLatch both = new CountDownLatch(2);
+            hub.subscribe(TOPIC, env -> {
+                delivered.add(env.id());
+                both.countDown();
+                if (delivered.size() == 1) {
+                    entered.countDown();
+                    try {
+                        release.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            });
+
+            BusPublisher nodeA = new BusPublisher(hub, "node-a", CTX);
+            nodeA.onEvent(delta("a0")); // taken by the drain, then held there
+            assertTrue(entered.await(10, TimeUnit.SECONDS), "the consumer holds frame 0");
+            nodeA.onEvent(delta("a1")); // fills the one-slot queue
+            nodeA.onEvent(delta("a2")); // no room — dropped
+            nodeA.onEvent(delta("a3")); // dropped too
+            release.countDown();
+
+            assertTrue(both.await(10, TimeUnit.SECONDS), "the queued frame still delivers");
+            assertTrue(gapHeard.await(10, TimeUnit.SECONDS), "the loss is announced");
+            assertEquals(List.of("node-a#0#0", "node-a#0#1"), delivered);
+            assertEquals(List.of(new BusGap(TOPIC, "node-a", 0L, 2L, 3L)), gaps,
+                    "the gap names the dropped stretch — frame 1 was delivered, not counted lost");
+        }
+    }
+
+    @Test
+    void subscribeGapsAreAnnouncedOffTheHubLock() throws Exception {
+        // The no-user-code-under-the-lock rule applies to gap handlers too: a
+        // handler that blocks during a local subscribe's replay must not hold
+        // up a concurrent publish. Before the fix this test deadlocks — the
+        // subscribe announced gaps while holding the hub lock.
+        try (ProcessBusHub hub = new ProcessBusHub(0, 1)) {
+            BusPublisher nodeA = new BusPublisher(hub, "node-a", CTX);
+            nodeA.onEvent(delta("a0"));
+            nodeA.onEvent(delta("a1")); // ring cap 1: a0 evicted → subscribe will gap
+
+            CountDownLatch handlerEntered = new CountDownLatch(1);
+            CountDownLatch release = new CountDownLatch(1);
+            List<BusGap> gaps = Collections.synchronizedList(new ArrayList<>());
+            hub.onGap(gap -> {
+                gaps.add(gap);
+                handlerEntered.countDown();
+                try {
+                    release.await(10, TimeUnit.SECONDS);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+
+            Thread subscriber = Thread.ofVirtual().start(() ->
+                    hub.subscribe(TOPIC, env -> { }));
+            assertTrue(handlerEntered.await(10, TimeUnit.SECONDS),
+                    "the subscribe reached its gap announcement");
+
+            // With the handler parked, a publish must still get the lock.
+            nodeA.onEvent(delta("a2"));
+            release.countDown();
+            subscriber.join(10_000);
+            assertEquals(1, gaps.size());
+            assertEquals("node-a", gaps.get(0).sender());
+        }
+    }
+
+    @Test
+    void acksCarryTheEpochSoARestartedNodesOutboxDrains() throws Exception {
+        // The publisher blocks when its outbox is full and only the hub's
+        // cumulative ack trims it. With a non-zero epoch, four publishes
+        // through a two-slot outbox complete ONLY if the hub acks the right
+        // (topic, sender, epoch) — a wrong-epoch ack would hang this test.
+        try (ProcessBusHub hub = new ProcessBusHub(0);
+             ProcessBus subscriberSide = new ProcessBus("127.0.0.1", hub.port(), "sub-1");
+             ProcessBus publisherSide = new ProcessBus("127.0.0.1", hub.port(), "pub-1", 2)) {
+            Collector collector = new Collector();
+            CountDownLatch four = collector.expect(4);
+            subscriberSide.subscribe(TOPIC, collector);
+
+            BusPublisher nodeA = new BusPublisher(publisherSide, "node-a", CTX, 5L);
+            for (int i = 0; i < 4; i++) {
+                nodeA.onEvent(delta("a" + i)); // blocks past 2 until the epoch-5 ack trims
+            }
+
+            assertTrue(four.await(10, TimeUnit.SECONDS),
+                    "all four frames flow — the acks named the right incarnation");
+            assertEquals(List.of("node-a#5#0", "node-a#5#1", "node-a#5#2", "node-a#5#3"),
+                    collector.ids());
+        }
+    }
+
+    @Test
+    void aRestartedPublisherWithAFreshEpochIsHeardNotDropped() throws Exception {
+        // The card-22 limit falls, end to end: a node process dies and comes
+        // back under the same sender id. Its new incarnation restarts the
+        // sequence at 0 — before epochs the hub classified that as redelivery
+        // and acked it into the void. With epochs, both incarnations deliver.
+        try (ProcessBusHub hub = new ProcessBusHub(0);
+             ProcessBus subscriberSide = new ProcessBus("127.0.0.1", hub.port(), "sub-1")) {
+            Collector collector = new Collector();
+            CountDownLatch firstLife = collector.expect(2);
+            subscriberSide.subscribe(TOPIC, collector);
+
+            ProcessBus firstProcess = new ProcessBus("127.0.0.1", hub.port(), "node-a-p1");
+            BusPublisher firstIncarnation = new BusPublisher(firstProcess, "node-a", CTX, 1L);
+            firstIncarnation.onEvent(delta("a0"));
+            firstIncarnation.onEvent(delta("a1"));
+            assertTrue(firstLife.await(10, TimeUnit.SECONDS), "the first life is heard");
+            firstProcess.close(); // the crash-and-restart, as the wire sees it
+
+            CountDownLatch secondLife = collector.expect(2);
+            try (ProcessBus secondProcess = new ProcessBus("127.0.0.1", hub.port(), "node-a-p2")) {
+                BusPublisher secondIncarnation =
+                        new BusPublisher(secondProcess, "node-a", CTX, 2L);
+                secondIncarnation.onEvent(delta("b0"));
+                secondIncarnation.onEvent(delta("b1"));
+
+                assertTrue(secondLife.await(10, TimeUnit.SECONDS),
+                        "the restarted node's frames DELIVER — the card-22 limit fell");
+            }
+            assertEquals(List.of("node-a#1#0", "node-a#1#1", "node-a#2#0", "node-a#2#1"),
+                    collector.ids(), "both incarnations, in order, exactly once");
         }
     }
 }

@@ -21,7 +21,7 @@ import java.util.Map;
  */
 final class Wire {
 
-    static final int VERSION = 1;
+    static final int VERSION = 2;
 
     /** The builder-side mapper for ops that carry no envelope. */
     private static final ObjectMapper PLAIN = new ObjectMapper();
@@ -36,16 +36,17 @@ final class Wire {
     record Hello(String clientId) implements Msg {
     }
 
-    record Sub(String topic, Map<String, Long> cursor) implements Msg {
+    /** The cursor names each incarnation it consumed: sender → epoch → seq. */
+    record Sub(String topic, Map<String, Map<Long, Long>> cursor) implements Msg {
     }
 
     record Pub(BusEnvelope frame) implements Msg {
     }
 
-    record Ack(String topic, String sender, long highWater) implements Msg {
+    record Ack(String topic, String sender, long epoch, long highWater) implements Msg {
     }
 
-    record Gap(String topic, String sender, long fromSeq, long toSeq) implements Msg {
+    record Gap(String topic, String sender, long epoch, long fromSeq, long toSeq) implements Msg {
     }
 
     static String hello(String clientId) {
@@ -54,11 +55,14 @@ final class Wire {
         return write(node);
     }
 
-    static String sub(String topic, Map<String, Long> cursor) {
+    static String sub(String topic, Map<String, Map<Long, Long>> cursor) {
         ObjectNode node = base("sub");
         node.put("topic", topic);
         ObjectNode cursorNode = node.putObject("cursor");
-        cursor.forEach(cursorNode::put);
+        cursor.forEach((sender, epochs) -> {
+            ObjectNode epochNode = cursorNode.putObject(sender);
+            epochs.forEach((epoch, seq) -> epochNode.put(String.valueOf(epoch), seq));
+        });
         return write(node);
     }
 
@@ -74,21 +78,23 @@ final class Wire {
         return write(node);
     }
 
-    static String ack(String topic, String sender, long highWater) {
-        // The topic rides along on purpose: high-waters are per (topic,
-        // sender), and sequences restart per context — an ack without the
-        // topic would trim a same-named sender's OTHER topics from the outbox.
+    static String ack(String topic, String sender, long epoch, long highWater) {
+        // Topic AND epoch ride along on purpose: high-waters are per (topic,
+        // sender, epoch) — sequences restart per context AND per incarnation,
+        // so an ack missing either scope would trim frames the hub never saw.
         ObjectNode node = base("ack");
         node.put("topic", topic);
         node.put("sender", sender);
+        node.put("epoch", epoch);
         node.put("highWater", highWater);
         return write(node);
     }
 
-    static String gap(String topic, String sender, long fromSeq, long toSeq) {
+    static String gap(String topic, String sender, long epoch, long fromSeq, long toSeq) {
         ObjectNode node = base("gap");
         node.put("topic", topic);
         node.put("sender", sender);
+        node.put("epoch", epoch);
         node.put("fromSeq", fromSeq);
         node.put("toSeq", toSeq);
         return write(node);
@@ -119,15 +125,20 @@ final class Wire {
         return switch (op) {
             case "hello" -> new Hello(node.path("clientId").asText());
             case "sub" -> {
-                Map<String, Long> cursor = new LinkedHashMap<>();
-                node.path("cursor").fields()
-                        .forEachRemaining(e -> cursor.put(e.getKey(), e.getValue().asLong()));
+                Map<String, Map<Long, Long>> cursor = new LinkedHashMap<>();
+                node.path("cursor").fields().forEachRemaining(sender -> {
+                    Map<Long, Long> epochs = new LinkedHashMap<>();
+                    sender.getValue().fields().forEachRemaining(epoch ->
+                            epochs.put(Long.parseLong(epoch.getKey()), epoch.getValue().asLong()));
+                    cursor.put(sender.getKey(), epochs);
+                });
                 yield new Sub(node.path("topic").asText(), cursor);
             }
             case "pub" -> new Pub(BusEnvelope.fromLine(node.path("frame").toString(), mapper));
             case "ack" -> new Ack(node.path("topic").asText(), node.path("sender").asText(),
-                    node.path("highWater").asLong());
+                    node.path("epoch").asLong(), node.path("highWater").asLong());
             case "gap" -> new Gap(node.path("topic").asText(), node.path("sender").asText(),
+                    node.path("epoch").asLong(),
                     node.path("fromSeq").asLong(), node.path("toSeq").asLong());
             default -> throw new IllegalArgumentException("unknown op '" + op + "': " + line);
         };
