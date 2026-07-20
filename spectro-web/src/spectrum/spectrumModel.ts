@@ -41,6 +41,10 @@ export interface Lane {
   ticks: LaneTick[];
   inTokens: number;
   outTokens: number;
+  /** The lane's latest reasoning text — a bounded buffer (latest wins), so the
+   *  Spectrum peek shows current thinking, not a growing transcript. Empty
+   *  until the agent emits a thinking_delta. */
+  thinking: string;
   /** Marks dropped by density thinning — reported, never silent. */
   dropped: number;
 }
@@ -58,6 +62,10 @@ export interface SpectrumModel {
 
 /** Per lane: marks beyond this are thinned (token/reasoning first). */
 export const MAX_LANE_TICKS = 1200;
+
+/** Per lane: the reasoning buffer keeps at most this many trailing characters
+ *  (latest wins), so a long chain of thought stays a peek, not a memory leak. */
+export const MAX_LANE_THINKING = 4096;
 
 interface RawTick {
   ts: number;
@@ -89,7 +97,7 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
     let l = acc.get(id);
     if (l === undefined) {
       l = {
-        lane: { id, parentId: null, label: null, task: "", state: "submitted", lastStatus: null, pendingGate: false, inTokens: 0, outTokens: 0 },
+        lane: { id, parentId: null, label: null, task: "", state: "submitted", lastStatus: null, pendingGate: false, inTokens: 0, outTokens: 0, thinking: "" },
         ticks: [],
       };
       acc.set(id, l);
@@ -129,9 +137,17 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
       case "text_delta":
         tick(event.agentId, { ts, kind: "token", seq });
         break;
-      case "thinking_delta":
+      case "thinking_delta": {
+        const l = laneOf(event.agentId);
+        const merged = l.lane.thinking + event.text;
+        // Bounded, latest wins: keep the tail so the peek shows the most
+        // recent reasoning rather than an unbounded transcript.
+        l.lane.thinking = merged.length > MAX_LANE_THINKING
+          ? merged.slice(merged.length - MAX_LANE_THINKING)
+          : merged;
         tick(event.agentId, { ts, kind: "reasoning", seq });
         break;
+      }
       case "tool_call":
         callToAgent.set(event.callId, event.agentId);
         tick(event.agentId, { ts, kind: "tool", seq });

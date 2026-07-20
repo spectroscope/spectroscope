@@ -15,6 +15,7 @@
 @import "./styles/attachments-voice.css"; /* Attachments + voice input */
 @import "./styles/settings-trace.css"; /* Design drawer + trace view */
 @import "./styles/spectrum.css"; /* Spectrum tab: fleet lanes (phase-4 design transplant) */
+@import "./styles/fleet.css"; /* Spectrum LIVE: fleet roster cards + lane reasoning peek */
 @import "./styles/surfaces.css"; /* Phase-4 surfaces: gate bar, explain panel, doctor page */
 @import "./styles/lab.css"; /* Lab: controls, flow map box, petri net, JSONL strip, system map */
 @import "./styles/workspace-gear.css"; /* Composer gear: permission mode + always-allow rules (Task 16) */

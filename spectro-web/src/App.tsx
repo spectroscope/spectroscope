@@ -35,6 +35,7 @@ import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
+import { fleetPushLive, hydrateFleet } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -130,6 +131,7 @@ export function App() {
     setLive((s) => reduceAll(s, batch));
     setLiveEvents((prev) => [...prev, ...batch]);
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
+    fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
   }, []);
 
   useEffect(() => {
@@ -146,6 +148,7 @@ export function App() {
         }),
     });
     connRef.current = connection;
+    void hydrateFleet(); // seed the roster from REST; live frames take over
     return () => {
       connRef.current = null;
       connection.close();

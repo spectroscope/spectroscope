@@ -1,0 +1,116 @@
+/* Fleet roster (Spectrum LIVE): node cards above the lanes, and the reasoning
+ * peek that hangs under each lane. Tokens only — surface cards, hairline
+ * borders, the state dot, the reasoning violet. No new colours. */
+
+.fleet-roster {
+  margin: 0 0 var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+.fleet-roster-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-3);
+}
+
+.fleet-roster-title {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+}
+
+.fleet-roster-count {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.fleet-nodes {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: var(--sp-2);
+}
+
+.fleet-node {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--text-faint);
+  border-radius: var(--radius-card);
+}
+
+.fleet-node--online { border-left-color: var(--ok); }
+.fleet-node--offline { opacity: 0.72; }
+
+.fleet-node-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.fleet-node-id {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fleet-node-role {
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.fleet-node-epoch {
+  font-size: 0.68rem;
+  color: var(--ev-reasoning);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+}
+
+.fleet-node-state {
+  margin-left: auto;
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.fleet-node-state--online { color: var(--ok); }
+.fleet-node-state--offline { color: var(--text-faint); }
+
+.fleet-node-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+
+.fleet-cap {
+  font-size: 0.66rem;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+}
+
+.fleet-node-meta {
+  font-size: 0.68rem;
+  color: var(--text-faint);
+}
+
+/* A lane and its optional reasoning peek travel together. */
+.spectrum-lane-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.spectrum-lane-group .thinking {
+  margin: 0 0 var(--sp-2) var(--sp-4);
+}

@@ -156,6 +156,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sp.legendAria": { de: "Legende der Event-Typen", en: "Event type legend" },
   "sp.lanesAria": { de: "Agenten-Lanes", en: "Agent lanes" },
 
+  // fleet roster (Spectrum LIVE)
+  "fleet.title": { de: "Flotte", en: "Fleet" },
+  "fleet.count": { de: "{n} Knoten · {online} online", en: "{n} nodes · {online} online" },
+  "fleet.rosterAria": { de: "Flotten-Roster", en: "Fleet roster" },
+  "fleet.online": { de: "online", en: "online" },
+  "fleet.offline": { de: "offline", en: "offline" },
+  "fleet.epoch": { de: "Epoche {n}", en: "epoch {n}" },
+  "fleet.restarted": { de: "neugestartet — neue Prozess-Inkarnation", en: "restarted — new process incarnation" },
+  "fleet.lastSeen": { de: "vor {t} gesehen", en: "seen {t} ago" },
+  "fleet.noEvents": { de: "Noch keine Flotten-Events. Die Knoten sind da, ihre Linien erscheinen, sobald sie laufen.", en: "No fleet events yet. The nodes are here; their lines appear once they run." },
+  "fleet.noEventsHint": { de: "Jeder Knoten zeichnet seine Spektrallinie, sobald er Events sendet.", en: "Each node draws its spectral line as soon as it emits events." },
+
   // permission dialog
   "perm.wants": { de: "möchte ausführen", en: "wants to execute" },
   "perm.by": { de: "angefragt von {id}", en: "requested by {id}" },

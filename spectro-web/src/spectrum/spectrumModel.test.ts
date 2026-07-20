@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { buildSpectrum, MAX_LANE_TICKS } from "./spectrumModel";
+import { buildSpectrum, MAX_LANE_TICKS, MAX_LANE_THINKING } from "./spectrumModel";
 
 // A small fleet run: main spawns a worker, the worker hits a gate, reports
 // back, the run ends. Timestamps rise in steps of 100ms from t=1000.
@@ -94,5 +94,36 @@ describe("buildSpectrum", () => {
     expect(m.lanes).toEqual([]);
     expect(m.running).toBe(false);
     expect(m.t0).toBe(m.t1);
+  });
+});
+
+describe("lane thinking pass-through", () => {
+  it("threads thinking_delta text into the lane, not only a tick", () => {
+    const m = buildSpectrum([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 1000 },
+      { type: "thinking_delta", agentId: "main", text: "first I will ", ts: 1100 },
+      { type: "thinking_delta", agentId: "main", text: "read the files", ts: 1200 },
+    ]);
+    expect(m.lanes[0].thinking).toBe("first I will read the files");
+    // The tick survives — the timeline mark is not replaced by the text.
+    expect(m.lanes[0].ticks.some((t) => t.kind === "reasoning")).toBe(true);
+  });
+
+  it("bounds the buffer to the latest MAX_LANE_THINKING chars", () => {
+    const big = "x".repeat(MAX_LANE_THINKING + 500);
+    const m = buildSpectrum([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 1000 },
+      { type: "thinking_delta", agentId: "main", text: big + "TAIL", ts: 1100 },
+    ]);
+    expect(m.lanes[0].thinking.length).toBe(MAX_LANE_THINKING);
+    expect(m.lanes[0].thinking.endsWith("TAIL")).toBe(true); // latest wins: the tail is kept
+  });
+
+  it("is empty for a lane that never reasons", () => {
+    const m = buildSpectrum([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 1000 },
+      { type: "text_delta", agentId: "main", text: "answer", ts: 1100 },
+    ]);
+    expect(m.lanes[0].thinking).toBe("");
   });
 });
