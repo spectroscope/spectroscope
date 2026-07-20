@@ -1,0 +1,9 @@
+flowchart TB
+    src["Import: store list · file picker · paste"] --> scan["parse every line as JSON,<br/>scan past metadata records"]
+    scan --> spectroscope{"first line with a known<br/>RunEvent type (18 types)?"}
+    spectroscope -->|yes| verbatim["raw spectroscope JSONL —<br/>replays VERBATIM"]
+    spectroscope -->|no| cc{"record with message?"}
+    cc -->|yes| adapter["Claude Code adapter:<br/>tool_use→tool_call · Task→agent_spawn+A2A ·<br/>thinking→thinking_delta · sidechains via parentUuid"]
+    cc -->|no| err["unrecognized format"]
+    verbatim --> replay["same replay path as a stored session:<br/>chat · graph · trace · Lab render it for free"]
+    adapter --> replay

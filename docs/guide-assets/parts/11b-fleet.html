@@ -1,0 +1,49 @@
+<h1 data-ch="15b" id="ch-fleet">the fleet: Spectro.panel() and the orchestrator</h1>
+
+<p>Subagents fan out under one main agent. The fleet is the next level:
+several full agents, each with its own model, tools and workspace, run
+in parallel and merge into one spectrum. That is the
+<code>spectro-orchestrator</code> module (migration phase 5), and its
+facade follows the frozen five-lines style exactly:</p>
+
+<pre><code>var panel = Spectro.panel().model(Anthropic.opus());
+panel.agent("bugs").task("Find bugs in the diff");
+panel.agent("perf").task("Check the hot queries");
+
+for (RunEvent event : panel.run()) {
+    System.out.println(event);   // every lane, one spectrum
+}</code></pre>
+
+<p>Every lane is a complete core agent on its own virtual thread. The
+panel announces each lane on the stream (<code>agent_spawn</code>, then a
+task message), the lane reports in with a working status, its whole event
+stream rides along verbatim, and a result message records completed or
+failed before the panel's own <code>run_end</code> closes the spectrum.
+One broken lane never kills the fleet; it fails loudly and alone.</p>
+
+<!--SVG:14-orchestrator-fleet|The fleet architecture: the frozen facade, lanes as core agents, the bus with its envelopes, one aggregator into one stream.-->
+
+<h2 id="fleet-bus">what rides the bus</h2>
+
+<p>Under the surface, every event of every lane is wrapped in a bus
+envelope: sender, contextId, taskId, a per-sender sequence, a causal
+parentId chain, a topic for session isolation, and the RunEvent itself,
+verbatim. Addressing is self-addressing: consumers correlate by taskId
+within a contextId instead of from/to routing. The transport behind it
+is a seam. In-memory serves the facade today; a process transport is the
+designed next step, and a broker only joins if reality ever demands
+one.</p>
+
+<div class="callout"><div class="co-title">where it docks</div>
+<p>The bus's future home is the tracing seam: one registry in the core
+where the JSONL sink, an OTLP exporter and the bus publisher hang side
+by side. Until that port lands, the panel publishes from the outside.
+The envelopes and their consumers stay identical either way.</p></div>
+
+<h2 id="fleet-spectrum">watching a fleet</h2>
+
+<p>The spectrum tab folds a panel run with no extra wiring: the panel is
+a lane, every agent is a lane, task/status/result pulses and gate states
+land where they belong, and a lane click pins the trace. Export a panel
+run to JSONL and the import dialog replays the whole fleet, exactly as
+recorded.</p>

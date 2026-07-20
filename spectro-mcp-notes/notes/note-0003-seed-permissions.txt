@@ -1,0 +1,2 @@
+Tool inputs are model output and therefore untrusted. Every MCP tool is
+permission-gated because it can cause external side effects.

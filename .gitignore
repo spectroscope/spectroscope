@@ -1,0 +1,33 @@
+node_modules/
+dist/
+dist-prototype/
+build/
+out/
+coverage/
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
+.env.*
+!.env.example
+*.log
+*.class
+*.hprof
+target/
+release/
+.gradle/
+.kotlin/
+.DS_Store
+.obsidian/
+.claude/
+
+# Machine-local: each machine sets its own MCP server paths (absolute).
+.spectro/settings.json
+# Machine-local overrides next to any checked-in project settings.
+.spectro/settings.local.json
+
+# IDE project folders (machine-local)
+.idea/
+.vscode/
+*.iml

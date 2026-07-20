@@ -1,0 +1,678 @@
+/* ---- Chat tab right panel (Agenten + System-Kontext) ---- */
+.right-panel {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: var(--right-panel-w, 360px);
+  min-width: 0;
+  min-height: 0;
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--glint), transparent 120px);
+  border-left: 1px solid var(--border);
+}
+.right-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+}
+.rp-tabs { display: flex; gap: 2px; flex: 1; min-width: 0; }
+.rp-tab {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: var(--sp-1) var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.rp-tab:hover { color: var(--text-dim); }
+.rp-tab--active { color: var(--text); background: var(--surface-2); }
+.rp-close { flex: none; }
+.right-panel-body {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-3);
+}
+
+/* Workspace tab (phase 5): sandboxed cwd tree + preview pane. */
+.ws { display: flex; flex-direction: column; height: 100%; min-height: 0; gap: var(--sp-2); }
+.ws-head { display: flex; align-items: center; gap: var(--sp-2); }
+.ws-root { font-size: var(--fs-12); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-session-note { flex-shrink: 0; font-size: var(--fs-11); color: var(--text-faint); border: 1px solid var(--border); border-radius: 999px; padding: 1px var(--sp-2); }
+.ws-refresh,
+.ws-pick {
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.ws-refresh { margin-left: auto; }
+.ws-pick { flex-shrink: 0; white-space: nowrap; }
+.ws-refresh:hover, .ws-pick:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.ws-pick:disabled { opacity: 0.45; cursor: not-allowed; }
+.ws-tree {
+  flex: 0 1 40%;
+  min-height: 90px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--shade);
+  padding: var(--sp-1) 0;
+}
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  background: none;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 2px var(--sp-2);
+  text-align: left;
+  transition: background var(--t-fast);
+}
+.ws-row:hover { background: var(--surface-2); }
+.ws-row--active { background: var(--accent-soft); }
+.ws-row-glyph { flex: none; width: 12px; color: var(--text-faint); }
+.ws-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-row-size { margin-left: auto; flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+.ws-preview {
+  flex: 1 1 60%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.ws-preview-head {
+  flex: none;
+  padding: var(--sp-1) var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.ws-preview-path { display: block; font-size: var(--fs-11); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-frame { flex: 1; width: 100%; border: 0; background: #fff; }
+.ws-image { flex: 1; overflow: auto; display: grid; place-items: center; padding: var(--sp-2); }
+.ws-image img { max-width: 100%; height: auto; }
+.ws-text {
+  flex: 1;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.ws-md { flex: 1; overflow-y: auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); }
+.ws-note { margin: var(--sp-2); font-size: var(--fs-12); color: var(--text-dim); }
+
+/* Agenten list — background-tasks style cards */
+.agents-empty,
+.ctx-empty {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+.agents-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  font: inherit;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.agent-card:hover { border-color: var(--border-strong); }
+.agent-card--working { border-left-color: var(--warn); }
+.agent-card--completed { border-left-color: var(--ok); }
+.agent-card--failed { border-left-color: var(--error); }
+/* Plan steps (PlanTab) reuse this vocabulary with wire statuses; a running
+   step is a live indicator → Coral, matching the CLI's coral [~]. */
+.agent-card--in_progress { border-left-color: var(--accent); }
+.agent-card--selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-soft); }
+.agent-card-head { display: flex; align-items: center; gap: var(--sp-2); }
+.agent-dot { width: 7px; height: 7px; border-radius: 999px; background: var(--text-faint); flex: none; }
+.agent-dot--working { background: var(--warn); }
+.agent-dot--completed { background: var(--ok); }
+.agent-dot--failed { background: var(--error); }
+.agent-dot--in_progress { background: var(--accent); animation: spectroscope-pulse 1.2s ease-in-out infinite; }
+.agent-card-name { font-size: var(--fs-12); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-role-tag { font-size: var(--fs-11); color: var(--sand); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0 var(--sp-1); }
+.agent-badge { margin-left: auto; font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
+.agent-badge--working { color: var(--warn); }
+.agent-badge--completed { color: var(--ok); }
+.agent-badge--failed { color: var(--error); }
+.agent-badge--in_progress { color: var(--accent); }
+.agent-card-task { font-size: var(--fs-12); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-status { font-size: var(--fs-11); color: var(--sand); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-card-meta { font-size: var(--fs-11); color: var(--text-faint); }
+
+/* System-Kontext */
+.ctx { display: flex; flex-direction: column; gap: var(--sp-4); }
+.ctx-lead { margin: 0; font-size: var(--fs-12); color: var(--text-dim); line-height: 1.5; }
+.ctx-section { display: flex; flex-direction: column; gap: var(--sp-1); }
+.ctx-section-title { margin: 0; font-size: var(--fs-11); text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
+.ctx-pre {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  padding: var(--sp-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.55;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+/* The markdown-rendered prompt keeps the ctx-pre box but flows as prose. */
+.ctx-prompt-md {
+  font-family: var(--font-ui);
+  font-size: var(--fs-12);
+  white-space: normal;
+  color: var(--text);
+}
+.ctx-prompt-md .md h1 { font-size: var(--fs-14); }
+.ctx-prompt-md .md h2 { font-size: var(--fs-13); }
+.ctx-prompt-md .md h3, .ctx-prompt-md .md h4 { font-size: var(--fs-12); }
+
+.ctx-kv { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.ctx-kv > div { display: flex; gap: var(--sp-2); font-size: var(--fs-12); }
+.ctx-kv dt { color: var(--text-faint); min-width: 72px; }
+.ctx-kv dd { margin: 0; color: var(--text); }
+.ctx-tools, .ctx-skills, .ctx-roles { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ctx-tools li, .ctx-skills li, .ctx-roles li { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-12); }
+.ctx-tool-name { color: var(--text); }
+.ctx-tool-desc { color: var(--text-faint); font-size: var(--fs-11); flex: 1 1 100%; line-height: 1.45; }
+.ctx-perm { font-size: var(--fs-11); color: var(--warn); border: 1px solid var(--warn); border-radius: 999px; padding: 0 6px; }
+.ctx-role-tag { font-size: var(--fs-11); color: var(--text-dim); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0 6px; }
+.ctx-role-tag--ro { color: var(--ok); border-color: var(--ok); }
+.ctx-mcp { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ctx-mcp li { font-size: var(--fs-11); background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-control); padding: 2px var(--sp-2); color: var(--text-dim); }
+.ctx-none { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+.ctx-note { margin: 0; font-size: var(--fs-11); color: var(--text-faint); font-style: italic; line-height: 1.45; }
+
+/* System-Kontext header row + the Raw (fullscreen) button */
+.ctx-head { display: flex; align-items: flex-start; gap: var(--sp-2); }
+.ctx-head .ctx-lead { flex: 1; }
+.ctx-raw-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  font-weight: 500;
+  padding: 3px var(--sp-2);
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.ctx-raw-btn:hover { color: var(--text); border-color: var(--accent); }
+
+/* Fullscreen raw-prompt modal — the whole prompt, nothing truncated */
+.raw-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: rgba(0, 0, 0, 0.62);
+  backdrop-filter: blur(2px);
+  display: flex;
+  padding: clamp(16px, 4vh, 48px);
+}
+.raw-modal {
+  margin: auto;
+  width: 100%;
+  max-width: 1100px;
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-modal);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+.raw-modal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.raw-modal-title { font-size: var(--fs-14); font-weight: 500; color: var(--text); }
+.raw-modal-meta { margin-left: auto; font-size: var(--fs-11); color: var(--text-faint); }
+.raw-modal-copy {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 3px var(--sp-2);
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.raw-modal-copy:hover { color: var(--text); border-color: var(--accent); }
+.raw-modal-close { flex: none; }
+.raw-modal-pre {
+  flex: 1;
+  margin: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: var(--sp-4);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* One card per image — the whole card is a link to the full-size file. */
+.image-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  color: inherit;
+  text-decoration: none;
+  animation: rise-in 200ms var(--ease) backwards;
+}
+.image-card img {
+  display: block;
+  width: 100%;
+  height: auto; /* keep the intrinsic aspect ratio */
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.image-card:hover img,
+.image-card:focus-visible img {
+  border-color: var(--accent);
+  box-shadow: 0 6px 18px -10px var(--accent-glow);
+}
+
+.image-caption {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-13);
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.image-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.image-meta .badge { flex: none; }
+.image-copy {
+  margin-left: auto;
+  flex: none;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.image-copy:hover { color: var(--accent); border-color: var(--accent); }
+.image-model {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Header toggle: icon plus a small tabular count chip. */
+.image-toggle {
+  width: auto;
+  gap: var(--sp-1);
+  grid-auto-flow: column;
+  padding: 0 var(--sp-2);
+}
+.image-toggle-count {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  padding: 0 var(--sp-2);
+}
+
+/* Narrow viewports: the gallery overlays from the right instead of
+   squeezing the chat column. */
+@media (max-width: 900px) {
+  .image-panel {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: var(--z-dropdown);
+    box-shadow: var(--shadow-modal);
+  }
+}
+
+/* React Flow chrome on Ebony ground. */
+.react-flow { background: var(--bg); }
+.react-flow__controls { box-shadow: var(--shadow-card); }
+.react-flow__controls button { background: var(--surface-2); border-bottom: 1px solid var(--border); color: var(--text); fill: var(--text); }
+.react-flow__controls button:hover { background: var(--surface-3); }
+.react-flow__edge-path { stroke: var(--border-strong); }
+.react-flow__handle { background: var(--border-strong); border-color: var(--surface); }
+
+/* ============================================================ trace tab
+   The wire view: one dense mono row per frame, Wireshark-calm. Coral appears
+   exactly twice — outgoing arrows (client action) and the jump pill (an
+   interactive affordance); everything else is greys plus decorative pastels. */
+
+.trace-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+
+.trace-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); flex: none; }
+
+.trace-filter { width: 220px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-control); box-shadow: inset 0 1px 2px var(--shade); caret-color: var(--accent); color: var(--text); font-family: var(--font-mono); font-size: var(--fs-12); padding: 4px var(--sp-2); transition: border-color var(--t-fast), box-shadow var(--t-fast); }
+.trace-filter::placeholder { color: var(--text-faint); }
+.trace-filter:hover { border-color: var(--border-strong); }
+.trace-filter:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 2px var(--shade); }
+
+/* Direction: a three-way segmented control. */
+.trace-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-control); overflow: hidden; }
+.trace-seg button { background: none; border: 0; color: var(--text-faint); font: inherit; font-size: var(--fs-12); padding: 3px var(--sp-3); cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.trace-seg button + button { border-left: 1px solid var(--border); }
+.trace-seg button:hover { color: var(--text); }
+.trace-seg button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); }
+
+/* Type chips: toggles, all on by default. */
+.trace-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.trace-chip { background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--text-faint); font: inherit; font-size: var(--fs-11); line-height: 1.6; padding: 0 var(--sp-2); cursor: pointer; transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
+.trace-chip:hover { color: var(--text-dim); border-color: var(--border-strong); }
+.trace-chip[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text); }
+
+.trace-count { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); white-space: nowrap; }
+
+.trace-body { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.trace-scroll { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+.trace-table { padding-bottom: var(--sp-4); }
+
+/* Shared column grid for header and rows: # | time | dt | dir | agent | type | summary. */
+.trace-head,
+.trace-row { display: grid; grid-template-columns: 48px 92px 60px 20px 64px 140px 96px 150px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center; padding: 2px var(--sp-4); }
+.trace-head { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); padding-top: var(--sp-2); padding-bottom: var(--sp-1); font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
+
+.trace-row { width: 100%; background: none; border: 0; color: var(--text); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-12); text-align: left; transition: background var(--t-fast); }
+.trace-row:hover { background: var(--surface); }
+.trace-row[aria-expanded="true"] { background: var(--surface-2); }
+
+.trace-col { min-width: 0; }
+.trace-col--num { color: var(--text-faint); }
+.trace-col--dt { text-align: right; color: var(--text-faint); }
+/* LLM-direction flag: ↑ request to the model (sand), ↓ its response (coral),
+   · harness-internal (faint). Reads with the map: the LLM sits to the right. */
+.trace-col--llm { text-align: center; font-weight: 600; }
+.trace-col--proto { color: var(--text-faint); font-size: var(--fs-11); letter-spacing: 0.02em; }
+.trace-col--host { color: var(--text-faint); font-size: var(--fs-11); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.trace-col--llm-to { color: var(--sand); }
+.trace-col--llm-from { color: var(--accent); }
+.trace-col--llm-internal { color: var(--text-faint); }
+/* the synthetic "system_context" row (UI-only) — subtly set apart in sand */
+.trace-row--sys { background: color-mix(in srgb, var(--sand) 6%, transparent); }
+.trace-row--sys .trace-type { color: var(--sand); }
+.trace-col--agent { overflow: hidden; }
+.trace-col--agent .agent-badge { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
+.trace-col--summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+
+.trace-type { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--text-dim); vertical-align: bottom; }
+
+/* Expanded frame: the full payload as a JSON tree in a sunken well. */
+.trace-detail { position: relative; padding: var(--sp-2) var(--sp-4) var(--sp-3) 56px; background: var(--surface); box-shadow: inset 0 1px 0 var(--border), inset 0 -1px 0 var(--border); }
+.trace-detail .json-tree { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); box-shadow: inset 0 1px 3px var(--shade); padding: var(--sp-2) var(--sp-3); }
+.trace-detail .copy { top: var(--sp-3); right: var(--sp-5); }
+
+/* Detail view modes: Insight (tree) · Compact (highlighted wire lines) · Raw.
+   Compact and Raw never wrap artificially — one row per real wire line, the
+   pane scrolls horizontally so a long line stays ONE line. */
+.trace-detail-modes { display: inline-flex; gap: 2px; margin-bottom: var(--sp-2); padding: 2px; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; }
+.trace-detail-modes button { font: inherit; font-size: var(--fs-11); color: var(--text-dim); background: none; border: 0; border-radius: 999px; padding: 2px 10px; cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.trace-detail-modes button:hover { color: var(--text); }
+.trace-detail-modes button[aria-pressed="true"] { background: var(--surface-2); color: var(--text); }
+.trace-detail-lines,
+.trace-detail-raw { background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); box-shadow: inset 0 1px 3px var(--shade); padding: var(--sp-2) var(--sp-3); overflow-x: auto; font-family: var(--font-mono); font-size: var(--fs-12); line-height: 1.7; }
+.trace-detail-line { white-space: pre; }
+.trace-detail-raw { margin: 0; white-space: pre; color: var(--text); }
+.trace-detail:hover .copy,
+.trace-detail .copy:focus-visible { opacity: 1; }
+
+/* New frames arrived while the reader was scrolled up. */
+.trace-pill { position: absolute; bottom: var(--sp-4); left: 50%; transform: translateX(-50%); z-index: var(--z-sticky); display: inline-flex; align-items: center; gap: var(--sp-1); background: var(--surface-2); border: 1px solid var(--accent); border-radius: 999px; box-shadow: var(--shadow-raised); color: var(--accent); cursor: pointer; font: inherit; font-size: var(--fs-12); padding: 4px var(--sp-3); transition: background var(--t-fast); animation: rise-in 200ms var(--ease) backwards; }
+.trace-pill:hover { background: var(--accent-soft); }
+
+/* Jump rail — a slim vertical bar hugging the right edge: first frame up, newest frame down. */
+.trace-rail { position: absolute; right: var(--sp-2); top: 50%; transform: translateY(-50%); z-index: var(--z-sticky); display: flex; flex-direction: column; gap: var(--sp-1); background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; box-shadow: var(--shadow-raised); padding: var(--sp-1); }
+.trace-rail-btn { display: grid; place-items: center; width: 26px; height: 26px; background: transparent; border: none; border-radius: 999px; color: var(--text-dim); cursor: pointer; transition: background var(--t-fast), color var(--t-fast); }
+.trace-rail-btn:hover { background: var(--accent-soft); color: var(--accent); }
+
+.trace-empty { margin: var(--sp-4); max-width: 420px; padding: var(--sp-3); border: 1px dashed var(--border-strong); border-radius: var(--radius-control); font-size: var(--fs-12); line-height: 1.5; color: var(--text-faint); }
+
+/* ============================================================ json tree
+   Shared by the trace detail and the graph event panel. Value colors are
+   decorative pastels (they distinguish kinds, never status); only the
+   collapse toggles are interactive and inherit the global Coral focus ring. */
+
+.json-tree { font-family: var(--font-mono); font-size: var(--fs-12); line-height: 1.6; }
+.json-line { white-space: pre-wrap; word-break: break-word; }
+.json-key { color: var(--text-dim); }
+.json-string { color: var(--agent-explore); }
+.json-number { color: var(--agent-root); }
+.json-bool { color: var(--agent-worker); }
+.json-punct { color: var(--text-faint); }
+.json-count { color: var(--text-faint); font-size: var(--fs-11); }
+.json-toggle { background: none; border: 0; margin: 0; padding: 0; color: inherit; font: inherit; cursor: pointer; text-align: left; }
+.json-toggle:hover .json-caret { color: var(--text); }
+.json-caret { display: inline-block; width: 14px; color: var(--text-dim); transition: color var(--t-fast); }
+.json-caret-spacer { display: inline-block; width: 14px; }
+
+/* ============================================================ context ring
+   The header gauge: how full is the model's context window. Status colors
+   are decorative (the percent label carries the value); the button itself is
+   the interactive element and toggles the popover. */
+
+.context-wrap { position: relative; display: inline-flex; flex: none; }
+
+.context-ring { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; border-radius: 999px; padding: 4px var(--sp-2); color: var(--text-dim); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-11); transition: background var(--t-fast), color var(--t-fast); }
+.context-ring:hover { background: var(--surface-2); color: var(--text); }
+.context-ring svg { display: block; }
+
+.context-pop { position: absolute; top: calc(100% + var(--sp-2)); right: 0; z-index: var(--z-dropdown); width: 300px; background-color: var(--surface); background-image: linear-gradient(var(--glint), transparent 80px); border: 1px solid var(--border-strong); border-radius: var(--radius-card); box-shadow: var(--shadow-raised), inset 0 1px 0 var(--hairline); padding: var(--sp-4); animation: fade-in var(--t-fast) backwards; }
+
+.context-line { margin: var(--sp-1) 0 0; font-size: var(--fs-16); font-weight: 400; letter-spacing: var(--track-heading); }
+
+.context-parts { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--sp-3); row-gap: 2px; margin: var(--sp-3) 0; font-size: var(--fs-12); }
+.context-parts .head { font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
+.context-parts .num { font-family: var(--font-mono); text-align: right; color: var(--text-dim); }
+.context-part-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.context-meta { margin: 0 0 var(--sp-2); font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); }
+.context-note { margin: 0; font-size: var(--fs-12); line-height: 1.5; color: var(--text-faint); }
+
+
+/* Agent chips (Spectrum -> Trace hand-off): the pinned lane wears its
+   agent color as a small square dot — decoration, never the text. */
+.trace-chips--agents { margin-left: var(--sp-2); }
+.trace-chip-dot {
+  display: inline-block;
+  width: 3px;
+  height: 10px;
+  border-radius: 1px;
+  margin-right: var(--sp-1);
+  vertical-align: -1px;
+  background: var(--agent-color, var(--text-faint));
+}
+
+/* ---------- Reasoning lens (card 13) ---------- */
+.trace-lens {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  line-height: 1.6;
+  padding: 0 var(--sp-3);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.trace-lens:hover { border-color: var(--border-strong); color: var(--text); }
+.trace-lens--on {
+  color: var(--ev-reasoning);
+  border-color: var(--ev-reasoning);
+  background: color-mix(in srgb, var(--ev-reasoning) 8%, transparent);
+}
+
+.trace-lens-note {
+  margin: 0;
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Row roles while the lens is on. The violet left mark carries the
+   highlight; dimming keeps rows readable enough to scan. */
+.trace-row--hi {
+  box-shadow: inset 2px 0 0 var(--ev-reasoning);
+  background: color-mix(in srgb, var(--ev-reasoning) 5%, transparent);
+}
+.trace-row--dim { opacity: 0.38; }
+.trace-row--anchor { opacity: 0.9; }
+
+/* Said-vs-did pairing line under a block-ending thinking row. */
+.trace-pair {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  border-left: 2px solid var(--ev-reasoning);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 2px var(--sp-4) 2px var(--sp-6);
+  cursor: pointer;
+}
+.trace-pair:hover { color: var(--text); background: var(--surface-2); }
+.trace-pair .mono { color: var(--text-dim); }
+
+/* ---------- Causal chain strip (spectro-explain feature 2) ---------- */
+.trace-chain {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  margin-bottom: var(--sp-2);
+}
+.trace-chain-label {
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  margin-right: var(--sp-2);
+}
+.trace-chain-step { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.trace-chain-arrow { color: var(--text-faint); }
+.trace-chain-chip {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font-size: var(--fs-11);
+  line-height: 1.7;
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.trace-chain-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.trace-chain-chip--here {
+  cursor: default;
+  color: var(--text);
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: color-mix(in srgb, var(--accent) 5%, var(--surface-2));
+}
+
+/* ---------- Replay scrubber ---------- */
+.trace-scrub {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-1) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.trace-scrub input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--sp-violet);
+}
+.trace-scrub-label {
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.trace-scrub-pos { font-size: var(--fs-11); color: var(--text-dim); }
+
+/* ---------- Event-type mark in the type column ---------- */
+.trace-type { display: inline-flex; align-items: center; gap: var(--sp-1); }
+.trace-type-mark {
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}

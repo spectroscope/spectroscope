@@ -1,0 +1,199 @@
+<!-- ============================== CH 22 ============================== -->
+<h1 data-ch="22" id="ch-events"><span class="ch-num">Chapter 22</span>The RunEvent protocol</h1>
+
+<p class="lead">Eighteen event types, one sealed Java interface, one JSON line each.
+This chapter is the complete wire reference — every field, every optionality, every
+rule. The format is binding and shared byte-for-byte with the TypeScript edition
+(<code>docs/concept/JSONL-FORMAT.md</code> is the contract document).</p>
+
+<h2 id="ch-events-rules">The wire rules</h2>
+<ol>
+  <li><strong>snake_case types, camelCase fields.</strong> <code>"type":"tool_call"</code>
+      carries <code>callId</code>, never <code>call_id</code>.</li>
+  <li><strong>One line = one event</strong>, compact JSON, UTF-8, <code>\n</code>-terminated.
+      No arrays, no comments, no blank lines.</li>
+  <li><strong>Append-only.</strong> A written line is never modified, reordered or deleted —
+      compaction included.</li>
+  <li><strong>Additive evolution only.</strong> New types and new optional fields may appear;
+      renaming, removing or reinterpreting is forbidden. Old files replay forever.</li>
+  <li><strong>Tolerant consumers.</strong> Unknown types and fields are skipped, never
+      errors; an unparsable (torn) trailing line is silently discarded.</li>
+  <li><strong>Null optionals are absent.</strong> Optional fields are omitted from the JSON
+      entirely (<code>@JsonInclude(NON_NULL)</code>), matching the TS edition.</li>
+  <li><strong>Structured tool input.</strong> <code>input</code> travels as a JSON object,
+      never as a serialized string — consumers parse trees, never string-match JSON.</li>
+  <li><strong>Only data.</strong> No binary, no object references, no cycles; every line
+      round-trips losslessly.</li>
+</ol>
+
+<div class="kv">
+  <dt>IDs</dt><dd><code>sessionId</code> = file name (<code>yyyyMMdd-HHmmss-&lt;uuid8&gt;</code>) · <code>runId</code> = UUID per run · <code>agentId</code> = <code>"main"</code> or <code>explore-1</code>/<code>worker-2</code>… · <code>callId</code> links tool_call ↔ permission_request/decision ↔ tool_result.</dd>
+  <dt>Timestamps</dt><dd><code>ts</code> = epoch milliseconds, monotone within a file (write order).</dd>
+</div>
+
+<h2 id="ch-events-catalog">The catalog</h2>
+
+<div class="ref"><div class="ref-head"><code class="name">run_start</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<table class="tbl dense"><tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>runId</code></td><td>string</td><td>UUID per run</td></tr>
+<tr><td><code>agentId</code></td><td>string</td><td><code>"main"</code> or child id</td></tr>
+<tr><td><code>parentId</code></td><td>string?</td><td>only on child runs — the structural marker of a subagent</td></tr>
+<tr><td><code>prompt</code></td><td>string</td><td>the user/task text</td></tr>
+<tr><td><code>provider</code></td><td>string? <em>additive</em></td><td>kept live-accurate across mid-session switches</td></tr>
+<tr><td><code>attachments</code></td><td>Attachment[]? <em>additive</em></td><td>image references: <code>{kind, mediaType, blobPath, sha256}</code> — bytes never enter the event</td></tr></table></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">turn_start</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>turn</code> (1-based; the loop caps at 15). On resume a turn
+boundary flushes the reconstruction buffer.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">text_delta</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>text</code> — one streamed chunk of the answer. Consecutive
+deltas concatenate into the assistant text on resume.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">thinking_delta</code><span class="meta">additive · stage 7+</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>text</code> — one chunk of the model's reasoning. A sibling of
+<code>text_delta</code> but a separate stream: rendered apart, and it <strong>never re-enters
+the provider history</strong> (the resume fold ignores it).</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">tool_call</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>callId</code>, <code>name</code>, <code>input</code> (JSON object).
+MCP calls (<code>mcp__server__tool</code>) and skill uses are ordinary tool calls — no
+dedicated types exist.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">permission_request</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>callId</code>, <code>name</code>, <code>input</code> — emitted when a
+gated tool is about to run in ask mode; same <code>callId</code> as the pending call.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">permission_decision</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>callId</code>, <code>allowed</code> (boolean). One of only two types <strong>without an
+<code>agentId</code></strong> — consumers route it back via <code>callId</code>. Emitted for
+every decision, allowlist auto-approvals included (the audit trail).</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">tool_result</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>callId</code>, <code>output</code> (always a string, clipped
+surrogate-safely), <code>isError</code> (true iff the output starts <code>ERROR: </code>),
+<code>durationMs</code>.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">agent_spawn</code><span class="meta">additive · stage 5</span></div><div class="ref-body">
+<p><code>agentId</code> (the <em>child</em>), <code>parentId</code>, <code>task</code>. The tree edge —
+the whole agent hierarchy lives in these two id fields.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">compaction</code><span class="meta">additive · stage 4</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>removedTurns</code>, <code>summaryChars</code>. An audit line only:
+compaction replaces the <em>in-memory</em> history — the file is never rewritten.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">voice_input</code><span class="meta">additive · bonus 2</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>durationMs</code>, <code>model</code> (e.g. <code>"ggml-small"</code>).
+Written <em>before</em> the <code>run_start</code> of a spoken turn; pure provenance — a
+resumed voice turn is byte-identical to a typed one.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">usage</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>inputTokens</code>, <code>outputTokens</code> — per agent, raw
+provider counts. The wire never includes cache arithmetic (that lives only in the
+compaction trigger) — the token truth.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">run_end</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>runId</code>, <code>stopReason</code> — no <code>agentId</code>. Stop reasons:
+<code>end_turn</code> (regular), <code>max_tokens</code>, <code>tool_use</code> (edge case),
+<code>aborted</code> (cancel/Ctrl+C), <code>max_turns</code> (the 15-turn brake),
+<code>error</code> (preceded by an <code>error</code> event).</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">error</code><span class="meta">since stage 3</span></div><div class="ref-body">
+<p><code>agentId?</code>, <code>message</code> — the failure channel, followed by
+<code>run_end {stopReason:"error"}</code>. Also the web server's own error path (a refused
+provider switch, a too-large attachment) — always a first-class event, never a separate
+frame type.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">image_generated</code><span class="meta">additive · bonus 4</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>callId</code>, <code>prompt</code>, <code>provider</code>,
+<code>model</code>, <code>mediaType</code>, <code>blobPath</code> (relative to
+<code>~/.spectro</code>, e.g. <code>images/3f7a….png</code>), <code>sha256</code>. The event
+carries the reference; the bytes live in the content-addressed store.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">context_info</code><span class="meta">additive · full build, opt-in</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>turn</code>, <code>messages</code>, <code>estimatedTokens</code>,
+<code>threshold</code>, <code>parts[]</code> (<code>{label, chars, estTokens}</code> — system
+prompt / tool schemas / conversation). Emitted once per turn when introspection is on;
+sizes are chars/4 <em>estimates</em> — <code>usage</code> stays the truth. Drives the
+context ring.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">agent_message</code><span class="meta">additive · full build (A2A-lite)</span></div><div class="ref-body">
+<p><code>from</code>, <code>to</code>, <code>role</code>, <code>state</code>, <code>text</code>,
+<code>label?</code> — note the addressing is from/to, not agentId. Roles:
+<code>task</code> (parent→child, state <code>submitted</code>), <code>status</code>
+(child→parent, <code>working</code>, fed by <code>report_status</code>), <code>result</code>
+(child→parent, <code>completed</code>/<code>failed</code>). <code>label</code> names the dev
+tool (<code>build_plan</code>…) and is absent on plain spawns.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">plan</code><span class="meta">additive · full build</span></div><div class="ref-body">
+<p><code>agentId</code>, <code>steps[]</code> (<code>{text, status}</code>). Latest-wins full
+replacement from <code>update_plan</code>; statuses are the canonical English enum
+<code>pending / in_progress / completed</code>, enforced at the write boundary.</p></div></div>
+
+<h2 id="ch-events-interop">The cross-edition proof</h2>
+<p>The invariant is tested, not asserted: <code>CrossEditionReplayTest</code> replays the
+TypeScript edition's canonical example session verbatim — every line parses into a typed
+event, <strong>re-serialization reproduces the other edition's bytes line for line</strong>,
+and the resume fold reconstructs a usable history even though that file uses compact ids
+(<code>a0</code>) instead of <code>"main"</code>. Two interop hardenings came out of that
+work and are now permanent behaviour: the main agent is found <em>structurally</em> (first
+<code>run_start</code> without <code>parentId</code>), and text arriving after buffered tool
+results flushes the reconstruction even when a foreign file omits <code>turn_start</code>.</p>
+
+<h2 id="ch-events-resume">Resume: lines become a conversation</h2>
+
+<!--MERMAID:10-resume-flow|The resume fold: four line types contribute (run_start, text_delta, tool_call, tool_result); everything else is display material. Orphaned calls are dropped, roles merged.-->
+
+<p>Only four line types rebuild the provider history — everything else
+(<code>usage</code>, permissions, <code>thinking_delta</code>, <code>compaction</code>,
+<code>voice_input</code>…) is display and audit material. Child events never leak into the
+history: their results are already inside the parent's <code>tool_result</code>. Orphaned
+tool calls (a crash mid-round) are dropped because the provider API would reject the
+history; attachment images are restored <em>before</em> their prompt text, at their
+original position.</p>
+
+<!-- ============================== CH 23 ============================== -->
+<h1 data-ch="23" id="ch-streams"><span class="ch-num">Chapter 23</span>Streams &amp; cancellation</h1>
+
+<p class="lead">The Java-21 answer to the TypeScript edition's async generators: a
+blocking <code>Iterable</code> over a bounded queue, produced by a virtual thread, plus a
+cooperative cancel signal. No reactive framework anywhere.</p>
+
+<h2 id="ch-streams-eventstream">EventStream</h2>
+<pre>public interface EventStream extends Iterable&lt;RunEvent&gt;, AutoCloseable {
+    void cancel();
+    @Override void close();   // idempotent; also cancels
+    static EventStream start(CancelSignal signal, Consumer&lt;Consumer&lt;RunEvent&gt;&gt; body) { … }
+}</pre>
+<ul>
+  <li><strong>Backpressure for free:</strong> a bounded queue (64) — a slow renderer blocks
+      the producer instead of ballooning a buffer.</li>
+  <li><strong>The producer</strong> runs on a virtual thread named <code>spectroscope-agent</code>;
+      a <code>finally</code> always enqueues the end sentinel, so a consumer's for-each can
+      never hang, even when the body throws.</li>
+  <li><strong>The sentinel</strong> is a private instance recognized by reference identity —
+      never handed out, never serialized.</li>
+  <li><code>close()</code> also interrupts a producer parked on a full queue —
+      try-with-resources cleans up even when a consumer bails early.</li>
+</ul>
+
+<h2 id="ch-streams-merged">MergedEventStream</h2>
+<p>Subagents write into a shared merge: one unbounded queue, many producers (the parent
+pump plus one forwarder per child), exactly one consumer. Unbounded on purpose — child
+producers must never block behind a slow renderer. This is why A2A needs no network:
+the “protocol between agents” is just events interleaving on the one stream that every
+renderer and the session store already consume.</p>
+
+<h2 id="ch-streams-cancel">CancelSignal</h2>
+<pre>public final class CancelSignal {
+    public synchronized void cancel();                  // idempotent, runs listeners
+    public boolean isCancelled();
+    public synchronized Runnable onCancel(Runnable l);  // returns a deregistration handle
+}</pre>
+<p>The loop checks it at safe points; providers close their HTTP streams on it; running
+shell commands are force-killed by a per-call listener that deregisters itself
+afterwards (the handle return — a run's listener list must not grow per tool call).
+<code>onCancel</code> fires immediately if already cancelled, closing the classic
+registration race at spawn time. Children get their own signal, cascaded from the
+parent's — one Ctrl+C ends the whole tree with
+<code>run_end {stopReason:"aborted"}</code>, not a stack trace.</p>

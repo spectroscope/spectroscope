@@ -1,0 +1,2 @@
+This notes server ranks results with a hand-rolled term-frequency match plus a
+substring bonus. There is no Lucene; search is just a small program.

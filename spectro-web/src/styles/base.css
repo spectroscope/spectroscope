@@ -1,0 +1,235 @@
+/* spectroscope web UI — layout and component styles. Colors come EXCLUSIVELY from
+   the CSS variables in tokens.css (design/UI-UX-CONCEPT.md is the rationale):
+   Ebony surfaces, Coral only interactive or live, Sand editorial, pastels as
+   decoration. No raw hex values in this file.
+
+   Surface grammar: every raised card carries a faint top light (--glint), a
+   1px border and a soft warm shadow; code and input wells sink with an inset
+   shade. Motion explains causality (DS ease, 140–340ms) and respects
+   prefers-reduced-motion via the global switch in tokens.css. */
+
+/* ---------- Base ---------- */
+
+* {
+  box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  /* One ambient top light on the ebony canvas — depth, not decoration. */
+  background:
+    radial-gradient(1100px 480px at 50% -160px, var(--glint), transparent 70%)
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-14);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* Selection is an interaction — it wears Coral. */
+::selection {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+/* Scrollbars on Ebony: a quiet warm-grey pill, no track. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--text-faint);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Status dots: color never carries meaning alone — always paired with text. */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.dot.accent { background: var(--accent); }
+.dot.ok     { background: var(--ok); }
+.dot.warn   { background: var(--warn); }
+.dot.error  { background: var(--error); }
+.dot.faint  { background: var(--text-faint); }
+/* Only what is happening right now pulses — and only that gets a halo. */
+.dot.pulse {
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 0 12px var(--accent-glow);
+}
+
+.eyebrow {
+  font-size: var(--fs-11);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--text-faint);
+}
+.eyebrow.sand { color: var(--sand); }
+/* Editorial eyebrows carry the brand diamond (deco, never clickable). */
+.eyebrow.sand::before {
+  content: "\25C6";
+  font-size: 8px;
+  margin-right: var(--sp-2);
+  vertical-align: 1px;
+}
+
+/* ---------- Buttons ---------- */
+
+/* The QUIET sibling of .primary (owner tune 2026-07-17): a hint of the
+   accent instead of the full fill — accent-soft wash + shade depth + glint
+   top-light over the dark card, border tinted by accent-glow. Shared by the
+   sidebar's new-chat and the Lab's Step button. */
+.soft-primary {
+  background-color: var(--surface-2);
+  background-image:
+    linear-gradient(var(--glint), transparent 55%),
+    linear-gradient(var(--accent-soft), var(--accent-soft)),
+    linear-gradient(var(--shade), var(--shade));
+  border: 1px solid var(--accent-glow);
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 0 var(--glint);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  padding: 9px var(--sp-4);
+  transition: background-color var(--t-fast), border-color var(--t-fast),
+    background-image var(--t-fast);
+}
+.soft-primary:hover:not(:disabled) {
+  background-image:
+    linear-gradient(var(--glint), transparent 55%),
+    linear-gradient(var(--accent-glow), var(--accent-glow));
+  border-color: var(--accent);
+}
+.soft-primary:active:not(:disabled) {
+  background-image:
+    linear-gradient(var(--accent-soft), var(--accent-soft)),
+    linear-gradient(var(--shade), var(--shade));
+}
+.soft-primary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.primary {
+  background-color: var(--accent);
+  /* Top light on Coral: the one confident, dimensional element per view. */
+  background-image: linear-gradient(var(--glint-bright), transparent 60%);
+  border: 0;
+  border-radius: var(--radius-control);
+  box-shadow: inset 0 1px 0 var(--glint-bright), 0 6px 18px -10px var(--accent-glow);
+  color: var(--text-on-accent);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 9px var(--sp-4);
+  transition: background-color var(--t-fast), box-shadow var(--t-fast), transform var(--t-fast);
+}
+.primary:hover:not(:disabled) {
+  background-color: var(--accent-hover);
+  box-shadow: inset 0 1px 0 var(--glint-bright), 0 8px 22px -10px var(--accent-glow);
+  transform: translateY(-1px);
+}
+.primary:active:not(:disabled) {
+  background-color: var(--accent-pressed);
+  box-shadow: inset 0 1px 0 transparent, 0 3px 10px -8px var(--accent-glow);
+  transform: translateY(0);
+}
+.primary:disabled {
+  background-color: var(--surface-3);
+  background-image: none;
+  box-shadow: none;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  padding: 8px var(--sp-4);
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.ghost:hover { background: var(--surface-2); border-color: var(--text-faint); }
+.ghost:active { background: var(--surface-3); }
+
+.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 3px;
+  transition: color var(--t-fast), text-decoration-color var(--t-fast);
+}
+.link:hover {
+  color: var(--accent-hover);
+  text-decoration-color: var(--accent-hover);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), transform var(--t-fast);
+}
+.icon-button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+.icon-button:active { transform: scale(0.94); }
+

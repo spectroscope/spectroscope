@@ -1,0 +1,8 @@
+flowchart TB
+    t["turn start"] --> gate{"lastInputTokens ><br/>compactionThreshold (100k)?"}
+    gate -->|no| cont["continue normally"]
+    gate -->|yes| split["split: old | last 4 messages<br/>(+ cut repair for tool pairs)"]
+    split --> sum["summary call — same provider,<br/>note-taker prompt, NO tools"]
+    sum -->|blank| cont
+    sum --> swap["new history: summary message<br/>+ recent 4 (roles merged)"]
+    swap --> ev["emit compaction event<br/>(JSONL is NEVER rewritten)"]

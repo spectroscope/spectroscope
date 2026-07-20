@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant R as McpServerRegistry
+    participant C as McpClient
+    participant T as StdioTransport
+    participant S as MCP server (child process)
+    Note over R,S: startup (eager, skip-on-failure)
+    R->>C: start()
+    C->>T: initialize (protocol 2024-11-05)
+    T->>S: spawn command + args · JSON-RPC over stdio
+    S-->>C: capabilities · serverInfo
+    C->>S: tools/list
+    S-->>C: descriptors → registered as mcp__server__tool
+    Note over C,S: per call (at-most-once, 20 s timeout)
+    C->>S: tools/call (exactly once)
+    alt success
+        S-->>C: text content → tool_result
+    else failure / timeout
+        C->>C: poison transport · degrade to ERROR string
+        Note over C: next call reconnects lazily — never re-issued
+    end

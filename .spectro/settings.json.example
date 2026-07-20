@@ -1,0 +1,13 @@
+{
+  "_comment": "Copy to settings.json (this directory = the project layer; gitignored here because mcpServers wants absolute machine paths). Precedence: defaults < env (SPECTRO_*) < ~/.spectro/settings.json < this file < settings.local.json < CLI flags. Known keys: provider, model, baseUrl, compactionThreshold, permissionMode, autoApprove, imageProvider, imageModel, thinking, mcpServers, maxRetries, promptCaching, hooks, sttModel, chromeBinary (+ user-scope only: workspace, logLevel).",
+
+  "permissionMode": "ask",
+  "autoApprove": ["run_command:git status*"],
+
+  "mcpServers": {
+    "notes": {
+      "command": "/absolute/path/to/this/checkout/spectro/spectro-mcp-notes/build/install/spectro-mcp-notes/bin/spectro-mcp-notes",
+      "args": ["/absolute/path/to/this/checkout/spectro/spectro-mcp-notes/notes"]
+    }
+  }
+}

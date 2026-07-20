@@ -1,0 +1,86 @@
+<!-- ============================== COVER ============================== -->
+<div class="cover">
+  <div class="cover-brand"><svg style="vertical-align:-3px" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true"><rect x="13.2" y="14" width="2.6" height="36" rx="0.7" fill="#C05A4C"/><rect x="21.7" y="14" width="1.6" height="36" rx="0.7" fill="#CE9440"/><rect x="28.9" y="14" width="5.2" height="36" rx="0.7" fill="#2DD4A7"/><rect x="42" y="14" width="2" height="36" rx="0.7" fill="#2CB1C4"/><rect x="49.35" y="14" width="1.3" height="36" rx="0.7" fill="#5C5142"/></svg> spectroscope <span class="dim" style="font-weight:300">· full build</span></div>
+  <div class="cover-mid">
+    <div class="cover-eyebrow">agent orchestrator · java 21 · user guide &amp; technical reference</div>
+    <h1 class="cover-title">the complete<br><b>spectroscope</b> user guide</h1>
+    <p class="cover-sub">One headless core, many faces. Every feature of the full build,
+    from the terminal, the web UI, the desktop shell, the Lab, subagents, skills, MCP,
+    voice and vision to the fleet on the bus, explained with real screenshots, and every
+    protocol, event and endpoint documented down to the wire.</p>
+  </div>
+  <div class="cover-stats">
+    <div class="stat"><div class="v">7</div><div class="k">Modules on one stream</div></div>
+    <div class="stat"><div class="v">18</div><div class="k">RunEvent types</div></div>
+    <div class="stat"><div class="v">18+</div><div class="k">Tools (+ MCP)</div></div>
+    <div class="stat"><div class="v">3</div><div class="k">LLM providers</div></div>
+    <div class="stat"><div class="v">545</div><div class="k">JUnit tests</div></div>
+    <div class="stat"><div class="v">310</div><div class="k">Vitest tests</div></div>
+    <div class="stat"><div class="v">3</div><div class="k">Designs (dark · bright · white)</div></div>
+    <div class="stat"><div class="v">7</div><div class="k">Built-in scenarios</div></div>
+  </div>
+  <div class="cover-foot">
+    <span>spectroscope — the agent orchestrator you can watch</span>
+    <span>2026-07-20 · migration phase 6</span>
+  </div>
+</div>
+
+<!-- ============================== ABOUT ============================== -->
+<h1 data-ch="0" id="about"><span class="ch-num">About this guide</span>How to read this book</h1>
+
+<div class="callout"><div class="co-title">a note on the screenshots</div>
+<p>Every screenshot is a real capture of the running app, taken by the
+repository's own capture pipeline (<code>capture_screens.mjs</code>) and
+reshot per release. The two editions of this guide carry matching sets:
+the dark pages show <strong>spectro dark</strong>, the light pages
+<strong>spectro bright</strong>.</p></div>
+
+<p class="lead">spectroscope is the reference harness of the workshop “build an agent harness
+from scratch” — and the full build in the <code>spectroscope/</code> folder is its final form:
+everything the ten core stages and six bonus stages construct, plus the conveniences
+that never fit a single stage. This guide documents that full build. Not the journey —
+the machine.</p>
+
+<p>The book has five parts, ordered from “I just want to use it” to “I want to know
+exactly what crosses which wire”:</p>
+
+<ul>
+  <li><strong>Part I — Meet spectroscope</strong>: what it is, how to start it, what it can do.</li>
+  <li><strong>Part II — The faces</strong>: the terminal, the web UI with all its tabs and
+      panels, the Lab, session management, the design system, the desktop app.</li>
+  <li><strong>Part III — The agent's powers</strong>: tools, permissions, hooks, subagents,
+      skills, providers, vision, voice, image generation, MCP and scheduling.</li>
+  <li><strong>Part IV — The file system</strong>: where everything lives on disk and what
+      each file looks like inside.</li>
+  <li><strong>Part V — Under the hood</strong>: the complete technical reference — the
+      architecture dossier, every event, every socket frame, every REST endpoint,
+      every configuration key.</li>
+</ul>
+
+<div class="callout">
+  <div class="co-title">Honesty rules of this document</div>
+  <p>Every screenshot in this guide is a real capture of the running application
+  (English chrome, taken 2026-07-20 with the reproducible script in
+  <code>docs/guide-assets/capture_screens.mjs</code>). Every terminal block is real
+  command output. Every name, constant, wire string and default was read from the
+  migration phase-6 source tree (2026-07-20) — not from memory. Where behaviour is a
+  deliberate limitation, the guide says so.</p>
+</div>
+
+<h2 id="about-conventions">Conventions</h2>
+<ul>
+  <li><code>monospace</code> marks anything that exists literally in code, config or on
+      the wire: tool names, event types, JSON keys, commands.</li>
+  <li>Chips classify tools: <span class="chip free">free</span> needs no permission,
+      <span class="chip gated">gated</span> asks first,
+      <span class="chip prefix">gated + prefix rule</span> asks first and remembers
+      approvals scoped to a prefix.</li>
+  <li>German UI labels appear in parentheses where the chrome ships bilingual —
+      the screenshots use the English chrome.</li>
+  <li>File paths are relative to the <code>spectroscope/</code> root unless they start with
+      <code>~</code>.</li>
+</ul>
+
+<!-- ============================== TOC ============================== -->
+<h1 data-ch="✦" id="toc"><span class="ch-num">Contents</span>The map of this book</h1>
+<!--TOC-->

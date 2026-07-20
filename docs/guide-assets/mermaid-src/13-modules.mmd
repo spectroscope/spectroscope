@@ -1,0 +1,8 @@
+flowchart BT
+    core["spectro-core<br/>headless library · plain new"]
+    cli["spectro-cli<br/>picocli · REPL · doctor · cron"] --> core
+    server["spectro-server<br/>Spring Boot 3.5 · WS + REST"] --> core
+    server --> cli
+    notes["spectro-mcp-notes<br/>stdio JSON-RPC server (standalone)"]
+    web["spectro-web (npm/Vite)<br/>builds into server static/"] -.-> server
+    desktop["spectro-desktop (Electron)<br/>spawns the boot jar"] -.-> server

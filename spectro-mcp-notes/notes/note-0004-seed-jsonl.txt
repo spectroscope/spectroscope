@@ -1,0 +1,2 @@
+The JSONL wire format is byte-identical between the Java and TypeScript editions,
+so a session recorded by either harness replays in the other.

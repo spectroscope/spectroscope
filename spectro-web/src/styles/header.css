@@ -1,0 +1,92 @@
+/* ---------- Header ---------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 52px;
+  padding: 0 var(--sp-4);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+}
+
+/* Session titles are headings, not labels: Book weight, tracked like the DS. */
+.header-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 400;
+  letter-spacing: var(--track-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: inset 0 1px 0 var(--hairline);
+  padding: 4px var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.provider-chip-model {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  padding-left: var(--sp-2);
+  border-left: 1px solid var(--border);
+  max-width: 16ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Stop: Coral outline, visible only while a run is active. */
+.stop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-13);
+  padding: 6px var(--sp-3);
+  transition: background var(--t-fast), box-shadow var(--t-fast);
+}
+.stop:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 4px 14px -8px var(--accent-glow);
+}
+.stop:active { background: var(--accent-soft); box-shadow: none; }
+
+/* ---------- Connection banner ---------- */
+
+.conn-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--warn-soft);
+  border-bottom: 1px solid var(--border);
+  box-shadow: inset 2px 0 0 var(--warn);
+  color: var(--warn);
+  font-size: var(--fs-13);
+  animation: banner-in var(--t-med) backwards;
+}
+.conn-banner .link { font-size: var(--fs-13); }
+
+@keyframes banner-in {
+  from { opacity: 0; transform: translateY(-4px); }
+}
+

@@ -1,0 +1,127 @@
+<!-- ============================== CH 5 ============================== -->
+<h1 data-ch="5" id="ch-chat"><span class="ch-num">Chapter 5</span>The web face: Chat</h1>
+
+<p class="lead">One Spring Boot jar serves everything: the built React UI, a handful of
+REST endpoints, and a single WebSocket that carries RunEvents in one direction and a
+small set of client frames in the other. Open <code>http://localhost:8080</code> after
+<code>./spectro web</code> and you are looking at the chat.</p>
+
+<!--SHOT:01-home-empty|The empty app: sidebar with the session archive, header with thinking toggle · language toggle · design drawer · provider chip, the four tabs, and the composer waiting. “Ask spectroscope.”-->
+
+<h2 id="ch-chat-anatomy">The anatomy of the screen</h2>
+<ul>
+  <li><strong>Sidebar</strong> (left, resizable, collapsible): “New chat”, the
+      <strong>Scenarios</strong> button (chapter 7), the session archive with an Import
+      button (chapter 8). The first row is always the live session of this browser tab.</li>
+  <li><strong>Header</strong>: session title (the first prompt), image-gallery toggle
+      (appears once images exist), right-panel toggle, the <strong>Thinking</strong> switch,
+      the <strong>DE/EN</strong> toggle, the design drawer, the <strong>provider picker</strong>
+      chip, the <strong>context ring</strong> (appears once tokens flow) and the Stop button
+      while a run is active.</li>
+  <li><strong>Tab bar</strong>: Chat · Graph · Trace · Lab — four lenses over the same state.</li>
+  <li><strong>Footer</strong>: run and session token totals in tabular numerals, a run status
+      dot, and the connection dot.</li>
+</ul>
+
+<p>Behind the scenes, every incoming socket frame is batched once per animation frame
+(a <code>text_delta</code> flood costs one React render per frame, not per token) and
+folded by one pure reducer into an immutable <code>UiState</code>. Live stream and
+archived replay produce the same state shape from the same code — which is why every
+view in this chapter works identically for both.</p>
+
+<!--MERMAID:01-pipeline|The state pipeline: one socket, one rAF batch, one pure reducer — every tab is a lens over the same UiState.-->
+
+<h2 id="ch-chat-conversation">The conversation</h2>
+
+<!--SHOT:08-chat-scenario-top|A full conversation (here: the deterministic “coding” scenario): user prompt, collapsible Thinking disclosure, tool cards with gate chips, markdown answer cards.-->
+
+<ul>
+  <li><strong>Markdown answers.</strong> Assistant turns render through a dependency-free
+      markdown parser (headings, streaming-safe fenced code with language chip and copy
+      button, nested lists, GFM tables, quotes). Nothing ever becomes raw HTML, and link
+      protocols are vetted — <code>javascript:</code> renders as plain text. Model output is
+      untrusted end to end.</li>
+  <li><strong>Thinking, apart from the answer.</strong> While a reasoning model thinks, a
+      pulsing “thinking …” dot is the live indicator; the finished reasoning collapses into
+      a disclosure above the answer showing its size. The header switch turns the stream off
+      for the next run (<code>set_thinking</code>).</li>
+  <li><strong>Tool cards.</strong> One collapsed card per call: status dot + name + input
+      preview + <strong>gate chip</strong> + duration. The gate chip is the didactic point —
+      <em>Gate: allowed / denied / waiting</em> appears only for permission-gated calls, so
+      the three control paths (free tool, gated tool, hook-blocked call) read differently at
+      a glance. Expanding shows full input and output JSON with copy buttons.</li>
+  <li><strong>Subagent threads.</strong> Consecutive turns of one child nest under a
+      pastel-edged thread block (header: agent id, role label, task). Interleaving splits
+      threads honestly — the Trace keeps the flat truth. More in chapter 14.</li>
+  <li><strong>Info and error lines.</strong> Spawns and compactions appear as quiet info
+      lines (localized live); a failed run gets an error card with a “Send again” link.</li>
+</ul>
+
+<!--SHOT:08b-chat-scenario-threads|Subagent threads: two parallel workers from a fan-out, each with its own pastel-edged thread, status lines and tool cards; the A2A result closes each thread.-->
+
+<h2 id="ch-chat-composer">The composer</h2>
+<ul>
+  <li><strong>Enter sends, Shift+Enter breaks the line</strong> — the only shortcut. The
+      textarea autosizes up to 150&nbsp;px; the Send button reads “Running …” while a run is
+      active (one run at a time per connection).</li>
+  <li><strong>Image attachments.</strong> The image button opens a file picker
+      (jpeg/png/webp/gif, multiple); dragging files anywhere onto the chat works too. Every
+      image is downscaled in the browser before sending (longest edge 1568&nbsp;px, JPEG
+      re-encode when useful; GIFs pass through to keep animation), previewed as removable
+      chips, and never leaves the page until you hit Send. Attachments cross the socket as
+      base64, land in the session's blob store, and the events carry only references.</li>
+  <li><strong>Push-to-talk.</strong> The mic button records (coral pulsing dot +
+      <code>m:ss</code> timer), a second press stops; the audio is transcribed server-side by
+      local whisper.cpp and the text lands <em>in the input field</em> — an STT error is
+      reviewable text, never an agent instruction. If STT is not installed the button
+      disables itself with a setup hint. Chapter 17 has the setup.</li>
+</ul>
+
+<h2 id="ch-chat-permission">The permission dialog</h2>
+
+<p>When the agent wants to run a gated tool and no allowlist rule covers it, the run
+genuinely pauses — the agent's virtual thread parks on a future server-side — and the
+dialog takes over:</p>
+
+<!--SHOT:23-permission-dialog|The serious moment: run_command wants to execute uname -a. The input is shown in full — you approve what you see. Deny is the focused default; Escape denies.-->
+
+<ul>
+  <li>The input is shown <strong>in full</strong> as pretty JSON — you approve what you see,
+      never a summary.</li>
+  <li><strong>Deny is the safe default</strong>: it holds focus, Escape denies, Tab is trapped,
+      and clicking the backdrop does nothing — a decision must be deliberate.</li>
+  <li>When a subagent asks, the dialog names it (“requested by worker-1”).</li>
+  <li>Multiple pending requests queue with a counter (“1 of 3”).</li>
+</ul>
+
+<p>The two checkboxes appear once you tick the first:</p>
+
+<!--SHOT:23b-permission-dialog-remember|“Always allow: run_command (this session)” — and, gated behind it, “Persist (project settings, .spectro/settings.json)”. Only Allow carries the flags.-->
+
+<p><strong>Always allow (this session)</strong> remembers the approval for this browser
+tab only. <strong>Persist</strong> appends the rule to the project's
+<code>.spectro/settings.json</code> — the same <code>autoApprove</code> list the CLI reads,
+so a web decision is honored by the terminal on its next run. Remembered rules are
+<strong>prefix-scoped</strong> for risky tools (a <code>git status</code> approval becomes
+<code>run_command:git*</code>, never “all commands”) — chapter 13 has the exact rules.
+A denied call returns <code>ERROR: the user denied the execution.</code> to the model,
+which reads it and adapts.</p>
+
+<h2 id="ch-chat-live">Live indicators</h2>
+
+<!--SHOT:22-thinking-live|A live run against local Ollama: the model's reasoning streams into the pulsing Thinking disclosure while the header shows the provider chip and the context ring.-->
+
+<ul>
+  <li>The <strong>context ring</strong> in the header fills with the last reported input
+      tokens against the compaction threshold (green &lt; 70%, amber ≤ 90%, red above);
+      clicking it opens the introspection popover — chapter 28.</li>
+  <li>The <strong>usage footer</strong> counts run and session tokens live in tabular
+      numerals; the status dot switches “run active → ready” and names any non-regular stop
+      reason.</li>
+  <li>The <strong>connection banner</strong> appears under the header when the socket drops,
+      with a reconnect countdown (exponential backoff 1→15&nbsp;s) and a “Reconnect now”
+      action. Sessions survive: the JSONL file is the state, the socket is just transport.</li>
+  <li>The <strong>Stop button</strong> sends <code>abort</code>, which fires the run's
+      CancelSignal — the run ends with <code>stopReason: "aborted"</code>, tools and children
+      included.</li>
+</ul>

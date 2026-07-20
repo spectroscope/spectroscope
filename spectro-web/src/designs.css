@@ -1,0 +1,95 @@
+/* Design skins for the switcher. Each [data-design="x"] overrides ONLY spectroscope's
+   existing token names (tokens.css) — because the whole UI reads var(--token),
+   flipping the attribute on <html> reskins everything in place, no reload.
+   Since the phase-4 design transplant, :root IS the brand dark (espresso,
+   picker name "spectro dark") and [data-design="paper"] is the brand light
+   ("spectro bright") — both live in tokens.css. The one extra skin here is
+   `still` ("spectro white"): a deliberately quiet all-white light theme.
+   The seven retired skins (classic, nebula, nocturne, obsidian, staffwise,
+   neon-riot, prisma — palettes from Fable_Designs_Pro) were removed on
+   2026-07-20 (owner call); git history keeps them. */
+
+/* ---------- spectro white (id `still`) — minimal light: white, gray, one blue ---------- */
+[data-design="still"] {
+  color-scheme: light;
+  --bg: #fbfbfd;
+  --surface: #ffffff;
+  /* Owner tune 2026-07-17: same flat-ladder fix as prisma — wider surface
+     steps, dim/faint visibly lighter than body ink (~3.8:1 on the ground,
+     deliberate for de-emphasized text; body stays 16:1), stronger
+     selection/hover pigment. */
+  --surface-2: #f2f2f5;
+  --surface-3: #e5e5ea;
+  --border: rgba(0, 0, 0, 0.11);
+  --border-strong: rgba(0, 0, 0, 0.22);
+  --scrim: rgba(29, 29, 31, 0.40);
+  --glint: rgba(255, 255, 255, 0.6);
+  --glint-bright: rgba(255, 255, 255, 0.95);
+  --hairline: rgba(0, 0, 0, 0.08);
+  --shade: rgba(0, 0, 0, 0.07);
+  --text: #1d1d1f;
+  --text-dim: #808085;
+  --text-faint: rgba(29, 29, 31, 0.38);
+  --text-on-accent: #ffffff;
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-pressed: #005bb8;
+  --accent-soft: rgba(0, 113, 227, 0.16);
+  --accent-glow: rgba(0, 113, 227, 0.24);
+  --sand: #6e6e73;           /* calm graphite eyebrows — the Apple way */
+  --sand-glow: rgba(110, 110, 115, 0.16);
+  --ok: #248a3d;
+  --warn: #c07600;
+  --warn-soft: rgba(192, 118, 0, 0.10);
+  --error: #d70015;
+  --error-soft: rgba(215, 0, 21, 0.08);
+  --agent-root: #0071e3;
+  --agent-explore: #248a3d;
+  --agent-worker: #8944ab;
+  --agent-extra: #c07600;
+  --font-ui: Geist, Inter, "Helvetica Neue", Helvetica, system-ui, sans-serif;
+  --radius-chip: 8px;
+  --radius-control: 10px;
+  --radius-card: 16px;
+  --radius-modal: 20px;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 8px 20px -14px rgba(0, 0, 0, 0.12);
+  --shadow-raised: 0 2px 6px rgba(0, 0, 0, 0.06), 0 14px 34px -16px rgba(0, 0, 0, 0.16);
+  --shadow-modal: 0 12px 36px -14px rgba(0, 0, 0, 0.16), 0 32px 90px -20px rgba(0, 0, 0, 0.22);
+}
+
+/* ============================================================
+   Effects layer (togglable via html.fx-scroll / html.fx-particles).
+   Both defer to prefers-reduced-motion.
+   ============================================================ */
+
+/* Particle canvas: a fixed backdrop above the body gradient, behind the UI
+   (z-index:-1). Portaled to <body> so no ancestor stacking context clips it. */
+.particle-field {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: -1;
+  pointer-events: none;
+  display: block;
+}
+
+/* Scroll reveals: only when fx-scroll is on AND the user allows motion. */
+html.fx-scroll {
+  scroll-behavior: smooth;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html.fx-scroll [data-reveal] {
+    opacity: 0;
+    transform: translateY(14px);
+    transition:
+      opacity 0.55s var(--ease-out),
+      transform 0.55s var(--ease-out);
+    will-change: opacity, transform;
+  }
+  html.fx-scroll [data-reveal].in {
+    opacity: 1;
+    transform: none;
+  }
+}

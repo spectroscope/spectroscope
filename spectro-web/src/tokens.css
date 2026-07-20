@@ -1,0 +1,186 @@
+/* spectroscope design tokens — the single source of truth for the web UI and
+   the desktop shell. Values mirror the brand token file
+   (~/Spectroscope/design/website/tokens.css, migration phase 4): vintage
+   espresso dark as the default, the paper light theme as [data-design="paper"].
+   Rules: monochrome surroundings, COLOR ONLY ON THE SPECTRAL LINES, no
+   shadows (depth = raised surface + hairlines), crisp marks (particle scenes
+   may glow, marks never do).
+   Never copy values into components by hand: ALWAYS use var(--token). */
+
+:root {
+  color-scheme: dark;
+
+  /* ---------- Surfaces — vintage espresso ladder ---------- */
+  --bg: #17120D;            /* app ground */
+  --surface: #201913;       /* cards, sidebar, panels (brand --bg-raise) */
+  --surface-2: #292019;     /* chips, inputs, hover surfaces (raise+line step) */
+  --surface-3: #2E251C;     /* active/pressed surfaces */
+  --border: #33291F;        /* hairlines (brand --line) */
+  --border-strong: #5C5142; /* focus-adjacent separation (brand --faint tone) */
+  --scrim: rgba(23, 18, 13, 0.72); /* modal backdrop, espresso-tinted */
+
+  /* ---------- Light-on-dark layering (kept near-flat: no gloss) ---------- */
+  --glint: rgba(237, 231, 220, 0.03);        /* faint ambient top light */
+  --glint-bright: rgba(237, 231, 220, 0.10); /* top edge of the primary button */
+  --hairline: rgba(237, 231, 220, 0.05);     /* 1px inner highlight lines */
+  --shade: rgba(0, 0, 0, 0.18);              /* inset depth for code/input wells */
+
+  /* ---------- Ink — warm cream ---------- */
+  --text: #EDE7DC;
+  --text-dim: #A2988A;
+  --text-faint: #5C5142;
+  --text-on-accent: #2A1B08; /* deep brown text on the amber accent */
+
+  /* ---------- Interactive: the logo's amber line ---------- */
+  --accent: #CE9440;        /* teal #2DD4A7 is the documented rollback */
+  --accent-hover: #E0A855;
+  --accent-pressed: #B8823A;
+  --accent-soft: rgba(206, 148, 64, 0.13);
+  --accent-glow: rgba(206, 148, 64, 0.22); /* live caret/running dot only — keep faint */
+
+  /* ---------- Editorial (never clickable): the line you follow ---------- */
+  --sand: #8B7CF0;          /* eyebrows/kickers wear violet (brand rule) */
+  --sand-glow: rgba(139, 124, 240, 0.20);
+
+  /* ---------- Spectral lines — the ONLY carriers of color ---------- */
+  --sp-red: #C05A4C;
+  --sp-amber: #CE9440;
+  --sp-teal: #2DD4A7;
+  --sp-ocean: #2CB1C4;
+  --sp-violet: #8B7CF0;     /* "the line you follow": pending, reasoning, interactive highlight */
+
+  /* ---------- Event-type mapping (fixed brand vocabulary) ---------- */
+  --ev-token: var(--sp-teal);
+  --ev-tool: var(--sp-amber);
+  --ev-gate: var(--sp-red);
+  --ev-subagent: var(--sp-ocean);
+  --ev-lifecycle: var(--text-faint);
+  --ev-pending: var(--sp-violet);
+  --ev-reasoning: var(--sp-violet);
+
+  /* ---------- Status (spectral, desaturation lives in the palette) ---------- */
+  --ok: #2DD4A7;
+  --warn: #CE9440;
+  --warn-soft: rgba(206, 148, 64, 0.10);
+  --error: #C05A4C;
+  --error-soft: rgba(192, 90, 76, 0.13);
+
+  /* ---------- Agent/graph accents (decoration: border/badge, never text) ---------- */
+  --agent-root: #2DD4A7;    /* main agent rides the hero line */
+  --agent-explore: #2CB1C4;
+  --agent-worker: #8B7CF0;
+  --agent-extra: #CE9440;
+
+  /* ---------- Typography (brand: Inter + JetBrains Mono, self-hosted) ---------- */
+  --font-ui: "Inter Variable", Inter, Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --fs-11: 11px;  /* badges, eyebrows (uppercase, +0.18em) */
+  --fs-12: 12px;  /* meta, token counts */
+  --fs-13: 13px;  /* secondary text, tool I/O */
+  --fs-14: 14px;  /* body (desktop density; raise to 16px on mobile) */
+  --fs-16: 16px;  /* emphasized lines, modal titles */
+  --fs-20: 20px;  /* panel titles */
+  --fs-28: 28px;  /* page/empty-state titles */
+  --lh-body: 1.55;
+  --track-eyebrow: 0.18em;   /* brand labels track .18–.24em */
+  --track-heading: -0.01em;
+  --track-display: -0.015em;
+
+  /* ---------- Grid, radii, layers (brand: 10px cards/buttons, 7px chips) ---------- */
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px;
+  --sp-5: 24px; --sp-6: 32px; --sp-7: 48px;
+  --radius-chip: 7px;
+  --radius-control: 10px;
+  --radius-card: 10px;
+  --radius-modal: 10px;
+  --sidebar-w: 280px;
+  --content-max: 860px;     /* reading width of the chat history */
+  --z-sticky: 10; --z-dropdown: 100; --z-modal: 1000; --z-toast: 1100;
+
+  /* ---------- Motion (calm and linear, 120–360ms, no bounce) ---------- */
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --t-fast: 140ms cubic-bezier(0.2, 0, 0, 1);  /* hover, focus, chips */
+  --t-med: 240ms cubic-bezier(0.2, 0, 0, 1);   /* cards open/close */
+  --t-slow: 340ms cubic-bezier(0.16, 1, 0.3, 1); /* modal entry */
+
+  /* ---------- Elevation: none. Depth comes from surface steps + hairlines. ---------- */
+  --shadow-card: none;
+  --shadow-raised: none;
+  --shadow-modal: none;
+}
+
+/* ---------------------------------------------------------------
+   paper — the brand light theme (L1 "paper", retro prism on paper).
+   First-class: every surface, status and spectral token re-derived
+   for the paper ground. Accent = the logo blue, darkened for paper.
+   --------------------------------------------------------------- */
+[data-design="paper"] {
+  color-scheme: light;
+
+  --bg: #F6F4EE;
+  --surface: #EFECE3;
+  --surface-2: #E9E5D8;
+  --surface-3: #E2DCCC;
+  --border: #DDD8CB;
+  --border-strong: #C4BCAD;
+  --scrim: rgba(246, 244, 238, 0.78);
+
+  --glint: rgba(255, 255, 255, 0.5);
+  --glint-bright: rgba(255, 255, 255, 0.85);
+  --hairline: rgba(23, 22, 26, 0.10);
+  --shade: rgba(23, 22, 26, 0.07);
+
+  --text: #17161A;
+  --text-dim: #6A665D;
+  --text-faint: #A39E92;
+  --text-on-accent: #F6F4EE;
+
+  --accent: #2E7EA6;
+  --accent-hover: #276C8F;   /* hover darkens on a light ground */
+  --accent-pressed: #205B79;
+  --accent-soft: rgba(46, 126, 166, 0.14);
+  --accent-glow: rgba(46, 126, 166, 0.20);
+
+  --sand: #6C5CE7;
+  --sand-glow: rgba(108, 92, 231, 0.18);
+
+  --sp-red: #C24B3E;
+  --sp-amber: #A9762A;
+  --sp-teal: #0F9D77;
+  --sp-ocean: #0B8799;
+  --sp-violet: #6C5CE7;
+
+  --ok: #0F9D77;
+  --warn: #A9762A;
+  --warn-soft: rgba(169, 118, 42, 0.10);
+  --error: #C24B3E;
+  --error-soft: rgba(194, 75, 62, 0.12);
+
+  --agent-root: #0F9D77;
+  --agent-explore: #0B8799;
+  --agent-worker: #6C5CE7;
+  --agent-extra: #A9762A;
+}
+
+/* Focus: always visible, always accent. Never outline: none without a replacement. */
+:where(a, button, [role="button"], input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+
+/* Live pulse (running node/tool). With reduced motion: static. */
+@keyframes spectroscope-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
+.pulse { animation: spectroscope-pulse 1.2s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse { animation: none; }
+  * { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
+
+/* Numbers in metrics/footer must not wobble (layout shift). */
+.tabular { font-variant-numeric: tabular-nums; }

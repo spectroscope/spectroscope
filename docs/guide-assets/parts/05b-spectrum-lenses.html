@@ -1,0 +1,79 @@
+<h1 data-ch="6b" id="ch-spectrum">the spectrum and the new lenses</h1>
+
+<p>The design transplant (migration phase 4) brought the brand into the
+product and four new surfaces with it. All of them read the same event
+stream you already know; none of them adds a second source of truth.</p>
+
+<h2 id="spectrum-tab">the spectrum tab</h2>
+
+<p>The spectrum is the fleet on one screen. Every agent draws one
+horizontal lane; every event is a discrete mark on it, colored by type:
+token teal, reasoning violet, tool amber, gate red, subagent ocean,
+lifecycle faint. The lane rail carries the agent id, its task, its
+lifecycle state and its token totals. A pending permission turns the
+lane's gate mark violet and pulses until the decision lands.</p>
+
+<!--SHOT:20-spectrum-brand|The spectrum tab: one lane per agent, every event a spectral mark. A real capture of a review fan-out with three subagents.-->
+
+<p>Clicking a lane opens the trace pinned to that agent: the new agent
+chip row filters the wire view to one lane while session-level frames
+(decisions, run ends) stay visible. Dense token streams are thinned for
+display; the counter names the drop, and the JSONL file keeps
+everything.</p>
+
+<h2 id="reasoning-lens">the reasoning lens</h2>
+
+<p>The reasoning lens is a trace mode for one question: what did the
+model say it was thinking, and what did it then do? Switched on, thinking
+frames come to the foreground in violet, everything else steps back, and
+tool calls and gate frames stay readable as anchors. Every block of
+thinking ends in a clickable "then:" line that jumps to the action that
+followed it.</p>
+
+<!--SHOT:21-trace-lens-brand|The reasoning lens: thinking foregrounded in violet, the said-vs-did pairing line under the block, the causal chain in the open frame.-->
+
+<div class="callout"><div class="co-title">honest labeling</div>
+<p>Reasoning text is the model's self-report, recorded next to what it
+actually did. It is not a window into the weights, and the interface
+says so. With reasoning capture off, the lens tells you that too instead
+of showing an empty highlight.</p></div>
+
+<p>The lens state persists with your design preferences, applies to live
+runs and replays alike, and combines with every other filter.</p>
+
+<h2 id="causal-chain">the causal chain and the replay scrubber</h2>
+
+<p>Every open trace frame now shows its walk-back: result, decision,
+request, call, turn, run, spawn, parent run. Each link is a chip; click
+it and the trace jumps there. The chain is computed from the recorded
+stream alone, with no model involved.</p>
+
+<p>The replay scrubber caps the visible stream at any frame. Drag it
+back and you read the session exactly as far as it had happened, filters
+included.</p>
+
+<h2 id="gate-surface">the gate surface</h2>
+
+<p>Pending permissions are first-class now. Instead of a blocking modal,
+a gate bar docks above the footer on every tab: the violet line means
+the run waits on you. Approve or deny inline, keep the session rule
+checkbox at hand, and expand the bar for the full input and the recorded
+outcomes of earlier gates. The Lab keeps its own stepper-owned dialog;
+replays never ask.</p>
+
+<h2 id="explain-panel">the explain panel</h2>
+
+<p>The explain button in the trace toolbar docks the why layer next to
+the stream: a run summary (duration, turns, tool calls by name, gate
+tallies, tokens, stop reason) and one entry per gate that answers "why
+did the gate ask" from the permission mode at ask time. Stored sessions
+carry no mode frames; the panel says "not recorded" instead of guessing.
+Everything in the panel folds deterministically from the stream.</p>
+
+<h2 id="doctor">spectro doctor, the web face</h2>
+
+<p>The reference-lamp button in the header opens the calibration page:
+one measured line per subsystem, from this browser's viewpoint. Server
+api, live socket, llm backend, session store, default workspace, log
+level, permission mode. The page re-measures on every open; the CLI's
+<code>spectro doctor</code> checks the machine side.</p>

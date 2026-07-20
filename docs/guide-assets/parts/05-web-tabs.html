@@ -1,0 +1,193 @@
+<!-- ============================== CH 6 ============================== -->
+<h1 data-ch="6" id="ch-tabs"><span class="ch-num">Chapter 6</span>The web face: tabs &amp; panels</h1>
+
+<p class="lead">Chat is one lens. The Graph tab shows the same run as a process
+diagram, the Trace tab as wire frames, and the right-docked panel adds the agents
+roster, the live plan, the exact system context and a sandboxed file browser.</p>
+
+<h2 id="ch-tabs-graph">The Graph tab</h2>
+
+<p>Two views behind a <em>Flow | Graph</em> toggle (sticky per browser). For archived
+sessions a replay bar adds <em>Full</em>, <em>Time-lapse</em> (advances along the real
+timestamp gaps, accelerated), <em>Pause</em> and a scrubber.</p>
+
+<!--SHOT:09-graph-flow-overview|Flow view: the whole session as a BPMN-style overview — activities on the main spine, one parallel split/join block per subagent wave, gate outcomes as dots.-->
+
+<p><strong>Flow</strong> is the minimap for humans: rounded activities
+(<em>user / think / tool / say / compact / end</em>) stack on the main spine; each
+subagent wave becomes a split block with one column per child and a join bar. Think and
+say activities accumulate their streamed text, so real runs get sentence labels instead
+of “token one”. Tool activities label themselves honestly — <code>read &lt;file&gt;</code>,
+<code>$ &lt;command&gt;</code>, <code>fetch &lt;url&gt;</code>, <code>server · tool</code> for MCP.
+Gate outcomes render as small dots (pending / allowed / denied). In a replay, clicking
+an activity seeks the timeline to its first event.</p>
+
+<!--SHOT:10-graph-dagre|Graph view: the dagre DAG — prompt, turns, tools, subagent lanes and the answer; every node carries timing, token badges and status.-->
+
+<p><strong>Graph</strong> is the classic DAG (React Flow + dagre): one node per prompt,
+turn, tool call, subagent and answer, with <code>t+</code> relative times, duration and
+token badges, error badges, and a pulsing outline for running nodes. Sequentially
+spawned subagent subtrees get their own side-by-side lanes. Clicking a node opens a
+detail panel with its timing line and its <em>raw evidence</em> — exactly the events
+that formed the node, each as a collapsible JSON tree. The right mouse button pans;
+the left button only clicks — on both React Flow canvases in the app.</p>
+
+<h2 id="ch-tabs-trace">The Trace tab</h2>
+
+<!--SHOT:11-trace|The wire view: every frame in both directions with time, Δt, LLM direction, wire protocol, agent, type and a token-highlighted summary. The tab badge counts frames live; the slim rail on the right jumps to the first or the newest frame.-->
+
+<p>“What Wireshark is to packets, this is to the harness protocol.” Every frame lands
+here — RunEvents inbound, client messages outbound — before the reducer even looks at
+it, so unknown event types are visible too.</p>
+
+<ul>
+  <li><strong>Columns:</strong> sequence · wall-clock time with milliseconds · Δt since the
+      previous visible row · <strong>LLM direction</strong> (↑ going to the model with the
+      next request, ↓ produced by the model, · internal) · <strong>proto</strong> ·
+      <strong>host</strong> · agent · type · summary.</li>
+  <li><strong>The proto column</strong> names the wire each payload actually rides — the
+      protocol breakdown as a column: <code>SSE</code> for the cloud LLM streams (Claude and
+      OpenAI-compatible), <code>NDJSON</code> for Ollama, <code>JSON-RPC</code> for
+      <code>mcp__*</code> tool rows (a result resolves its tool through the callId),
+      <code>HTTP</code> for <code>web_fetch</code> and image generation, <code>local</code>
+      for the file tools, and <code>—</code> for everything harness-internal (the gate, the
+      plan, introspection, A2A) that never leaves the process.</li>
+  <li><strong>The host column</strong> names the network counterpart: LLM rows show where the
+      request really goes (<code>api.anthropic.com</code>, <code>localhost:11434</code> …) —
+      live from the socket-only <code>provider_info</code> frame the server sends on connect
+      and after every provider switch, so a switch is a visible trace row, never a silent
+      client-side swap. MCP rows name their server, <code>web_fetch</code> the fetched URL's
+      host, image events their backend endpoint; replays only know the provider, so anthropic
+      maps to its fixed endpoint and local backends show an honest <code>—</code>.</li>
+  <li><strong>Filters:</strong> free-text (matches type, agent and payload), an LLM-direction
+      segment, and toggleable category chips (run, turn, text, tool, permission, usage,
+      image, context, other).</li>
+  <li><strong>Summaries with token highlighting:</strong> the model's own words in sand,
+      punctuation faint, numbers tabular, the literal <code>ERROR</code> red — lossless, the
+      full payload is one click away (collapsible JSON tree + copy).</li>
+  <li><strong>The synthetic <code>system_context</code> row:</strong> the system prompt rides
+      with every request but is not a wire event — the view prepends one synthetic ↑ row
+      (from <code>GET /api/context</code>) naming prompt size, tools, skills and MCP servers.
+      Display-only: never in the reducer, never in the JSONL.</li>
+  <li><strong>Reading flow:</strong> the tab <strong>opens at the first frame</strong> — the
+      story reads from the beginning. While a frame is open, <strong>Space steps to the next
+      visible one</strong> (it opens, takes focus and centres itself; Enter still toggles a
+      focused row), so the trace taps through like the Lab stepper. A slim
+      <strong>jump rail</strong> on the right edge scrolls to the first or the newest frame.</li>
+  <li><strong>Auto-follow</strong> engages once you scroll down to the live end; while you are
+      reading further up, arrivals accumulate into a “{n} new ↓” pill instead of yanking the
+      view.</li>
+  <li><strong>Three detail modes</strong> per row: <em>Insight</em> (the JSON tree),
+      <em>Compact</em> (one token-highlighted line per real wire line, horizontally
+      scrollable) and <em>Raw</em> (plain text). The <code>session_resume</code> marker's
+      detail carries the entire re-uploaded history as its JSONL lines — chapter 8.</li>
+</ul>
+
+<h2 id="ch-tabs-text">The Text tab</h2>
+
+<p>The fourth lens on the same stream — where the trace shows frames, this shows the
+<em>text</em>. Two views behind a <em>Text | JSONL</em> toggle (sticky per browser), one
+copy button for the whole thing:</p>
+
+<ul>
+  <li><strong>Text</strong> is the whole session as one readable feed, with the protocol
+      made visible as literal markers: every reasoning run sits between
+      <code>&lt;think&gt;</code> and <code>&lt;/think&gt;</code> — exactly the tags Ollama
+      really streams inline; Anthropic's thinking blocks render to the same boundaries —
+      followed by the answer text in plain type. Tool use appears as honest indicators
+      with nothing hidden: <code>[tool_call read_file {"path":"…"}]</code>, then
+      <code>[tool_result read_file · 9ms]</code> with the <em>full</em> output underneath.
+      Run boundaries (<code>[run_start ollama]</code>, <code>[run_end end_turn]</code>),
+      the permission gate, spawns, A2A messages, compaction and errors all keep their
+      place in reading order; subagent lines carry their agent id as a prefix. Prompts
+      render in sand, thinking dimmed italic, markers faint — but it is all ONE selectable
+      text, and the copy button hands it out as plain text.</li>
+  <li><strong>JSONL</strong> is the session exactly as the file on disk stores it: one
+      compact JSON line per wire event, newline per event — the NDJSON view of the truth.
+      Socket-only UI frames (<code>provider_info</code>, <code>workspace_info</code>)
+      are deliberately absent: they never enter the file, and this view IS the file.</li>
+</ul>
+
+<h2 id="ch-tabs-panel">The right panel</h2>
+<p>The header's panel button docks a resizable panel into the Chat tab with four tabs.</p>
+
+<h3 id="ch-tabs-agents">Agents</h3>
+
+<!--SHOT:12-panel-agents|The session-wide roster: main plus every subagent that ever ran, with lifecycle badge, task, latest status line and token cost. It survives run ends — only a new chat clears it.-->
+
+<p>One card per agent — main first, then every child in spawn order — with its state dot
+and lifecycle badge (<em>submitted / working / done / failed</em>), its task, the latest
+<code>report_status</code> line, and its token cost (<code>1.2k in · 0.3k out</code>).
+Selecting a card jumps to the System context tab for that agent.</p>
+
+<h3 id="ch-tabs-plan">Plan</h3>
+
+<!--SHOT:21-panel-plan-live|The agent's published plan, live: three steps in the three states (done / running… / open). This capture is from a real local-model run — note the first update_plan attempt errored on a wrong field name and the model self-corrected on the second call.-->
+
+<p>The read-only, latest-wins snapshot of the agent's plan, fed by the permission-free
+<code>update_plan</code> tool: each step with a status dot and badge — <em>done</em>,
+coral <em>running …</em>, <em>open</em>. The wire statuses stay canonical English
+(<code>pending / in_progress / completed</code>, enforced at the write boundary); only
+the labels localize. The tab badge counts steps; the CLI pretty-prints the same event.</p>
+
+<h3 id="ch-tabs-context">System context</h3>
+
+<!--SHOT:13-panel-system-context|“What goes to the LLM before any user message”: the real system prompt (markdown-rendered), model + thinking state, all tools with gate markers, skills, MCP servers and the subagent role profiles.-->
+
+<p>The transparency panel: exactly what the LLM receives before any user message. For the
+<strong>main agent</strong>: the full system prompt (working directory, project
+<code>SPECTRO.md</code> context, the skills catalog), provider/model/thinking, every tool
+in registration order (gate chip = needs your approval), skills, MCP servers, and the
+six subagent role profiles. For a <strong>selected subagent</strong>: its role prompt,
+its task, its reduced tool set — and the note that children never get the spawn tools
+(nesting ends at depth 1). The data comes from the stateless <code>GET /api/context</code>,
+assembled from the same constants the live tools use — what the panel shows is what the
+model gets. A fullscreen <em>Raw</em> modal shows the whole context untruncated with a
+character count and copy button.</p>
+
+<h3 id="ch-tabs-files">Files</h3>
+
+<!--SHOT:25-files-workspace|The Files tab is the agent's desk: the workspace this session runs in, refreshed live — hello.txt, which the agent wrote through an allowed gate seconds ago, is right there.-->
+
+<p>A read-only view of the agent's <strong>workspace</strong> — the same sandbox the file
+tools see. Every session gets its own folder (<code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code>
+unless a <code>workspace</code> is configured — chapter 30), the server announces it over
+the socket (<code>workspace_info</code>, visible in the trace), and the tab follows it
+live: what the agent writes appears here, and the repo you started spectroscope in stays clean.
+The panel <strong>opens itself</strong> on the Files tab when the announcement arrives —
+the agent's desk appears where its files land. And you can <strong>pick the desk per
+session</strong>: the “Choose folder …” button opens the <em>native</em> folder dialog on
+the spectroscope machine (<code>POST /api/pick-workspace</code>, macOS; a browser cannot hand out
+absolute paths, but spectroscope runs locally), and the picked path travels back as the additive
+<code>set_workspace</code> socket message. Only before the first run — once the agent ran,
+the sandbox and every subagent are anchored, the button locks and a new chat is the way to
+a different folder. The pin is shared server state, so the tree you browse and the sandbox
+the tools see are always the same folder, and a resume in the same server process finds
+the picked folder again. And the browser <strong>remembers your pick</strong>: every new
+chat lands on the same desk with zero clicks (a dashed “↺ folder” chip shows the memory;
+clicking it forgets — the next chat gets its per-session temp folder again. Resumes are
+never touched).
+Hidden entries and build folders (<code>.git</code>, <code>build</code>,
+<code>node_modules</code>, <code>target</code>, <code>dist</code>, <code>out</code>) are
+skipped, depth and entry count are capped honestly (“list truncated” note). Clicking a
+file previews it by type: HTML runs in a <strong>CSP-sandboxed iframe</strong> (scripts
+execute in an opaque origin — no cookies, no API, no parent access), markdown renders
+through the shared component, images inline, everything else as text. Binary answers
+415, oversized 413 — and the defense in depth is real: the <code>.env</code> with your
+API key answers 404 <em>even by direct URL</em>, because every path segment is re-checked
+server-side against the hidden/ignored rule.</p>
+
+<h2 id="ch-tabs-gallery">The image gallery</h2>
+<p>When the agent generates images (chapter 17), a gallery column opens next to the chat:
+cards newest-first with the prompt as caption, provider and model badges, full-size link,
+and a provider dropdown (<code>gemini</code> / <code>openai</code>) that switches the image
+backend for the next generation. Bytes never cross the socket — cards load from
+<code>GET /api/images/&lt;sha256&gt;.&lt;ext&gt;</code>, where the content address doubles as
+the traversal guard (64 hex chars or 400, before any filesystem access).</p>
+
+<p>Each card also carries <strong>“→ Workspace”</strong>: it copies the image from the
+global store into <em>this session's workspace</em> — you pick the file name (keep the
+content-addressed original or type your own; a name without an extension inherits the
+original's), and the file appears in the Files tab, ready for the agent's tools. The
+endpoint keeps the house guards: only store names touch the disk, the target name is a
+single sanitized file name, and an existing file is never overwritten (409).</p>

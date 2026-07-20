@@ -1,0 +1,95 @@
+<!-- ============================== CH 13 ============================== -->
+<h1 data-ch="13" id="ch-control"><span class="ch-num">Chapter 13</span>Permissions, allowlist &amp; hooks</h1>
+
+<p class="lead">You stay in control through three layered mechanisms: the permission
+gate (a human decides), the allowlist (you decide once, scoped), and hooks (your
+scripts decide, before the gate even asks). All three leave an audit trail in the
+session file.</p>
+
+<h2 id="ch-control-pipeline">The guard pipeline</h2>
+<p>Every single tool call passes this pipeline, in this order — the order is
+load-bearing:</p>
+
+<!--MERMAID:06-guard-flow|Per tool call: pre_tool_use hook (can block before anything else) → permission gate with allowlist short-circuit → sandboxed execution → advisory post_tool_use hook.-->
+
+<h2 id="ch-control-modes">Permission modes</h2>
+<table class="tbl">
+  <tr><th>mode</th><th>meaning</th><th>where</th></tr>
+  <tr><td><code>ask</code></td><td>gated tools pause the run until a human decides (terminal y/N, web dialog) — with the allowlist answering first</td><td>default; the interactive faces</td></tr>
+  <tr><td><code>readonly</code></td><td>every gated tool is denied automatically — the agent can look, not touch</td><td>headless default (<code>spectro run</code>, cron): “capability before convenience”</td></tr>
+  <tr><td><code>auto</code></td><td>every gated tool is approved automatically</td><td>opt-in for unattended runs: <code>--permissions auto</code> / per-job <code>"permissions": "auto"</code></td></tr>
+</table>
+<p>Even automatic policies emit <code>permission_request</code>/<code>permission_decision</code>
+events — the JSONL always shows who allowed what.</p>
+
+<h2 id="ch-control-allowlist">The allowlist</h2>
+<p>Rules live under <code>autoApprove</code> in any settings layer and are consulted
+before any human is asked:</p>
+
+<pre>{ "autoApprove": [
+    "grep",                      // a bare name approves every call of that tool
+    "run_command:git status*",   // a prefix rule approves matching inputs only
+    "write_file:docs/notes.md*"
+] }</pre>
+
+<p>Matching reads each tool's <strong>guarded field</strong> — the one input that
+defines its blast radius. The same table drives what an “always allow” click remembers,
+so a remembered rule can never silently go dark on the matching side:</p>
+
+<table class="tbl">
+  <tr><th>tool</th><th>guarded field</th><th>an “always allow” click stores</th></tr>
+  <tr><td><code>run_command</code></td><td><code>command</code></td><td>the first token: <code>run_command:git*</code></td></tr>
+  <tr><td><code>write_file</code> / <code>edit_file</code></td><td><code>path</code></td><td>the full path: <code>edit_file:src/Main.java*</code></td></tr>
+  <tr><td><code>web_fetch</code></td><td><code>url</code></td><td>the full URL: <code>web_fetch:https://example.com*</code></td></tr>
+  <tr><td>everything else</td><td>—</td><td>the bare tool name</td></tr>
+</table>
+
+<p>Session-remembered rules live per connection (two tabs never share them). Ticking
+<strong>Persist</strong> appends the rule to the session's <strong>workspace</strong>
+project file (<code>&lt;workspace&gt;/.spectro/settings.json</code>) through a single
+serialized writer that preserves every other key and dedupes — falling back to the
+deprecated launch-dir <code>.spectro/settings.json</code> only for a session with no real
+workspace yet. Because the CLI resolves the same workspace, it honours your web decision
+there on its next run.</p>
+
+<h2 id="ch-control-hooks">Hooks</h2>
+<p>Hooks are config-driven shell commands around every tool call — your policy, in your
+scripting language, versioned with the project. They come <em>only</em> from config,
+never from tool input: a pre-hook is arbitrary shell running before the gate, so it must
+never be model-controlled.</p>
+
+<pre>{ "hooks": [
+    { "event": "pre_tool_use",          // or post_tool_use — anything else fails LOUDLY
+      "matcher": "run_command",         // tool-name glob: * (default), exact, or prefix*
+      "command": "./guard.sh",          // any shell string
+      "timeoutSeconds": 5 }             // optional, default 10
+] }</pre>
+
+<div class="kv">
+  <dt>Environment</dt><dd>the hook process sees <code>SPECTRO_TOOL_NAME</code>, <code>SPECTRO_TOOL_INPUT</code> (compact JSON) and — post only — <code>SPECTRO_TOOL_RESULT</code>; cwd is the agent's working directory.</dd>
+  <dt>pre_tool_use</dt><dd>runs <strong>before the permission gate</strong> and blocks on exit ≠ 0 <em>or</em> a stdout verdict <code>{"decision":"block","reason":"…"}</code>. A block short-circuits: no dialog, no execution — the model receives <code>ERROR: blocked by pre_tool_use hook: &lt;reason&gt;</code>. First matching block wins.</dd>
+  <dt>post_tool_use</dt><dd>runs after execution, <strong>advisory only</strong> — exit code ignored, the result is never rewritten. For logging, notifications, formatters.</dd>
+  <dt>Fail-open timeout</dt><dd>a hanging hook must not wedge every tool call — on timeout the pipeline continues to the normal gate. Safe because the shared runner drains the pipe concurrently: a chatty hook cannot deadlock itself into the timeout.</dd>
+  <dt>Subagents included</dt><dd>children run the <em>same</em> hook runner — a hook that blocks a tool also blocks it on a child, or delegation would be a bypass.</dd>
+  <dt>Whole-block merge</dt><dd>like <code>mcpServers</code>: a settings layer that defines <code>hooks</code> replaces the entire block below it.</dd>
+</div>
+
+<div class="callout coral">
+  <div class="co-title">Example — veto every rm</div>
+  <p>In <code>.spectro/settings.json</code>:</p>
+<pre>{ "hooks": [ {
+  "event": "pre_tool_use", "matcher": "run_command",
+  "command": "case \"$SPECTRO_TOOL_INPUT\" in *'rm '*) echo '{\"decision\":\"block\",\"reason\":\"rm is off limits here\"}' ;; esac"
+} ] }</pre>
+  <p>Ask the agent to delete a file with <code>rm</code> and it instantly receives
+  <code>ERROR: blocked by pre_tool_use hook: rm is off limits here</code> — no permission
+  dialog, no execution. <code>spectro doctor</code> shows
+  <code>hooks: 1 configured (pre_tool_use:run_command)</code>. Verified live.</p>
+</div>
+
+<h2 id="ch-control-audit">The audit trail</h2>
+<p>Every decision is an event: <code>permission_request</code> (with the full input) and
+<code>permission_decision</code> (allowed or not) land in the JSONL even for allowlist
+auto-approvals; hook blocks are visible as their error result. The Trace tab's
+permission category shows the whole history; the Lab's gate row turns green or red as
+you step onto it.</p>

@@ -1,0 +1,17 @@
+sequenceDiagram
+    participant UI as ProviderPicker
+    participant WS as SpectroSocketHandler
+    participant Conn as SessionConnection
+    participant SW as SwitchableProvider
+    participant Agent
+    UI->>WS: set_provider {provider, model}
+    WS->>Conn: onSetProvider(name, model)
+    Conn->>Conn: derive config · ProviderFactory.build()
+    alt anthropic without ANTHROPIC_API_KEY
+        Conn-->>UI: error event — switch refused
+    else ok
+        Conn->>SW: swap(next, providerName)
+        Note over Agent,SW: applies on the NEXT run —<br/>history untouched
+        Agent->>SW: stream(request)
+        SW->>SW: delegate.get().stream(...)
+    end

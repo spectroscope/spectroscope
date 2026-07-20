@@ -1,0 +1,104 @@
+<!-- ============================== CH 9 ============================== -->
+<h1 data-ch="9" id="ch-design"><span class="ch-num">Chapter 9</span>The design system</h1>
+
+<p class="lead">The whole UI reads its colours, fonts, radii and motion through CSS
+custom properties. That single indirection makes two things cheap: swapping the entire
+look (a <em>design</em>) and painting effects that always match.</p>
+
+<h2 id="ch-design-tokens">The token base</h2>
+<p>The master vocabulary is brand-strict: espresso <code>#17120D</code> as the ground
+(never pure black), <strong>the logo's amber line <code>#CE9440</code> exclusively for
+interaction and live elements</strong> (links, buttons, focus, running indicators, the
+packet), <strong>violet <code>#8B7CF0</code> as the editorial accent</strong> (eyebrows,
+kickers — never clickable), desaturated status colours, and pastel agent accents that
+are decoration only. Focus is always visible and always the accent; reduced motion
+switches every animation off globally; numbers render tabular so nothing jitters
+mid-stream.</p>
+
+<h2 id="ch-design-genomes">Three designs</h2>
+
+<!--SHOT:18-design-drawer|The design section of the settings page: the three designs with swatches, the effect switches beneath — a choice applies live and persists in one step.-->
+
+<p>A design is a token override set — nothing structural changes. Selecting one flips a
+<code>data-design</code> attribute on <code>&lt;html&gt;</code> and the UI re-expresses
+itself instantly, no reload; a FOUC guard applies the saved design before first paint.</p>
+
+<table class="tbl">
+  <tr><th>design</th><th><code>data-design</code></th><th>character</th><th>ground / accent</th><th>particles</th></tr>
+  <tr><td><strong>spectro dark</strong></td><td><code>spectroscope</code></td><td>espresso · amber line (the default)</td><td><code>#17120D</code> / <code>#CE9440</code></td><td>brand dust</td></tr>
+  <tr><td><strong>spectro bright</strong></td><td><code>paper</code></td><td>LIGHT — paper · the logo blue</td><td><code>#F6F4EE</code> / <code>#2E7EA6</code></td><td>ink dust</td></tr>
+  <tr><td><strong>spectro white</strong></td><td><code>still</code></td><td>LIGHT — minimal white, gray, one blue</td><td><code>#fbfbfd</code> / <code>#0071e3</code></td><td>— (deliberately still)</td></tr>
+</table>
+
+<p>The two <strong>light</strong> designs flip <code>color-scheme</code> and re-derive
+the status colours, agent pastels and the whole shadow set for a light ground — proof
+that the token vocabulary carries a full polarity flip, not just a palette swap.</p>
+
+<!--SHOT:19-design-white|spectro white: the same UI in the quiet all-white design — every component reads var(--token), so the flip is total, live behind the settings page.-->
+
+<h2 id="ch-design-shaders">The effects layer</h2>
+<p>Two independently togglable effects, both reading the <em>active</em> design's colours
+live: the <strong>particle field</strong> (a canvas behind the UI with the brand dust
+drift — spectro white deliberately renders none) and the <strong>scroll reveal</strong>
+(panels fade/rise on entry). Both defer to reduced motion; particles pause in hidden
+tabs. A design choice from the settings page applies and persists in one step; the
+effect switches work the same way.</p>
+
+<!-- ============================== CH 10 ============================== -->
+<h1 data-ch="10" id="ch-desktop"><span class="ch-num">Chapter 10</span>The desktop face</h1>
+
+<p class="lead">A JVM cannot live inside Electron's main process — so the desktop app is
+honest about it: a thin shell that <em>supervises</em> the real server as a child process
+and points a window at it. The lesson of this face is process management, not IPC.</p>
+
+<h2 id="ch-desktop-seq">The supervision sequence</h2>
+
+<!--MERMAID:04-desktop-seq|./spectro desktop: stop a stale instance, build the jar, find a free port, spawn the JVM, poll /api/health for up to 30 s, then load the UI.-->
+
+<p><code>./spectro desktop</code> prepares the ground (stops a stale instance — Electron's
+single-instance lock would otherwise hand a relaunch to the <em>old</em> build; builds the
+boot jar; clears the macOS quarantine flag from fresh Electron binaries; puts the
+resolved JDK on the PATH). The Electron main process then finds a free port, spawns
+<code>java -jar spectro-server.jar --server.port=P</code>, polls <code>/api/health</code>
+every 500&nbsp;ms for up to 30&nbsp;s, and opens a 1200×800 window on
+<code>http://127.0.0.1:P</code> — the same React UI, talking over the same WebSocket. The
+renderer gets no Node API at all (<code>contextIsolation</code> on,
+<code>nodeIntegration</code> off): it is an ordinary web page.</p>
+
+<h2 id="ch-desktop-tray">Tray, notifications, quitting</h2>
+<ul>
+  <li><strong>Closing the window does not quit.</strong> The tray (an ebony diamond) keeps
+      shell and server alive so cron jobs keep running. Tray menu: New chat, Cron status,
+      Quit.</li>
+  <li><strong>Native cron notifications.</strong> Every 30&nbsp;s the shell polls
+      <code>GET /api/jobs/state</code> and fires a desktop notification for each job whose
+      status <em>changed</em> — click to open the window.</li>
+  <li><strong>Quit is graceful, then firm.</strong> ⌘Q / tray-Quit sends the JVM a SIGTERM
+      (Spring Boot closes sockets and finishes the current JSONL line); if the process still
+      lives after five seconds, SIGKILL follows.</li>
+  <li><strong>Startup failures clean up.</strong> If health never turns green, the shell
+      kills the JVM before showing the error — no headless server left behind. A missing
+      <code>java</code> shows “Java 21 is required”.</li>
+</ul>
+
+<!-- ============================== CH 11 ============================== -->
+<h1 data-ch="11" id="ch-lang"><span class="ch-num">Chapter 11</span>Two languages</h1>
+
+<p class="lead">The UI chrome ships fully bilingual — German (the default) and English —
+switched live by the header toggle. This guide's screenshots use the English chrome.</p>
+
+<ul>
+  <li><strong>Chrome only, content never.</strong> Sidebar, header, dialogs, panels, tool
+      cards, Lab toolbar, the in-map SVG texts, trace chrome, settings page, footer — all
+      switch live (~330 dictionary entries). Chat content, tool payloads and the JSONL wire
+      never run through translation: a session keeps its own language.</li>
+  <li><strong>Wire values stay English.</strong> Plan statuses (<code>pending / in_progress /
+      completed</code>), A2A states and stop reasons are canonical English on the wire —
+      only labels localize. Cross-edition compatibility depends on it.</li>
+  <li><strong>Scenarios compile per language.</strong> Picking a scenario compiles it in the
+      current chrome language; the compiled session then keeps that language, like any
+      other session.</li>
+  <li><strong>Late-bound info lines.</strong> Reducer-folded info lines (spawns, compactions)
+      carry an additive key + variables, so lines already in the transcript re-render when
+      you flip the language.</li>
+</ul>

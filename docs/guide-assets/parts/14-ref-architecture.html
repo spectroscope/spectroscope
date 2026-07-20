@@ -1,0 +1,71 @@
+<!-- ============================== PART V ============================== -->
+<div class="part">
+  <div class="part-num">V</div>
+  <div class="part-eyebrow">Part V</div>
+  <h1 class="part-title" data-ch="V" id="part5">Under the hood</h1>
+  <p class="part-sub">The complete technical reference: the generated architecture
+  dossier, every event on the wire, the provider port, the WebSocket and REST protocols,
+  the loop internals, context management, MCP internals, every configuration key, and
+  the build itself.</p>
+  <div class="part-toc">
+    <div><span>21</span> The architecture dossier</div>
+    <div><span>22</span> The RunEvent protocol</div>
+    <div><span>23</span> Streams &amp; cancellation</div>
+    <div><span>24</span> The provider wire</div>
+    <div><span>25</span> The WebSocket protocol</div>
+    <div><span>26</span> The REST API</div>
+    <div><span>27</span> The agent loop, hop by hop</div>
+    <div><span>28</span> Context: compaction, caching, introspection</div>
+    <div><span>29</span> MCP internals</div>
+    <div><span>30</span> Configuration reference</div>
+    <div><span>31</span> Build &amp; test inventory</div>
+    <div><span>A</span> Troubleshooting</div>
+    <div><span>B</span> Reproducing this guide</div>
+  </div>
+</div>
+
+<!-- ============================== CH 21 ============================== -->
+<h1 data-ch="21" id="ch-dossier"><span class="ch-num">Chapter 21</span>The architecture dossier</h1>
+
+<p class="lead">Fourteen generated diagrams cover the full build — every class name,
+wire string, endpoint and count in them was read from this repository, and each comes
+from a rerunnable Python generator (<code>docs/diagrams/build_NN_*.py</code>): change the
+system, rerun the script, the diagram is current again. The shared visual language:
+<span style="color:var(--ocean)">ocean</span> outlines the core,
+<span style="color:var(--lilac)">lilac</span> the faces,
+<span style="color:var(--salmon)">salmon</span> the model side and external services,
+<span style="color:var(--moss)">moss</span> the disk; sand carries the event wire and
+stats; coral appears only where a human decides, a run is cancelled or the network
+boundary is crossed.</p>
+
+<h2 id="ch-dossier-00">The big picture</h2>
+<p>Chapter 1 already showed diagram 00 (one core, five faces). The build view below adds
+the honest module structure: four JVM modules, two JS toolchains, and the one deliberate
+cross-dependency — the server reuses the CLI's Transcriber for <code>/api/transcribe</code>.</p>
+<!--SVG:01-gradle-modules|Diagram 01 — the Gradle build: module dependency edges, version catalog, and the two npm toolchains that live next to the JVM graph on purpose.-->
+
+<h2 id="ch-dossier-02">The protocol layer</h2>
+<!--SVG:02-runevent-protocol|Diagram 02 — the RunEvent protocol: all 18 record types with exact wire strings, additive events marked, the wire rules, and the anatomy of a session file including the cross-edition invariant.-->
+<!--SVG:13-protocol-breakdown|Diagram 13 — protocol breakdown, hop by hop: SSE lives only between the cloud APIs and their adapters (and the optional MCP-HTTP transport); Ollama streams NDJSON; in-process it is the blocking EventStream; WebSocket to the browser; JSONL on disk; JSON-RPC/stdio to MCP servers; A2A between agents is events on the merged stream — no network.-->
+
+<h2 id="ch-dossier-03">The model side</h2>
+<!--SVG:03-provider-port|Diagram 03 — the LlmProvider port: the sealed request/event vocabulary, the wrapper chain (Switchable → Retrying → backend), the three backends with their transports, the retry policy table, the ImageProvider port and the config precedence.-->
+
+<h2 id="ch-dossier-04">The loop and the belt</h2>
+<!--SVG:04-agent-loop|Diagram 04 — one turn as a swimlane: request build, streaming, the pre_tool_use hook, allowlist and human gate, sandboxed execution, the feedback loop into the next turn, compaction and run end.-->
+<!--SVG:05-tool-belt|Diagram 05 — the tool belt: every tool grouped by family with its gate class (free / gated / gated + prefix rule), the sandbox rules, the tool contract, and the allowlist's guardedField mapping.-->
+
+<h2 id="ch-dossier-06">Delegation</h2>
+<!--SVG:06-subagents-a2a|Diagram 06 — subagents: the manager's limits, the explore/worker role profiles, the dev-tool-to-skill table, and the A2A-lite lifecycle as a parent/child sequence.-->
+
+<h2 id="ch-dossier-07">The web face</h2>
+<!--SVG:07-spectro-server|Diagram 07 — spectro-server: the WebSocket frame vocabulary in both directions, all REST endpoints with their guards, and SessionConnection's responsibilities.-->
+<!--SVG:08-spectro-web|Diagram 08 — spectro-web: the rAF-batched pure-reducer pipeline, the tabs as lenses over one UiState, the header and sidebar anatomy, the persistence stores and the design system.-->
+
+<h2 id="ch-dossier-09">Runtime and integration</h2>
+<!--SVG:09-launcher-desktop|Diagram 09 — runtime: the ./spectro command table and its pre-flight (JDK resolution, .env), the nine-step Electron supervision sequence, the twelve doctor checks and the voice setup scripts.-->
+<!--SVG:10-mcp-integration|Diagram 10 — MCP: the config block, the registry's eager-connect/skip-on-failure policy, the at-most-once client, both transports, the McpTool adapter and the spectro-mcp-notes example server.-->
+
+<h2 id="ch-dossier-11">The codebase itself</h2>
+<!--SVG:11-code-inventory-treemap|Diagram 11 — the code inventory as a treemap: area proportional to lines of source per module and package, test code as dashed tiles, measured counts in the footer.-->
+<!--SVG:12-the-wall|Diagram 12 — the wall poster: people, faces, core, operating system, disk, and everything beyond the network boundary in one picture.-->

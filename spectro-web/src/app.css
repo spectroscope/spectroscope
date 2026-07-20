@@ -1,0 +1,20 @@
+/* spectroscope web UI — the style entry point. The rules live in src/styles/*,
+   split from the former 2.9k-line monolith (clean-code night job); the
+   import ORDER is the old file's section order, so the cascade is
+   unchanged. Colors come EXCLUSIVELY from tokens.css variables. */
+
+@import "./styles/base.css"; /* Base primitives: reset, scrollbars, dots, eyebrows, buttons */
+@import "./styles/shell.css"; /* App shell grid + resizer handles */
+@import "./styles/sidebar.css"; /* Sidebar, brand, import + scenario dialogs, session list */
+@import "./styles/header.css"; /* Header, title, stop button, connection banner */
+@import "./styles/chat.css"; /* Chat turns, markdown typography, thinking, info/error lines */
+@import "./styles/toolcard.css"; /* Tool cards, gate chips, subagent threads, code wells */
+@import "./styles/modal-composer.css"; /* Permission modal, composer, usage footer, responsive */
+@import "./styles/graph.css"; /* Graph tab: flow overview + React Flow DAG, replay bar, detail */
+@import "./styles/panels.css"; /* Right panel: agents, system context, workspace, images */
+@import "./styles/attachments-voice.css"; /* Attachments + voice input */
+@import "./styles/settings-trace.css"; /* Design drawer + trace view */
+@import "./styles/spectrum.css"; /* Spectrum tab: fleet lanes (phase-4 design transplant) */
+@import "./styles/surfaces.css"; /* Phase-4 surfaces: gate bar, explain panel, doctor page */
+@import "./styles/lab.css"; /* Lab: controls, flow map box, petri net, JSONL strip, system map */
+@import "./styles/workspace-gear.css"; /* Composer gear: permission mode + always-allow rules (Task 16) */

@@ -1,0 +1,16 @@
+◆ spectro doctor
+  ✓ Java 25.0.2
+  ✓ config: provider=ollama model=qwen3.5:27b permissionMode=ask autoApprove=2 rule(s)
+    layers: user config absent · project settings present
+  ✓ ollama at http://localhost:11434 (version 0.24.0)
+    images: gemini — GEMINI_API_KEY not set; generate_image will return a readable error
+  ✓ skills: 4 installed (brainstorming, test-driven-development, verification, writing-plans)
+  ✓ hooks: 0 configured
+  ✓ mcp: notes reachable at /Users/you/spectroscope/spectro/spectro-mcp-notes/build/install/spectro-mcp-notes/bin/spectro-mcp-notes (2 tools)
+    vision: local provider — attach images only with a vision model (e.g. ollama pull qwen3-vl); a text-only model fails fast
+  ✓ voice input: whisper-cli + ggml-small.bin ready (/voice)
+    voice output: piper missing · voice missing — run bash scripts/setup-tts.sh to enable --speak
+  ✓ sessions dir writable: /Users/you/.spectro/sessions (7 session(s))
+  ✓ jobs.json: 0 job(s)
+
+Everything looks good.

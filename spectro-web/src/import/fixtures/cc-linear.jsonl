@@ -1,0 +1,4 @@
+{"type":"user","message":{"role":"user","content":"List the files in src and read config.json"},"uuid":"u1","timestamp":"2026-07-09T10:00:00.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"I'll list then read."},{"type":"text","text":"Listing now."},{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"ls src"}}],"usage":{"input_tokens":1200,"output_tokens":80}},"uuid":"a1","parentUuid":"u1","timestamp":"2026-07-09T10:00:01.000Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"config.json\nindex.ts","is_error":false}]},"uuid":"u2","parentUuid":"a1","timestamp":"2026-07-09T10:00:02.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Found two files."}],"usage":{"input_tokens":1400,"output_tokens":40}},"uuid":"a2","parentUuid":"u2","timestamp":"2026-07-09T10:00:03.000Z"}

@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <link rel="icon" href="/brand/favicon.svg" type="image/svg+xml" />
+    <title>spectroscope</title>
+    <script>
+      // FOUC guard: apply the saved skin + effect flags before the bundle paints.
+      // Mirrors designPrefs.applyToDom / readSaved — keep the id list in sync.
+      (function () {
+        try {
+          var raw = localStorage.getItem("spectroscope:design");
+          var p = raw ? JSON.parse(raw) : {};
+          var ids = ["spectroscope", "paper", "still"];
+          var el = document.documentElement;
+          el.setAttribute("data-design", ids.indexOf(p.design) >= 0 ? p.design : "spectroscope");
+          el.classList.toggle("fx-scroll", typeof p.scroll === "boolean" ? p.scroll : true);
+          el.classList.toggle("fx-particles", typeof p.particles === "boolean" ? p.particles : true);
+        } catch (e) {
+          /* storage blocked — the default brand espresso stands */
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="/assets/index-BB3Knpuz.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D_qf74Gz.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

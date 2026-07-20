@@ -1,0 +1,8 @@
+flowchart LR
+    d["built-in defaults"] --> e["environment<br/>SPECTRO_* (from ./.env)"]
+    e --> u["~/.spectro/settings.json<br/>(user layer)"]
+    u --> l[".spectro/settings.json<br/>(launch dir, deprecated)"]
+    l --> wp["ws/.spectro/settings.json<br/>(workspace project)"]
+    wp --> wl["ws/.spectro/settings.local.json<br/>(workspace local)"]
+    wl --> f["CLI flags<br/>--provider · --model · ..."]
+    style f stroke:#FF5959,color:#F5F4EF

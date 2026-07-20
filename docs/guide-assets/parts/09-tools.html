@@ -1,0 +1,139 @@
+<!-- ============================== PART III ============================== -->
+<div class="part">
+  <div class="part-num">III</div>
+  <div class="part-eyebrow">Part III</div>
+  <h1 class="part-title" data-ch="III" id="part3">The agent's powers</h1>
+  <p class="part-sub">Everything the model may do, and everything that keeps it honest:
+  the tool belt, the permission system, hooks, subagents, skills, providers,
+  the senses — vision, voice, images — MCP and the scheduler.</p>
+  <div class="part-toc">
+    <div><span>12</span> The tool belt</div>
+    <div><span>13</span> Permissions, allowlist &amp; hooks</div>
+    <div><span>14</span> Subagents &amp; A2A</div>
+    <div><span>15</span> Skills</div>
+    <div><span>16</span> Providers &amp; models</div>
+    <div><span>17</span> Seeing, hearing, speaking, painting</div>
+    <div><span>18</span> MCP — external tool servers</div>
+    <div><span>19</span> Scheduling</div>
+  </div>
+</div>
+
+<!-- ============================== CH 12 ============================== -->
+<h1 data-ch="12" id="ch-tools"><span class="ch-num">Chapter 12</span>The tool belt</h1>
+
+<p class="lead">Eighteen built-in tools, plus one dynamic adapter per connected MCP tool.
+Every tool obeys one iron contract: <strong>it never throws</strong> — failures come back
+as a string starting <code>ERROR:</code>, which the model reads and self-corrects from.
+Every model-supplied path passes the sandbox. Every mutation passes the gate.</p>
+
+<h2 id="ch-tools-rules">The shared rules</h2>
+<div class="grid2">
+<div class="card">
+  <h4>The path sandbox</h4>
+  <p>Every file tool resolves paths relative to the working directory and refuses anything
+  that normalizes outside it (<code>ERROR: path is outside the working directory</code>).
+  Tree-walking tools additionally verify each hit's <em>real</em> path (symlink-escape
+  guard) and never enter <code>.git</code>, <code>build</code>, <code>node_modules</code>,
+  <code>target</code>.</p>
+</div>
+<div class="card">
+  <h4>The caps</h4>
+  <p>Files: 50&thinsp;kB read/edit ceiling. Output: 10&thinsp;000 chars shared clamp
+  (surrogate-safe truncation). Glob: 200 results. Shell: 10&thinsp;s timeout, pipe drained
+  on a background thread — a timeout means “genuinely hung”, never “output too large”.
+  Web: 512&thinsp;kB streamed body cap before the text clip.</p>
+</div>
+</div>
+
+<h2 id="ch-tools-files">Files &amp; search</h2>
+
+<div class="ref"><div class="ref-head"><code class="name">read_file</code><span class="chip free">free</span><span class="meta">input: { path }</span></div>
+<div class="ref-body"><p>Reads a UTF-8 text file (≤ 50&thinsp;kB) relative to the working directory.
+<em>Try: “Read build.gradle.kts and tell me the dependencies.”</em></p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">list_dir</code><span class="chip free">free</span><span class="meta">input: { path }</span></div>
+<div class="ref-body"><p>Lists a directory, sorted, directories marked with a trailing slash; an empty
+directory answers <code>(empty)</code>.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">glob</code><span class="chip free">free</span><span class="meta">input: { pattern, path? }</span></div>
+<div class="ref-body"><p>Finds files by glob pattern (<code>**/*.java</code>) under a directory — pure Java,
+pruned walk, symlink-guarded, results sorted and capped at 200. Also granted to explore
+subagents. <em>Try: “Find every *.test.ts file under spectro-web.”</em></p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">grep</code><span class="chip free">free</span><span class="meta">input: { pattern, path?, glob? }</span></div>
+<div class="ref-body"><p>Searches file contents by Java regex, returning <code>path:line:text</code> hits —
+no shell involved, so it works even where <code>run_command</code> is denied. Skips
+oversized and binary files; invalid regex answers <code>ERROR: invalid regex: …</code>.
+<em>Try: “Search for TODO across the Java sources.”</em></p></div></div>
+
+<h2 id="ch-tools-mutation">Mutation &amp; shell</h2>
+
+<div class="ref"><div class="ref-head"><code class="name">write_file</code><span class="chip prefix">gated · remembers path</span><span class="meta">input: { path, content }</span></div>
+<div class="ref-body"><p>Writes a text file, creating parent directories. Success:
+<code>Wrote: &lt;path&gt; (&lt;n&gt; bytes)</code>. An “always allow” remembers the <em>full
+path</em>, never a blanket approval.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">edit_file</code><span class="chip prefix">gated · remembers path</span><span class="meta">input: { path, old_string, new_string, replace_all? }</span></div>
+<div class="ref-body"><p>Surgical exact-string replacement. <code>old_string</code> must be unique
+(<code>ERROR: old_string is not unique (n matches)</code> otherwise) unless
+<code>replace_all</code>; zero matches and empty <code>old_string</code> error readably.
+A denied edit writes nothing. <em>Try: “In README.md, change the title X to Y.”</em></p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">run_command</code><span class="chip prefix">gated · remembers first token</span><span class="meta">input: { command }</span></div>
+<div class="ref-body"><p>Runs a shell command in the working directory via <code>/bin/sh -c</code>: stderr
+merged, output drained concurrently and capped, 10&thinsp;s timeout, killed on abort.
+Non-zero exit returns <code>ERROR: exit code &lt;n&gt;</code> <em>plus the output</em> —
+exit-code feedback is what lets the model fix its own mistakes. An “always allow”
+remembers only the first token (<code>run_command:git*</code>).</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">web_fetch</code><span class="chip prefix">gated · remembers URL</span><span class="meta">input: { url }</span></div>
+<div class="ref-body"><p>Fetches an http/https page and returns readable text (scripts/styles dropped, tags
+stripped, entities decoded, whitespace collapsed, 10&thinsp;k-char clip). Network egress on
+model-chosen input is a side effect — hence the gate. Streaming fetch with finite 15&thinsp;s
+timeouts and a 512&thinsp;kB body cap; non-2xx answers
+<code>ERROR: web_fetch got HTTP &lt;status&gt;</code>. Main agent only.</p></div></div>
+
+<h2 id="ch-tools-meta">Metadata &amp; delegation</h2>
+
+<div class="ref"><div class="ref-head"><code class="name">update_plan</code><span class="chip free">free · main only</span><span class="meta">input: { steps: [{text, status}] }</span></div>
+<div class="ref-body"><p>Publishes the agent's step list to the Plan panel (chapter 6) as the additive
+<code>plan</code> event. Latest wins — each call replaces the whole plan. The status enum
+(<code>pending / in_progress / completed</code>) is <em>enforced</em>: a model improvising
+<code>"done"</code> gets an error instead of polluting the wire. Deliberately not given to
+subagents — a worker's plan would clobber the display.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">use_skill</code><span class="chip free">free</span><span class="meta">input: { name }</span></div>
+<div class="ref-body"><p>Returns the full instructions of a named skill (chapter 15). Registered only when
+skills are installed; children get it too, so dev-tool workers can load their role skill.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">generate_image</code><span class="chip gated">gated</span><span class="meta">input: { prompt }</span></div>
+<div class="ref-body"><p>Generates an image via the configured image provider (chapter 17). Gated because it
+is a paid cloud call. The image lands content-addressed under <code>~/.spectro/images/</code>;
+the model sees only a short confirmation — the user sees the gallery.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">spawn_agent</code> / <code class="name">spawn_agents</code><span class="chip free">free · parent only</span><span class="meta">input: { type, task } / { agents: […] }</span></div>
+<div class="ref-body"><p>Starts one subagent (or up to four in parallel) and waits for the result —
+chapter 14. Free of a gate because the <em>child's</em> tools ask for permission
+individually; delegation is not an escape hatch.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">build_plan</code> · <code class="name">write_spec</code> · <code class="name">develop</code> · <code class="name">test</code><span class="chip free">free · parent only</span><span class="meta">input: { task }</span></div>
+<div class="ref-body"><p>The four development role tools — thin wrappers over a worker spawn, each pointing
+its child at a skill (chapter 14).</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">report_status</code><span class="chip free">free · children only</span><span class="meta">input: { message }</span></div>
+<div class="ref-body"><p>The child's side of the A2A protocol: one short progress sentence per milestone,
+surfacing live in the parent's UI. Telling the parent what you do is never dangerous.</p></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">mcp__&lt;server&gt;__&lt;tool&gt;</code><span class="chip gated">gated · dynamic</span><span class="meta">schema from the server</span></div>
+<div class="ref-body"><p>Every tool a connected MCP server advertises, wrapped as a first-class spectroscope tool
+(chapter 18). Always gated: its inputs are model output and its effects are external.</p></div></div>
+
+<h2 id="ch-tools-who">Who gets which tools</h2>
+<table class="tbl">
+  <tr><th>agent</th><th>registry</th></tr>
+  <tr><td><code>main</code></td><td>all of the above (17 named + MCP; <code>use_skill</code> when skills exist)</td></tr>
+  <tr><td><code>worker-N</code></td><td>list_dir, read_file, write_file, run_command, edit_file, glob, grep, use_skill*, <strong>report_status</strong></td></tr>
+  <tr><td><code>explore-N</code></td><td>list_dir, read_file, glob, grep, <strong>report_status</strong> — read-only <em>by construction</em>: everything else simply is not in its registry</td></tr>
+</table>
+<p class="small">* when skills are installed. Children never receive: spawn/dev tools
+(nesting depth 1 is structural), generate_image, web_fetch, update_plan, MCP tools.</p>

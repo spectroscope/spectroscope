@@ -1,0 +1,103 @@
+<!-- ============================== CH 14 ============================== -->
+<h1 data-ch="14" id="ch-subagents"><span class="ch-num">Chapter 14</span>Subagents &amp; the A2A protocol</h1>
+
+<p class="lead">A subagent is not a special construct — it is another <code>Agent</code>
+from the same core, with its own fresh context, its own reduced tool registry, and the
+same permission gate and hooks as its parent. What makes spectroscope's delegation special is
+that the protocol between the agents is <em>visible</em>: a task/status/result lifecycle
+you can watch in every view.</p>
+
+<h2 id="ch-subagents-roles">Two roles</h2>
+<table class="tbl">
+  <tr><th>role</th><th>purpose</th><th>tools</th></tr>
+  <tr><td><code>explore</code></td><td>read-only research: map a directory, find usages, summarize</td><td>list_dir, read_file, glob, grep + report_status — <strong>read-only by construction</strong></td></tr>
+  <tr><td><code>worker</code></td><td>real subtasks that may change things</td><td>the full standard set + use_skill + report_status</td></tr>
+</table>
+
+<p>Children see <em>only their task text</em> — no conversation history — which is the
+point: a fresh, focused context. Their final text is all the parent receives, wrapped
+with the token cost so delegation visibly costs something:
+<code>[worker-1] result (tokens: 2.1k in / 0.4k out): …</code></p>
+
+<div class="kv">
+  <dt>Limits</dt><dd>at most 4 parallel children (schema-enforced and runtime-checked); 120 s per child (then <code>ERROR: [worker-1] timeout after 120 s — cut the subtask smaller.</code>); nesting depth 1 — children simply do not have the spawn tools.</dd>
+  <dt>Cancellation</dt><dd>each child has its own CancelSignal; the parent's cancel cascades — Ctrl+C or Stop ends the whole tree cleanly.</dd>
+  <dt>Isolation that isn't</dt><dd>same working-directory sandbox, same permission broker (the dialog names the asking child), same hooks. Delegation never widens what is allowed.</dd>
+</div>
+
+<h2 id="ch-subagents-a2a">The A2A-lite lifecycle</h2>
+
+<!--MERMAID:09-a2a-seq|Around every child run: agent_spawn (the tree edge), a task message, streamed status messages from the child's report_status tool, and a completed/failed result message.-->
+
+<p>Two additive events carry the protocol — the wire format needed no break. Every spawn
+emits <code>agent_spawn</code> (child id, parent id, task) followed by an
+<code>agent_message</code> with role <code>task</code>, state <code>submitted</code>.
+While working, the child's permission-free <code>report_status</code> tool publishes
+role-<code>status</code> messages (“working”) that surface live in the Agents panel, the
+chat thread header and the Lab cards. At the end — on <em>every</em> path, including
+timeout and cancellation — a role-<code>result</code> message closes the child with state
+<code>completed</code> or <code>failed</code>.</p>
+
+<p>Where you see it: chat nests child turns into pastel threads (chapter 5); the Graph
+tab draws split/join blocks per wave (chapter 6); the Lab gives every child its own loop
+card with its own packet (chapter 7); the Agents panel keeps the roster with token costs
+(chapter 6); the CLI renders <code>[worker-1]</code>-prefixed lines (chapter 4).</p>
+
+<h2 id="ch-subagents-dev">The development tools</h2>
+<p>Four role tools wrap a worker spawn with a persona and a skill — no new agent types;
+specialization is prompt + skill:</p>
+
+<table class="tbl">
+  <tr><th>tool</th><th>persona</th><th>loads skill</th><th>delegates</th></tr>
+  <tr><td><code>build_plan</code></td><td>senior PLANNER</td><td><code>writing-plans</code></td><td>a feature request → a step-by-step implementation plan (a written document)</td></tr>
+  <tr><td><code>write_spec</code></td><td>requirements ANALYST</td><td><code>brainstorming</code></td><td>a rough idea → a design/spec with decisions and trade-offs</td></tr>
+  <tr><td><code>develop</code></td><td>IMPLEMENTER</td><td><code>test-driven-development</code></td><td>a development task, carried out in small verified steps</td></tr>
+  <tr><td><code>test</code></td><td>TESTER — “Do NOT fix anything.”</td><td><code>verification</code></td><td>runs and inspects, reports evidence, changes nothing</td></tr>
+</table>
+
+<p>The child's prompt is the persona preamble + a standing instruction to report progress
+via <code>report_status</code> + your task text; the A2A task message shows <em>your</em>
+task with the tool name as its label — which is exactly how the UI badges the thread.
+<em>Try: “build_plan: draft a plan for adding CSV export to the sessions list.”</em></p>
+
+<!-- ============================== CH 15 ============================== -->
+<h1 data-ch="15" id="ch-skills"><span class="ch-num">Chapter 15</span>Skills</h1>
+
+<p class="lead">Skills extend the agent with <em>data, not code</em>: markdown instruction
+packages the agent loads when a task matches. The loop is untouched, no new event type
+exists — a skill use is an ordinary tool call you can see in every view.</p>
+
+<h2 id="ch-skills-format">The package format</h2>
+<pre>~/.spectro/skills/&lt;folder&gt;/SKILL.md        (user scope)
+&lt;project&gt;/.spectro/skills/&lt;folder&gt;/SKILL.md   (project scope — wins by name)
+
+---
+name: test-driven-development
+description: Red-green-refactor discipline for every change - write the failing
+  test first, watch it fail for the right reason, make it pass minimally, then clean up.
+---
+# The skill body — full markdown instructions…</pre>
+
+<p>Frontmatter is hand-parsed (<code>name:</code>, <code>description:</code>); a file
+without it falls back to the folder name and the first body line. Broken skills are
+skipped with a warning — they never take the harness down.</p>
+
+<h2 id="ch-skills-disclosure">Progressive disclosure</h2>
+<p>Only the <em>catalog</em> — one <code>name: description</code> bullet per skill —
+rides in the system prompt under a <code>## Skills</code> header, with the standing
+instruction to call <code>use_skill</code> before matching work. The body loads on
+demand. That keeps the context small however many skills you install, and makes skill
+usage visible: you can watch the agent fetch its instructions in the chat and trace.</p>
+
+<h2 id="ch-skills-shipped">The four shipped skills</h2>
+<table class="tbl">
+  <tr><th>skill</th><th>teaches</th></tr>
+  <tr><td><code>brainstorming</code></td><td>turn a vague idea into an agreed design before code: one question per turn, real alternatives, decisions recorded</td></tr>
+  <tr><td><code>test-driven-development</code></td><td>red → green → refactor with honest verification rules (no network in tests, one behavior per test)</td></tr>
+  <tr><td><code>writing-plans</code></td><td>plans a fresh engineer could execute: exact files, verifiable steps, no open questions</td></tr>
+  <tr><td><code>verification</code></td><td>evidence before claims — never state what you did not observe in this run; report VERIFIED / FAILED / UNVERIFIABLE per claim</td></tr>
+</table>
+
+<p><code>/skills</code> lists what is installed; <code>spectro doctor</code> counts them;
+the System-context panel shows the catalog exactly as the model sees it. The four
+development tools of chapter 14 point their children at these skills.</p>

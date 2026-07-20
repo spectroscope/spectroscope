@@ -1,0 +1,149 @@
+<!-- ============================== CH 24 ============================== -->
+<h1 data-ch="24" id="ch-pwire"><span class="ch-num">Chapter 24</span>The provider wire</h1>
+
+<p class="lead">Between the agent loop and any model sits one sealed vocabulary. The
+loop consumes five event kinds and produces one request record — everything
+provider-specific stays inside the adapters.</p>
+
+<h2 id="ch-pwire-port">The port</h2>
+<pre>public interface LlmProvider {
+    Iterable&lt;ProviderEvent&gt; stream(ProviderRequest request);   // blocking, lazy
+    default String providerName() { return null; }             // live label for run_start
+}
+
+record ProviderRequest(String system, List&lt;ProviderMessage&gt; messages,
+                       List&lt;ToolSpec&gt; tools, int maxTokens, boolean thinking,
+                       CancelSignal signal)
+
+record ProviderMessage(Role role /* USER | ASSISTANT */, List&lt;ProviderContent&gt; content)
+
+sealed interface ProviderContent
+        permits TextContent, ToolCallContent, ToolResultContent, ImageContent
+
+sealed interface ProviderEvent permits PTextDelta, PThinkingDelta, PToolCall, PUsage, PStop
+record PUsage(int inputTokens, int outputTokens,
+              int cacheReadTokens, int cacheCreationTokens)
+record PStop(StopReason reason /* END_TURN | TOOL_USE | MAX_TOKENS | ABORTED */)</pre>
+
+<p>Contract points: all three backends return <em>lazy</em> iterables (tokens reach the
+UI while the HTTP stream is still open); <code>PUsage.inputTokens</code> stays the
+provider's raw count (it feeds the wire <code>usage</code> event) while the two cache
+fields ride separately for the compaction trigger only; a cancel mid-stream surfaces as
+<code>PStop(ABORTED)</code>, never as an exception.</p>
+
+<h2 id="ch-pwire-mapping">Backend mappings</h2>
+
+<h3>Anthropic (SSE via the official SDK)</h3>
+<ul>
+  <li>SDK client built with <code>maxRetries(0)</code> — spectroscope owns retry.</li>
+  <li>Deltas translate one-to-one; <strong>usage and fully-parsed tool inputs exist only in
+      the accumulated final message</strong> — the classic SDK trap — so
+      <code>PToolCall</code>s, <code>PUsage</code> and <code>PStop</code> emit after the stream
+      is exhausted.</li>
+  <li>Extended thinking with a 2048-token budget (clamped below <code>maxTokens</code>);
+      thinking requests carry no sampling parameters.</li>
+  <li>Vision: image blocks are reordered before text within a user message.</li>
+  <li>Cancel closes the SDK stream; the resulting error maps to <code>ABORTED</code> iff the
+      signal fired.</li>
+</ul>
+
+<h3>Ollama (NDJSON)</h3>
+<ul>
+  <li><code>POST /api/chat</code> read line by line; typed wire records
+      (<code>ChatRequest(model, stream, messages, tools, options, think)</code>); tool
+      results become <code>role:"tool"</code> messages; images ride as raw base64 arrays.</li>
+  <li>No call ids from the server — the adapter mints <code>ollama-call-&lt;nanos&gt;</code>.</li>
+  <li>Token counts arrive only in the final <code>done:true</code> chunk.</li>
+  <li><strong>Thinking, two ways:</strong> the native <code>message.thinking</code> field, plus
+      a streaming state machine that splits inline <code>&lt;think&gt;</code> tags even when a
+      tag is torn across chunk boundaries.</li>
+  <li><strong>Vision fail-fast:</strong> before sending images, <code>POST /api/show</code>
+      checks the model's capabilities — a text-only model is refused with an actionable
+      message instead of a confusing 400.</li>
+  <li>Error classification at the source: retryable HTTP → <code>TransientProviderException</code>;
+      terminal (404 model-not-pulled, 401) → <code>IllegalStateException</code> — never retried.</li>
+</ul>
+
+<h3>OpenAI-compatible (SSE)</h3>
+<ul>
+  <li><code>data:</code> lines until <code>data: [DONE]</code>; keep-alive comments skipped;
+      <code>stream_options.include_usage</code> puts usage in the final chunk.</li>
+  <li><strong>Fragmented tool calls</strong> accumulate per index until the turn closes;
+      arguments arrive as a JSON <em>string</em> and are re-parsed (unparseable →
+      <code>{"raw": …}</code>).</li>
+  <li>Bearer auth only when a key is present — LM Studio and friends run keyless.</li>
+  <li>If the base URL still equals the Ollama default, it swaps to
+      <code>http://localhost:1234</code> (LM Studio's port).</li>
+</ul>
+
+<!-- ============================== CH 25 ============================== -->
+<h1 data-ch="25" id="ch-ws"><span class="ch-num">Chapter 25</span>The WebSocket protocol</h1>
+
+<p class="lead">One endpoint (<code>/ws</code>), one connection per browser tab, one agent
+per connection. Server→client traffic is <em>nothing but serialized RunEvents</em> —
+there is no separate frame vocabulary in that direction. Client→server is six small
+frames.</p>
+
+<h2 id="ch-ws-client">Client → server</h2>
+<table class="tbl">
+  <tr><th>frame</th><th>shape</th><th>semantics</th></tr>
+  <tr><td><code>user_message</code></td><td><code>{type, text, attachments?: [{mediaType, dataBase64}]}</code></td><td>starts a run (refused with an error event while one is active). Attachments are decoded and stored <em>before</em> the run starts; 5 MB cap per attachment; supported: jpeg/png/webp/gif</td></tr>
+  <tr><td><code>permission_response</code></td><td><code>{type, callId, allowed, remember?, persist?}</code></td><td>answers a parked permission future. <code>remember</code> adds a session rule, <code>persist</code> appends it to <code>.spectro/settings.json</code></td></tr>
+  <tr><td><code>abort</code></td><td><code>{type}</code></td><td>fires the current run's CancelSignal</td></tr>
+  <tr><td><code>set_provider</code></td><td><code>{type, provider, model?}</code></td><td>mid-session backend switch; validated; refused without a key; applies on the next run</td></tr>
+  <tr><td><code>set_image_provider</code></td><td><code>{type, provider}</code></td><td><code>gemini</code> | <code>openai</code>; effective on the next generation</td></tr>
+  <tr><td><code>set_thinking</code></td><td><code>{type, enabled}</code></td><td>reasoning visibility; applies on the next run</td></tr>
+</table>
+
+<p class="small">Nuances the names hide: the client frame is
+<code>permission_response</code> — <code>permission_decision</code> is the <em>RunEvent</em>
+that flows back and into the file. Cancel is spelled <code>abort</code> on the wire.
+Resume is <em>not</em> a frame: it is the <code>?resume=&lt;id&gt;</code> query parameter at
+connect time (kept across auto-reconnects); archive replay is pure REST.</p>
+
+<h2 id="ch-ws-server">Server → client</h2>
+<p>Every event of a run goes to the socket <em>and</em> the session file — the same
+object. Server-side errors (invalid frame, refused switch, oversized attachment) arrive
+as first-class <code>error</code> RunEvents. One synchronized writer per connection; a
+dead socket swallows sends — “a dead socket is not a run failure; the JSONL already has
+it.”</p>
+
+<h2 id="ch-ws-threading">Threading model</h2>
+<ul>
+  <li>The Tomcat thread only parses frames; every run executes on a virtual thread
+      (<code>spectroscope-run</code>).</li>
+  <li>Permission waits <em>park</em> the agent's virtual thread on a
+      <code>CompletableFuture</code> keyed by <code>callId</code> — cheap, and the browser
+      dialog answers with the same id. On disconnect every pending future completes with
+      <em>deny</em>, so no thread ever hangs.</li>
+  <li>Two tabs = two connections = two agents, two session files, two independent
+      remembered-rule lists. Only the persisted settings file is shared — its writer is
+      serialized.</li>
+  <li>Text frames up to 16 MB (base64 images need the headroom; the Spring default of
+      8 kB would close the socket with status 1009).</li>
+</ul>
+
+<!-- ============================== CH 26 ============================== -->
+<h1 data-ch="26" id="ch-rest"><span class="ch-num">Chapter 26</span>The REST API</h1>
+
+<p class="lead">Read-only by design — the socket carries every mutation — with exactly
+two exceptions: the transcription POST and the guarded session DELETE. Bound to
+127.0.0.1; auth and TLS are a deliberate course boundary.</p>
+
+<table class="tbl dense">
+  <tr><th>endpoint</th><th>returns</th><th>notes &amp; guards</th></tr>
+  <tr><td><code>GET /api/health</code></td><td><code>{"status":"ok"}</code></td><td>the desktop shell's startup probe</td></tr>
+  <tr><td><code>GET /api/sessions</code></td><td><code>[{id, startedAt, firstPrompt, tokens, provider}]</code></td><td>fold over the sessions dir; broken files skipped</td></tr>
+  <tr><td><code>GET /api/sessions/{id}/events</code></td><td>the session's RunEvents as a JSON array</td><td>replay + resume seeding; torn last line dropped</td></tr>
+  <tr><td><code>DELETE /api/sessions/{id}</code></td><td>204 · 400 · 404</td><td><strong>the one destructive endpoint</strong>: id-shape guard (<code>[A-Za-z0-9][A-Za-z0-9-]*</code>) → 400; unknown → 404; the store additionally refuses ids that do not resolve to a direct child of the sessions dir. Removes JSONL + blob folder</td></tr>
+  <tr><td><code>GET /api/config</code></td><td><code>{provider, model}</code></td><td>boot truth; live switches are client-side overlay</td></tr>
+  <tr><td><code>GET /api/context</code></td><td>system prompt, tools, skills, MCP servers, thinking, provider/model, subagent role profiles</td><td>stateless — assembled from the same constants the live agent uses; no agent built, MCP not connected</td></tr>
+  <tr><td><code>GET /api/models?provider=</code></td><td><code>[string]</code></td><td>ollama: live from <code>/api/tags</code> with finite 1.5 s/2.5 s timeouts (a stalled Ollama must not pin a worker); cloud: curated; errors → <code>[]</code></td></tr>
+  <tr><td><code>GET /api/images/{file}</code></td><td>image bytes</td><td>name must match <code>[0-9a-f]{64}\.(png|jpg|webp)</code> — 400 <em>before</em> any filesystem access; the content address is the traversal guard</td></tr>
+  <tr><td><code>GET /api/jobs/state</code></td><td><code>{jobId: JobState}</code></td><td>cron outcomes; corrupt file → <code>{}</code>; polled by the desktop shell</td></tr>
+  <tr><td><code>GET /api/files</code></td><td>the sandboxed workspace tree</td><td>hidden + ignored dirs skipped; depth ≤ 8; ≤ 2000 entries with an honest <code>truncated</code> flag</td></tr>
+  <tr><td><code>GET /api/file?path=</code></td><td>one file for preview</td><td><code>resolveInside</code> + per-segment hidden/ignored re-check (the <code>.env</code> answers 404 even by direct URL); every document served with <code>Content-Security-Policy: sandbox allow-scripts</code>; 413 oversized, 415 binary</td></tr>
+  <tr><td><code>POST /api/transcribe</code></td><td><code>{text}</code></td><td>browser audio → ffmpeg 16 kHz mono → whisper-cli; 503 with a setup hint when STT is not installed; the transcript goes to the composer, never to the agent</td></tr>
+  <tr><td><code>GET /api/claude/transcripts</code></td><td><code>[{path, project, file, size, modifiedAt}]</code></td><td>lists <code>~/.claude/projects/**/*.jsonl</code> (newest first, ≤ 300) — the folder is Finder-invisible, hence this endpoint</td></tr>
+  <tr><td><code>GET /api/claude/transcripts/content?path=</code></td><td>raw JSONL</td><td>must end <code>.jsonl</code>; canonical real-path must stay inside the real base (no traversal, no symlink escape); 64 MB cap</td></tr>
+</table>

@@ -1,0 +1,226 @@
+/* ---------- Permission modal ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  background: var(--scrim);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: fade-in var(--t-med) backwards;
+}
+
+.modal {
+  position: relative;
+  width: min(560px, calc(100vw - var(--sp-6)));
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--glint), transparent 140px);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-modal), inset 0 1px 0 var(--hairline);
+  padding: var(--sp-5);
+  animation: modal-in var(--t-slow) backwards;
+}
+/* Editorial Sand rule above the eyebrow — the serious moment is marked, not loud. */
+.modal::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: var(--sp-5);
+  width: 44px;
+  height: 2px;
+  background: var(--sand);
+  border-radius: 0 0 2px 2px;
+}
+
+.modal-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: var(--sp-3);
+}
+
+.queue-counter {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+.modal h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-20);
+  font-weight: 300;
+  letter-spacing: var(--track-heading);
+}
+.modal h2 .mono {
+  font-size: var(--fs-14);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+}
+
+.requested-by {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+
+/* Shown instead of the "dauerhaft" checkbox for a temp-workspace session —
+   there is no project settings file yet to persist a rule into. */
+.modal-remember-hint {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+
+/* Scrollable, never truncated — you approve what you see. */
+.modal-input {
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--sp-3);
+  margin-top: var(--sp-5);
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ---------- Composer ---------- */
+
+.composer {
+  position: relative;
+  border-top: 1px solid var(--border);
+  padding: var(--sp-3) var(--sp-4) var(--sp-4);
+}
+/* History fades out before it reaches the composer. */
+.composer::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -33px;
+  height: 32px;
+  background: linear-gradient(180deg, transparent, var(--bg));
+  pointer-events: none;
+}
+
+.composer-inner {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+
+.composer textarea {
+  flex: 1;
+  min-height: 42px;
+  max-height: 150px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: inset 0 1px 2px var(--shade);
+  caret-color: var(--accent);
+  color: var(--text);
+  font: inherit;
+  line-height: var(--lh-body);
+  padding: 10px var(--sp-4);
+  resize: none;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.composer textarea::placeholder { color: var(--text-faint); }
+.composer textarea:hover { border-color: var(--border-strong); }
+/* Focus ring as border + soft Coral halo (replaces the outline, never removes it). */
+.composer textarea:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 2px var(--shade);
+}
+
+.send { min-height: 42px; }
+
+/* The irreversible action reads as danger, and LOUDLY once armed. */
+.archive-delete { color: var(--text-dim); }
+.archive-delete:hover { color: var(--error); border-color: var(--error); background: none; }
+.archive-delete--armed,
+.archive-delete--armed:hover { color: var(--error); border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+
+.archive-bar .composer-inner {
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  min-height: 42px;
+}
+.archive-note {
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+}
+
+/* ---------- Usage footer ---------- */
+
+.usage-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.usage { font-family: var(--font-mono); }
+.footer-diamond {
+  color: var(--sand);
+  font-size: var(--fs-11);
+}
+.footer-spacer { flex: 1; }
+.footer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  white-space: nowrap;
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 900px) {
+  .layout,
+  .layout.sidebar-closed {
+    grid-template-columns: 1fr;
+  }
+  .sidebar {
+    position: fixed;
+    inset: 0 auto 0 0;
+    width: var(--sidebar-w);
+    z-index: var(--z-dropdown);
+    box-shadow: var(--shadow-modal);
+  }
+}
+
+@media (max-width: 768px) {
+  body { font-size: var(--fs-16); } /* prevents iOS auto-zoom */
+}
+
+/* Reduced motion: the token switch shortens every transition/animation;
+   hover transforms are stilled here so nothing shifts under the pointer. */
+@media (prefers-reduced-motion: reduce) {
+  .primary:hover:not(:disabled),
+  .session-row:hover,
+  .icon-button:active {
+    transform: none;
+  }
+}
+

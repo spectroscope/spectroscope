@@ -1,0 +1,9 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-06-22T21:00:06.745Z","sessionId":"s-modern","content":"check the tests"}
+{"type":"queue-operation","operation":"dequeue","timestamp":"2026-06-22T21:00:06.762Z","sessionId":"s-modern"}
+{"type":"user","message":{"role":"user","content":"check the tests"},"uuid":"u1","parentUuid":null,"isSidechain":false,"cwd":"/tmp/proj","gitBranch":"main","entrypoint":"cli","permissionMode":"default","timestamp":"2026-06-22T21:00:07.000Z"}
+{"type":"attachment","attachment":{"type":"diagnostics"},"parentUuid":"u1","isSidechain":false,"sessionId":"s-modern","cwd":"/tmp/proj","gitBranch":"main","entrypoint":"cli","timestamp":"2026-06-22T21:00:07.100Z"}
+{"type":"last-prompt","lastPrompt":"check the tests","leafUuid":"u1","sessionId":"s-modern"}
+{"type":"ai-title","aiTitle":"Test suite check","sessionId":"s-modern"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"I delegate the run to a subagent."},{"type":"text","text":"Running the suite."},{"type":"tool_use","id":"agent-1","name":"Agent","input":{"description":"run the test suite","subagent_type":"general-purpose","prompt":"run npm test and report"}}],"usage":{"input_tokens":900,"output_tokens":60}},"uuid":"a1","parentUuid":"u1","isSidechain":false,"requestId":"r1","sessionId":"s-modern","timestamp":"2026-06-22T21:00:09.000Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"agent-1","content":"12 passed, 0 failed","is_error":false}]},"uuid":"u2","parentUuid":"a1","isSidechain":false,"sessionId":"s-modern","timestamp":"2026-06-22T21:00:14.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"All green."}],"usage":{"input_tokens":1000,"output_tokens":20}},"uuid":"a2","parentUuid":"u2","isSidechain":false,"requestId":"r2","sessionId":"s-modern","timestamp":"2026-06-22T21:00:15.000Z"}

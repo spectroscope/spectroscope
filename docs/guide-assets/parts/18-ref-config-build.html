@@ -1,0 +1,226 @@
+<!-- ============================== CH 30 ============================== -->
+<h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
+
+<p class="lead">Seven layers, seventeen keys (three of them whole-block), plus a small
+handful of true environment-only secrets. Missing files are fine at every layer;
+malformed JSON fails loudly — a broken config is a programming error, not a fallback
+case.</p>
+
+<h2 id="ch-config-layers">The layers</h2>
+<pre>built-in defaults
+  &lt;  environment  SPECTRO_*                        (usually injected from ./.env —
+                                                    now the BASE, directly above defaults)
+  &lt;  ~/.spectro/settings.json                      (user; config.json read beneath it,
+                                                    for one release)
+  &lt;  &lt;launch-dir&gt;/.spectro/settings.json           (deprecated compat layer)
+  &lt;  &lt;workspace&gt;/.spectro/settings.json            (project — travels with the workspace)
+  &lt;  &lt;workspace&gt;/.spectro/settings.local.json      (machine-local, gitignored)
+  &lt;  CLI flags    --provider --model --base-url --compaction-threshold --workspace</pre>
+
+<p><strong>The flip</strong> (owner decision 2026-07-18, "settings-productization"):
+env used to sit just below the flags, outranking every settings file — editing
+<code>./.env</code> was the loudest way to configure spectroscope, and a stale line nobody
+remembered could silently shadow a deliberate choice made in the Settings page. Now env
+is the BASE, one step above the built-in defaults: it still seeds the starting
+configuration (a good fit for bootstrap, CI, or a one-shot experiment), but ANY settings
+file — user, project or local — outranks it. <em>"Die env ist die Basis, die Settings
+geben den Ton an."</em> Later layers win field by field — except <code>autoApprove</code>,
+<code>mcpServers</code> and <code>hooks</code>, which merge as <strong>whole blocks</strong>:
+a layer that defines the block replaces it entirely (no per-entry merge). Unknown JSON
+keys are ignored everywhere, so additive fields never break older builds.</p>
+
+<p><strong>Two resolution moments.</strong> Config resolves at two different times, and
+not every field is meaningful at both. The <em>process</em> moment (server boot,
+<code>spectro doctor</code>, CLI startup, a stateless REST call) has no session yet, so
+only <code>defaults &lt; env &lt; user &lt; launch-dir &lt; flags</code> applies — this
+is where <code>workspace</code> itself resolves, and the one-per-process
+<code>logLevel</code>. The <em>session</em> moment (the agent build, the composer gear, a
+per-connection re-apply) joins the session's own resolved workspace pair — project, then
+local — directly below launch-dir: two concurrent sessions with different workspaces can
+legitimately run different providers or permission modes. A workspace scope may not set
+<code>workspace</code> itself (a folder must not repoint the agent elsewhere) or
+<code>logLevel</code> (one log file per process) — both fail loudly if you try.</p>
+
+<p><strong>Workspace-supplied config is executed, not just read.</strong> A workspace's own
+<code>.spectro/settings.json</code> can set <code>mcpServers</code>, <code>hooks</code>,
+<code>autoApprove</code> and <code>permissionMode</code> — and every one of those takes
+effect the moment the workspace resolves: an <code>mcpServers</code> entry spawns its
+process, a <code>hooks</code> entry runs a shell command around every tool call, and a
+permissive <code>autoApprove</code>/<code>permissionMode</code> can auto-allow gates that
+would otherwise ask. Pinning a folder as your workspace therefore runs whatever its
+checked-in settings declare — the course maxim <em>"tool inputs are model output and
+therefore untrusted"</em> extends one layer further to <em>folder-supplied config is
+untrusted too</em>. Review a cloned or otherwise foreign repository's <code>.spectro/</code>
+before pointing spectroscope at it, the same way you would before running its build scripts.</p>
+
+<p><strong>The settings API.</strong> <code>GET /api/settings[?session=]</code> returns
+the resolved configuration alongside per-field <strong>provenance</strong> (which layer
+won, which lower layers were shadowed) and the raw, non-empty layers — without
+<code>?session=</code> it is the process-moment view, with one the session-relative view.
+<code>PUT /api/settings/{user|project|local}</code> writes a schema-validated partial
+patch to exactly one scope; a <code>null</code> value removes that key. Secret-shaped
+keys (<code>*_API_KEY</code>, <code>*_TOKEN</code>) are always rejected — a settings file
+is never a place to paste a key.</p>
+
+<p><strong>Two gears, two scopes.</strong> The header gear (the Settings page) edits the
+GLOBAL, user-scope fields only: session defaults (provider/model/thinking/image backend),
+the default workspace (origin badge + a "reset" that falls back to the layer below),
+<code>logLevel</code>, and the machine-tool paths (<code>chromeBinary</code> /
+<code>imageModel</code> / <code>sttModel</code>). A second, compact gear sits in the
+composer row and edits THIS session's workspace: permission mode as a keyboard-navigable
+text list (live immediately via <code>set_permission_mode</code>, persisted to the
+workspace project file once one is pinned), always-allow rules (add and delete), machine-
+local overrides, and raw-JSON editors for <code>mcpServers</code>/<code>hooks</code>. An
+unpinned session — still in its throwaway temp folder — shows the composer gear's project
+sections disabled: there is no durable folder to write to yet.</p>
+
+<p><strong>Doctor never lets a shadowed variable go unnoticed.</strong> Every run,
+<code>spectro doctor</code> walks the same provenance and prints one line for every
+<code>SPECTRO_*</code> variable that IS set but is no longer the effective source, naming
+both the variable and the settings layer that now wins:</p>
+<pre>env SPECTRO_MODEL is set but shadowed by user settings (effective model comes from user)</pre>
+<p>On first boot after the flip, if no user settings file exists yet, spectroscope materializes
+one FROM the current env base (secrets excluded, only the fields the env actually sets) —
+so day one changes nothing functionally, and from then on that file is the truth the
+doctor line, the Settings page and every face agree on. <code>spectro doctor --migrate</code>
+renames the old <code>~/.spectro/config.json</code> to its new name, <code>settings.json</code>,
+whenever the new name is not yet present.</p>
+
+<h3 id="ch-config-deprecation">Deprecation table</h3>
+<p>Every <code>SPECTRO_*</code> variable below still works exactly as before — as the env
+BASE — but is deprecated in favor of the settings field it feeds:</p>
+<table class="tbl dense">
+  <tr><th>env variable (deprecated)</th><th>settings field</th></tr>
+  <tr><td><code>SPECTRO_PROVIDER</code></td><td><code>provider</code></td></tr>
+  <tr><td><code>SPECTRO_MODEL</code></td><td><code>model</code></td></tr>
+  <tr><td><code>SPECTRO_BASE_URL</code></td><td><code>baseUrl</code></td></tr>
+  <tr><td><code>SPECTRO_WORKSPACE</code></td><td><code>workspace</code></td></tr>
+  <tr><td><code>SPECTRO_THINKING</code></td><td><code>thinking</code></td></tr>
+  <tr><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td><code>imageProvider</code></td></tr>
+  <tr><td><code>SPECTRO_IMAGE_MODEL</code></td><td><code>imageModel</code></td></tr>
+  <tr><td><code>SPECTRO_STT_MODEL</code></td><td><code>sttModel</code></td></tr>
+  <tr><td><code>SPECTRO_CHROME</code></td><td><code>chromeBinary</code></td></tr>
+  <tr><td><code>SPECTRO_MAX_RETRIES</code></td><td><code>maxRetries</code></td></tr>
+  <tr><td><code>SPECTRO_PROMPT_CACHING</code></td><td><code>promptCaching</code></td></tr>
+  <tr><td><code>SPECTRO_LOG_LEVEL</code></td><td><code>logLevel</code></td></tr>
+</table>
+<p>Not deprecated — these never had a settings-field counterpart: <code>compactionThreshold</code>
+and <code>permissionMode</code> (aside from its live socket message) are flag/UI-only, no
+env form ever existed for them; the API keys in "Environment-only variables" below are
+true secrets and never graduate into a settings file.</p>
+
+<h2 id="ch-config-keys">Every key</h2>
+<table class="tbl dense">
+  <tr><th>key</th><th>type · default</th><th>env base (deprecated)</th><th>meaning</th></tr>
+  <tr><td><code>provider</code></td><td><code>anthropic</code> | <code>ollama</code> | <code>openai</code> · <code>anthropic</code></td><td><code>SPECTRO_PROVIDER</code></td><td>the LLM backend; unknown values fail loudly</td></tr>
+  <tr><td><code>model</code></td><td>string · <code>claude-opus-4-8</code></td><td><code>SPECTRO_MODEL</code></td><td>if provider is ollama/openai and no layer set a model, the default flips to <code>qwen3</code> / <code>local-model</code></td></tr>
+  <tr><td><code>baseUrl</code></td><td>URL · <code>http://localhost:11434</code></td><td><code>SPECTRO_BASE_URL</code></td><td>ignored by anthropic; openai swaps an untouched Ollama default to <code>api.openai.com</code> when <code>OPENAI_API_KEY</code> is set (a key means the cloud), else to <code>:1234</code> (LM Studio) — an explicit URL always wins</td></tr>
+  <tr><td><code>compactionThreshold</code></td><td>int · <code>100000</code></td><td>— (flag only)</td><td>compaction trigger in input tokens</td></tr>
+  <tr><td><code>permissionMode</code></td><td><code>ask</code> | <code>auto</code> | <code>readonly</code> · <code>ask</code></td><td>—</td><td>chapter 13; headless <code>run</code> has its own <code>--permissions</code>; live via the composer gear's <code>set_permission_mode</code></td></tr>
+  <tr><td><code>workspace</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_WORKSPACE</code> / <code>--workspace</code></td><td>the agent's working directory (file tools, glob/grep, run_command); unset = a per-session folder <code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code> — a resume finds its files again, and the project you started spectroscope in stays clean; process-global — a workspace scope may not set this (a folder must not repoint the agent)</td></tr>
+  <tr><td><code>autoApprove</code></td><td>string[] · <code>[]</code></td><td>—</td><td>allowlist rules: <code>tool</code> or <code>tool:prefix*</code> — whole-block; lives in the workspace project file once one is pinned</td></tr>
+  <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
+  <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle)</td></tr>
+  <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18)</td></tr>
+  <tr><td><code>maxRetries</code></td><td>int · <code>2</code></td><td><code>SPECTRO_MAX_RETRIES</code></td><td>transient retry budget; 0 disables; garbage values fail readably</td></tr>
+  <tr><td><code>promptCaching</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_PROMPT_CACHING</code></td><td>Anthropic cache_control breakpoints; no-op elsewhere</td></tr>
+  <tr><td><code>logLevel</code></td><td><code>error</code>|<code>warn</code>|<code>info</code>|<code>debug</code>|<code>trace</code> · <code>info</code></td><td><code>SPECTRO_LOG_LEVEL</code></td><td>operator-log detail (chapter 31); process-global — one log file per JVM, refused in a workspace scope, user scope only</td></tr>
+  <tr><td><code>imageModel</code></td><td>string · <em>unset</em></td><td><code>SPECTRO_IMAGE_MODEL</code></td><td>overrides the image backend's own default model; machine-tool path — belongs in user or workspace-local scope</td></tr>
+  <tr><td><code>sttModel</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_STT_MODEL</code></td><td>absolute path to the whisper.cpp model (default <code>~/.spectro/models/ggml-small.bin</code>); machine-tool path</td></tr>
+  <tr><td><code>chromeBinary</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_CHROME</code></td><td>override for the system-Chrome binary <code>browse_page</code> discovers automatically; machine-tool path</td></tr>
+  <tr><td><code>hooks</code></td><td>array · <code>[]</code></td><td>—</td><td>pre/post tool hooks — whole-block (chapter 13)</td></tr>
+  <tr><td><code>tts</code></td><td><code>{enabled, voice}</code> · off, <code>en_US-lessac-medium</code></td><td>—</td><td>CLI-side voice output block in the same user settings file (not a <code>SpectroConfig</code> field)</td></tr>
+</table>
+<p>Every <code>SPECTRO_*</code> name in the "env base" column still works exactly as
+before, but only as the BASE layer — see the deprecation table above for the field each
+one now defers to, and run <code>spectro doctor</code> to see which of yours are currently
+shadowed. The three "machine-tool path" fields are session-scoped like any other field,
+but discouraged from a committed project file — the header gear and the composer gear's
+local-overrides section are where they belong.</p>
+
+<h2 id="ch-config-env">Environment-only variables</h2>
+<p>Everything that used to live only in the environment has graduated to a settings
+field (deprecation table above). What is left is <strong>secrets</strong> — spectroscope never
+writes an API key to a settings file, and the <code>PUT</code> endpoints refuse to accept
+one outright (any <code>*_API_KEY</code>/<code>*_TOKEN</code>-shaped key is rejected):</p>
+<table class="tbl dense">
+  <tr><th>variable</th><th>consumed by</th></tr>
+  <tr><td><code>ANTHROPIC_API_KEY</code></td><td>the Anthropic SDK; checked up front — a missing key refuses provider construction with a readable message</td></tr>
+  <tr><td><code>OPENAI_API_KEY</code></td><td>optional Bearer for the chat provider; required by the OpenAI image backend</td></tr>
+  <tr><td><code>GEMINI_API_KEY</code></td><td>the Gemini image backend</td></tr>
+  <tr><td><code>TAVILY_API_KEY</code></td><td>the Tavily tier of <code>web_search</code>; absent falls back to the keyless DuckDuckGo tier</td></tr>
+</table>
+
+<p><strong>Three <code>.env</code> injection paths, one parse rule.</strong> Gradle's run
+tasks (CLI and server) and the <code>./spectro</code> launcher all read the project root's
+gitignored <code>.env</code> identically: comments and blank lines skipped, first
+<code>=</code> splits, one quote layer stripped, <strong>empty values excluded</strong> —
+a <code>KEY=</code> line can never blank a variable you exported in your shell. The
+launcher's copy exists because the desktop face bypasses Gradle entirely. All JavaExec
+tasks also run from the project root, so the project settings layer is always found.</p>
+
+<p><strong>The single writer.</strong> Only <code>SettingsWriter</code> ever writes a
+settings file — two entry points, the same serialized read-modify-write discipline:
+<code>appendAutoApprove</code> (the permission dialog's “Persist”/“dauerhaft” checkbox)
+appends one allowlist rule to the workspace project file; <code>patch</code> (behind
+every <code>PUT /api/settings/*</code> call, so behind both gears) applies a
+schema-validated partial patch to any of the three files, rejecting secrets and
+process-globals in the wrong scope before anything touches disk. Both preserve every
+other key already in the file, and a <code>local</code> write also ensures the
+workspace's <code>.spectro/.gitignore</code> lists <code>settings.local.json</code>.
+Everything else only reads.</p>
+
+<h2 id="ch-config-spectromd">SPECTRO.md</h2>
+<p>A <code>SPECTRO.md</code> in the working directory is appended to the system prompt as a
+“Project context” section — provider-neutral, visible in the System-context panel.
+The counterpart of a CLAUDE.md, for spectroscope.</p>
+
+<!-- ============================== CH 31 ============================== -->
+<h1 data-ch="31" id="ch-build"><span class="ch-num">Chapter 31</span>Build &amp; test inventory</h1>
+
+<p class="lead">Four JVM modules, two npm toolchains, one version catalog — and a test
+suite that never needs an API key.</p>
+
+<!--MERMAID:13-modules|The module graph. spectro-server depends on spectro-cli deliberately: the transcription endpoint reuses the CLI's Transcriber, and the audio channel stays out of the core.-->
+
+<h2 id="ch-build-modules">Modules</h2>
+<table class="tbl">
+  <tr><th>module</th><th>role</th><th>key facts</th></tr>
+  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code> (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code> — no other class may import it; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
+  <tr><td><code>spectro-cli</code></td><td>terminal face</td><td>application; picocli; slf4j-nop keeps output clean; registers the <code>tour</code> task; stdin wired for the REPL</td></tr>
+  <tr><td><code>spectro-server</code></td><td>web backend</td><td>Spring Boot 3.5.3 (only here); starters web + websocket; depends on core <em>and</em> cli; serves the built UI from <code>static/</code></td></tr>
+  <tr><td><code>spectro-mcp-notes</code></td><td>example MCP server</td><td>standalone; Jackson only; its test spawns the real child JVM</td></tr>
+  <tr><td><code>spectro-web</code></td><td>browser UI</td><td>npm/Vite; React 19, React Flow 12, dagre; <code>npm run build</code> writes straight into the server's resources</td></tr>
+  <tr><td><code>spectro-desktop</code></td><td>desktop shell</td><td>npm/Electron 37; TypeScript strict; zero runtime dependencies (health polling via built-in fetch)</td></tr>
+</table>
+
+<h2 id="ch-build-versions">Version pins</h2>
+<table class="tbl dense">
+  <tr><th>library</th><th>version</th><th></th></tr>
+  <tr><td><code>com.anthropic:anthropic-java</code></td><td>2.34.0</td><td>owns SSE; client built with maxRetries(0)</td></tr>
+  <tr><td><code>jackson-databind</code></td><td>2.17.2</td><td>the one <code>api</code> dependency</td></tr>
+  <tr><td><code>info.picocli:picocli</code></td><td>4.7.6</td><td>CLI framework</td></tr>
+  <tr><td><code>org.springframework:spring-web</code></td><td>6.2.8</td><td>Framework as library — no Boot in the core</td></tr>
+  <tr><td><code>com.cronutils:cron-utils</code></td><td>9.2.1</td><td>computes slots; a ScheduledExecutorService fires them</td></tr>
+  <tr><td><code>org.junit.jupiter</code></td><td>5.10.2</td><td></td></tr>
+  <tr><td>Gradle wrapper</td><td>9.6.1</td><td>checked in</td></tr>
+  <tr><td>Spring Boot</td><td>3.5.3</td><td>spectro-server only</td></tr>
+  <tr><td>react / @xyflow/react / dagre</td><td>19.1 / 12.11 / 0.8.5</td><td>spectro-web</td></tr>
+  <tr><td>electron / electron-builder</td><td>37.2 / 26.0</td><td>spectro-desktop</td></tr>
+</table>
+
+<h2 id="ch-build-tests">The test suite</h2>
+<table class="tbl">
+  <tr><th>module</th><th>tests</th><th>what they pin</th></tr>
+  <tr><td>spectro-core</td><td>270</td><td>event round-trips and wire shapes, the loop against fake providers, sessions/resume/delete, compaction, subagents (parallelism, timeout), scheduler, all three provider mappings against scripted local servers, MCP client/transports, hooks, allowlist, retry</td></tr>
+  <tr><td>spectro-cli</td><td>33</td><td>renderer, overrides plumbing, allowlist, voice seams</td></tr>
+  <tr><td>spectro-server</td><td>33</td><td>REST guards (incl. the delete endpoint), a full WebSocket round-trip against an Ollama mock, workspace sandbox, transcripts controller</td></tr>
+  <tr><td>spectro-mcp-notes</td><td>18</td><td>store, ranker, stdio protocol in-JVM and as a real child process</td></tr>
+  <tr><td><strong>JUnit total</strong></td><td><strong>354</strong></td><td rowspan="2">plus <strong>252 vitest</strong> for the web UI (reducer, threads, stepper, scene models, scenario compiler, importer, markdown parser, layout stores)</td></tr>
+  <tr><td>spectro-web (vitest)</td><td>252</td></tr>
+</table>
+
+<p>Every test runs key-free and network-model-free: fake providers, scripted HTTP
+servers, injectable process seams, and a redirected <code>user.home</code> so no test can
+ever touch your real <code>~/.spectro</code>. Gate: <code>./gradlew build</code> +
+<code>cd spectro-web &amp;&amp; npm test</code>.</p>

@@ -1,0 +1,8 @@
+<!-- Core tests run with a test-only Logback backend (the Logged/MDC tests
+     capture records in-memory). This file keeps every OTHER test silent:
+     no appenders, WARN root — a test that wants records attaches its own
+     ListAppender and raises its logger's level programmatically. -->
+<configuration>
+  <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+  <root level="WARN"/>
+</configuration>

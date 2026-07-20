@@ -1,0 +1,163 @@
+<!-- ============================== CH 27 ============================== -->
+<h1 data-ch="27" id="ch-loop"><span class="ch-num">Chapter 27</span>The agent loop, hop by hop</h1>
+
+<p class="lead">The whole harness reduces to one loop in one class: build a request,
+stream the response, execute the tool calls behind the guards, feed the results back,
+repeat — at most fifteen times. Everything else in this book hangs off one of these
+hops.</p>
+
+<!--MERMAID:05-agent-loop|One run: request build → streaming → per-call guard pipeline → results back into the history → next turn. Every arrow is also an event in the session file.-->
+
+<h2 id="ch-loop-turn">The turn, precisely</h2>
+<ol>
+  <li><strong>Run start.</strong> Fresh UUID, <code>run_start</code> with the <em>live</em>
+      provider label (a switched backend reports itself truthfully). Attachments convert to
+      image content <em>before</em> the prompt text in the first user message.</li>
+  <li><strong>Per turn</strong> (1…15):
+    <ol type="a">
+      <li><code>turn_start</code>; with introspection on, a <code>context_info</code> estimate
+          of what the next call will carry;</li>
+      <li>the compaction check (chapter 28) — a no-op below the threshold;</li>
+      <li>the request: system prompt, full history copy, tool specs, maxTokens (default
+          32&thinsp;000), thinking flag, the cancel signal;</li>
+      <li>streaming: text deltas emit immediately; thinking deltas emit but never join the
+          history; tool calls collect; usage updates the context measure; the stop reason
+          records;</li>
+      <li>abort check — a cancelled run ends here with <code>aborted</code>;</li>
+      <li>history append: the assistant message (text + tool-call blocks) goes in
+          <em>before</em> any results — the API's ordering rule;</li>
+      <li>no tool calls → <code>run_end</code> with the mapped stop reason; otherwise:</li>
+      <li>the tool round: every call passes the guard pipeline below, in order; all results
+          of the round return to the model in <em>one</em> user message — denials and errors
+          included, as data the model can read and react to.</li>
+    </ol>
+  </li>
+  <li><strong>Turn 15 exceeded</strong> → <code>run_end {stopReason:"max_turns"}</code> — the
+      runaway brake.</li>
+  <li><strong>Any exception</strong> → <code>error</code> + <code>run_end {stopReason:"error"}</code>
+      (or <code>aborted</code> if the signal fired). The stream terminates on every path.</li>
+</ol>
+
+<h2 id="ch-loop-guard">The guard pipeline (per tool call)</h2>
+<p>Chapter 13 showed it from the user's side; this is the implementation order inside
+<code>runGuarded</code>, and it is load-bearing:</p>
+<ol>
+  <li><strong><code>pre_tool_use</code> hooks</strong> — before anything else, so a policy
+      veto costs no dialog. First matching block wins; timeout fails open.</li>
+  <li><strong>The gate</strong> — only for <code>needsPermission()</code> tools:
+      <code>permission_request</code> → the broker blocks the virtual thread (terminal
+      read, or a parked future in the web) → <code>permission_decision</code> — always
+      emitted, allowlist answers included. Denial returns the literal
+      <code>ERROR: the user denied the execution.</code></li>
+  <li><strong>Execution</strong> — <code>tool.execute(input, context)</code>; the context
+      carries the sandbox root, the cancel signal, the caller's agent id, the call id and
+      an <code>emit</code> sink through which artifact tools publish their additive events
+      (<code>plan</code>, <code>image_generated</code>, <code>agent_message</code>).</li>
+  <li><strong><code>post_tool_use</code> hooks</strong> — after the fact, advisory,
+      never rewriting.</li>
+</ol>
+
+<h2 id="ch-loop-headless">The headless variant</h2>
+<p><code>spectro run</code> and cron jobs share a runner with a fixed system prompt for
+unattended operation (“there is no human at the terminal: do not ask questions … if a
+tool is denied, do not retry it”), a constant-policy broker (readonly denies, auto
+allows), standard tools only (never the spawn tools), an external turn brake, and a
+result record (final text, stop reason, session id, exit-ok). Every headless run writes
+a normal session file — automation is fully auditable after the fact.</p>
+
+<!-- ============================== CH 28 ============================== -->
+<h1 data-ch="28" id="ch-context"><span class="ch-num">Chapter 28</span>Context: compaction, caching, introspection</h1>
+
+<p class="lead">Three mechanisms manage the finite context window: compaction shrinks
+the history when it grows past the threshold, prompt caching makes the stable prefix
+cheap, and introspection shows you both at work.</p>
+
+<h2 id="ch-context-compaction">Compaction</h2>
+
+<!--MERMAID:11-compaction|Above the threshold: split the history, summarize the old part with the same model (no tools), swap in “summary + last 4 messages”. In memory only — the file grows, never shrinks.-->
+
+<ul>
+  <li><strong>Trigger:</strong> the last turn's context size vs.
+      <code>compactionThreshold</code> (default 100&thinsp;000 input tokens) — checked at the
+      start of each turn. The measure is honest under caching:
+      <code>inputTokens + cacheRead + cacheCreation</code>, because cached tokens still
+      occupy the window even though the provider bills them separately.</li>
+  <li><strong>Mechanism:</strong> everything except the last four messages is summarized by
+      the same provider (note-taker system prompt, summary-only instruction, no tools);
+      the new history is one summary message plus the recent four, with a cut repair so no
+      tool result loses its call. A failed summary is an <code>error</code> event and an
+      unchanged history — never a broken run.</li>
+  <li><strong>The file never shrinks.</strong> A <code>compaction</code> audit line is
+      appended; a later resume reconstructs the <em>full</em> history from the file and
+      compacts again if needed — the file is always the unabridged truth.</li>
+  <li><strong>Force it:</strong> <code>/compact</code> in the REPL calls the same mechanism
+      regardless of the threshold.</li>
+</ul>
+
+<h2 id="ch-context-caching">Prompt caching</h2>
+<p>Chapter 16 covered the two breakpoints (system + tools; the last stable message).
+The reference detail: only text and tool-result blocks can carry a breakpoint (others
+pass through, best effort); the index is recomputed fresh every call, so a history
+reshaped by compaction simply gets a new breakpoint; and the wire <code>usage</code>
+event never includes the fold — a cache hit must not change the bytes an old consumer
+sees.</p>
+
+<h2 id="ch-context-ring">Introspection</h2>
+<p>With introspection on (both interactive faces enable it), every turn emits
+<code>context_info</code>: message count, an estimated token total against the threshold,
+and labeled parts — system prompt, tool schemas, conversation — each measured in chars
+and estimated at chars/4. The web header's <strong>context ring</strong> renders it live
+(green &lt; 70&thinsp;%, amber ≤ 90&thinsp;%, red above); its popover shows the parts table
+with the honest caveat that the estimate is an estimate — the <code>usage</code> line is
+the truth. The “Context window” scenario (chapter 7) demonstrates the whole arc:
+fill → warn → compact → continue.</p>
+
+<!-- ============================== CH 29 ============================== -->
+<h1 data-ch="29" id="ch-mcp-int"><span class="ch-num">Chapter 29</span>MCP internals</h1>
+
+<p class="lead">Chapter 18 explained MCP for users; this is the wire level. The
+<code>dev.spectroscope.core.mcp</code> package is container-free: hand-rolled JSON-RPC 2.0 records,
+a transport seam, a client with strict delivery semantics, and a registry that treats
+broken servers as skippable.</p>
+
+<h2 id="ch-mcp-int-rpc">JSON-RPC framing</h2>
+<ul>
+  <li>Protocol version pinned: <code>2024-11-05</code>; client info <code>spectroscope / 1.0</code>.</li>
+  <li><strong>stdio transport</strong> (primary): one JSON object per line; stdout is
+      protocol, stderr goes to a per-server log file under the system temp dir. Handshake:
+      <code>initialize</code> → <code>notifications/initialized</code> → <code>tools/list</code>.
+      Reads are bounded (20&thinsp;s) by a watcher thread; <strong>a timed-out channel is
+      poisoned</strong> — the uninterruptible reader is unblocked by closing the streams,
+      and the channel refuses further requests until reconnect.</li>
+  <li><strong>HTTP/SSE transport</strong> (optional): each JSON-RPC frame POSTs to the
+      configured URL; the reply's <code>data:</code> lines are concatenated per the SSE spec
+      (a plain JSON body is accepted too); 20&thinsp;s connect/read timeouts; stateless.</li>
+  <li>Tool results: the <code>text</code> of all <code>content[]</code> blocks joined by
+      newlines; unexpected shapes return the raw JSON rather than failing.</li>
+</ul>
+
+<h2 id="ch-mcp-int-client">Client semantics</h2>
+<ul>
+  <li><strong>At-most-once</strong>: <code>tools/call</code> is issued exactly once per tool
+      call. Dead transport <em>before</em> the call → one lazy reconnect. Failure or timeout
+      <em>during</em> the call → poison + readable <code>ERROR:</code>, never a re-issue (a
+      slow-but-successful <code>add_note</code> must not run twice).</li>
+  <li><strong>Registry policy:</strong> eager connect at startup, log-and-skip on failure,
+      descriptors cached, config order preserved; handles (name, target, reachable, tool
+      count) feed <code>spectro doctor</code> and <code>/mcp</code>. Closed on shutdown.</li>
+  <li><strong>Adapter hygiene:</strong> a server-supplied schema that is missing or not an
+      object is replaced by <code>{"type":"object"}</code> — untrusted server output must
+      not crash the provider advertisement.</li>
+  <li><strong>Scope:</strong> MCP tools bind to the session at connect time, independent of
+      LLM-provider switches; children never see them.</li>
+</ul>
+
+<h2 id="ch-mcp-int-notes">The reference server</h2>
+<p><code>spectro-mcp-notes</code> doubles as executable documentation of the server side:
+a single-threaded stdio loop answering <code>initialize</code>, <code>tools/list</code>,
+<code>tools/call</code>; JSON-RPC errors <code>-32601</code>/<code>-32603</code> where they
+belong; tool-level failures as MCP-style <code>isError</code> results (still JSON-RPC
+successes). Its store is a directory of text files with collision-safe creation; its
+ranker a few dozen lines of term frequency + substring bonus — search as a small
+program, not a search engine. Eighteen tests include one that spawns the real child JVM
+and speaks the protocol end to end.</p>

@@ -1,0 +1,210 @@
+<!-- ============================== CH 16 ============================== -->
+<h1 data-ch="16" id="ch-providers"><span class="ch-num">Chapter 16</span>Providers &amp; models</h1>
+
+<p class="lead">Everything the loop needs from a model sits behind one narrow port:
+<code>Iterable&lt;ProviderEvent&gt; stream(request)</code>. Swap the implementation and
+the loop never notices — which is why spectroscope can switch between a cloud API and a local
+model mid-session.</p>
+
+<h2 id="ch-providers-three">The three backends</h2>
+<table class="tbl">
+  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai</th></tr>
+  <tr><td>transport</td><td>official SDK, SSE</td><td>NDJSON over <code>POST /api/chat</code></td><td>SSE over <code>POST /v1/chat/completions</code></td></tr>
+  <tr><td>auth</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td>Bearer optional (LM Studio &amp; friends run keyless)</td></tr>
+  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td><code>local-model</code> (the loaded one)</td></tr>
+  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td>—</td></tr>
+  <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td></tr>
+</table>
+
+<h2 id="ch-providers-switch">Switching mid-session</h2>
+
+<!--SHOT:17-provider-picker|The header picker: provider select plus a real model dropdown — Ollama's list is live from the server, cloud lists are curated, and a custom model is always typeable.-->
+
+<p>The header chip opens the picker. The model dropdown is honest: for Ollama it lists
+what is actually installed (live from <code>/api/tags</code>), for the cloud providers a
+curated set, with “Custom model …” always available; an empty list degrades to free
+text. Apply sends <code>set_provider</code> — and because the agent is built once per
+connection (it carries your history), the switch swaps a delegate <em>inside</em> the
+provider port instead of rebuilding anything. It takes effect on the next prompt,
+history intact. Selecting Anthropic without a key is refused with a readable error, and
+the map in the Lab re-places the LLM node inside or beyond the network boundary to
+match. </p>
+
+<!--MERMAID:02-provider-switch|set_provider: validate, build the new backend (key check included), swap the delegate. The next run_start reports the new provider — no new event type needed.-->
+
+<h2 id="ch-providers-retry">Retry — a loop that doesn't tip over</h2>
+<p>Transient failures (HTTP 408/409/425/429, any 5xx, dropped connections) are retried
+with exponential backoff and jitter — but <strong>only before the first event</strong> of
+a response. A stream that breaks mid-answer is never retried (that would duplicate
+already-emitted text into the transcript); it surfaces as an honest error. Terminal
+errors — 404 model-not-pulled, 401 bad key — never retry. spectroscope owns retry exclusively:
+the Anthropic SDK's own retry is disabled so nothing double-retries.
+Knobs: <code>maxRetries</code> (default 2, <code>SPECTRO_MAX_RETRIES</code>; 0 disables).</p>
+
+<!--MERMAID:07-retry-flow|The retry window: establish + first event inside the loop, transient-only, capped backoff with jitter, cancel-aware — and never after the first event.-->
+
+<h2 id="ch-providers-caching">Prompt caching (Anthropic)</h2>
+<p>With <code>promptCaching</code> on (default), spectroscope places two <code>cache_control</code>
+breakpoints per request: one covering the stable prefix (system prompt + tool list), one
+on the last <em>stable</em> message — the one just before the current turn. Costs and
+latency drop on every consecutive turn. The wire stays honest: the <code>usage</code>
+event reports the provider's raw token counts, while the cache-read/-creation counts are
+folded only into the <em>compaction trigger</em> — cached tokens still occupy the context
+window, so the threshold must see them (chapter 28).</p>
+
+<h2 id="ch-providers-wrappers">The wrapper chain</h2>
+<pre>Agent loop
+  └─ TracingProvider      (CLI --verbose only: the wire on stderr)
+      └─ SwitchableProvider (web face only: the mid-session swap point)
+          └─ RetryingProvider (all faces, unless maxRetries=0)
+              └─ AnthropicProvider | OllamaProvider | OpenAiCompatProvider</pre>
+<p>All wrapping happens at one chokepoint (<code>providerFromConfig()</code>), so the
+CLI, the server, headless runs and the scheduler behave identically.</p>
+
+<!-- ============================== CH 17 ============================== -->
+<h1 data-ch="17" id="ch-senses"><span class="ch-num">Chapter 17</span>Seeing, hearing, speaking, painting</h1>
+
+<p class="lead">Four bonus-stage senses, all built on the same additive principles:
+binary data never enters the event stream, external engines sit behind injectable
+seams, and everything degrades readably when a piece is missing.</p>
+
+<h2 id="ch-senses-vision">Vision — image input</h2>
+<ul>
+  <li><strong>Web:</strong> attach images in the composer (picker or drag-and-drop) — they
+      are downscaled client-side, stored content-addressed in the session's blob folder,
+      and restored <em>before</em> the prompt text in the provider history (the position
+      matters to the model).</li>
+  <li><strong>CLI:</strong> <code>spectro run -p "…" --image photo.png</code> (repeatable).</li>
+  <li><strong>Local models fail fast:</strong> Ollama models without the vision capability
+      are refused with an actionable message (“use qwen3-vl or llava”) before any tokens
+      are wasted; cloud models handle images natively.</li>
+  <li>Events carry only references (<code>blobPath</code>, <code>sha256</code>) — session
+      files stay small and <code>jq</code>-able; a deleted blob degrades to a placeholder,
+      never a crash.</li>
+</ul>
+
+<h2 id="ch-senses-voice-in">Voice input — local push-to-talk</h2>
+<p>One-time setup: <code>bash scripts/setup-stt.sh</code> — installs whisper.cpp and
+ffmpeg (Homebrew on macOS) and downloads the ggml-small model (~460 MB) with a
+<strong>pinned SHA-256</strong>: a mismatch deletes the file and aborts. Recording is
+16 kHz mono WAV (whisper's required format); transcription runs with automatic language
+detection, so German dictation is not forced through English.</p>
+<ul>
+  <li><strong>REPL <code>/voice</code>:</strong> record until Enter, transcribe, then an
+      <em>editable confirmation</em> — Enter sends, typing replaces, blank discards. An STT
+      error never reaches the agent unreviewed. The turn is audited by a
+      <code>voice_input</code> event that never enters the provider history.</li>
+  <li><strong>Web mic button:</strong> records in the browser, transcribes via
+      <code>POST /api/transcribe</code> (the server reuses the same Transcriber), and drops
+      the text into the composer draft. STT not installed → the endpoint answers 503 and
+      the button disables itself with the setup hint.</li>
+</ul>
+
+<h2 id="ch-senses-voice-out">Voice output — spoken answers</h2>
+<p>Setup: <code>bash scripts/setup-tts.sh</code> (piper + the <code>en_US-lessac-medium</code>
+voice). Enable per run with <code>--speak</code>, at runtime with <code>/speak on|off</code>,
+or permanently via <code>"tts": { "enabled": true }</code> in <code>~/.spectro/settings.json</code>
+(the legacy <code>config.json</code> name is still read beneath it for one release —
+chapter 20).
+The renderer buffers streamed text to sentence boundaries and speaks <em>while the rest
+still streams</em> (synthesis runs up to three sentences ahead of strictly-ordered
+playback). Code blocks are never read aloud — you hear “Code block skipped.” Abort stops
+mid-sentence with no ghost audio. Ollama + piper is a fully offline agent that talks.</p>
+
+<h2 id="ch-senses-images">Image generation</h2>
+<p>The <code>generate_image</code> tool sits behind its own provider port with two
+backends — Gemini (<code>gemini-2.5-flash-image</code>, <code>GEMINI_API_KEY</code>) and
+OpenAI (<code>gpt-image-1</code>, <code>OPENAI_API_KEY</code>) — selected by
+<code>imageProvider</code> / <code>SPECTRO_IMAGE_PROVIDER</code> or live from the gallery's
+dropdown. Results land content-addressed under <code>~/.spectro/images/</code> (same bytes
+= same file, shared across sessions); the additive <code>image_generated</code> event
+feeds the gallery panel; the model itself only sees a short confirmation string. Gated,
+because it is a paid cloud call. A missing key returns a readable
+<code>ERROR:</code> the model can relay — never a crash.</p>
+
+<!-- ============================== CH 18 ============================== -->
+<h1 data-ch="18" id="ch-mcp"><span class="ch-num">Chapter 18</span>MCP — external tool servers</h1>
+
+<p class="lead">spectroscope is an MCP client: plug in any Model-Context-Protocol server and its
+tools become first-class spectroscope tools — gated, traced, replayable. No new event type was
+needed: MCP calls are ordinary <code>tool_call</code>/<code>tool_result</code> lines, so
+graph, trace and archive render them for free.</p>
+
+<h2 id="ch-mcp-config">Configuration</h2>
+<p>The <code>mcpServers</code> block has the same shape Claude Desktop and Claude Code
+use — a config written for those drops straight in:</p>
+
+<pre>{ "mcpServers": {
+    "notes": {                                  // stdio: command (+ args, env)
+      "command": "/path/to/spectro-mcp-notes/bin/spectro-mcp-notes",
+      "args": ["/path/to/notes-directory"]
+    },
+    "search": { "url": "http://localhost:9000/mcp", "type": "sse" }   // or HTTP/SSE
+} }</pre>
+
+<p>Servers connect eagerly at startup; one that fails to start is logged and
+<strong>skipped</strong> — a broken entry never takes the harness down. Each advertised
+tool registers as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, always permission-gated:
+its inputs are model output and its effects are external. <code>/mcp</code> lists
+servers and tools in the REPL; <code>spectro doctor</code> probes reachability; the
+System-context panel names the servers.</p>
+
+<h2 id="ch-mcp-semantics">Call semantics: at-most-once</h2>
+
+<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport and degrades to an ERROR string — never re-issued, so a slow-but-successful side effect is never doubled.-->
+
+<p>Every call is issued <em>exactly once</em> with a 20-second budget. If the transport
+died between calls, it is re-established once, lazily. But a call that fails or times
+out on an established transport is <strong>not retried</strong> — a slow-but-successful
+<code>add_note</code> must not be doubled. Instead the transport is poisoned (the next
+call reconnects) and the model receives a readable
+<code>ERROR: MCP tool '…' on server '…' failed: …</code>. A dead or slow server degrades;
+it never crashes the harness.</p>
+
+<h2 id="ch-mcp-notes">The example server: spectro-mcp-notes</h2>
+<p>The repository ships a complete, runnable MCP server as its own module — a stdio
+JSON-RPC 2.0 program whose only dependency is Jackson (“no heavy MCP SDK, no Lucene”).
+Build it with <code>./spectro mcp-notes</code>. It serves two tools over a directory of
+plain text files (default <code>~/.spectro/notes</code>, six seed notes included):</p>
+<ul>
+  <li><code>search_notes</code> — hand-rolled ranked full-text search (term frequency +
+      substring bonus) returning snippets with their source files;</li>
+  <li><code>add_note</code> — appends a note as a new file, with collision-safe naming
+      (two identical texts land in two files, never an overwrite).</li>
+</ul>
+<p><em>Try (with the server configured): “Search my notes for 'permissions' and summarize
+what you find.”</em> — the call passes the permission gate like any other tool, and the
+Lab's map lights the whole MCP chain: client → network stack → boundary → server.</p>
+
+<!-- ============================== CH 19 ============================== -->
+<h1 data-ch="19" id="ch-cron"><span class="ch-num">Chapter 19</span>Scheduling</h1>
+
+<p class="lead">The scheduler turns spectroscope into an unattended worker: jobs in a JSON file,
+5-field cron expressions, honest state tracking and desktop notifications.</p>
+
+<pre># ~/.spectro/jobs.json — an array of jobs, validated loudly on load
+[ { "id": "morning-report",
+    "cron": "0 8 * * *",
+    "prompt": "Summarize yesterday's session files under ~/.spectro/sessions.",
+    "cwd": "/Users/you/projects/demo",
+    "permissions": "readonly" } ]        // readonly (default) | auto</pre>
+
+<table class="tbl">
+  <tr><th>command</th><th>behaviour</th></tr>
+  <tr><td><code>spectroscope cron</code></td><td>the foreground daemon — arms every job, reschedules after each firing, Ctrl+C stops</td></tr>
+  <tr><td><code>spectroscope cron list</code></td><td>each job with its expression, policy and next run time (explicit zone)</td></tr>
+  <tr><td><code>spectroscope cron status</code></td><td>list + last outcome per job: time, ok/failed/skipped, stop reason, session id, result preview</td></tr>
+  <tr><td><code>spectroscope cron --once &lt;id&gt;</code></td><td>run one job now; exit 0 only on <code>ok</code></td></tr>
+</table>
+
+<ul>
+  <li><strong>Overlap guard:</strong> a job still running when its next slot fires records a
+      <code>skipped (overlap)</code> state instead of stacking.</li>
+  <li><strong>Headless policy:</strong> jobs default to <code>readonly</code>; every run writes
+      a normal session file (full audit) and its outcome into
+      <code>~/.spectro/jobs-state.json</code>.</li>
+  <li><strong>Notifications:</strong> macOS notification per finished job (terminal bell
+      elsewhere); the desktop shell (chapter 10) adds native click-to-open notifications.</li>
+  <li><strong>Container-free:</strong> cron-utils computes the times, a single
+      ScheduledExecutorService thread fires them — no Spring scheduling in the core.</li>
+</ul>

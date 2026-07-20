@@ -1,0 +1,457 @@
+/* guide.css — USER-GUIDE design on the spectroscope brand tokens
+   (espresso dark + paper light, migration phase 4); print-first (A4).
+   The builder stamps data-theme="dark|light" on <html>. */
+
+/* ---------- tokens ---------- */
+:root {
+  --bg: #17120D;
+  --surface: #201913;
+  --surface-2: #292019;
+  --surface-3: #2E251C;
+  --border: #33291F;
+  --border-strong: #5C5142;
+  --hairline: rgba(237, 231, 220, 0.05);
+  --shade: rgba(0, 0, 0, 0.18);
+  --text: #EDE7DC;
+  --text-dim: #A2988A;
+  --text-faint: #5C5142;
+  --accent: #CE9440;
+  --accent-soft: rgba(206, 148, 64, 0.12);
+  --sand: #8B7CF0;
+  --sand-soft: rgba(139, 124, 240, 0.14);
+  --ok: #2DD4A7;
+  --warn: #CE9440;
+  --error: #C05A4C;
+  --agent-root: #2DD4A7;
+  --agent-explore: #2CB1C4;
+  --agent-worker: #8B7CF0;
+  --ocean: #2CB1C4;
+  --lilac: #8B7CF0;
+  --salmon: #CE9440;
+  --moss: #2DD4A7;
+  --font-ui: Inter, "Inter Variable", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "JetBrains Mono Variable", ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* paper — the brand light theme, first-class */
+html[data-theme="light"] {
+  --bg: #F6F4EE;
+  --surface: #EFECE3;
+  --surface-2: #E9E5D8;
+  --surface-3: #E2DCCC;
+  --border: #DDD8CB;
+  --border-strong: #C4BCAD;
+  --hairline: rgba(23, 22, 26, 0.10);
+  --shade: rgba(23, 22, 26, 0.07);
+  --text: #17161A;
+  --text-dim: #6A665D;
+  --text-faint: #A39E92;
+  --accent: #2E7EA6;
+  --accent-soft: rgba(46, 126, 166, 0.12);
+  --sand: #6C5CE7;
+  --sand-soft: rgba(108, 92, 231, 0.14);
+  --ok: #0F9D77;
+  --warn: #A9762A;
+  --error: #C24B3E;
+  --agent-root: #0F9D77;
+  --agent-explore: #0B8799;
+  --agent-worker: #6C5CE7;
+  --ocean: #0B8799;
+  --lilac: #6C5CE7;
+  --salmon: #A9762A;
+  --moss: #0F9D77;
+}
+
+/* ---------- page machinery (headless-Chrome print) ---------- */
+@page { size: A4; margin: 0; }
+html {
+  background: var(--bg);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 10.5pt;
+  line-height: 1.55;
+  font-weight: 400;
+}
+table.pagewrap { width: 100%; border-collapse: collapse; }
+table.pagewrap > thead td.page-spacer { height: 13mm; }
+table.pagewrap > tfoot td.page-spacer { height: 13mm; }
+.content { padding: 0 17mm; }
+
+/* on screen, keep a readable column */
+@media screen {
+  body { font-size: 15px; }
+  .content { max-width: 860px; margin: 0 auto; padding: 24px; }
+}
+
+* { box-sizing: border-box; }
+
+/* ---------- typography ---------- */
+h1, h2, h3, h4 { font-family: var(--font-ui); letter-spacing: -0.01em; }
+
+h1 {
+  break-before: page;
+  font-weight: 300;
+  font-size: 26pt;
+  letter-spacing: -0.02em;
+  margin: 10mm 0 4mm;
+  padding-top: 6mm;
+  line-height: 1.15;
+}
+h1 .ch-num {
+  display: block;
+  font-size: 9pt;
+  font-weight: 400;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sand);
+  margin-bottom: 3mm;
+}
+/* chapter numbers stand alone; the diamond was ex-brand deco */
+h1::after {
+  content: "";
+  display: block;
+  width: 34mm; height: 1px;
+  background: linear-gradient(90deg, var(--sand), transparent);
+  margin-top: 4mm;
+}
+
+h2 {
+  font-weight: 700;
+  font-size: 14pt;
+  margin: 9mm 0 2.5mm;
+  break-after: avoid;
+}
+h3 {
+  font-weight: 700;
+  font-size: 11pt;
+  margin: 6mm 0 1.8mm;
+  break-after: avoid;
+}
+h4 {
+  font-weight: 700;
+  font-size: 10pt;
+  color: var(--text-dim);
+  margin: 4mm 0 1.2mm;
+  break-after: avoid;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 8.5pt;
+}
+p { margin: 0 0 2.6mm; }
+p, li { orphans: 3; widows: 3; }
+strong { font-weight: 700; }
+em { font-style: italic; }
+a { color: var(--accent); text-decoration: none; }
+ul, ol { margin: 0 0 3mm; padding-left: 5.5mm; }
+li { margin-bottom: 1mm; }
+ul > li::marker { content: "·  "; color: var(--sand); }
+hr { border: 0; border-top: 1px solid var(--border); margin: 6mm 0; }
+
+.lead { font-size: 12pt; font-weight: 300; color: var(--text); line-height: 1.6; }
+.dim { color: var(--text-dim); }
+.small { font-size: 8.5pt; color: var(--text-dim); }
+
+/* ---------- code ---------- */
+code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.5px 4px;
+  white-space: nowrap;
+}
+pre {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3mm 4mm;
+  font-family: var(--font-mono);
+  font-size: 8pt;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin: 0 0 3.5mm;
+  break-inside: avoid;
+}
+pre code { background: none; border: 0; padding: 0; white-space: inherit; }
+
+/* terminal block — always the espresso well, even on paper (a terminal
+   is a dark instrument; ink-on-paper code sits in pre/code instead).
+   The well carries its OWN ink: without the pinned color, the light
+   theme would inherit dark body ink onto the dark ground. */
+.term {
+  background: #120E0A;
+  color: #EDE7DC;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin: 0 0 3.5mm;
+  break-inside: avoid;
+  overflow: hidden;
+}
+.term-head {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 7.5pt;
+  padding: 1.4mm 3mm;
+}
+.term-dot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); margin-right: 2mm; vertical-align: 1px;
+}
+.term pre { background: none; border: 0; border-radius: 0; margin: 0; }
+
+/* ---------- tables ---------- */
+table.tbl {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0 0 4mm;
+  font-size: 8.6pt;
+}
+table.tbl th {
+  text-align: left;
+  font-size: 7.6pt;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border-strong);
+  padding: 1.6mm 2.5mm;
+  font-weight: 400;
+}
+table.tbl td {
+  border-bottom: 1px solid var(--border);
+  padding: 1.7mm 2.5mm;
+  vertical-align: top;
+}
+table.tbl tr:nth-child(even) td { background: rgba(255, 255, 255, 0.018); }
+table.tbl code { white-space: normal; word-break: break-word; }
+table.tbl.dense { font-size: 7.9pt; }
+table.tbl.dense td, table.tbl.dense th { padding: 1.2mm 2mm; }
+
+/* ---------- figures ---------- */
+figure { margin: 4mm 0 5mm; break-inside: avoid; }
+figure.shot img {
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  box-shadow: 0 1px 0 var(--hairline) inset;
+}
+figure.shot--half { width: 62%; margin-left: auto; margin-right: auto; }
+figure.diagram img { width: 100%; border-radius: 4px; }
+figure.diagram { break-inside: avoid; margin: 4mm 0 6mm; }
+figure.mermaid {
+  /* The mermaid SVGs are pre-rendered with light ink for a dark ground
+     (render_mermaid.mjs); until they are re-rendered per theme they keep
+     their own espresso card in BOTH themes — same rule as the terminal. */
+  background: #17120D;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4mm;
+  text-align: center;
+}
+figure.mermaid svg { max-width: 100%; height: auto; }
+figcaption {
+  font-size: 8.2pt;
+  color: var(--text-dim);
+  margin-top: 1.8mm;
+  text-align: left;
+}
+figcaption { border-left: 2px solid var(--sand); padding-left: 2.4mm; }
+
+/* ---------- callouts / cards ---------- */
+.callout {
+  border-left: 2px solid var(--sand);
+  background: var(--sand-soft);
+  border-radius: 0 8px 8px 0;
+  padding: 2.6mm 4mm;
+  margin: 0 0 3.5mm;
+  break-inside: avoid;
+}
+.callout.coral { border-left-color: var(--accent); background: var(--accent-soft); }
+.callout .co-title {
+  font-size: 7.6pt; text-transform: uppercase; letter-spacing: 0.12em;
+  color: var(--sand); margin-bottom: 1mm; font-weight: 400;
+}
+.callout.coral .co-title { color: var(--accent); }
+.callout p:last-child { margin-bottom: 0; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 3.5mm 4.5mm;
+  margin: 0 0 3.5mm;
+  break-inside: avoid;
+}
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 4mm; margin: 0 0 3.5mm; }
+.grid2 > * { margin: 0; }
+
+/* chips */
+.chip {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 7.4pt;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0.3mm 2.4mm;
+  color: var(--text-dim);
+  vertical-align: 1px;
+}
+.chip.free { color: var(--ok); border-color: rgba(74, 222, 128, 0.4); }
+.chip.gated { color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
+.chip.prefix { color: var(--accent); border-color: rgba(255, 89, 89, 0.4); }
+
+/* ---------- part divider sheets ---------- */
+.part {
+  break-before: page;
+  min-height: 250mm;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  padding: 20mm 6mm;
+}
+.part .part-num {
+  font-weight: 300;
+  font-size: 92pt;
+  line-height: 1;
+  color: transparent;
+  -webkit-text-stroke: 1px var(--border-strong);
+  letter-spacing: -0.03em;
+}
+.part .part-eyebrow {
+  font-size: 9pt; letter-spacing: 0.2em; text-transform: uppercase;
+  color: var(--sand); margin: 8mm 0 3mm;
+}
+.part .part-eyebrow { letter-spacing: 0.18em; }
+.part h1.part-title {
+  break-before: auto;
+  font-size: 34pt;
+  margin: 0 0 6mm;
+  padding: 0;
+}
+.part h1.part-title::after { display: none; }
+.part .part-sub { font-size: 12pt; font-weight: 300; color: var(--text-dim); max-width: 130mm; line-height: 1.6; }
+.part .part-toc { margin-top: 10mm; font-size: 9.5pt; color: var(--text-dim); columns: 2; column-gap: 10mm; }
+.part .part-toc div { margin-bottom: 1.6mm; }
+.part .part-toc span { color: var(--sand); font-family: var(--font-mono); font-size: 8pt; margin-right: 2mm; }
+
+/* ---------- cover ---------- */
+.cover {
+  min-height: 271mm;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  padding: 10mm 4mm 8mm;
+}
+.cover .cover-brand {
+  display: flex; align-items: center; gap: 3mm;
+  font-size: 13pt; font-weight: 700;
+}
+.cover .cover-brand .diamond { color: var(--sand); font-size: 10pt; }
+.cover .cover-mid { margin-top: 52mm; }
+.cover .cover-eyebrow {
+  color: var(--sand); letter-spacing: 0.22em; text-transform: uppercase;
+  font-size: 9.5pt; margin-bottom: 6mm;
+}
+/* eyebrows stand alone (brand: no diamond deco) */
+  break-before: auto;
+  font-size: 52pt;
+  font-weight: 300;
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+  margin: 0 0 8mm;
+  padding: 0;
+}
+.cover h1.cover-title::after { display: none; }
+.cover h1.cover-title b { font-weight: 700; }
+.cover .cover-sub {
+  font-size: 13.5pt; font-weight: 300; color: var(--text-dim);
+  max-width: 150mm; line-height: 1.65;
+}
+.cover .cover-stats {
+  margin-top: auto;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 3mm;
+  border-top: 1px solid var(--border);
+  padding-top: 5mm;
+}
+.cover .stat .v { font-size: 16pt; font-weight: 300; color: var(--sand); }
+.cover .stat .k { font-size: 7.6pt; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-faint); margin-top: 0.6mm; }
+.cover .cover-foot {
+  margin-top: 6mm; display: flex; justify-content: space-between;
+  font-size: 8pt; color: var(--text-faint);
+}
+
+/* ---------- toc ---------- */
+.toc { columns: 2; column-gap: 10mm; margin: 6mm 0; }
+.toc-ch { break-inside: avoid; margin-bottom: 4.5mm; }
+.toc-main { color: var(--text); font-weight: 700; font-size: 10.5pt; display: block; margin-bottom: 1mm; }
+.toc-num {
+  color: var(--sand); font-family: var(--font-mono); font-weight: 400;
+  font-size: 8.5pt; margin-right: 1.5mm;
+}
+.toc-subs { border-left: 1px solid var(--border); padding-left: 3mm; }
+.toc-sub { display: block; color: var(--text-dim); font-size: 8.6pt; margin-bottom: 0.8mm; }
+/* Part header: full width across both columns — a section divider that also
+   resets the column balance, so the two columns stay even (no long gaps). */
+.toc-part {
+  column-span: all;
+  break-inside: avoid;
+  break-after: avoid;
+  margin: 4mm 0 2.5mm;
+  padding-bottom: 1.2mm;
+  border-bottom: 1px solid var(--border-strong);
+}
+.toc-part:first-child { margin-top: 0; }
+.toc-part-num {
+  font-family: var(--font-mono); font-size: 7.6pt; text-transform: uppercase;
+  letter-spacing: 0.16em; color: var(--sand); margin-right: 2.5mm;
+}
+.toc-part a { color: var(--text); font-weight: 700; font-size: 11pt; }
+
+/* ---------- key/value spec lists ---------- */
+.kv { display: grid; grid-template-columns: 34mm 1fr; gap: 1mm 4mm; margin: 0 0 3.5mm; font-size: 9pt; }
+.kv dt { color: var(--text-dim); font-size: 8pt; text-transform: uppercase; letter-spacing: 0.06em; padding-top: 0.4mm; }
+.kv dd { margin: 0; }
+
+/* file tree */
+pre.tree { font-size: 8.4pt; line-height: 1.65; }
+pre.tree .d { color: var(--ocean); }
+pre.tree .f { color: var(--text); }
+pre.tree .c { color: var(--text-faint); }
+pre.tree .hl { color: var(--sand); }
+
+/* event/tool reference blocks */
+.ref {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin: 0 0 4mm;
+  break-inside: avoid;
+  overflow: hidden;
+}
+.ref-head {
+  display: flex; align-items: baseline; gap: 3mm;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 2.2mm 4mm;
+}
+.ref-head code.name {
+  background: none; border: 0; font-size: 10pt; color: var(--sand); font-weight: 400;
+}
+.ref-head .meta { margin-left: auto; font-size: 7.6pt; color: var(--text-faint); }
+.ref-body { padding: 2.6mm 4mm 1mm; }
+.ref-body p { margin-bottom: 1.8mm; }
+.ref-body table.tbl { margin-bottom: 2mm; }
+
+.avoid-break { break-inside: avoid; }
+.page-break { break-before: page; }

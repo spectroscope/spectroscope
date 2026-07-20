@@ -1,0 +1,9 @@
+flowchart TB
+    s["provider.stream(request)"] --> pull["pull the FIRST event"]
+    pull -->|ok| through["deliver + pass the rest through<br/>(mid-stream breaks are never retried)"]
+    pull -->|throws| cls{"transient?<br/>408/409/425/429/5xx · IOException ·<br/>TransientProviderException"}
+    cls -->|no: 401/404/...| fail["rethrow → error event"]
+    cls -->|yes| budget{"attempts left?<br/>(maxRetries, default 2)"}
+    budget -->|no| fail
+    budget -->|yes| sleep["backoff: 250 ms · ×2 · cap 8 s<br/>+ 20% jitter (cancel-aware)"]
+    sleep --> pull

@@ -1,0 +1,183 @@
+<!-- ============================== PART I ============================== -->
+<div class="part">
+  <div class="part-num">I</div>
+  <div class="part-eyebrow">Part I</div>
+  <h1 class="part-title" data-ch="I" id="part1">Meet spectroscope</h1>
+  <p class="part-sub">What the harness is, the one idea everything hangs on,
+  how to start it in thirty seconds, and a map of everything it can do.</p>
+  <div class="part-toc">
+    <div><span>1</span> What is spectroscope?</div>
+    <div><span>2</span> Quick start</div>
+    <div><span>3</span> The capability map</div>
+  </div>
+</div>
+
+<!-- ============================== CH 1 ============================== -->
+<h1 data-ch="1" id="ch-what"><span class="ch-num">Chapter 1</span>What is spectroscope?</h1>
+
+<p class="lead">spectroscope is an agent harness: the machinery around a large language model
+that turns “a model that can talk” into “an agent that can work” — read files, run
+commands, ask for permission, delegate to subagents, remember sessions, and show you
+every step it takes while doing so.</p>
+
+<p>It was built from scratch across a sixteen-stage workshop (Java 21, Gradle,
+Spring only where it earns its place), and the <code>spectroscope/</code> full build is the
+sum of all of it. Three properties define the design:</p>
+
+<h2 id="ch-what-core">One core, five faces</h2>
+<p>The heart of spectroscope is <code>spectro-core</code> — a headless Java library with no
+container, no UI and no I/O of its own. Everything in it is constructible with plain
+<code>new</code>. When the agent runs, the core produces exactly one thing: a typed
+stream of <strong>RunEvents</strong>. Everything else in the project is a <em>renderer</em>
+of that stream:</p>
+
+<ul>
+  <li>the <strong>CLI</strong> (<code>spectro-cli</code>) renders it as ANSI text with tool cards and a spinner,</li>
+  <li>the <strong>web backend</strong> (<code>spectro-server</code>) pushes it over a WebSocket,</li>
+  <li>the <strong>browser UI</strong> (<code>spectro-web</code>) folds it into chat, graph, trace, Lab and panels,</li>
+  <li>the <strong>desktop shell</strong> (<code>spectro-desktop</code>) wraps that same web UI in a supervised window,</li>
+  <li>the <strong>session store</strong> writes it line by line into a JSONL file.</li>
+</ul>
+
+<p>That last renderer is the trick: the same event stream is simultaneously the
+<strong>UI protocol</strong>, the <strong>storage format</strong> and the <strong>data
+source for every visualisation</strong>. Replaying an old session is not a separate
+code path — it is the same array of events, read from a file instead of a socket.</p>
+
+<!--SVG:00-one-core-five-faces|The big picture: the container-free core, the RunEvent stream as the one wire, the five faces, the provider ports and the disk.-->
+
+<h2 id="ch-what-additive">Additive forever</h2>
+<p>The JSONL wire format is shared byte-for-byte with the sibling TypeScript edition of
+the workshop. That makes the format a contract: new event types and new optional fields
+may be added, but nothing is ever renamed, removed or reinterpreted, and every consumer
+silently skips what it does not know. Sessions recorded in 2026 replay forever; sessions
+recorded by the other edition replay here (proven by a byte-for-byte round-trip test).</p>
+
+<h2 id="ch-what-untrusted">Tool inputs are model output</h2>
+<p>The course maxim that shapes every security decision in this book: whatever a tool
+receives as input was written by the model, and the model writes what it wants. So every
+file path passes a sandbox, every mutation passes a permission gate, network egress asks
+first, hooks can veto calls before the gate, and even the “always allow” button remembers
+its approval scoped to a prefix instead of a blanket. You will meet this maxim in almost
+every chapter.</p>
+
+<h2 id="ch-what-stack">The stack, in one breath</h2>
+<div class="kv">
+  <dt>Language</dt><dd>Java 21 — virtual threads + blocking style; no reactive frameworks. The stream type is a blocking <code>Iterable&lt;RunEvent&gt;</code>, cancellation is a cooperative <code>CancelSignal</code>.</dd>
+  <dt>Build</dt><dd>Gradle 9.6.1, Kotlin DSL, version catalog, five JVM modules + two npm toolchains (Vite/React web UI, Electron shell).</dd>
+  <dt>LLM access</dt><dd>One narrow <code>LlmProvider</code> port; behind it Anthropic (official SDK, SSE), Ollama (NDJSON) and any OpenAI-compatible server (SSE) — switchable mid-session.</dd>
+  <dt>Frameworks</dt><dd>Spring <em>Framework</em> as a library in the core (RestClient + declarative HTTP interfaces); Spring <em>Boot</em> 3.5.3 only in <code>spectro-server</code>; picocli in the CLI; React 19 + React Flow in the browser.</dd>
+  <dt>Tests</dt><dd>354 JUnit + 252 vitest, all key-free: fake providers, scripted HTTP servers, process seams. <code>./gradlew build</code> needs no API key and no network model.</dd>
+</div>
+
+<!-- ============================== CH 2 ============================== -->
+<h1 data-ch="2" id="ch-quickstart"><span class="ch-num">Chapter 2</span>Quick start</h1>
+
+<p class="lead">One executable starts everything. The <code>./spectro</code> launcher
+resolves a JDK, loads your <code>.env</code>, and dispatches to the face you ask for —
+you never have to touch the Gradle task zoo.</p>
+
+<h2 id="ch-quickstart-launcher">The launcher</h2>
+
+<!--TERM:cli-usage|$ ./spectro-->
+
+<p>Before dispatching, the launcher fixes the two classic host problems for you:</p>
+<ul>
+  <li><strong>JDK auto-resolution.</strong> The modules compile with <code>--release 21</code>,
+  but many machines default to an older <code>java</code>. If <code>JAVA_HOME</code> is not
+  already a JDK 21+, the launcher probes <code>/usr/libexec/java_home</code>, the Homebrew
+  <code>openjdk@21</code> keg (preferred: a stable versioned keg survives brew upgrades),
+  newer kegs up to 25, and the Cellar globs — and exports the first hit. Verified up to
+  JDK 26; a miss prints a note and continues.</li>
+  <li><strong><code>.env</code> loading for every face.</strong> The gitignored
+  <code>spectroscope/.env</code> holds API keys and provider switches. The launcher parses it
+  (comments skipped, one quote layer stripped, empty values ignored so <code>KEY=</code>
+  can never blank a shell export) and exports the pairs — deliberately including the
+  <code>desktop</code> face, which spawns the server through Electron and would otherwise
+  bypass Gradle's own injection.</li>
+</ul>
+
+<h2 id="ch-quickstart-min">The thirty-second start</h2>
+<pre>cd spectroscope
+
+# 1 — pick a model. Local (no key at all):
+#    .env:  SPECTRO_PROVIDER=ollama · SPECTRO_MODEL=qwen3 · SPECTRO_BASE_URL=http://localhost:11434
+#    cloud: ANTHROPIC_API_KEY=sk-ant-…      (model defaults to claude-opus-4-8)
+
+# 2 — check the environment
+./spectro doctor
+
+# 3 — go
+./spectro web        # browser UI on http://localhost:8080
+./spectro repl       # terminal REPL
+./spectro run -p "Say OK."   # headless one-shot
+./spectro desktop    # the Electron app</pre>
+
+<h2 id="ch-quickstart-doctor">What doctor tells you</h2>
+<p><code>./spectro doctor</code> is the honest pre-flight: it probes what your configuration
+actually selects — it loads the config hierarchy with your flags, pings the provider you
+chose, connects to every configured MCP server, and write-tests the sessions directory.
+This is real output from the machine this guide was built on:</p>
+
+<!--TERM:cli-doctor|$ ./spectro doctor-->
+
+<p>Green checks fail the exit code when broken; the indented dim lines are information,
+not failures — a missing image-generation key, for example, is deliberately not unhealthy
+(the tool will return a readable error instead). Chapter 4 documents all twelve checks.</p>
+
+<h2 id="ch-quickstart-providers">The provider matrix</h2>
+<table class="tbl">
+  <tr><th>provider</th><th>transport</th><th>needs</th><th>default model</th></tr>
+  <tr><td><code>anthropic</code></td><td>official SDK, SSE streaming</td><td><code>ANTHROPIC_API_KEY</code></td><td><code>claude-opus-4-8</code></td></tr>
+  <tr><td><code>ollama</code></td><td>Spring RestClient, NDJSON</td><td>local Ollama on :11434</td><td><code>qwen3</code></td></tr>
+  <tr><td><code>openai</code></td><td>Spring RestClient, SSE</td><td>any OpenAI-compatible server (LM Studio, llama.cpp, vLLM); key optional</td><td><code>local-model</code></td></tr>
+</table>
+
+<p>Selection rides the settings hierarchy (chapter 30 has every key): defaults
+&lt; environment (<code>SPECTRO_PROVIDER</code> / <code>SPECTRO_MODEL</code> /
+<code>SPECTRO_BASE_URL</code>, usually from <code>./.env</code> — the BASE layer)
+&lt; <code>~/.spectro/settings.json</code> (user) &lt; launch-dir
+<code>.spectro/settings.json</code> (deprecated) &lt; workspace
+<code>.spectro/settings.json</code> + <code>settings.local.json</code> &lt; CLI flags —
+any settings file outranks the env. “Local Ollama for this checkout” is three
+uncommented lines in <code>.env</code> as long as no settings file overrides them — and
+in the web UI you can switch provider and model mid-session from the header.</p>
+
+<!--MERMAID:03-config-precedence|Configuration precedence, low to high. Each layer only fills what the higher layers left unset.-->
+
+<!-- ============================== CH 3 ============================== -->
+<h1 data-ch="3" id="ch-map"><span class="ch-num">Chapter 3</span>The capability map</h1>
+
+<p class="lead">Everything the full build can do, on two pages. Each row names the
+chapter where the details live.</p>
+
+<table class="tbl">
+  <tr><th>Capability</th><th>In one sentence</th><th>Ch.</th></tr>
+  <tr><td><strong>Terminal REPL</strong></td><td>Interactive agent with tool cards, spinner, slash commands, voice input and spoken answers.</td><td>4</td></tr>
+  <tr><td><strong>Headless runs</strong></td><td><code>spectro run -p "…"</code> — one prompt, exit codes for CI, NDJSON event output with <code>--json</code>.</td><td>4</td></tr>
+  <tr><td><strong>Cron scheduling</strong></td><td>Jobs in <code>~/.spectro/jobs.json</code> run unattended with desktop notifications and audit sessions.</td><td>19</td></tr>
+  <tr><td><strong>Web chat</strong></td><td>Streaming chat with markdown answers, collapsible reasoning, tool cards with gate chips, image attachments, push-to-talk.</td><td>5</td></tr>
+  <tr><td><strong>Graph view</strong></td><td>Every run as a BPMN-style flow overview or a dagre DAG — live and for any archived session.</td><td>6</td></tr>
+  <tr><td><strong>Trace view</strong></td><td>The Wireshark of the harness: every wire frame both directions, filters, Δt, LLM-direction column, three detail modes.</td><td>6</td></tr>
+  <tr><td><strong>Right panel</strong></td><td>Agents roster, the agent's live plan, the exact system context per agent, and a sandboxed file browser.</td><td>6</td></tr>
+  <tr><td><strong>The Lab</strong></td><td>A step-through debugger for agent runs: dam up the event stream, advance it click by click across three synchronized views.</td><td>7</td></tr>
+  <tr><td><strong>Scenarios</strong></td><td>Seven deterministic, compiled demo runs — no LLM, no key — for teaching every mechanism.</td><td>7</td></tr>
+  <tr><td><strong>Sessions</strong></td><td>Every run is a JSONL file: list, replay, resume live (with the context re-upload made visible), delete with a two-step guard.</td><td>8</td></tr>
+  <tr><td><strong>Import</strong></td><td>Replay foreign files: raw spectroscope JSONL verbatim, Claude Code transcripts through an adapter.</td><td>8</td></tr>
+  <tr><td><strong>Design system</strong></td><td>Three brand designs — spectro dark, spectro bright, spectro white — switchable in place, particle/scroll effects, one-step persistence.</td><td>9</td></tr>
+  <tr><td><strong>Desktop app</strong></td><td>Electron shell that spawns and supervises the server JVM: health checks, tray, native cron notifications.</td><td>10</td></tr>
+  <tr><td><strong>DE/EN chrome</strong></td><td>The whole UI chrome switches between German and English live; content keeps its language.</td><td>11</td></tr>
+  <tr><td><strong>Tool belt</strong></td><td>18 built-in tools — files, shell, search, web fetch, plan, skills, spawns — plus every connected MCP tool.</td><td>12</td></tr>
+  <tr><td><strong>Permission system</strong></td><td>ask/auto/readonly modes, a blocking broker, prefix-scoped allowlist, “always allow” with optional persistence.</td><td>13</td></tr>
+  <tr><td><strong>Hooks</strong></td><td>Config-driven shell guards around every tool call: <code>pre_tool_use</code> can block before the gate, <code>post_tool_use</code> observes.</td><td>13</td></tr>
+  <tr><td><strong>Subagents</strong></td><td>Explore/worker children with their own context, visible A2A task/status/result protocol, four development role tools.</td><td>14</td></tr>
+  <tr><td><strong>Skills</strong></td><td><code>SKILL.md</code> packages with progressive disclosure — catalog in the prompt, body on demand.</td><td>15</td></tr>
+  <tr><td><strong>Provider switch</strong></td><td>Change LLM backend and model mid-session from the header; history intact; refused cleanly without a key.</td><td>16</td></tr>
+  <tr><td><strong>Resilience</strong></td><td>Transient-error retry with backoff (spectroscope owns it, SDK retry off) and Anthropic prompt caching with an honest compaction trigger.</td><td>16</td></tr>
+  <tr><td><strong>Vision</strong></td><td>Attach images in the composer or <code>--image</code>; blobs stay next to the session file, prompts stay small.</td><td>17</td></tr>
+  <tr><td><strong>Voice in/out</strong></td><td>Local whisper.cpp push-to-talk (editable transcript) and piper speech output that reads answers while they stream.</td><td>17</td></tr>
+  <tr><td><strong>Image generation</strong></td><td><code>generate_image</code> behind its own provider port (Gemini / OpenAI), content-addressed store, gallery panel.</td><td>17</td></tr>
+  <tr><td><strong>MCP client</strong></td><td>External tool servers over stdio or HTTP/SSE, Claude-Desktop-shaped config, at-most-once calls, example notes server included.</td><td>18</td></tr>
+  <tr><td><strong>Context management</strong></td><td>Automatic compaction at 100k tokens, forced <code>/compact</code>, live context ring with per-part introspection.</td><td>28</td></tr>
+  <tr><td><strong>Wire tracing</strong></td><td><code>--verbose</code> mirrors the full agent↔provider protocol to stderr; the Trace tab does it in the browser.</td><td>4, 6</td></tr>
+</table>

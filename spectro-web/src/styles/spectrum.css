@@ -1,0 +1,148 @@
+/* Spectrum tab — the fleet as spectral lines. One lane per agent: a label
+   rail on the left, the discrete-marks band on the right. Color appears ONLY
+   on the marks (brand rule); everything else stays monochrome. */
+
+.spectrum-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  gap: var(--sp-3);
+}
+
+.spectrum-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  flex-wrap: wrap;
+}
+
+.spectrum-legend {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.spectrum-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+.spectrum-legend-mark {
+  display: inline-block;
+  width: 3px;
+  height: 12px;
+  border-radius: 1px;
+}
+
+.spectrum-count {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+
+.spectrum-lanes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+
+/* A lane is one card-height row: rail | band. The whole row opens the trace. */
+.spectrum-lane {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: var(--sp-4);
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  padding: var(--sp-3) var(--sp-4);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  transition: border-color var(--t-fast), transform var(--t-fast);
+}
+.spectrum-lane:hover {
+  border-color: var(--border-strong);
+  transform: translateY(-1px);
+}
+
+.spectrum-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.spectrum-rail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.spectrum-id {
+  font-size: var(--fs-12);
+  letter-spacing: 0.02em;
+}
+.spectrum-label {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+}
+.spectrum-gate {
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  border: 1px solid var(--ev-pending);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+  letter-spacing: 0.06em;
+}
+.spectrum-task {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.spectrum-meta {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+
+.spectrum-band {
+  display: block;
+  min-width: 0;
+}
+.spectrum-band svg {
+  display: block;
+  width: 100%;
+  height: 40px;
+}
+.spectrum-baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.spectrum-empty {
+  margin: auto;
+  max-width: 30rem;
+  text-align: center;
+  color: var(--text-dim);
+}
+.spectrum-empty-sub {
+  font-size: var(--fs-13);
+  color: var(--text-faint);
+}
+
+.spectrum-note {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}

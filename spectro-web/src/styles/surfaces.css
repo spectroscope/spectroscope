@@ -1,0 +1,225 @@
+/* Phase-4 surfaces: the gate bar, the explain panel, the doctor page.
+   Colors come exclusively from tokens.css; the violet line is the one
+   "waiting on you" mark, gate outcomes wear the gate red / token teal. */
+
+/* ---------- Gate bar (first-class permission surface) ---------- */
+.gate-bar {
+  position: relative;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--sp-2) var(--sp-4) var(--sp-2) calc(var(--sp-4) + 4px);
+  flex: none;
+}
+.gate-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--ev-pending);
+}
+.gate-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.gate-kicker {
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.gate-tool { font-size: var(--fs-13); color: var(--text); }
+.gate-input {
+  flex: 1;
+  min-width: 8rem;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.gate-queue { font-size: var(--fs-11); color: var(--ev-pending); }
+.gate-remember {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.gate-remember input { accent-color: var(--accent); }
+.gate-deny,
+.gate-allow {
+  font: inherit;
+  font-size: var(--fs-13);
+  font-weight: 560;
+  border-radius: var(--radius-control);
+  padding: var(--sp-1) var(--sp-4);
+  cursor: pointer;
+  transition: border-color var(--t-fast), filter var(--t-fast), transform var(--t-fast);
+}
+.gate-deny {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.gate-deny:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+.gate-allow {
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  color: var(--text-on-accent);
+}
+.gate-allow:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.gate-expand { margin-left: auto; }
+
+.gate-detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding-top: var(--sp-2);
+}
+.gate-input-full {
+  margin: 0;
+  max-height: 9rem;
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.gate-history {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.gate-history-label {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.gate-history-row {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.gate-history-agent { color: var(--text-faint); }
+.gate-outcome {
+  font-size: var(--fs-11);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+  border: 1px solid;
+}
+.gate-outcome--allowed { color: var(--ev-token); border-color: var(--ev-token); }
+.gate-outcome--denied { color: var(--ev-gate); border-color: var(--ev-gate); }
+.gate-outcome--pending { color: var(--ev-pending); border-color: var(--ev-pending); }
+
+/* ---------- Explain panel (docked right of the trace stream) ---------- */
+.explain-panel {
+  width: 320px;
+  flex: none;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  padding: var(--sp-3) var(--sp-4) var(--sp-5);
+}
+.explain-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-2);
+}
+.explain-kicker {
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.explain-section { margin-bottom: var(--sp-4); }
+.explain-title {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
+  font-weight: 640;
+  letter-spacing: var(--track-heading);
+}
+.explain-prompt {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.explain-facts { margin: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.explain-facts > div { display: flex; justify-content: space-between; gap: var(--sp-3); }
+.explain-facts dt { color: var(--text-faint); font-size: var(--fs-12); }
+.explain-facts dd { margin: 0; font-size: var(--fs-12); color: var(--text-dim); text-align: right; }
+.explain-toollist {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.explain-gates { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.explain-gate { border: 1px solid var(--border); border-radius: var(--radius-chip); padding: var(--sp-2) var(--sp-3); }
+.explain-gate-head {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: var(--fs-12);
+  padding: 0;
+  cursor: pointer;
+}
+.explain-gate-head:hover { color: var(--accent); }
+.explain-gate-agent { color: var(--text-faint); }
+.explain-gate-why {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.explain-empty { font-size: var(--fs-12); color: var(--text-faint); }
+.explain-note {
+  margin: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+
+/* ---------- Doctor page ---------- */
+.doctor-page { max-width: 34rem; }
+.doctor-page .settings-head { gap: var(--sp-3); }
+.doctor-page .settings-hint { text-align: right; }
+.doctor-lede { margin: 0 0 var(--sp-3); font-size: var(--fs-13); color: var(--text-dim); }
+.doctor-list { list-style: none; margin: 0 0 var(--sp-4); padding: 0; display: flex; flex-direction: column; }
+.doctor-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+  border-bottom: 1px solid var(--border);
+}
+.doctor-row:last-child { border-bottom: none; }
+.doctor-label { flex: none; width: 11rem; font-size: var(--fs-13); }
+.doctor-value {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.doctor-cli { margin: 0; font-size: var(--fs-12); color: var(--text); }
+.doctor-cli-hint { margin: var(--sp-1) 0 0; font-size: var(--fs-12); color: var(--text-faint); }

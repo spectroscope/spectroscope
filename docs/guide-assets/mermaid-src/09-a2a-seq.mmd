@@ -1,0 +1,14 @@
+sequenceDiagram
+    participant M as main agent
+    participant SM as SubagentManager
+    participant W as worker-1 (own Agent)
+    M->>SM: build_plan {task} (tool_call)
+    SM-->>M: agent_spawn (tree edge)
+    SM-->>M: agent_message task · submitted
+    SM->>W: run(preamble + task) — own registry, same gate + hooks
+    W-->>M: agent_message status · working (report_status)
+    W-->>M: ...own run_start/tool_call/text_delta events (parentId set)
+    W->>SM: final text
+    SM-->>M: agent_message result · completed | failed
+    SM->>M: tool_result "[worker-1] result (tokens: X in / Y out): ..."
+    Note over M,W: limits: max 4 parallel · 120 s each · nesting depth 1

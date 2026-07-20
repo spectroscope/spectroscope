@@ -1,0 +1,10 @@
+flowchart TB
+    f["session JSONL lines"] --> filter["main agent only<br/>(first run_start without parentId)"]
+    filter --> fold["stateful fold"]
+    fold --> rs["run_start → USER message<br/>(images restored BEFORE text)"]
+    fold --> td["text_delta → assistant buffer"]
+    fold --> tc["tool_call / tool_result →<br/>matched pairs buffered"]
+    fold --> flush["turn_start or text-after-results<br/>→ flush buffer"]
+    flush --> drop["orphaned tool_calls dropped<br/>(crash mid round)"]
+    drop --> merge["mergeAdjacentRoles<br/>(API alternation rule)"]
+    merge --> hist["List of ProviderMessage —<br/>the agent continues seamlessly"]

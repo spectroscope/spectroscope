@@ -1,0 +1,165 @@
+<!-- ============================== PART II ============================== -->
+<div class="part">
+  <div class="part-num">II</div>
+  <div class="part-eyebrow">Part II</div>
+  <h1 class="part-title" data-ch="II" id="part2">The faces</h1>
+  <p class="part-sub">Five renderers of one event stream: the terminal, the web UI with
+  its tabs and panels, the step-through Lab, the session archive, the design system,
+  and the desktop shell.</p>
+  <div class="part-toc">
+    <div><span>4</span> The command line</div>
+    <div><span>5</span> The web face: Chat</div>
+    <div><span>6</span> The web face: tabs &amp; panels</div>
+    <div><span>7</span> The Lab</div>
+    <div><span>8</span> Sessions: replay, resume, delete, import</div>
+    <div><span>9</span> The design system</div>
+    <div><span>10</span> The desktop face</div>
+    <div><span>11</span> Two languages</div>
+  </div>
+</div>
+
+<!-- ============================== CH 4 ============================== -->
+<h1 data-ch="4" id="ch-cli"><span class="ch-num">Chapter 4</span>The command line</h1>
+
+<p class="lead">The CLI is the first face the workshop builds and the most direct one:
+a picocli application whose root command is an interactive REPL, with subcommands for
+headless runs, scheduling and diagnostics. Everything it prints is a rendering of the
+same RunEvent stream that the web UI folds and the session store writes.</p>
+
+<h2 id="ch-cli-commands">Commands and global flags</h2>
+
+<table class="tbl">
+  <tr><th>invocation</th><th>what it does</th></tr>
+  <tr><td><code>spectroscope</code></td><td>the interactive REPL (root command, no subcommand)</td></tr>
+  <tr><td><code>spectro run -p "…"</code></td><td>headless single prompt (see below)</td></tr>
+  <tr><td><code>spectroscope cron [list|status|--once id]</code></td><td>the scheduler — chapter 19</td></tr>
+  <tr><td><code>spectro sessions</code></td><td>list stored sessions (a positional, not a subcommand)</td></tr>
+  <tr><td><code>spectroscope --resume &lt;id&gt;</code></td><td>continue a stored session in the REPL</td></tr>
+  <tr><td><code>spectro doctor</code></td><td>the environment check</td></tr>
+  <tr><td><code>./spectro tour</code></td><td>the interactive menu tour of all faces</td></tr>
+</table>
+
+<p>Global flags on the root command apply to every entry point (subcommands reach them
+via picocli's <code>@ParentCommand</code> — so <code>flags &gt; env</code> holds on
+<code>run</code> and <code>doctor</code> too):</p>
+
+<table class="tbl">
+  <tr><th>flag</th><th>meaning</th></tr>
+  <tr><td><code>--provider</code> / <code>--model</code> / <code>--base-url</code></td><td>override the configured backend for this invocation</td></tr>
+  <tr><td><code>--compaction-threshold &lt;n&gt;</code></td><td>compaction trigger in input tokens (default 100&thinsp;000)</td></tr>
+  <tr><td><code>--resume &lt;id&gt;</code></td><td>rebuild the conversation from a session file and continue it</td></tr>
+  <tr><td><code>--verbose</code></td><td>mirror the agent↔provider wire protocol to stderr in cyan</td></tr>
+  <tr><td><code>--speak</code></td><td>read answers aloud while they stream (voice output, chapter 17)</td></tr>
+</table>
+
+<h2 id="ch-cli-repl">The REPL</h2>
+<p>Startup prints a banner naming the provider and model (for Ollama it live-probes the
+server version), the session id and file path, and the essential key bindings. The
+prompt is a coral <code>❯</code>. Each turn drives three consumers in order — the JSONL
+store, the speech renderer, the ANSI renderer — the CLI-side proof of “one stream, many
+renderers”.</p>
+
+<pre>◆ spectroscope  full build
+  ollama · gpt-oss:20b · ollama 0.24.0 · images: gemini · skills: 4 · allowlist active
+  session 20260716-091500-3fa4b2c1 · ~/.spectro/sessions/20260716-091500-3fa4b2c1.jsonl
+  /help for commands · /mcp servers · /voice push-to-talk · /speak on|off reads answers aloud · Ctrl+C aborts a run</pre>
+
+<p>Rendering rules worth knowing (all in <code>EventRenderer</code>):</p>
+<ul>
+  <li><strong>Thinking is dimmed.</strong> A reasoning model's <code>thinking_delta</code>
+      stream prints dim under a <code>· thinking</code> label, visually apart from the answer.</li>
+  <li><strong>Tool cards.</strong> Each call prints <code>⚒ name</code> (coral hammer) with a
+      100-char input preview; the result line shows <code>✓/✗ &lt;ms&gt; · output preview</code>.</li>
+  <li><strong>Permissions inline.</strong> A gated call prints a sand
+      <code>run &lt;tool&gt;? [y/N]</code> prompt; only <code>y</code> approves. Allowlisted calls
+      print <code>✓ auto-approved by allowlist</code> instead — the decision is still recorded
+      in the stream.</li>
+  <li><strong>Subagents in brackets.</strong> Child events render as
+      <code>[worker-1] …</code> lines with line-buffered text so parallel children stay readable;
+      A2A task/status/result messages appear as one dim line each.</li>
+  <li><strong>The plan pretty-print.</strong> An <code>update_plan</code> call renders
+      <code>◇ plan (N steps)</code> with <code>[x]</code> done, coral <code>[~]</code> running,
+      <code>[ ]</code> open.</li>
+  <li><strong>Degradation.</strong> Colors and the braille spinner appear only on a real TTY
+      (and never with <code>NO_COLOR</code> or <code>TERM=dumb</code>); piped output is plain text.</li>
+</ul>
+
+<h2 id="ch-cli-slash">Slash commands</h2>
+<p>Handled entirely in the CLI — none of these ever reaches the model:</p>
+
+<table class="tbl">
+  <tr><th>command</th><th>behaviour</th></tr>
+  <tr><td><code>/help</code></td><td>lists all twelve commands with one-liners</td></tr>
+  <tr><td><code>/cost</code></td><td>cumulative session tokens: <code>Session usage: X in / Y out</code></td></tr>
+  <tr><td><code>/model</code></td><td>current provider · model (+ base URL for local providers)</td></tr>
+  <tr><td><code>/sessions</code></td><td>the stored-session listing, same as <code>spectro sessions</code></td></tr>
+  <tr><td><code>/skills</code></td><td>installed skills with descriptions (chapter 15)</td></tr>
+  <tr><td><code>/mcp</code></td><td>connected MCP servers, reachability, and every <code>mcp__…</code> tool (chapter 18)</td></tr>
+  <tr><td><code>/think on|off</code></td><td>toggles reasoning visibility; rebuilds the agent and reloads the session history so nothing is lost</td></tr>
+  <tr><td><code>/voice</code></td><td>push-to-talk: record → transcribe → editable confirmation (chapter 17)</td></tr>
+  <tr><td><code>/speak on|off</code></td><td>voice output at runtime; <code>off</code> also stops the current sentence</td></tr>
+  <tr><td><code>/compact</code></td><td>force a context compaction now (<code>Agent.compactNow()</code>); prints the result or “Nothing to compact”</td></tr>
+  <tr><td><code>/clear</code></td><td>fresh agent, fresh session file: <code>New session: &lt;id&gt;</code></td></tr>
+  <tr><td><code>/exit</code></td><td>leave (empty line or Ctrl-D work too)</td></tr>
+</table>
+
+<h2 id="ch-cli-run">Headless runs: <code>spectro run</code></h2>
+<p>The automation face. One prompt, one process, honest exit codes:</p>
+
+<pre># plain: prints only the final answer text
+./spectro run -p "Count the Java files under spectro-core."
+
+# NDJSON: every RunEvent on stdout, one per line — byte-identical to the JSONL format
+./spectro run -p "Say OK." --json | jq -c '{type}'
+
+# guard rails
+./spectro run -p "…" --max-turns 5 --permissions readonly</pre>
+
+<table class="tbl">
+  <tr><th>flag</th><th>meaning</th></tr>
+  <tr><td><code>-p, --prompt</code></td><td>required task text</td></tr>
+  <tr><td><code>--json</code></td><td>NDJSON events on stdout; ALL diagnostics go to stderr, so <code>| jq</code> pipelines stay clean</td></tr>
+  <tr><td><code>--max-turns &lt;n&gt;</code></td><td>cancel when a turn exceeds the limit (stop reason <code>max_turns</code>)</td></tr>
+  <tr><td><code>--permissions readonly|auto</code></td><td>the headless policy. Default <strong>readonly</strong> — “capability before convenience”: unattended runs deny mutations unless you opt in</td></tr>
+  <tr><td><code>--image &lt;path&gt;</code></td><td>attach an image (repeatable; jpg/jpeg/png/webp/gif) — vision, chapter 17</td></tr>
+  <tr><td><code>--verbose</code> / <code>--speak</code></td><td>as on the REPL</td></tr>
+</table>
+
+<p><strong>Exit code contract:</strong> 0 only when the run ended with a regular
+<code>end_turn</code>. Anything else (aborted, max turns, error) exits 1 and names the
+stop reason and the session id on stderr — the session file is always there for
+post-mortem inspection.</p>
+
+<h2 id="ch-cli-doctor">The twelve doctor checks</h2>
+<table class="tbl dense">
+  <tr><th>#</th><th>check</th><th>what it verifies</th></tr>
+  <tr><td>1</td><td>Java runtime</td><td>runtime major version ≥ 21</td></tr>
+  <tr><td>2</td><td>Config hierarchy</td><td>the layered config loads; shows provider/model/permissionMode/allowlist count and which layers exist. A broken config stops doctor immediately — nothing below would make sense</td></tr>
+  <tr><td>3</td><td>Provider reachability</td><td>anthropic: key present · ollama: live version probe · openai: GET <code>/v1/models</code> (2 s/3 s timeouts)</td></tr>
+  <tr><td>4</td><td>Image provider</td><td>key for gemini/openai; a missing key is informational, not unhealthy</td></tr>
+  <tr><td>5</td><td>Skills</td><td>count + names of installed skills</td></tr>
+  <tr><td>6</td><td>Hooks</td><td>count + <code>event:matcher</code> pairs</td></tr>
+  <tr><td>7</td><td>MCP servers</td><td>connects each configured server: reachable + tool count, or a red UNREACHABLE line (never a crash)</td></tr>
+  <tr><td>8</td><td>Vision</td><td>informational hint matching your provider (vision model needed locally)</td></tr>
+  <tr><td>9</td><td>Voice input</td><td><code>whisper-cli</code> on PATH + the ggml model file present</td></tr>
+  <tr><td>10</td><td>Voice output</td><td>piper binary + voice model present</td></tr>
+  <tr><td>11</td><td>Sessions dir</td><td>creates the dir, writes and deletes a probe file, counts sessions</td></tr>
+  <tr><td>12</td><td>jobs.json</td><td>the cron file parses (loudly invalid otherwise)</td></tr>
+</table>
+
+<h2 id="ch-cli-verbose">Wire tracing with <code>--verbose</code></h2>
+<p>A decorator around the provider mirrors the whole protocol to <strong>stderr</strong>
+in cyan: the full outgoing request before each call (message count, tool names, clipped
+system prompt, every content block) and each incoming provider event as it streams
+(<code>⇠ text_delta "…"</code>, <code>⇠ tool_call name {…}</code>,
+<code>⇠ usage 123 in / 45 out</code>, <code>⇠ stop end_turn</code>). Because it writes to
+stderr, <code>spectro run --json | jq</code> keeps a clean stdout. In the REPL the traced
+instance is shared with subagents — you see the children's requests too.</p>
+
+<h2 id="ch-cli-tour">The tour</h2>
+<p><code>./spectro tour</code> is a menu-driven guide around all faces: launch the REPL,
+list or resume sessions, do a headless run, drive cron, start the web jar, run doctor —
+plus a settings screen that captures a provider choice and API key for the session
+(hidden input, optional save to <code>./.env</code> with mode 600) and stage-appropriate
+“try this” tips. The same file ships in every workshop stage and detects at runtime
+which features exist; in the full build it shows everything.</p>

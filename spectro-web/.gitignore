@@ -1,0 +1,16 @@
+node_modules
+dist
+dist-prototype
+dist-prototype-en
+exports
+*.local
+*.tsbuildinfo
+
+# Editor directories and files
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

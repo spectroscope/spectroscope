@@ -1,0 +1,652 @@
+/* ==========================================================================
+   System-Map · React Flow prototype
+   A standalone showcase of what the Lab "Karte" could become on React Flow.
+   100% design-token driven → reskins across all 6 genomes; honours
+   prefers-reduced-motion. No app.css is imported, so every class is pf-*.
+   ========================================================================== */
+
+.pf-root {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  overflow: hidden;
+}
+
+/* ---- React Flow theming ------------------------------------------------- */
+.pf-flow {
+  width: 100%;
+  height: 100%;
+}
+.pf-flow .react-flow__background {
+  background: radial-gradient(120% 120% at 30% 0%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 55%),
+    var(--bg);
+}
+/* Strip React Flow's default node chrome — our custom nodes bring their own. */
+.react-flow__node-zone,
+.react-flow__node-user,
+.react-flow__node-agent,
+.react-flow__node-os,
+.react-flow__node-llm,
+.react-flow__node-ext,
+.react-flow__node-subagent {
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  width: auto;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: default;
+}
+.react-flow__handle {
+  opacity: 0;
+  pointer-events: none;
+  border: none;
+  min-width: 1px;
+  min-height: 1px;
+  width: 1px;
+  height: 1px;
+}
+.react-flow__attribution { display: none; }
+
+.react-flow__controls {
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  border: 1px solid var(--border-strong);
+}
+.react-flow__controls-button {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  fill: var(--text-dim);
+}
+.react-flow__controls-button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+  fill: var(--text);
+}
+.react-flow__minimap {
+  border-radius: 10px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface) !important;
+  overflow: hidden;
+}
+.react-flow__minimap-mask { fill: color-mix(in srgb, var(--bg) 72%, transparent); }
+
+/* ---- Zones (background containers) -------------------------------------- */
+.pf-zone {
+  width: 100%;
+  height: 100%;
+  border-radius: 20px;
+  border: 1px solid var(--border);
+  background:
+    radial-gradient(140% 90% at 20% 0%, color-mix(in srgb, var(--surface-2) 55%, transparent), transparent 70%),
+    color-mix(in srgb, var(--surface) 40%, transparent);
+  box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+}
+.pf-zone::before {
+  /* dotted grain, like the current SystemMap */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(var(--border-strong) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0.14;
+  pointer-events: none;
+}
+.pf-zone--outside {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--surface) 22%, transparent);
+}
+.pf-zone--os {
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--surface) 55%, transparent);
+}
+.pf-zone__eyebrow {
+  position: absolute;
+  top: 14px;
+  left: 18px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: var(--text-dim);
+}
+.pf-zone--outside .pf-zone__eyebrow { color: var(--text-faint); }
+.pf-diamond {
+  width: 9px;
+  height: 9px;
+  transform: rotate(45deg);
+  background: var(--sand);
+  box-shadow: 0 0 14px var(--sand-glow);
+}
+
+/* ---- Netzgrenze (boundary) ---------------------------------------------- */
+.pf-boundary {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+.pf-boundary::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  border-left: 1.5px dashed var(--border-strong);
+}
+.pf-boundary__tag {
+  position: absolute;
+  left: 50%;
+  top: 8px;
+  transform: translateX(-50%);
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  color: var(--text-faint);
+  background: var(--bg);
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+/* ---- Generic card ------------------------------------------------------- */
+.pf-card {
+  box-sizing: border-box;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.34);
+  transition: border-color 160ms ease, box-shadow 220ms ease, transform 220ms ease;
+}
+.pf-card--active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 34px var(--accent-glow), 0 12px 34px rgba(0, 0, 0, 0.34);
+}
+.pf-card--error.pf-card--active {
+  border-color: var(--error);
+  box-shadow: 0 0 0 1px var(--error), 0 0 30px var(--error-soft), 0 12px 34px rgba(0, 0, 0, 0.34);
+}
+.pf-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+}
+.pf-mono { font-family: var(--font-mono); }
+
+/* ---- Agent hub ---------------------------------------------------------- */
+.pf-agent {
+  width: 336px;
+  padding: 14px 16px 12px;
+}
+.pf-agent__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.pf-agent__title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+.pf-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--agent-root) 26%, var(--surface-3));
+  border: 1px solid color-mix(in srgb, var(--agent-root) 55%, transparent);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+}
+.pf-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  max-width: 190px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.pf-status__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+.pf-pulse { animation: pf-pulse 1.2s ease-in-out infinite; }
+@keyframes pf-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.5); }
+}
+
+.pf-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 11px;
+  margin-top: 7px;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 12px;
+}
+.pf-row--lit { border-color: var(--accent); }
+.pf-row__label { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.pf-row__note { font-size: 11px; color: var(--text-dim); }
+.pf-lock {
+  width: 12px; height: 11px; border-radius: 2px;
+  border: 1.4px solid currentColor; border-top: none;
+  position: relative;
+}
+.pf-lock::before {
+  content: ""; position: absolute; left: 1.5px; top: -5px;
+  width: 7px; height: 6px; border: 1.4px solid currentColor; border-bottom: none;
+  border-radius: 5px 5px 0 0;
+}
+
+.pf-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 9px;
+}
+.pf-chip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: all 140ms ease;
+}
+.pf-chip--on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+/* ---- Disclosure (expandable content) ------------------------------------ */
+.pf-disc { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 9px; }
+.pf-disc__btn {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+  width: 100%;
+}
+.pf-disc__btn:hover { color: var(--text); }
+.pf-disc__chev { transition: transform 180ms ease; font-size: 9px; color: var(--accent); }
+.pf-disc__btn[aria-expanded="true"] .pf-disc__chev { transform: rotate(90deg); }
+.pf-disc__body {
+  margin-top: 9px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* keep children from widening the node */
+  gap: 10px;
+  max-width: 100%;
+  max-height: 300px; /* cap growth so an expanded node never runs into its neighbours */
+  overflow-y: auto;
+  animation: pf-reveal 200ms ease;
+}
+@keyframes pf-reveal { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+.pf-kv { font-size: 11px; color: var(--text-dim); }
+.pf-kv b { color: var(--text); font-weight: 600; }
+
+/* context bars */
+.pf-ctx { display: grid; gap: 6px; }
+.pf-ctx__row { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: 10.5px; }
+.pf-ctx__bar { height: 6px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.pf-ctx__fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--sand), color-mix(in srgb, var(--sand) 40%, var(--accent))); }
+.pf-ctx__tok { font-family: var(--font-mono); color: var(--text-faint); font-size: 10px; }
+
+.pf-panelbox {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  padding: 9px 10px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.pf-panelbox__label { font-size: 10px; letter-spacing: 0.12em; color: var(--sand); margin-bottom: 6px; text-transform: uppercase; }
+.pf-prose { font-size: 11px; line-height: 1.5; color: var(--text-dim); max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.pf-json { overflow-x: auto; }
+
+/* ---- User node ---------------------------------------------------------- */
+.pf-user { width: 116px; padding: 12px; text-align: center; }
+.pf-user__avatar {
+  width: 40px; height: 40px; margin: 0 auto 8px; border-radius: 50%;
+  background: var(--surface); border: 1px solid var(--border-strong);
+  display: grid; place-items: center; font-size: 15px;
+}
+.pf-user__name { font-weight: 700; font-size: 13px; }
+.pf-user__sub { font-size: 10px; color: var(--text-faint); letter-spacing: 0.08em; margin-top: 2px; }
+
+/* ---- OS nodes ----------------------------------------------------------- */
+.pf-os { width: 152px; padding: 11px 12px; text-align: center; } /* all OS-band text centered */
+.pf-os--shell { width: 200px; } /* wider so the command reads well */
+.pf-os--mcp { width: 190px; } /* the MCP client is wider */
+.pf-os--net { width: 104px; } /* the network is just a small globe → narrower */
+.pf-os__head { display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 8px; }
+.pf-os__line { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: center; }
+.pf-os__line--on { color: var(--sand); }
+
+/* disk animation */
+.pf-disk { display: grid; place-items: center; height: 56px; }
+.pf-disk svg { overflow: visible; }
+.pf-platter { transform-box: fill-box; transform-origin: center; }
+.pf-disk[data-disk="read"] .pf-platter,
+.pf-disk[data-disk="write"] .pf-platter { animation: pf-spin 1.6s linear infinite; }
+@keyframes pf-spin { to { transform: rotate(360deg); } }
+.pf-arm { transform-box: fill-box; transform-origin: 92% 30%; transition: transform 300ms ease; }
+.pf-disk[data-disk="read"] .pf-arm { transform: rotate(-16deg); }
+.pf-disk[data-disk="write"] .pf-arm { transform: rotate(-24deg); }
+.pf-ripple { opacity: 0; }
+.pf-disk[data-disk="read"] .pf-ripple,
+.pf-disk[data-disk="write"] .pf-ripple { animation: pf-ripple 1.4s ease-out infinite; }
+@keyframes pf-ripple { 0% { r: 12px; opacity: 0.55; } 100% { r: 26px; opacity: 0; } }
+.pf-filepill {
+  margin-top: 8px; text-align: center; font-family: var(--font-mono); font-size: 10.5px;
+  padding: 3px 8px; border-radius: 999px; border: 1px solid var(--ok); color: var(--sand);
+  background: var(--surface);
+}
+.pf-filepill--write { border-color: var(--accent); }
+
+/* network glyph — an animated globe: meridians spin + a signal packet orbits */
+.pf-globe { display: grid; place-items: center; height: 44px; color: var(--text-dim); }
+.pf-globe--on { color: var(--accent); }
+.pf-globe svg { overflow: visible; }
+.pf-globe__rim, .pf-globe__lat, .pf-globe__axis, .pf-globe__mer { fill: none; stroke: currentColor; stroke-width: 1.1; }
+.pf-globe__lat, .pf-globe__axis { opacity: 0.45; }
+.pf-globe__mer { opacity: 0.7; }
+.pf-globe__packet { fill: currentColor; opacity: 0; }
+.pf-globe--on .pf-globe__rim { filter: drop-shadow(0 0 3px var(--accent-glow)); }
+.pf-globe--on .pf-globe__packet { opacity: 1; }
+.pf-globe--on .pf-globe__mer1 { animation: pf-globe-spin 2.6s ease-in-out infinite; }
+.pf-globe--on .pf-globe__mer2 { animation: pf-globe-spin 2.6s ease-in-out infinite; animation-delay: -1.3s; }
+.pf-globe__orbit { transform-box: view-box; transform-origin: 22px 22px; }
+.pf-globe--on .pf-globe__orbit { animation: pf-orbit 2.1s linear infinite; }
+@keyframes pf-globe-spin { 0%, 100% { rx: 15px; } 50% { rx: 1.5px; } }
+@keyframes pf-orbit { to { transform: rotate(360deg); } }
+
+/* shell — a tiny live terminal: coral prompt, command types out, blinking cursor */
+.pf-shell {
+  display: flex; align-items: center; justify-content: center; gap: 3px;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+  white-space: nowrap;
+}
+.pf-shell--on { color: var(--sand); }
+.pf-shell__prompt { color: var(--accent); font-weight: 700; }
+.pf-shell__idle { color: var(--text-faint); }
+.pf-shell__cmd { display: inline-block; vertical-align: bottom; }
+.pf-shell--on .pf-shell__cmd {
+  overflow: hidden; white-space: nowrap;
+  width: calc(var(--n, 1) * 1ch);
+  animation: pf-type 1.05s steps(20, end) both;
+}
+.pf-shell__cursor {
+  display: inline-block; width: 6px; height: 12px; background: currentColor;
+  vertical-align: -2px; animation: pf-blink 1.05s steps(1, end) infinite;
+}
+@keyframes pf-type { from { width: 0; } }
+@keyframes pf-blink { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+
+/* ---- User keyboard: keys ripple like someone typing the prompt ---- */
+.pf-kbd { display: grid; place-items: center; margin: 0 auto 6px; color: var(--text-dim); }
+.pf-kbd--on { color: var(--accent); }
+.pf-kbd__key { fill: var(--surface-3); stroke: var(--border-strong); stroke-width: 0.5; transform-box: fill-box; transform-origin: center; }
+.pf-kbd__space { fill: var(--surface-2); }
+.pf-kbd--on .pf-kbd__key { animation: pf-key 1.5s ease-in-out infinite; }
+@keyframes pf-key {
+  0%, 100% { fill: var(--surface-3); transform: translateY(0); }
+  8% { fill: var(--accent); transform: translateY(1px); }
+  22% { fill: var(--surface-3); transform: translateY(0); }
+}
+
+/* ---- Netz router: blinking activity LEDs + routing signal waves ---- */
+.pf-router { display: grid; place-items: center; margin: 0 auto 6px; color: var(--text-dim); }
+.pf-router--on { color: var(--accent); }
+.pf-router__body { fill: var(--surface-3); stroke: currentColor; stroke-width: 1; }
+.pf-router__ant { stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; }
+.pf-router__tip { fill: currentColor; }
+.pf-router__port { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 0.5; }
+.pf-router__led { fill: var(--border-strong); }
+.pf-router--on .pf-router__led { fill: var(--ok); animation: pf-led 1s steps(1, end) infinite; }
+.pf-router__wave { fill: none; stroke: currentColor; stroke-width: 1; opacity: 0; transform-box: fill-box; transform-origin: center; }
+.pf-router--on .pf-router__wave { animation: pf-wave 1.8s ease-out infinite; }
+@keyframes pf-led { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0.2; } }
+@keyframes pf-wave { 0% { opacity: 0.55; transform: scale(0.35); } 100% { opacity: 0; transform: scale(1.25); } }
+
+/* ---- MCP-Server ALU: chip cells flicker like it's crunching ---- */
+.pf-alu { display: grid; place-items: center; margin: 0 auto 6px; color: var(--text-dim); }
+.pf-alu--on { color: var(--accent); }
+.pf-alu__chip { fill: var(--surface-3); stroke: currentColor; stroke-width: 1; }
+.pf-alu__pin { stroke: var(--border-strong); stroke-width: 1.2; stroke-linecap: round; }
+.pf-alu__cell { fill: var(--border-strong); }
+.pf-alu--on .pf-alu__cell { animation: pf-crunch 0.6s steps(1, end) infinite; }
+@keyframes pf-crunch {
+  0% { fill: var(--border-strong); }
+  33% { fill: var(--sand); }
+  66% { fill: var(--accent); }
+  100% { fill: var(--border-strong); }
+}
+
+.pf-ext--center { text-align: center; }
+.pf-ext--center .pf-ext__head { justify-content: center; }
+
+/* ---- LLM node ----------------------------------------------------------- */
+.pf-llm { width: 176px; padding: 16px 14px; text-align: center; position: relative; }
+.pf-llm__halo {
+  position: absolute; inset: -18px; border-radius: 50%;
+  background: radial-gradient(circle, var(--accent-glow), transparent 68%);
+  opacity: 0; transition: opacity 260ms ease; pointer-events: none;
+}
+.pf-llm--active .pf-llm__halo { opacity: 1; animation: pf-breathe 2.4s ease-in-out infinite; }
+@keyframes pf-breathe { 0%,100% { transform: scale(1); opacity: 0.7; } 50% { transform: scale(1.12); opacity: 1; } }
+.pf-llm__net {
+  width: 116px; height: 62px; margin: 0 auto 8px; border-radius: 14px;
+  background: color-mix(in srgb, var(--surface-3) 70%, transparent);
+  border: 1px solid var(--border-strong);
+  display: grid; place-items: center; position: relative; overflow: hidden;
+  transition: border-color 200ms ease;
+}
+.pf-llm--active .pf-llm__net { border-color: var(--accent); }
+
+/* neural-network glyph */
+.pf-nn { display: block; }
+.pf-nn__edges line { stroke: var(--border-strong); stroke-width: 0.8; opacity: 0.4; }
+.pf-nn__nodes circle { fill: var(--text-dim); transition: fill 200ms ease; }
+.pf-nn__nodes .pf-nn__out { fill: var(--text-dim); }
+.pf-nn--active .pf-nn__edges line {
+  stroke: var(--accent); opacity: 0.55; stroke-dasharray: 3 7;
+  animation: pf-nn-flow 0.9s linear infinite;
+}
+.pf-nn--active .pf-nn__nodes circle {
+  fill: var(--accent); animation: pf-nn-pulse 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 2px var(--accent-glow));
+}
+.pf-nn--active .pf-nn__nodes .pf-nn__out { fill: var(--sand); }
+@keyframes pf-nn-flow { to { stroke-dashoffset: -10; } }
+@keyframes pf-nn-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+.pf-llm__name { font-weight: 700; font-size: 15px; letter-spacing: 0.04em; }
+.pf-llm__model { font-family: var(--font-mono); font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.pf-llm__loc { font-size: 10px; letter-spacing: 0.08em; margin-top: 6px; color: var(--text-faint); }
+.pf-llm__loc b { color: var(--sand); }
+
+/* ---- External services -------------------------------------------------- */
+.pf-ext { width: 150px; padding: 12px; }
+.pf-ext__head { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 12px; }
+.pf-ext__glyph {
+  width: 26px; height: 26px; border-radius: 8px; background: var(--surface-3);
+  border: 1px solid var(--border-strong); display: grid; place-items: center; font-size: 13px;
+}
+.pf-ext__sub { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint); margin-top: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pf-ext__sub--on { color: var(--sand); }
+
+/* ---- Subagent node ------------------------------------------------------ */
+.pf-sub { width: 216px; padding: 12px 13px; }
+.pf-sub__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.pf-sub__id { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; }
+.pf-sub__dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+.pf-badge { font-size: 9.5px; letter-spacing: 0.08em; padding: 2px 8px; border-radius: 999px; border: 1px solid currentColor; text-transform: uppercase; white-space: nowrap; }
+.pf-sub__task { font-size: 11px; color: var(--text-dim); margin-top: 8px; line-height: 1.45; max-height: 46px; overflow: hidden; }
+.pf-sub__status { font-family: var(--font-mono); font-size: 11px; margin-top: 8px; display: flex; align-items: center; gap: 7px; }
+
+/* ---- Rails + packet (custom edges) -------------------------------------- */
+.pf-rail { fill: none; stroke: var(--border-strong); stroke-width: 1.6px; }
+.pf-rail--net { stroke-dasharray: 3 6; }
+.pf-rail--active {
+  stroke: var(--accent);
+  stroke-width: 2.4px;
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+.pf-rail--active.pf-rail--flow {
+  stroke-dasharray: 5 9;
+  animation: pf-dash 0.55s linear infinite;
+}
+.pf-rail--err { stroke: var(--error); filter: drop-shadow(0 0 6px var(--error-soft)); }
+@keyframes pf-dash { to { stroke-dashoffset: -14; } }
+
+.pf-comet { fill: var(--accent); filter: drop-shadow(0 0 6px var(--accent)); }
+.pf-comet--err { fill: var(--error); filter: drop-shadow(0 0 6px var(--error)); }
+.pf-comet-glow { fill: var(--accent-glow); }
+
+/* ---- Toolbar / panels --------------------------------------------------- */
+.pf-panel-tl { margin: 14px; }
+.pf-brand { display: flex; align-items: center; gap: 12px; }
+.pf-brand__mark { width: 34px; height: 34px; border-radius: 9px; background: var(--bg); border: 1px solid var(--border-strong); display: grid; place-items: center; }
+.pf-brand__mark span { width: 15px; height: 15px; background: var(--accent); transform: rotate(45deg); }
+.pf-brand__title { font-weight: 800; font-size: 16px; letter-spacing: 0.02em; }
+.pf-brand__sub { font-size: 10px; letter-spacing: 0.18em; color: var(--text-faint); text-transform: uppercase; margin-top: 1px; }
+
+.pf-bar {
+  margin: 14px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--border-strong);
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+  min-width: 288px;
+}
+.pf-bar__group { display: flex; align-items: center; gap: 8px; }
+.pf-bar__group + .pf-bar__group { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+.pf-bar__label { font-size: 10px; letter-spacing: 0.14em; color: var(--text-faint); text-transform: uppercase; margin-bottom: 8px; }
+
+.pf-btn {
+  all: unset;
+  cursor: pointer;
+  display: inline-grid;
+  place-items: center;
+  min-width: 36px;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  color: var(--text-dim);
+  font-size: 14px;
+  transition: all 130ms ease;
+}
+.pf-btn:hover { background: var(--surface-3); color: var(--text); border-color: var(--text-faint); }
+.pf-btn:disabled { opacity: 0.4; cursor: default; }
+.pf-btn--primary { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); font-weight: 700; }
+.pf-btn--primary:hover { background: var(--accent-hover); color: var(--text-on-accent); }
+
+.pf-seg { display: inline-flex; background: var(--surface); border: 1px solid var(--border); border-radius: 9px; padding: 3px; gap: 3px; }
+.pf-seg button {
+  all: unset; cursor: pointer; padding: 5px 11px; border-radius: 6px;
+  font-size: 11px; color: var(--text-dim);
+}
+.pf-seg button[data-on="true"] { background: var(--surface-3); color: var(--text); }
+
+.pf-select {
+  appearance: none;
+  background: var(--surface) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23A8A79E' fill='none' stroke-width='1.4'/%3E%3C/svg%3E") no-repeat right 10px center;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 12px;
+  padding: 8px 28px 8px 11px;
+  cursor: pointer;
+}
+.pf-range { accent-color: var(--accent); width: 128px; }
+
+.pf-progress { margin-top: 12px; }
+.pf-progress__track { height: 5px; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.pf-progress__fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--sand)); transition: width 200ms ease; }
+.pf-progress__meta { display: flex; justify-content: space-between; margin-top: 7px; font-size: 10.5px; color: var(--text-faint); font-family: var(--font-mono); }
+.pf-progress__ev { color: var(--sand); }
+
+.pf-legend {
+  margin: 14px;
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 9px 14px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.pf-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.pf-legend i { width: 20px; height: 0; border-top: 2px solid var(--border-strong); }
+.pf-legend i.on { border-top-color: var(--accent); }
+.pf-legend i.net { border-top-style: dashed; }
+.pf-legend b { width: 8px; height: 8px; border-radius: 50%; }
+
+/* ---- JSON tree ---------------------------------------------------------- */
+.pf-json { font-family: var(--font-mono); font-size: 11px; line-height: 1.55; }
+.pf-json__row { white-space: pre; }
+.pf-json__toggle { cursor: pointer; color: var(--accent); user-select: none; }
+.pf-json__key { color: var(--sand); }
+.pf-json__str { color: var(--text); }
+.pf-json__num { color: color-mix(in srgb, var(--ok) 80%, var(--text)); font-variant-numeric: tabular-nums; }
+.pf-json__bool { color: var(--warn); }
+.pf-json__punct { color: var(--text-faint); }
+
+/* ---- Reduced motion ----------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .pf-rail--active.pf-rail--flow { animation: none; stroke-dasharray: none; }
+  .pf-platter, .pf-ripple, .pf-llm--active .pf-llm__halo, .pf-pulse,
+  .pf-nn--active .pf-nn__edges line, .pf-nn--active .pf-nn__nodes circle,
+  .pf-globe--on .pf-globe__mer, .pf-globe--on .pf-globe__orbit, .pf-shell--on .pf-shell__cmd,
+  .pf-kbd--on .pf-kbd__key, .pf-router--on .pf-router__led, .pf-router--on .pf-router__wave,
+  .pf-alu--on .pf-alu__cell { animation: none !important; }
+  .pf-shell--on .pf-shell__cmd { width: auto; }
+  .pf-comet, .pf-comet-glow { display: none; }
+}

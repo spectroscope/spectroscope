@@ -1,0 +1,190 @@
+<!-- ============================== PART IV ============================== -->
+<div class="part">
+  <div class="part-num">IV</div>
+  <div class="part-eyebrow">Part IV</div>
+  <h1 class="part-title" data-ch="IV" id="part4">The file system</h1>
+  <p class="part-sub">Everything spectroscope writes and reads lives in two places: a per-user
+  home under <code>~/.spectro</code> and an optional per-project <code>.spectro/</code> folder.
+  This part maps every file — and opens one up.</p>
+  <div class="part-toc">
+    <div><span>20</span> Where everything lives</div>
+  </div>
+</div>
+
+<!-- ============================== CH 20 ============================== -->
+<h1 data-ch="20" id="ch-fs"><span class="ch-num">Chapter 20</span>Where everything lives</h1>
+
+<p class="lead">spectroscope keeps no database, no hidden caches, no binary state. Everything is
+plain files you can read, version, back up and delete — most of it line-oriented JSON
+that <code>jq</code> understands directly.</p>
+
+<h2 id="ch-fs-home">The user home: <code>~/.spectro</code></h2>
+
+<pre class="tree"><span class="d">~/.spectro/</span>
+├── <span class="f">settings.json</span>            <span class="c">user settings layer (optional) — provider, model, autoApprove,</span>
+│                            <span class="c">mcpServers, hooks, tts … every key in chapter 30.</span>
+│                            <span class="c">(config.json, the legacy name, is still read beneath it</span>
+│                            <span class="c">for one release — `spectro doctor --migrate` renames it)</span>
+├── <span class="d">sessions/</span>                <span class="c">the session archive — the heart of it all</span>
+│   ├── <span class="hl">20260716-091500-3fa4b2c1.jsonl</span>   <span class="c">one session = one append-only event file</span>
+│   └── <span class="d">20260716-091500-3fa4b2c1/</span>        <span class="c">only when images were attached:</span>
+│       └── <span class="d">blobs/</span>
+│           └── <span class="f">ca96adb5…f90157</span>          <span class="c">attachment bytes, file name = sha256</span>
+├── <span class="d">images/</span>                  <span class="c">generated images, shared across sessions</span>
+│   └── <span class="f">3f7a99c2…81d4.png</span>       <span class="c">content-addressed: &lt;sha256&gt;.&lt;png|jpg|webp&gt;</span>
+├── <span class="d">skills/</span>                  <span class="c">user-scope skills (chapter 15)</span>
+│   └── <span class="d">my-skill/</span><span class="f">SKILL.md</span>
+├── <span class="d">models/</span>                  <span class="c">local speech models (voice setup scripts)</span>
+│   ├── <span class="f">ggml-small.bin</span>          <span class="c">whisper.cpp STT model (~460 MB, SHA-pinned)</span>
+│   ├── <span class="d">piper/</span><span class="f">piper</span>            <span class="c">TTS binary</span>
+│   └── <span class="f">en_US-lessac-medium.onnx</span> <span class="c">TTS voice</span>
+├── <span class="d">notes/</span>                   <span class="c">the example MCP server's note store (one .txt per note)</span>
+├── <span class="f">jobs.json</span>                <span class="c">cron jobs — an array, hand-edited (chapter 19)</span>
+└── <span class="f">jobs-state.json</span>          <span class="c">last outcome per job id — written by the scheduler</span></pre>
+
+<p class="small">Directories appear on demand — a fresh install has none of them until
+the first session, the first generated image, the first setup script. On this machine,
+today: <code>sessions/</code> (11 files, 228&thinsp;kB) and <code>models/</code> (465&thinsp;MB —
+the whisper model dominates).</p>
+
+<h2 id="ch-fs-project">The launch-dir layer: <code>&lt;launch dir&gt;/.spectroscope</code></h2>
+
+<pre class="tree"><span class="d">&lt;launch dir&gt;/.spectro/</span>
+├── <span class="f">settings.json</span>            <span class="c">the launch-dir settings layer — the directory spectroscope was</span>
+│                            <span class="c">STARTED in. Still read (deprecated compat layer, one</span>
+│                            <span class="c">release); its role as THE project file moved to the</span>
+│                            <span class="c">workspace's own .spectro/ pair below. The “Persist”</span>
+│                            <span class="c">checkbox appends here only when the session has no</span>
+│                            <span class="c">real workspace (throwaway temp desk).</span>
+└── <span class="d">skills/</span>                  <span class="c">project-scope skills — win over user scope by name</span>
+    ├── <span class="d">brainstorming/</span><span class="f">SKILL.md</span>
+    ├── <span class="d">test-driven-development/</span><span class="f">SKILL.md</span>
+    ├── <span class="d">verification/</span><span class="f">SKILL.md</span>
+    └── <span class="d">writing-plans/</span><span class="f">SKILL.md</span></pre>
+
+<p>Two more files matter at the launch-dir root: the gitignored <code>./.env</code>
+(<strong>secrets only</strong> since the precedence flip — API keys, loaded by Gradle and
+the launcher, never committed; deprecated <code>SPECTRO_*</code> lines still work as the env
+base, but <code>.env.example</code> now documents just the keys) and an optional
+<code>SPECTRO.md</code>, whose content is appended to the system prompt as project context —
+the agent reads it before your first message.</p>
+
+<h2 id="ch-fs-session">Inside a session file</h2>
+
+<p>The session id doubles as the file name: <code>yyyyMMdd-HHmmss-&lt;uuid8&gt;</code> —
+sortable by start time, collision-free. One event per line, compact JSON, UTF-8,
+append-only: the file is never rewritten, not even by compaction. This is a real session
+from this machine (a thinking model answering “What is 2+2? Think first.” — 43 lines,
+abbreviated in the middle):</p>
+
+<pre>{"type":"run_start","runId":"e93e24cf-f415-4873-a21c-cbd73fec673e","agentId":"main",
+     "prompt":"What is 2+2? Think first.","provider":"ollama","ts":1783086147207}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1783086147208}
+{"type":"thinking_delta","agentId":"main","text":"The","ts":1783086147561}
+{"type":"thinking_delta","agentId":"main","text":" user","ts":1783086147561}
+    … 30 more thinking deltas — the model reasons token by token …
+{"type":"text_delta","agentId":"main","text":"2","ts":1783086148244}
+{"type":"text_delta","agentId":"main","text":" +","ts":1783086148263}
+{"type":"text_delta","agentId":"main","text":" 2","ts":1783086148282}
+{"type":"text_delta","agentId":"main","text":" =","ts":1783086148301}
+{"type":"text_delta","agentId":"main","text":" 4","ts":1783086148339}
+{"type":"text_delta","agentId":"main","text":".","ts":1783086148358}
+{"type":"usage","agentId":"main","inputTokens":297,"outputTokens":49,"ts":1783086148379}
+{"type":"run_end","runId":"e93e24cf-…","stopReason":"end_turn","ts":1783086148379}</pre>
+
+<p>Everything you saw in Part II — chat, graph, trace, Lab, plan panel — is a fold over
+lines like these. A REPL session appends multiple runs into one file; resume appends to
+the same file again. Chapter 22 documents all 18 line types field by field.</p>
+
+<h2 id="ch-fs-blobs">Blobs and generated images</h2>
+<ul>
+  <li><strong>Attachments</strong> (what you upload) live next to their session:
+      <code>sessions/&lt;id&gt;/blobs/&lt;sha256&gt;</code>. Content-addressed — attaching the
+      same image twice stores one file. Events reference
+      <code>blobPath</code> + <code>sha256</code> only; a deleted blob degrades to a
+      placeholder on replay, never a crash. Accepted types: jpeg, png, webp, gif.</li>
+  <li><strong>Generated images</strong> (what the agent paints) are shared across sessions
+      in one global store: <code>~/.spectro/images/&lt;sha256&gt;.&lt;ext&gt;</code>. The web UI
+      loads them via <code>GET /api/images/&lt;file&gt;</code>, where only
+      <code>64-hex.png|jpg|webp</code> names are even considered — the content address is
+      the traversal guard.</li>
+</ul>
+
+<h2 id="ch-fs-workspace">The workspace: where the agent actually works</h2>
+<p>The session files above are spectroscope's <em>records</em>; the <strong>workspace</strong> is
+the agent's <em>desk</em> — the directory the file tools sandbox against, glob/grep search
+and <code>run_command</code> runs in. Unless a <code>workspace</code> is configured
+(chapter 30), every session gets its own folder under the OS temp dir:</p>
+
+<pre class="tree"><span class="d">&lt;tmpdir&gt;/spectroscope-ws/</span>
+├── <span class="d">20260716-204301-db5f3af7/</span>   one folder per session, keyed by the SESSION id
+│   └── add.py                     ← what “write me a script” produces lands HERE,
+└── <span class="d">20260716-204419-39b41a29/</span>      not in the repo you started spectroscope in
+</pre>
+
+<p>The key is the session id, so a <strong>resume finds its files again</strong>; a New
+chat means a fresh desk. The web server announces the folder over the socket
+(<code>workspace_info</code> — a UI-only frame, never in the JSONL) and the Files tab
+follows it (chapter 6). The launch dir stays anchored: skills, MCP servers, SPECTRO.md and
+its own (deprecated) settings layer still load from the directory spectroscope was started in —
+while the workspace contributes its own settings pair on top (below).</p>
+
+<p>Three ways to place the desk, highest wins: <strong>pick it per session</strong> in the
+web UI (the Files tab's “Choose folder …” button opens the native macOS dialog on the
+spectroscope machine; only before the first run, pinned in server memory for the session),
+<strong>configure it</strong> (<code>workspace</code> key / <code>SPECTRO_WORKSPACE</code> /
+<code>--workspace</code> — chapter 30), or <strong>let spectroscope mint</strong> the per-session
+temp folder above.</p>
+
+<p>A <em>real</em> workspace (picked or configured — not the throwaway temp desk) carries
+its own settings pair, the top file layers of the hierarchy (chapter 30) and the files
+the composer gear and the permission dialog's “Persist” checkbox write:</p>
+
+<pre class="tree"><span class="d">&lt;workspace&gt;/.spectro/</span>
+├── <span class="f">settings.json</span>            <span class="c">the workspace PROJECT file — travels with that repo.</span>
+│                            <span class="c">Team conventions become checked-in settings:</span>
+│                            <span class="c">permissionMode, autoApprove, hooks, mcpServers …</span>
+│                            <span class="c">Persisted “always allow” rules land here.</span>
+├── <span class="f">settings.local.json</span>      <span class="c">machine-local overrides for THIS workspace — absolute</span>
+│                            <span class="c">paths, personal rules. Never committed:</span>
+└── <span class="f">.gitignore</span>               <span class="c">spectroscope writes it on the first local save; it lists</span>
+                             <span class="c">settings.local.json so the local file stays out of git</span></pre>
+
+<p class="small">This pair is not just read, it is <strong>executed</strong>:
+<code>mcpServers</code> spawns processes, <code>hooks</code> runs shell commands around
+every tool call, and a permissive <code>autoApprove</code>/<code>permissionMode</code> can
+auto-allow gates that would otherwise ask (chapter 30). Pinning a cloned or otherwise
+foreign folder as your workspace means reviewing its <code>.spectro/</code> first — the same
+way you would review its build scripts before running them.</p>
+
+<h2 id="ch-fs-lifecycle">Lifecycle: create, resume, delete</h2>
+<ul>
+  <li><strong>Created</strong> on the first prompt of a connection (web) or at REPL start;
+      headless and cron runs write the same files.</li>
+  <li><strong>Resumed</strong> by <code>spectroscope --resume &lt;id&gt;</code> or the web Resume
+      button — the history is reconstructed from the file, new events append.</li>
+  <li><strong>Deleted</strong> only by the guarded two-step (chapter 8):
+      <code>SessionStore.deleteSession</code> removes the JSONL and the blob folder — and
+      only for ids resolving to a direct child of the sessions directory. Nothing else in
+      spectroscope ever deletes or rewrites a session line.</li>
+  <li><strong>Crash-safe by construction:</strong> one <code>write</code> per event, no open
+      handle, no save step. A torn last line after a crash is silently discarded on read;
+      everything that streamed is on disk.</li>
+</ul>
+
+<h2 id="ch-fs-jq">The jq cookbook</h2>
+<p>Because the format keeps its rules (one object per line, no binary, camelCase), the
+shell is a first-class session browser:</p>
+
+<pre># watch a session live
+tail -f ~/.spectro/sessions/&lt;id&gt;.jsonl | jq -c '{type, agentId, name}'
+
+# tool timings
+jq -r 'select(.type=="tool_result") | "\(.durationMs)ms\t\(.callId)"' &lt;id&gt;.jsonl
+
+# token totals
+jq -s '[.[] | select(.type=="usage")]
+       | {in: map(.inputTokens)|add, out: map(.outputTokens)|add}' &lt;id&gt;.jsonl
+
+# the agent tree
+jq -r 'select(.type=="agent_spawn") | "\(.parentId) -> \(.agentId): \(.task)"' &lt;id&gt;.jsonl</pre>

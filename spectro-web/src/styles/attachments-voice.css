@@ -1,0 +1,126 @@
+/* ---------- Attachments ---------- */
+
+/* Preview chips sit ABOVE the input, inside the same content column. */
+.composer-column {
+  max-width: var(--content-max);
+  margin: 0 auto;
+}
+.composer-column .composer-inner {
+  max-width: none; /* the column already constrains the width */
+}
+
+.attach-button {
+  width: 44px;  /* touch target ≥ 44px (UI-UX-CONCEPT 4.4) */
+  height: 44px;
+  flex: none;
+}
+
+/* Drag-over tints the input zone (accent-soft) with a dashed Coral border. */
+.composer-inner.drag-over textarea {
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+}
+
+.attach-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding-bottom: var(--sp-2);
+}
+
+.attach-chip {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--surface-2);
+  background-image: linear-gradient(var(--glint), transparent 70%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-2);
+}
+
+.attach-thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+}
+
+.attach-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.attach-name {
+  font-size: var(--fs-13);
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.attach-size {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+}
+.attach-remove {
+  display: grid;
+  place-items: center;
+  width: 44px;  /* remove cross keeps the full touch target */
+  height: 44px;
+  flex: none;
+  background: none;
+  border: 0;
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.attach-remove:hover {
+  background: var(--error-soft);
+  color: var(--error);
+}
+
+/* Thumbnails on the sent user turn — the visible proof of what went out. */
+.user-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-2);
+}
+.user-attachment-thumb {
+  display: block;
+  max-width: 160px;
+  max-height: 120px;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+}
+
+/* ---------- Voice input ---------- */
+
+/* Mic shares the attach button's frame; recording tints it Coral. Disabled (STT
+   not installed) dims it — the tooltip carries the setup hint. */
+.mic-button.recording {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.mic-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.mic-button:disabled:hover {
+  background: none;
+  color: var(--text-dim);
+}
+
+/* Recording state above the input: a pulsing Coral dot + mm:ss timer. */
+.recording-indicator {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  font-size: var(--fs-13);
+  color: var(--accent);
+}
+

@@ -1,0 +1,11 @@
+flowchart LR
+    ws["WebSocket /ws<br/>(RunEvent JSON)"] -->|"rAF batch"| onEvents["App.onEvents(batch)"]
+    onEvents --> reducer["reduceAll(state, batch)<br/>pure fold — reducer.ts"]
+    onEvents --> raw["liveEvents[]<br/>raw, for the graph"]
+    onEvents --> dam["stepper.pushLive(batch)<br/>the Lab's dam"]
+    reducer --> ui["UiState"]
+    ui --> chat["Chat"]
+    ui --> panel["Right panel<br/>Agents · Plan · Context · Files"]
+    ui --> trace["Trace"]
+    raw --> graphv["Graph<br/>(Flow + dagre views)"]
+    dam --> lab["Lab<br/>(stepped state)"]

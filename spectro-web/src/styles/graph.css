@@ -1,0 +1,179 @@
+/* ============================================================ graph
+   The graph tab. Everything below this line belongs to the graph view and the
+   Chat/Graph tab bar; colors strictly via tokens (Coral = live/interactive,
+   Sand = editorial, pastels = agent identity only). */
+
+.tab-nav { display: flex; gap: var(--sp-2); padding: 0 var(--sp-5); border-bottom: 1px solid var(--border); flex: none; }
+.tab { display: inline-flex; align-items: center; gap: var(--sp-2); background: none; border: none; color: var(--text-dim); padding: var(--sp-3) var(--sp-3); font: inherit; font-size: var(--fs-13); cursor: pointer; transition: color var(--t-fast); }
+.tab:hover { color: var(--text); }
+.tab--active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+/* Live frame counter on the trace tab — same chip voice as the image count. */
+.tab-count { background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; font-family: var(--font-mono); font-size: var(--fs-11); line-height: 1.5; padding: 0 var(--sp-2); color: var(--text-dim); }
+
+.graph-view { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.graph-body { display: flex; flex: 1; min-height: 0; }
+.graph-canvas { flex: 1; min-width: 0; }
+
+/* View toggle row: Flow (BPMN-like spine) | Graph (React Flow DAG). */
+.graph-viewbar { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); flex: none; }
+
+/* Flow view — the BPMN-like session overview (ported from the LLM_Simulator's
+   OverviewPane; class names stay pf-ov__* so the two stay diffable). All
+   colours flow from tokens; the current activity glows accent. */
+.graph-ov { flex: 1; min-width: 0; }
+.pf-ov { height: 100%; overflow: auto; padding: var(--sp-3); }
+.pf-ov svg { display: block; margin: 0 auto; }
+.pf-ov__bar { fill: var(--border-strong); cursor: pointer; }
+.pf-ov__bar.is-current { fill: var(--accent); }
+.pf-ov__branch { fill: var(--text-faint); font: 9px var(--font-mono); text-transform: uppercase; letter-spacing: 0.06em; }
+.pf-ov__act { cursor: pointer; }
+.pf-ov__act.is-static { cursor: default; }
+.pf-ov__act rect { fill: var(--surface-2); stroke: var(--border-strong); stroke-width: 1; }
+.pf-ov__act text { fill: var(--text-dim); font: 10px var(--font-mono); }
+.pf-ov__act.is-applied rect { stroke: color-mix(in srgb, var(--accent) 45%, var(--border-strong)); }
+.pf-ov__act.is-applied text { fill: var(--text); }
+.pf-ov__act.is-future { opacity: 0.5; }
+.pf-ov__act.is-current rect { fill: color-mix(in srgb, var(--accent) 22%, transparent); stroke: var(--accent); stroke-width: 1.5; }
+.pf-ov__act.is-current text { fill: var(--text); }
+.pf-ov__act.is-error rect { stroke: var(--error); }
+.pf-ov__act.is-user rect { fill: color-mix(in srgb, var(--accent) 12%, transparent); }
+.pf-ov__act.is-think rect { stroke-dasharray: 3 2; }
+.pf-ov__act.is-end rect { stroke: var(--ok); }
+.pf-ov__act.is-compact rect { stroke: var(--warn); }
+.pf-ov__gate.is-allowed { fill: var(--ok); }
+.pf-ov__gate.is-denied { fill: var(--error); }
+.pf-ov__gate.is-pending { fill: var(--warn); }
+
+.graph-replay-bar { display: flex; gap: var(--sp-2); align-items: center; padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); font-size: var(--fs-12); color: var(--text-dim); flex: none; }
+.graph-replay-bar button { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text); font: inherit; font-size: var(--fs-12); padding: 2px var(--sp-3); cursor: pointer; transition: border-color var(--t-fast); }
+.graph-replay-bar button:hover { border-color: var(--border-strong); }
+.graph-replay-bar input[type="range"] { flex: 1; accent-color: var(--accent); }
+
+/* Fixed node box (220x96, mirrored by NODE_W/NODE_H in GraphView): the second
+   line and footer clamp to one line each, so streaming never resizes a node
+   and the dagre layout stays calm. */
+/* Height mirrors NODE_H in graph/GraphView.tsx (dagre lays out with it) — 106px
+   fits all four rows at natural line height; flex-shrink: 0 keeps a long row
+   from being squeezed until overflow: hidden clips its descenders. */
+.graph-node { position: relative; display: flex; flex-direction: column; gap: 2px; width: 220px; height: 106px; padding: 10px var(--sp-3); border: 1px solid var(--border); border-radius: var(--radius-card); background: var(--surface); color: var(--text); font-size: var(--fs-13); overflow: hidden; }
+.graph-node__eyebrow, .graph-node__label, .graph-node__preview { flex-shrink: 0; }
+.graph-node__eyebrow { display: block; font-size: var(--fs-11); letter-spacing: var(--track-eyebrow); text-transform: uppercase; color: var(--text-dim); }
+.graph-node__label { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-node__preview { display: block; min-height: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-12); color: var(--text-dim); }
+.graph-node__foot { display: flex; align-items: center; gap: var(--sp-2); margin-top: auto; min-width: 0; }
+.graph-node__rel { flex: none; font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-faint); }
+.graph-node__badge { display: inline-block; margin-top: var(--sp-1); padding: 1px var(--sp-2); border-radius: var(--radius-chip); background: var(--surface-2); color: var(--text-dim); font-size: var(--fs-11); }
+.graph-node__foot .graph-node__badge { margin-top: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.graph-node__badge--error { background: var(--error); color: var(--text-on-accent); }
+.graph-node--user { border-top: 3px solid var(--sand); }
+.graph-node--turn { border-top: 3px solid var(--agent-root); }
+.graph-node--tool { border-top: 3px solid var(--agent-explore); }
+.graph-node--subagent { border-top: 3px solid var(--agent-worker); }
+.graph-node--answer { border-top: 3px solid var(--sand); font-weight: 600; }
+.graph-node--error { border-color: var(--error); }
+.graph-node--running { border-color: var(--accent); animation: graph-pulse 1.2s ease-in-out infinite; }
+@keyframes graph-pulse { 0%, 100% { box-shadow: 0 0 0 0 var(--accent-soft); } 50% { box-shadow: 0 0 0 10px transparent; } }
+@media (prefers-reduced-motion: reduce) {
+  .graph-node--running { animation: none; box-shadow: 0 0 0 2px var(--accent-soft); }
+}
+
+.graph-detail { width: 340px; overflow: auto; overscroll-behavior: contain; border-left: 1px solid var(--border); padding: var(--sp-4); background: var(--surface); }
+.graph-detail h3 { margin: var(--sp-1) 0 var(--sp-2); font-size: var(--fs-14); overflow-wrap: break-word; }
+.graph-detail h4 { margin: 0; font-size: var(--fs-12); color: var(--text-dim); }
+.graph-detail button { background: none; border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text-dim); font: inherit; font-size: var(--fs-12); padding: 2px var(--sp-3); cursor: pointer; }
+.graph-detail__head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--sp-3); }
+.graph-detail__head > div { min-width: 0; }
+.graph-detail__timing { margin: 0 0 var(--sp-3); font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: break-word; }
+.graph-detail__events-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); margin-bottom: var(--sp-2); }
+/* Copy-all lives in the head row — always visible, chip-sized. */
+.graph-detail__events-head .copy { position: static; opacity: 1; }
+/* Each raw event is one collapsible JSON root in a quiet well. */
+.graph-detail__event { background: var(--surface-2); border-radius: var(--radius-chip); padding: var(--sp-2); margin-bottom: var(--sp-2); }
+.graph-detail__note { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+
+/* ============================================================ images
+   The gallery panel: a right-hand column inside the chat tab. Same surface
+   grammar as every other card — tokens only, Coral strictly on interaction
+   (the thumbnails ARE links, so they may glow on hover). */
+
+.chat-row {
+  position: relative; /* anchor for the narrow-viewport overlay */
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+.chat-row .chat { min-width: 0; }
+
+.image-panel {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  width: 300px;
+  min-height: 0;
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--glint), transparent 120px);
+  border-left: 1px solid var(--border);
+}
+
+.image-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 44px;
+  padding: var(--sp-2) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+/* Provider select: styled like the composer well — Coral only on focus. */
+.image-provider {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.image-provider-label {
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.image-provider select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 4px var(--sp-2);
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.image-provider select:hover { border-color: var(--border-strong); }
+.image-provider select:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.image-panel-scroll {
+  flex: 1;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  padding: var(--sp-3);
+}
+
+/* Empty state: quiet hint, same voice as the sidebar note. */
+.image-panel-empty {
+  margin: 0;
+  padding: var(--sp-3);
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-faint);
+}
+

@@ -1,0 +1,6 @@
+{"type":"user","message":{"role":"user","content":"Delegate a review"},"uuid":"u1","timestamp":"2026-07-09T10:00:00.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"task1","name":"Task","input":{"description":"Review the diff","subagent_type":"code-reviewer"}}]},"uuid":"a1","parentUuid":"u1","timestamp":"2026-07-09T10:00:01.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Reviewing the diff now."}]},"uuid":"s1","parentUuid":"task1","isSidechain":true,"timestamp":"2026-07-09T10:00:02.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Found 1 issue."}]},"uuid":"s2","parentUuid":"s1","isSidechain":true,"timestamp":"2026-07-09T10:00:03.000Z"}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"task1","content":"Review done: 1 issue.","is_error":false}]},"uuid":"u2","parentUuid":"a1","timestamp":"2026-07-09T10:00:04.000Z"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The reviewer found one issue."}]},"uuid":"a2","parentUuid":"u2","timestamp":"2026-07-09T10:00:05.000Z"}

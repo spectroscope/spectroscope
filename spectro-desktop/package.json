@@ -1,0 +1,30 @@
+{
+  "name": "spectro-desktop",
+  "private": true,
+  "version": "0.0.1",
+  "description": "spectroscope Desktop — Electron shell: spawns and supervises the spectro-server JVM",
+  "author": "Christopher Ezell",
+  "license": "MIT",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "npm run build && electron .",
+    "typecheck": "tsc --noEmit",
+    "dist": "npm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "electron": "^37.2.0",
+    "electron-builder": "^26.0.12",
+    "typescript": "^5.5.4"
+  },
+  "build": {
+    "appId": "dev.spectroscope.desktop",
+    "productName": "spectroscope",
+    "directories": { "output": "release" },
+    "files": ["dist/**"],
+    "extraResources": [
+      { "from": "../spectro-server/build/libs/spectro-server-0.0.1.jar", "to": "spectro-server.jar" }
+    ]
+  }
+}

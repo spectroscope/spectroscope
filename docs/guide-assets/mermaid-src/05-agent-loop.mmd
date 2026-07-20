@@ -1,0 +1,20 @@
+sequenceDiagram
+    participant U as User / face
+    participant A as Agent loop
+    participant P as LlmProvider
+    participant G as Gate (hooks · allowlist · human)
+    participant T as Tool
+    U->>A: run(prompt)
+    A-->>U: run_start · turn_start
+    A->>P: stream(system, history, tools, maxTokens)
+    P-->>A: thinking_delta* · text_delta* · tool_call* · usage · stop
+    loop per tool call
+        A->>G: pre_tool_use hook → allowlist → permission_request
+        G-->>A: permission_decision
+        A->>T: execute(input, ToolContext) — sandboxed
+        T-->>A: output ("ERROR: ..." on failure)
+        A-->>U: tool_result
+        A->>G: post_tool_use hook (advisory)
+    end
+    A->>P: next turn with tool results (max 15 turns)
+    A-->>U: run_end {stopReason}

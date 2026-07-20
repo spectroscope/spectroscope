@@ -1,0 +1,60 @@
+<!-- spectroscope logging (see docs/design/LOGGING-CONCEPT.md).
+
+     ONE config for both faces: spectro-server depends on spectro-cli, so this
+     file rules the CLI and the boot server alike. The contract:
+
+       - console (stderr) stays WARN-quiet: the CLI's ANSI face and the
+         launcher output never gain chatter (the old slf4j-nop silence,
+         minus the blindness),
+       - diagnostics go to ~/.spectro/logs/spectroscope.log (5 MB x 3, rolling),
+       - every line carries date/time and the [agentId] MDC prefix
+         (main / worker-1 / explore-2), set by Agent.loop per run thread,
+       - the ROOT level follows SPECTRO_LOG_LEVEL (default INFO); the config
+         key `logLevel` is re-applied programmatically by LogSetup after
+         the settings hierarchy loads (defaults < config file < env).      -->
+<configuration>
+  <!-- No logback self-chatter on the console. -->
+  <statusListener class="ch.qos.logback.core.status.NopStatusListener"/>
+
+  <appender name="STDERR" class="ch.qos.logback.core.ConsoleAppender">
+    <target>System.err</target>
+    <!-- The console never shows below WARN, whatever the root level says. -->
+    <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
+      <level>WARN</level>
+    </filter>
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level [%X{agentId:-—}] %logger{0} — %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+    <file>${user.home}/.spectro/logs/spectroscope.log</file>
+    <rollingPolicy class="ch.qos.logback.core.rolling.FixedWindowRollingPolicy">
+      <fileNamePattern>${user.home}/.spectro/logs/spectroscope.%i.log</fileNamePattern>
+      <minIndex>1</minIndex>
+      <maxIndex>3</maxIndex>
+    </rollingPolicy>
+    <triggeringPolicy class="ch.qos.logback.core.rolling.SizeBasedTriggeringPolicy">
+      <maxFileSize>5MB</maxFileSize>
+    </triggeringPolicy>
+    <encoder>
+      <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%X{agentId:-—}] %logger — %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- spectroscope's debug is spectroscope's debug: third-party categories stay at INFO so
+       a debug root never dumps whole HTTP bodies (Spring RestClient / Apache
+       HttpClient wire logs would flood the file and could leak payloads,
+       base64 attachments, keys). Raise these deliberately if ever needed;
+       the wire-demo feature remains the verbose flag / TracingProvider. -->
+  <logger name="org.springframework" level="INFO"/>
+  <logger name="org.apache" level="INFO"/>
+  <logger name="ch.qos.logback" level="INFO"/>
+  <logger name="com.anthropic" level="INFO"/>
+  <logger name="io.micrometer" level="INFO"/>
+
+  <root level="${SPECTRO_LOG_LEVEL:-INFO}">
+    <appender-ref ref="STDERR"/>
+    <appender-ref ref="FILE"/>
+  </root>
+</configuration>

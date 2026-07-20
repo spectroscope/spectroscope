@@ -1,0 +1,19 @@
+/* Brand typography, self-hosted (migration phase 4): Inter + JetBrains Mono
+   as variable fonts. Latin subset, fontsource build, SIL OFL 1.1 licensed —
+   see src/assets/fonts/. No runtime font CDN: spectroscope is local-first. */
+
+@font-face {
+  font-family: "Inter Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url("./assets/fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+}
+
+@font-face {
+  font-family: "JetBrains Mono Variable";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url("./assets/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2-variations");
+}

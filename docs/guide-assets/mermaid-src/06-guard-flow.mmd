@@ -1,0 +1,15 @@
+flowchart TB
+    call["tool_call from the model"] --> hook{"pre_tool_use hook<br/>configured + matching?"}
+    hook -->|"block (exit != 0 or<br/>{decision: block})"| blocked["tool_result:<br/>ERROR: blocked by pre_tool_use hook"]
+    hook -->|pass / timeout fail-open| perm{"needsPermission()?"}
+    perm -->|no| exec
+    perm -->|yes| allow{"allowlist match?<br/>(autoApprove + remembered)"}
+    allow -->|yes, silent| exec["execute(input, context)<br/>path sandbox · caps · timeout"]
+    allow -->|no| human{"human decides<br/>(y/N or dialog)"}
+    human -->|deny| denied["tool_result:<br/>ERROR: the user denied the execution."]
+    human -->|allow| exec
+    exec --> post["post_tool_use hook<br/>(advisory, never rewrites)"]
+    post --> result["tool_result → back to the model"]
+    style human stroke:#FF5959
+    style blocked stroke:#F87171
+    style denied stroke:#F87171

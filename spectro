@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# ./spectro — task launcher for this solution: the spectro tasks, not the gradle task zoo.
+# No arguments (or -h/--help) prints the table; any other word dispatches to ./gradlew.
+set -euo pipefail
+cd "$(dirname "${BASH_SOURCE[0]}")"
+
+# Colors only on a real terminal — piped output stays plain.
+if [ -t 1 ]; then
+    BOLD=$'\033[1m'; DIM=$'\033[2m'; CORAL=$'\033[38;5;203m'; RESET=$'\033[0m'
+else
+    BOLD=''; DIM=''; CORAL=''; RESET=''
+fi
+
+gradle() { exec ./gradlew -q --console=plain "$@"; }
+
+row() {
+    printf '  %s%-13s%s %s\n' "$BOLD" "$1" "$RESET" "$2"
+    printf '  %-13s %s%s%s\n' '' "$DIM" "$3" "$RESET"
+}
+
+show_help() {
+    printf '%s\n\n' "${CORAL}◆${RESET} ${BOLD}spectroscope${RESET}"
+    row 'repl' 'interactive agent REPL — /voice push-to-talk, --speak reads aloud' './gradlew -q --console=plain :spectro-cli:run --args="..."'
+    row 'run' 'headless run: ./spectro run -p "task" [--json] [--image path] [--speak]' './gradlew -q --console=plain :spectro-cli:run --args="run -p ..."'
+    row 'cron' 'scheduler: list / status / run <id> (~/.spectro/jobs.json)' './gradlew -q --console=plain :spectro-cli:run --args="cron list"'
+    row 'sessions' 'list the stored JSONL sessions (~/.spectro/sessions)' './gradlew -q --console=plain :spectro-cli:run --args="sessions"'
+    row 'resume' 'continue a session by id: ./spectro resume <id>' './gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"'
+    row 'doctor' 'check Java, config layers, provider reachability' './gradlew -q --console=plain :spectro-cli:run --args="doctor"'
+    row 'tour' 'guided feature tour — menu, tips, settings' './gradlew -q --console=plain tour'
+    row 'web' 'web face — Spring Boot server + browser UI on :8080' './gradlew -q --console=plain :spectro-server:bootRun'
+    row 'desktop' 'desktop face — Electron shell + managed Spring Boot process' './gradlew :spectro-server:bootJar && (cd spectro-desktop && npm start)'
+    row 'mcp-notes' 'build the example MCP server (stdio) into a runnable dist' './gradlew -q --console=plain :spectro-mcp-notes:installDist'
+    printf '\n%s\n' "${DIM}Extra arguments pass through: ./spectro repl --verbose · ./spectro run -p 'Say OK.' --json${RESET}"
+    printf '%s\n' "${DIM}Vision needs a vision model (attach via --image or the web composer); voice: bash scripts/setup-stt.sh (in) and scripts/setup-tts.sh (out).${RESET}"
+    printf '%s\n' "${DIM}MCP: configure external servers in .spectro/settings.json ('mcpServers'); ./spectro mcp-notes builds the example; in the REPL, /mcp lists them.${RESET}"
+}
+
+if [ $# -eq 0 ]; then show_help; exit 0; fi
+task="$1"; shift
+
+# Ensure Gradle (and the desktop's spawned `java`) runs on a JDK 21+. The modules
+# compile with --release 21, so a system default of Java 17 is not enough. Any
+# 21-or-newer JDK works (verified up to 26); the probe order prefers the stable
+# versioned keg (openjdk@21) so a brew upgrade of the "current" formula cannot
+# strand the launcher. A good JAVA_HOME is always respected.
+if [ "$task" != help ] && [ "$task" != -h ] && [ "$task" != --help ]; then
+    _jmajor() { local jc="$1/bin/javac"; [ -x "$jc" ] || return 1; "$jc" -version 2>&1 | sed -nE 's/^javac ([0-9]+).*/\1/p'; }
+    _jok() { local m; m=$(_jmajor "$1" 2>/dev/null) || return 1; [ -n "$m" ] && [ "$m" -ge 21 ]; }
+    if ! _jok "${JAVA_HOME:-}"; then
+        for _c in \
+            "$(/usr/libexec/java_home -v 21 2>/dev/null || true)" \
+            /opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+            /usr/local/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home \
+            "$(/usr/libexec/java_home -v 21+ 2>/dev/null || true)" \
+            /opt/homebrew/opt/openjdk@25/libexec/openjdk.jdk/Contents/Home \
+            /opt/homebrew/opt/openjdk@23/libexec/openjdk.jdk/Contents/Home \
+            /opt/homebrew/opt/openjdk@22/libexec/openjdk.jdk/Contents/Home \
+            /opt/homebrew/opt/openjdk@24/libexec/openjdk.jdk/Contents/Home \
+            /opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home \
+            /opt/homebrew/Cellar/openjdk*/*/libexec/openjdk.jdk/Contents/Home \
+            /usr/local/Cellar/openjdk*/*/libexec/openjdk.jdk/Contents/Home; do
+            [ -n "$_c" ] || continue
+            if _jok "$_c"; then export JAVA_HOME="$_c"; break; fi
+        done
+    fi
+    if ! _jok "${JAVA_HOME:-}"; then
+        printf '%sNote: no JDK 21+ found; Gradle may fail (system java: %s). Install one (brew install openjdk@21) or set JAVA_HOME.%s\n' \
+            "$DIM" "$(java -version 2>&1 | head -1 | sed -E 's/.*version "([^"]+)".*/\1/' || echo none)" "$RESET" >&2
+    fi
+
+    # Load spectro/.env (gitignored) — ANTHROPIC_API_KEY, SPECTRO_PROVIDER/MODEL/... —
+    # so EVERY face sees it, including `desktop`, which spawns the jar through
+    # Electron and so bypasses Gradle's own .env injection. Rules mirror that
+    # injection: KEY=value, skip comments/blanks and empty-value lines, strip one
+    # layer of surrounding quotes. An empty value leaves an exported var intact.
+    if [ -f .env ]; then
+        while IFS= read -r _line || [ -n "$_line" ]; do
+            case "$_line" in ''|\#*) continue ;; esac
+            case "$_line" in *=*) ;; *) continue ;; esac
+            _k=${_line%%=*}; _v=${_line#*=}
+            _k=$(printf '%s' "$_k" | tr -d '[:space:]')
+            case "$_v" in
+                \"*\") _v=${_v#\"}; _v=${_v%\"} ;;   # quoted: verbatim
+                \'*\') _v=${_v#\'}; _v=${_v%\'} ;;
+                *)                                    # unquoted: drop an inline comment
+                    _v=$(printf '%s' "$_v" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//') ;;
+            esac
+            if [ -n "$_k" ] && [ -n "$_v" ]; then export "$_k=$_v"; fi
+        done < .env
+    fi
+fi
+
+# Gradle's --args honors double quotes — quote every passthrough argument.
+args_str=''
+for a in "$@"; do args_str+="\"${a//\"/\\\"}\" "; done
+
+case "$task" in
+    -h|--help|help) show_help ;;
+    repl)          gradle :spectro-cli:run --args="$args_str" ;;
+    run)           gradle :spectro-cli:run --args="run $args_str" ;;
+    cron)          gradle :spectro-cli:run --args="cron $args_str" ;;
+    sessions)      gradle :spectro-cli:run --args="sessions" ;;
+    resume)
+        if [ $# -eq 0 ]; then printf 'usage: ./spectro resume <id>\n' >&2; exit 1; fi
+        gradle :spectro-cli:run --args="--resume $args_str"
+        ;;
+    doctor)        gradle :spectro-cli:run --args="doctor" ;;
+    tour)          gradle tour ;;
+    mcp-notes)     gradle :spectro-mcp-notes:installDist ;;
+    web)           gradle :spectro-server:bootRun ;;
+    desktop)
+        # A running instance holds Electron's single-instance lock, so a plain
+        # relaunch would hand off to the OLD build instead of starting fresh. Stop
+        # any running spectro-desktop (and its server) first for a clean start.
+        if pgrep -f "spectro-desktop/node_modules/electron" >/dev/null 2>&1; then
+            printf '%sStopping a running spectro-desktop for a clean start ...%s\n' "$DIM" "$RESET"
+            pkill -f "spectro-desktop/node_modules/electron" 2>/dev/null || true
+            pkill -f "spectro-server-0.0.1.jar" 2>/dev/null || true
+            sleep 1
+        fi
+        # Desktop face: build the boot jar the Electron shell spawns, then run it.
+        printf '%sBuilding spectro-server.jar ...%s\n' "$DIM" "$RESET"
+        ./gradlew -q --console=plain :spectro-server:bootJar
+        if [ ! -d spectro-desktop/node_modules ]; then
+            printf '%sInstalling spectro-desktop dependencies (first run) ...%s\n' "$DIM" "$RESET"
+            ( cd spectro-desktop && npm install )
+            # Fresh npm/Electron binaries can carry the macOS quarantine flag,
+            # which Gatekeeper blocks on first launch — clear it up front.
+            command -v xattr >/dev/null 2>&1 && \
+                xattr -r -d com.apple.quarantine spectro-desktop/node_modules 2>/dev/null || true
+        fi
+        # The Electron child spawns "java -jar spectro-server.jar"; hand it the same
+        # JDK Gradle just used ($JAVA_HOME on PATH) so a stale system java (e.g. 17)
+        # cannot block the Java 21 server from starting.
+        exec env PATH="${JAVA_HOME:+$JAVA_HOME/bin:}$PATH" sh -c 'cd spectro-desktop && npm start'
+        ;;
+    *)
+        printf 'Unknown task: %s\n\n' "$task" >&2
+        show_help >&2
+        exit 1
+        ;;
+esac

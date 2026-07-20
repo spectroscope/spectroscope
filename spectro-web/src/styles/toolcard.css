@@ -1,0 +1,200 @@
+/* ---------- Tool card ---------- */
+
+.tool-card {
+  background-color: var(--surface);
+  background-image: linear-gradient(var(--glint), transparent 48px);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--line-color, var(--border));
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  margin: 0 0 var(--sp-3);
+  overflow: hidden;
+  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+}
+.tool-card:hover {
+  border-color: var(--border-strong);
+  border-left-color: var(--line-color, var(--border-strong));
+  box-shadow: var(--shadow-raised);
+}
+
+.tool-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  min-height: 44px;
+  padding: var(--sp-1) var(--sp-3);
+  background: none;
+  border: 0;
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background var(--t-fast);
+}
+.tool-card-head:hover { background: var(--surface-2); }
+.tool-card-head:hover .chevron { color: var(--text); }
+
+.tool-name {
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+}
+
+.tool-preview {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+
+/* Status is a tracked micro-label: dot carries the color, text the meaning. */
+.tool-status {
+  font-size: var(--fs-11);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.tool-status.status-ok     { color: var(--ok); }
+.tool-status.status-error  { color: var(--error); }
+.tool-status.status-denied { color: var(--warn); }
+
+/* The gate outcome on a tool card — the permission story made visible. */
+.gate-chip {
+  font-size: var(--fs-11);
+  letter-spacing: 0.06em;
+  border: 1px solid;
+  border-radius: 999px;
+  padding: 0 var(--sp-2);
+  white-space: nowrap;
+}
+.gate-chip.gate-pending { color: var(--warn); border-color: var(--warn); }
+.gate-chip.gate-allowed { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 55%, transparent); }
+.gate-chip.gate-denied  { color: var(--error); border-color: var(--error); background: var(--error-soft); }
+
+/* Subagent thread: a child's turns nest under one pastel-edged container. */
+.chat-thread {
+  margin-left: var(--sp-4);
+  padding-left: var(--sp-4);
+  border-left: 2px solid var(--agent-color, var(--border-strong));
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.chat-thread-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.thread-label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--sand);
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  padding: 0 var(--sp-1);
+  white-space: nowrap;
+}
+.thread-task {
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.chat-thread-body { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+
+.badge {
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  white-space: nowrap;
+}
+
+.chevron {
+  flex-shrink: 0;
+  color: var(--text-dim);
+  transition: transform var(--t-med), color var(--t-fast);
+}
+.chevron.open { transform: rotate(180deg); }
+
+/* Expand/collapse via the grid-rows trick: 0fr <-> 1fr, no height animation. */
+.tool-card-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--t-med);
+}
+.tool-card-body.open { grid-template-rows: 1fr; }
+.tool-card-inner {
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 var(--sp-3);
+  /* Divider between header row and body — invisible while collapsed. */
+  box-shadow: inset 0 1px 0 var(--border);
+}
+
+.io-label {
+  font-size: var(--fs-11);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--text-faint);
+  margin: var(--sp-3) 0 var(--sp-1);
+}
+
+/* Code wells sink where cards rise. */
+.io-block {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  box-shadow: inset 0 1px 3px var(--shade);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.io-block.output {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.io-block.error { background: var(--error-soft); }
+
+.output-wrap {
+  position: relative;
+  margin-bottom: var(--sp-3);
+}
+
+.copy {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+  opacity: 0;
+  transition: opacity var(--t-fast), color var(--t-fast);
+}
+.output-wrap:hover .copy,
+.copy:focus-visible { opacity: 1; }
+.copy:hover { color: var(--text); }
+
+.denied-line {
+  margin: var(--sp-1) 0 var(--sp-3);
+  font-size: var(--fs-13);
+  color: var(--warn);
+}
+

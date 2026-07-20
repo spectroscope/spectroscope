@@ -1,0 +1,441 @@
+/* ============================================================
+   Lab — step-through Petri-net mode (chat | net | JSONL strip)
+   ============================================================ */
+
+.lab-row {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  --lab-chat-w: 340px;
+  --lab-trace-w: 300px;
+}
+.lab-row .chat {
+  min-width: 0;
+  flex: 0 0 var(--lab-chat-w);
+}
+.lab-row--chat-collapsed .chat { display: none; }
+.lab-row--trace-collapsed .lab-trace { display: none; }
+
+.lab-center {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 320px;
+  padding: var(--sp-4);
+  gap: var(--sp-3);
+  overflow: auto;
+}
+
+/* ---- controls ---- */
+.lab-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.lab-step {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-14);
+}
+.lab-step-next {
+  font-size: var(--fs-11);
+  opacity: 0.8;
+}
+.lab-grain {
+  display: inline-flex;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.lab-grain-opt {
+  background: none;
+  border: 0;
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.lab-grain-opt--on {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.lab-queue {
+  flex: 1;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.lab-reset {
+  padding: var(--sp-1) var(--sp-3);
+  font-size: var(--fs-12);
+}
+.lab-hint {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+
+/* ---- the Flow map (React Flow) — a sized box inside the flex-column center;
+   NOT .pf-root (that is position:fixed, for the standalone prototype). ---- */
+.lab-flowmap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 540px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* ---- the net ---- */
+.lab-net {
+  width: 100%;
+  height: auto;
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.lab-place {
+  fill: var(--surface-2);
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.lab-place--occupied {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+.lab-plabel {
+  fill: var(--text-dim);
+  font-size: 13px;
+  font-family: var(--font-ui);
+}
+.lab-count {
+  fill: var(--sand);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+.lab-edge {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.5;
+}
+.lab-edge--fired {
+  stroke: var(--accent);
+}
+.lab-edge--log {
+  stroke: var(--border);
+  stroke-dasharray: 4 5;
+}
+.lab-arrowhead {
+  fill: var(--border-strong);
+}
+.lab-bar {
+  fill: var(--text-faint);
+}
+.lab-bar--fired {
+  animation: lab-bar-flash 0.7s var(--ease-out);
+  fill: var(--accent);
+}
+.lab-bar--error {
+  animation: lab-bar-flash 0.7s var(--ease-out);
+  fill: var(--error);
+}
+@keyframes lab-bar-flash {
+  0% { fill: var(--text); } /* flash in ink, correct on espresso AND paper */
+}
+.lab-tlabel {
+  fill: var(--text-faint);
+  font-size: 10.5px;
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
+.lab-tlabel--fired {
+  fill: var(--accent);
+}
+.lab-tlabel--log {
+  fill: var(--text-faint);
+}
+.lab-pulse {
+  fill: none;
+  stroke: var(--accent);
+  animation: lab-pulse 0.7s var(--ease-out) forwards;
+}
+@keyframes lab-pulse {
+  from { stroke-width: 2; opacity: 0.9; transform: scale(1); transform-origin: center; transform-box: fill-box; }
+  to { stroke-width: 1; opacity: 0; transform: scale(1.35); transform-origin: center; transform-box: fill-box; }
+}
+.lab-token {
+  transition: transform 420ms var(--ease-out);
+}
+.lab-token circle {
+  fill: var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent-glow));
+}
+.lab-token--error circle {
+  fill: var(--error);
+}
+
+/* ---- JSONL strip ---- */
+.lab-trace {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 var(--lab-trace-w);
+  min-width: 0;
+  background: var(--surface);
+}
+.lab-trace-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.lab-trace-meta {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+/* "Alle": lifts the render windows so every JSONL line is on screen. */
+.lab-trace-all {
+  margin-left: var(--sp-2);
+  margin-right: auto;
+  background: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 1px var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.lab-trace-all:hover { color: var(--text); border-color: var(--text-faint); }
+.lab-trace-all--on { color: var(--accent); border-color: var(--accent); }
+.lab-trace-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-2) 0;
+}
+.lab-line {
+  border-left: 2px solid transparent;
+}
+.lab-line-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: 100%;
+  background: none;
+  border: 0;
+  padding: 3px var(--sp-3);
+  color: inherit;
+  font: inherit;
+  font-size: var(--fs-12);
+  text-align: left;
+  cursor: pointer;
+}
+.lab-line-head:hover { background: var(--surface-2); }
+.lab-line-seq {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  min-width: 3ch;
+}
+.lab-line-type {
+  color: var(--text-dim);
+  font-size: var(--fs-11);
+}
+.lab-line-sum {
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.lab-line--current {
+  border-left-color: var(--accent);
+  background: var(--accent-soft);
+}
+.lab-line--current .lab-line-type { color: var(--text); }
+.lab-line--queued { opacity: 0.45; }
+.lab-line--gap {
+  padding: 2px var(--sp-3);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.lab-line-body {
+  padding: var(--sp-1) var(--sp-3) var(--sp-2) calc(var(--sp-3) + 3ch);
+  font-size: var(--fs-12);
+}
+.lab-dam {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-3);
+}
+.lab-dam-line {
+  flex: 1;
+  height: 1px;
+  background: var(--warn);
+  opacity: 0.5;
+}
+.lab-dam-label {
+  font-size: var(--fs-11);
+  color: var(--warn);
+}
+
+/* ---- System-Map (the "Karte" view) ---- */
+.sys {
+  width: 100%;
+  height: auto;
+  flex: none;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.sys-eye { fill: var(--text-dim); font-family: var(--font-ui); font-weight: 500; font-size: 11px; letter-spacing: 0.14em; }
+.sys-sub { fill: var(--text-faint); font-family: var(--font-ui); font-size: 10.5px; }
+.sys-lab { fill: var(--text); font-family: var(--font-ui); font-weight: 500; font-size: 12.5px; }
+.sys-mono { fill: var(--text-dim); font-family: var(--font-mono); font-weight: 500; font-size: 11px; }
+.sys-node { fill: var(--text); font-family: var(--font-ui); font-weight: 500; font-size: 12.5px; text-anchor: middle; }
+.sys-nsub { fill: var(--text-faint); font-family: var(--font-mono); font-size: 10px; text-anchor: middle; }
+.sys-legend { fill: var(--text-faint); font-family: var(--font-ui); font-size: 10.5px; }
+.sys-mini { fill: var(--text-dim); font-family: var(--font-ui); font-size: 9.5px; }
+
+.sys-leg { fill: none; stroke: var(--border-strong); stroke-width: 1.6; }
+.sys-leg--net { stroke-dasharray: 5 6; }
+.sys-leg--on { stroke: var(--accent); stroke-width: 2.6; stroke-dasharray: 7 8; animation: sys-flow 0.9s linear infinite; }
+@keyframes sys-flow { to { stroke-dashoffset: -30; } }
+
+.sys-chip { transition: fill 0.3s var(--ease-out), stroke 0.3s var(--ease-out); }
+
+.sys-packet { transition: transform 420ms var(--ease-out); }
+.sys-packet-core { fill: var(--accent); filter: drop-shadow(0 0 6px var(--accent-glow)); }
+.sys-packet-glow { fill: var(--accent); opacity: 0.3; animation: sys-breathe 1.7s ease-in-out infinite; }
+.sys[data-error="1"] .sys-packet-core { fill: var(--error); }
+
+/* disk states */
+.sys-arm line { stroke: var(--border-strong); }
+.sys-arm circle { fill: var(--border-strong); }
+.sys-disk-glow, .sys-disk-ripple { opacity: 0; }
+.sys[data-disk="write"] .sys-platter-rim { stroke: var(--accent); }
+.sys[data-disk="write"] .sys-arm line { stroke: var(--accent); }
+.sys[data-disk="write"] .sys-arm circle { fill: var(--accent); }
+.sys[data-disk="write"] .sys-disk-glow { opacity: 1; animation: sys-breathe 2s ease-in-out infinite; }
+.sys[data-disk="write"] .sys-disk-ripple { animation: sys-ripple 2s ease-out infinite; }
+.sys[data-disk="write"] .sys-platter { animation: sys-spin 9s linear infinite; transform-box: fill-box; transform-origin: center; }
+.sys[data-disk="read"] .sys-platter-rim { stroke: var(--ok); }
+.sys[data-disk="read"] .sys-arm line { stroke: var(--ok); }
+.sys[data-disk="read"] .sys-arm circle { fill: var(--ok); }
+.sys[data-disk="read"] .sys-platter { animation: sys-spin 14s linear infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes sys-spin { to { transform: rotate(360deg); } }
+@keyframes sys-breathe { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.92; } }
+@keyframes sys-ripple { 0% { r: 11px; opacity: 0.55; } 100% { r: 30px; opacity: 0; } }
+
+/* LLM: remote vs local (Ollama) */
+.sys[data-llm="remote"] .sys-local-only { display: none; }
+.sys[data-llm="local"] .sys-remote-only { display: none; }
+.sys[data-llm="local"] .sys-llm-title { fill: var(--text-faint); }
+.sys-llm-halo { animation: sys-breathe 1.7s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sys-leg--on, .sys-packet-glow, .sys-disk-glow, .sys-disk-ripple, .sys-platter, .sys-llm-halo { animation: none; }
+  .sys-packet { transition: none; }
+}
+
+/* ---- Lab view toggle + Tempo slider ---- */
+.lab-view-toggle { margin-left: calc(-1 * var(--sp-1)); }
+.lab-speed { display: inline-flex; align-items: center; gap: var(--sp-2); }
+.lab-speed-label { font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
+.lab-speed input[type="range"] { width: 96px; accent-color: var(--accent); cursor: pointer; }
+.lab-speed-rate { font-size: var(--fs-11); color: var(--text-dim); min-width: 5ch; }
+.lab-back { padding: var(--sp-1) var(--sp-3); font-size: var(--fs-20); line-height: 1; }
+.sys-node--sm { font-size: 11px; }
+.sys-bubble rect { transition: stroke 0.3s var(--ease-out); }
+
+/* ---- summary-line token highlighting (Lab strip + Trace tab) ---- */
+.sum-str { color: var(--sand); }              /* structural string values: paths, names */
+.sum-text { color: var(--text); }             /* the event's own `text` field: the model's words */
+.sum-punct { color: var(--text-faint); opacity: 0.85; }
+.sum-num { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.sum-err { color: var(--error); font-weight: 500; }
+
+/* ---- subagent loops in the map (each child = its own little agent) ---- */
+.sys-subloops { animation: sys-sub-pop 0.35s var(--ease-out); }
+.sys-subnode-g--active { animation: sys-subnode-pulse 0.8s var(--ease-out); }
+@keyframes sys-subnode-pulse { 0% { opacity: 0.55; } 100% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .sys-subloops, .sys-subnode-g--active { animation: none; } }
+
+/* ---- subagent cards (A2A-lite): pop in under the System-Map ---- */
+.sys-subs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  animation: sys-sub-pop 0.35s var(--ease-out);
+}
+.sys-sub-card {
+  flex: 1 1 240px;
+  min-width: 0;
+  max-width: 420px;
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: var(--sp-2) var(--sp-3);
+  animation: sys-sub-pop 0.35s var(--ease-out);
+}
+.sys-sub-card--working { border-color: var(--warn); }
+.sys-sub-card--completed { border-color: var(--ok); }
+.sys-sub-card--failed { border-color: var(--error); }
+.sys-sub-card--active { animation: sys-sub-pulse 0.7s var(--ease-out); }
+.sys-sub-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: 2px;
+}
+.sys-sub-badge {
+  font-size: var(--fs-11);
+  padding: 1px var(--sp-2);
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.sys-sub-badge--working { color: var(--warn); border-color: var(--warn); animation: sys-breathe 2s ease-in-out infinite; }
+.sys-sub-badge--completed { color: var(--ok); border-color: var(--ok); }
+.sys-sub-badge--failed { color: var(--error); border-color: var(--error); }
+.sys-sub-id {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sys-sub-task {
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sys-sub-status {
+  font-size: var(--fs-11);
+  color: var(--sand);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@keyframes sys-sub-pop {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes sys-sub-pulse {
+  0% { box-shadow: 0 0 0 0 var(--accent-glow); }
+  100% { box-shadow: 0 0 0 10px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sys-subs, .sys-sub-card, .sys-sub-card--active, .sys-sub-badge--working { animation: none; }
+}

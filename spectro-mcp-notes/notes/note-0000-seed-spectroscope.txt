@@ -1,0 +1,2 @@
+spectroscope is an agent harness with one core and three faces: CLI, web, and desktop.
+Everything renders the same typed RunEvent stream.

@@ -1,0 +1,447 @@
+/* ============================================================
+   Design switcher — gear state + settings drawer
+   ============================================================ */
+
+.icon-button--on {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.settings-drawer {
+  position: fixed;
+  top: 0;
+  right: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  flex-direction: column;
+  width: min(340px, 92vw);
+  height: 100%;
+  background: var(--surface);
+  border-left: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-modal);
+  animation: settings-slide var(--t-slow);
+}
+@keyframes settings-slide {
+  from { transform: translateX(16px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+/* ---- The settings PAGE (owner request): one consolidated modal ---------- */
+.settings-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--scrim);
+  animation: settings-fade var(--t-fast);
+}
+@keyframes settings-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.settings-page {
+  display: flex;
+  flex-direction: column;
+  width: min(680px, 94vw);
+  max-height: min(86vh, 900px);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-modal, 16px);
+  box-shadow: var(--shadow-modal);
+  animation: settings-rise var(--t-slow);
+}
+@keyframes settings-rise {
+  from { transform: translateY(10px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+.settings-page .settings-head { flex: none; }
+.settings-page .settings-body { overflow-y: auto; }
+.settings-page .settings-hint { margin-left: auto; margin-right: 10px; }
+
+.settings-seg {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip, 8px);
+  background: var(--surface-2);
+  width: fit-content;
+}
+.settings-seg-option {
+  border: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: calc(var(--radius-chip, 8px) - 3px);
+  cursor: pointer;
+}
+.settings-seg-option--active {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.settings-field select,
+.settings-field input {
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control, 8px);
+  padding: 7px 9px;
+}
+.settings-field select:focus-visible,
+.settings-field input:focus-visible {
+  outline: 2px solid var(--accent-glow);
+  outline-offset: 1px;
+}
+
+.settings-forget {
+  margin-top: 10px;
+  align-self: flex-start;
+}
+
+/* ---- settings provenance (Task 13: origin badge + per-field reset) ----
+   .origin-badge mirrors the shared .badge chip shape (toolcard.css) so a
+   provenance chip ("from user settings · shadows env") reads exactly like
+   every other small metadata chip in the app. */
+.origin-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.origin-badge {
+  background: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 1px var(--sp-2);
+  white-space: nowrap;
+}
+.origin-reset {
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: var(--fs-12);
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: var(--radius-chip, 8px);
+}
+.origin-reset:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.settings-error {
+  color: var(--error);
+}
+.settings-ws {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.settings-ws-path {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-chip, 8px);
+  padding: 5px 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-ws .settings-forget { margin-top: 0; }
+.settings-kv {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.settings-kv code {
+  font-family: var(--font-mono);
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-chip, 8px);
+  padding: 2px 8px;
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+
+.settings-label {
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: var(--sp-2);
+}
+
+/* ---- design picker ---- */
+.design-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.design-option {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast);
+}
+.design-option:hover { background: var(--surface-3); border-color: var(--border-strong); }
+.design-option:active { transform: scale(0.99); }
+.design-option--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.design-swatch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--hairline);
+  overflow: hidden;
+}
+.design-swatch-dot {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+.design-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.design-name { font-size: var(--fs-14); }
+.design-sub { font-size: var(--fs-12); color: var(--text-dim); }
+.design-tag {
+  flex: none;
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+  color: var(--sand);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  padding: 1px 6px;
+}
+
+/* ---- effect toggles ---- */
+.settings-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.fx-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text);
+  font-size: var(--fs-14);
+  cursor: pointer;
+}
+.fx-switch-track {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 16px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  border: 1px solid var(--border-strong);
+  transition: background var(--t-fast), border-color var(--t-fast);
+}
+.fx-switch-knob {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--text-faint);
+  transition: transform var(--t-fast), background var(--t-fast);
+}
+.fx-switch--on .fx-switch-track { background: var(--accent-soft); border-color: var(--accent); }
+.fx-switch--on .fx-switch-knob { transform: translateX(14px); background: var(--accent); }
+.settings-note {
+  margin: 0;
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+
+/* ---- footer ---- */
+.settings-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--border);
+}
+.settings-hint {
+  flex: 1;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.settings-foot .primary,
+.settings-foot .ghost {
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-13);
+}
+
+/* ============================================================
+   Provider picker — the connection chip opens an LLM-backend popover
+   ============================================================ */
+
+.provider-picker {
+  position: relative;
+  display: inline-flex;
+}
+.provider-chip--button {
+  cursor: pointer;
+  transition: border-color var(--t-fast), background var(--t-fast);
+}
+.provider-chip--button:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+.provider-caret {
+  color: var(--text-faint);
+  margin-left: 1px;
+}
+
+.provider-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: var(--z-dropdown);
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+}
+.provider-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+.provider-field-label {
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.provider-select,
+.provider-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font-size: var(--fs-13);
+  font-family: inherit;
+}
+.provider-input::placeholder {
+  color: var(--text-faint);
+}
+.provider-select:focus,
+.provider-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+/* Why-free-text note under the model input when no list arrived. */
+.provider-field-note {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.provider-pop-foot {
+  display: flex;
+  justify-content: flex-end;
+}
+.provider-pop-foot .primary {
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-13);
+}
+
+
+/* ============ Text tab (the readable feed + the raw JSONL view) ============ */
+.textview { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.textview-bar { display: flex; align-items: center; gap: var(--sp-3); padding: var(--sp-2) var(--sp-4); border-bottom: 1px solid var(--border); }
+.textview-note { flex: 1; font-size: var(--fs-12); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.textview-empty { padding: var(--sp-6) var(--sp-4); color: var(--text-faint); font-size: var(--fs-13); }
+.textview-scroll { flex: 1; min-height: 0; overflow: auto; padding: var(--sp-3) var(--sp-4) var(--sp-6); }
+
+.tf-feed { font-family: var(--font-mono); font-size: var(--fs-13); line-height: 1.55; max-width: 110ch; }
+.tf { white-space: pre-wrap; word-break: break-word; }
+.tf + .tf { margin-top: 2px; }
+.tf-agent { color: var(--text-faint); margin-right: var(--sp-2); }
+.tf--marker { color: var(--text-faint); }
+.tf--prompt { color: var(--sand); }
+.tf--thinking { color: var(--text-dim); font-style: italic; }
+.tf--answer { color: var(--text); }
+.tf--output { color: var(--text-dim); }
+.tf--error { color: var(--error); }
+
+.tf-jsonl { margin: 0; font-family: var(--font-mono); font-size: var(--fs-12); line-height: 1.6; }
+.tf-jsonl-line { white-space: pre; }

@@ -1,0 +1,2 @@
+The RunEvent stream is the UI protocol, the JSONL storage format, and the
+graph data source all at once. MCP tool calls flow as plain tool_call events.

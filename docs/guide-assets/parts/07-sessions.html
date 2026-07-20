@@ -1,0 +1,79 @@
+<!-- ============================== CH 8 ============================== -->
+<h1 data-ch="8" id="ch-sessions"><span class="ch-num">Chapter 8</span>Sessions: replay, resume, delete, import</h1>
+
+<p class="lead">Every run writes a JSONL session file as it happens — there is no “save”
+step, the file <em>is</em> the state. This chapter is about what you can do with those
+files from the UI; Part IV shows them on disk, and chapter 22 documents every line.</p>
+
+<h2 id="ch-sessions-archive">The archive</h2>
+<p>The sidebar lists every stored session newest-first: first prompt, relative age,
+token total. Opening one is a <strong>replay</strong> — the same events, folded by the
+same reducer, rendered read-only. Chat, Graph, Trace and Lab all work on it; the
+composer is replaced by the archive bar.</p>
+
+<!--SHOT:15-archive-bar|An archived session: the header eyebrow says Archive, the bar offers “Resume session”, the two-step Delete, and “Return to live”. All four tabs work on the replay.-->
+
+<h2 id="ch-sessions-resume">Resume — with the re-upload made visible</h2>
+<p><strong>Resume session</strong> turns an archive back into the live session: the UI
+seeds itself from the stored events, the socket reconnects with <code>?resume=&lt;id&gt;</code>,
+the server reconstructs the provider history from the file (main agent only, orphaned
+tool calls dropped — chapter 22), and new events <em>append to the same file</em>. The
+header eyebrow flips to <em>Resumed</em>.</p>
+
+<!--SHOT:16-trace-resume-marker|After a resume, the trace shows the whole reconstructed history followed by the session_resume marker row: “n events loaded · ~t tokens of history ride along with the next request (plus system prompt & tool schemas on top).”-->
+
+<p>The didactic detail: resuming is not free. Your next prompt re-uploads the whole
+conversation to the model. The trace makes that visible with a UI-only
+<strong><code>session_resume</code> marker</strong> between history and new traffic,
+summarizing how many events and roughly how many tokens now ride along. The estimate
+mirrors what the server actually reconstructs: main agent only (a subagent's inner steps
+never ride back up), thinking excluded (it never re-enters the provider history) — and
+the marker says explicitly that the system prompt and tool schemas come on top, so the
+next <code>usage</code> event's real jump lands where you expect it. The marker's detail
+view carries the entire re-uploaded history as its JSONL lines. Scenario and import
+replays offer no resume — there is no file to append to.</p>
+
+<h2 id="ch-sessions-delete">Delete — the two-step danger button</h2>
+
+<!--SHOT:15b-delete-armed|First click arms: “Really delete?” in error tint. A second click within four seconds deletes; standing still disarms. Nothing else in spectroscope destroys data.-->
+
+<p>Deleting a session is the first deliberately destructive surface in spectroscope, so it is
+defended in depth: the button must be clicked twice within four seconds (first click
+arms, idle disarms); the REST endpoint (<code>DELETE /api/sessions/{id}</code>) guards the
+id shape before touching anything; and the store itself refuses any id that does not
+resolve to a direct child of the sessions directory — traversal ids delete nothing.
+Success removes the JSONL <em>and</em> the session's blob folder, closes the replay and
+refreshes the sidebar. The session currently being resumed by the live tab never offers
+the button.</p>
+
+<h2 id="ch-sessions-import">Import</h2>
+
+<!--SHOT:20-import-dialog|Three ways in: one-click list of your local Claude Code transcripts (the ~/.claude store is Finder-invisible — a file picker cannot reach it), a file picker, or paste.-->
+
+<p>The Import dialog replays <em>foreign</em> files through the same pipeline:</p>
+<ul>
+  <li><strong>Raw spectroscope JSONL</strong> — recognized by its event types, replayed verbatim.
+      Files from the TypeScript edition work identically (the format is the contract).</li>
+  <li><strong>Claude Code transcripts</strong> — recognized by their <code>message</code>
+      records and translated by an adapter: tool uses become <code>tool_call</code>s,
+      <code>Task</code>/<code>Agent</code> spawns become <code>agent_spawn</code> + A2A messages,
+      thinking becomes <code>thinking_delta</code>, sidechains fold under their owning task.
+      You can watch a real Claude Code session step through the Lab's map.</li>
+</ul>
+
+<!--MERMAID:12-import-flow|Import detection: spectroscope JSONL replays verbatim; Claude Code transcripts run through the adapter; both feed the same replay path as stored sessions.-->
+
+<div class="callout">
+  <div class="co-title">Known limitation</div>
+  <p>Newer Claude Code versions store subagent transcripts as separate files
+  (<code>…/subagents/agent-*.jsonl</code>). Importing a main transcript shows each spawn
+  and its result, but not the child's inner steps — a multi-file merge is a future
+  candidate.</p>
+</div>
+
+<h2 id="ch-sessions-newchat">New chat semantics</h2>
+<p>One socket connection is one server-side session — one agent, one JSONL file. “New
+chat” therefore closes and reopens the socket: fresh agent, fresh file, fresh state.
+Two browser tabs are two fully independent sessions (separate agents, files, remembered
+permission rules); only persisted rules in <code>.spectro/settings.json</code> are shared,
+which is why that writer is serialized.</p>

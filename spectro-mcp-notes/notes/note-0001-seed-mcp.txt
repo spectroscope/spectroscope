@@ -1,0 +1,2 @@
+MCP (Model Context Protocol) is just another tool source next to StandardTools.
+An MCP server is a program that answers tools/call over stdio JSON-RPC.

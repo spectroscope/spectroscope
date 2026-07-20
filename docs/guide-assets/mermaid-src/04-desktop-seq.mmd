@@ -1,0 +1,16 @@
+sequenceDiagram
+    participant L as ./spectro desktop
+    participant E as Electron main.ts
+    participant JVM as spectro-server.jar
+    participant Win as BrowserWindow
+    L->>L: stop stale instance (single-instance lock)
+    L->>L: gradlew :spectro-server:bootJar
+    L->>E: npm start (JAVA_HOME/bin on PATH, .env loaded)
+    E->>E: findFreePort()
+    E->>JVM: spawn java -jar spectro-server.jar --server.port=P
+    loop up to 30 s, every 500 ms
+        E->>JVM: GET /api/health
+    end
+    JVM-->>E: 200 {"status":"ok"}
+    E->>Win: loadURL(http://127.0.0.1:P)
+    Note over E,JVM: window close keeps app + JVM alive (tray, cron)<br/>Quit: SIGTERM, after 5 s SIGKILL

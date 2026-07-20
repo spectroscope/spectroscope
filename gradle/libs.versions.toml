@@ -1,0 +1,32 @@
+# Central version catalog — every dependency version lives here once; the
+# module build scripts reference typed accessors (libs.anthropic.java, ...).
+[versions]
+anthropic = "2.34.0"
+jackson = "2.17.2"
+picocli = "4.7.6"
+junit = "5.10.2"
+spring = "6.2.8"
+cronutils = "9.2.1"
+slf4j = "2.0.18"
+# Logging night 2026-07-17: ONE backend everywhere (see docs/design/LOGGING-CONCEPT.md).
+# 1.5.38 carries the 2026 CVE fixes (Boot 3.5.3 still manages 1.5.18).
+logback = "1.5.38"
+
+[libraries]
+anthropic-java = { module = "com.anthropic:anthropic-java", version.ref = "anthropic" }
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+# Spring Framework as a LIBRARY (no Boot, no container): RestClient + declarative
+# HTTP interfaces power the Ollama provider — owner decision 2026-07-02.
+# spring-aop carries the aopalliance interfaces the HTTP-interface proxy needs.
+spring-web = { module = "org.springframework:spring-web", version.ref = "spring" }
+spring-aop = { module = "org.springframework:spring-aop", version.ref = "spring" }
+spring-context = { module = "org.springframework:spring-context", version.ref = "spring" }
+# Scheduler: cron-utils computes the slots, a ScheduledExecutorService fires them.
+cron-utils = { module = "com.cronutils:cron-utils", version.ref = "cronutils" }
+# Logging (logging night 2026-07-17, replaces the old slf4j-nop void knowingly):
+# the core speaks the slf4j API only (a library never ships a backend); the
+# faces run Logback — console stays WARN-quiet, diagnostics go to the file.
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+logback-classic = { module = "ch.qos.logback:logback-classic", version.ref = "logback" }

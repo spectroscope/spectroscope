@@ -1,0 +1,26 @@
+◆ spectroscope
+
+  repl          interactive agent REPL — /voice push-to-talk, --speak reads aloud
+                ./gradlew -q --console=plain :spectro-cli:run --args="..."
+  run           headless run: ./spectro run -p "task" [--json] [--image path] [--speak]
+                ./gradlew -q --console=plain :spectro-cli:run --args="run -p ..."
+  cron          scheduler: list / status / run <id> (~/.spectro/jobs.json)
+                ./gradlew -q --console=plain :spectro-cli:run --args="cron list"
+  sessions      list the stored JSONL sessions (~/.spectro/sessions)
+                ./gradlew -q --console=plain :spectro-cli:run --args="sessions"
+  resume        continue a session by id: ./spectro resume <id>
+                ./gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"
+  doctor        check Java, config layers, provider reachability
+                ./gradlew -q --console=plain :spectro-cli:run --args="doctor"
+  tour          guided feature tour — menu, tips, settings
+                ./gradlew -q --console=plain tour
+  web           web face — Spring Boot server + browser UI on :8080
+                ./gradlew -q --console=plain :spectro-server:bootRun
+  desktop       desktop face — Electron shell + managed Spring Boot process
+                ./gradlew :spectro-server:bootJar && (cd spectro-desktop && npm start)
+  mcp-notes     build the example MCP server (stdio) into a runnable dist
+                ./gradlew -q --console=plain :spectro-mcp-notes:installDist
+
+Extra arguments pass through: ./spectro repl --verbose · ./spectro run -p 'Say OK.' --json
+Vision needs a vision model (attach via --image or the web composer); voice: bash scripts/setup-stt.sh (in) and scripts/setup-tts.sh (out).
+MCP: configure external servers in .spectro/settings.json ('mcpServers'); ./spectro mcp-notes builds the example; in the REPL, /mcp lists them.
