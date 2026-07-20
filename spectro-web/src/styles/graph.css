@@ -108,7 +108,8 @@
   display: flex;
   flex-direction: column;
   flex: none;
-  width: 300px;
+  width: 300px; /* fallback — the layout store drives the real width inline */
+  min-width: 0; /* long option labels must never widen the panel */
   min-height: 0;
   background-color: var(--surface);
   background-image: linear-gradient(var(--glint), transparent 120px);
@@ -130,6 +131,7 @@
   align-items: center;
   gap: var(--sp-2);
   margin-left: auto;
+  min-width: 0; /* the select shrinks with the panel, never dictates it */
   font-size: var(--fs-11);
   color: var(--text-faint);
 }
@@ -147,6 +149,11 @@
   font: inherit;
   font-size: var(--fs-12);
   padding: 4px var(--sp-2);
+  max-width: 11rem; /* the closed control truncates; the open list shows full labels */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
 .image-provider select:hover { border-color: var(--border-strong); }

@@ -24,7 +24,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
-import { openRightPanel, setActiveRightTab, setRightPanelW, setSidebarW, toggleRightPanel, useLayout } from "./state/layout";
+import { openRightPanel, setActiveRightTab, setImagesW, setRightPanelW, setSidebarW, toggleRightPanel, useLayout } from "./state/layout";
 import { TextView } from "./components/TextView";
 import { TraceView } from "./components/TraceView";
 import { UsageFooter } from "./components/UsageFooter";
@@ -106,6 +106,16 @@ export function App() {
   const resizeRightPanel = (clientX: number): void => {
     const r = chatRowRef.current?.getBoundingClientRect();
     if (r) setRightPanelW(Math.max(RIGHT_PANEL_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - CHAT_RESERVED_MIN_WIDTH_PX)));
+  };
+
+  // The gallery resizes from its left edge too (owner 2026-07-20): width =
+  // distance from the pointer to the panel's own right edge — the edge is
+  // stable during the drag (whatever sits right of the gallery is fixed).
+  const resizeImages = (clientX: number): void => {
+    const panel = chatRowRef.current?.querySelector(".image-panel");
+    const row = chatRowRef.current?.getBoundingClientRect();
+    const r = panel?.getBoundingClientRect();
+    if (r && row) setImagesW(Math.max(240, Math.min(r.right - clientX, row.width - CHAT_RESERVED_MIN_WIDTH_PX)));
   };
 
   // Design switcher: the live (draft) skin drives the particle backdrop and the
@@ -579,14 +589,24 @@ export function App() {
               sendClient={sendClient}
             />
             {imagesOpen && (
-              <ImagePanel
-                images={view.images}
-                provider={imageProvider}
-                keys={imageKeys}
-                onProviderChange={changeImageProvider}
-                onClose={() => setImagesOpen(false)}
-                sessionId={viewingLive ? live.workspace?.sessionId : undefined}
-              />
+              <>
+                <Resizer
+                  collapsed={false}
+                  chevron="right"
+                  label={t(lang, "img.title")}
+                  onResize={resizeImages}
+                  onToggle={() => setImagesOpen(false)}
+                />
+                <ImagePanel
+                  images={view.images}
+                  provider={imageProvider}
+                  keys={imageKeys}
+                  width={layout.imagesW}
+                  onProviderChange={changeImageProvider}
+                  onClose={() => setImagesOpen(false)}
+                  sessionId={viewingLive ? live.workspace?.sessionId : undefined}
+                />
+              </>
             )}
             {layout.rightPanelOpen && (
               <>

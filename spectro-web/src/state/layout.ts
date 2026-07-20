@@ -27,6 +27,8 @@ export interface LayoutState {
   rightPanelOpen: boolean;
   /** Chat tab's right panel width in px. */
   rightPanelW: number;
+  /** Image gallery panel width in px (resizable like the workspace panes). */
+  imagesW: number;
   /** Which tab the right panel shows. */
   activeRightTab: RightTab;
 }
@@ -39,6 +41,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   traceOpen: false,
   rightPanelOpen: false,
   rightPanelW: 360,
+  imagesW: 300,
   activeRightTab: "agents",
 };
 
@@ -79,7 +82,7 @@ function set(patch: Partial<LayoutState>): void {
     next.sidebarW === state.sidebarW && next.chatW === state.chatW && next.traceW === state.traceW &&
     next.chatOpen === state.chatOpen && next.traceOpen === state.traceOpen &&
     next.rightPanelOpen === state.rightPanelOpen && next.rightPanelW === state.rightPanelW &&
-    next.activeRightTab === state.activeRightTab
+    next.imagesW === state.imagesW && next.activeRightTab === state.activeRightTab
   ) {
     return; // no change — no emit
   }
@@ -94,6 +97,7 @@ export function setTraceW(w: number): void { set({ traceW: clampW(w, 200, 1200) 
 export function toggleChat(): void { set({ chatOpen: !state.chatOpen }); }
 export function toggleTrace(): void { set({ traceOpen: !state.traceOpen }); }
 export function setRightPanelW(w: number): void { set({ rightPanelW: clampW(w, 260, 720) }); }
+export function setImagesW(w: number): void { set({ imagesW: clampW(w, 240, 720) }); }
 export function toggleRightPanel(): void { set({ rightPanelOpen: !state.rightPanelOpen }); }
 /** Opens the panel if closed (idempotent) — the workspace announcement uses it. */
 export function openRightPanel(): void { if (!state.rightPanelOpen) set({ rightPanelOpen: true }); }

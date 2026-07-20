@@ -20,6 +20,8 @@ export function ImagePanel(props: {
   /** Key PRESENCE per backend (from /api/config); null until known. A
    *  keyless backend stays selectable but says so in its option label. */
   keys: { gemini: boolean; openai: boolean } | null;
+  /** Panel width in px (persisted layout state; the resizer drives it). */
+  width?: number;
   onProviderChange: (provider: string) => void;
   onClose: () => void;
   /** The live session whose workspace receives copies — absent hides the button (replays). */
@@ -56,7 +58,7 @@ export function ImagePanel(props: {
   };
 
   return (
-    <aside className="image-panel" aria-label={t(lang, "img.aria")}>
+    <aside className="image-panel" style={props.width !== undefined ? { width: props.width } : undefined} aria-label={t(lang, "img.aria")}>
       <div className="image-panel-head">
         <span className="eyebrow">{t(lang, "img.title")}</span>
         <span className="badge tabular">{props.images.length}</span>
