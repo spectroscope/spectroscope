@@ -660,3 +660,9 @@
   .pf-shell--on .pf-shell__cmd { width: auto; }
   .pf-comet, .pf-comet-glow { display: none; }
 }
+
+/* the generated-image thumbnail, shown inline in the agent's context disclosure
+   when the active tool is generate_image (edu port). Inert otherwise. */
+.pf-genimg-wrap { display: flex; align-items: center; gap: 10px; margin-top: 2px; }
+.pf-genimg { border-radius: 5px; flex: none; }
+.pf-genimg-cap { font-family: var(--font-mono); font-size: 10px; color: var(--text-dim); line-height: 1.3; }

@@ -50,8 +50,27 @@ function Disclosure({ label, children, open: openDefault = false }: { label: str
 
 interface Activity { text: string; color: string; }
 
-/** The tool chips the agent hub shows (the standard tool belt). */
-const AGENT_TOOL_CHIPS = ["read_file", "write_file", "list_dir", "run_command"];
+/** The tool chips the agent hub shows (the tool belt + the extension actions). */
+const AGENT_TOOL_CHIPS = ["read_file", "write_file", "list_dir", "run_command", "use_skill", "call_mcp", "generate_image"];
+
+/** A tiny "generated image" thumbnail (a placeholder gradient, not a real asset)
+ *  shown when the agent's active tool is generate_image. */
+function GenImage() {
+  return (
+    <svg className="pf-genimg" width="72" height="48" viewBox="0 0 72 48" aria-hidden="true">
+      <defs>
+        <linearGradient id="pf-gi" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--sp-ocean)" />
+          <stop offset="0.5" stopColor="var(--sp-violet)" />
+          <stop offset="1" stopColor="var(--sp-amber)" />
+        </linearGradient>
+      </defs>
+      <rect x="1" y="1" width="70" height="46" rx="4" fill="url(#pf-gi)" opacity="0.85" />
+      <circle cx="20" cy="18" r="6" fill="var(--surface)" opacity="0.7" />
+      <path d="M6 42 L26 24 L38 34 L52 18 L66 42 Z" fill="var(--surface)" opacity="0.5" />
+    </svg>
+  );
+}
 
 /** The shell's one-line display clips a running command to this width. */
 const SHELL_PREVIEW_CHARS = 26;
@@ -90,6 +109,7 @@ export function AgentNode({ data }: NodeProps) {
   const lang = useLang();
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
   const maxTok = Math.max(1, ...(d.ctxParts ?? []).map((p) => p.estTokens));
+  const isGenImage = d.tool?.name === "generate_image";
   return (
     <div className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}`}>
       <div className="pf-agent__head">
@@ -144,7 +164,17 @@ export function AgentNode({ data }: NodeProps) {
             </div>
           </div>
         )}
-        {d.tool ? (
+        {d.tool && isGenImage ? (
+          <div className="pf-panelbox pf-genimg-panel">
+            <div className="pf-panelbox__label">{t(lang, "map.ctx.toolCall")} · {d.tool.name}</div>
+            <div className="pf-genimg-wrap">
+              <GenImage />
+              <span className="pf-genimg-cap">
+                {String((d.tool.input as { prompt?: string })?.prompt ?? "a generated image")}
+              </span>
+            </div>
+          </div>
+        ) : d.tool ? (
           <div className="pf-panelbox">
             <div className="pf-panelbox__label">{t(lang, "map.ctx.toolCall")} · {d.tool.name}</div>
             <div className="nowheel" style={{ maxHeight: 150, overflow: "auto" }}>

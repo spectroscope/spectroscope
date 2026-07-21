@@ -1,0 +1,107 @@
+/* The keymap overlay (edu port): a game-style shortcut sheet. Tokens only, no
+   shadows — the keycap reads physical via a thick bottom border. */
+.km-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(3px);
+}
+.km-panel {
+  width: min(680px, 100%);
+  max-height: 86vh;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  padding: var(--sp-5);
+}
+.km-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-4);
+}
+.km-close {
+  background: none;
+  border: 0;
+  padding: 0 var(--sp-1);
+  color: var(--text-dim);
+  font-size: var(--fs-20);
+  line-height: 1;
+  cursor: pointer;
+}
+.km-close:hover {
+  color: var(--text);
+}
+.km-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-16);
+  font-weight: 600;
+  text-transform: lowercase;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+.km-title-ico { color: var(--accent); display: inline-flex; }
+.km-title-ico svg { width: 22px; height: 22px; }
+.km-groups {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-4) var(--sp-6);
+}
+.km-group:last-child { grid-column: 1 / -1; }
+.km-group-title {
+  margin: 0 0 var(--sp-2);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.km-rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.km-row {
+  display: grid;
+  grid-template-columns: 22px 96px 1fr;
+  align-items: center;
+  gap: 12px;
+}
+.km-ico { color: var(--text-faint); display: inline-flex; }
+.km-ico svg { width: 20px; height: 20px; }
+.km-keys {
+  display: inline-flex;
+  gap: 5px;
+}
+.km-key {
+  display: inline-block;
+  min-width: 22px;
+  padding: 3px 8px 4px;
+  text-align: center;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 3px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1;
+}
+.km-label {
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+}
+.km-foot {
+  margin: var(--sp-4) 0 0;
+  color: var(--text-faint);
+  font-size: var(--fs-12);
+}

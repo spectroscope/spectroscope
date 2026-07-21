@@ -17,6 +17,7 @@ import { ImagePanel } from "./components/ImagePanel";
 import { ImportDialog } from "./components/ImportDialog";
 import { GateBar } from "./components/GateBar";
 import { DoctorPanel } from "./components/DoctorPanel";
+import { Keymap } from "./components/Keymap";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { compile } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
@@ -96,6 +97,26 @@ export function App() {
   const [thinking, setThinking] = useState(true); // reasoning visibility (on by default)
   const [settingsOpen, setSettingsOpen] = useState(false); // design drawer
   const [doctorOpen, setDoctorOpen] = useState(false); // calibration/status page
+  const [keymapOpen, setKeymapOpen] = useState(false); // the ? shortcut sheet (edu port)
+  // Global keymap shortcut: ? opens the sheet, Escape closes it. Guarded while
+  // typing so it never eats a keystroke in the composer or a filter (edu port).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = e.target as HTMLElement | null;
+      const typing =
+        el !== null &&
+        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+      if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key === "?") {
+        e.preventDefault();
+        setKeymapOpen(true);
+      } else if (e.key === "Escape") {
+        setKeymapOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
   const [serverCfg, setServerCfg] = useState<{ provider: string; model: string } | null>(null); // /api/config boot truth
   // Key PRESENCE per image backend (from /api/config, never values). Drives
   // the gallery dropdown's "no key in .env" hints and the smart default below.
@@ -575,6 +596,7 @@ export function App() {
           onToggleSettings={() => setSettingsOpen((o) => !o)}
           doctorOpen={doctorOpen}
           onToggleDoctor={() => setDoctorOpen((o) => !o)}
+          onOpenKeymap={() => setKeymapOpen(true)}
           viewingLive={viewingLive}
           provider={curProvider}
           model={curModel}
@@ -779,6 +801,7 @@ export function App() {
       </div>
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
       <DoctorPanel
         open={doctorOpen}
         onClose={() => setDoctorOpen(false)}
