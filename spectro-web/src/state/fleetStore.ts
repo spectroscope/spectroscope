@@ -147,7 +147,10 @@ function changedContexts(incoming: FleetFrame[]): Set<string> {
 /** Ingest a live socket batch: pull out the fleet frames the reducer ignores,
  *  fold (per fleet), and notify. A batch with no fleet frames is a no-op. */
 export function fleetPushLive(batch: RunEvent[]): void {
-  const incoming = batch.filter(isFleetFrame) as FleetFrame[];
+  // Filter over unknown[]: isFleetFrame is an (event: unknown) => event is
+  // FleetFrame guard, and FleetFrame is not a RunEvent subtype, so narrowing
+  // straight off RunEvent[] can't apply the guard (tsc -b rejects the cast).
+  const incoming = (batch as unknown[]).filter(isFleetFrame);
   if (incoming.length === 0) {
     return;
   }
