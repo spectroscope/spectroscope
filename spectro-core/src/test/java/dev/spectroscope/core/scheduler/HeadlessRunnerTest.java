@@ -171,6 +171,40 @@ class HeadlessRunnerTest {
     }
 
     @Test
+    void anInjectedBrokerOverridesTheAutoApprovePolicy(@TempDir Path cwd) {
+        // The ask-mode seam block 4 leans on: a fleet node injects its own broker
+        // (a parking broker) that decides per call, overriding the fixed
+        // readonly/auto policy. Here it denies a write even though autoApprove=true.
+        ScriptedProvider provider = new ScriptedProvider();
+        provider.turns.add(List.of(
+                new LlmProvider.PToolCall("c1", "write_file",
+                        JSON.createObjectNode().put("path", "gate.txt").put("content", "x")),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)));
+        provider.turns.add(List.of(
+                new LlmProvider.PTextDelta("The broker denied the write."),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+        List<RunEvent> events = new ArrayList<>();
+        List<String> asked = new ArrayList<>();
+        HeadlessRunner.Outcome outcome = runner(provider)
+                .withBroker(request -> {   // a custom broker: record the call, deny it
+                    asked.add(request.callId());
+                    return false;
+                })
+                .runOnce("Write gate.txt", cwd, /* autoApprove */ true, null, events::add, line -> { });
+
+        assertTrue(outcome.exitOk(), "a denied write is regular feedback, not a failure");
+        assertEquals(List.of("c1"), asked,
+                "the injected broker decided the call, not the autoApprove policy");
+        RunEvent.PermissionDecision decision = events.stream()
+                .filter(RunEvent.PermissionDecision.class::isInstance)
+                .map(RunEvent.PermissionDecision.class::cast)
+                .findFirst().orElseThrow();
+        assertFalse(decision.allowed(), "the broker's verdict wins over autoApprove=true");
+        assertFalse(Files.exists(cwd.resolve("gate.txt")), "the write did not happen");
+    }
+
+    @Test
     void theTurnBrakeCancelsFromTheOutside(@TempDir Path cwd) {
         // A provider that would loop forever: every turn wants another tool.
         LlmProvider relentless = request -> {

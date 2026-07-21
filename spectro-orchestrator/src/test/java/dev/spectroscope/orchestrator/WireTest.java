@@ -8,6 +8,7 @@ import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -84,6 +85,38 @@ class WireTest {
         // dialect grew a sixth op, so a v2 fleet can never misread a ctl line.
         Wire.Ctl parsed = assertInstanceOf(Wire.Ctl.class, Wire.parse(Wire.ctl("stop"), JSON));
         assertEquals("stop", parsed.action(), "the control verb survives the round-trip");
+    }
+
+    @Test
+    void aGateCtlCarriesCallIdAndAllow() {
+        // Block 4: the hub answers a parked permission gate on a node — the
+        // control verb "gate" rides the callId it addresses and the verdict.
+        // A new verb with extra fields adds no op, so the version stays 3 and a
+        // pre-gate v3 node reads action="gate", ignores the fields, and no-ops.
+        Wire.Ctl allowed = assertInstanceOf(Wire.Ctl.class,
+                Wire.parse(Wire.ctl("gate", "call-7", true), JSON));
+        assertEquals("gate", allowed.action());
+        assertEquals("call-7", allowed.callId(), "the addressed callId survives the round-trip");
+        assertEquals(Boolean.TRUE, allowed.allow(), "the verdict survives the round-trip");
+
+        // A denial round-trips too — false is a real verdict, not an absent one.
+        Wire.Ctl denied = assertInstanceOf(Wire.Ctl.class,
+                Wire.parse(Wire.ctl("gate", "call-8", false), JSON));
+        assertEquals(Boolean.FALSE, denied.allow());
+    }
+
+    @Test
+    void aStopCtlStaysByteIdenticalWithoutGateFields() {
+        // The frozen stop verb must NOT grow callId/allow keys: a pre-gate node
+        // parses the exact same line, and the gate fields default to null so the
+        // reader dispatches stop by callId==null, not by sniffing the verb.
+        String stop = Wire.ctl("stop");
+        assertEquals("{\"v\":3,\"op\":\"ctl\",\"action\":\"stop\"}", stop,
+                "stop is byte-identical — no callId/allow keys leak onto it");
+        Wire.Ctl parsed = assertInstanceOf(Wire.Ctl.class, Wire.parse(stop, JSON));
+        assertEquals("stop", parsed.action());
+        assertNull(parsed.callId(), "a plain control verb carries no callId");
+        assertNull(parsed.allow(), "a plain control verb carries no verdict");
     }
 
     @Test

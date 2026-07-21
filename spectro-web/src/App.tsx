@@ -36,7 +36,7 @@ import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
-import { fleetPushLive, hydrateFleet, useFleet } from "./state/fleetStore";
+import { fleetPushLive, hydrateFleet, useFleet, fleetPending } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -443,6 +443,22 @@ export function App() {
   const tabEvents = enteredFleet !== null
     ? enteredFleetModel.events
     : (viewingLive ? liveEvents : (replay?.events ?? []));
+  // The entered fleet's parked permission gates (block 4): the same GateBar,
+  // but answered over REST to the node (POST /api/fleet/{node}/gate) instead of
+  // the session socket. Best-effort like stop — if the node left, its own close
+  // denies the gate, so a failed POST is nothing to shout about.
+  const fleetGate = enteredFleet !== null ? fleetPending(enteredFleetModel) : [];
+  const decideFleetGate = (callId: string, allowed: boolean): void => {
+    const gate = fleetGate.find((g) => g.callId === callId);
+    if (gate === undefined) return; // already decided, or the node is gone
+    void fetch(`/api/fleet/${encodeURIComponent(gate.agentId)}/gate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ callId, allow: allowed }),
+    }).catch(() => {
+      // best-effort: the node's close denies the gate if this never lands
+    });
+  };
   // The trace tab is a fold-tab too: an entered fleet's frames become inbound
   // trace entries (drill-in shows the MEMBER's wire, not the own session).
   const traceEntries = useMemo(
@@ -497,7 +513,8 @@ export function App() {
   // While the Lab tab is active it owns the permission flow (the dialog
   // appears when the user STEPS onto the request) — suppress the global
   // gate bar meanwhile. Replays never ask.
-  const gateVisible = viewingLive && tab !== "lab" && live.pendingPermissions.length > 0;
+  const gateVisible =
+    enteredFleet === null && viewingLive && tab !== "lab" && live.pendingPermissions.length > 0;
 
   const firstUser = view.turns.find((turn) => turn.kind === "user");
   const title =
@@ -743,6 +760,19 @@ export function App() {
             cards={live.cards}
             workspaceConfigured={live.workspace?.configured ?? false}
             onDecide={decide}
+          />
+        )}
+        {/* The FLEET gate: a node in ask mode parked a tool; answer it over the
+            hub. Same bar, no "remember" (a remote node has no allowlist here).
+            Suppressed on the lab tab, which shows own-session content, mirroring
+            the session gate's tab guard above. */}
+        {enteredFleet !== null && tab !== "lab" && fleetGate.length > 0 && (
+          <GateBar
+            pending={fleetGate}
+            cards={{}}
+            workspaceConfigured={false}
+            allowRemember={false}
+            onDecide={decideFleetGate}
           />
         )}
         <UsageFooter state={view} connection={conn.status} />

@@ -9,6 +9,7 @@ import java.io.BufferedWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
+import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
@@ -18,6 +19,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -37,6 +39,11 @@ import java.util.function.Consumer;
 public final class ProcessBus implements BusTransport {
 
     private static final Logger log = LoggerFactory.getLogger(ProcessBus.class);
+
+    /** A bounded connect keeps the reconnect cadence prompt: an unreachable host
+     *  must not stretch one manager cycle to the multi-minute OS connect default
+     *  (a parked gate's deny re-fires once per cycle — see {@link #runManager}). */
+    private static final int CONNECT_TIMEOUT_MS = 2_000;
 
     private final String host;
     private final int port;
@@ -60,6 +67,20 @@ public final class ProcessBus implements BusTransport {
      *  client (no controller) ignores it. Runs on the reader thread, so the
      *  handler MUST be non-blocking (cancel a signal, count a latch — no I/O). */
     private volatile Consumer<String> onControl = action -> { };
+    /** The reverse-GATE seam: the hub's answer to a permission request this node
+     *  parked — the callId it addresses and the verdict (block 4). Parallel to
+     *  {@link #onControl}; a plain client (no parking broker) ignores it. Runs
+     *  on the reader thread, so the handler MUST be non-blocking: complete the
+     *  parked future and return — never join, never I/O, or every later frame
+     *  stalls behind it. */
+    private volatile BiConsumer<String, Boolean> onGate = (callId, allow) -> { };
+    /** Fired when an ESTABLISHED connection drops (block 4): a fleet node's
+     *  parked permission gate can only be answered by a live hub, so a node
+     *  wires this to release those gates when the hub can no longer reach it —
+     *  else an ask-mode run wedges forever behind an answer that cannot come.
+     *  A plain client (no parking broker) ignores it. Never fires during the
+     *  pure initial connect-retry: nothing was ever up to drop. */
+    private volatile Runnable onDisconnect = () -> { };
     private volatile boolean closed = false;
     private final Thread manager;
 
@@ -121,6 +142,38 @@ public final class ProcessBus implements BusTransport {
      */
     public ProcessBus onControl(Consumer<String> handler) {
         this.onControl = handler;
+        return this;
+    }
+
+    /**
+     * Registers the reverse-GATE handler: the hub's answer to a permission
+     * request this node parked (block 4). Fires on the connection's reader
+     * thread and is guarded like {@link #onControl} — a throwing handler is
+     * logged, never fatal. The handler MUST be non-blocking: complete the
+     * parked future with the verdict and return. Never join or do I/O here, or
+     * the answer stalls every frame queued behind it.
+     *
+     * @param handler receives (callId, allow) for each gate answer the hub sends
+     * @return this bus, for fluent construction
+     */
+    public ProcessBus onGate(BiConsumer<String, Boolean> handler) {
+        this.onGate = handler;
+        return this;
+    }
+
+    /**
+     * Registers the disconnect handler: fired once per manager cycle in which an
+     * ESTABLISHED connection is down (the hub died, or a reconnect after an
+     * established link failed). Never fires during the pure initial connect —
+     * nothing was ever up. Runs on the connection-manager thread and is guarded
+     * like {@link #onGate}; keep it non-blocking (a fleet node denies its parked
+     * gates here so the run never wedges behind an answer the hub can't deliver).
+     *
+     * @param handler receives a signal that an established connection dropped
+     * @return this bus, for fluent construction
+     */
+    public ProcessBus onDisconnect(Runnable handler) {
+        this.onDisconnect = handler;
         return this;
     }
 
@@ -227,6 +280,25 @@ public final class ProcessBus implements BusTransport {
         }
     }
 
+    /**
+     * Best-effort keepalive tightening: bound a silent peer's detection toward
+     * the minute range instead of the OS default (often ~2h), where the platform
+     * exposes the extended options. A platform without them keeps
+     * {@code setKeepAlive}'s default cadence — slower, but still finite, and a
+     * truly stuck fleet node is ultimately reaped by SIGTERM regardless.
+     *
+     * @param socket the freshly connected socket to tune
+     */
+    private static void tightenKeepAlive(Socket socket) {
+        try {
+            socket.setOption(jdk.net.ExtendedSocketOptions.TCP_KEEPIDLE, 30);
+            socket.setOption(jdk.net.ExtendedSocketOptions.TCP_KEEPINTERVAL, 10);
+            socket.setOption(jdk.net.ExtendedSocketOptions.TCP_KEEPCOUNT, 3);
+        } catch (IOException | RuntimeException unsupported) {
+            // A platform without the extended options: keepalive's default stands.
+        }
+    }
+
     /** Caller holds the lock. */
     private void teardownConnection() {
         if (socket != null) {
@@ -245,10 +317,20 @@ public final class ProcessBus implements BusTransport {
      *  because nobody restarts a background node by hand. */
     private void runManager() {
         long backoff = 50;
+        boolean everConnected = false;
         while (!closed) {
             Socket attempt = null;
             try {
-                attempt = new Socket(host, port);
+                // A bounded connect keeps reconnect cycling prompt; TCP keepalive
+                // lets the OS surface a SILENT peer death (a partition or a
+                // powered-off host sends no FIN/RST, so an idle readLine would
+                // otherwise block for the OS default of hours) as a broken read,
+                // which readLoop's IOException path turns into a disconnect.
+                attempt = new Socket();
+                attempt.connect(new InetSocketAddress(host, port), CONNECT_TIMEOUT_MS);
+                attempt.setKeepAlive(true);
+                tightenKeepAlive(attempt);
+                everConnected = true; // an established TCP link this lifetime
                 BufferedReader in = new BufferedReader(
                         new InputStreamReader(attempt.getInputStream(), StandardCharsets.UTF_8));
                 synchronized (lock) {
@@ -284,6 +366,15 @@ public final class ProcessBus implements BusTransport {
             if (closed) {
                 return;
             }
+            // A connection that was ONCE established is now down (the hub died,
+            // or a reconnect after an established link failed). Announce it so an
+            // ask-mode node can release gates the departed hub can no longer
+            // answer — firing every down cycle also frees a gate that parked in
+            // the tiny window right after the drop. Never fires before the first
+            // successful connect (everConnected == false), per the review.
+            if (everConnected) {
+                announceDisconnect();
+            }
             try {
                 Thread.sleep(backoff);
             } catch (InterruptedException interrupted) {
@@ -315,7 +406,16 @@ public final class ProcessBus implements BusTransport {
                         }
                         announceGap(new BusGap(topic, sender, epoch, fromSeq, toSeq));
                     }
-                    case Wire.Ctl(String action) -> announceControl(action);
+                    case Wire.Ctl(String action, String callId, Boolean allow) -> {
+                        // Dispatch on the addressing, not the verb: a gate answer
+                        // carries a callId (block 4), a plain control verb (stop)
+                        // does not. A pre-gate handler never sees the gate line.
+                        if (callId != null) {
+                            announceGate(callId, allow);
+                        } else {
+                            announceControl(action);
+                        }
+                    }
                     default -> log.warn("unexpected op from hub: {}", line);
                 }
             } catch (RuntimeException poison) {
@@ -349,6 +449,28 @@ public final class ProcessBus implements BusTransport {
             onControl.accept(action);
         } catch (RuntimeException broken) {
             log.warn("control handler failed for '{}': {}", action, broken.toString());
+        }
+    }
+
+    /** The gate handler is user code (a node's parking broker) — guard it, log
+     *  it, never die of it. A poison gate answer must not kill the reader loop
+     *  (that would strand the node's whole event stream over one bad verdict). */
+    private void announceGate(String callId, Boolean allow) {
+        try {
+            onGate.accept(callId, allow);
+        } catch (RuntimeException broken) {
+            log.warn("gate handler failed for '{}': {}", callId, broken.toString());
+        }
+    }
+
+    /** The disconnect handler is user code (a node releasing parked gates) —
+     *  guard it, log it, never die of it. It runs on the manager thread between
+     *  reconnect attempts, so a throwing handler must not break the heal loop. */
+    private void announceDisconnect() {
+        try {
+            onDisconnect.run();
+        } catch (RuntimeException broken) {
+            log.warn("disconnect handler failed: {}", broken.toString());
         }
     }
 

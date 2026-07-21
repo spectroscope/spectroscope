@@ -115,6 +115,47 @@ public class FleetController {
     }
 
     /**
+     * Answer a parked permission gate on a fleet node (block 4): dispatch a
+     * {@code ctl{gate}} carrying the operator's verdict to the node over the hub.
+     * Best-effort and honest like {@link #stop}: a 202 means the answer was SENT
+     * to the node's live connection, not that the node acted on it (the control
+     * plane has no ack). If the node left before the answer lands, its own close
+     * denies the orphaned gate — the operator sees the gate clear either way.
+     *
+     * <p>Same LOCAL-ORIGIN gate and {@code consumes=json} guard as stop/spawn: a
+     * remote or DNS-rebinding caller is a 404, a form POST a 415. The body must
+     * carry both {@code callId} and {@code allow}; a missing verdict is a 400, so
+     * a malformed answer never silently denies (or allows) a parked tool.</p>
+     *
+     * @param node    the node id from the roster
+     * @param answer  the operator's verdict {callId, allow}
+     * @param request the servlet request — must be a local origin
+     * @return 202 sent · 404 not local / no fleet / unknown · 409 the node left ·
+     *         400 a missing callId or verdict
+     */
+    @PostMapping(path = "/api/fleet/{node}/gate", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> gate(@PathVariable("node") String node,
+                                                    @RequestBody GateAnswer answer,
+                                                    HttpServletRequest request) {
+        if (!isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build(); // remote / rebinding — hide it
+        }
+        if (answer == null || answer.callId() == null || answer.callId().isBlank()
+                || answer.allow() == null) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "callId and allow are both required"));
+        }
+        return switch (fleet.controlGate(node, answer.callId(), answer.allow())) {
+            case DISABLED, UNKNOWN -> ResponseEntity.notFound().build();
+            case DISCONNECTED -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(gateBody(node, answer.callId(), "the node already left the roster"));
+            case DISPATCHED -> ResponseEntity.accepted()
+                    .body(gateBody(node, answer.callId(),
+                            "gate answer sent — best-effort; if the node left, its close denies the gate"));
+        };
+    }
+
+    /**
      * Spawn a readonly fleet node (block 3b) — the RCE-sensitive surface, gated
      * to the teeth: LOCAL-ORIGIN (loopback remote address AND a localhost Host —
      * the Host check is what stops DNS rebinding, which a loopback check alone
@@ -204,6 +245,16 @@ public class FleetController {
         Map<String, Object> json = new LinkedHashMap<>();
         json.put("node", node);
         json.put("action", "stop");
+        json.put("note", note);
+        return json;
+    }
+
+    /** The gate response shape — the verb, node, addressed callId, and a note. */
+    private static Map<String, Object> gateBody(String node, String callId, String note) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("node", node);
+        json.put("action", "gate");
+        json.put("callId", callId);
         json.put("note", note);
         return json;
     }

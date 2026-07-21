@@ -2,13 +2,14 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   fleetPushLive,
   hydrateFleet,
+  fleetPending,
   __getFleet,
   __getFleets,
   __getFleetOf,
   __setTestHooks,
   __resetForTests,
 } from "./fleetStore";
-import type { FleetFrame, FleetNode } from "../spectrum/fleetModel";
+import { EMPTY_FLEET, type FleetFrame, type FleetModel, type FleetNode } from "../spectrum/fleetModel";
 import type { RunEvent } from "../events";
 
 function node(id: string, connected = true): FleetNode {
@@ -162,5 +163,49 @@ describe("fleetStore multi-fleet keying", () => {
     fleetPushLive([ctxEvent("b", "ctxB", 0, delta("b", "b0")) as unknown as RunEvent]);
     // ctxA did not change, so its model reference is reused (no spurious render).
     expect(__getFleetOf("ctxA")).toBe(before);
+  });
+});
+
+describe("fleetPending", () => {
+  function model(events: RunEvent[]): FleetModel {
+    return { roster: [], events, epochBySender: {} };
+  }
+
+  it("returns undecided permission requests with their payload, dropping decided ones", () => {
+    // Block 4: the entered fleet's gate surface. Same request-minus-decision-by-
+    // callId fold as the sidebar's pendingGate flag, but KEEPING the payload so
+    // an operator can answer it (agentId names the node the answer POSTs to).
+    const pending = fleetPending(
+      model([
+        { type: "permission_request", agentId: "node-a", callId: "c1", name: "write_file", input: { path: "a.txt" }, ts: 1 },
+        { type: "permission_request", agentId: "node-b", callId: "c2", name: "run_command", input: { cmd: "ls" }, ts: 2 },
+        { type: "permission_decision", callId: "c1", allowed: true, ts: 3 },
+      ]),
+    );
+    expect(pending).toEqual([
+      { callId: "c2", agentId: "node-b", name: "run_command", input: { cmd: "ls" } },
+    ]);
+  });
+
+  it("keeps the parked order — first-parked first (the queue the GateBar shows)", () => {
+    const pending = fleetPending(
+      model([
+        { type: "permission_request", agentId: "node-a", callId: "first", name: "t", input: {}, ts: 1 },
+        { type: "permission_request", agentId: "node-a", callId: "second", name: "t", input: {}, ts: 2 },
+      ]),
+    );
+    expect(pending.map((p) => p.callId)).toEqual(["first", "second"]);
+  });
+
+  it("is empty with no requests, or when every request is decided", () => {
+    expect(fleetPending(EMPTY_FLEET)).toEqual([]);
+    expect(
+      fleetPending(
+        model([
+          { type: "permission_request", agentId: "node-a", callId: "c1", name: "t", input: {}, ts: 1 },
+          { type: "permission_decision", callId: "c1", allowed: false, ts: 2 },
+        ]),
+      ),
+    ).toEqual([]);
   });
 });

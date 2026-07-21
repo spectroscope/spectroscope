@@ -317,6 +317,155 @@ class NodeCommandTest {
     }
 
     @Test
+    void anAskModeGateParksUntilTheHubAnswersItThenTheToolRuns(@TempDir Path cwd) throws Exception {
+        // Block 4 end to end: an ask-mode node hits a needsPermission tool, PARKS,
+        // and its permission_request reaches the hub. The operator answers allow
+        // via controlGate(id, callId, true); the broker unparks and the write runs.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            java.util.concurrent.atomic.AtomicReference<String> parkedCallId =
+                    new java.util.concurrent.atomic.AtomicReference<>();
+            CountDownLatch gateParked = new CountDownLatch(1);
+            CountDownLatch runEnd = new CountDownLatch(1);
+            List<RunEvent> seen = Collections.synchronizedList(new ArrayList<>());
+            hub.subscribe(BusEnvelope.topicFor("fleet-gate"), env -> {
+                seen.add((RunEvent) env.payload());
+                if (env.payload() instanceof RunEvent.PermissionRequest pr) {
+                    parkedCallId.set(pr.callId());
+                    gateParked.countDown();
+                }
+                if (env.payload() instanceof RunEvent.RunEnd) {
+                    runEnd.countDown();
+                }
+            });
+
+            ScriptedProvider provider = new ScriptedProvider();
+            provider.turns.add(List.of(
+                    new LlmProvider.PToolCall("c1", "write_file",
+                            JSON.createObjectNode().put("path", "gated.txt").put("content", "ok")),
+                    new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)));
+            provider.turns.add(List.of(
+                    new LlmProvider.PTextDelta("Wrote the gated file."),
+                    new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+            SessionStore store = new SessionStore();
+            java.util.concurrent.atomic.AtomicInteger exit =
+                    new java.util.concurrent.atomic.AtomicInteger(-99);
+            Thread run = Thread.ofVirtual().start(() ->
+                    exit.set(NodeCommand.execute(JSON, CONFIG, provider,
+                            new NodeCommand.NodeSpec("127.0.0.1", hub.port(), "node-g", 8L,
+                                    "fleet-gate", "worker", "write", cwd, false, null),
+                            store, line -> { }, /* linger */ false, /* askMode */ true)));
+
+            assertTrue(gateParked.await(10, TimeUnit.SECONDS), "the gate reached the hub, parked");
+            assertEquals("c1", parkedCallId.get(), "the parked gate carries the tool's call id");
+            hub.controlGate("node-g", "c1", true); // the operator answers allow
+
+            assertTrue(runEnd.await(10, TimeUnit.SECONDS), "the answered run reached its end");
+            run.join(10_000);
+            assertEquals(0, exit.get(), "an allowed gate lets the run finish regularly");
+            assertTrue(Files.exists(cwd.resolve("gated.txt")), "allow ran the write");
+            assertTrue(seen.stream().anyMatch(ev -> ev instanceof RunEvent.PermissionDecision pd && pd.allowed()),
+                    "the allow decision is audited on the bus");
+        }
+    }
+
+    @Test
+    void anAskModeGateStoppedMidParkAbortsWithoutHanging(@TempDir Path cwd) throws Exception {
+        // Gotcha (c) end to end: a stop that lands while a gate is parked denies
+        // the gate (the producer thread unparks) and the run ends aborted — the
+        // deadlock the GateBroker guards, exercised through the real node wiring.
+        // The provider re-checks the signal so a stopped run ends aborted whether
+        // the loop rechecks before the next turn or the provider does.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            CountDownLatch gateParked = new CountDownLatch(1);
+            CountDownLatch runEnd = new CountDownLatch(1);
+            List<BusEnvelope> seen = Collections.synchronizedList(new ArrayList<>());
+            hub.subscribe(BusEnvelope.topicFor("fleet-gs"), env -> {
+                seen.add(env);
+                if (env.payload() instanceof RunEvent.PermissionRequest) {
+                    gateParked.countDown();
+                }
+                if (env.payload() instanceof RunEvent.RunEnd) {
+                    runEnd.countDown();
+                }
+            });
+
+            LlmProvider provider = request -> {
+                if (request.signal() != null && request.signal().isCancelled()) {
+                    return List.of(); // stopped → the loop ends aborted, no turn 2
+                }
+                return List.of(
+                        new LlmProvider.PToolCall("c1", "write_file",
+                                JSON.createObjectNode().put("path", "never.txt").put("content", "x")),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+            };
+
+            java.util.concurrent.atomic.AtomicInteger exit =
+                    new java.util.concurrent.atomic.AtomicInteger(-99);
+            Thread run = Thread.ofVirtual().start(() ->
+                    exit.set(NodeCommand.execute(JSON, CONFIG, provider,
+                            new NodeCommand.NodeSpec("127.0.0.1", hub.port(), "node-gs", 9L,
+                                    "fleet-gs", "worker", "write", cwd, false, null),
+                            new SessionStore(), line -> { }, /* linger */ false, /* askMode */ true)));
+
+            assertTrue(gateParked.await(10, TimeUnit.SECONDS), "the gate parked, awaiting an answer");
+            hub.control("node-gs", "stop"); // stop lands while the gate is parked
+
+            run.join(10_000);
+            assertFalse(run.isAlive(), "a stop while parked never hangs the node");
+            assertEquals(1, exit.get(), "a stopped run is not a regular end_turn");
+            assertFalse(Files.exists(cwd.resolve("never.txt")), "the denied write never happened");
+            assertTrue(runEnd.await(5, TimeUnit.SECONDS), "the aborted end reached the hub");
+            RunEvent.RunEnd end = seen.stream().map(BusEnvelope::payload)
+                    .filter(RunEvent.RunEnd.class::isInstance).map(RunEvent.RunEnd.class::cast)
+                    .reduce((first, second) -> second).orElseThrow();
+            assertEquals("aborted", end.stopReason(), "a gate stopped mid-park ends the run aborted");
+        }
+    }
+
+    @Test
+    void anAskModeGateIsReleasedWhenTheHubDiesSoTheNodeNeverWedges(@TempDir Path cwd) throws Exception {
+        // Finding 1 (adversarial review): a gate parked when the hub DIES can be
+        // freed by none of the three cancel triggers (stop needs a live hub;
+        // maxTurns needs a TurnStart the parked producer never emits; EventStream
+        // teardown needs an END the parked producer never emits). The onDisconnect
+        // seam denies parked gates on hub loss so the run proceeds (denied) and
+        // the node exits, instead of wedging until SIGTERM.
+        ProcessBusHub hub = new ProcessBusHub(0);
+        int hubPort = hub.port();
+        CountDownLatch gateParked = new CountDownLatch(1);
+        hub.subscribe(BusEnvelope.topicFor("fleet-hd"), env -> {
+            if (env.payload() instanceof RunEvent.PermissionRequest) {
+                gateParked.countDown();
+            }
+        });
+
+        ScriptedProvider provider = new ScriptedProvider();
+        provider.turns.add(List.of(
+                new LlmProvider.PToolCall("c1", "write_file",
+                        JSON.createObjectNode().put("path", "x.txt").put("content", "x")),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)));
+        provider.turns.add(List.of( // reached only after the denied tool -> a normal end
+                new LlmProvider.PTextDelta("The write was denied (hub gone)."),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+        java.util.concurrent.atomic.AtomicInteger exit =
+                new java.util.concurrent.atomic.AtomicInteger(-99);
+        Thread run = Thread.ofVirtual().start(() ->
+                exit.set(NodeCommand.execute(JSON, CONFIG, provider,
+                        new NodeCommand.NodeSpec("127.0.0.1", hubPort, "node-hd", 11L,
+                                "fleet-hd", "worker", "write", cwd, false, null),
+                        new SessionStore(), line -> { }, /* linger */ false, /* askMode */ true)));
+
+        assertTrue(gateParked.await(10, TimeUnit.SECONDS), "the gate parked, awaiting an answer");
+        hub.close(); // the hub DIES while the gate is parked — no ctl can ever come
+
+        run.join(10_000);
+        assertFalse(run.isAlive(), "the node must NOT wedge when the hub dies mid-gate");
+        assertFalse(Files.exists(cwd.resolve("x.txt")), "the abandoned gate was denied, not run");
+    }
+
+    @Test
     void aDeadHubNeverKillsOrBlocksTheRun(@TempDir Path cwd) {
         // The review's self-deadlock finding: with the hub down, the outbox
         // (1024) plus the node's queue (1024) fill — before the fix, event

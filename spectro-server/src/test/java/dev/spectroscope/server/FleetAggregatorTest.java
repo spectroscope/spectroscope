@@ -203,4 +203,51 @@ class FleetAggregatorTest {
             }
         }
     }
+
+    @Test
+    void controlGateIsDisabledWhenTheHubIsOff() {
+        try (FleetAggregator off = new FleetAggregator("")) {
+            assertEquals(FleetAggregator.ControlResult.DISABLED, off.controlGate("node-x", "c1", true),
+                    "no hub, no gate to answer");
+        }
+    }
+
+    @Test
+    void controlGateDispatchesTheAnswerToAConnectedNodeAndReportsUnknownForAGhost() throws Exception {
+        // Block 4: answering a parked permission gate mirrors control() exactly —
+        // same best-effort ControlResult mapping, but the answer rides the gate
+        // channel (callId + verdict) to the node's onGate seam.
+        try (FleetAggregator aggregator = new FleetAggregator("0")) {
+            assertEquals(FleetAggregator.ControlResult.UNKNOWN,
+                    aggregator.controlGate("node-g", "c1", true),
+                    "a node that never joined cannot be answered");
+
+            CountDownLatch connected = new CountDownLatch(1);
+            aggregator.addListener(new FleetAggregator.Listener() {
+                @Override
+                public void onRoster(List<FleetAggregator.NodeState> roster) {
+                    if (roster.stream().anyMatch(s -> s.card().id().equals("node-g") && s.connected())) {
+                        connected.countDown();
+                    }
+                }
+
+                @Override
+                public void onFleetEvent(BusEnvelope envelope) {
+                }
+            });
+
+            NodeCard card = new NodeCard("node-g", "worker", List.of(), TOPIC);
+            try (ProcessBus node = new ProcessBus("127.0.0.1", aggregator.port(), "node-g", 1024, card)) {
+                BlockingQueue<String> gates = new LinkedBlockingQueue<>();
+                node.onGate((callId, allow) -> gates.add(callId + "=" + allow));
+                assertTrue(connected.await(10, TimeUnit.SECONDS), "the node joined the fold");
+
+                assertEquals(FleetAggregator.ControlResult.DISPATCHED,
+                        aggregator.controlGate("node-g", "call-9", true),
+                        "a connected node's gate answer is dispatched over the hub");
+                assertEquals("call-9=true", gates.poll(10, TimeUnit.SECONDS),
+                        "the answer reached the node's onGate seam with its callId and verdict");
+            }
+        }
+    }
 }

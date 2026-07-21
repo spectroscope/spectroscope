@@ -20,6 +20,10 @@ export function GateBar(props: {
   /** The session's tool cards — decided gates carry their recorded outcome. */
   cards: Record<string, ToolCard>;
   workspaceConfigured: boolean;
+  /** Whether to offer "remember this decision". Default true (a session gate);
+   *  a FLEET gate passes false — a remote node has no allowlist we control, so
+   *  remember would be an inert, misleading control (block 4). */
+  allowRemember?: boolean;
   onDecide: (
     callId: string,
     allowed: boolean,
@@ -69,15 +73,17 @@ export function GateBar(props: {
             {t(lang, "gate.queue", { n: props.pending.length - 1 })}
           </span>
         )}
-        <label className="gate-remember">
-          <input
-            type="checkbox"
-            checked={remember}
-            onChange={(e) => setRemember(e.target.checked)}
-          />
-          {t(lang, "gate.remember")}
-        </label>
-        {remember && props.workspaceConfigured && (
+        {props.allowRemember !== false && (
+          <label className="gate-remember">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            {t(lang, "gate.remember")}
+          </label>
+        )}
+        {props.allowRemember !== false && remember && props.workspaceConfigured && (
           <label className="gate-remember">
             <input
               type="checkbox"

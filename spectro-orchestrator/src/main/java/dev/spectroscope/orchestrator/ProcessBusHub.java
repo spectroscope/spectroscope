@@ -267,6 +267,38 @@ public final class ProcessBusHub implements BusTransport {
         }
     }
 
+    /**
+     * Reverse control, GATE answer (block 4): addresses the operator's verdict
+     * for a permission request the node parked to ONE node over its live
+     * connection. Rides the SAME best-effort channel as {@link #control} — no
+     * outbox, no cumulative ack, no replay ring — so a server 202 means SENT,
+     * not confirmed. If the node vanished or the line is lost before its writer
+     * flushes, the gate stays parked; the node's own run-end and close deny
+     * orphaned futures, and {@code stop} is the escape hatch. An unknown or
+     * departed node is a no-op warn, never a throw (the endpoint leans on this).
+     *
+     * @param nodeId the target node's id (its hello {@code clientId})
+     * @param callId the parked permission request's call id
+     * @param allow  the operator's verdict — true to run the tool, false to deny
+     */
+    public void controlGate(String nodeId, String callId, boolean allow) {
+        String line = Wire.ctl("gate", callId, allow);
+        boolean delivered = false;
+        synchronized (lock) {
+            // Enqueue under the lock — the same ordering discipline as control().
+            for (Connection connection : connections) {
+                if (nodeId.equals(connection.clientId)) {
+                    connection.enqueue(line);
+                    delivered = true;
+                    break;
+                }
+            }
+        }
+        if (!delivered) {
+            log.warn("controlGate({}, {}) — no connected node with that id", nodeId, callId);
+        }
+    }
+
     /** The local (aggregator-side) publish: no wire, no outbox — the ring
      *  IS the durability this transport offers. */
     @Override

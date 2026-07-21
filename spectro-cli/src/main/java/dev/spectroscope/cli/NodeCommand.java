@@ -75,7 +75,8 @@ public final class NodeCommand implements Callable<Integer> {
     String role;
 
     @Option(names = "--permissions", defaultValue = "readonly",
-            description = "Headless policy: readonly (default) or auto.")
+            description = "Headless policy: readonly (default), auto, or ask "
+                    + "(park each tool for an operator to answer over the hub).")
     String permissions;
 
     @Option(names = "--max-turns",
@@ -171,19 +172,38 @@ public final class NodeCommand implements Callable<Integer> {
     }
 
     /**
-     * The node run: connect the bus (the card rides the handshake), publish
-     * the whole headless run through the tracing seam, then drain on close —
-     * a finishing node must not strand its outbox tail. Reverse control is
-     * wired throughout: a hub {@code ctl{stop}} ends a running turn, and a
-     * lingering node's idle wait.
+     * The single-shot / linger node run WITHOUT ask-mode gating — delegates to
+     * the full {@link #execute(ObjectMapper, SpectroConfig, LlmProvider, NodeSpec,
+     * SessionStore, Consumer, boolean, boolean)} with the fixed readonly/auto
+     * policy. Every frozen caller and test lands here.
      *
-     * @param linger when true, the node stays connected (roster-visible,
-     *               controllable) after the run instead of exiting, until a
-     *               ctl{stop} arrives (or, in production, SIGTERM)
+     * @param linger when true, the node stays connected after the run until a stop
      * @return 0 only on a regular end_turn — the run command's contract
      */
     static int execute(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
                        NodeSpec spec, SessionStore store, Consumer<String> log, boolean linger) {
+        return execute(mapper, config, providerOverride, spec, store, log, linger, false);
+    }
+
+    /**
+     * The node run: connect the bus (the card rides the handshake), publish the
+     * whole headless run through the tracing seam, then drain on close — a
+     * finishing node must not strand its outbox tail. Reverse control is wired
+     * throughout: a hub {@code ctl{stop}} ends a running turn and a lingering
+     * node's idle wait; in ask mode a hub {@code ctl{gate}} answers a parked
+     * permission request.
+     *
+     * @param linger  when true, the node stays connected (roster-visible,
+     *                controllable) after the run instead of exiting, until a
+     *                ctl{stop} arrives (or, in production, SIGTERM)
+     * @param askMode when true, a needsPermission tool PARKS until an operator
+     *                answers over the hub (block 4) instead of a fixed yes/no —
+     *                the parking broker replaces the readonly/auto policy
+     * @return 0 only on a regular end_turn — the run command's contract
+     */
+    static int execute(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
+                       NodeSpec spec, SessionStore store, Consumer<String> log, boolean linger,
+                       boolean askMode) {
         String topic = BusEnvelope.topicFor(spec.contextId());
         List<String> capabilities = StandardTools.all().stream().map(Tool::name).toList();
         NodeCard card = new NodeCard(spec.nodeId(), spec.role(), capabilities, topic);
@@ -192,6 +212,11 @@ public final class NodeCommand implements Callable<Integer> {
         // seam can reach it. The latch releases a lingering node's idle wait.
         CancelSignal cancel = new CancelSignal();
         CountDownLatch stopped = new CountDownLatch(1);
+        // Ask mode: a PARKING broker holds each needsPermission tool until an
+        // operator answers over the hub. Built here (not in call) because it needs
+        // THIS run's cancel signal — a stop denies every parked gate. Null in
+        // readonly/auto, where the runner keeps its fixed autoApprove policy.
+        GateBroker gateBroker = askMode ? new GateBroker(cancel) : null;
         // Close order is the reverse of opening: the port drains its queue
         // into the still-open bus, THEN the bus drains its outbox to the hub.
         try (ProcessBus bus = new ProcessBus(spec.hubHost(), spec.hubPort(), spec.nodeId(),
@@ -209,12 +234,32 @@ public final class NodeCommand implements Callable<Integer> {
                     stopped.countDown();
                 }
             });
+            // Ask mode: the hub's answer to a parked gate lands on the reader
+            // thread; the broker only completes the future — non-blocking by contract.
+            if (gateBroker != null) {
+                bus.onGate(gateBroker::answer);
+                // A gate can only be answered by a LIVE hub. If the hub dies while
+                // a gate is parked, none of the cancel triggers can fire — stop
+                // needs a live hub, the turn brake needs a TurnStart the parked
+                // producer never emits, and the EventStream teardown needs an END
+                // it never emits either. Releasing parked gates on hub loss lets
+                // the run proceed (denied) and the node exit. Coverage is honest:
+                // a hub that CLOSES or RESETS is surfaced promptly; a SILENT
+                // partition (no FIN/RST) is surfaced by the connection's TCP
+                // keepalive within its window (minutes); and a node still stuck
+                // beyond that is ultimately reaped by SIGTERM, the documented
+                // fleet backstop. Fires only after an established link drops.
+                bus.onDisconnect(gateBroker::denyAllPending);
+            }
             HeadlessRunner runner = (providerOverride != null
                     ? HeadlessRunners.withProvider(mapper, config, providerOverride)
                     : new HeadlessRunner(mapper, config))
                     .withIdentity(spec.nodeId())
                     .withAuxiliaryPort(port)
                     .withCancelSignal(cancel);
+            if (gateBroker != null) {
+                runner = runner.withBroker(gateBroker); // ask mode replaces the fixed policy
+            }
             HeadlessRunner.Outcome outcome = runner.runOnce(spec.prompt(), spec.workspace(),
                     spec.autoApprove(), spec.maxTurns(), null, log, store, List.of());
 
@@ -244,6 +289,17 @@ public final class NodeCommand implements Callable<Integer> {
                 }
             }
             return code;
+        } finally {
+            // A defensive final sweep — NOT the real backstop. It runs only after
+            // runOnce returns, which cannot happen WHILE a gate is parked (the
+            // parked producer blocks the run from ending), so here pending is
+            // already empty. The genuine hub-loss release is bus.onDisconnect
+            // above; the genuine stop release is the cancel signal. This guard
+            // only matters if a future refactor lets the try body exit with a
+            // gate still parked. Idempotent — safe to repeat.
+            if (gateBroker != null) {
+                gateBroker.denyAllPending();
+            }
         }
     }
 
@@ -257,8 +313,10 @@ public final class NodeCommand implements Callable<Integer> {
      */
     @Override
     public Integer call() {
-        if (!"readonly".equals(permissions) && !"auto".equals(permissions)) {
-            System.err.println("--permissions must be \"readonly\" or \"auto\" (headless default: readonly).");
+        if (!"readonly".equals(permissions) && !"auto".equals(permissions)
+                && !"ask".equals(permissions)) {
+            System.err.println("--permissions must be \"readonly\", \"auto\" or \"ask\" "
+                    + "(headless default: readonly).");
             return 1;
         }
         if (maxTurns != null && maxTurns < 1) {
@@ -308,7 +366,7 @@ public final class NodeCommand implements Callable<Integer> {
             return execute(mapper, config, providerOverride,
                     new NodeSpec(address.host(), address.port(), nodeId, epoch, context,
                             role, prompt, workspace, "auto".equals(permissions), maxTurns),
-                    store, System.err::println, linger);
+                    store, System.err::println, linger, "ask".equals(permissions));
         } catch (IllegalStateException missingKey) {
             System.err.println(missingKey.getMessage());
             return 1;

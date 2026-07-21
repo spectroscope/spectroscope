@@ -6,6 +6,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import type { RunEvent } from "../events";
+import type { PendingPermission } from "./reducer";
 import {
   buildFleet,
   EMPTY_FLEET,
@@ -182,6 +183,28 @@ export async function hydrateFleet(): Promise<void> {
   } catch {
     // The fleet view simply stays empty — never break the app over a probe.
   }
+}
+
+/** The undecided permission requests of a fleet model, as the GateBar's
+ *  `PendingPermission[]` — the same request-minus-decision-by-callId fold as
+ *  {@link summarize}'s pendingGate flag, but KEEPING each request's payload so
+ *  an operator can answer it (block 4). {@code agentId} names the node the
+ *  answer POSTs to; order is first-parked-first (the queue the GateBar shows). */
+export function fleetPending(model: FleetModel): PendingPermission[] {
+  const byCallId = new Map<string, PendingPermission>();
+  for (const event of model.events) {
+    if (event.type === "permission_request") {
+      byCallId.set(event.callId, {
+        callId: event.callId,
+        agentId: event.agentId,
+        name: event.name,
+        input: event.input,
+      });
+    } else if (event.type === "permission_decision") {
+      byCallId.delete(event.callId);
+    }
+  }
+  return [...byCallId.values()];
 }
 
 /** React binding. No arg = the merged all-fleets model (back-compat); a

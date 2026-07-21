@@ -60,6 +60,10 @@ public final class HeadlessRunner {
     /** An externally-owned cancel signal (a fleet node's, so a hub ctl{stop} can
      *  end a running turn); null = mint a fresh one per run, the frozen default. */
     private final CancelSignal externalSignal;
+    /** A caller-supplied permission broker (a fleet node's ask-mode PARKING
+     *  broker) that replaces the fixed readonly/auto policy; null = the constant
+     *  {@code request -> autoApprove} broker, the frozen default. */
+    private final PermissionBroker externalBroker;
 
     /**
      * The production constructor — the provider is built fresh from config per run.
@@ -79,17 +83,19 @@ public final class HeadlessRunner {
      * @param providerOverride the scripted provider, or null to build from config
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
-        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null);
+        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null);
     }
 
     private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
-                           String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal) {
+                           String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal,
+                           PermissionBroker externalBroker) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
         this.agentId = agentId;
         this.auxiliaryPort = auxiliaryPort;
         this.externalSignal = externalSignal;
+        this.externalBroker = externalBroker;
     }
 
     /**
@@ -102,7 +108,8 @@ public final class HeadlessRunner {
      * @return the re-identified runner; this instance is unchanged
      */
     public HeadlessRunner withIdentity(String agentId) {
-        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort, externalSignal);
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, externalBroker);
     }
 
     /**
@@ -118,7 +125,8 @@ public final class HeadlessRunner {
      * @return the extended runner; this instance is unchanged
      */
     public HeadlessRunner withAuxiliaryPort(TracingPort port) {
-        return new HeadlessRunner(mapper, config, providerOverride, agentId, port, externalSignal);
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, port,
+                externalSignal, externalBroker);
     }
 
     /**
@@ -132,7 +140,23 @@ public final class HeadlessRunner {
      * @return the re-signalled runner; this instance is unchanged
      */
     public HeadlessRunner withCancelSignal(CancelSignal signal) {
-        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort, signal);
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                signal, externalBroker);
+    }
+
+    /**
+     * A copy of this runner whose runs decide permissions through
+     * {@code broker} instead of the fixed readonly/auto policy. This is the
+     * ask-mode seam a fleet node uses: the broker PARKS a needsPermission tool
+     * until an operator answers over the hub. Unset (the default), the constant
+     * {@code request -> autoApprove} broker decides — behaviour is unchanged.
+     *
+     * @param broker the caller-owned permission broker to drive this runner's runs
+     * @return the re-brokered runner; this instance is unchanged
+     */
+    public HeadlessRunner withBroker(PermissionBroker broker) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, broker);
     }
 
     /**
@@ -191,8 +215,10 @@ public final class HeadlessRunner {
         StandardTools.all().forEach(registry::register);
 
         // Headless there is no y/N. The policy is the whole broker: readonly => always
-        // false, auto => always true — auditable as a permission_decision event.
-        PermissionBroker broker = request -> autoApprove;
+        // false, auto => always true — auditable as a permission_decision event. A
+        // fleet node in "ask" mode injects its own PARKING broker instead (block 4);
+        // when it does, it decides every call and autoApprove is not consulted.
+        PermissionBroker broker = externalBroker != null ? externalBroker : (request -> autoApprove);
 
         LlmProvider provider = providerOverride != null
                 ? providerOverride

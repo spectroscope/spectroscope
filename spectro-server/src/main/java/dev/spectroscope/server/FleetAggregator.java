@@ -211,6 +211,34 @@ public class FleetAggregator implements AutoCloseable {
         return ControlResult.DISPATCHED;
     }
 
+    /**
+     * Reverse control, GATE answer (block 4): dispatch an operator's verdict for
+     * a parked permission request to a connected fleet node over the hub. Same
+     * best-effort {@link ControlResult} mapping as {@link #control} — a
+     * DISPATCHED means the answer was written to the node's live connection, not
+     * that the node acted on it (the control plane has no ack). If the node left
+     * before the answer lands, its own close denies the orphaned gate.
+     *
+     * @param nodeId the target node's id
+     * @param callId the parked permission request's call id
+     * @param allow  the operator's verdict — true to run the tool, false to deny
+     * @return where the request landed — the endpoint maps this to an HTTP status
+     */
+    public ControlResult controlGate(String nodeId, String callId, boolean allow) {
+        if (hub == null) {
+            return ControlResult.DISABLED;
+        }
+        NodeState state = nodes.get(nodeId);
+        if (state == null) {
+            return ControlResult.UNKNOWN;
+        }
+        if (!state.connected()) {
+            return ControlResult.DISCONNECTED;
+        }
+        hub.controlGate(nodeId, callId, allow);
+        return ControlResult.DISPATCHED;
+    }
+
     /** @return the fold, one entry per node ever seen, ordered by node id */
     public List<NodeState> snapshot() {
         List<NodeState> roster = new ArrayList<>(nodes.values());

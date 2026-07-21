@@ -37,6 +37,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FleetControlIntegrationTest {
 
     private static final String CTX = "fleet-ctl-it";
+    private static final String CTX_GATE = "fleet-gate-it";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @LocalServerPort
@@ -101,6 +102,73 @@ class FleetControlIntegrationTest {
                 String.class);
         assertEquals(415, nonJson.getStatusCode().value(),
                 "stop only accepts application/json — a browser form POST cannot reach it");
+    }
+
+    /** A local-origin JSON POST with a body — the shape the UI's gate answer sends. */
+    private ResponseEntity<String> gatePost(String url, String jsonBody) {
+        return rest.exchange(
+                RequestEntity.post(URI.create(url)).contentType(MediaType.APPLICATION_JSON).body(jsonBody),
+                String.class);
+    }
+
+    /** Polls the REST roster until {@code nodeId} shows as connected, or times out. */
+    private void awaitConnected(String base, String nodeId) throws Exception {
+        long deadline = System.currentTimeMillis() + 20_000;
+        while (System.currentTimeMillis() < deadline) {
+            JsonNode body = JSON.readTree(rest.getForObject(base + "/api/fleet", String.class));
+            for (JsonNode n : body.path("nodes")) {
+                if (nodeId.equals(n.path("id").asText()) && n.path("connected").asBoolean()) {
+                    return;
+                }
+            }
+            Thread.sleep(50);
+        }
+        throw new AssertionError(nodeId + " never surfaced as connected on the roster");
+    }
+
+    @Test
+    void aGatePostDispatchesTheAnswerToTheNodeAnd404sForAGhost() throws Exception {
+        // Block 4 over HTTP: POST /api/fleet/{node}/gate {callId, allow} dispatches
+        // a ctl{gate} to a connected node and answers honestly (202 sent, 404 ghost).
+        String base = "http://127.0.0.1:" + port;
+
+        assertEquals(404,
+                gatePost(base + "/api/fleet/ghost/gate", "{\"callId\":\"c1\",\"allow\":true}")
+                        .getStatusCode().value(),
+                "answering a gate on an unknown node is a 404");
+
+        NodeCard card = new NodeCard("node-gate", "worker",
+                List.of("write_file"), BusEnvelope.topicFor(CTX_GATE));
+        try (ProcessBus node = new ProcessBus("127.0.0.1", fleet.port(), "node-gate", 1024, card)) {
+            BlockingQueue<String> gates = new LinkedBlockingQueue<>();
+            node.onGate((callId, allow) -> gates.add(callId + "=" + allow));
+
+            awaitConnected(base, "node-gate");
+
+            ResponseEntity<String> resp = gatePost(base + "/api/fleet/node-gate/gate",
+                    "{\"callId\":\"call-9\",\"allow\":true}");
+            assertEquals(202, resp.getStatusCode().value(),
+                    "a dispatched gate answer is Accepted (best-effort)");
+            assertEquals("call-9=true", gates.poll(10, TimeUnit.SECONDS),
+                    "the node received the gate answer with its callId and verdict over the hub");
+        }
+    }
+
+    @Test
+    void aGatePostRejectsANonJsonBodyAndAMissingVerdict() {
+        String url = "http://127.0.0.1:" + port + "/api/fleet/node-x/gate";
+
+        // Same CSRF guard as stop/spawn — a browser form POST is a 415.
+        ResponseEntity<String> nonJson = rest.exchange(
+                RequestEntity.post(URI.create(url)).contentType(MediaType.TEXT_PLAIN).body("callId=c1"),
+                String.class);
+        assertEquals(415, nonJson.getStatusCode().value(),
+                "gate only accepts application/json — a browser form POST cannot reach it");
+
+        // A JSON body missing the verdict is a 400 — a missing allow must not
+        // silently deny (or silently allow) a parked tool.
+        assertEquals(400, gatePost(url, "{\"callId\":\"c1\"}").getStatusCode().value(),
+                "callId and allow are both required");
     }
 
     @Test

@@ -59,9 +59,12 @@ final class Wire {
     }
 
     /** A control verb the hub delivers to ONE node (addressed by connection, so
-     *  no id rides the line). {@code action} is the verb — "stop" today; more
-     *  can join without a version bump, since a new verb adds no op. */
-    record Ctl(String action) implements Msg {
+     *  no id rides the line). {@code action} is the verb — "stop" or "gate"
+     *  today; more can join without a version bump, since a new verb adds no op.
+     *  A "gate" answer also carries the {@code callId} it addresses and the
+     *  operator's {@code allow} verdict; a plain verb (stop) leaves both null,
+     *  so the reader dispatches on {@code callId != null}, never on the verb. */
+    record Ctl(String action, String callId, Boolean allow) implements Msg {
     }
 
     static String hello(String clientId) {
@@ -134,10 +137,23 @@ final class Wire {
     }
 
     /** The reverse-control line: {@code {"v":3,"op":"ctl","action":"stop"}}. The
-     *  hub writes it to one node's connection; delivery IS the addressing. */
+     *  hub writes it to one node's connection; delivery IS the addressing. A
+     *  plain verb carries no gate fields — the line stays byte-identical to the
+     *  block-2 form, so a pre-gate node reads it unchanged. */
     static String ctl(String action) {
         ObjectNode node = base("ctl");
         node.put("action", action);
+        return write(node);
+    }
+
+    /** The gate form: the hub answers a parked permission request on ONE node,
+     *  carrying the {@code callId} it addresses and the operator's verdict —
+     *  {@code {"v":3,"op":"ctl","action":"gate","callId":"…","allow":true}}. */
+    static String ctl(String action, String callId, boolean allow) {
+        ObjectNode node = base("ctl");
+        node.put("action", action);
+        node.put("callId", callId);
+        node.put("allow", allow);
         return write(node);
     }
 
@@ -181,7 +197,13 @@ final class Wire {
             case "gap" -> new Gap(node.path("topic").asText(), node.path("sender").asText(),
                     node.path("epoch").asLong(),
                     node.path("fromSeq").asLong(), node.path("toSeq").asLong());
-            case "ctl" -> new Ctl(node.path("action").asText());
+            case "ctl" -> {
+                JsonNode callIdNode = node.get("callId");
+                String callId = callIdNode != null && !callIdNode.isNull() ? callIdNode.asText() : null;
+                JsonNode allowNode = node.get("allow");
+                Boolean allow = allowNode != null && !allowNode.isNull() ? allowNode.asBoolean() : null;
+                yield new Ctl(node.path("action").asText(), callId, allow);
+            }
             default -> throw new IllegalArgumentException("unknown op '" + op + "': " + line);
         };
     }
