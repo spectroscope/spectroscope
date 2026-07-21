@@ -297,3 +297,110 @@
 .fleet-canvas .react-flow__controls-button:hover {
   background: var(--surface-3);
 }
+
+/* ---- fleet control: the spawn panel (a React Flow Panel over the canvas) +
+   the per-node stop button. Token-based, no shadows. ---- */
+.fleet-spawn { margin: 8px; }
+.fleet-spawn-open {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.fleet-spawn-open:hover { color: var(--text); border-color: var(--accent); }
+.fleet-spawn-panel {
+  width: 320px;
+  max-width: 78vw;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.fleet-spawn-head { display: flex; align-items: center; justify-content: space-between; }
+.fleet-spawn-title { font-size: var(--fs-12); color: var(--text); text-transform: lowercase; letter-spacing: 0.02em; }
+.fleet-spawn-close {
+  background: none; border: 0; color: var(--text-dim); font-size: var(--fs-20); line-height: 1; cursor: pointer;
+}
+.fleet-spawn-close:hover { color: var(--text); }
+.fleet-spawn-field { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.fleet-spawn-field > span { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.fleet-spawn-field textarea, .fleet-spawn-field input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: var(--sp-1) var(--sp-2);
+  resize: vertical;
+}
+.fleet-spawn-field textarea:focus, .fleet-spawn-field input:focus { outline: none; border-color: var(--accent); }
+.fleet-spawn-row { display: flex; gap: var(--sp-2); }
+.fleet-spawn-check { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); align-self: flex-end; padding-bottom: 4px; }
+.fleet-spawn-go {
+  margin-top: 2px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font: inherit; font-size: var(--fs-12);
+  padding: var(--sp-2);
+  cursor: pointer;
+  transition: filter var(--t-fast);
+}
+.fleet-spawn-go:hover:not(:disabled) { filter: brightness(1.08); }
+.fleet-spawn-go:disabled { opacity: 0.5; cursor: default; }
+.fleet-spawn-status { margin: 0; font-size: var(--fs-11); font-family: var(--font-mono); }
+.fleet-spawn-status--ok { color: var(--ok); }
+.fleet-spawn-status--error { color: var(--error); }
+.fleet-spawn-why {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+.fleet-spawn-cli-perm { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.fleet-spawn-perm {
+  font-family: var(--font-mono); font-size: var(--fs-11);
+  background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-chip);
+  color: var(--text-dim); padding: 1px var(--sp-2); cursor: pointer;
+}
+.fleet-spawn-perm--on { color: var(--accent); border-color: var(--accent); }
+.fleet-spawn-perm-hint { font-size: var(--fs-11); color: var(--text-faint); }
+.fleet-spawn-cli {
+  display: flex; align-items: stretch; gap: var(--sp-2);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip);
+  padding: var(--sp-2);
+}
+.fleet-spawn-cli code { flex: 1; min-width: 0; font-size: var(--fs-11); color: var(--text-dim); overflow-x: auto; white-space: nowrap; }
+.fleet-spawn-copy {
+  flex: none; align-self: center;
+  font-family: var(--font-mono); font-size: var(--fs-11);
+  background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-chip);
+  color: var(--text-dim); padding: 2px var(--sp-2); cursor: pointer;
+}
+.fleet-spawn-copy:hover { color: var(--text); border-color: var(--accent); }
+
+.fleet-node-stop {
+  margin-left: auto;
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font-size: var(--fs-14);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color var(--t-fast);
+}
+.fleet-node-stop:hover { color: var(--error); }

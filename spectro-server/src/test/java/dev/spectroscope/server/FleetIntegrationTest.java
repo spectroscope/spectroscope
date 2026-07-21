@@ -142,6 +142,8 @@ class FleetIntegrationTest {
         JsonNode fleetBody = JSON.readTree(rest.getForObject(
                 "http://127.0.0.1:" + port + "/api/fleet", String.class));
         assertTrue(fleetBody.path("enabled").asBoolean());
+        assertTrue(fleetBody.path("hubPort").asInt() > 0,
+                "the roster names the loopback hub port, so the UI can print an exact node command");
         assertEquals("node-it", fleetBody.path("nodes").get(0).path("id").asText());
 
         JsonNode replay = JSON.readTree(rest.getForObject(

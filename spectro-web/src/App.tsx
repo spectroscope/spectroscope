@@ -36,7 +36,7 @@ import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
-import { fleetPushLive, hydrateFleet, useFleet, fleetPending } from "./state/fleetStore";
+import { fleetPushLive, hydrateFleet, useFleet, useFleetHubPort, fleetPending } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -459,6 +459,26 @@ export function App() {
       // best-effort: the node's close denies the gate if this never lands
     });
   };
+  // Stop a fleet node from the canvas — best-effort, confirmed once (the node
+  // leaves the roster when it actually ends; re-click if a lost stop stranded it).
+  const fleetHubPort = useFleetHubPort();
+  // useCallback so the reference stays stable across App re-renders (a live
+  // socket batch, say): otherwise it would re-key FleetCanvas's layout memo and
+  // re-run dagre on every render while a fleet is open.
+  const stopFleetNode = useCallback((agentId: string): void => {
+    const ok = window.confirm(
+      lang === "de"
+        ? `node "${agentId}" stoppen? (best-effort — bei verlorenem stop nochmal klicken)`
+        : `stop node "${agentId}"? (best-effort — re-click if a stop is lost)`,
+    );
+    if (!ok) return;
+    void fetch(`/api/fleet/${encodeURIComponent(agentId)}/stop`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    }).catch(() => {
+      // best-effort: SIGTERM (or a re-click) is the fallback for a lost stop
+    });
+  }, [lang]);
   // The trace tab is a fold-tab too: an entered fleet's frames become inbound
   // trace entries (drill-in shows the MEMBER's wire, not the own session).
   const traceEntries = useMemo(
@@ -719,6 +739,9 @@ export function App() {
             <FleetCanvas
               model={enteredFleetModel}
               events={tabEvents}
+              contextId={enteredFleet}
+              hubPort={fleetHubPort}
+              onStop={stopFleetNode}
               onOpenTrace={(agentId) => {
                 setTraceAgent(agentId);
                 setTab("trace");

@@ -52,6 +52,9 @@ function subscribe(cb: () => void): () => void {
 }
 
 let frames: FleetFrame[] = [];
+// The loopback hub port from GET /api/fleet (null when the hub is off) — the
+// spawn panel prints it into the exact copy-paste node command.
+let hubPort: number | null = null;
 // Per-context models, cached so useSyncExternalStore sees a stable reference for
 // a fleet that did not change this push.
 let byContext = new Map<string, FleetModel>();
@@ -172,10 +175,11 @@ export async function hydrateFleet(): Promise<void> {
     if (!res.ok) {
       return;
     }
-    const body = (await res.json()) as { enabled?: boolean; nodes?: FleetNode[] };
+    const body = (await res.json()) as { enabled?: boolean; hubPort?: number; nodes?: FleetNode[] };
     if (body.enabled !== true || !Array.isArray(body.nodes)) {
       return;
     }
+    hubPort = typeof body.hubPort === "number" ? body.hubPort : null;
     const roster: FleetFrame = { type: "fleet_roster", nodes: body.nodes };
     frames = [roster, ...frames]; // oldest frame; a later live roster overrides it
     rebuild(changedContexts([roster]));
@@ -221,6 +225,12 @@ export function useFleet(contextId?: string): FleetModel {
 export function useFleets(): FleetSummary[] {
   return useSyncExternalStore(subscribe, getSummaries, getSummaries);
 }
+
+/** React binding: the loopback hub port (null when the hub is off), for the
+ *  spawn panel's copy-paste node command. */
+export function useFleetHubPort(): number | null {
+  return useSyncExternalStore(subscribe, () => hubPort, () => hubPort);
+}
 function getSummaries(): FleetSummary[] {
   return summaries;
 }
@@ -250,6 +260,7 @@ export function __getFleetOf(contextId: string): FleetModel {
 /** Reset all module state — call in beforeEach so tests never bleed. */
 export function __resetForTests(): void {
   frames = [];
+  hubPort = null;
   byContext = new Map();
   merged = EMPTY_FLEET;
   summaries = [];

@@ -54,6 +54,10 @@ public class FleetController {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("enabled", fleet.enabled());
+        // The loopback hub port (null when the hub is off) — the cockpit prints it
+        // into the exact `spectro node --hub 127.0.0.1:<port>` command for a
+        // full-power node, since the UI spawn is deliberately readonly-only.
+        body.put("hubPort", fleet.enabled() ? fleet.port() : null);
         body.put("nodes", fleet.snapshot().stream().map(FleetAggregator::nodeJson).toList());
         return ResponseEntity.ok(body);
     }

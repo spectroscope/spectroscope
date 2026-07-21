@@ -17,6 +17,7 @@ import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
 import { buildFleetGraph, type FleetEdgeKind, type FleetGraphNode } from "./fleetGraph";
 import { collapseFleetGraph, type LegibleGraph, type LegibleNode } from "./fleetLegibility";
 import type { FleetModel } from "./fleetModel";
+import { FleetSpawn } from "./FleetSpawn";
 
 const NODE_W = 208;
 const NODE_H = 82;
@@ -53,6 +54,8 @@ interface SpectralNodeData {
   detail: LegibleGraph["detail"];
   /** Fold this expanded group back (only set on a member of an expanded group). */
   onCollapse?: (groupId: string) => void;
+  /** Stop this node over the hub (only wired for a connected single agent). */
+  onStop?: (agentId: string) => void;
 }
 
 function SpectralNode({ data }: NodeProps) {
@@ -89,6 +92,17 @@ function SpectralNode({ data }: NodeProps) {
         ) : node.role !== "" ? (
           <span className="fleet-node-card-role">{node.role}</span>
         ) : null}
+        {!isGroup && node.connected && d.onStop && (
+          <button
+            type="button"
+            className="fleet-node-stop nodrag"
+            title="stop this node"
+            aria-label={`stop ${node.id}`}
+            onClick={(e) => { e.stopPropagation(); d.onStop!(node.id); }}
+          >
+            ⊗
+          </button>
+        )}
       </div>
       {d.detail !== "dot" && (
         <svg className="fleet-node-band" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true">
@@ -138,11 +152,17 @@ function layout(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
   });
 }
 
-export function FleetCanvas({ model, events, onOpenTrace }: {
+export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, onStop }: {
   model: FleetModel;
   events: RunEvent[];
   /** Drill into an agent's own trace (reuses the sidebar/spectrum hand-off). */
   onOpenTrace?: (agentId: string) => void;
+  /** The entered fleet's contextId — enables the spawn panel (prefills context). */
+  contextId?: string;
+  /** The loopback hub port, for the spawn panel's copy-paste node command. */
+  hubPort?: number | null;
+  /** Stop a connected node over the hub (POST /api/fleet/{node}/stop). */
+  onStop?: (agentId: string) => void;
 }) {
   const lang = useLang();
   // A folded group is no longer terminal: the ids here are expanded, so their
@@ -191,6 +211,7 @@ export function FleetCanvas({ model, events, onOpenTrace }: {
         lane: n.kind === "agent" ? laneById.get(n.id) ?? null : null,
         detail: legible.detail,
         onCollapse: n.groupId !== undefined ? collapseGroup : undefined,
+        onStop: n.kind === "agent" ? onStop : undefined,
       },
     }));
     const flowEdges: FlowEdge[] = legible.edges.map((e) => ({
@@ -201,7 +222,7 @@ export function FleetCanvas({ model, events, onOpenTrace }: {
       style: { stroke: EDGE_COLOR[e.kind], strokeWidth: 1.4 },
     }));
     return { nodes: layout(flowNodes, flowEdges), edges: flowEdges };
-  }, [legible, events, collapseGroup]);
+  }, [legible, events, collapseGroup, onStop]);
 
   // A group card expands; an agent card drills into its own trace. The collapse
   // chip inside an expanded member stops propagation, so it never lands here.
@@ -239,6 +260,7 @@ export function FleetCanvas({ model, events, onOpenTrace }: {
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable
           nodeColor={(n) => clusterColor((n.data as unknown as SpectralNodeData).node.cluster)} />
+        {contextId !== undefined && <FleetSpawn contextId={contextId} hubPort={hubPort ?? null} />}
       </ReactFlow>
     </div>
   );
