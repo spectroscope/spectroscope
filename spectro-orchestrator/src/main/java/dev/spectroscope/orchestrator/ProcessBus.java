@@ -56,6 +56,10 @@ public final class ProcessBus implements BusTransport {
 
     private volatile Consumer<BusGap> onGap =
             gap -> log.warn("bus history evicted before this client caught up: {}", gap);
+    /** The reverse-control seam: a verb the hub addressed to THIS node. A plain
+     *  client (no controller) ignores it. Runs on the reader thread, so the
+     *  handler MUST be non-blocking (cancel a signal, count a latch — no I/O). */
+    private volatile Consumer<String> onControl = action -> { };
     private volatile boolean closed = false;
     private final Thread manager;
 
@@ -102,6 +106,21 @@ public final class ProcessBus implements BusTransport {
      */
     public ProcessBus onGap(Consumer<BusGap> handler) {
         this.onGap = handler;
+        return this;
+    }
+
+    /**
+     * Registers the reverse-control handler: a verb the hub addressed to this
+     * node (block 2, e.g. "stop"). Fires on the connection's reader thread and
+     * is guarded like {@link #onGap} — a throwing handler is logged, never
+     * fatal. Keep it non-blocking (cancel a run, count a latch); heavy work
+     * here would stall every frame behind it.
+     *
+     * @param handler receives each control verb the hub sends to this node
+     * @return this bus, for fluent construction
+     */
+    public ProcessBus onControl(Consumer<String> handler) {
+        this.onControl = handler;
         return this;
     }
 
@@ -296,6 +315,7 @@ public final class ProcessBus implements BusTransport {
                         }
                         announceGap(new BusGap(topic, sender, epoch, fromSeq, toSeq));
                     }
+                    case Wire.Ctl(String action) -> announceControl(action);
                     default -> log.warn("unexpected op from hub: {}", line);
                 }
             } catch (RuntimeException poison) {
@@ -318,6 +338,17 @@ public final class ProcessBus implements BusTransport {
             onGap.accept(gap);
         } catch (RuntimeException broken) {
             log.warn("gap handler failed for {}: {}", gap, broken.toString());
+        }
+    }
+
+    /** The control handler is user code — guard it, log it, never die of it. A
+     *  poison control verb must not kill the reader loop (that would strand a
+     *  node's whole event stream over one bad "stop"). */
+    private void announceControl(String action) {
+        try {
+            onControl.accept(action);
+        } catch (RuntimeException broken) {
+            log.warn("control handler failed for '{}': {}", action, broken.toString());
         }
     }
 

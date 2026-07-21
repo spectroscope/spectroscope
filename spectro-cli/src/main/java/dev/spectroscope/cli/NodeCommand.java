@@ -2,6 +2,7 @@ package dev.spectroscope.cli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.cli.trace.TracingProvider;
+import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.ProviderFactory;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
@@ -24,6 +25,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
 import java.util.function.Consumer;
 
 /**
@@ -82,6 +84,10 @@ public final class NodeCommand implements Callable<Integer> {
 
     @Option(names = "--verbose", description = "Trace the agent<->provider protocol on stderr (cyan).")
     boolean verbose;
+
+    @Option(names = "--linger",
+            description = "Stay a controllable fleet node after the run, until ctl{stop} or SIGTERM.")
+    boolean linger;
 
     @ParentCommand
     private SpectroCli parent;
@@ -152,9 +158,8 @@ public final class NodeCommand implements Callable<Integer> {
     }
 
     /**
-     * The node run: connect the bus (the card rides the handshake), publish
-     * the whole headless run through the tracing seam, then drain on close —
-     * a finishing node must not strand its outbox tail.
+     * Single-shot node run: connect, run once, exit. The frozen contract —
+     * every existing caller and test lands here.
      *
      * @param providerOverride a pre-built (scripted or tracing) provider, or
      *                         null to build one from config inside the runner
@@ -162,9 +167,31 @@ public final class NodeCommand implements Callable<Integer> {
      */
     static int execute(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
                        NodeSpec spec, SessionStore store, Consumer<String> log) {
+        return execute(mapper, config, providerOverride, spec, store, log, false);
+    }
+
+    /**
+     * The node run: connect the bus (the card rides the handshake), publish
+     * the whole headless run through the tracing seam, then drain on close —
+     * a finishing node must not strand its outbox tail. Reverse control is
+     * wired throughout: a hub {@code ctl{stop}} ends a running turn, and a
+     * lingering node's idle wait.
+     *
+     * @param linger when true, the node stays connected (roster-visible,
+     *               controllable) after the run instead of exiting, until a
+     *               ctl{stop} arrives (or, in production, SIGTERM)
+     * @return 0 only on a regular end_turn — the run command's contract
+     */
+    static int execute(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
+                       NodeSpec spec, SessionStore store, Consumer<String> log, boolean linger) {
         String topic = BusEnvelope.topicFor(spec.contextId());
         List<String> capabilities = StandardTools.all().stream().map(Tool::name).toList();
         NodeCard card = new NodeCard(spec.nodeId(), spec.role(), capabilities, topic);
+        // The node's own cancel signal: a hub ctl{stop} ends a RUNNING turn.
+        // Owned here (not minted inside the runner) so the bus's reverse-control
+        // seam can reach it. The latch releases a lingering node's idle wait.
+        CancelSignal cancel = new CancelSignal();
+        CountDownLatch stopped = new CountDownLatch(1);
         // Close order is the reverse of opening: the port drains its queue
         // into the still-open bus, THEN the bus drains its outbox to the hub.
         try (ProcessBus bus = new ProcessBus(spec.hubHost(), spec.hubPort(), spec.nodeId(),
@@ -172,20 +199,51 @@ public final class NodeCommand implements Callable<Integer> {
              AsyncBusPort port = new AsyncBusPort(
                      new BusPublisher(bus, spec.nodeId(), spec.contextId(), spec.epoch()),
                      OUTBOX)) {
+            // Wire reverse control BEFORE the run: a stop that arrives mid-turn
+            // must land on the live signal. Runs on the bus reader thread, so it
+            // only flips the (thread-safe) signal and the latch — no blocking here.
+            bus.onControl(action -> {
+                if ("stop".equals(action)) {
+                    log.accept("control: stop received — cancelling the run");
+                    cancel.cancel();
+                    stopped.countDown();
+                }
+            });
             HeadlessRunner runner = (providerOverride != null
                     ? HeadlessRunners.withProvider(mapper, config, providerOverride)
                     : new HeadlessRunner(mapper, config))
                     .withIdentity(spec.nodeId())
-                    .withAuxiliaryPort(port);
+                    .withAuxiliaryPort(port)
+                    .withCancelSignal(cancel);
             HeadlessRunner.Outcome outcome = runner.runOnce(spec.prompt(), spec.workspace(),
                     spec.autoApprove(), spec.maxTurns(), null, log, store, List.of());
+
+            // Report the run's result NOW — a lingering node's answer must be
+            // visible while it waits, not held back until it is finally stopped.
+            int code;
             if (outcome.exitOk()) {
                 System.out.println(outcome.finalText().stripTrailing());
-                return 0;
+                code = 0;
+            } else {
+                System.err.println("Node run did not end regularly (" + outcome.stopReason()
+                        + "). Session: " + outcome.sessionId());
+                code = 1;
             }
-            System.err.println("Node run did not end regularly (" + outcome.stopReason()
-                    + "). Session: " + outcome.sessionId());
-            return 1;
+
+            // A lingering node stays connected until a ctl{stop}. Gate on the
+            // stop LATCH, never on the run's cancel signal: the EventStream close
+            // cancels that signal on EVERY normal teardown, so it cannot tell an
+            // operator stop from an ordinary finish. If a stop already arrived
+            // (the run was itself ended by it), the latch is down — skip the wait.
+            if (linger && stopped.getCount() > 0) {
+                log.accept("node idle — lingering until stop (ctl{stop} or SIGTERM)");
+                try {
+                    stopped.await();
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            return code;
         }
     }
 
@@ -250,7 +308,7 @@ public final class NodeCommand implements Callable<Integer> {
             return execute(mapper, config, providerOverride,
                     new NodeSpec(address.host(), address.port(), nodeId, epoch, context,
                             role, prompt, workspace, "auto".equals(permissions), maxTurns),
-                    store, System.err::println);
+                    store, System.err::println, linger);
         } catch (IllegalStateException missingKey) {
             System.err.println(missingKey.getMessage());
             return 1;

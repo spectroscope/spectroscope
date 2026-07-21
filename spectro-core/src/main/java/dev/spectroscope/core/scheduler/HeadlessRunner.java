@@ -57,6 +57,9 @@ public final class HeadlessRunner {
     private final String agentId;
     /** An extra REGISTERED port next to the required JSONL sink; null = none. */
     private final TracingPort auxiliaryPort;
+    /** An externally-owned cancel signal (a fleet node's, so a hub ctl{stop} can
+     *  end a running turn); null = mint a fresh one per run, the frozen default. */
+    private final CancelSignal externalSignal;
 
     /**
      * The production constructor — the provider is built fresh from config per run.
@@ -76,16 +79,17 @@ public final class HeadlessRunner {
      * @param providerOverride the scripted provider, or null to build from config
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
-        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null);
+        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null);
     }
 
     private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
-                           String agentId, TracingPort auxiliaryPort) {
+                           String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
         this.agentId = agentId;
         this.auxiliaryPort = auxiliaryPort;
+        this.externalSignal = externalSignal;
     }
 
     /**
@@ -98,7 +102,7 @@ public final class HeadlessRunner {
      * @return the re-identified runner; this instance is unchanged
      */
     public HeadlessRunner withIdentity(String agentId) {
-        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort);
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort, externalSignal);
     }
 
     /**
@@ -114,7 +118,21 @@ public final class HeadlessRunner {
      * @return the extended runner; this instance is unchanged
      */
     public HeadlessRunner withAuxiliaryPort(TracingPort port) {
-        return new HeadlessRunner(mapper, config, providerOverride, agentId, port);
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, port, externalSignal);
+    }
+
+    /**
+     * A copy of this runner whose run cancels off an EXTERNALLY-owned
+     * {@link CancelSignal} instead of a fresh per-run one. This is the seam a
+     * fleet node uses: it holds the signal, wires a hub {@code ctl{stop}} to
+     * {@link CancelSignal#cancel()}, and a running turn ends "aborted". Unset
+     * (the default), a fresh signal is minted per run — behaviour is unchanged.
+     *
+     * @param signal the caller-owned cancel signal to drive this runner's runs
+     * @return the re-signalled runner; this instance is unchanged
+     */
+    public HeadlessRunner withCancelSignal(CancelSignal signal) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort, signal);
     }
 
     /**
@@ -202,7 +220,9 @@ public final class HeadlessRunner {
         if (auxiliaryPort != null) {
             tracing.register(auxiliaryPort);
         }
-        CancelSignal signal = new CancelSignal();
+        // An externally-owned signal (a fleet node's) lets a hub ctl{stop} end a
+        // running turn; without one, a fresh per-run signal — the frozen default.
+        CancelSignal signal = externalSignal != null ? externalSignal : new CancelSignal();
         StringBuilder finalText = new StringBuilder();
         String stopReason = "error";
         String errorMessage = "";

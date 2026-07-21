@@ -70,11 +70,20 @@ class WireTest {
     void everyLineIsSingleLineAndVersioned() {
         for (String line : new String[] {
                 Wire.hello("c"), Wire.sub("t", Map.of()), Wire.pub(envelope(0), JSON),
-                Wire.ack("t", "s", 0L, 1L), Wire.gap("t", "s", 0L, 1L, 2L)}) {
+                Wire.ack("t", "s", 0L, 1L), Wire.gap("t", "s", 0L, 1L, 2L), Wire.ctl("stop")}) {
             assertTrue(line.indexOf('\n') < 0, "one op = one line: " + line);
-            assertTrue(line.contains("\"v\":2"),
-                    "the protocol wears its version — v2 since epochs changed the dialect: " + line);
+            assertTrue(line.contains("\"v\":3"),
+                    "the protocol wears its version — v3 since the ctl op entered the dialect: " + line);
         }
+    }
+
+    @Test
+    void aCtlOpRoundTripsForReverseControl() {
+        // Block 2: the hub addresses a node with a control verb (reverse of the
+        // node->hub pub flow). The version bumped to 3 the moment the delivery
+        // dialect grew a sixth op, so a v2 fleet can never misread a ctl line.
+        Wire.Ctl parsed = assertInstanceOf(Wire.Ctl.class, Wire.parse(Wire.ctl("stop"), JSON));
+        assertEquals("stop", parsed.action(), "the control verb survives the round-trip");
     }
 
     @Test
@@ -97,11 +106,11 @@ class WireTest {
         // A card without id and topic must not become an empty-string ghost
         // in rosters — "malformed card is simply no card" is the contract.
         Wire.Hello parsed = assertInstanceOf(Wire.Hello.class, Wire.parse(
-                "{\"v\":2,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{}}", JSON));
+                "{\"v\":3,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{}}", JSON));
         assertEquals(java.util.Optional.empty(), parsed.card());
 
         Wire.Hello topicless = assertInstanceOf(Wire.Hello.class, Wire.parse(
-                "{\"v\":2,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{\"id\":\"n\"}}", JSON));
+                "{\"v\":3,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{\"id\":\"n\"}}", JSON));
         assertEquals(java.util.Optional.empty(), topicless.card(),
                 "id without topic is still no card");
     }
@@ -139,10 +148,13 @@ class WireTest {
     @Test
     void anUnknownOpOrForeignVersionFailsLoudly() {
         assertThrows(IllegalArgumentException.class,
-                () -> Wire.parse("{\"v\":2,\"op\":\"warp\"}", JSON));
+                () -> Wire.parse("{\"v\":3,\"op\":\"warp\"}", JSON));
         assertThrows(IllegalArgumentException.class,
                 () -> Wire.parse("{\"v\":1,\"op\":\"hello\",\"clientId\":\"c\"}", JSON),
                 "the pre-epoch dialect is a foreign protocol — mixing must fail loudly");
+        assertThrows(IllegalArgumentException.class,
+                () -> Wire.parse("{\"v\":2,\"op\":\"hello\",\"clientId\":\"c\"}", JSON),
+                "the pre-ctl dialect (v2) is now foreign too — a bump auto-protects mixed fleets");
         assertThrows(IllegalArgumentException.class,
                 () -> Wire.parse("not json at all", JSON));
     }

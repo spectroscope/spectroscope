@@ -228,6 +228,45 @@ public final class ProcessBusHub implements BusTransport {
         }
     }
 
+    /**
+     * Reverse control (block 2): addresses a control verb to ONE node over its
+     * live connection — the wire under "stop a running fleet node". Delivery IS
+     * the addressing: the {@code ctl} line carries only the verb and rides the
+     * writer queue of the connection whose {@code clientId} matches.
+     *
+     * <p><b>Best-effort, not at-least-once.</b> Unlike a published frame, a ctl
+     * line has no outbox, no cumulative ack and no replay ring: a node that
+     * never connected (or already left) is a no-op (a warn line, NEVER a throw —
+     * a caller must not fail because a node vanished a millisecond earlier), and
+     * a line enqueued to a connection that then drops before its writer flushes
+     * is simply lost, not redelivered on reconnect. Reliable stop is therefore
+     * the CALLER's job (block 3's server endpoint): re-issue {@code stop} — it is
+     * idempotent — until the node leaves {@link #roster()}. A raw {@code spectro
+     * node --linger} whose stop is lost is ended by SIGTERM.</p>
+     *
+     * @param nodeId the target node's id (its hello {@code clientId})
+     * @param action the control verb, e.g. "stop"
+     */
+    public void control(String nodeId, String action) {
+        String line = Wire.ctl(action);
+        boolean delivered = false;
+        synchronized (lock) {
+            // Enqueue under the lock — the same ordering discipline every writer
+            // enqueue follows. First match wins (an id collision is a documented
+            // fleet limit; both would be stale copies of the same node).
+            for (Connection connection : connections) {
+                if (nodeId.equals(connection.clientId)) {
+                    connection.enqueue(line);
+                    delivered = true;
+                    break;
+                }
+            }
+        }
+        if (!delivered) {
+            log.warn("control({}, {}) — no connected node with that id", nodeId, action);
+        }
+    }
+
     /** The local (aggregator-side) publish: no wire, no outbox — the ring
      *  IS the durability this transport offers. */
     @Override

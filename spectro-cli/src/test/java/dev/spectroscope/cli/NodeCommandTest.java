@@ -27,6 +27,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -167,6 +168,151 @@ class NodeCommandTest {
                     store.id() + ".jsonl");
             assertTrue(Files.exists(sessionFile),
                     "durability first — the node is a normal session locally");
+        }
+    }
+
+    @Test
+    void aControlStopCancelsARunningNode(@TempDir Path cwd) throws Exception {
+        // Block 2 reverse ctl end to end: a running node, the hub sends
+        // control(id,"stop"), the node's bus dispatches it to a cancel that ends
+        // the turn "aborted". The provider parks waiting for that cancel; if it
+        // never comes it falls through to a normal answer after a bounded window,
+        // so the pre-wiring RED fails fast (exit 0) instead of hanging.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            List<BusEnvelope> seen = Collections.synchronizedList(new ArrayList<>());
+            CountDownLatch runStartAtHub = new CountDownLatch(1);
+            CountDownLatch runEndAtHub = new CountDownLatch(1);
+            hub.subscribe(BusEnvelope.topicFor("fleet-stop"), env -> {
+                seen.add(env);
+                if (env.payload() instanceof RunEvent.RunStart) {
+                    runStartAtHub.countDown();
+                }
+                if (env.payload() instanceof RunEvent.RunEnd) {
+                    runEndAtHub.countDown();
+                }
+            });
+
+            LlmProvider parking = request -> {
+                long deadline = System.currentTimeMillis() + 3_000;
+                while (!request.signal().isCancelled() && System.currentTimeMillis() < deadline) {
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                if (request.signal().isCancelled()) {
+                    return List.of(); // stopped mid-flight → the loop ends aborted
+                }
+                return List.of( // never stopped → a normal answer (RED fails fast)
+                        new LlmProvider.PTextDelta("ran to completion"),
+                        new LlmProvider.PUsage(3, 1),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN));
+            };
+
+            SessionStore store = new SessionStore();
+            java.util.concurrent.atomic.AtomicInteger exit =
+                    new java.util.concurrent.atomic.AtomicInteger(-99);
+            Thread run = Thread.ofVirtual().start(() ->
+                    exit.set(NodeCommand.execute(JSON, CONFIG, parking,
+                            new NodeCommand.NodeSpec("127.0.0.1", hub.port(), "node-s", 5L,
+                                    "fleet-stop", "worker", "scan", cwd, false, null),
+                            store, line -> { })));
+
+            assertTrue(runStartAtHub.await(10, TimeUnit.SECONDS), "the node is provably mid-run");
+            hub.control("node-s", "stop"); // the reverse ctl: end the running node
+
+            assertTrue(runEndAtHub.await(10, TimeUnit.SECONDS), "the stopped run's end reached the hub");
+            run.join(10_000);
+            assertEquals(1, exit.get(), "an externally-stopped run is not a regular end_turn");
+
+            RunEvent.RunEnd end = seen.stream().map(BusEnvelope::payload)
+                    .filter(RunEvent.RunEnd.class::isInstance).map(RunEvent.RunEnd.class::cast)
+                    .reduce((first, second) -> second).orElseThrow();
+            assertEquals("aborted", end.stopReason(), "the terminal frame is an aborted run");
+        }
+    }
+
+    @Test
+    void aLingeringNodeStaysConnectedAfterTheRunAndExitsOnStop(@TempDir Path cwd) throws Exception {
+        // Opt-in --linger: after a NORMAL run the node stays connected (roster-
+        // visible, controllable) instead of exiting, until a ctl{stop} (or, in
+        // production, SIGTERM). Default-off keeps every frozen test single-shot.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            CountDownLatch runEndAtHub = new CountDownLatch(1);
+            CountDownLatch joined = new CountDownLatch(1);
+            hub.onRosterChange(joined::countDown);
+            hub.subscribe(BusEnvelope.topicFor("fleet-linger"), env -> {
+                if (env.payload() instanceof RunEvent.RunEnd) {
+                    runEndAtHub.countDown();
+                }
+            });
+
+            SessionStore store = new SessionStore();
+            java.util.concurrent.atomic.AtomicInteger exit =
+                    new java.util.concurrent.atomic.AtomicInteger(-99);
+            Thread run = Thread.ofVirtual().start(() ->
+                    exit.set(NodeCommand.execute(JSON, CONFIG, oneAnswer("all done"),
+                            new NodeCommand.NodeSpec("127.0.0.1", hub.port(), "node-l", 3L,
+                                    "fleet-linger", "worker", "scan", cwd, false, null),
+                            store, line -> { }, /* linger */ true)));
+
+            assertTrue(joined.await(10, TimeUnit.SECONDS), "the node registered on the hub");
+            assertTrue(runEndAtHub.await(10, TimeUnit.SECONDS), "the run completed");
+            run.join(500);
+            assertTrue(run.isAlive(), "a lingering node does NOT exit on its own after the run");
+
+            hub.control("node-l", "stop"); // the reverse ctl ends the idle lingering node
+            run.join(10_000);
+            assertFalse(run.isAlive(), "ctl{stop} ends the lingering node");
+            assertEquals(0, exit.get(), "a cleanly-stopped node whose run ended ok exits 0");
+        }
+    }
+
+    @Test
+    void aLingeringNodeStoppedMidRunAbortsAndDoesNotHangInTheLingerWait(@TempDir Path cwd) throws Exception {
+        // The edge the linger gate must survive: --linger AND a stop that lands
+        // DURING the run. The run aborts, and the node must NOT then fall into
+        // the idle linger wait (the stop already fired) — it exits.
+        try (ProcessBusHub hub = new ProcessBusHub(0)) {
+            CountDownLatch runStartAtHub = new CountDownLatch(1);
+            CountDownLatch runEndAtHub = new CountDownLatch(1);
+            hub.subscribe(BusEnvelope.topicFor("fleet-lm"), env -> {
+                if (env.payload() instanceof RunEvent.RunStart) {
+                    runStartAtHub.countDown();
+                }
+                if (env.payload() instanceof RunEvent.RunEnd) {
+                    runEndAtHub.countDown();
+                }
+            });
+            LlmProvider parking = request -> {
+                while (!request.signal().isCancelled()) {
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                return List.of();
+            };
+
+            java.util.concurrent.atomic.AtomicInteger exit =
+                    new java.util.concurrent.atomic.AtomicInteger(-99);
+            Thread run = Thread.ofVirtual().start(() ->
+                    exit.set(NodeCommand.execute(JSON, CONFIG, parking,
+                            new NodeCommand.NodeSpec("127.0.0.1", hub.port(), "node-lm", 4L,
+                                    "fleet-lm", "worker", "scan", cwd, false, null),
+                            new SessionStore(), line -> { }, /* linger */ true)));
+
+            assertTrue(runStartAtHub.await(10, TimeUnit.SECONDS), "the node is mid-run");
+            hub.control("node-lm", "stop"); // stop lands DURING the run
+
+            run.join(10_000);
+            assertFalse(run.isAlive(), "a linger node stopped mid-run exits, it does not hang lingering");
+            assertEquals(1, exit.get(), "a mid-run stop is an aborted run, not a clean end");
+            assertTrue(runEndAtHub.await(5, TimeUnit.SECONDS), "its aborted end reached the hub");
         }
     }
 

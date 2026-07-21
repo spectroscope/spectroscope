@@ -14,18 +14,22 @@ import java.util.Optional;
 
 /**
  * The ProcessBus wire protocol (card 22): one op = one JSON line, version
- * pinned from day one. Five ops carry the whole transport — {@code hello}
+ * pinned from day one. Six ops carry the whole transport — {@code hello}
  * (who connects), {@code sub} (topic + resume cursor), {@code pub} (an
  * envelope, spliced via its canonical line form), {@code ack} (cumulative
- * per-sender high-water) and {@code gap} (evicted history, announced loudly
- * — KONZEPT §8 trap 1 forbids silent loss, not loss).
+ * per-sender high-water), {@code gap} (evicted history, announced loudly
+ * — KONZEPT §8 trap 1 forbids silent loss, not loss) and {@code ctl} (block 2:
+ * a control verb the hub addresses to ONE node — the reverse of the node→hub
+ * pub flow; delivery is by connection, so a ctl line carries only its verb).
  *
  * <p>Pure codec: no sockets, no state. A foreign version or unknown op fails
- * loudly at parse time — a mixed-version fleet must be impossible to miss.</p>
+ * loudly at parse time — a mixed-version fleet must be impossible to miss. The
+ * version bumped to 3 the moment the delivery dialect grew the ctl op, so a
+ * pre-ctl (v2) node can never misread a control line as anything else.</p>
  */
 final class Wire {
 
-    static final int VERSION = 2;
+    static final int VERSION = 3;
 
     /** The builder-side mapper for ops that carry no envelope. */
     private static final ObjectMapper PLAIN = new ObjectMapper();
@@ -34,7 +38,7 @@ final class Wire {
     }
 
     /** One parsed op — the transport switches over the sealed union. */
-    sealed interface Msg permits Hello, Sub, Pub, Ack, Gap {
+    sealed interface Msg permits Hello, Sub, Pub, Ack, Gap, Ctl {
     }
 
     /** The card is optional handshake metadata — plain clients send none. */
@@ -52,6 +56,12 @@ final class Wire {
     }
 
     record Gap(String topic, String sender, long epoch, long fromSeq, long toSeq) implements Msg {
+    }
+
+    /** A control verb the hub delivers to ONE node (addressed by connection, so
+     *  no id rides the line). {@code action} is the verb — "stop" today; more
+     *  can join without a version bump, since a new verb adds no op. */
+    record Ctl(String action) implements Msg {
     }
 
     static String hello(String clientId) {
@@ -123,6 +133,14 @@ final class Wire {
         return write(node);
     }
 
+    /** The reverse-control line: {@code {"v":3,"op":"ctl","action":"stop"}}. The
+     *  hub writes it to one node's connection; delivery IS the addressing. */
+    static String ctl(String action) {
+        ObjectNode node = base("ctl");
+        node.put("action", action);
+        return write(node);
+    }
+
     /**
      * Parses one wire line into the op union.
      *
@@ -163,6 +181,7 @@ final class Wire {
             case "gap" -> new Gap(node.path("topic").asText(), node.path("sender").asText(),
                     node.path("epoch").asLong(),
                     node.path("fromSeq").asLong(), node.path("toSeq").asLong());
+            case "ctl" -> new Ctl(node.path("action").asText());
             default -> throw new IllegalArgumentException("unknown op '" + op + "': " + line);
         };
     }

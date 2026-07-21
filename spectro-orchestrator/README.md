@@ -127,10 +127,11 @@ Honest limits, stated because hiding them would be the real failure:
   (frames delivered to nobody, however, never advance the cursor — a
   consumer joining after all handles closed replays what they missed).
 
-The wire is versioned newline-delimited JSON — `"v":2` since epochs
-entered the dialect (cursor per incarnation, epoch on ack and gap); a
-foreign version fails loudly at parse time, because a mixed-version
-fleet must be impossible to miss. A real child-JVM proof
+The wire is versioned newline-delimited JSON — `"v":3` since the `ctl`
+op (reverse control: the hub addresses a verb to one node) entered the
+dialect on top of the epoch changes (cursor per incarnation, epoch on
+ack and gap); a foreign version fails loudly at parse time, because a
+mixed-version fleet must be impossible to miss. A real child-JVM proof
 (`ProcessBusProcessProofTest`) crosses the boundary with distinct PIDs,
 and `close()` drains the outbox first — a finishing node must not
 strand its tail.

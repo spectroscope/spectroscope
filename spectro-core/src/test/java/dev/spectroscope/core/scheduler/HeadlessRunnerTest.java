@@ -1,6 +1,7 @@
 package dev.spectroscope.core.scheduler;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
@@ -14,7 +15,9 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Queue;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -185,6 +188,59 @@ class HeadlessRunnerTest {
 
         assertFalse(outcome.exitOk());
         assertEquals("max_turns", outcome.stopReason());
+    }
+
+    @Test
+    void anInjectedCancelSignalAbortsARunningTurnFromTheOutside(@TempDir Path cwd) throws Exception {
+        // The seam block 2 leans on: a fleet node injects its own CancelSignal
+        // so a hub ctl{stop} can end a RUNNING turn. The provider parks in its
+        // stream until the signal fires from another thread, then yields
+        // nothing — the run loop's post-stream check turns that into "aborted".
+        CancelSignal signal = new CancelSignal();
+        CountDownLatch reachedProvider = new CountDownLatch(1);
+        LlmProvider parking = request -> {
+            reachedProvider.countDown();
+            while (!request.signal().isCancelled()) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            return List.of(); // the cancelled loop aborts without more events
+        };
+
+        HeadlessRunner runner = new HeadlessRunner(JSON, CONFIG, parking).withCancelSignal(signal);
+        AtomicReference<HeadlessRunner.Outcome> outcome = new AtomicReference<>();
+        Thread run = Thread.ofVirtual().start(() ->
+                outcome.set(runner.runOnce("scan forever", cwd, false, null, null, line -> { })));
+
+        assertTrue(reachedProvider.await(5, TimeUnit.SECONDS), "the run reached the provider mid-flight");
+        signal.cancel(); // the outside brake — a ctl{stop} calls exactly this
+        run.join(5_000);
+
+        assertFalse(run.isAlive(), "the run ended promptly on cancel");
+        assertFalse(outcome.get().exitOk(), "a cancelled run is not a regular end_turn");
+        assertEquals("aborted", outcome.get().stopReason());
+    }
+
+    @Test
+    void anInjectedButUncancelledSignalLeavesANormalRunUnchanged(@TempDir Path cwd) {
+        // withCancelSignal must be inert unless something cancels it — the
+        // frozen no-signal behaviour, just with the seam present.
+        ScriptedProvider provider = new ScriptedProvider();
+        provider.turns.add(List.of(
+                new LlmProvider.PTextDelta("done"),
+                new LlmProvider.PUsage(1, 1),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+        HeadlessRunner.Outcome outcome = new HeadlessRunner(JSON, CONFIG, provider)
+                .withCancelSignal(new CancelSignal())
+                .runOnce("go", cwd, false, null, null, line -> { });
+
+        assertTrue(outcome.exitOk());
+        assertEquals("done", outcome.finalText());
     }
 
     @Test
