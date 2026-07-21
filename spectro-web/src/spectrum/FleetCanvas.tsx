@@ -4,7 +4,7 @@
 // node per agent, never every event. Reuses the graph tab's dagre layout and
 // the spectral tick colors — langfuse structure, spectroscope skin.
 
-import { useMemo } from "react";
+import { useMemo, type CSSProperties } from "react";
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode, NodeProps } from "@xyflow/react";
 import * as dagre from "dagre";
@@ -15,10 +15,18 @@ import { useLang } from "../state/lang";
 import { formatTokens } from "../format";
 import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
 import { buildFleetGraph, type FleetEdgeKind, type FleetGraphNode } from "./fleetGraph";
+import { collapseFleetGraph, type LegibleGraph, type LegibleNode } from "./fleetLegibility";
 import type { FleetModel } from "./fleetModel";
 
 const NODE_W = 208;
 const NODE_H = 82;
+
+// Role -> brand agent-colour var, the cluster tint. Unknown roles fall back.
+const CLUSTER_VAR: Record<string, string> = {
+  worker: "--agent-worker", explore: "--agent-explore", root: "--agent-root",
+  conductor: "--agent-root", panel: "--agent-root",
+};
+const clusterColor = (cluster: string): string => `var(${CLUSTER_VAR[cluster] ?? "--agent-extra"})`;
 
 const EDGE_COLOR: Record<FleetEdgeKind, string> = {
   spawn: "var(--ev-subagent)", // ocean rail
@@ -40,41 +48,56 @@ const stateDot = (state: FleetGraphNode["state"]): string =>
   state === "failed" ? "error" : state === "working" ? "accent" : state === "completed" ? "ok" : "faint";
 
 function SpectralNode({ data }: NodeProps) {
-  const d = data as { node: FleetGraphNode; lane: Lane | null };
+  const d = data as { node: LegibleNode; lane: Lane | null; detail: LegibleGraph["detail"] };
   const node = d.node;
+  const isGroup = node.kind === "group";
   const live = node.state === "working" && node.connected;
   const classes = [
     "fleet-node-card",
     `fleet-node-card--${node.state}`,
+    isGroup ? "fleet-node-card--group" : "",
+    d.detail !== "full" ? `fleet-node-card--${d.detail}` : "",
     node.pendingGate ? "fleet-node-card--gate pulse" : "",
   ].filter(Boolean).join(" ");
+  const style = { "--cluster": clusterColor(node.cluster) } as CSSProperties;
   return (
-    <div className={classes}>
+    <div className={classes} style={style}>
       <Handle type="target" position={Position.Top} />
       <div className="fleet-node-card-head">
         <span className={`dot ${stateDot(node.state)}${live ? " pulse" : ""}`} aria-hidden="true" />
-        <span className="fleet-node-card-id mono">{node.id}</span>
-        {node.role !== "" && <span className="fleet-node-card-role">{node.role}</span>}
+        <span className="fleet-node-cluster" aria-hidden="true" />
+        <span className="fleet-node-card-id mono">{isGroup ? node.role : node.id}</span>
+        {isGroup
+          ? <span className="fleet-node-count mono">×{node.count}{node.descendants.length > 0 ? ` +${node.descendants.length}` : ""}</span>
+          : node.role !== "" && <span className="fleet-node-card-role">{node.role}</span>}
       </div>
-      <svg className="fleet-node-band" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true">
-        <line x1="0" y1="7" x2="200" y2="7" className="fleet-node-baseline" />
-        {(d.lane?.ticks ?? []).map((tick, i) => (
-          <rect
-            key={i}
-            x={tick.x * 198 + 1}
-            y={2}
-            width={tick.kind === "gate" ? 2.4 : 1.2}
-            height={10}
-            rx={0.5}
-            fill={TICK_COLOR[tick.kind]}
-            opacity={tick.kind === "token" ? 0.7 : 0.95}
-          />
-        ))}
-      </svg>
-      <div className="fleet-node-card-foot mono tabular">
-        {formatTokens(node.inTokens)} in · {formatTokens(node.outTokens)} out
-        {node.epoch > 0 && <span className="fleet-node-card-epoch"> · #{node.epoch}</span>}
-      </div>
+      {d.detail !== "dot" && (
+        <svg className="fleet-node-band" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true">
+          {isGroup ? (
+            // a "deck" motif — many agents stacked behind one card
+            [3, 6.5, 10].map((y, i) => (
+              <line key={i} x1="0" y1={y} x2={200 - i * 20} y2={y}
+                stroke="var(--cluster)" strokeWidth={1.4} opacity={0.35 + i * 0.22} />
+            ))
+          ) : (
+            <>
+              <line x1="0" y1="7" x2="200" y2="7" className="fleet-node-baseline" />
+              {(d.lane?.ticks ?? []).map((tick, i) => (
+                <rect key={i} x={tick.x * 198 + 1} y={2}
+                  width={tick.kind === "gate" ? 2.4 : 1.2} height={10} rx={0.5}
+                  fill={TICK_COLOR[tick.kind]} opacity={tick.kind === "token" ? 0.7 : 0.95} />
+              ))}
+            </>
+          )}
+        </svg>
+      )}
+      {d.detail === "full" && (
+        <div className="fleet-node-card-foot mono tabular">
+          {formatTokens(node.inTokens)} in · {formatTokens(node.outTokens)} out
+          {isGroup && node.descendants.length > 0 && <span> · +{node.descendants.length} rolled up</span>}
+          {node.epoch > 0 && <span className="fleet-node-card-epoch"> · #{node.epoch}</span>}
+        </div>
+      )}
       <Handle type="source" position={Position.Bottom} />
     </div>
   );
@@ -99,16 +122,18 @@ function layout(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
 export function FleetCanvas({ model, events }: { model: FleetModel; events: RunEvent[] }) {
   const lang = useLang();
   const { nodes, edges } = useMemo(() => {
-    const fleetGraph = buildFleetGraph(model);
+    // Product tuning: small fleets stay fully legible as individual cards; only
+    // a genuinely wide fan-out (6+ same-role siblings) folds into a group.
+    const legible = collapseFleetGraph(buildFleetGraph(model), { minGroup: 6, maxNodes: 24 });
     const spectrum = buildSpectrum(events);
     const laneById = new Map(spectrum.lanes.map((l) => [l.id, l]));
-    const flowNodes: FlowNode[] = fleetGraph.nodes.map((n) => ({
+    const flowNodes: FlowNode[] = legible.nodes.map((n) => ({
       id: n.id,
       type: "spectral",
       position: { x: 0, y: 0 },
-      data: { node: n, lane: laneById.get(n.id) ?? null },
+      data: { node: n, lane: n.kind === "agent" ? laneById.get(n.id) ?? null : null, detail: legible.detail },
     }));
-    const flowEdges: FlowEdge[] = fleetGraph.edges.map((e) => ({
+    const flowEdges: FlowEdge[] = legible.edges.map((e) => ({
       id: e.id,
       source: e.source,
       target: e.target,
@@ -140,7 +165,8 @@ export function FleetCanvas({ model, events }: { model: FleetModel; events: RunE
       >
         <Background />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable nodeColor={() => "var(--agent-worker)"} />
+        <MiniMap pannable zoomable
+          nodeColor={(n) => clusterColor((n.data as { node: LegibleNode }).node.cluster)} />
       </ReactFlow>
     </div>
   );

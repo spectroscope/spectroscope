@@ -230,6 +230,27 @@
 }
 .fleet-node-card-epoch { color: var(--ev-reasoning); }
 
+/* Role clustering: a small tint square before the id, coloured by cluster. */
+.fleet-node-cluster {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex: none;
+  background: var(--cluster, var(--text-faint));
+}
+/* Aggregated group node: a deck of same-role siblings behind one card. */
+.fleet-node-card--group { border-style: dashed; }
+.fleet-node-count {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 0.7rem;
+  color: var(--cluster, var(--text-dim));
+}
+/* Level-of-detail: shrink node chrome as the fleet grows past the budget. */
+.fleet-node-card--compact { gap: 3px; padding: var(--sp-1) var(--sp-3); }
+.fleet-node-card--compact .fleet-node-band { height: 10px; }
+.fleet-node-card--dot { padding: var(--sp-1) var(--sp-2); }
+
 /* Fleet canvas: theme the React Flow chrome to the brand surface */
 .fleet-canvas .react-flow__minimap {
   background: var(--surface);
