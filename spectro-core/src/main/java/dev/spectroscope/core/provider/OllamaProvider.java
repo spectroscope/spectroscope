@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.io.BufferedReader;
@@ -53,7 +54,16 @@ public final class OllamaProvider implements LlmProvider {
     public OllamaProvider(OllamaOptions options) {
         this.baseUrl = options.baseUrl().replaceAll("/$", "");
         this.model = options.model();
-        this.http = RestClient.builder().baseUrl(baseUrl).build();
+        // The JDK HttpClient transport, NOT the default HttpURLConnection one:
+        // cancelling a run closes the streaming response, and only the JDK
+        // client's close CANCELS the body subscription promptly. The default
+        // (SimpleClientHttpRequestFactory) instead tries to DRAIN the stream for
+        // connection reuse on close, which BLOCKS when a slow or cloud model has
+        // stalled mid-stream — so the stop button could never interrupt it.
+        this.http = RestClient.builder()
+                .baseUrl(baseUrl)
+                .requestFactory(new JdkClientHttpRequestFactory())
+                .build();
         this.api = OllamaApi.create(http);
     }
 
@@ -330,6 +340,14 @@ public final class OllamaProvider implements LlmProvider {
             try {
                 String line = lines.readLine();
                 if (line == null) {
+                    // A null line is EOF. A cancel closes the response to unblock
+                    // this very read, and the JDK transport surfaces that as a
+                    // clean EOF (not an IOException) — so a cancelled read must
+                    // end ABORTED here, never be misread as a natural finish.
+                    if (signal != null && signal.isCancelled()) {
+                        endWith(new PStop(PStop.StopReason.ABORTED));
+                        return;
+                    }
                     // Stream ended without done:true — close out with what we know.
                     endWith(new PStop(sawToolCall
                             ? PStop.StopReason.TOOL_USE : PStop.StopReason.END_TURN));

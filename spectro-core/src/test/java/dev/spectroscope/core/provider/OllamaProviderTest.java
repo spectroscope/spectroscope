@@ -25,7 +25,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -124,6 +126,63 @@ class OllamaProviderTest {
         List<ProviderEvent> events = new ArrayList<>();
         provider().stream(request).forEach(events::add);
         return events;
+    }
+
+    @Test
+    void aCancelDuringAStalledStreamAbortsPromptlyInsteadOfHanging() throws Exception {
+        // The stop button, reproduced: a slow/cloud model streams one delta then
+        // stalls (no more tokens for a while). The reader is blocked in readLine.
+        // Pressing stop cancels the signal — and the run MUST abort promptly, not
+        // wait until the model finally produces more (or the whole generation).
+        CountDownLatch requestArrived = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        server.removeContext("/api/chat");
+        server.createContext("/api/chat", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/x-ndjson");
+            exchange.sendResponseHeaders(200, 0); // chunked: an open, arbitrary-length stream
+            OutputStream out = exchange.getResponseBody();
+            try {
+                out.write("{\"message\":{\"content\":\"hi \"}}\n".getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                requestArrived.countDown();
+                release.await(8, TimeUnit.SECONDS); // then STALL — no more tokens
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+
+        CancelSignal signal = new CancelSignal();
+        ProviderRequest req = new ProviderRequest("sys", oneUser("go"), List.of(), 500, signal);
+        Iterator<ProviderEvent> it = provider().stream(req).iterator();
+
+        // first delta proves the stream is open and flowing
+        assertTrue(it.hasNext());
+        assertEquals("hi ", assertInstanceOf(PTextDelta.class, it.next()).text());
+        assertTrue(requestArrived.await(5, TimeUnit.SECONDS));
+
+        // ask for the next event on another thread — it blocks in readLine (stalled)
+        AtomicReference<ProviderEvent> nextEvent = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        Thread reader = Thread.ofVirtual().start(() -> {
+            if (it.hasNext()) {
+                nextEvent.set(it.next());
+            }
+            done.countDown();
+        });
+
+        Thread.sleep(300);   // let the reader block in readLine on the stalled stream
+        signal.cancel();     // the stop button
+
+        boolean aborted = done.await(3, TimeUnit.SECONDS);
+        release.countDown(); // let the server thread unwind regardless
+        reader.join(1_000);
+
+        assertTrue(aborted, "cancelling a stalled ollama stream must abort promptly, not hang");
+        assertEquals(PStop.StopReason.ABORTED,
+                assertInstanceOf(PStop.class, nextEvent.get()).reason());
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
 import java.io.BufferedReader;
@@ -60,8 +61,13 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @param options base URL (trailing slash stripped), model name and optional API key
      */
     public OpenAiCompatProvider(Options options) {
+        // The JDK HttpClient transport, NOT the default HttpURLConnection one:
+        // only the JDK client's close CANCELS a streaming response promptly, so
+        // the stop button can interrupt a stalled stream instead of blocking on a
+        // drain-for-reuse (see OllamaProvider for the full rationale).
         RestClient.Builder builder = RestClient.builder()
-                .baseUrl(options.baseUrl().replaceAll("/$", ""));
+                .baseUrl(options.baseUrl().replaceAll("/$", ""))
+                .requestFactory(new JdkClientHttpRequestFactory());
         if (options.apiKey() != null && !options.apiKey().isBlank()) {
             builder.defaultHeader("Authorization", "Bearer " + options.apiKey());
         }
@@ -462,7 +468,18 @@ public final class OpenAiCompatProvider implements LlmProvider {
             }
             try {
                 String line = lines.readLine();
-                if (line == null || line.equals("data: [DONE]")) {
+                if (line == null) {
+                    // EOF: a cancel closes the response to unblock this read, and
+                    // the JDK transport surfaces that as a clean EOF — so a
+                    // cancelled read ends ABORTED, never a misread natural finish.
+                    if (signal != null && signal.isCancelled()) {
+                        endWith(new PStop(PStop.StopReason.ABORTED));
+                        return;
+                    }
+                    finishTurn();
+                    return;
+                }
+                if (line.equals("data: [DONE]")) {
                     finishTurn();
                     return;
                 }

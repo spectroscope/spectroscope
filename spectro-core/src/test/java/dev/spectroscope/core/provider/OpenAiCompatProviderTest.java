@@ -23,7 +23,9 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -90,6 +92,65 @@ class OpenAiCompatProviderTest {
 
     private static ProviderRequest request(List<ProviderMessage> messages) {
         return new ProviderRequest("You are a test.", messages, List.of(), 500, new CancelSignal());
+    }
+
+    @Test
+    void aCancelDuringAStalledStreamAbortsPromptlyInsteadOfHanging() throws Exception {
+        // The stop button, reproduced against an SSE server that streams one delta
+        // then stalls. Cancelling must abort promptly — the JDK transport close
+        // unblocks the read, and the cancelled EOF ends ABORTED, not END_TURN.
+        CountDownLatch requestArrived = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        server.removeContext("/v1/chat/completions");
+        server.createContext("/v1/chat/completions", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0); // chunked: an open SSE stream
+            OutputStream out = exchange.getResponseBody();
+            try {
+                out.write("data: {\"choices\":[{\"delta\":{\"content\":\"hi \"}}]}\n\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                requestArrived.countDown();
+                release.await(8, TimeUnit.SECONDS); // then STALL
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+
+        CancelSignal signal = new CancelSignal();
+        ProviderRequest req = new ProviderRequest("sys",
+                List.of(new ProviderMessage(ProviderMessage.Role.USER, List.of(new TextContent("go")))),
+                List.of(), 500, signal);
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "local-model", null));
+        Iterator<ProviderEvent> it = provider.stream(req).iterator();
+
+        assertTrue(it.hasNext());
+        assertEquals("hi ", assertInstanceOf(PTextDelta.class, it.next()).text());
+        assertTrue(requestArrived.await(5, TimeUnit.SECONDS));
+
+        AtomicReference<ProviderEvent> nextEvent = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        Thread reader = Thread.ofVirtual().start(() -> {
+            if (it.hasNext()) {
+                nextEvent.set(it.next());
+            }
+            done.countDown();
+        });
+
+        Thread.sleep(300);
+        signal.cancel();
+
+        boolean aborted = done.await(3, TimeUnit.SECONDS);
+        release.countDown();
+        reader.join(1_000);
+
+        assertTrue(aborted, "cancelling a stalled openai-compatible stream must abort promptly, not hang");
+        assertEquals(PStop.StopReason.ABORTED,
+                assertInstanceOf(PStop.class, nextEvent.get()).reason());
     }
 
     @Test
