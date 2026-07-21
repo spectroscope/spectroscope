@@ -34,6 +34,7 @@ import { SettingsPanel } from "./components/SettingsPanel";
 import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
+import { FleetCanvas } from "./spectrum/FleetCanvas";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
 import { fleetPushLive, hydrateFleet, useFleet } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
@@ -675,10 +676,11 @@ export function App() {
             }}
           />
         ) : tab === "graph" ? (
-          <GraphView
-            events={tabEvents}
-            isReplay={!viewingLive}
-          />
+          enteredFleet !== null ? (
+            <FleetCanvas model={enteredFleetModel} events={tabEvents} />
+          ) : (
+            <GraphView events={tabEvents} isReplay={!viewingLive} />
+          )
         ) : tab === "text" ? (
           <TextView events={tabEvents} />
         ) : tab === "lab" ? (

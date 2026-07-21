@@ -172,3 +172,80 @@
   border-radius: var(--radius-chip);
   padding: 0 4px;
 }
+
+/* Fleet canvas — the spectral DAG (React Flow) */
+.fleet-canvas {
+  position: relative;
+  height: 100%;
+  min-height: 460px;
+  width: 100%;
+}
+.fleet-node-card {
+  width: 208px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--text-faint);
+  border-radius: var(--radius-card);
+  font-size: 0.75rem;
+}
+.fleet-node-card--working { border-left-color: var(--warn); }
+.fleet-node-card--completed { border-left-color: var(--ok); }
+.fleet-node-card--failed { border-left-color: var(--error); }
+.fleet-node-card--gate { border-color: var(--ev-gate); }
+.fleet-node-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.fleet-node-card-id {
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-node-card-role {
+  margin-left: auto;
+  font-size: 0.66rem;
+  color: var(--text-dim);
+}
+.fleet-node-band {
+  width: 100%;
+  height: 14px;
+  display: block;
+}
+.fleet-node-baseline {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+.fleet-node-card-foot {
+  font-size: 0.66rem;
+  color: var(--text-faint);
+}
+.fleet-node-card-epoch { color: var(--ev-reasoning); }
+
+/* Fleet canvas: theme the React Flow chrome to the brand surface */
+.fleet-canvas .react-flow__minimap {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+}
+.fleet-canvas .react-flow__minimap-mask {
+  fill: var(--bg);
+  fill-opacity: 0.55;
+}
+.fleet-canvas .react-flow__controls-button {
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  fill: var(--text);
+}
+.fleet-canvas .react-flow__controls-button:hover {
+  background: var(--surface-3);
+}
