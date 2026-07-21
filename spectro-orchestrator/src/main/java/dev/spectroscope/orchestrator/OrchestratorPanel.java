@@ -10,6 +10,7 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
+import dev.spectroscope.core.trace.TracingPort;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -40,6 +41,9 @@ public final class OrchestratorPanel implements FleetPanel {
     /** The panel's own agent id on the stream — the fleet's conductor. */
     public static final String PANEL_AGENT_ID = "panel";
 
+    /** Wire lines a hub-mirror connection may buffer (mirrors the node default). */
+    private static final int OUTBOX = 1024;
+
     /** The embedded-library stance, fleet edition. */
     private static final String UNATTENDED_PROMPT =
             "You are one lane of a spectroscope fleet. There is no human at the "
@@ -47,29 +51,53 @@ public final class OrchestratorPanel implements FleetPanel {
             + "summarize your result briefly at the end. If a tool is denied, do "
             + "not retry it — state the denial in your result.";
 
-    private final BusTransport bus;
+    private final BusTransport bus; // the LOCAL SPINE — the returned stream rides this, always
     private final boolean ownsBus;
+    /** The fleet hub, or null = in-memory only (today's behaviour). When set,
+     *  each sender ALSO mirrors its frames to the hub as an additive side
+     *  channel; the returned stream never depends on hub liveness. */
+    private final HubAddress hub;
     private final Map<String, Lane> lanes = new LinkedHashMap<>();
     private LlmProvider defaultProvider;
     private Path workspaceRoot = Path.of(".");
     private boolean started = false;
 
-    /** The facade path: a private in-memory bus per panel run. */
+    /** The facade path: a private in-memory bus per panel run. Env-aware — when
+     *  {@code SPECTRO_HUB} is set, the run ALSO mirrors to that fleet hub so
+     *  {@link dev.spectroscope.Spectro#panel()} code fleets are live-visible.
+     *  Note the ambient coupling: a process with {@code SPECTRO_HUB} exported
+     *  makes EVERY {@code Spectro.panel()} run open a mirror connection. The
+     *  returned stream is unaffected either way (it rides the in-memory spine),
+     *  but a dead hub means best-effort mirror drops, not a broken run. */
     public OrchestratorPanel() {
-        this(new InMemoryBus(), true);
+        this(new InMemoryBus(), true, HubAddress.fromEnv(System.getenv()));
     }
 
     /** Test/aggregator seam: run this panel over a caller-supplied transport.
      *  The caller keeps ownership — the panel never closes a bus it did not
-     *  create (a shared aggregator or process transport outlives one run).
+     *  create (a shared aggregator or process transport outlives one run). This
+     *  seam is NEVER env-teed: a caller who passes a bus means "use exactly
+     *  this transport", no SPECTRO_HUB hijack.
      *  @param bus the transport every envelope of this panel rides */
     public OrchestratorPanel(BusTransport bus) {
-        this(bus, false);
+        this(bus, false, null);
     }
 
-    private OrchestratorPanel(BusTransport bus, boolean ownsBus) {
+    /** Explicit hub target: run over a private in-memory spine AND mirror every
+     *  frame to the fleet hub at {@code hub}, without relying on
+     *  {@code SPECTRO_HUB}. The additive counterpart to the env-first facade
+     *  path — for a program that wants to point a panel at a hub in code, and
+     *  the seam tests use to force the hub path deterministically.
+     *  @param hub the fleet hub to mirror to (never null here; use the no-arg
+     *             or {@link #OrchestratorPanel(BusTransport)} form for no hub) */
+    public OrchestratorPanel(HubAddress hub) {
+        this(new InMemoryBus(), true, Objects.requireNonNull(hub, "hub"));
+    }
+
+    private OrchestratorPanel(BusTransport bus, boolean ownsBus, HubAddress hub) {
         this.bus = Objects.requireNonNull(bus, "bus");
         this.ownsBus = ownsBus;
+        this.hub = hub;
     }
 
     @Override
@@ -110,6 +138,14 @@ public final class OrchestratorPanel implements FleetPanel {
                 throw new IllegalStateException(
                         "lane '" + lane.id + "' has no model — set one on the lane or on the panel");
             }
+            // A lane id becomes a hub NodeCard id + a REST path segment when a
+            // hub is configured; validate up front on BOTH paths so a bad id
+            // fails fast and legibly here, not as a cryptic mid-run NodeCard
+            // throw that only surfaces with a hub set.
+            if (!lane.id.matches("[A-Za-z0-9._-]+") || lane.id.equals(".") || lane.id.equals("..")) {
+                throw new IllegalArgumentException(
+                        "lane id must be URL-safe [A-Za-z0-9._-] and not \".\"/\"..\", was: \"" + lane.id + "\"");
+            }
         }
         started = true;
 
@@ -121,23 +157,36 @@ public final class OrchestratorPanel implements FleetPanel {
         return EventStream.start(signal, sink -> {
             // The aggregator: ONE subscriber unwraps the fleet's envelopes into
             // the merged stream, in publication order (per lane: causal order).
+            // It subscribes to the LOCAL SPINE — the returned stream never
+            // touches the hub, so a dead hub cannot stall or drop it.
             AutoCloseable subscription = bus.subscribe(topic, env -> sink.accept(env.payload()));
             EnvelopeStamper panelPen = new EnvelopeStamper(PANEL_AGENT_ID, 0L, contextId, topic);
+            // The conductor's hub-mirror connection (only when a hub is set): its
+            // own card so the aggregator taps the topic, its own async pen so a
+            // slow hub only drops-with-a-count, never blocks the run thread.
+            ProcessBus conductorBus = null;
+            AsyncBusPort conductorHub = null;
+            if (hub != null) {
+                NodeCard panelCard = new NodeCard(PANEL_AGENT_ID, "conductor", List.of(), topic);
+                conductorBus = new ProcessBus(hub.host(), hub.port(), PANEL_AGENT_ID, OUTBOX, panelCard);
+                conductorHub = new AsyncBusPort(new BusPublisher(conductorBus, PANEL_AGENT_ID, contextId), OUTBOX);
+            }
+            final TracingPort conductorOut = conductorHub;
             try {
-                bus.publish(panelPen.stamp(contextId, new RunEvent.RunStart(
+                publishConductor(panelPen, contextId, conductorOut, new RunEvent.RunStart(
                         contextId, PANEL_AGENT_ID, null,
-                        "fleet of " + lanes.size() + " agents", "fleet", null, t0)));
+                        "fleet of " + lanes.size() + " agents", "fleet", null, t0));
 
                 List<Thread> threads = new ArrayList<>();
                 for (Lane lane : lanes.values()) {
                     String taskId = "task-" + UUID.randomUUID().toString().substring(0, 8);
                     // The panel announces the lane BEFORE it starts: the tree
                     // edge, then the visible assignment (A2A task message).
-                    bus.publish(panelPen.stamp(taskId, new RunEvent.AgentSpawn(
-                            lane.id, PANEL_AGENT_ID, lane.task, System.currentTimeMillis())));
-                    bus.publish(panelPen.stamp(taskId, new RunEvent.AgentMessage(
+                    publishConductor(panelPen, taskId, conductorOut, new RunEvent.AgentSpawn(
+                            lane.id, PANEL_AGENT_ID, lane.task, System.currentTimeMillis()));
+                    publishConductor(panelPen, taskId, conductorOut, new RunEvent.AgentMessage(
                             PANEL_AGENT_ID, lane.id, "task", "submitted", lane.task, null,
-                            System.currentTimeMillis())));
+                            System.currentTimeMillis()));
                     CancelSignal laneSignal = new CancelSignal();
                     signal.onCancel(laneSignal::cancel);
                     threads.add(Thread.ofVirtual()
@@ -147,14 +196,18 @@ public final class OrchestratorPanel implements FleetPanel {
                 for (Thread thread : threads) {
                     thread.join();
                 }
-                bus.publish(panelPen.stamp(contextId, new RunEvent.RunEnd(
+                publishConductor(panelPen, contextId, conductorOut, new RunEvent.RunEnd(
                         contextId, signal.isCancelled() ? "aborted" : "end_turn",
-                        System.currentTimeMillis())));
+                        System.currentTimeMillis()));
             } catch (InterruptedException interrupted) {
                 Thread.currentThread().interrupt();
-                bus.publish(panelPen.stamp(contextId, new RunEvent.RunEnd(
-                        contextId, "aborted", System.currentTimeMillis())));
+                publishConductor(panelPen, contextId, conductorOut, new RunEvent.RunEnd(
+                        contextId, "aborted", System.currentTimeMillis()));
             } finally {
+                // The conductor's hub teardown is best-effort and OFF the spine's
+                // critical path (same reason as the lanes): a slow/dead hub must
+                // not delay the returned stream's completion. Detach it.
+                closeMirrorDetached("spectro-fleet-close-panel", conductorHub, conductorBus);
                 try {
                     subscription.close();
                 } catch (Exception ignored) {
@@ -171,43 +224,117 @@ public final class OrchestratorPanel implements FleetPanel {
      *  onto the bus verbatim, close with the recorded outcome. Never throws —
      *  a broken lane becomes an error event plus a failed result. */
     private void runLane(Lane lane, String taskId, String contextId, String topic, CancelSignal signal) {
-        EnvelopeStamper pen = new EnvelopeStamper(lane.id, 0L, contextId, topic);
-        // The lane publishes its agent's events through the tracing port —
-        // sharing the pen, so choreography frames and pumped events stay ONE
-        // causal chain. The core-side drain sites register the same port type.
-        BusPublisher publisher = new BusPublisher(bus, pen, taskId);
+        // The SPINE pen — shared across choreography frames and pumped events so
+        // they stay ONE causal chain, stamped only on THIS lane thread.
+        EnvelopeStamper spinePen = new EnvelopeStamper(lane.id, 0L, contextId, topic);
+        TracingPort spineOut = new BusPublisher(bus, spinePen, taskId);
+        ProcessBus laneBus = null;
+        AsyncBusPort laneHub = null;
         AtomicBoolean sawError = new AtomicBoolean(false);
         String[] stopReason = {null};
-        bus.publish(pen.stamp(taskId, new RunEvent.AgentMessage(
-                lane.id, PANEL_AGENT_ID, "status", "working", "lane started",
-                null, System.currentTimeMillis())));
         try {
-            dev.spectroscope.core.Agent agent = buildAgent(lane);
-            try (EventStream stream = agent.run(lane.task, new RunOptions(signal, null))) {
-                for (RunEvent event : stream) {
-                    if (event instanceof RunEvent.ErrorEvent) {
-                        sawError.set(true);
-                    }
-                    if (event instanceof RunEvent.ToolResult result && result.isError()) {
-                        sawError.set(true);
-                    }
-                    if (event instanceof RunEvent.RunEnd end) {
-                        stopReason[0] = end.stopReason();
-                    }
-                    publisher.onEvent(event);
-                }
+            // Fan-out at the source: the spine synchronously FIRST (the returned
+            // stream), then the hub mirror (its own card + its OWN async pen,
+            // stamped only on the AsyncBusPort drain thread) SECOND. A dead hub
+            // can only fill the bounded queue and drop-count — never delay or
+            // drop a spine frame.
+            final TracingPort out;
+            if (hub != null) {
+                NodeCard card = new NodeCard(lane.id, "worker",
+                        laneTools(lane).stream().map(Tool::name).toList(), topic);
+                laneBus = new ProcessBus(hub.host(), hub.port(), lane.id, OUTBOX, card);
+                laneHub = new AsyncBusPort(new BusPublisher(laneBus, lane.id, contextId), OUTBOX);
+                final AsyncBusPort hubOut = laneHub;
+                out = event -> {
+                    spineOut.onEvent(event);
+                    hubOut.onEvent(event);
+                };
+            } else {
+                out = spineOut;
             }
-        } catch (RuntimeException broken) {
-            sawError.set(true);
-            bus.publish(pen.stamp(taskId, new RunEvent.ErrorEvent(
-                    lane.id, "lane failed: " + broken.getMessage(), System.currentTimeMillis())));
+
+            out.onEvent(new RunEvent.AgentMessage(
+                    lane.id, PANEL_AGENT_ID, "status", "working", "lane started",
+                    null, System.currentTimeMillis()));
+            try {
+                dev.spectroscope.core.Agent agent = buildAgent(lane);
+                try (EventStream stream = agent.run(lane.task, new RunOptions(signal, null))) {
+                    for (RunEvent event : stream) {
+                        if (event instanceof RunEvent.ErrorEvent) {
+                            sawError.set(true);
+                        }
+                        if (event instanceof RunEvent.ToolResult result && result.isError()) {
+                            sawError.set(true);
+                        }
+                        if (event instanceof RunEvent.RunEnd end) {
+                            stopReason[0] = end.stopReason();
+                        }
+                        out.onEvent(event);
+                    }
+                }
+            } catch (RuntimeException broken) {
+                sawError.set(true);
+                out.onEvent(new RunEvent.ErrorEvent(
+                        lane.id, "lane failed: " + broken.getMessage(), System.currentTimeMillis()));
+            }
+            boolean failed = sawError.get() || !"end_turn".equals(stopReason[0]);
+            out.onEvent(new RunEvent.AgentMessage(
+                    lane.id, PANEL_AGENT_ID, "result", failed ? "failed" : "completed",
+                    failed ? "failed (" + (stopReason[0] == null ? "no run_end" : stopReason[0]) + ")"
+                           : "completed",
+                    null, System.currentTimeMillis()));
+        } finally {
+            // The hub teardown must NEVER gate the spine: ProcessBus.close()
+            // blocks up to its drain-grace waiting for acks, so a dead/slow hub
+            // would otherwise delay THIS lane thread's termination — which the
+            // conductor joins BEFORE it publishes the terminal run_end. Close
+            // the run-private mirror connections on a detached best-effort thread
+            // so the returned stream's completion is never gated on hub liveness.
+            closeMirrorDetached("spectro-fleet-close-" + lane.id, laneHub, laneBus);
         }
-        boolean failed = sawError.get() || !"end_turn".equals(stopReason[0]);
-        bus.publish(pen.stamp(taskId, new RunEvent.AgentMessage(
-                lane.id, PANEL_AGENT_ID, "result", failed ? "failed" : "completed",
-                failed ? "failed (" + (stopReason[0] == null ? "no run_end" : stopReason[0]) + ")"
-                       : "completed",
-                null, System.currentTimeMillis())));
+    }
+
+    /** Close a sender's mirror connections OFF the run's critical path: drain
+     *  the async port into the still-open bus (fast), then drain the bus outbox
+     *  to the hub (up to its grace, best-effort) — all on a detached thread so a
+     *  slow/dead hub can never delay the returned spine stream. No-op when both
+     *  are null (the in-memory path). */
+    private static void closeMirrorDetached(String name, AutoCloseable port, AutoCloseable transport) {
+        if (port == null && transport == null) {
+            return;
+        }
+        Thread.ofVirtual().name(name).start(() -> {
+            closeQuietly(port);      // drains the queue into the still-open bus (fast)
+            closeQuietly(transport); // drains the outbox to the hub (grace-bounded, OFF-path)
+        });
+    }
+
+    /** Publish a conductor frame: the spine (as today), then the hub mirror
+     *  (non-blocking) when a hub is configured. */
+    private void publishConductor(EnvelopeStamper spinePen, String taskId,
+                                  TracingPort hubPortOrNull, RunEvent event) {
+        bus.publish(spinePen.stamp(taskId, event));
+        if (hubPortOrNull != null) {
+            hubPortOrNull.onEvent(event);
+        }
+    }
+
+    /** The lane's tools — its own set, or the full registry. The ONE source for
+     *  both the advertised card capabilities and the real registry, so the
+     *  announced blast radius can never drift from what the lane can actually do. */
+    private List<Tool> laneTools(Lane lane) {
+        return lane.tools != null ? lane.tools : dev.spectroscope.Tools.all();
+    }
+
+    private static void closeQuietly(AutoCloseable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+            // best-effort teardown — a close failure must not mask the run result
+        }
     }
 
     /** Builds the lane's core agent — the same construction path as the
@@ -220,7 +347,7 @@ public final class OrchestratorPanel implements FleetPanel {
             throw new IllegalStateException("workspace not creatable: " + workspace, e);
         }
         ToolRegistry registry = new ToolRegistry();
-        (lane.tools != null ? lane.tools : dev.spectroscope.Tools.all()).forEach(registry::register);
+        laneTools(lane).forEach(registry::register);
         LlmProvider provider = lane.provider != null ? lane.provider : defaultProvider;
         String prompt = lane.systemPrompt != null
                 ? lane.systemPrompt
