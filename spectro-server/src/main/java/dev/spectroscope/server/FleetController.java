@@ -3,9 +3,11 @@ package dev.spectroscope.server;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.orchestrator.BusEnvelope;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.io.IOException;
@@ -58,6 +60,36 @@ public class FleetController {
                     return ResponseEntity.ok(body);
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    /**
+     * Stop a running fleet node (block 3): dispatch a {@code ctl{stop}} to it
+     * over the hub. Best-effort and honest about it — a 202 means the verb was
+     * SENT to the node's live connection, not that the node has confirmed it
+     * stopped (the control plane has no ack). The client re-issues the stop —
+     * it is idempotent — until the node leaves the roster.
+     *
+     * @param node the node id from the roster
+     * @return 202 sent · 404 no fleet or unknown node · 409 the node already left
+     */
+    @PostMapping("/api/fleet/{node}/stop")
+    public ResponseEntity<Map<String, Object>> stop(@PathVariable("node") String node) {
+        return switch (fleet.control(node, "stop")) {
+            case DISABLED, UNKNOWN -> ResponseEntity.notFound().build();
+            case DISCONNECTED -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(body(node, "the node already left the roster"));
+            case DISPATCHED -> ResponseEntity.accepted()
+                    .body(body(node, "stop sent — best-effort; re-issue until the node leaves the roster"));
+        };
+    }
+
+    /** The stop response shape — the verb, the node, and an honest note. */
+    private static Map<String, Object> body(String node, String note) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("node", node);
+        json.put("action", "stop");
+        json.put("note", note);
+        return json;
     }
 
     /** The envelope's canonical line IS the frame format — reuse it verbatim. */

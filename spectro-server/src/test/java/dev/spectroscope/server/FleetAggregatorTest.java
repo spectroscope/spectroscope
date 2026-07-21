@@ -18,7 +18,9 @@ import java.net.ServerSocket;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -157,6 +159,48 @@ class FleetAggregatorTest {
             FleetAggregator.NodeState gone = aggregator.snapshot().get(0);
             assertEquals("node-a", gone.card().id());
             assertFalse(gone.connected(), "a departed node shows as disconnected, not vanished");
+        }
+    }
+
+    @Test
+    void controlIsDisabledWhenTheHubIsOff() {
+        try (FleetAggregator off = new FleetAggregator("")) {
+            assertEquals(FleetAggregator.ControlResult.DISABLED, off.control("node-x", "stop"),
+                    "no hub, nothing to control");
+        }
+    }
+
+    @Test
+    void controlDispatchesToAConnectedNodeAndReportsUnknownForAGhost() throws Exception {
+        try (FleetAggregator aggregator = new FleetAggregator("0")) {
+            assertEquals(FleetAggregator.ControlResult.UNKNOWN, aggregator.control("node-c", "stop"),
+                    "a node that never joined cannot be controlled");
+
+            CountDownLatch connected = new CountDownLatch(1);
+            aggregator.addListener(new FleetAggregator.Listener() {
+                @Override
+                public void onRoster(List<FleetAggregator.NodeState> roster) {
+                    if (roster.stream().anyMatch(s -> s.card().id().equals("node-c") && s.connected())) {
+                        connected.countDown();
+                    }
+                }
+
+                @Override
+                public void onFleetEvent(BusEnvelope envelope) {
+                }
+            });
+
+            NodeCard card = new NodeCard("node-c", "worker", List.of(), TOPIC);
+            try (ProcessBus node = new ProcessBus("127.0.0.1", aggregator.port(), "node-c", 1024, card)) {
+                BlockingQueue<String> received = new LinkedBlockingQueue<>();
+                node.onControl(received::add);
+                assertTrue(connected.await(10, TimeUnit.SECONDS), "the node joined the fold");
+
+                assertEquals(FleetAggregator.ControlResult.DISPATCHED, aggregator.control("node-c", "stop"),
+                        "a connected node's verb is dispatched over the hub");
+                assertEquals("stop", received.poll(10, TimeUnit.SECONDS),
+                        "the verb reached the node's onControl seam");
+            }
         }
     }
 }

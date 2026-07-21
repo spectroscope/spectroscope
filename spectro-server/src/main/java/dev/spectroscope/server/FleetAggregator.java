@@ -168,6 +168,49 @@ public class FleetAggregator implements AutoCloseable {
         return json;
     }
 
+    /**
+     * The outcome of a {@link #control} request. Honest about the best-effort
+     * control plane: {@code DISPATCHED} means the verb was written to the node's
+     * live connection, NOT that the node acted on it — the control plane has no
+     * ack (block 2), so a caller re-issues an idempotent stop until the node
+     * leaves the roster.
+     */
+    public enum ControlResult {
+        /** The fleet hub is off (opt-in via SPECTRO_HUB_PORT) — no target exists. */
+        DISABLED,
+        /** No node with that id has ever joined this hub's uptime. */
+        UNKNOWN,
+        /** The node was seen but has since left — its connection is gone. */
+        DISCONNECTED,
+        /** The verb was written to the node's live connection (best-effort). */
+        DISPATCHED
+    }
+
+    /**
+     * Reverse control (block 3): dispatch a verb to a connected fleet node over
+     * the hub. Best-effort by construction — see {@link ControlResult}. The hub
+     * itself is loopback-only; this method only touches a node the hub already
+     * accepted.
+     *
+     * @param nodeId the target node's id
+     * @param action the control verb, e.g. "stop"
+     * @return where the request landed — the endpoint maps this to an HTTP status
+     */
+    public ControlResult control(String nodeId, String action) {
+        if (hub == null) {
+            return ControlResult.DISABLED;
+        }
+        NodeState state = nodes.get(nodeId);
+        if (state == null) {
+            return ControlResult.UNKNOWN;
+        }
+        if (!state.connected()) {
+            return ControlResult.DISCONNECTED;
+        }
+        hub.control(nodeId, action);
+        return ControlResult.DISPATCHED;
+    }
+
     /** @return the fold, one entry per node ever seen, ordered by node id */
     public List<NodeState> snapshot() {
         List<NodeState> roster = new ArrayList<>(nodes.values());
