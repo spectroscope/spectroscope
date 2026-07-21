@@ -97,7 +97,11 @@ export function setTraceW(w: number): void { set({ traceW: clampW(w, 200, 1200) 
 export function toggleChat(): void { set({ chatOpen: !state.chatOpen }); }
 export function toggleTrace(): void { set({ traceOpen: !state.traceOpen }); }
 export function setRightPanelW(w: number): void { set({ rightPanelW: clampW(w, 260, 720) }); }
-export function setImagesW(w: number): void { set({ imagesW: clampW(w, 240, 720) }); }
+// The image gallery holds generated images the user wants to actually SEE, so
+// its width goes as wide as the chat can spare (the resize handler already
+// reserves CHAT_RESERVED_MIN_WIDTH_PX for the chat) — a 1200px ceiling like the
+// chat pane, not the old 720 that capped image viewing well below the viewport.
+export function setImagesW(w: number): void { set({ imagesW: clampW(w, 240, 1200) }); }
 export function toggleRightPanel(): void { set({ rightPanelOpen: !state.rightPanelOpen }); }
 /** Opens the panel if closed (idempotent) — the workspace announcement uses it. */
 export function openRightPanel(): void { if (!state.rightPanelOpen) set({ rightPanelOpen: true }); }
