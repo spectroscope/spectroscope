@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fleetSigil } from "./fleetSigil";
+import { fleetSigil } from "./FleetSigil";
 import type { FleetNode } from "./fleetModel";
 
 function node(id: string, role = "worker", connected = true): FleetNode {

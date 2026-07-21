@@ -7,6 +7,8 @@ import type { SessionMeta } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
+import { useFleets } from "../state/fleetStore";
+import { FleetSigil } from "../spectrum/FleetSigil";
 
 export function Sidebar(props: {
   /** null = the live socket session is shown. */
@@ -20,10 +22,21 @@ export function Sidebar(props: {
   onImport: () => void;
   /** Opens the scenario picker (scripted demo runs) — its own surface. */
   onScenarios: () => void;
+  /** The entered fleet's contextId, or null when a session is shown. */
+  activeFleet: string | null;
+  /** Enter a fleet — inspect its agents like a session. */
+  onSelectFleet: (contextId: string) => void;
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
+  const [nav, setNav] = useState<"sessions" | "fleets">("sessions");
   const lang = useLang();
+  const fleets = useFleets();
+  // Attention-first: a fleet with a pending gate floats to the top, then by
+  // most recent activity — a manager sees who is blocked on them.
+  const orderedFleets = [...fleets].sort(
+    (a, b) => Number(b.pendingGate) - Number(a.pendingGate) || b.lastActivity - a.lastActivity,
+  );
 
   useEffect(() => {
     let alive = true;
@@ -81,47 +94,97 @@ export function Sidebar(props: {
       </button>
 
       <div className="sidebar-eyebrow-row">
-        <div className="eyebrow sidebar-eyebrow">Sessions</div>
-        <button type="button" className="sidebar-import" onClick={props.onImport}
-          title={t(lang, "nav.importTitle")}>
-          Import
-        </button>
+        <div className="sidebar-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
+          <button
+            type="button" role="tab" aria-selected={nav === "sessions"}
+            className={`sidebar-seg-btn${nav === "sessions" ? " active" : ""}`}
+            onClick={() => setNav("sessions")}
+          >
+            Sessions
+          </button>
+          <button
+            type="button" role="tab" aria-selected={nav === "fleets"}
+            className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
+            onClick={() => setNav("fleets")}
+          >
+            {t(lang, "nav.fleets")}
+            {fleets.length > 0 && <span className="sidebar-seg-badge tabular">{fleets.length}</span>}
+          </button>
+        </div>
+        {nav === "sessions" && (
+          <button type="button" className="sidebar-import" onClick={props.onImport}
+            title={t(lang, "nav.importTitle")}>
+            Import
+          </button>
+        )}
       </div>
 
-      <nav className="session-list" aria-label="Sessions">
-        <button
-          type="button"
-          className={`session-row live-row${props.activeId === null ? " active" : ""}`}
-          onClick={props.onSelectLive}
-        >
-          <span className="session-title">
-            <span className="dot accent" aria-hidden="true" /> {t(lang, "nav.live")}
-          </span>
-          <span className="session-meta">{t(lang, "nav.liveSub")}</span>
-        </button>
+      {nav === "sessions" ? (
+        <>
+          <nav className="session-list" aria-label="Sessions">
+            <button
+              type="button"
+              className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
+              onClick={props.onSelectLive}
+            >
+              <span className="session-title">
+                <span className="dot accent" aria-hidden="true" /> {t(lang, "nav.live")}
+              </span>
+              <span className="session-meta">{t(lang, "nav.liveSub")}</span>
+            </button>
 
-        {sessions?.map((s) => (
-          <button
-            type="button"
-            key={s.id}
-            className={`session-row${props.activeId === s.id ? " active" : ""}`}
-            title={`${s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}\n${new Date(s.startedAt).toLocaleString(lang === "de" ? "de-DE" : "en-US")}`}
-            onClick={() => props.onSelectSession(s.id)}
-          >
-            <span className="session-title">
-              {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
-            </span>
-            <span className="session-meta tabular">
-              {relativeTime(s.startedAt, Date.now(), lang)} &middot; {formatTokens(s.tokens)} tokens
-            </span>
-          </button>
-        ))}
-      </nav>
+            {sessions?.map((s) => (
+              <button
+                type="button"
+                key={s.id}
+                className={`session-row${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
+                title={`${s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}\n${new Date(s.startedAt).toLocaleString(lang === "de" ? "de-DE" : "en-US")}`}
+                onClick={() => props.onSelectSession(s.id)}
+              >
+                <span className="session-title">
+                  {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
+                </span>
+                <span className="session-meta tabular">
+                  {relativeTime(s.startedAt, Date.now(), lang)} &middot; {formatTokens(s.tokens)} tokens
+                </span>
+              </button>
+            ))}
+          </nav>
 
-      {sessions !== null && sessions.length === 0 && !failed && (
-        <p className="sidebar-note">{t(lang, "nav.none")}</p>
+          {sessions !== null && sessions.length === 0 && !failed && (
+            <p className="sidebar-note">{t(lang, "nav.none")}</p>
+          )}
+          {failed && <p className="sidebar-note">{t(lang, "nav.unreachable")}</p>}
+        </>
+      ) : (
+        <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>
+          {orderedFleets.length === 0 ? (
+            <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
+          ) : (
+            orderedFleets.map((f) => (
+              <button
+                type="button"
+                key={f.contextId}
+                className={`session-row fleet-row${props.activeFleet === f.contextId ? " active" : ""}`}
+                onClick={() => props.onSelectFleet(f.contextId)}
+                title={f.contextId}
+              >
+                <span className="session-title fleet-row-title">
+                  <FleetSigil roster={f.roster} />
+                  <span className="fleet-row-name mono">{f.contextId}</span>
+                  {f.pendingGate && (
+                    <span className="fleet-gate-chip mono pulse">{t(lang, "sp.gateOpen")}</span>
+                  )}
+                </span>
+                <span className="session-meta tabular">
+                  {t(lang, "fleet.count", { n: f.agentCount, online: f.onlineCount })}
+                  {f.lastActivity > 0 && ` · ${relativeTime(f.lastActivity, Date.now(), lang)}`}
+                </span>
+              </button>
+            ))
+          )}
+        </nav>
       )}
-      {failed && <p className="sidebar-note">{t(lang, "nav.unreachable")}</p>}
     </aside>
   );
 }

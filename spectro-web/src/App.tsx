@@ -35,7 +35,7 @@ import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
-import { fleetPushLive, hydrateFleet } from "./state/fleetStore";
+import { fleetPushLive, hydrateFleet, useFleet } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -65,6 +65,9 @@ const foldArchive = (events: RunEvent[]) => normalizeReplay(reduceAll(initialSta
 export function App() {
   const [live, setLive] = useState<UiState>(initialState);
   const [replay, setReplay] = useState<Replay | null>(null);
+  // The third event source (parallel to replay): a contextId when a fleet is
+  // entered, feeding the tabs that fleet's events instead of the own session.
+  const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>({ status: "connecting", retryAt: null });
   const [connNonce, setConnNonce] = useState(0); // bumped by "New chat" to force a fresh socket session
   const [resumeId, setResumeId] = useState<string | null>(null); // non-null: the socket continues this stored session
@@ -311,12 +314,25 @@ export function App() {
       if (!res.ok) throw new Error(String(res.status));
       const events = (await res.json()) as RunEvent[];
       setReplay({ id, state: foldArchive(events), events });
+      setEnteredFleet(null);
     } catch {
       // Server unreachable or session gone — stay on the current view.
     }
   };
 
-  const returnToLive = (): void => setReplay(null);
+  const returnToLive = (): void => {
+    setReplay(null);
+    setEnteredFleet(null);
+  };
+
+  // Enter a fleet like a session: its events feed the tabs; land on Spectrum so
+  // the agents are visible at once, and clear any single-agent trace filter.
+  const enterFleet = (contextId: string): void => {
+    setReplay(null);
+    setEnteredFleet(contextId);
+    setTraceAgent(null);
+    setTab("spectrum");
+  };
 
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
@@ -353,6 +369,7 @@ export function App() {
     setLive(initialState);
     setLiveEvents([]); // the graph starts empty too
     setReplay(null);
+    setEnteredFleet(null);
     setResumeId(null); // a fresh chat never carries an old session along
     setImagesOpen(false); // the gallery re-opens with the first new image
     // No provider state to reset: the fresh connection announces its backend
@@ -415,6 +432,14 @@ export function App() {
 
   const viewingLive = replay === null;
   const view = replay === null ? live : replay.state;
+
+  // The tabs' flat event source, third-source duality: an entered fleet's events
+  // win over the own live/replay session. The fold-tabs (spectrum/graph/text)
+  // take a flat RunEvent[] and re-fold, so entering a fleet needs no tab change.
+  const enteredFleetModel = useFleet(enteredFleet ?? undefined);
+  const tabEvents = enteredFleet !== null
+    ? enteredFleetModel.events
+    : (viewingLive ? liveEvents : (replay?.events ?? []));
 
   // The effective LLM backend for the header + the Lab map: the server's
   // provider_info frame is wire truth (sent on connect and after every
@@ -488,6 +513,8 @@ export function App() {
           onNewChat={newChat}
           onImport={() => setImportOpen(true)}
           onScenarios={() => setScenariosOpen(true)}
+          activeFleet={enteredFleet}
+          onSelectFleet={enterFleet}
         />
       )}
       {importOpen && <ImportDialog onLoad={openImport} onClose={() => setImportOpen(false)} />}
@@ -638,8 +665,10 @@ export function App() {
           </div>
         ) : tab === "spectrum" ? (
           <SpectrumView
-            events={viewingLive ? liveEvents : (replay?.events ?? [])}
-            running={viewingLive && live.running}
+            events={tabEvents}
+            running={enteredFleet !== null
+              ? enteredFleetModel.roster.some((node) => node.connected)
+              : viewingLive && live.running}
             onOpenTrace={(agentId) => {
               setTraceAgent(agentId);
               setTab("trace");
@@ -647,11 +676,11 @@ export function App() {
           />
         ) : tab === "graph" ? (
           <GraphView
-            events={viewingLive ? liveEvents : (replay?.events ?? [])}
+            events={tabEvents}
             isReplay={!viewingLive}
           />
         ) : tab === "text" ? (
-          <TextView events={viewingLive ? liveEvents : (replay?.events ?? [])} />
+          <TextView events={tabEvents} />
         ) : tab === "lab" ? (
           <LabView
             replay={replay}

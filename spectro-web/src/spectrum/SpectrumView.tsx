@@ -9,9 +9,7 @@ import type { RunEvent } from "../events";
 import { formatDuration, formatTokens } from "../format";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { useFleet } from "../state/fleetStore";
 import { ThinkingDisclosure } from "../components/ThinkingDisclosure";
-import { FleetRoster } from "./FleetRoster";
 import { buildSpectrum } from "./spectrumModel";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
 
@@ -107,15 +105,11 @@ export function SpectrumView(props: {
   onOpenTrace: (agentId: string) => void;
 }) {
   const lang = useLang();
-  const fleet = useFleet();
-  // Fleet mode: when the hub reports a roster, the Spectrum tab folds the
-  // FLEET's events (one lane per node) and shows the roster above them.
-  // Otherwise it stays the single-session view, bit-identical to before — the
-  // two event streams are never mixed (both stamp agentId="main" for a root).
-  const fleetMode = fleet.roster.length > 0;
-  const source = fleetMode ? fleet.events : props.events;
-  const model = useMemo(() => buildSpectrum(source), [source]);
-  const running = fleetMode ? fleet.roster.some((node) => node.connected) : props.running;
+  // Pure props.events fold. The event SOURCE (own session, replay, or an entered
+  // fleet) is chosen upstream in App.tsx; Spectrum just renders whatever flat
+  // stream it is handed — one lane per agent, live and replay through one path.
+  const running = props.running;
+  const model = useMemo(() => buildSpectrum(props.events), [props.events]);
   const dropped = model.lanes.reduce((n, l) => n + l.dropped, 0);
   const span = model.t1 - model.t0;
 
@@ -137,12 +131,10 @@ export function SpectrumView(props: {
         </span>
       </div>
 
-      {fleetMode && <FleetRoster roster={fleet.roster} epochBySender={fleet.epochBySender} />}
-
       {model.lanes.length === 0 ? (
         <div className="spectrum-empty">
-          <p>{t(lang, fleetMode ? "fleet.noEvents" : "sp.empty")}</p>
-          <p className="spectrum-empty-sub">{t(lang, fleetMode ? "fleet.noEventsHint" : "sp.emptyHint")}</p>
+          <p>{t(lang, "sp.empty")}</p>
+          <p className="spectrum-empty-sub">{t(lang, "sp.emptyHint")}</p>
         </div>
       ) : (
         <div className="spectrum-lanes" role="list" aria-label={t(lang, "sp.lanesAria")}>

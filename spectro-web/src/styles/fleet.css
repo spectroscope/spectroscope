@@ -114,3 +114,61 @@
 .spectrum-lane-group .thinking {
   margin: 0 0 var(--sp-2) var(--sp-4);
 }
+
+/* Sidebar: sessions | fleets segmented control + fleet rows */
+.sidebar-seg {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--surface-2);
+  border-radius: var(--radius-chip);
+  padding: 2px;
+}
+.sidebar-seg-btn {
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  border-radius: 5px;
+  padding: 2px 8px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sidebar-seg-btn.active {
+  background: var(--surface);
+  color: var(--text);
+}
+.sidebar-seg-badge {
+  font-size: 0.62rem;
+  color: var(--text-faint);
+  background: var(--surface-3);
+  border-radius: 999px;
+  padding: 0 5px;
+  min-width: 14px;
+  text-align: center;
+}
+.fleet-row-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.fleet-sigil {
+  flex: none;
+}
+.fleet-row-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-gate-chip {
+  flex: none;
+  font-size: 0.6rem;
+  color: var(--ev-gate);
+  border: 1px solid var(--ev-gate);
+  border-radius: var(--radius-chip);
+  padding: 0 4px;
+}
