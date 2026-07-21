@@ -260,6 +260,26 @@ function patchCard(s: UiState, callId: string, patch: Partial<ToolCard>): UiStat
   return { ...s, cards: { ...s.cards, [callId]: { ...card, ...patch } } };
 }
 
+/**
+ * Trace-tab entries for a flat, all-inbound event stream — an entered fleet's
+ * frames (there are no outbound ClientMessages to a fleet). Mirrors the inbound
+ * mapping {@link reduce} applies to each wire frame, so a fleet member's trace
+ * reads exactly like a session's: the raw payload, uninterpreted.
+ */
+export function traceFromEvents(events: RunEvent[]): TraceEntry[] {
+  return events.map((event, i) => {
+    const raw = event as { type: string; ts?: unknown; agentId?: unknown };
+    return {
+      seq: i + 1,
+      dir: "in" as const,
+      ts: typeof raw.ts === "number" ? raw.ts : 0,
+      type: raw.type,
+      agentId: typeof raw.agentId === "string" ? raw.agentId : undefined,
+      payload: event,
+    };
+  });
+}
+
 export function reduce(state: UiState, event: RunEvent): UiState {
   // EVERY incoming frame lands in the trace first — known or unknown type
   // alike. The switch below may ignore an event; the wire view must not,

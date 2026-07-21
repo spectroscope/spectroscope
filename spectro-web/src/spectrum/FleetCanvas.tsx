@@ -4,7 +4,7 @@
 // node per agent, never every event. Reuses the graph tab's dagre layout and
 // the spectral tick colors — langfuse structure, spectroscope skin.
 
-import { useMemo, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
 import { Background, Controls, Handle, MiniMap, Position, ReactFlow } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode, NodeProps } from "@xyflow/react";
 import * as dagre from "dagre";
@@ -47,8 +47,16 @@ const TICK_COLOR: Record<TickKind, string> = {
 const stateDot = (state: FleetGraphNode["state"]): string =>
   state === "failed" ? "error" : state === "working" ? "accent" : state === "completed" ? "ok" : "faint";
 
+interface SpectralNodeData {
+  node: LegibleNode;
+  lane: Lane | null;
+  detail: LegibleGraph["detail"];
+  /** Fold this expanded group back (only set on a member of an expanded group). */
+  onCollapse?: (groupId: string) => void;
+}
+
 function SpectralNode({ data }: NodeProps) {
-  const d = data as { node: LegibleNode; lane: Lane | null; detail: LegibleGraph["detail"] };
+  const d = data as unknown as SpectralNodeData;
   const node = d.node;
   const isGroup = node.kind === "group";
   const live = node.state === "working" && node.connected;
@@ -67,9 +75,20 @@ function SpectralNode({ data }: NodeProps) {
         <span className={`dot ${stateDot(node.state)}${live ? " pulse" : ""}`} aria-hidden="true" />
         <span className="fleet-node-cluster" aria-hidden="true" />
         <span className="fleet-node-card-id mono">{isGroup ? node.role : node.id}</span>
-        {isGroup
-          ? <span className="fleet-node-count mono">×{node.count}{node.descendants.length > 0 ? ` +${node.descendants.length}` : ""}</span>
-          : node.role !== "" && <span className="fleet-node-card-role">{node.role}</span>}
+        {isGroup ? (
+          <span className="fleet-node-count mono">
+            ×{node.count}{node.descendants.length > 0 ? ` +${node.descendants.length}` : ""}
+            <span className="fleet-node-expand" aria-hidden="true">▸</span>
+          </span>
+        ) : node.groupId !== undefined && d.onCollapse ? (
+          <button type="button" className="fleet-node-collapse mono nodrag"
+            title="fold back into the group"
+            onClick={(e) => { e.stopPropagation(); d.onCollapse!(node.groupId!); }}>
+            ▾ {node.role}
+          </button>
+        ) : node.role !== "" ? (
+          <span className="fleet-node-card-role">{node.role}</span>
+        ) : null}
       </div>
       {d.detail !== "dot" && (
         <svg className="fleet-node-band" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true">
@@ -119,19 +138,60 @@ function layout(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
   });
 }
 
-export function FleetCanvas({ model, events }: { model: FleetModel; events: RunEvent[] }) {
+export function FleetCanvas({ model, events, onOpenTrace }: {
+  model: FleetModel;
+  events: RunEvent[];
+  /** Drill into an agent's own trace (reuses the sidebar/spectrum hand-off). */
+  onOpenTrace?: (agentId: string) => void;
+}) {
   const lang = useLang();
+  // A folded group is no longer terminal: the ids here are expanded, so their
+  // members (and rolled-up descendants) surface as individual, reachable nodes.
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set());
+
+  const collapseGroup = useCallback((groupId: string) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.delete(groupId);
+      return next;
+    });
+  }, []);
+
+  // Product tuning: small fleets stay fully legible as individual cards; only
+  // a genuinely wide fan-out (6+ same-role siblings) folds into a group.
+  const legible = useMemo(
+    () => collapseFleetGraph(buildFleetGraph(model),
+      { minGroup: 6, maxNodes: 24, expanded: [...expanded] }),
+    [model, expanded],
+  );
+
+  // Reconcile the expanded set with the current fold: drop ids that no longer
+  // name a live group (their members carry no groupId this round). Without this,
+  // a bucket that dissolved (roster shrank below the threshold) and later reforms
+  // would silently reappear pre-expanded from its stale deterministic id.
+  useEffect(() => {
+    const live = new Set(legible.nodes.filter((n) => n.groupId).map((n) => n.groupId));
+    setExpanded((prev) => {
+      let changed = false;
+      const next = new Set<string>();
+      prev.forEach((id) => { if (live.has(id)) next.add(id); else changed = true; });
+      return changed ? next : prev;
+    });
+  }, [legible]);
+
   const { nodes, edges } = useMemo(() => {
-    // Product tuning: small fleets stay fully legible as individual cards; only
-    // a genuinely wide fan-out (6+ same-role siblings) folds into a group.
-    const legible = collapseFleetGraph(buildFleetGraph(model), { minGroup: 6, maxNodes: 24 });
     const spectrum = buildSpectrum(events);
     const laneById = new Map(spectrum.lanes.map((l) => [l.id, l]));
     const flowNodes: FlowNode[] = legible.nodes.map((n) => ({
       id: n.id,
       type: "spectral",
       position: { x: 0, y: 0 },
-      data: { node: n, lane: n.kind === "agent" ? laneById.get(n.id) ?? null : null, detail: legible.detail },
+      data: {
+        node: n,
+        lane: n.kind === "agent" ? laneById.get(n.id) ?? null : null,
+        detail: legible.detail,
+        onCollapse: n.groupId !== undefined ? collapseGroup : undefined,
+      },
     }));
     const flowEdges: FlowEdge[] = legible.edges.map((e) => ({
       id: e.id,
@@ -141,7 +201,18 @@ export function FleetCanvas({ model, events }: { model: FleetModel; events: RunE
       style: { stroke: EDGE_COLOR[e.kind], strokeWidth: 1.4 },
     }));
     return { nodes: layout(flowNodes, flowEdges), edges: flowEdges };
-  }, [model, events]);
+  }, [legible, events, collapseGroup]);
+
+  // A group card expands; an agent card drills into its own trace. The collapse
+  // chip inside an expanded member stops propagation, so it never lands here.
+  const onNodeClick = useCallback((_e: MouseEvent, flow: FlowNode) => {
+    const node = (flow.data as unknown as SpectralNodeData).node;
+    if (node.kind === "group") {
+      setExpanded((prev) => new Set(prev).add(node.id));
+    } else if (onOpenTrace) {
+      onOpenTrace(node.id);
+    }
+  }, [onOpenTrace]);
 
   if (nodes.length === 0) {
     return (
@@ -158,6 +229,7 @@ export function FleetCanvas({ model, events }: { model: FleetModel; events: RunE
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onNodeClick={onNodeClick}
         fitView
         minZoom={0.2}
         panOnDrag={[1, 2]}
@@ -166,7 +238,7 @@ export function FleetCanvas({ model, events }: { model: FleetModel; events: RunE
         <Background />
         <Controls showInteractive={false} />
         <MiniMap pannable zoomable
-          nodeColor={(n) => clusterColor((n.data as { node: LegibleNode }).node.cluster)} />
+          nodeColor={(n) => clusterColor((n.data as unknown as SpectralNodeData).node.cluster)} />
       </ReactFlow>
     </div>
   );

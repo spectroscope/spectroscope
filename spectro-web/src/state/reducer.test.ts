@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ClientMessage, RunEvent } from "../events";
-import { initialState, normalizeReplay, recordOutgoing, reduce, reduceAll } from "./reducer";
+import { initialState, normalizeReplay, recordOutgoing, reduce, reduceAll, traceFromEvents } from "./reducer";
 
 // A realistic root run: prompt -> streamed answer -> usage -> end.
 const happyPath: RunEvent[] = [
@@ -660,5 +660,28 @@ describe("permission_mode_info (socket-only frame)", () => {
     const frame = { type: "permission_mode_info", mode: "auto", ts: 1 } as unknown as RunEvent;
     const next = reduce(initialState, frame);
     expect(next.permissionMode).toBe("auto");
+  });
+});
+
+describe("traceFromEvents — a flat inbound stream for the fleet trace tab", () => {
+  it("maps each event to an inbound trace entry with type, agentId, ts and payload", () => {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "worker-2", prompt: "scan", ts: 10 },
+      { type: "text_delta", agentId: "worker-2", text: "hi", ts: 11 },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 12 },
+    ];
+
+    const trace = traceFromEvents(events);
+
+    expect(trace).toHaveLength(3);
+    expect(trace.every((e) => e.dir === "in")).toBe(true);
+    expect(trace.map((e) => e.seq)).toEqual([1, 2, 3]);
+    expect(trace[0]).toMatchObject({ type: "run_start", agentId: "worker-2", ts: 10 });
+    expect(trace[0].payload).toBe(events[0]); // the raw frame, uninterpreted
+    expect(trace[2].agentId).toBeUndefined(); // run_end carries no agentId
+  });
+
+  it("is empty for an empty stream", () => {
+    expect(traceFromEvents([])).toEqual([]);
   });
 });

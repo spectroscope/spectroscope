@@ -2,12 +2,12 @@
 // and a replayed archive are the same UiState shape from the same reducer;
 // the app only decides which of the two the components render.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ClientMessage, RunEvent } from "./events";
 import { connect } from "./transport/ws";
 import type { Connection, ConnectionStatus } from "./transport/ws";
-import { initialState, normalizeReplay, recordOutgoing, recordResumeMarker, reduceAll } from "./state/reducer";
+import { initialState, normalizeReplay, recordOutgoing, recordResumeMarker, reduceAll, traceFromEvents } from "./state/reducer";
 import type { UiState } from "./state/reducer";
 import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
@@ -441,6 +441,12 @@ export function App() {
   const tabEvents = enteredFleet !== null
     ? enteredFleetModel.events
     : (viewingLive ? liveEvents : (replay?.events ?? []));
+  // The trace tab is a fold-tab too: an entered fleet's frames become inbound
+  // trace entries (drill-in shows the MEMBER's wire, not the own session).
+  const traceEntries = useMemo(
+    () => (enteredFleet !== null ? traceFromEvents(tabEvents) : view.trace),
+    [enteredFleet, tabEvents, view.trace],
+  );
 
   // The effective LLM backend for the header + the Lab map: the server's
   // provider_info frame is wire truth (sent on connect and after every
@@ -677,7 +683,14 @@ export function App() {
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (
-            <FleetCanvas model={enteredFleetModel} events={tabEvents} />
+            <FleetCanvas
+              model={enteredFleetModel}
+              events={tabEvents}
+              onOpenTrace={(agentId) => {
+                setTraceAgent(agentId);
+                setTab("trace");
+              }}
+            />
           ) : (
             <GraphView events={tabEvents} isReplay={!viewingLive} />
           )
@@ -698,7 +711,7 @@ export function App() {
             sendClient={sendClient}
           />
         ) : (
-          <TraceView entries={view.trace} agentFilter={traceAgent} onAgentFilter={setTraceAgent} />
+          <TraceView entries={traceEntries} agentFilter={traceAgent} onAgentFilter={setTraceAgent} />
         )}
         {/* The gate surface: pending permissions as a first-class bar, on
             every lens — the violet line means "the run waits on you". */}

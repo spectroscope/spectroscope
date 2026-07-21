@@ -27,6 +27,9 @@ export interface LegibleNode {
   members: string[];
   /** Ids of the subtree rolled up under a group (empty for an agent). */
   descendants: string[];
+  /** Set on an agent that is only individual because its group is EXPANDED —
+   *  the id of the group it folds back into (lets the canvas offer collapse). */
+  groupId?: string;
   connected: boolean;
   epoch: number;
   state: FleetGraphNode["state"];
@@ -48,6 +51,9 @@ export interface CollapseOpts {
   minGroup?: number;
   /** Soft budget on rendered nodes; drives the level-of-detail. */
   maxNodes?: number;
+  /** Group ids the caller has expanded — these buckets are NOT folded, so their
+   *  members (and, transitively, their rolled-up subtrees) render individually. */
+  expanded?: string[];
 }
 
 // A monitor must never hide a red behind a green: `failed` dominates the group
@@ -106,6 +112,7 @@ function detailFor(nodeCount: number, maxNodes: number): LegibleGraph["detail"] 
 export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): LegibleGraph {
   const minGroup = opts.minGroup ?? 3;
   const maxNodes = opts.maxNodes ?? 24;
+  const expanded = new Set(opts.expanded ?? []);
 
   const children = new Map<string, FleetGraphNode[]>();
   for (const n of graph.nodes) {
@@ -129,11 +136,23 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
   const rep = new Map<string, string>();
   const grouped = new Set<string>();
   const groupById = new Map<string, LegibleNode>();
+  // Members of a group the caller EXPANDED — emitted individually, but tagged
+  // with the group id they fold back into so the canvas can offer a re-collapse.
+  const expandedMemberGroup = new Map<string, string>();
 
   for (const members of byParentRole.values()) {
     if (members.length < minGroup) continue;
     const first = members[0];
-    const gid = `group:${first.spawnedBy ?? "root"}:${first.role}`;
+    // An empty parent segment marks the null-parent (top-level) bucket; a real
+    // parent id fills it. This keeps a top-level fan-out distinct from children
+    // of an agent whose id happens to be "root" (they would otherwise collide).
+    const gid = `group:${first.spawnedBy ?? ""}:${first.role}`;
+    if (expanded.has(gid)) {
+      // Left un-folded on purpose: members fall through to individual emission,
+      // and their subtrees are no longer rolled up into a group that is not there.
+      for (const m of members) expandedMemberGroup.set(m.id, gid);
+      continue;
+    }
     const group: LegibleNode = {
       id: gid, kind: "group", role: first.role, cluster: first.role,
       count: members.length, members: members.map((m) => m.id), descendants: [],
@@ -157,7 +176,11 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
     while (queue.length > 0) {
       const parentId = queue.shift()!;
       for (const child of children.get(parentId) ?? []) {
-        if (grouped.has(child.id) || absorbed.has(child.id)) continue; // its own group, or already taken
+        // Skip a child that is its own group, already taken, OR a member of an
+        // EXPANDED group — the last case must surface individually, never be
+        // swallowed as this (still-folded) ancestor's roll-up descendant.
+        if (grouped.has(child.id) || absorbed.has(child.id)
+            || expandedMemberGroup.has(child.id)) continue;
         absorbed.add(child.id);
         rep.set(child.id, group.id);
         group.descendants.push(child.id);
@@ -172,7 +195,10 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
   for (const n of graph.nodes) {
     if (grouped.has(n.id) || absorbed.has(n.id)) continue;
     rep.set(n.id, n.id);
-    outNodes.push(asAgent(n));
+    const agent = asAgent(n);
+    const gid = expandedMemberGroup.get(n.id);
+    if (gid !== undefined) agent.groupId = gid;
+    outNodes.push(agent);
   }
 
   // Re-parent every emitted node through rep so nested groups point at the

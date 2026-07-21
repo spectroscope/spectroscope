@@ -239,13 +239,40 @@
   background: var(--cluster, var(--text-faint));
 }
 /* Aggregated group node: a deck of same-role siblings behind one card. */
-.fleet-node-card--group { border-style: dashed; }
+.fleet-node-card--group { border-style: dashed; cursor: pointer; }
+.fleet-node-card--group:hover { border-color: var(--cluster, var(--text-dim)); }
 .fleet-node-count {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-weight: 600;
   font-size: 0.7rem;
   color: var(--cluster, var(--text-dim));
 }
+/* A group is expandable — the caret hints at the reveal, and rotates on hover. */
+.fleet-node-expand {
+  font-size: 0.62rem;
+  opacity: 0.7;
+  transition: transform 0.12s ease;
+}
+.fleet-node-card--group:hover .fleet-node-expand { transform: translateX(1px); opacity: 1; }
+/* Collapse chip on a member of an EXPANDED group — folds it back. */
+.fleet-node-collapse {
+  margin-left: auto;
+  padding: 0 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip, 4px);
+  background: var(--surface-2);
+  color: var(--cluster, var(--text-dim));
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.fleet-node-collapse:hover { border-color: var(--cluster, var(--text-dim)); color: var(--text); }
+/* An agent card in a fleet drills into its own trace on click. */
+.fleet-node-card:not(.fleet-node-card--group) { cursor: pointer; }
 /* Level-of-detail: shrink node chrome as the fleet grows past the budget. */
 .fleet-node-card--compact { gap: 3px; padding: var(--sp-1) var(--sp-3); }
 .fleet-node-card--compact .fleet-node-band { height: 10px; }
