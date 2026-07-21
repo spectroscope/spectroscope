@@ -79,6 +79,8 @@ export function App() {
   // Spectrum -> Trace hand-off: clicking a lane pins its agent as the trace's
   // agent filter (null = all agents). The chip row in the trace clears it.
   const [traceAgent, setTraceAgent] = useState<string | null>(null);
+  // A Spectrum-band click hands one exact event to the Trace (open + flash it).
+  const [focusEvent, setFocusEvent] = useState<RunEvent | null>(null);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]); // raw, for the graph
   // Provider/model, thinking and the image backend now live in the user's
   // server-side settings (~/.spectro/settings.json) — the server builds every
@@ -680,6 +682,20 @@ export function App() {
               setTraceAgent(agentId);
               setTab("trace");
             }}
+            onFocusEvent={(agentId, event) => {
+              // Scope the trace to the event's OWN agent so the focused row is
+              // never hidden by the filter: an agent_spawn tick sits on the
+              // parent lane but carries the child's agentId; events without an
+              // agentId (agent_message) stay visible under any filter, so the
+              // lane is a safe fallback there.
+              const evAgent =
+                typeof (event as { agentId?: unknown }).agentId === "string"
+                  ? (event as { agentId: string }).agentId
+                  : agentId;
+              setTraceAgent(evAgent);
+              setFocusEvent(event);
+              setTab("trace");
+            }}
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (
@@ -711,7 +727,13 @@ export function App() {
             sendClient={sendClient}
           />
         ) : (
-          <TraceView entries={traceEntries} agentFilter={traceAgent} onAgentFilter={setTraceAgent} />
+          <TraceView
+            entries={traceEntries}
+            agentFilter={traceAgent}
+            onAgentFilter={setTraceAgent}
+            focusEvent={focusEvent}
+            onFocusHandled={() => setFocusEvent(null)}
+          />
         )}
         {/* The gate surface: pending permissions as a first-class bar, on
             every lens — the violet line means "the run waits on you". */}

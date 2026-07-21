@@ -449,6 +449,13 @@
 .trace-row { width: 100%; background: none; border: 0; color: var(--text); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-12); text-align: left; transition: background var(--t-fast); }
 .trace-row:hover { background: var(--surface); }
 .trace-row[aria-expanded="true"] { background: var(--surface-2); }
+/* A jump (chain chip or a Spectrum-event click) flashes its row so the eye lands. */
+.trace-row--flash { animation: trace-flash 1.2s var(--ease); }
+@keyframes trace-flash {
+  from { background-color: color-mix(in srgb, var(--accent) 24%, transparent); }
+  to { background-color: transparent; }
+}
+@media (prefers-reduced-motion: reduce) { .trace-row--flash { animation: none; } }
 
 .trace-col { min-width: 0; }
 .trace-col--num { color: var(--text-faint); }

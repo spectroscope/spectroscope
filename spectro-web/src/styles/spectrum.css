@@ -52,33 +52,42 @@
   gap: var(--sp-2);
 }
 
-/* A lane is one card-height row: rail | band. The whole row opens the trace. */
+/* A lane is one card-height row: rail | band. The rail opens the whole agent
+   in Trace; the band is a per-event scrubber (its own interaction). */
 .spectrum-lane {
   display: grid;
   grid-template-columns: minmax(220px, 300px) 1fr;
   gap: var(--sp-4);
   align-items: center;
   width: 100%;
-  text-align: left;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   padding: var(--sp-3) var(--sp-4);
   color: var(--text);
-  font: inherit;
-  cursor: pointer;
-  transition: border-color var(--t-fast), transform var(--t-fast);
+  transition: border-color var(--t-fast);
 }
-.spectrum-lane:hover {
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
-}
+.spectrum-lane:hover { border-color: var(--border-strong); }
 
+/* The rail is the "open this whole agent in Trace" button. */
 .spectrum-rail {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.spectrum-rail:hover .spectrum-id { text-decoration: underline; text-underline-offset: 2px; }
+.spectrum-rail:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
 }
 .spectrum-rail-head {
   display: flex;
@@ -117,14 +126,89 @@
   color: var(--text-faint);
 }
 
+/* The band is the interactive scrubber surface — a positioning context for the
+   popup + scrub line. Crosshair says "point at an event". */
 .spectrum-band {
+  position: relative;
   display: block;
   min-width: 0;
+  cursor: crosshair;
+  border-radius: var(--radius-chip);
+}
+.spectrum-band:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
 }
 .spectrum-band svg {
   display: block;
   width: 100%;
   height: 40px;
+}
+
+/* The scrub line: a thin guide at the hovered event's x. */
+.spectrum-scrub {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border-strong);
+  opacity: 0.7;
+  transform: translateX(-0.5px);
+  pointer-events: none;
+}
+
+/* The hover popup: type + a mini preview, floating above the scrubbed event.
+   UI chrome (surface/border) — never a brand mark, so no glow. */
+.spectrum-tip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  transform: translateX(-50%);
+  z-index: var(--z-dropdown);
+  width: max-content;
+  max-width: 320px;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-modal);
+  pointer-events: none;
+}
+.spectrum-tip-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.spectrum-tip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  flex: none;
+}
+.spectrum-tip-type {
+  font-size: var(--fs-12);
+  font-weight: 600;
+  color: var(--text);
+}
+.spectrum-tip-time {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.spectrum-tip-detail {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.spectrum-tip-foot {
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-11);
+  color: var(--accent);
 }
 .spectrum-baseline {
   stroke: var(--border);

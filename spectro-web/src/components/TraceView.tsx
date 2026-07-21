@@ -6,6 +6,7 @@
 
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
+import type { RunEvent } from "../events";
 import type { TraceEntry } from "../state/reducer";
 import { agentAccent, compactJson, formatTokens } from "../format";
 import { CopyButton } from "./CopyButton";
@@ -349,6 +350,12 @@ export function TraceView(props: {
    *  null = all agents. Controlled by App so the pin survives tab switches. */
   agentFilter?: string | null;
   onAgentFilter?: (agentId: string | null) => void;
+  /** Per-event hand-off from the Spectrum band: open + flash THIS exact event's
+   *  frame (matched by identity — its payload IS this object). */
+  focusEvent?: RunEvent | null;
+  /** Called once the focus was consumed, so App can clear it (a repeat click on
+   *  the same event re-focuses). */
+  onFocusHandled?: () => void;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -462,10 +469,29 @@ export function TraceView(props: {
     setOpenSeq(seq);
     requestAnimationFrame(() => {
       const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${seq}"]`);
-      row?.focus({ preventScroll: true });
-      row?.scrollIntoView({ block: "center" });
+      if (!row) return;
+      row.focus({ preventScroll: true });
+      row.scrollIntoView({ block: "center" });
+      // A brief flash so a jump (chain chip OR a Spectrum event) lands the eye.
+      row.classList.add("trace-row--flash");
+      setTimeout(() => row.classList.remove("trace-row--flash"), 1200);
     });
   }, []);
+
+  // Spectrum drill-in: find THIS event's frame by identity (its payload is the
+  // very object the band handed us) and jump to it, then clear the request so a
+  // repeat click on the same event fires again. A miss is possible only for a
+  // very old event whose row has scrolled past the trace's memory cap (the band
+  // draws from the uncapped stream); the tab switch + agent filter that App
+  // applied still land the reader on that agent's surviving trace — the exact
+  // scroll+flash is what degrades, not the whole affordance.
+  const { focusEvent, onFocusHandled } = props;
+  useEffect(() => {
+    if (!focusEvent) return;
+    const match = allEntries.find((e) => e.payload === focusEvent);
+    if (match) jumpTo(match.seq);
+    onFocusHandled?.();
+  }, [focusEvent, allEntries, jumpTo, onFocusHandled]);
 
   // Protocol + host per frame: one pass carries the current provider (from
   // each run_start AND each provider_info frame), the current LLM host (from
