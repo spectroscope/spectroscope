@@ -1,0 +1,57 @@
+<!-- ============================== CH 33 ============================== -->
+<h1 data-ch="33" id="ch-key-security"><span class="ch-num">Chapter 33</span>Saving a key, safely</h1>
+
+<p class="lead">You can paste an API key into the cockpit and have spectroscope save it
+for you. That is a web page writing a secret to disk, so it only ships fenced. This is
+the honest account of the fences: what the feature does, why it takes effect without a
+restart, and exactly which requests it refuses.</p>
+
+<h2 id="ch-key-where">Where the key goes</h2>
+<p>The key lands in one place: <code>~/.spectro/.env</code>, written at <code>0600</code>
+(owner read and write only). It is <strong>never</strong> put in <code>settings.json</code>
+— those files are meant to be shared and checked into a project, so a secret there is a
+leak waiting to happen. It never enters a session file, a log line, or any GET response:
+the API reports a key's <em>presence</em> (<code>true</code>/<code>false</code>), never its
+value. There is one write path, the POST below; the value leaves your browser once, as that
+request body, and is never sent back.</p>
+
+<h2 id="ch-key-seam">Why it works without a restart</h2>
+<p>A running JVM cannot change its own environment: <code>System.getenv</code> is frozen for
+the life of the process. So a key merely written to disk would be inert until the next
+launch. spectroscope closes that with a read seam. Every provider resolves its key as
+<em>environment first, then <code>~/.spectro/.env</code></em>
+(<code>SpectroConfig.resolveApiKey</code>). Providers are built per chat, so the moment you
+save a key the next new chat picks it up: no restart, and it works the same from the jar and
+the desktop app, not only the launcher's <code>./.env</code>. A real environment variable or
+a launcher-loaded <code>./.env</code> still wins, so nothing you set on the command line is
+ever overridden.</p>
+
+<h2 id="ch-key-fences">The two fences on the write</h2>
+<p>The endpoint is <code>POST /api/onboarding/key</code>. It is bound to <code>127.0.0.1</code>
+like the rest of the server, and it passes only when <strong>both</strong> of these hold:</p>
+<table class="tbl">
+  <tr><th>fence</th><th>what it checks</th><th>what it stops</th></tr>
+  <tr><td><strong>local origin</strong></td><td>the TCP peer is loopback <em>and</em> the <code>Host</code> header is <code>localhost</code> / <code>127.0.0.1</code></td><td>a remote caller, and a DNS-rebinding attack that aims a public name at your loopback</td></tr>
+  <tr><td><strong>same origin</strong></td><td>the <code>Origin</code> header is absent (a non-browser client) <em>or</em> points at loopback</td><td>CSRF: a page on <code>evil.com</code> firing a <code>fetch</code> at your local server. Its request is still loopback, but its Origin is its own domain, so it is refused</td></tr>
+</table>
+<p>The second fence matters because the read side of this controller deliberately allows
+cross-origin requests, so the Vite dev server on another port can read <code>/api/config</code>.
+Reads are harmless; a <em>write</em> is not, so the write checks the Origin itself instead of
+trusting the CORS policy. A refused request answers <code>404</code>, not <code>403</code>: an
+attacker gets no signal that the endpoint is even there.</p>
+
+<h2 id="ch-key-threat">What an attacker can and cannot do</h2>
+<p>Plainly, for the sceptics:</p>
+<ul>
+  <li>A website you visit <strong>cannot</strong> write a key here. The Origin fence answers it 404 (verified: an <code>evil.com</code> Origin is rejected, a loopback Origin is accepted).</li>
+  <li>A remote machine <strong>cannot</strong> reach the endpoint. The server binds loopback, and the Host fence 404s a rebinding attempt.</li>
+  <li>Nobody can <strong>read</strong> a saved key back through the API. Every surface is presence-only; the value sits on disk at <code>0600</code> and in the process, nowhere else.</li>
+  <li>The honest residual: a malicious program <em>already running on your machine</em> could POST a key (its Origin is loopback) or just read the file directly. But a hostile local process can do far worse than this anyway, so it is outside the line this feature draws. That line is external websites and remote hosts, and both are closed.</li>
+</ul>
+
+<h2 id="ch-key-optout">You never have to use it</h2>
+<p>The dialog is a convenience, not the only door. The same key is read from a real
+environment variable, from a <code>./.env</code> next to the launcher
+(<code>./spectro-serve --env-file</code>), or typed hidden on the command line with
+<code>./spectro-serve set-key</code>. All four land in the same resolver, so use whichever you
+trust. The cockpit field is there for the person who would rather not open a terminal.</p>
