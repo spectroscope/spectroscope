@@ -12,7 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { PROVIDERS, modelFieldMode } from "./providerPickerMode";
+import { PROVIDERS, modelFieldMode, pickModel } from "./providerPickerMode";
 
 const CUSTOM = "__custom__";
 
@@ -57,7 +57,14 @@ export function ProviderPicker({
     fetch(`/api/models?provider=${encodeURIComponent(sel)}`)
       .then((r) => (r.ok ? r.json() : []))
       .then((list) => {
-        if (alive && Array.isArray(list)) setModels(list.filter((m) => typeof m === "string"));
+        if (!alive || !Array.isArray(list)) return;
+        const ms = list.filter((m) => typeof m === "string");
+        setModels(ms);
+        // A local backend's list is its real installed models: don't leave a
+        // stale cross-provider model (e.g. opus after switching to ollama)
+        // pinned at the top — snap to the first real one.
+        const isLocal = providerStatus?.[sel] === "local";
+        setModel((cur) => pickModel(cur, ms, isLocal));
       })
       .catch(() => {
         if (alive) setModels([]);

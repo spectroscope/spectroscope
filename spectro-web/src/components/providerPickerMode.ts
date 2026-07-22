@@ -26,3 +26,18 @@ export function modelFieldMode(
   }
   return models.length > 0 ? "list" : "freetext";
 }
+
+/**
+ * Which model to select once a provider's list has loaded. A LOCAL backend
+ * (ollama, lmstudio) has an AUTHORITATIVE list — its actually-installed models —
+ * so a selection that isn't in it (e.g. claude-opus carried over from anthropic,
+ * or an empty seed) is replaced with the first real one. A cloud list can be a
+ * curated fallback, so a cloud model is never second-guessed; and an empty list
+ * (backend down) leaves the selection alone.
+ */
+export function pickModel(current: string, models: string[], isLocal: boolean): string {
+  if (isLocal && models.length > 0 && !models.includes(current)) {
+    return models[0];
+  }
+  return current;
+}

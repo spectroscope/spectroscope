@@ -1,5 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { modelFieldMode, PROVIDERS } from "./providerPickerMode";
+import { modelFieldMode, pickModel, PROVIDERS } from "./providerPickerMode";
+
+describe("pickModel", () => {
+  const ollama = ["qwen3.5:27b", "glm-5.2", "llama4"];
+  it("drops a stale cross-provider model for a LOCAL backend (opus after switching to ollama)", () => {
+    // ollama's list is authoritative — claude-opus isn't in it, so take the first real one.
+    expect(pickModel("claude-opus-4-8", ollama, true)).toBe("qwen3.5:27b");
+  });
+  it("keeps the model when it IS in the local list", () => {
+    expect(pickModel("glm-5.2", ollama, true)).toBe("glm-5.2");
+  });
+  it("fills an empty selection with the first local model", () => {
+    expect(pickModel("", ollama, true)).toBe("qwen3.5:27b");
+  });
+  it("never second-guesses a cloud model (the list can be a curated fallback)", () => {
+    // a newer cloud model not in the curated list must survive.
+    expect(pickModel("claude-opus-5", ["claude-opus-4-8"], false)).toBe("claude-opus-5");
+  });
+  it("leaves the model untouched when the local list is empty (backend down)", () => {
+    expect(pickModel("claude-opus-4-8", [], true)).toBe("claude-opus-4-8");
+  });
+});
 
 describe("modelFieldMode", () => {
   it("shows the honest needs-key message when the provider has no key", () => {
