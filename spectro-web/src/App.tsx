@@ -38,6 +38,7 @@ import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
+import { FleetHome } from "./spectrum/FleetHome";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
 import { fleetPushLive, hydrateFleet, useFleet, useFleetHubPort, fleetPending } from "./state/fleetStore";
@@ -705,6 +706,16 @@ export function App() {
         </nav>
 
         {tab === "chat" ? (
+          enteredFleet !== null ? (
+            /* A fleet has no chat — show its home (getting-started + spawn), not
+               the stale session chat, so entering a fleet switches the pane. */
+            <FleetHome
+              contextId={enteredFleet}
+              nodeCount={enteredFleetModel.roster.length}
+              hubPort={fleetHubPort}
+              onSpawn={() => setSpawnDialogOpen(true)}
+            />
+          ) : (
           /* Chat + gallery share the tab area; the graph tab is untouched.
              The right panel (agents + system context) docks on the far right. */
           <div
@@ -767,6 +778,7 @@ export function App() {
               </>
             )}
           </div>
+          )
         ) : tab === "spectrum" ? (
           <SpectrumView
             events={tabEvents}

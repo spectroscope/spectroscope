@@ -300,6 +300,32 @@
 
 /* ---- fleet control: the spawn panel (a React Flow Panel over the canvas) +
    the per-node stop button. Token-based, no shadows. ---- */
+/* ---- fleet home: the chat-tab getting-started panel for an entered fleet ---- */
+.fleet-home {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--sp-5) var(--sp-3);
+}
+.fleet-home-inner { width: 100%; max-width: 560px; }
+.fleet-home-eyebrow { margin: 0; font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
+.fleet-home-title { margin: 2px 0 var(--sp-2); font-size: var(--fs-18); color: var(--text); }
+.fleet-home-lead { margin: 0 0 var(--sp-4); font-size: var(--fs-13); line-height: 1.55; color: var(--text-dim); }
+.fleet-home-card { border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--shade); padding: var(--sp-3); }
+.fleet-home-card-label { margin: 0 0 var(--sp-2); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.fleet-home-code { display: flex; align-items: center; gap: var(--sp-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); padding: var(--sp-2); }
+.fleet-home-code code { flex: 1; min-width: 0; font-size: var(--fs-11); color: var(--text-dim); overflow-x: auto; white-space: nowrap; }
+.fleet-home-copy { flex: none; background: none; border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text-faint); font: inherit; font-size: var(--fs-11); padding: 2px var(--sp-2); cursor: pointer; }
+.fleet-home-copy:hover { color: var(--text); border-color: var(--accent); }
+.fleet-home-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); }
+.fleet-home-spawn { background: none; border: 1px solid var(--accent); border-radius: var(--radius-chip); color: var(--accent); font: inherit; font-size: var(--fs-12); padding: var(--sp-1) var(--sp-2); cursor: pointer; }
+.fleet-home-spawn:hover { filter: brightness(1.1); }
+.fleet-home-link { font-size: var(--fs-12); color: var(--text-faint); text-decoration: none; }
+.fleet-home-link:hover { color: var(--accent); }
+
 .fleet-spawn { margin: 8px; }
 .fleet-spawn-open {
   font-family: var(--font-mono);
