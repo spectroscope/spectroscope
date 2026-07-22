@@ -185,8 +185,13 @@ public final class SpectroCli implements Runnable {
             return;
         }
 
-        if (config.provider().equals("anthropic") && System.getenv("ANTHROPIC_API_KEY") == null) {
-            System.err.println("ANTHROPIC_API_KEY is not set (export ANTHROPIC_API_KEY=...).");
+        // First-run onboarding (the CLI twin of the web's first-run sheet): if the
+        // configured API provider has no key, don't fail with a terse line — tell a
+        // newcomer how to get a backend running. Local providers (ollama/lmstudio)
+        // are left to try; an unreachable one fails clearly on the first call.
+        if ("needs-key".equals(
+                SpectroConfig.onboardingStatus(config.provider(), providerKeyPresent(config.provider())))) {
+            System.err.print(firstRunHint(config.provider()));
             return;
         }
 
@@ -246,6 +251,40 @@ public final class SpectroCli implements Runnable {
 
         printBanner(store, initialMessages.size());
         replLoop(console, speech, currentSignal);
+    }
+
+    /** Whether this provider's API key is present in the environment. A local
+     *  provider (ollama, lmstudio) carries no key requirement, so it counts as
+     *  present. */
+    private static boolean providerKeyPresent(String provider) {
+        String env = SpectroConfig.keyEnvFor(provider);
+        if (env == null) {
+            return true; // local backend — no key needed
+        }
+        String v = System.getenv(env);
+        return v != null && !v.isBlank();
+    }
+
+    /** The first-run onboarding message for a keyless API provider — the CLI's
+     *  version of the web's first-run sheet: the two zero-cost local paths and how
+     *  to add a cloud key to .env. Package-private + static so it is unit-testable.
+     *  @param provider the configured provider whose key is missing
+     *  @return the multi-line hint to print on stderr */
+    static String firstRunHint(String provider) {
+        String keyEnv = SpectroConfig.keyEnvFor(provider);
+        return """
+
+                spectroscope needs an llm backend — none is ready. pick one:
+
+                  ollama    (local, free)  install https://ollama.com, run `ollama pull qwen3`,
+                                           then start with SPECTRO_PROVIDER=ollama
+                  lmstudio  (local, free)  run LM Studio's server on :1234,
+                                           then start with SPECTRO_PROVIDER=lmstudio
+                  %s  (needs a key)  add %s=... to a .env file next to spectroscope, then rerun
+
+                set the provider for good in ~/.spectro/settings.json; run `spectro doctor` to check.
+                """
+                .formatted(provider, keyEnv);
     }
 
     /** Provider (plus the --verbose trace wrap), skills, system prompt,
