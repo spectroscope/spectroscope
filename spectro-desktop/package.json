@@ -1,7 +1,7 @@
 {
   "name": "spectro-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "spectroscope Desktop — Electron shell: spawns and supervises the spectro-server JVM",
   "author": "Christopher Ezell",
   "license": "MIT",
