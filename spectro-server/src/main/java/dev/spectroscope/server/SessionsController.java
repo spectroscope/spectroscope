@@ -171,7 +171,7 @@ public class SessionsController {
     public List<String> models(@RequestParam(name = "provider", defaultValue = "") String provider) {
         return switch (provider) {
             case "anthropic" -> anthropicModels();
-            case "openai" -> openaiModels();
+            case "openai", "lmstudio", "openrouter" -> openaiModels(provider);
             case "ollama" -> ollamaModels();
             default -> List.of();
         };
@@ -223,12 +223,14 @@ public class SessionsController {
      *
      * @return chat-capable model ids, newest first, or the curated fallback
      */
-    private List<String> openaiModels() {
+    private List<String> openaiModels(String provider) {
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-            String key = System.getenv("OPENAI_API_KEY");
+            String key = "openrouter".equals(provider)
+                    ? System.getenv("OPENROUTER_API_KEY")
+                    : System.getenv("OPENAI_API_KEY");
             boolean hasKey = key != null && !key.isBlank();
-            String base = SpectroConfig.effectiveOpenAiBaseUrl(c.baseUrl(), hasKey);
+            String base = SpectroConfig.effectiveOpenAiBaseUrl(provider, c.baseUrl());
 
             RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get().uri(base + "/v1/models");
             if (hasKey) {

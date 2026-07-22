@@ -130,7 +130,8 @@ public record SpectroConfig(
 
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.
-    static final Set<String> KNOWN_PROVIDERS = Set.of("anthropic", "ollama", "openai");
+    static final Set<String> KNOWN_PROVIDERS =
+            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter");
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
@@ -598,9 +599,8 @@ public record SpectroConfig(
     public LlmProvider providerFromConfig() {
         LlmProvider real = switch (provider) {
             case "ollama" -> new OllamaProvider(new OllamaOptions(baseUrl, model));
-            case "openai" -> new OpenAiCompatProvider(
-                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model,
-                            System.getenv("OPENAI_API_KEY")));
+            case "openai", "lmstudio", "openrouter" -> new OpenAiCompatProvider(
+                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey()));
             case "anthropic" -> new AnthropicProvider(model, promptCaching);
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         };
@@ -612,28 +612,58 @@ public record SpectroConfig(
     }
 
     /**
-     * The openai provider's EFFECTIVE endpoint, static and pure for tests: an
-     * explicit baseUrl always wins; the untouched Ollama default swaps to
-     * api.openai.com when a key exists (a key means the cloud) and to LM
-     * Studio's port otherwise. The provider, {@link #providerHost()} and the
-     * server's live model list all derive from this one rule.
+     * The EFFECTIVE endpoint for an OpenAI-compatible provider, static and pure
+     * for tests: an explicit baseUrl always wins; otherwise the provider's own
+     * preset. No key-based swapping — the provider names the endpoint, the key
+     * only authenticates. The provider, {@link #providerHost()} and the server's
+     * live model list all derive from this one rule.
      *
-     * @param baseUrl the configured base url
-     * @param hasKey  whether OPENAI_API_KEY is set (non-blank)
+     * @param provider "openai" | "lmstudio" | "openrouter"
+     * @param baseUrl  the configured base url
      * @return the endpoint the openai-compatible provider talks to
      */
-    public static String effectiveOpenAiBaseUrl(String baseUrl, boolean hasKey) {
+    public static String effectiveOpenAiBaseUrl(String provider, String baseUrl) {
         if (!"http://localhost:11434".equals(baseUrl)) {
-            return baseUrl;
+            return baseUrl; // an explicit endpoint always wins
         }
-        return hasKey ? "https://api.openai.com" : "http://localhost:1234";
+        return openAiCompatPreset(provider);
     }
 
-    /** The effective openai endpoint for THIS config, key read from the environment.
-     *  @return the effective base URL for the openai-compatible endpoint */
+    /** The preset endpoint root for each OpenAI-compatible provider (before an
+     *  explicit override): openai = the cloud, lmstudio = a local LM Studio
+     *  server, openrouter = the OpenRouter gateway.
+     *  @param provider the provider name
+     *  @return the preset base URL */
+    static String openAiCompatPreset(String provider) {
+        return switch (provider) {
+            case "lmstudio" -> "http://localhost:1234";
+            case "openrouter" -> "https://openrouter.ai/api";
+            default -> "https://api.openai.com";
+        };
+    }
+
+    /** True for the OpenAI-compatible providers (one wire protocol, three hosts).
+     *  @param provider the provider name
+     *  @return whether it speaks the OpenAI chat/completions API */
+    static boolean isOpenAiCompat(String provider) {
+        return "openai".equals(provider)
+                || "lmstudio".equals(provider)
+                || "openrouter".equals(provider);
+    }
+
+    /** This provider's API key from the environment — {@code OPENROUTER_API_KEY}
+     *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
+     *  @return the key, or null when unset */
+    private String openAiCompatKey() {
+        return "openrouter".equals(provider)
+                ? System.getenv("OPENROUTER_API_KEY")
+                : System.getenv("OPENAI_API_KEY");
+    }
+
+    /** The effective openai-compatible endpoint for THIS config.
+     *  @return the effective base URL */
     private String openAiBaseUrl() {
-        String key = System.getenv("OPENAI_API_KEY");
-        return effectiveOpenAiBaseUrl(baseUrl, key != null && !key.isBlank());
+        return effectiveOpenAiBaseUrl(provider, baseUrl);
     }
 
     /**
@@ -649,7 +679,7 @@ public record SpectroConfig(
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
         }
-        String effective = "openai".equals(provider) ? openAiBaseUrl() : baseUrl;
+        String effective = isOpenAiCompat(provider) ? openAiBaseUrl() : baseUrl;
         try {
             java.net.URI url = java.net.URI.create(effective);
             String host = url.getHost();

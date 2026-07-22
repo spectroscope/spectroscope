@@ -494,22 +494,33 @@ class SpectroConfigTest {
         // (providerHost on the default would depend on the machine's env).
         assertEquals("my-gpu-box:8000",
                 configFor("openai", "http://my-gpu-box:8000/v1").providerHost());
+        // The two new OpenAI-compatible providers name their own preset hosts.
+        assertEquals("localhost:1234",
+                configFor("lmstudio", "http://localhost:11434").providerHost());
+        assertEquals("openrouter.ai",
+                configFor("openrouter", "http://localhost:11434").providerHost());
+        // openai no longer depends on the key — it is always the cloud host.
+        assertEquals("api.openai.com",
+                configFor("openai", "http://localhost:11434").providerHost());
         // An unparseable url degrades to the raw value instead of throwing.
         assertEquals("not a url", configFor("ollama", "not a url").providerHost());
     }
 
     @Test
-    void effectiveOpenAiBaseUrlPrefersTheCloudOnceAKeyExists() {
-        // Untouched Ollama default, no key: the local LM-Studio port (as ever).
-        assertEquals("http://localhost:1234",
-                SpectroConfig.effectiveOpenAiBaseUrl("http://localhost:11434", false));
-        // Untouched default + OPENAI_API_KEY: a key means the cloud — the
-        // provider, the host column and the model list all follow it.
+    void effectiveOpenAiBaseUrlUsesEachProvidersPreset() {
+        // No more silent key-based swap: each OpenAI-compatible provider has an
+        // explicit preset endpoint, so openai never quietly becomes LM Studio.
         assertEquals("https://api.openai.com",
-                SpectroConfig.effectiveOpenAiBaseUrl("http://localhost:11434", true));
-        // An explicit baseUrl always wins, key or not.
+                SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://localhost:11434"));
+        assertEquals("http://localhost:1234",
+                SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://localhost:11434"));
+        assertEquals("https://openrouter.ai/api",
+                SpectroConfig.effectiveOpenAiBaseUrl("openrouter", "http://localhost:11434"));
+        // An explicit (non-default) baseUrl always wins for any of them.
         assertEquals("http://my-box:8000",
-                SpectroConfig.effectiveOpenAiBaseUrl("http://my-box:8000", true));
+                SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://my-box:8000"));
+        assertEquals("http://my-box:8000",
+                SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://my-box:8000"));
     }
 
     // ---- imageModel / sttModel / chromeBinary (settings productization) ----------------
