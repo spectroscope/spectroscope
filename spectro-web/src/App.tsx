@@ -41,7 +41,7 @@ import { FleetCanvas } from "./spectrum/FleetCanvas";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
-import { fleetPushLive, hydrateFleet, useFleet, useFleetHubPort, fleetPending } from "./state/fleetStore";
+import { fleetPushLive, fleetLoadScenario, hydrateFleet, useFleet, useFleetHubPort, fleetPending } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -412,12 +412,20 @@ export function App() {
   const [scenariosOpen, setScenariosOpen] = useState(false);
   const openScenario = (dsl: Dsl): void => {
     const events = compile(dsl, lang);
+    setScenariosOpen(false);
+    if (dsl.fleet === true) {
+      // A fleet scenario: fold the compiled events into a replay fleet and enter
+      // it like a live one — the fleet canvas shows the topology at a glance.
+      const contextId = `scenario:${dsl.id}`;
+      fleetLoadScenario(contextId, events);
+      enterFleet(contextId);
+      return;
+    }
     setReplay({
       id: `scenario:${dsl.id}`,
       state: foldArchive(events),
       events,
     });
-    setScenariosOpen(false);
     setTab("lab");
   };
 
@@ -810,7 +818,9 @@ export function App() {
             <FleetCanvas
               model={enteredFleetModel}
               events={tabEvents}
-              contextId={enteredFleet}
+              /* A scripted fleet scenario has no live hub — hide the spawn panel
+                 (its node command would connect to nothing). */
+              contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
               hubPort={fleetHubPort}
               onStop={stopFleetNode}
               onOpenTrace={(agentId) => {

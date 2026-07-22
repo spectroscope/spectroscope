@@ -163,6 +163,72 @@ export function fleetPushLive(batch: RunEvent[]): void {
   emit();
 }
 
+/** Which fleet a frame belongs to (single-context frames — as scenario frames
+ *  are by construction; a live multi-context roster is identified by its first
+ *  node, which never matches a synthetic `scenario:…` id). */
+function contextOf(frame: FleetFrame): string {
+  return frame.type === "fleet_event"
+    ? frame.frame.contextId
+    : frame.nodes.length > 0
+      ? contextOfTopic(frame.nodes[0].topic)
+      : "";
+}
+
+/** A node's role from its id: a trailing "-N" / "N" is dropped so a fan-out of
+ *  worker-1…worker-7 all cluster as "worker"; "main" is the fleet root. */
+function roleFromAgentId(id: string): string {
+  if (id === "main") return "root";
+  return id.replace(/[-_]?\d+$/, "") || id;
+}
+
+/**
+ * Load a compiled scenario's events as a REPLAY fleet under `contextId`: derive
+ * a roster from the agents in the stream and wrap each event as a fleet_event
+ * envelope, then fold them in exactly like live frames — so the whole
+ * entered-fleet UI (canvas, roster, drill-in, gate bar) works with no live hub.
+ * Idempotent: re-loading the same contextId replaces its prior frames.
+ */
+export function fleetLoadScenario(contextId: string, events: RunEvent[]): void {
+  const topic = contextId + TOPIC_SUFFIX;
+  const roles = new Map<string, string>();
+  const note = (id: string | undefined): void => {
+    if (id !== undefined && id !== "" && !roles.has(id)) roles.set(id, roleFromAgentId(id));
+  };
+  for (const ev of events) {
+    const e = ev as { agentId?: string; from?: string; to?: string; type: string };
+    note(e.agentId);
+    if (e.type === "agent_message") {
+      note(e.from);
+      note(e.to);
+    }
+  }
+  const roster: FleetNode[] = [...roles].map(([id, role]) => ({
+    id, role, capabilities: [], topic, connected: false, lastSeen: 0,
+  }));
+  const fresh: FleetFrame[] = [
+    { type: "fleet_roster", nodes: roster },
+    ...events.map((payload, i) => ({
+      type: "fleet_event" as const,
+      frame: {
+        sender: (payload as { agentId?: string }).agentId ?? "main",
+        epoch: 0,
+        contextId,
+        taskId: contextId,
+        sequence: i,
+        parentId: null,
+        topic,
+        ts: (payload as { ts?: number }).ts ?? 0,
+        payload,
+      },
+    })),
+  ];
+  frames = frames.filter((f) => contextOf(f) !== contextId).concat(fresh);
+  const changed = changedContexts(fresh);
+  changed.add(contextId); // ensure the (possibly emptied-then-refilled) context rebuilds
+  rebuild(changed);
+  emit();
+}
+
 // The fetch seam — swappable in tests via __setTestHooks.
 let doFetch: typeof fetch = (...args) => fetch(...args);
 

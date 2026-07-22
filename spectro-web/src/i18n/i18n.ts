@@ -34,7 +34,10 @@ export const dict: Record<string, { de: string; en: string }> = {
 
   // scenario dialog
   "scn.title": { de: "Szenario abspielen", en: "Play a scenario" },
-  "scn.hint": { de: "Elf skriptgesteuerte Demo-Läufe — deterministisch kompiliert, ganz ohne LLM. Öffnet im Lab: dort steppst du den Lauf Schritt für Schritt oder lässt ihn im Flow-Modus abspielen.", en: "Eleven scripted demo runs — deterministically compiled, no LLM involved. Opens in the Lab: step through the run or let it auto-play in flow mode." },
+  "scn.hint": { de: "Skriptgesteuerte Demo-Läufe — deterministisch kompiliert, ganz ohne LLM. Ein Chat-Lauf öffnet im Lab (Schritt für Schritt oder im Flow-Modus); ein Fleet-Lauf öffnet die Fleet-Ansicht, wo du die Topologie inspizierst.", en: "Scripted demo runs — deterministically compiled, no LLM involved. A chat run opens in the Lab (step through it, or auto-play in flow mode); a fleet run opens the fleet view, where you inspect the topology." },
+  "scn.tab.chats": { de: "chats / agenten", en: "chats / agents" },
+  "scn.tab.fleet": { de: "fleet", en: "fleet" },
+  "scn.empty.fleet": { de: "Keine Fleet-Szenarien.", en: "No fleet scenarios." },
 
   // import dialog
   "imp.title": { de: "Session-Datei laden", en: "Load a session file" },

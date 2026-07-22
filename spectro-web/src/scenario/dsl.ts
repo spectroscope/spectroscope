@@ -33,6 +33,10 @@ export interface Dsl {
   provider?: string;
   system?: Localized;
   steps: Step[];
+  /** A multi-agent scenario that reads best as a FLEET (a topology of parallel
+   *  agents), not a single chat run. The picker lists these under the "fleet"
+   *  tab and loads them into the fleet canvas instead of the Lab stepper. */
+  fleet?: boolean;
 }
 
 export function loc(v: Localized, lang: Lang): string {

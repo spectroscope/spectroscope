@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   fleetPushLive,
+  fleetLoadScenario,
   hydrateFleet,
   fleetPending,
   __getFleet,
@@ -207,5 +208,45 @@ describe("fleetPending", () => {
         ]),
       ),
     ).toEqual([]);
+  });
+
+  describe("fleetLoadScenario", () => {
+    const evs: RunEvent[] = [
+      { type: "run_start", runId: "s-main", agentId: "main", prompt: "go", ts: 1 },
+      { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "a", ts: 2 },
+      { type: "agent_spawn", agentId: "worker-2", parentId: "main", task: "b", ts: 3 },
+      { type: "text_delta", agentId: "worker-1", text: "hi", ts: 4 },
+    ];
+
+    it("folds a compiled scenario into a fleet model under its contextId", () => {
+      fleetLoadScenario("scenario:demo", evs);
+      const fleet = __getFleetOf("scenario:demo");
+      expect(fleet.events).toHaveLength(evs.length);
+      // roster derived from the agents; roles from the ids (worker-N → worker).
+      const byId = new Map(fleet.roster.map((n) => [n.id, n]));
+      expect(byId.get("main")?.role).toBe("root");
+      expect(byId.get("worker-1")?.role).toBe("worker");
+      expect(byId.get("worker-2")?.role).toBe("worker");
+      // it is a replay, not a live hub — nothing connected.
+      expect(fleet.roster.every((n) => !n.connected)).toBe(true);
+    });
+
+    it("shows up in the fleet summaries list", () => {
+      fleetLoadScenario("scenario:demo", evs);
+      expect(__getFleets().some((s) => s.contextId === "scenario:demo")).toBe(true);
+    });
+
+    it("is idempotent — re-loading replaces, never doubles, the frames", () => {
+      fleetLoadScenario("scenario:demo", evs);
+      fleetLoadScenario("scenario:demo", evs);
+      expect(__getFleetOf("scenario:demo").events).toHaveLength(evs.length);
+    });
+
+    it("coexists with a live fleet under a different contextId", () => {
+      fleetPushLive([eventFrame("node-a", 0)] as unknown as RunEvent[]);
+      fleetLoadScenario("scenario:demo", evs);
+      expect(__getFleetOf("c").events.length).toBeGreaterThan(0); // the live one survives
+      expect(__getFleetOf("scenario:demo").events).toHaveLength(evs.length);
+    });
   });
 });

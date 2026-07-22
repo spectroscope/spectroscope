@@ -8,7 +8,16 @@ type ToolCall = Extract<RunEvent, { type: "tool_call" }>;
 
 describe("registry", () => {
   it("has the built-in scenarios", () => {
-    expect(SCENARIOS.map((s) => s.id).sort()).toEqual(["agentsmd", "buildplan", "codereview", "coding", "context", "darkmode", "diskshell", "fanout", "imagegen", "permission", "research"]);
+    expect(SCENARIOS.map((s) => s.id).sort()).toEqual(["agentsmd", "buildplan", "codereview", "coding", "context", "darkmode", "diskshell", "fanout", "fleetswarm", "imagegen", "permission", "research"]);
+  });
+
+  it("the fleet-tagged scenarios are the genuinely multi-agent ones", () => {
+    const fleetIds = SCENARIOS.filter((s) => s.fleet).map((s) => s.id).sort();
+    expect(fleetIds).toEqual(["codereview", "coding", "fanout", "fleetswarm", "research"]);
+    // every fleet scenario compiles to a stream with at least one agent_spawn.
+    for (const s of SCENARIOS.filter((x) => x.fleet)) {
+      expect(compile(s, "en").some((e) => e.type === "agent_spawn"), s.id).toBe(true);
+    }
   });
 
   it("context scenario: the window fills to 'high', then a compaction shrinks it", () => {

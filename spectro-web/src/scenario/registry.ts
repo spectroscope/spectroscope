@@ -1,4 +1,4 @@
-// The ten built-in scenarios, ported from the LLM_Simulator (all bilingual).
+// The built-in scenarios, ported from the LLM_Simulator (all bilingual).
 // Each is a Dsl the compiler turns into a deterministic RunEvent stream —
 // scripted demo runs that need no server, no key and no Ollama.
 
@@ -34,6 +34,7 @@ const buildplan: Dsl = {
 
 const fanout: Dsl = {
   id: "fanout",
+  fleet: true,
   name: { en: "Review fan-out · 3 subagents", de: "Review-Fan-out · 3 Subagenten" },
   prompt: {
     en: "Review the open PR thoroughly: bugs, performance and security. Check them in parallel, then summarize by priority.",
@@ -133,6 +134,7 @@ const agentsmd: Dsl = {
 // ---------------------------------------------------------------------------
 const coding: Dsl = {
   id: "coding",
+  fleet: true,
   name: { en: "Coding · 4 phases, parallel workers", de: "Coding · 4 Phasen, parallele Worker" },
   prompt: {
     en: "Add retry logic to the HTTP client and cover it with a test. Explore first, plan, implement in parallel, then verify.",
@@ -182,6 +184,7 @@ const coding: Dsl = {
 // ---------------------------------------------------------------------------
 const research: Dsl = {
   id: "research",
+  fleet: true,
   name: { en: "Research · consolidate + critical review", de: "Research · Konsolidierung + kritisches Review" },
   prompt: {
     en: "Should we adopt HTTP/3 for our API edge? Research pros/cons, consolidate, and review the draft critically before answering.",
@@ -268,6 +271,7 @@ const context: Dsl = {
 
 const codereview: Dsl = {
   id: "codereview",
+  fleet: true,
   name: { en: "Three-lens code review · 3 subagents", de: "Drei-Linsen-Code-Review · 3 Subagenten" },
   prompt: {
     en: "Review parse_ages(csv_line) with three lenses in parallel — correctness, security, readability — then give me a verdict table.",
@@ -341,4 +345,47 @@ const imagegen: Dsl = {
   ],
 };
 
-export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, agentsmd, coding, research, context, codereview, darkmode, imagegen];
+// ---------------------------------------------------------------------------
+// Fleet swarm — a conductor dispatches THREE workers to build different slices
+// of a release in parallel, then merges. Authored fleet-first: it reads best in
+// the fleet canvas (the topology at a glance), not as a single stepped chat.
+// ---------------------------------------------------------------------------
+const fleetswarm: Dsl = {
+  id: "fleetswarm",
+  fleet: true,
+  name: { en: "Fleet swarm · conductor + 3 workers", de: "Fleet-Schwarm · Conductor + 3 Worker" },
+  prompt: {
+    en: "Cut the release: build the binary, write the notes and refresh the docs — in parallel — then merge.",
+    de: "Schnür den Release: Binary bauen, Notes schreiben und Docs auffrischen — parallel — dann mergen.",
+  },
+  provider: "ollama",
+  steps: [
+    { think: { en: "Three independent slices — I dispatch a worker for each and let them run in parallel.", de: "Drei unabhängige Scheiben — ich schicke je einen Worker los und lasse sie parallel laufen." } },
+    { fanout: { label: "dispatch", tool: "dispatch", agents: [
+      { id: "worker-build", task: { en: "Build the release binary", de: "Das Release-Binary bauen" },
+        steps: [
+          { think: { en: "Compile, then package.", de: "Kompilieren, dann packen." } },
+          { status: { en: "compiling", de: "kompiliere" } },
+          { run: "./gradlew build", gate: "allow", result: "BUILD SUCCESSFUL" },
+          { say: { en: "Binary built.", de: "Binary gebaut." } },
+        ] },
+      { id: "worker-notes", task: { en: "Write the release notes", de: "Die Release-Notes schreiben" },
+        steps: [
+          { think: { en: "Summarize the merged changes since the last tag.", de: "Die gemergten Änderungen seit dem letzten Tag zusammenfassen." } },
+          { write: "release-notes/next.md", result: "ok, wrote 1 file" },
+          { say: { en: "Notes drafted.", de: "Notes entworfen." } },
+        ] },
+      { id: "worker-docs", task: { en: "Refresh the docs", de: "Die Docs auffrischen" },
+        steps: [
+          { think: { en: "Bump the version and the quickstart snippet.", de: "Version und Quickstart-Snippet anheben." } },
+          { write: "docs/quickstart.md", result: "ok, wrote 1 file" },
+          { say: { en: "Docs refreshed.", de: "Docs aufgefrischt." } },
+        ] },
+    ] } },
+    { think: { en: "All three slices are back. I merge and tag.", de: "Alle drei Scheiben sind zurück. Ich merge und tagge." } },
+    { run: "git tag v1.2.0", gate: "allow", result: "tagged v1.2.0" },
+    { say: { en: "Release cut: binary, notes and docs merged, tagged v1.2.0.", de: "Release geschnürt: Binary, Notes und Docs gemergt, v1.2.0 getaggt." } },
+  ],
+};
+
+export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, agentsmd, coding, research, context, codereview, darkmode, imagegen, fleetswarm];
