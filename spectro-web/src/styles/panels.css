@@ -558,6 +558,7 @@
 .context-pop { position: absolute; top: calc(100% + var(--sp-2)); right: 0; z-index: var(--z-dropdown); width: 300px; background-color: var(--surface); background-image: linear-gradient(var(--glint), transparent 80px); border: 1px solid var(--border-strong); border-radius: var(--radius-card); box-shadow: var(--shadow-raised), inset 0 1px 0 var(--hairline); padding: var(--sp-4); animation: fade-in var(--t-fast) backwards; }
 
 .context-line { margin: var(--sp-1) 0 0; font-size: var(--fs-16); font-weight: 400; letter-spacing: var(--track-heading); }
+.context-window { margin: 2px 0 0; font-size: var(--fs-12); color: var(--text-faint); }
 
 .context-parts { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--sp-3); row-gap: 2px; margin: var(--sp-3) 0; font-size: var(--fs-12); }
 .context-parts .head { font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }

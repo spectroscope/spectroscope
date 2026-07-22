@@ -7,6 +7,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ContextSnapshot } from "../state/reducer";
 import { formatTokens } from "../format";
+import { contextWindowFor, formatWindow } from "./contextWindow";
 
 const SIZE = 18;
 const R = 7;
@@ -19,8 +20,10 @@ const CRITICAL_AT_PCT = 90;
 export function ContextRing(props: {
   lastInputTokens: number;
   context: ContextSnapshot | null;
+  model?: string;
 }) {
   const { lastInputTokens, context } = props;
+  const modelWindow = props.model ? contextWindowFor(props.model) : null;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
 
@@ -89,8 +92,11 @@ export function ContextRing(props: {
         <div className="context-pop" role="dialog" aria-label="Context usage">
           <span className="eyebrow">Context</span>
           <p className="context-line tabular">
-            {formatTokens(lastInputTokens)} of {formatTokens(threshold)} tokens ({shownPct}%)
+            {formatTokens(lastInputTokens)} of {formatTokens(threshold)} before compaction ({shownPct}%)
           </p>
+          {modelWindow !== null && (
+            <p className="context-window tabular">model window · {formatWindow(modelWindow)}</p>
+          )}
           {context !== null ? (
             <>
               <div className="context-parts">
