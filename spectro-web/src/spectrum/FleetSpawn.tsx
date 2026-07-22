@@ -10,6 +10,7 @@ import { useState } from "react";
 import { Panel } from "@xyflow/react";
 import { useLang } from "../state/lang";
 import { buildNodeCommand, type NodePermission, type NodeSpawnFields } from "./nodeCommand";
+import { RoleField } from "./roleField";
 
 type SpawnStatus = { kind: "idle" | "spawning" | "ok" | "error"; msg?: string };
 
@@ -91,7 +92,7 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
           <input value={fields.context} onChange={(e) => set("context", e.target.value)}
             placeholder={de ? "flotten-name, z. b. pr-42" : "fleet name, e.g. pr-42"} /></label>
         <label className="fleet-spawn-field"><span>role</span>
-          <input value={fields.role} onChange={(e) => set("role", e.target.value)} placeholder="worker" /></label>
+          <RoleField role={fields.role} onRoleChange={(r) => set("role", r)} /></label>
       </div>
       <div className="fleet-spawn-row">
         <label className="fleet-spawn-field"><span>id</span>

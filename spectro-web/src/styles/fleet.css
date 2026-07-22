@@ -332,7 +332,8 @@
 .fleet-spawn-close:hover { color: var(--text); }
 .fleet-spawn-field { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
 .fleet-spawn-field > span { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
-.fleet-spawn-field textarea, .fleet-spawn-field input {
+.fleet-spawn-field textarea, .fleet-spawn-field input,
+.fleet-spawn-role-select, .fleet-spawn-role-custom {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-chip);
@@ -342,7 +343,10 @@
   padding: var(--sp-1) var(--sp-2);
   resize: vertical;
 }
-.fleet-spawn-field textarea:focus, .fleet-spawn-field input:focus { outline: none; border-color: var(--accent); }
+.fleet-spawn-role-select, .fleet-spawn-role-custom { width: 100%; }
+.fleet-spawn-role-custom { margin-top: 3px; }
+.fleet-spawn-field textarea:focus, .fleet-spawn-field input:focus,
+.fleet-spawn-role-select:focus, .fleet-spawn-role-custom:focus { outline: none; border-color: var(--accent); }
 .fleet-spawn-row { display: flex; gap: var(--sp-2); }
 .fleet-spawn-check { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); align-self: flex-end; padding-bottom: 4px; }
 .fleet-spawn-go {
