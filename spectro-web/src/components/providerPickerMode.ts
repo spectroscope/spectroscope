@@ -2,7 +2,7 @@
 
 /** Every selectable LLM backend. The two OpenAI-compatible presets (lmstudio,
  *  openrouter) sit next to the cloud ones; the picker treats them uniformly. */
-export const PROVIDERS = ["anthropic", "ollama", "openai", "lmstudio", "openrouter"] as const;
+export const PROVIDERS = ["anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini"] as const;
 
 /** What the model field should render for the selected provider. */
 export type ModelFieldMode =

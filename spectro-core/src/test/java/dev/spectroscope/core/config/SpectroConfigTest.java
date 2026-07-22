@@ -178,7 +178,7 @@ class SpectroConfigTest {
     @Test
     void unknownProvidersFailLoudly(@TempDir Path projectDir) {
         assertThrows(IllegalArgumentException.class, () -> SpectroConfig.load(
-                new SpectroConfig.Overrides("gemini", null, null, null, null, null), projectDir));
+                new SpectroConfig.Overrides("not-a-real-provider", null, null, null, null, null), projectDir));
     }
 
     @Test
@@ -516,6 +516,8 @@ class SpectroConfigTest {
                 SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://localhost:11434"));
         assertEquals("https://openrouter.ai/api",
                 SpectroConfig.effectiveOpenAiBaseUrl("openrouter", "http://localhost:11434"));
+        assertEquals("https://generativelanguage.googleapis.com/v1beta/openai",
+                SpectroConfig.effectiveOpenAiBaseUrl("gemini", "http://localhost:11434"));
         // An explicit (non-default) baseUrl always wins for any of them.
         assertEquals("http://my-box:8000",
                 SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://my-box:8000"));
@@ -546,10 +548,50 @@ class SpectroConfigTest {
     }
 
     @Test
+    void imageEnvOverlaysADotEnvKeySoUiSavedKeysReachTheImageSubsystem() throws java.io.IOException {
+        // The point of 'set key in UI': a GEMINI_API_KEY written to ~/.spectro/.env
+        // must reach the IMAGE subsystem too, not just chat — image generation reads
+        // its key from this map. Skip if the test JVM already exports the var.
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getenv("GEMINI_API_KEY") == null);
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        assertNull(SpectroConfig.imageEnv().get("GEMINI_API_KEY"));
+
+        SpectroConfig.writeApiKey("GEMINI_API_KEY", "AI-test");
+        assertEquals("AI-test", SpectroConfig.imageEnv().get("GEMINI_API_KEY"),
+                "a UI-saved .env key must surface in the image env");
+        // the process environment still passes through untouched.
+        assertEquals(System.getenv("PATH"), SpectroConfig.imageEnv().get("PATH"));
+
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+    }
+
+    @Test
+    void imageEnvOverlaysWhenTheProcessVarIsPresentButBlank() throws java.io.IOException {
+        // Same precedence as resolveApiKey: a blank env var counts as ABSENT, so the
+        // .env key must still surface — otherwise chat works (resolveApiKey skips
+        // blank) while image fails (it kept the blank), which is the reported bug.
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        SpectroConfig.writeApiKey("GEMINI_API_KEY", "AI-from-dotenv");
+
+        // blank process var -> .env wins
+        assertEquals("AI-from-dotenv",
+                SpectroConfig.imageEnvFrom(java.util.Map.of("GEMINI_API_KEY", "")).get("GEMINI_API_KEY"));
+        // a real process var still wins over .env
+        assertEquals("AI-from-env",
+                SpectroConfig.imageEnvFrom(java.util.Map.of("GEMINI_API_KEY", "AI-from-env")).get("GEMINI_API_KEY"));
+        // absent -> .env overlay
+        assertEquals("AI-from-dotenv",
+                SpectroConfig.imageEnvFrom(java.util.Map.of()).get("GEMINI_API_KEY"));
+
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+    }
+
+    @Test
     void keyEnvNamesTheApiProvidersSecretAndIsNullForLocalOnes() {
         assertEquals("ANTHROPIC_API_KEY", SpectroConfig.keyEnvFor("anthropic"));
         assertEquals("OPENAI_API_KEY", SpectroConfig.keyEnvFor("openai"));
         assertEquals("OPENROUTER_API_KEY", SpectroConfig.keyEnvFor("openrouter"));
+        assertEquals("GEMINI_API_KEY", SpectroConfig.keyEnvFor("gemini"));
         // The local backends need no key — reachability decides them instead.
         assertNull(SpectroConfig.keyEnvFor("ollama"));
         assertNull(SpectroConfig.keyEnvFor("lmstudio"));

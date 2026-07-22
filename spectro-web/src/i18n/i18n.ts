@@ -192,6 +192,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.keepPh": { de: "leer = aktuelles Modell behalten", en: "empty = keep the current model" },
   "pp.noList": { de: "gerade keine Modell-Liste vom Backend; Modell-ID eintippen", en: "no model list from the backend right now; type the model id" },
   "pp.needsKey": { de: "kein Key gesetzt — trag ihn in die .env (siehe Hilfe)", en: "no key set — add it to your .env (see the help)" },
+  "pp.setInSettings": { de: "Key in den Einstellungen setzen →", en: "set a key in Settings →" },
   "pp.localDown": { de: "backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)", en: "backend not reachable — start ollama / LM Studio (or type a model id)" },
   "pp.keySave": { de: "in .env speichern", en: "save to .env" },
   "pp.keySaving": { de: "speichere …", en: "saving …" },
@@ -431,6 +432,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.machineHint": { de: "Pfad-Overrides für Chrome (browse_page), das Bild-Modell und das lokale Whisper-Modell (STT). Leer = automatische Erkennung bzw. Backend-Standard.", en: "Path overrides for Chrome (browse_page), the image model and the local whisper STT model. Empty = automatic discovery or the backend's own default." },
   "set.chrome": { de: "Chrome-Binary", en: "Chrome binary" },
   "set.imageModel": { de: "Bild-Modell", en: "Image model" },
+  "set.imageModelAuto": { de: "Standard des Backends", en: "backend default" },
   "set.sttModel": { de: "STT-Modell", en: "STT model" },
 
   // settings page — one-shot graduation banner (retiring the two localStorage

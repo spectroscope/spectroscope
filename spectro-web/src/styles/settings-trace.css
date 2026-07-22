@@ -436,6 +436,22 @@
 .pp-keysave {
   white-space: nowrap;
 }
+/* Header picker's needs-key affordance: no key entry here — a link to Settings,
+   where the one key write lives. Styled as a quiet accent link, not a button. */
+.provider-settings-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.provider-settings-link:hover {
+  color: var(--accent-strong, var(--accent));
+}
 
 .provider-pop-foot {
   display: flex;

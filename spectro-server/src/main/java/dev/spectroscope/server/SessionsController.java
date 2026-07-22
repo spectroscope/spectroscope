@@ -129,7 +129,7 @@ public class SessionsController {
         // that will actually answer. Local backends (ollama/lmstudio) report
         // "local"; the client reads their reachability from the model list.
         Map<String, String> providerStatus = new LinkedHashMap<>();
-        for (String p : List.of("anthropic", "openai", "openrouter", "ollama", "lmstudio")) {
+        for (String p : List.of("anthropic", "openai", "openrouter", "gemini", "ollama", "lmstudio")) {
             String keyEnv = SpectroConfig.keyEnvFor(p);
             providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
         }
@@ -246,7 +246,7 @@ public class SessionsController {
     public List<String> models(@RequestParam(name = "provider", defaultValue = "") String provider) {
         return switch (provider) {
             case "anthropic" -> anthropicModels();
-            case "openai", "lmstudio", "openrouter" -> openaiModels(provider);
+            case "openai", "lmstudio", "openrouter", "gemini" -> openaiModels(provider);
             case "ollama" -> ollamaModels();
             default -> List.of();
         };
@@ -306,12 +306,12 @@ public class SessionsController {
         List<String> fallback = "openai".equals(provider) ? OPENAI_MODELS : List.of();
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-            String key = SpectroConfig.resolveApiKey(
-                    "openrouter".equals(provider) ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY");
+            String key = SpectroConfig.resolveApiKey(SpectroConfig.keyEnvFor(provider));
             boolean hasKey = key != null && !key.isBlank();
             String base = SpectroConfig.effectiveOpenAiBaseUrl(provider, c.baseUrl());
 
-            RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get().uri(base + "/v1/models");
+            RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get()
+                    .uri(base + dev.spectroscope.core.provider.OpenAiCompatProvider.compatPath(base, "/models"));
             if (hasKey) {
                 request = request.header("Authorization", "Bearer " + key);
             }

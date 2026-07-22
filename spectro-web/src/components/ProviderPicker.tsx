@@ -1,20 +1,18 @@
 // The header provider picker: the connection/provider chip is a button that opens
-// a small popover to switch the LLM backend (anthropic / ollama / openai) and its
-// model mid-session. Sends set_provider; the switch applies on the next prompt.
+// a small popover to switch the LLM backend (anthropic / ollama / openai / …) and
+// its model mid-session. Sends set_provider; the switch applies on the next prompt.
 //
 // The model field is a REAL dropdown (owner decision) fed by GET /api/models —
-// Ollama lists its actually-installed models live, the cloud providers a curated
-// set. The current model is always selectable even when the list doesn't carry
-// it, "Eigenes Modell …" reveals a free-text input for anything newer than the
-// curated list, and an EMPTY list (Ollama down, no key) falls back to free text.
+// see providerModelField.tsx for the shared brain. When a provider needs a key,
+// this picker does NOT take one: the key write lives only in Settings, so it
+// points there instead (owner decision).
 
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { PROVIDERS, modelFieldMode, pickModel } from "./providerPickerMode";
-
-const CUSTOM = "__custom__";
+import { PROVIDERS } from "./providerPickerMode";
+import { ModelField, useProviderModels } from "./providerModelField";
 
 export function ProviderPicker({
   provider,
@@ -22,26 +20,24 @@ export function ProviderPicker({
   status,
   providerStatus,
   onApply,
-  onKeySaved,
+  onOpenSettings,
 }: {
   provider: string;
   /** The current model, so the chip shows it and the form prefills the real one. */
   model?: string;
   status: ConnectionStatus;
   /** Per-provider onboarding status from /api/config: ready | needs-key | local.
-   *  Drives the honest 'no key — add it to .env' message instead of a fake list. */
+   *  Drives the honest 'no key' affordance instead of a fake list. */
   providerStatus?: Record<string, string>;
   onApply: (provider: string, model: string) => void;
-  /** Called after a key is saved to ~/.spectro/.env, so the app re-reads /api/config
-   *  and the provider flips from needs-key to ready. */
-  onKeySaved?: () => void;
+  /** Open the Settings panel — the needs-key affordance points there, since the
+   *  key write lives only in Settings. */
+  onOpenSettings?: () => void;
 }) {
   const lang = useLang();
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(provider);
   const [model, setModel] = useState("");
-  const [custom, setCustom] = useState(false);
-  const [models, setModels] = useState<string[]>([]); // per-provider list for the dropdown
   const ref = useRef<HTMLDivElement>(null);
 
   // Opening seeds the form from the active provider and the real current model.
@@ -49,34 +45,15 @@ export function ProviderPicker({
     if (open) {
       setSel(provider);
       setModel(activeModel || "");
-      setCustom(false);
     }
   }, [open, provider, activeModel]);
 
-  // The model list follows the selected provider (Ollama: live installed models;
-  // cloud: curated). An empty list keeps the free-text fallback.
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    fetch(`/api/models?provider=${encodeURIComponent(sel)}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (!alive || !Array.isArray(list)) return;
-        const ms = list.filter((m) => typeof m === "string");
-        setModels(ms);
-        // A local backend's list is its real installed models: don't leave a
-        // stale cross-provider model (e.g. opus after switching to ollama)
-        // pinned at the top — snap to the first real one.
-        const isLocal = providerStatus?.[sel] === "local";
-        setModel((cur) => pickModel(cur, ms, isLocal));
-      })
-      .catch(() => {
-        if (alive) setModels([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [open, sel]);
+  // Shared model list + field mode; autoPick snaps a stale local model.
+  const { models, mode } = useProviderModels(open ? sel : "", providerStatus, {
+    model,
+    onModelChange: setModel,
+    autoPick: true,
+  });
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -101,11 +78,6 @@ export function ProviderPicker({
     onApply(sel, model.trim());
     setOpen(false);
   };
-
-  // The dropdown always carries the seeded/current model, even when the
-  // fetched list doesn't — the selection must show reality, never lie.
-  const options = model !== "" && !custom && !models.includes(model) ? [model, ...models] : models;
-  const mode = modelFieldMode(sel, providerStatus, models);
 
   return (
     <div className="provider-picker" ref={ref}>
@@ -135,7 +107,6 @@ export function ProviderPicker({
               onChange={(e) => {
                 setSel(e.target.value);
                 setModel("");
-                setCustom(false);
               }}
             >
               {PROVIDERS.map((p) => (
@@ -147,135 +118,27 @@ export function ProviderPicker({
           </label>
           <label className="provider-field">
             <span className="provider-field-label">{t(lang, "pp.model")}</span>
-            {mode === "needs-key" ? (
-              // An API provider with no key: no fake model list — say what to do,
-              // and let the operator paste the key straight into ~/.spectro/.env.
-              <KeyInput provider={sel} onSaved={onKeySaved} />
-            ) : mode === "list" ? (
-              <select
-                className="provider-select"
-                value={custom ? CUSTOM : model}
-                onChange={(e) => {
-                  if (e.target.value === CUSTOM) {
-                    setCustom(true);
-                    setModel("");
-                  } else {
-                    setCustom(false);
-                    setModel(e.target.value);
-                  }
-                }}
-              >
-                {options.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-                <option value={CUSTOM}>{t(lang, "pp.custom")}</option>
-              </select>
-            ) : (
-              // No list (backend down, Ollama unreachable, no key): free text
-              // stays — but SAY so, or the fallback reads as a broken picker.
-              <>
-                <input
-                  className="provider-input"
-                  type="text"
-                  value={model}
-                  placeholder={t(lang, "pp.keepPh")}
-                  onChange={(e) => setModel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") apply();
-                  }}
-                />
-                <span className="provider-field-note">
-                  {t(lang, providerStatus?.[sel] === "local" ? "pp.localDown" : "pp.noList")}
-                </span>
-              </>
-            )}
+            <ModelField
+              provider={sel}
+              models={models}
+              mode={mode}
+              model={model}
+              onModelChange={setModel}
+              providerStatus={providerStatus}
+              keyAffordance="link"
+              onOpenSettings={() => {
+                setOpen(false);
+                onOpenSettings?.();
+              }}
+              onEnter={apply}
+            />
           </label>
-          {custom && models.length > 0 && (
-            <label className="provider-field">
-              <input
-                className="provider-input"
-                type="text"
-                autoFocus
-                value={model}
-                placeholder={t(lang, "pp.customPh")}
-                onChange={(e) => setModel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") apply();
-                }}
-              />
-            </label>
-          )}
           <div className="provider-pop-foot">
             <button type="button" className="primary" onClick={apply}>
               {t(lang, "pp.switch")}
             </button>
           </div>
         </div>
-      )}
-    </div>
-  );
-}
-
-/** The needs-key affordance: paste an API key and save it to ~/.spectro/.env
- *  (0600) via the local-origin endpoint. The field is masked; the value only ever
- *  leaves as the POST body. On success the app re-reads /api/config so the
- *  provider flips from needs-key to ready — no restart, a new chat uses it. */
-function KeyInput({ provider, onSaved }: { provider: string; onSaved?: () => void }) {
-  const lang = useLang();
-  const de = lang === "de";
-  const [key, setKey] = useState("");
-  const [state, setState] = useState<"idle" | "saving" | "ok" | "err">("idle");
-
-  const save = async (): Promise<void> => {
-    if (key.trim() === "") return;
-    setState("saving");
-    try {
-      const res = await fetch("/api/onboarding/key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider, key: key.trim() }),
-      });
-      if (res.ok) {
-        setState("ok");
-        setKey("");
-        onSaved?.();
-      } else {
-        setState("err");
-      }
-    } catch {
-      setState("err");
-    }
-  };
-
-  return (
-    <div className="pp-keyinput">
-      <span className="provider-field-note provider-field-note--warn">{t(lang, "pp.needsKey")}</span>
-      <div className="pp-keyrow">
-        <input
-          className="provider-input"
-          type="password"
-          autoComplete="off"
-          value={key}
-          placeholder={de ? "api-key hier einfügen" : "paste your api key"}
-          onChange={(e) => setKey(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void save();
-          }}
-        />
-        <button
-          type="button"
-          className="primary pp-keysave"
-          disabled={state === "saving" || key.trim() === ""}
-          onClick={() => void save()}
-        >
-          {t(lang, state === "saving" ? "pp.keySaving" : "pp.keySave")}
-        </button>
-      </div>
-      {state === "ok" && <span className="provider-field-note">{t(lang, "pp.keySaved")}</span>}
-      {state === "err" && (
-        <span className="provider-field-note provider-field-note--warn">{t(lang, "pp.keyErr")}</span>
       )}
     </div>
   );

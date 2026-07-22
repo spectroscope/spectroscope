@@ -132,7 +132,7 @@ public record SpectroConfig(
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.
     static final Set<String> KNOWN_PROVIDERS =
-            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter");
+            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini");
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
@@ -600,7 +600,7 @@ public record SpectroConfig(
     public LlmProvider providerFromConfig() {
         LlmProvider real = switch (provider) {
             case "ollama" -> new OllamaProvider(new OllamaOptions(baseUrl, model));
-            case "openai", "lmstudio", "openrouter" -> new OpenAiCompatProvider(
+            case "openai", "lmstudio", "openrouter", "gemini" -> new OpenAiCompatProvider(
                     new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey()));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
@@ -639,6 +639,7 @@ public record SpectroConfig(
         return switch (provider) {
             case "lmstudio" -> "http://localhost:1234";
             case "openrouter" -> "https://openrouter.ai/api";
+            case "gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai";
             default -> "https://api.openai.com";
         };
     }
@@ -649,7 +650,8 @@ public record SpectroConfig(
     static boolean isOpenAiCompat(String provider) {
         return "openai".equals(provider)
                 || "lmstudio".equals(provider)
-                || "openrouter".equals(provider);
+                || "openrouter".equals(provider)
+                || "gemini".equals(provider);
     }
 
     /** The environment variable carrying a provider's API key, or {@code null}
@@ -663,6 +665,7 @@ public record SpectroConfig(
             case "anthropic" -> "ANTHROPIC_API_KEY";
             case "openai" -> "OPENAI_API_KEY";
             case "openrouter" -> "OPENROUTER_API_KEY";
+            case "gemini" -> "GEMINI_API_KEY"; // same key as the gemini image backend
             default -> null; // ollama, lmstudio: local, no key
         };
     }
@@ -710,6 +713,37 @@ public record SpectroConfig(
     public static boolean hasApiKey(String keyEnv) {
         String v = resolveApiKey(keyEnv);
         return v != null && !v.isBlank();
+    }
+
+    /** Image-provider API keys the image subsystem may need — kept next to
+     *  {@link #imageEnv()} so a new image backend adds its key here. */
+    private static final java.util.List<String> IMAGE_KEY_ENVS =
+            java.util.List.of("GEMINI_API_KEY", "OPENAI_API_KEY");
+
+    /** The environment the image subsystem builds its provider from: the process
+     *  environment, overlaid with any image key the UI wrote to {@link #dotEnvPath()}
+     *  (so 'set key in UI' feeds image generation, not only chat). The process env
+     *  wins when it already carries the key — same precedence as {@link #resolveApiKey}. */
+    public static java.util.Map<String, String> imageEnv() {
+        return imageEnvFrom(System.getenv());
+    }
+
+    /** {@link #imageEnv()} over an injectable base environment (for tests). A
+     *  process var that is absent OR blank counts as unset — same as
+     *  {@link #resolveApiKey} — so a UI-saved {@link #dotEnvPath()} key still
+     *  surfaces (a blank {@code GEMINI_API_KEY=} must not shadow it). */
+    static java.util.Map<String, String> imageEnvFrom(java.util.Map<String, String> base) {
+        java.util.Map<String, String> env = new java.util.HashMap<>(base);
+        for (String keyEnv : IMAGE_KEY_ENVS) {
+            String existing = env.get(keyEnv);
+            if (existing == null || existing.isBlank()) {
+                String fromDotEnv = dotEnvValue(keyEnv);
+                if (fromDotEnv != null && !fromDotEnv.isBlank()) {
+                    env.put(keyEnv, fromDotEnv);
+                }
+            }
+        }
+        return env;
     }
 
     /** One key's value from {@link #dotEnvPath()} (KEY=value; one layer of quotes
@@ -765,7 +799,7 @@ public record SpectroConfig(
      *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
      *  @return the key, or null when unset */
     private String openAiCompatKey() {
-        return resolveApiKey("openrouter".equals(provider) ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY");
+        return resolveApiKey(keyEnvFor(provider)); // null keyEnv (lmstudio) -> no key
     }
 
     /** The effective openai-compatible endpoint for THIS config.
@@ -810,7 +844,7 @@ public record SpectroConfig(
      * @return the image backend named by {@code imageProvider} ("gemini" or "openai")
      */
     public dev.spectroscope.core.image.ImageProvider imageProviderFromConfig() {
-        return dev.spectroscope.core.image.ImageProviders.create(imageProvider, imageModel, System.getenv());
+        return dev.spectroscope.core.image.ImageProviders.create(imageProvider, imageModel, imageEnv());
     }
 
     /** The env map for Chrome discovery: the process env, with the configured

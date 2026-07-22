@@ -21,6 +21,9 @@
 import { useEffect, useState } from "react";
 import { DESIGNS, applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
 import { t, type Lang } from "../i18n/i18n";
+import { imageModelOptions } from "./imageModels";
+import { PROVIDERS } from "./providerPickerMode";
+import { ModelField, useProviderModels } from "./providerModelField";
 import { setLang, useLang } from "../state/lang";
 import {
   fetchSettings,
@@ -119,11 +122,24 @@ function DraftInput({
 /** How long the "saved" confirmation flashes after any change. */
 const SAVED_FLASH_MS = 1400;
 
-const PROVIDERS = ["anthropic", "ollama", "openai"] as const;
 const IMAGE_PROVIDERS = ["gemini", "openai"] as const;
 const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
-export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsPanel({
+  open,
+  onClose,
+  providerStatus,
+  onKeySaved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** Per-provider onboarding status from /api/config: ready | needs-key | local.
+   *  Drives the model chooser's honest needs-key affordance (same as the picker). */
+  providerStatus?: Record<string, string>;
+  /** After a key is saved to ~/.spectro/.env, re-read /api/config so the provider
+   *  flips needs-key → ready. */
+  onKeySaved?: () => void;
+}) {
   const { prefs } = useDesignPrefs();
   const lang = useLang();
   const [savedFlash, setSavedFlash] = useState(false);
@@ -156,6 +172,19 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Shared model list for the session-defaults chooser — the SAME real
+  // /api/models list and needs-key logic as the header picker. autoPick is OFF:
+  // Settings must never persist a model the operator didn't choose (the picker
+  // snaps stale local models; the defaults page does not). Guarded on `open` so a
+  // closed panel makes no request. Must sit above the early return (hook order).
+  const settingsProvider = open && view ? String(view.effective.provider ?? "") : "";
+  const settingsModel = view ? String(view.effective.model ?? "") : "";
+  const { models: settingsModels, mode: settingsModelMode } = useProviderModels(
+    settingsProvider,
+    providerStatus,
+    { model: settingsModel, onModelChange: () => {}, autoPick: false },
+  );
 
   if (!open) return null;
 
@@ -336,8 +365,9 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                 <label className="settings-field">
                   <span>{t(lang, "set.provider")}</span>
                   <select
+                    className="provider-select"
                     value={String(view.effective.provider ?? "")}
-                    onChange={(e) => saveUser({ provider: e.target.value })}
+                    onChange={(e) => saveUser({ provider: e.target.value, model: null })}
                   >
                     {PROVIDERS.map((p) => (
                       <option key={p} value={p}>{p}</option>
@@ -348,12 +378,20 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.model")}</span>
-                  <DraftInput
-                    value={String(view.effective.model ?? "")}
-                    onCommit={(v) => saveUser({ model: v === "" ? null : v })}
+                  <ModelField
+                    provider={String(view.effective.provider ?? "")}
+                    models={settingsModels}
+                    mode={settingsModelMode}
+                    model={String(view.effective.model ?? "")}
+                    onModelChange={(m) => saveUser({ model: m === "" ? null : m })}
+                    providerStatus={providerStatus}
+                    keyAffordance="inline"
+                    onKeySaved={onKeySaved}
                   />
-                  <OriginRow view={view} field="model" lang={lang}
-                    onReset={() => saveUser({ model: null })} />
+                  {settingsModelMode !== "needs-key" && (
+                    <OriginRow view={view} field="model" lang={lang}
+                      onReset={() => saveUser({ model: null })} />
+                  )}
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.thinking")}</span>
@@ -371,7 +409,11 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                   <span>{t(lang, "set.imageBackend")}</span>
                   <select
                     value={String(view.effective.imageProvider ?? "")}
-                    onChange={(e) => saveUser({ imageProvider: e.target.value })}
+                    onChange={(e) =>
+                      // switching backend drops a stale cross-provider model
+                      // (a gemini model would 404 against openai's endpoint).
+                      saveUser({ imageProvider: e.target.value, imageModel: null })
+                    }
                   >
                     {IMAGE_PROVIDERS.map((p) => (
                       <option key={p} value={p}>{p}</option>
@@ -379,6 +421,23 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                   </select>
                   <OriginRow view={view} field="imageProvider" lang={lang}
                     onReset={() => saveUser({ imageProvider: null })} />
+                </label>
+                <label className="settings-field">
+                  <span>{t(lang, "set.imageModel")}</span>
+                  <select
+                    value={String(view.effective.imageModel ?? "")}
+                    onChange={(e) => saveUser({ imageModel: e.target.value === "" ? null : e.target.value })}
+                  >
+                    <option value="">{t(lang, "set.imageModelAuto")}</option>
+                    {imageModelOptions(
+                      String(view.effective.imageProvider ?? "gemini"),
+                      String(view.effective.imageModel ?? ""),
+                    ).map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                  <OriginRow view={view} field="imageModel" lang={lang}
+                    onReset={() => saveUser({ imageModel: null })} />
                 </label>
               </div>
 
@@ -433,15 +492,6 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                   />
                   <OriginRow view={view} field="chromeBinary" lang={lang}
                     onReset={() => saveUser({ chromeBinary: null })} />
-                </label>
-                <label className="settings-field">
-                  <span>{t(lang, "set.imageModel")}</span>
-                  <DraftInput
-                    value={String(view.effective.imageModel ?? "")}
-                    onCommit={(v) => saveUser({ imageModel: v === "" ? null : v })}
-                  />
-                  <OriginRow view={view} field="imageModel" lang={lang}
-                    onReset={() => saveUser({ imageModel: null })} />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.sttModel")}</span>

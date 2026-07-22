@@ -260,7 +260,9 @@ export function App() {
     controlsTouched.current = true; // a manual choice must never be overwritten by a later hydration
     setImageProvider(provider);
     sendClient({ type: "set_image_provider", provider });
-    putSettings("user", { imageProvider: provider }).catch(() => {});
+    // drop any model left over from the other backend — a gemini model would
+    // 404 against openai's endpoint (the settings panel resets it the same way).
+    putSettings("user", { imageProvider: provider, imageModel: null }).catch(() => {});
   };
   // Reasoning visibility: flips local state and tells the server (traced too).
   // Applies to the next run — the server keeps one agent per connection. The
@@ -649,7 +651,6 @@ export function App() {
           archiveProvider={view.provider ?? undefined}
           status={conn.status}
           onApplyProvider={changeProvider}
-          onKeySaved={() => setConfigNonce((n) => n + 1)}
           lastInputTokens={view.lastInputTokens}
           context={view.context}
           running={live.running}
@@ -850,7 +851,12 @@ export function App() {
         <UsageFooter state={view} connection={conn.status} />
       </div>
 
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        providerStatus={providerStatus ?? undefined}
+        onKeySaved={() => setConfigNonce((n) => n + 1)}
+      />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
       <Onboarding
         open={onboardingOpen}

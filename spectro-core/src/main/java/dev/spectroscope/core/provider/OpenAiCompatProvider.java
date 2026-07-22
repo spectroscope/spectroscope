@@ -419,8 +419,11 @@ public final class OpenAiCompatProvider implements LlmProvider {
          */
         private SseIterator(ProviderRequest request) {
             this.signal = request.signal();
+            // absolute URL, not a base-relative path: a leading-slash path would
+            // REPLACE gemini's /v1beta/openai base path instead of extending it.
+            String root = baseUrl.replaceAll("/$", "");
             var open = http.post()
-                    .uri("/v1/chat/completions")
+                    .uri(root + compatPath(root, "/chat/completions"))
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(toChatRequest(request))
                     .exchange((clientRequest, clientResponse) -> {
@@ -619,6 +622,27 @@ public final class OpenAiCompatProvider implements LlmProvider {
      */
     static boolean isOpenAiCloud(String baseUrl) {
         return baseUrl != null && baseUrl.startsWith("https://api.openai.com");
+    }
+
+    /**
+     * The path to append to an OpenAI-compatible base URL. Bare-host backends
+     * (openai {@code https://api.openai.com}, openrouter {@code …/api}, lmstudio
+     * {@code http://localhost:1234}) carry the version in a {@code /v1} segment,
+     * so they take {@code /v1} + suffix. Gemini's compat surface is exposed at
+     * {@code …/v1beta/openai}, which already carries the version, so paths hang
+     * directly off it. A custom base an operator sets that already ends in a
+     * version segment (openai's documented {@code …/v1}, a proxy at {@code …/v1})
+     * counts as already-versioned too, so it never gets a doubled {@code /v1/v1}.
+     * Used for both {@code /chat/completions} and {@code /models}.
+     *
+     * @param baseUrl the provider's endpoint root
+     * @param suffix  the endpoint path, e.g. {@code /chat/completions} or {@code /models}
+     * @return the path to request, relative to {@code baseUrl}
+     */
+    public static String compatPath(String baseUrl, String suffix) {
+        String base = baseUrl == null ? "" : baseUrl.replaceAll("/+$", "");
+        boolean alreadyVersioned = base.contains("/v1beta/openai") || base.matches(".*/v\\d+");
+        return (alreadyVersioned ? "" : "/v1") + suffix;
     }
 
     /**

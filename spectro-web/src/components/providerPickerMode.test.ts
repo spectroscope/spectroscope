@@ -46,6 +46,6 @@ describe("modelFieldMode", () => {
   });
 
   it("offers all five providers, including the two OpenAI-compatible ones", () => {
-    expect(PROVIDERS).toEqual(["anthropic", "ollama", "openai", "lmstudio", "openrouter"]);
+    expect(PROVIDERS).toEqual(["anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini"]);
   });
 });

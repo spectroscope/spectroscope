@@ -55,7 +55,7 @@ class OpenAiCompatProviderTest {
     @BeforeEach
     void startServer() throws IOException {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/v1/chat/completions", exchange -> {
+        com.sun.net.httpserver.HttpHandler chatHandler = exchange -> {
             lastBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
             if (scriptedStatus != 200) {
                 byte[] error = scriptedErrorBody.getBytes(StandardCharsets.UTF_8);
@@ -72,7 +72,11 @@ class OpenAiCompatProviderTest {
             try (OutputStream out = exchange.getResponseBody()) {
                 out.write(body);
             }
-        });
+        };
+        // bare-host backends (openai, lmstudio, openrouter) POST here…
+        server.createContext("/v1/chat/completions", chatHandler);
+        // …while gemini's OpenAI-compat surface hangs off /v1beta/openai.
+        server.createContext("/v1beta/openai/chat/completions", chatHandler);
         server.start();
         baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -421,5 +425,51 @@ class OpenAiCompatProviderTest {
         assertFalse(RetryPolicy.from(2).isTransient(error),
                 "the retry layer must not re-send a 401");
         assertTrue(error.getMessage().contains("401"));
+    }
+
+    @Test
+    void compatPathTakesTheV1SegmentForBareHostsButNotForGemini() {
+        // openai / lmstudio / openrouter are bare hosts (or host+/api): version lives in /v1.
+        assertEquals("/v1/chat/completions",
+                OpenAiCompatProvider.compatPath("https://api.openai.com", "/chat/completions"));
+        assertEquals("/v1/models",
+                OpenAiCompatProvider.compatPath("https://openrouter.ai/api", "/models"));
+        assertEquals("/v1/chat/completions",
+                OpenAiCompatProvider.compatPath("http://localhost:1234", "/chat/completions"));
+        // gemini's compat base already carries its version (/v1beta/openai) — no extra /v1.
+        assertEquals("/chat/completions",
+                OpenAiCompatProvider.compatPath(
+                        "https://generativelanguage.googleapis.com/v1beta/openai", "/chat/completions"));
+        assertEquals("/models",
+                OpenAiCompatProvider.compatPath(
+                        "https://generativelanguage.googleapis.com/v1beta/openai", "/models"));
+        // a CUSTOM base that already ends in a version segment (openai's own
+        // documented https://api.openai.com/v1, or a proxy at .../v1) must NOT get
+        // a doubled /v1/v1 — the trailing version counts as already-versioned.
+        assertEquals("/chat/completions",
+                OpenAiCompatProvider.compatPath("https://api.openai.com/v1", "/chat/completions"));
+        assertEquals("/models",
+                OpenAiCompatProvider.compatPath("https://proxy.internal/v1/", "/models"));
+    }
+
+    @Test
+    void geminiShapedBaseRoutesUnderV1betaOpenaiNotV1() {
+        scriptedSse = """
+                data: {"choices":[{"delta":{"content":"hi"}}]}
+
+                data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+                data: [DONE]
+                """;
+        // base carries /v1beta/openai like the gemini preset — the provider must POST to
+        // /v1beta/openai/chat/completions, NOT /v1beta/openai/v1/chat/completions.
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl + "/v1beta/openai", "gemini-2.5-flash", null));
+        List<ProviderEvent> events = new ArrayList<>();
+        provider.stream(request(List.of(
+                new ProviderMessage(ProviderMessage.Role.USER, List.of(new TextContent("Hi")))))).forEach(events::add);
+
+        assertEquals(new PTextDelta("hi"), events.get(0));
+        assertEquals(new PStop(PStop.StopReason.END_TURN), events.get(events.size() - 1));
     }
 }

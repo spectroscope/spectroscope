@@ -637,7 +637,7 @@ public final class SessionConnection {
         // switch applies to the next generation, and a missing key errors readably.
         registry.register(new GenerateImageTool(
                 () -> ImageProviders.create(imageProviderName.get(),
-                        activeConfig.get().imageModel(), System.getenv()),
+                        activeConfig.get().imageModel(), SpectroConfig.imageEnv()),
                 ImageStore.inUserHome()));
         // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
         registry.register(new WebFetchTool(new DefaultHttpFetcher()));

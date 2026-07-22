@@ -48,8 +48,6 @@ export function AppHeader(props: {
   archiveProvider?: string;
   status: ConnectionStatus;
   onApplyProvider: (provider: string, model: string) => void;
-  /** After a key is saved to .env, re-read /api/config so the provider flips to ready. */
-  onKeySaved?: () => void;
   /** Context gauge — appears with the first usage event of the view. */
   lastInputTokens: number;
   context: UiState["context"];
@@ -216,7 +214,9 @@ export function AppHeader(props: {
           status={props.status}
           providerStatus={props.providerStatus}
           onApply={props.onApplyProvider}
-          onKeySaved={props.onKeySaved}
+          onOpenSettings={() => {
+            if (!props.settingsOpen) props.onToggleSettings();
+          }}
         />
       ) : (
         <span className="provider-chip">
