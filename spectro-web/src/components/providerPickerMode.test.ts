@@ -20,6 +20,11 @@ describe("pickModel", () => {
   it("leaves the model untouched when the local list is empty (backend down)", () => {
     expect(pickModel("claude-opus-4-8", [], true)).toBe("claude-opus-4-8");
   });
+  it("snaps a keyed cloud provider off the bogus 'local-model' seed to a real one", () => {
+    // openai with a key returns its real list; 'local-model' (the openai default)
+    // isn't in it, so an authoritative list must replace it with the first real model.
+    expect(pickModel("local-model", ["gpt-4o", "gpt-4o-mini"], true)).toBe("gpt-4o");
+  });
 });
 
 describe("modelFieldMode", () => {

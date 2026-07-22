@@ -51,7 +51,11 @@ export function useProviderModels(
         setModels(ms);
         const { model: cur, onModelChange: change, autoPick: snap, providerStatus: status } = latest.current;
         if (snap) {
-          const picked = pickModel(cur, ms, status?.[provider] === "local");
+          // A local backend AND a keyed ("ready") cloud provider both return
+          // their real list — authoritative — so a bogus seed (opus carried over,
+          // or "local-model" left on a keyed openai) snaps to the first real one.
+          const authoritative = status?.[provider] === "local" || status?.[provider] === "ready";
+          const picked = pickModel(cur, ms, authoritative);
           if (picked !== cur) change(picked);
         }
       })
@@ -61,10 +65,12 @@ export function useProviderModels(
     return () => {
       alive = false;
     };
-    // provider drives the fetch; model/callbacks are read fresh from `latest` so a
+    // provider AND its onboarding status drive the fetch — the status flips
+    // needs-key→ready when a key is saved, which must refetch the real list with
+    // no provider round-trip. model/callbacks are read fresh from `latest` so a
     // snap can't loop back into another fetch and can't act on a stale model.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider]);
+  }, [provider, providerStatus?.[provider]]);
 
   return { models, mode: modelFieldMode(provider, providerStatus, models) };
 }

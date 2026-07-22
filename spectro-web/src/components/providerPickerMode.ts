@@ -28,15 +28,17 @@ export function modelFieldMode(
 }
 
 /**
- * Which model to select once a provider's list has loaded. A LOCAL backend
- * (ollama, lmstudio) has an AUTHORITATIVE list — its actually-installed models —
- * so a selection that isn't in it (e.g. claude-opus carried over from anthropic,
- * or an empty seed) is replaced with the first real one. A cloud list can be a
- * curated fallback, so a cloud model is never second-guessed; and an empty list
- * (backend down) leaves the selection alone.
+ * Which model to select once a provider's list has loaded, given whether that
+ * list is AUTHORITATIVE. A local backend (ollama, lmstudio) and a keyed cloud
+ * provider whose key is present ("ready") both return their real models, so a
+ * selection that isn't in the list — e.g. claude-opus carried over from
+ * anthropic, or "local-model" left seeded on a keyed openai — is replaced with
+ * the first real one. A needs-key / curated-fallback list is NOT authoritative,
+ * so the caller passes false and the selection is left alone; an empty list
+ * (backend down) also leaves it alone.
  */
-export function pickModel(current: string, models: string[], isLocal: boolean): string {
-  if (isLocal && models.length > 0 && !models.includes(current)) {
+export function pickModel(current: string, models: string[], authoritative: boolean): string {
+  if (authoritative && models.length > 0 && !models.includes(current)) {
     return models[0];
   }
   return current;
