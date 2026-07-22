@@ -445,7 +445,10 @@ public record SpectroConfig(
         if (!explicitModel) {
             String fallback = switch (base.provider()) {
                 case "ollama" -> "qwen3";
-                case "openai" -> "local-model"; // LM Studio ignores unknown ids and uses the loaded one
+                // LM Studio (and the openai preset when pointed at one) serves whatever
+                // model is loaded, ignoring the id — never the Claude default. lmstudio
+                // was missing here, which surfaced as the "opus for lmstudio" bug.
+                case "lmstudio", "openai" -> "local-model";
                 default -> base.model();
             };
             if (!fallback.equals(base.model())) {

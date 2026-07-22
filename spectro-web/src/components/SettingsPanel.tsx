@@ -390,7 +390,7 @@ export function SettingsPanel({
                     provider={String(view.effective.provider ?? "")}
                     models={settingsModels}
                     mode={settingsModelMode}
-                    model={String(view.effective.model ?? "")}
+                    model={settingsModel}
                     onModelChange={(m) => saveUser({ model: m === "" ? null : m })}
                     providerStatus={providerStatus}
                     keyAffordance="inline"

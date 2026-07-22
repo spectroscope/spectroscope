@@ -133,6 +133,10 @@ class SpectroConfigTest {
                 new SpectroConfig.Overrides("ollama", null, null, null, null, null), projectDir).model());
         assertEquals("local-model", SpectroConfig.load(
                 new SpectroConfig.Overrides("openai", null, null, null, null, null), projectDir).model());
+        // lmstudio serves whatever model is loaded, ignoring the id — it must NOT
+        // inherit the Claude default (that was the "opus for lmstudio" bug).
+        assertEquals("local-model", SpectroConfig.load(
+                new SpectroConfig.Overrides("lmstudio", null, null, null, null, null), projectDir).model());
     }
 
     @Test
