@@ -26,6 +26,9 @@ export function Sidebar(props: {
   activeFleet: string | null;
   /** Enter a fleet — inspect its agents like a session. */
   onSelectFleet: (contextId: string) => void;
+  /** Open the spawn dialog — start the FIRST node from the UI (the fleet-canvas
+   *  spawn panel is unreachable until a fleet already exists). */
+  onSpawnNode: () => void;
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -117,6 +120,12 @@ export function Sidebar(props: {
             Import
           </button>
         )}
+        {nav === "fleets" && (
+          <button type="button" className="sidebar-import sidebar-spawn" onClick={props.onSpawnNode}
+            title={lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)"}>
+            + node
+          </button>
+        )}
       </div>
 
       {nav === "sessions" ? (
@@ -159,7 +168,12 @@ export function Sidebar(props: {
       ) : (
         <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>
           {orderedFleets.length === 0 ? (
-            <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
+            <div className="fleet-empty">
+              <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
+              <button type="button" className="fleet-empty-spawn" onClick={props.onSpawnNode}>
+                + {lang === "de" ? "node starten" : "spawn a node"}
+              </button>
+            </div>
           ) : (
             orderedFleets.map((f) => (
               <button

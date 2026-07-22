@@ -404,3 +404,43 @@
   transition: color var(--t-fast);
 }
 .fleet-node-stop:hover { color: var(--error); }
+
+/* ---- spawn from the sidebar: a modal (reusing .fleet-spawn-panel) so the FIRST
+   node is startable even from the empty state, and the empty-state CTA. ---- */
+.fleet-spawn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(3px);
+}
+.fleet-spawn-modal .fleet-spawn-panel {
+  width: 400px;
+  max-width: 92vw;
+}
+.sidebar-spawn {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fleet-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.fleet-empty-spawn {
+  margin: var(--sp-1) 0 0 var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  transition: filter var(--t-fast);
+}
+.fleet-empty-spawn:hover { filter: brightness(1.08); }

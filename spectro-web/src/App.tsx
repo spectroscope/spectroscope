@@ -36,6 +36,7 @@ import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
+import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
 import { fleetPushLive, hydrateFleet, useFleet, useFleetHubPort, fleetPending } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
@@ -98,6 +99,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false); // design drawer
   const [doctorOpen, setDoctorOpen] = useState(false); // calibration/status page
   const [keymapOpen, setKeymapOpen] = useState(false); // the ? shortcut sheet (edu port)
+  const [spawnDialogOpen, setSpawnDialogOpen] = useState(false); // start a fleet node from the sidebar
   // Global keymap shortcut: ? opens the sheet, Escape closes it. Guarded while
   // typing so it never eats a keystroke in the composer or a filter (edu port).
   useEffect(() => {
@@ -582,6 +584,7 @@ export function App() {
           onScenarios={() => setScenariosOpen(true)}
           activeFleet={enteredFleet}
           onSelectFleet={enterFleet}
+          onSpawnNode={() => setSpawnDialogOpen(true)}
         />
       )}
       {importOpen && <ImportDialog onLoad={openImport} onClose={() => setImportOpen(false)} />}
@@ -825,6 +828,17 @@ export function App() {
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
+      {spawnDialogOpen && (
+        <div className="fleet-spawn-modal-backdrop" role="presentation" onClick={() => setSpawnDialogOpen(false)}>
+          <div className="fleet-spawn-modal" onClick={(e) => e.stopPropagation()}>
+            <FleetSpawnForm
+              contextId={enteredFleet ?? ""}
+              hubPort={fleetHubPort}
+              onClose={() => setSpawnDialogOpen(false)}
+            />
+          </div>
+        </div>
+      )}
       <DoctorPanel
         open={doctorOpen}
         onClose={() => setDoctorOpen(false)}
