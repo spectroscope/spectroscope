@@ -21,6 +21,7 @@ import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
 import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
+import { StarterDialog } from "./components/StarterDialog";
 import { compile } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
 import { Sidebar } from "./components/Sidebar";
@@ -410,6 +411,7 @@ export function App() {
   // reading its end state. Compiled content keeps its language afterwards,
   // like every other session.
   const [scenariosOpen, setScenariosOpen] = useState(false);
+  const [startersOpen, setStartersOpen] = useState(false);
   const openScenario = (dsl: Dsl): void => {
     const events = compile(dsl, lang);
     setScenariosOpen(false);
@@ -622,6 +624,7 @@ export function App() {
           onNewChat={newChat}
           onImport={() => setImportOpen(true)}
           onScenarios={() => setScenariosOpen(true)}
+          onStarters={() => setStartersOpen(true)}
           onSelectScenario={openScenario}
           activeFleet={enteredFleet}
           onSelectFleet={enterFleet}
@@ -630,6 +633,7 @@ export function App() {
       )}
       {importOpen && <ImportDialog onLoad={openImport} onClose={() => setImportOpen(false)} />}
       {scenariosOpen && <ScenarioDialog onPick={openScenario} onClose={() => setScenariosOpen(false)} />}
+      {startersOpen && <StarterDialog onClose={() => setStartersOpen(false)} />}
 
       <div className="main-col">
         {sidebarOpen && (

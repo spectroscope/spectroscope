@@ -25,6 +25,7 @@ export function Sidebar(props: {
   /** Opens the scenario picker modal — kept alongside the inline scenario rows
    *  below (a redundant second path; the owner may retire the modal later). */
   onScenarios: () => void;
+  onStarters: () => void;
   /** Play a scenario inline from the list — replays it like a session. */
   onSelectScenario: (dsl: Dsl) => void;
   /** The entered fleet's contextId, or null when a session is shown. */
@@ -100,6 +101,18 @@ export function Sidebar(props: {
           <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
         </svg>
         {t(lang, "nav.scenarios")}
+      </button>
+
+      <button
+        type="button"
+        className="ghost sidebar-scenarios"
+        onClick={props.onStarters}
+        title={t(lang, "nav.startersTitle")}
+      >
+        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+          <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />
+        </svg>
+        {t(lang, "nav.starters")}
       </button>
 
       <div className="sidebar-eyebrow-row">

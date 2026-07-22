@@ -19,6 +19,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.navMode": { de: "Sessions oder Flotten", en: "Sessions or fleets" },
   "nav.noFleets": { de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.", en: "No running fleets. Start nodes against the hub and they appear here." },
   "nav.scenarios": { de: "Szenarien", en: "Scenarios" },
+  "nav.starters": { de: "Starter", en: "Starters" },
+  "nav.startersTitle": { de: "Fertige Starter-Projekte (Gradle/Maven) kopieren oder in einen Ordner schreiben", en: "Ready-made starter projects (Gradle/Maven) to copy or scaffold into a folder" },
+  "starter.kicker": { de: "starter", en: "starters" },
+  "starter.title": { de: "Ein Projekt starten", en: "Start a project" },
+  "starter.hint": { de: "Fertige Projekte gegen spectroscope — kopieren oder in einen Ordner schreiben", en: "Ready-made projects against spectroscope — copy the files or scaffold them into a folder" },
+  "starter.loading": { de: "Lade Bundles …", en: "Loading bundles …" },
+  "starter.copyAll": { de: "alle kopieren", en: "copy all" },
+  "starter.scaffold": { de: "in ordner schreiben …", en: "scaffold into a folder …" },
+  "starter.wrote": { de: "{n} Dateien geschrieben nach {dir}", en: "wrote {n} files into {dir}" },
+  "starter.conflict": { de: "Nichts geschrieben — es existieren schon: {files}", en: "Nothing written — these already exist: {files}" },
+  "starter.pickCancelled": { de: "Ordner-Auswahl abgebrochen.", en: "Folder pick cancelled." },
+  "starter.pickFailed": { de: "Der Ordner-Dialog ist fehlgeschlagen.", en: "The folder dialog failed." },
   "nav.scenariosTitle": { de: "Skriptgesteuerte Demo-Läufe abspielen — deterministisch, ohne LLM und ohne API-Key", en: "Play scripted demo runs — deterministic, no LLM, no API key" },
 
   // header

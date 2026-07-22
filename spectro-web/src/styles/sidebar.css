@@ -153,6 +153,19 @@
   overflow-y: auto;
   padding-right: var(--sp-1);
 }
+/* Starter bundles: the selected row + the copy/scaffold detail. */
+.scn-row--on { border-left-color: var(--accent); background: var(--surface-2); }
+.starter-detail { margin-top: var(--sp-2); border-top: 1px solid var(--border); padding-top: var(--sp-2); }
+.starter-tools { display: flex; align-items: center; gap: var(--sp-1); margin-bottom: var(--sp-2); }
+.starter-detail-actions { margin-left: auto; display: flex; gap: var(--sp-1); align-items: center; }
+.starter-status { font-size: var(--fs-12); color: var(--text-dim); margin: 0 0 var(--sp-2); }
+.starter-files { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 40vh; overflow-y: auto; }
+.starter-file { border: 1px solid var(--border); border-radius: var(--radius-control); overflow: hidden; }
+.starter-file-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 2px var(--sp-2); background: var(--surface-2); font-size: var(--fs-11); color: var(--text-dim);
+}
+.starter-file .ws-text { max-height: 30vh; }
 .scn-row {
   display: flex;
   flex-direction: column;
