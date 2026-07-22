@@ -174,16 +174,24 @@ export function SettingsPanel({
   }, [open, onClose]);
 
   // Shared model list for the session-defaults chooser — the SAME real
-  // /api/models list and needs-key logic as the header picker. autoPick is OFF:
-  // Settings must never persist a model the operator didn't choose (the picker
-  // snaps stale local models; the defaults page does not). Guarded on `open` so a
-  // closed panel makes no request. Must sit above the early return (hook order).
+  // /api/models list, needs-key logic AND local-model snap as the header picker.
+  // autoPick snaps a non-installed model on a LOCAL backend to a real one (a
+  // cloud model like opus makes no sense as ollama's default), so picking ollama
+  // never leaves a stale opus behind; cloud providers are never second-guessed.
+  // Guarded on `open` so a closed panel makes no request. Must sit above the
+  // early return (hook order).
   const settingsProvider = open && view ? String(view.effective.provider ?? "") : "";
   const settingsModel = view ? String(view.effective.model ?? "") : "";
   const { models: settingsModels, mode: settingsModelMode } = useProviderModels(
     settingsProvider,
     providerStatus,
-    { model: settingsModel, onModelChange: () => {}, autoPick: false },
+    {
+      model: settingsModel,
+      // Quiet background persist for the auto-snap (no "saved" flash) — and a
+      // self-contained writer, since saveUser is defined below the early return.
+      onModelChange: (m) => void putSettings("user", { model: m === "" ? null : m }).then(setView).catch(() => {}),
+      autoPick: true,
+    },
   );
 
   if (!open) return null;
