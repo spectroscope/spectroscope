@@ -316,7 +316,7 @@ public final class SpectroCli implements Runnable {
      *  session means a new workspace). */
     private void composeSystemPrompt() {
         systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
-                + skills.systemPromptSection();
+                + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
     }
 
     /** Assembles the tool registry: standard tools, image generation, web

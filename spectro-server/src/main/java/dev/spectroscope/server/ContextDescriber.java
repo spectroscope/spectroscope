@@ -44,11 +44,18 @@ final class ContextDescriber {
         // The endpoint is stateless (no session), so the prompt names the
         // configured workspace or the per-session pattern — the live prompt
         // substitutes the real folder (see SessionConnection.buildAgentOnce).
-        String workspaceShown = config.workspace() != null
-                ? WorkspaceResolver.locate(config.workspace(), null).toString()
+        // A configured workspace resolves to a real folder we can read AGENTS.md
+        // from; a per-session temp folder does not exist yet (stateless endpoint),
+        // so it has no AGENTS.md to append (loadAgentsMd tolerates the null).
+        Path configuredWorkspace = config.workspace() != null
+                ? WorkspaceResolver.locate(config.workspace(), null)
+                : null;
+        String workspaceShown = configuredWorkspace != null
+                ? configuredWorkspace.toString()
                 : Path.of(System.getProperty("java.io.tmpdir"), "spectroscope-ws") + "/<session-id>";
         String systemPrompt = SessionConnection.BASE_SYSTEM_PROMPT + workspaceShown
-                + SpectroConfig.loadProjectMd(cwd) + skills.systemPromptSection();
+                + SpectroConfig.loadProjectMd(cwd) + SpectroConfig.loadAgentsMd(configuredWorkspace)
+                + skills.systemPromptSection();
 
         List<Tool> standardTools = StandardTools.all();
         List<String> mcpServerNames = config.mcpServers().stream()

@@ -94,6 +94,38 @@ const diskshell: Dsl = {
 };
 
 // ---------------------------------------------------------------------------
+// AGENTS.md — the agent reads the workspace's AGENTS.md and visibly honours it:
+// it refuses to touch a generated/ file (a rule from the file) and runs the
+// tests before finishing (another rule). Shows that workspace house-rules bind
+// the agent, not just the project's SPECTRO.md.
+// ---------------------------------------------------------------------------
+const agentsmd: Dsl = {
+  id: "agentsmd",
+  name: { en: "AGENTS.md · workspace house-rules", de: "AGENTS.md · Workspace-Hausregeln" },
+  prompt: {
+    en: "Change the greeting in generated/messages.ts and make sure the tests still pass.",
+    de: "Ändere die Begrüßung in generated/messages.ts und stell sicher, dass die Tests weiter grün sind.",
+  },
+  provider: "ollama",
+  steps: [
+    { think: { en: "First I read the workspace's AGENTS.md — its house-rules bind me.", de: "Zuerst lese ich die AGENTS.md des Workspace — ihre Hausregeln binden mich." } },
+    { read: "AGENTS.md", result: {
+      en: "# Agent instructions\n- Always run the tests before finishing.\n- Never edit anything under generated/ — it is machine-written.",
+      de: "# Agent-Anweisungen\n- Führe vor dem Abschluss immer die Tests aus.\n- Ändere niemals etwas unter generated/ — es ist maschinengeschrieben." } },
+    { think: {
+      en: "generated/messages.ts is off-limits per AGENTS.md. I edit the source template it is generated from, and leave the generated file untouched.",
+      de: "generated/messages.ts ist laut AGENTS.md tabu. Ich ändere die Quell-Vorlage, aus der sie generiert wird, und lasse die generierte Datei in Ruhe." } },
+    { read: "src/messages.template.ts", result: 'export const greeting = "hello";' },
+    { write: "src/messages.template.ts", result: "ok, wrote 1 file" },
+    { think: { en: "AGENTS.md says: run the tests before finishing.", de: "AGENTS.md sagt: vor dem Abschluss die Tests ausführen." } },
+    { run: "npm test", gate: "allow", result: "14 passed, 0 failed" },
+    { say: {
+      en: "Followed AGENTS.md: left generated/ untouched, edited the source template instead, and ran the tests (green) before finishing.",
+      de: "AGENTS.md befolgt: generated/ unangetastet gelassen, stattdessen die Quell-Vorlage geändert und vor dem Abschluss die Tests ausgeführt (grün)." } },
+  ],
+};
+
+// ---------------------------------------------------------------------------
 // Coding — a realistic dev run in FOUR phases, parallel where it should be:
 // Explore (main reads) → Plan (planner subagent) → Implement (two parallel
 // workers, each WRITES a file) → Verify (gated test run). Stays within the
@@ -309,4 +341,4 @@ const imagegen: Dsl = {
   ],
 };
 
-export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, coding, research, context, codereview, darkmode, imagegen];
+export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, agentsmd, coding, research, context, codereview, darkmode, imagegen];

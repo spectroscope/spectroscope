@@ -363,6 +363,37 @@ class SpectroConfigTest {
     }
 
     @Test
+    void agentsMdFromWorkspaceIsWrappedIntoASystemPromptSection(@TempDir Path workspace) throws IOException {
+        assertEquals("", SpectroConfig.loadAgentsMd(workspace), "absent AGENTS.md → empty string");
+        Files.writeString(workspace.resolve("AGENTS.md"), "Always run the tests; never touch generated/.");
+        String section = SpectroConfig.loadAgentsMd(workspace);
+        assertTrue(section.contains("## Agent instructions (AGENTS.md)"), section);
+        assertTrue(section.contains("never touch generated/"), section);
+    }
+
+    @Test
+    void loadAgentsMdToleratesANullWorkspace() {
+        // Some prompt-building paths (e.g. the stateless context endpoint) may not
+        // have a resolved workspace — that is "absent", not a crash.
+        assertEquals("", SpectroConfig.loadAgentsMd(null));
+    }
+
+    @Test
+    void projectMdAndAgentsMdBothAppendWhenEachIsPresent(@TempDir Path projectDir, @TempDir Path workspace)
+            throws IOException {
+        // SPECTRO.md is the project's context (project root); AGENTS.md is the
+        // cross-tool agent-instructions convention (the workspace). Different
+        // scopes, different files — both append, neither shadows the other.
+        Files.writeString(projectDir.resolve("SPECTRO.md"), "project rules here");
+        Files.writeString(workspace.resolve("AGENTS.md"), "agent rules here");
+        String combined = SpectroConfig.loadProjectMd(projectDir) + SpectroConfig.loadAgentsMd(workspace);
+        assertTrue(combined.contains("## Project context (SPECTRO.md)"), combined);
+        assertTrue(combined.contains("project rules here"), combined);
+        assertTrue(combined.contains("## Agent instructions (AGENTS.md)"), combined);
+        assertTrue(combined.contains("agent rules here"), combined);
+    }
+
+    @Test
     void hooksDefaultToAnEmptyListNeverNull(@TempDir Path projectDir) {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir);
         org.junit.jupiter.api.Assertions.assertNotNull(config.hooks());

@@ -679,7 +679,7 @@ public final class SessionConnection {
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
         String systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
-                + skills.systemPromptSection();
+                + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);

@@ -922,6 +922,33 @@ public record SpectroConfig(
         return "";
     }
 
+    /**
+     * AGENTS.md from the agent's WORKSPACE — the emerging cross-tool
+     * agent-instructions convention, read from where the agent actually works
+     * (its workspace, next to the code it edits), and appended to the system
+     * prompt. This is a different scope than {@link #loadProjectMd(Path)}:
+     * SPECTRO.md carries spectroscope's own project context from the project
+     * root, AGENTS.md carries the workspace's agent house-rules. Both append
+     * when present; neither shadows the other. A {@code null} or AGENTS.md-less
+     * workspace yields an empty string. Provider-neutral, like SPECTRO.md.
+     *
+     * @param workspace the agent's working directory searched for AGENTS.md
+     *                  (may be {@code null} when no workspace is resolved yet)
+     * @return the ready-to-append prompt section, or "" when no file is present
+     */
+    public static String loadAgentsMd(Path workspace) {
+        if (workspace == null) {
+            return "";
+        }
+        Path file = workspace.resolve("AGENTS.md");
+        try {
+            String content = Files.readString(file, StandardCharsets.UTF_8).strip();
+            return "\n\n## Agent instructions (AGENTS.md)\n\n" + content;
+        } catch (IOException absent) {
+            return "";
+        }
+    }
+
     /** Reads one layer into a partial holder, or an all-null holder if absent.
      *  Only genuine file-absence (the file itself missing, or a parent
      *  directory that does not exist — both surface as {@link

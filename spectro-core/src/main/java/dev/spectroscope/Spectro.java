@@ -159,9 +159,13 @@ public final class Spectro {
             }
             ToolRegistry registry = new ToolRegistry();
             tools.forEach(registry::register);
+            // The default (five-lines) prompt picks up AGENTS.md from the
+            // workspace, like the CLI and server do. An explicit systemPrompt
+            // means the caller owns the whole prompt — left untouched.
             String prompt = systemPrompt != null
                     ? systemPrompt
-                    : UNATTENDED_PROMPT + "\nThe workspace is " + workspace + ".";
+                    : UNATTENDED_PROMPT + "\nThe workspace is " + workspace + "."
+                            + dev.spectroscope.core.config.SpectroConfig.loadAgentsMd(workspace);
             return new dev.spectroscope.core.Agent(AgentOptions.builder()
                     .provider(provider)
                     .systemPrompt(prompt)

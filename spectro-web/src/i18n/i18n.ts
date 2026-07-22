@@ -34,7 +34,7 @@ export const dict: Record<string, { de: string; en: string }> = {
 
   // scenario dialog
   "scn.title": { de: "Szenario abspielen", en: "Play a scenario" },
-  "scn.hint": { de: "Zehn skriptgesteuerte Demo-Läufe — deterministisch kompiliert, ganz ohne LLM. Öffnet im Lab: dort steppst du den Lauf Schritt für Schritt oder lässt ihn im Flow-Modus abspielen.", en: "Ten scripted demo runs — deterministically compiled, no LLM involved. Opens in the Lab: step through the run or let it auto-play in flow mode." },
+  "scn.hint": { de: "Elf skriptgesteuerte Demo-Läufe — deterministisch kompiliert, ganz ohne LLM. Öffnet im Lab: dort steppst du den Lauf Schritt für Schritt oder lässt ihn im Flow-Modus abspielen.", en: "Eleven scripted demo runs — deterministically compiled, no LLM involved. Opens in the Lab: step through the run or let it auto-play in flow mode." },
 
   // import dialog
   "imp.title": { de: "Session-Datei laden", en: "Load a session file" },

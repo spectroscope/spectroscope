@@ -8,7 +8,7 @@ type ToolCall = Extract<RunEvent, { type: "tool_call" }>;
 
 describe("registry", () => {
   it("has the built-in scenarios", () => {
-    expect(SCENARIOS.map((s) => s.id).sort()).toEqual(["buildplan", "codereview", "coding", "context", "darkmode", "diskshell", "fanout", "imagegen", "permission", "research"]);
+    expect(SCENARIOS.map((s) => s.id).sort()).toEqual(["agentsmd", "buildplan", "codereview", "coding", "context", "darkmode", "diskshell", "fanout", "imagegen", "permission", "research"]);
   });
 
   it("context scenario: the window fills to 'high', then a compaction shrinks it", () => {
@@ -61,6 +61,20 @@ describe("registry", () => {
     expect(imgs[0].model).toBe("imagen-3.0");
     expect(imgs[0].blobPath).toContain(".spectro/images/");
     expect(imgs[0].sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("agentsmd scenario: reads AGENTS.md and honours it — runs the tests through an allowed gate", () => {
+    const ev = compile(SCENARIOS.find((s) => s.id === "agentsmd")!, "en");
+    // The agent reads the workspace AGENTS.md.
+    expect(ev.some((e) => e.type === "tool_call" && e.name === "read_file")).toBe(true);
+    // It edits the source template, never the generated/ file.
+    const writes = ev.filter((e): e is ToolCall => e.type === "tool_call" && e.name === "write_file");
+    expect(writes.length).toBeGreaterThan(0);
+    expect(writes.every((w) => !JSON.stringify(w.input ?? {}).includes("generated/"))).toBe(true);
+    // It runs the tests through an allowed gate before finishing.
+    const test = ev.find((e) => e.type === "tool_call" && e.agentId === "main" && e.name === "run_command");
+    expect(test).toBeTruthy();
+    expect(ev.some((e) => e.type === "permission_decision" && e.callId === (test as { callId: string }).callId && e.allowed)).toBe(true);
   });
 
   it("coding scenario: phases with a planner spawn and two parallel implementers that WRITE", () => {
