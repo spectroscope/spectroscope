@@ -639,6 +639,23 @@ export function TraceView(props: {
           ))}
         </div>
         <div className="trace-chips" role="group" aria-label={t(lang, "trace.typesAria")}>
+          {/* all / none: flip every type filter on or off at once. */}
+          <button
+            type="button"
+            className="trace-chip trace-chip--action"
+            title={t(lang, "trace.selectAll")}
+            onClick={() => setActive(new Set(CATEGORIES))}
+          >
+            {t(lang, "trace.all")}
+          </button>
+          <button
+            type="button"
+            className="trace-chip trace-chip--action"
+            title={t(lang, "trace.selectNone")}
+            onClick={() => setActive(new Set())}
+          >
+            {t(lang, "trace.none")}
+          </button>
           {CATEGORIES.map((c) => (
             <button
               key={c}

@@ -460,6 +460,9 @@
 .trace-chip { background: none; border: 1px solid var(--border); border-radius: 999px; color: var(--text-faint); font: inherit; font-size: var(--fs-11); line-height: 1.6; padding: 0 var(--sp-2); cursor: pointer; transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast); }
 .trace-chip:hover { color: var(--text-dim); border-color: var(--border-strong); }
 .trace-chip[aria-pressed="true"] { background: var(--surface-2); border-color: var(--border-strong); color: var(--text); }
+/* all / none: actions, not toggles — a dashed border sets them apart from the filter chips. */
+.trace-chip--action { border-style: dashed; color: var(--text-dim); }
+.trace-chip--action:hover { color: var(--text); border-color: var(--accent); }
 
 .trace-count { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); white-space: nowrap; }
 
