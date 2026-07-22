@@ -8,8 +8,12 @@
 #   spectro-<v>.zip                     CLI distribution (bin/spectro)
 #   spectro-server-<v>.jar              executable Spring Boot server
 #   spectro-mcp-notes-<v>.zip           sample MCP notes server
-#   spectro-web-<v>.zip                 built web UI bundle (normally served by the server)
 #   spectroscope-<v>-<arch>.dmg         desktop run kit (bundled server + JRE)
+#
+# spectro-web is NOT shipped standalone: it is a single-page app that needs the
+# server's REST/WebSocket API on the same origin, so a downloaded bundle can't
+# run on its own. It is built here only so the server jar (and the desktop app)
+# embed the current UI.
 #
 # The desktop .dmg is HOST-platform only (see build-desktop-runkit.sh). Pass
 # SKIP_DESKTOP=1 to build everything except the desktop kit (e.g. on a machine
@@ -24,11 +28,11 @@ OUT="build/release-assets"
 rm -rf "$OUT"; mkdir -p "$OUT"
 echo "==> building release assets for ${VERSION} → ${OUT}/"
 
-# 1) web bundle FIRST — its build lands in spectro-server's static resources, so
-#    the server jar below embeds the current UI.
-echo "==> [1/5] web UI bundle"
+# 1) build the web UI FIRST — its output lands in spectro-server's static
+#    resources, so the server jar below embeds the current UI. Not shipped as a
+#    standalone asset (a SPA can't run without the server's API + same origin).
+echo "==> [1/5] web UI build (embedded into the server jar; not a standalone asset)"
 ( cd spectro-web && { [ -d node_modules ] || npm ci; } && npm run build )
-( cd spectro-server/src/main/resources/static && zip -qr "$HARNESS/$OUT/spectro-web-${VERSION}.zip" . )
 
 # 2) JVM apps: CLI dist, server bootJar, mcp-notes dist
 echo "==> [2/5] cli + server + mcp-notes (gradle)"

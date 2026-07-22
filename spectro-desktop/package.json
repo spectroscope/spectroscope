@@ -22,10 +22,14 @@
     "appId": "dev.spectroscope.desktop",
     "productName": "spectroscope",
     "directories": { "output": "release" },
+    "icon": "icon.icns",
     "files": ["dist/**"],
     "extraResources": [
       { "from": "build/spectro-server.jar", "to": "spectro-server.jar" },
       { "from": "jre", "to": "jre" }
-    ]
+    ],
+    "mac": {
+      "icon": "icon.icns"
+    }
   }
 }

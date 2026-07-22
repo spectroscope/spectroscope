@@ -6,54 +6,83 @@
 # jlink'd Java runtime into the app, so the target machine needs no Java at all.
 # Double-click the result, the server starts with it, the cockpit opens.
 #
-# Output:  spectro-desktop/release/spectroscope-<version>-<arch>.dmg   (+ -mac.zip)
+# Output:  spectro-desktop/release/spectroscope-<version>-<arch>.dmg
 #
-# IMPORTANT — per-platform: electron-builder and the bundled JRE are both
-# platform + architecture specific. This builds for the HOST you run it on
-# (e.g. macOS arm64 → an arm64 .dmg). To ship Windows/Linux/Intel, run this on
-# (or cross-build for) each target. The build is UNSIGNED: on download, macOS
-# Gatekeeper blocks first launch → right-click the app → Open.
+# SIGNING: the app is AD-HOC signed (free, no Apple account). That is enough to
+# avoid the "\"spectroscope.app\" is damaged" error on download — macOS instead
+# shows the normal "unidentified developer" prompt, so the user right-clicks the
+# app → Open (or runs `xattr -cr spectroscope.app`) once. For a ZERO-warning,
+# double-click experience you need a paid Apple Developer ID + notarization:
+# see docs/DESKTOP-SIGNING.md.
 #
-# Prereqs: a JDK (for jlink), Node + npm. Run from anywhere.
+# PER-PLATFORM: electron-builder and the bundled JRE are OS/arch specific; this
+# builds for the HOST you run on. Ship Windows/Linux/Intel by building there.
+#
+# Prereqs: a JDK (jlink), Node + npm, macOS codesign/hdiutil. Optional:
+# rsvg-convert (regenerates the icon from icon.svg; otherwise the committed
+# icon.icns is used).
 set -euo pipefail
 
 HARNESS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"   # spectroscope-harness/spectro
 cd "$HARNESS"
+D=spectro-desktop
 
-# Version follows the server module unless overridden: VERSION=0.1.1 ./scripts/build-desktop-runkit.sh
 VERSION="${VERSION:-$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)}"
-echo "==> desktop run kit for spectro-server ${VERSION} (host: $(uname -s) $(uname -m))"
+ARCH="$(uname -m | sed 's/x86_64/x64/')"
+echo "==> desktop run kit for spectro-server ${VERSION} (host: $(uname -s) ${ARCH})"
 
-# 1) the server fat jar — the app supervises this process
-echo "==> [1/4] server bootJar"
+# 1) server fat jar → the version-neutral path the app's extraResources points at
+echo "==> [1/6] server bootJar"
 ./gradlew :spectro-server:bootJar --console=plain
 JAR="spectro-server/build/libs/spectro-server-${VERSION}.jar"
-[ -f "$JAR" ] || { echo "!! server jar not found: $JAR (is the version right?)"; exit 1; }
-
-# Copy to the version-neutral path the app's extraResources points at, so
-# package.json never has to name a version.
-mkdir -p spectro-desktop/build
-cp -f "$JAR" spectro-desktop/build/spectro-server.jar
+[ -f "$JAR" ] || { echo "!! server jar not found: $JAR"; exit 1; }
+mkdir -p "$D/build"; cp -f "$JAR" "$D/build/spectro-server.jar"
 
 # 2) jlink a full runtime (ALL-MODULE-PATH so Spring Boot's reflection is safe)
-echo "==> [2/4] jlink JRE"
+echo "==> [2/6] jlink JRE"
 JDK="$(/usr/libexec/java_home 2>/dev/null || dirname "$(dirname "$(command -v jlink)")")"
-[ -d "$JDK/jmods" ] || { echo "!! no jmods under $JDK — need a full JDK, not a JRE"; exit 1; }
-rm -rf spectro-desktop/jre
+[ -d "$JDK/jmods" ] || { echo "!! no jmods under $JDK — need a full JDK"; exit 1; }
+rm -rf "$D/jre"
 jlink --module-path "$JDK/jmods" --add-modules ALL-MODULE-PATH \
-      --strip-debug --no-header-files --no-man-pages \
-      --output spectro-desktop/jre
-echo -n "    bundled runtime: "; spectro-desktop/jre/bin/java -version 2>&1 | head -1
+      --strip-debug --no-header-files --no-man-pages --output "$D/jre"
+echo -n "    bundled runtime: "; "$D/jre/bin/java" -version 2>&1 | head -1
 
-# 3) node deps
-echo "==> [3/4] npm deps"
-( cd spectro-desktop && { [ -d node_modules ] || npm ci; } )
+# 3) app icon: regenerate icon.icns from icon.svg if rsvg-convert is present
+echo "==> [3/6] app icon"
+if command -v rsvg-convert >/dev/null && command -v iconutil >/dev/null; then
+  ISET="$(mktemp -d)/spectroscope.iconset"; mkdir -p "$ISET"
+  rsvg-convert -w 1024 -h 1024 "$D/icon.svg" -o "$ISET/base.png"
+  for s in 16 32 128 256 512; do
+    sips -z $s $s        "$ISET/base.png" --out "$ISET/icon_${s}x${s}.png"     >/dev/null
+    sips -z $((s*2)) $((s*2)) "$ISET/base.png" --out "$ISET/icon_${s}x${s}@2x.png" >/dev/null
+  done
+  rm -f "$ISET/base.png"
+  iconutil -c icns "$ISET" -o "$D/icon.icns"
+  echo "    regenerated $D/icon.icns"
+else
+  echo "    rsvg-convert/iconutil missing — using committed $D/icon.icns"
+fi
 
-# 4) electron-builder (unsigned — CSC_IDENTITY_AUTO_DISCOVERY=false skips cert lookup)
-echo "==> [4/4] electron-builder (unsigned, host arch)"
-( cd spectro-desktop && CSC_IDENTITY_AUTO_DISCOVERY=false npm run dist )
+# 4) build the app ONLY (no installer yet), so we can sign before packaging
+echo "==> [4/6] electron-builder --dir"
+( cd "$D" && { [ -d node_modules ] || npm ci; } && npm run build && npx electron-builder --dir )
+APP="$D/release/mac-${ARCH}/spectroscope.app"
+[ -d "$APP" ] || { echo "!! app not built: $APP"; exit 1; }
+
+# 5) AD-HOC sign the whole bundle (fixes the "damaged" gate) and verify hard
+echo "==> [5/6] ad-hoc codesign + verify"
+codesign --force --deep --sign - "$APP"
+codesign --verify --deep --strict "$APP" || { echo "!! signature did not verify"; exit 1; }
+echo "    $(codesign -dv "$APP" 2>&1 | grep -i signature) — valid"
+
+# 6) package the signed app into a .dmg (hdiutil preserves the signature exactly)
+echo "==> [6/6] package .dmg"
+STAGE="$(mktemp -d)"; ditto "$APP" "$STAGE/spectroscope.app"; ln -s /Applications "$STAGE/Applications"
+DMG="$D/release/spectroscope-${VERSION}-${ARCH}.dmg"; rm -f "$DMG"
+hdiutil create -volname "spectroscope" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+rm -rf "$STAGE"
 
 echo ""
-echo "==> done. artifacts:"
-ls -lh spectro-desktop/release/*.dmg spectro-desktop/release/*-mac.zip 2>/dev/null \
-  | awk '{print "     " $5 "  " $NF}' || echo "     (see spectro-desktop/release/)"
+echo "==> done: $DMG ($(du -h "$DMG" | cut -f1))"
+echo "    ad-hoc signed → no 'damaged' error; users right-click → Open once."
+echo "    zero-warning distribution needs an Apple Developer ID: docs/DESKTOP-SIGNING.md"

@@ -133,18 +133,33 @@ Mechanics:
    (full module set so Spring Boot's reflection is safe; ~160 MB, gitignored).
 3. `resolveJavaBin()` in `src/main.ts` uses `Resources/jre/bin/java` when packaged,
    the PATH `java` in dev.
-4. `electron-builder` (unsigned) → `spectro-desktop/release/spectroscope-<v>-<arch>.dmg`.
+4. App icon: `icon.svg` → `icon.icns` (rsvg-convert + `sips` + `iconutil`; the
+   committed `icon.icns` is the fallback when rsvg-convert is absent).
+5. `electron-builder --dir` (app only) → **ad-hoc** `codesign --force --deep
+   --sign -` → **verify** → `hdiutil` packs the signed app into the `.dmg`.
+
+**Why the two-phase build + explicit codesign:** electron-builder's "skip
+signing" leaves an *invalid* bundle seal (`codesign --verify` fails with "code
+has no resources but signature indicates they must be present"), and macOS calls
+that **"damaged"** on download — worse than "unidentified developer". The
+explicit `codesign --sign -` writes a valid ad-hoc seal, which downgrades the
+download prompt to the normal right-click → Open. Sign with `-` (ad-hoc) only —
+**never** a corporate/Valtech identity that `security find-identity` may list.
 
 **Verify it actually works** (not just that it built): launch the packaged
 `.app`, confirm a `…/Resources/jre/bin/java` child bound a port and
-`/api/health` returns `{"status":"ok"}`, then quit and confirm the JVM is reaped.
+`/api/health` returns `{"status":"ok"}`, quit and confirm the JVM is reaped, and
+`codesign --verify --deep --strict` the app (pass = not "damaged").
 
 ### Known limits (be honest in the release notes)
 - **Per-platform.** `electron-builder` + the JRE are OS/arch specific; the script
   builds the **host** target only. Windows/Linux/Intel need building on/for each.
-- **Unsigned.** No Apple Developer cert → on download macOS Gatekeeper blocks the
-  first launch: **right-click → Open**. (A local build has no quarantine flag, so
-  it launches directly — which is why the verify step above works without the prompt.)
+- **Ad-hoc signed, not notarized.** On download macOS shows *"unidentified
+  developer"* → **right-click → Open** once (or `xattr -cr`). For a zero-warning,
+  double-click app you need a paid Apple Developer ID + notarization: the full
+  procedure is [`docs/DESKTOP-SIGNING.md`](DESKTOP-SIGNING.md). (A local build has
+  no quarantine flag, so it launches directly — which is why the verify step
+  above works without any prompt.)
 
 ---
 
