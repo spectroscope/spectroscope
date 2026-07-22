@@ -101,9 +101,12 @@ fi
 #    SIGNED: electron-builder auto-discovers the identity (CSC_NAME pins it) and
 #    signs the Electron framework + helper apps with the hardened runtime from
 #    package.json. AD-HOC: disable discovery so it leaves the app unsigned.
+#    NOTE: electron-builder's CSC_NAME wants the common name WITHOUT the
+#    "Developer ID Application: " prefix (codesign, below, keeps the full string).
 echo "==> [4/7] electron-builder --dir"
+CSC_COMMON_NAME="${ID#Developer ID Application: }"
 ( cd "$D" && { [ -d node_modules ] || npm ci; } && npm run build \
-  && if [ -n "$ID" ]; then CSC_NAME="$ID" npx electron-builder --dir; \
+  && if [ -n "$ID" ]; then CSC_NAME="$CSC_COMMON_NAME" npx electron-builder --dir; \
      else CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --dir; fi )
 APP="$D/release/mac-${ARCH}/spectroscope.app"
 [ -d "$APP" ] || { echo "!! app not built: $APP"; exit 1; }
