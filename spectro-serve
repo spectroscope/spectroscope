@@ -161,6 +161,31 @@ cmd_logs() { [ -f "$LOG_FILE" ] || die "no log ($LOG_FILE)"; [ "${1:-}" = "-f" ]
 open_url() { local u="http://localhost:$PORT/"; (command -v open >/dev/null && open "$u") || (command -v xdg-open >/dev/null && xdg-open "$u") || say "open: $u"; }
 cmd_open() { resolve_port; open_url; }
 
+# provider -> its key env var (mirror of SpectroConfig.keyEnvFor; local backends
+# have none).
+key_env_for() { case "$1" in
+  anthropic) echo ANTHROPIC_API_KEY;; openai) echo OPENAI_API_KEY;;
+  openrouter) echo OPENROUTER_API_KEY;; gemini) echo GEMINI_API_KEY;; *) echo "";;
+esac; }
+
+# set-key: read an API key WITHOUT echoing it and upsert it into ./.env (chmod
+# 600) — the safe, local, one-time "type it once and it's saved" the onboarding
+# points at. The value is never printed back; a restart picks it up.
+cmd_set_key() {
+  local provider="$1"
+  if [ -z "$provider" ]; then printf 'provider (anthropic / openai / openrouter / gemini): '; read -r provider; fi
+  local env; env="$(key_env_for "$provider")"
+  [ -z "$env" ] && die "no key for '$provider' (ollama/lmstudio are local, no key needed)"
+  local key; printf 'paste %s (hidden, then Enter): ' "$env"; read -rs key; echo
+  [ -z "$key" ] && die "empty — nothing written"
+  local f=".env"; touch "$f"; chmod 600 "$f" 2>/dev/null || true
+  if grep -q "^${env}=" "$f" 2>/dev/null; then
+    local tmp; tmp="$(mktemp)"; grep -v "^${env}=" "$f" > "$tmp"; mv "$tmp" "$f"; chmod 600 "$f" 2>/dev/null || true
+  fi
+  printf '%s=%s\n' "$env" "$key" >> "$f"
+  ok "saved ${env} to ${f} (chmod 600, value not shown). run 'restart' to use it."
+}
+
 cmd_doctor() {
   banner; local bad=0
   for chk in "${DOCTOR_CHECKS[@]}"; do
@@ -181,6 +206,7 @@ cmd_help() {
   printf '  %-34s %s\n' "logs [-f]" "last log lines (or follow)"
   printf '  %-34s %s\n' "doctor"  "check prerequisites (with fixes)"
   printf '  %-34s %s\n' "open"    "open the browser on the URL"
+  printf '  %-34s %s\n' "set-key [provider]" "type an api key (hidden) into ./.env"
   say ""
   say "${C_DIM}  --env-file F (default ./.env) loads KEY=value into the env before boot;${C_0}"
   say "${C_DIM}  every var passes through to the JVM (provider, keys, SPECTRO_HUB_PORT).${C_0}"
@@ -206,6 +232,7 @@ case "${1:-overview}" in
   logs) shift; cmd_logs "${1:-}";;
   doctor) cmd_doctor;;
   open) cmd_open;;
+  set-key) shift; cmd_set_key "${1:-}";;
   help|-h|--help) cmd_help;;
   overview) overview;;
   *) die "unknown command: $1  ('$0 help')";;
