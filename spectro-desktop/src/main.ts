@@ -43,14 +43,22 @@ function findFreePort(): Promise<number> {
 function resolveJarPath(): string {
   return app.isPackaged
     ? path.join(process.resourcesPath, "spectro-server.jar")
-    : path.join(__dirname, "..", "..", "spectro-server", "build", "libs", "spectro-server-0.0.1.jar");
+    : path.join(__dirname, "..", "..", "spectro-server", "build", "libs", "spectro-server-0.1.0.jar");
+}
+
+// (b') Resolve the java binary: the packaged app bundles its OWN runtime (extraResources `jre`,
+// jlink'd from the JDK), so a fresh machine needs no system Java — a true one-click run kit. In
+// dev we fall through to whatever `java` is on the PATH.
+function resolveJavaBin(): string {
+  if (!app.isPackaged) return "java";
+  return path.join(process.resourcesPath, "jre", "bin", "java");
 }
 
 // (b) Spawn the JVM. A missing java binary surfaces as ENOENT on the spawn — that must become
 // a sentence, not a stack trace. Every startup failure kills the child before it can linger.
 function spawnServer(port: number): ChildProcess {
   const jarPath = resolveJarPath();
-  const jvm = spawn("java", ["-jar", jarPath, "--server.port=" + port]);
+  const jvm = spawn(resolveJavaBin(), ["-jar", jarPath, "--server.port=" + port]);
 
   jvm.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") {

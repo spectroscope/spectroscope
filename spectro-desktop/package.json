@@ -1,7 +1,7 @@
 {
   "name": "spectro-desktop",
   "private": true,
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "spectroscope Desktop — Electron shell: spawns and supervises the spectro-server JVM",
   "author": "Christopher Ezell",
   "license": "MIT",
@@ -24,7 +24,8 @@
     "directories": { "output": "release" },
     "files": ["dist/**"],
     "extraResources": [
-      { "from": "../spectro-server/build/libs/spectro-server-0.0.1.jar", "to": "spectro-server.jar" }
+      { "from": "../spectro-server/build/libs/spectro-server-0.1.0.jar", "to": "spectro-server.jar" },
+      { "from": "jre", "to": "jre" }
     ]
   }
 }

@@ -16,6 +16,8 @@ __pycache__/
 *.hprof
 target/
 release/
+# desktop run kit: the jlink'd runtime bundled into the Electron app (build artifact)
+spectro-desktop/jre/
 .gradle/
 .kotlin/
 .DS_Store
