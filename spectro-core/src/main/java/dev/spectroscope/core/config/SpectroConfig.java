@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -601,7 +602,7 @@ public record SpectroConfig(
             case "ollama" -> new OllamaProvider(new OllamaOptions(baseUrl, model));
             case "openai", "lmstudio", "openrouter" -> new OpenAiCompatProvider(
                     new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey()));
-            case "anthropic" -> new AnthropicProvider(model, promptCaching);
+            case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         };
         // The autologging proxy sits around the CONCRETE provider,
@@ -678,13 +679,93 @@ public record SpectroConfig(
         return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
     }
 
+    /** {@code ~/.spectro/.env} — where the UI's "save key" writes API keys, read
+     *  back as a fallback to the process environment. User-scoped so it works the
+     *  same from the jar, the launcher and the desktop app.
+     *  @return the path (the file may not exist) */
+    public static Path dotEnvPath() {
+        return Path.of(System.getProperty("user.home"), ".spectro", ".env");
+    }
+
+    /** Resolve an API key: the process environment first (a real env var or a
+     *  launcher-loaded ./.env always wins), then {@link #dotEnvPath()}. A running
+     *  JVM cannot change its own {@code System.getenv}, so this file fallback is
+     *  what lets a key saved from the UI take effect on the next provider build.
+     *  @param keyEnv the env var name (e.g. ANTHROPIC_API_KEY), or null
+     *  @return the key value, or null when set nowhere */
+    public static String resolveApiKey(String keyEnv) {
+        if (keyEnv == null) {
+            return null;
+        }
+        String env = System.getenv(keyEnv);
+        if (env != null && !env.isBlank()) {
+            return env;
+        }
+        return dotEnvValue(keyEnv);
+    }
+
+    /** Presence of an API key across env and {@link #dotEnvPath()} — never the value.
+     *  @param keyEnv the env var name, or null
+     *  @return true when set and non-blank somewhere */
+    public static boolean hasApiKey(String keyEnv) {
+        String v = resolveApiKey(keyEnv);
+        return v != null && !v.isBlank();
+    }
+
+    /** One key's value from {@link #dotEnvPath()} (KEY=value; one layer of quotes
+     *  stripped), or null. */
+    private static String dotEnvValue(String keyEnv) {
+        Path env = dotEnvPath();
+        if (!Files.exists(env)) {
+            return null;
+        }
+        try {
+            for (String line : Files.readAllLines(env)) {
+                String t = line.strip();
+                int eq = t.indexOf('=');
+                if (t.isEmpty() || t.startsWith("#") || eq < 1) {
+                    continue;
+                }
+                if (!t.substring(0, eq).strip().equals(keyEnv)) {
+                    continue;
+                }
+                String v = t.substring(eq + 1).strip();
+                if (v.length() >= 2
+                        && ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'")))) {
+                    v = v.substring(1, v.length() - 1);
+                }
+                return v.isBlank() ? null : v;
+            }
+        } catch (IOException unreadable) {
+            return null;
+        }
+        return null;
+    }
+
+    /** Upsert an API key into {@link #dotEnvPath()} (0600) — the write half of the
+     *  UI "save key". The caller validates {@code keyEnv} against {@link #keyEnvFor}.
+     *  @param keyEnv the env var name
+     *  @param value  the secret (never logged)
+     *  @throws IOException if the file cannot be written */
+    public static void writeApiKey(String keyEnv, String value) throws IOException {
+        Path env = dotEnvPath();
+        Files.createDirectories(env.getParent());
+        List<String> lines = Files.exists(env) ? new ArrayList<>(Files.readAllLines(env)) : new ArrayList<>();
+        lines.removeIf(l -> l.strip().startsWith(keyEnv + "="));
+        lines.add(keyEnv + "=" + value);
+        Files.write(env, lines);
+        try {
+            Files.setPosixFilePermissions(env, PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException | IOException nonPosix) {
+            // Windows / non-POSIX: best effort — the file stays under the user's home.
+        }
+    }
+
     /** This provider's API key from the environment — {@code OPENROUTER_API_KEY}
      *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
      *  @return the key, or null when unset */
     private String openAiCompatKey() {
-        return "openrouter".equals(provider)
-                ? System.getenv("OPENROUTER_API_KEY")
-                : System.getenv("OPENAI_API_KEY");
+        return resolveApiKey("openrouter".equals(provider) ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY");
     }
 
     /** The effective openai-compatible endpoint for THIS config.

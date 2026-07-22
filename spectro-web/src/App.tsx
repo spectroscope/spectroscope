@@ -137,6 +137,7 @@ export function App() {
   // Per-provider onboarding status from /api/config (ready | needs-key | local),
   // so the picker shows 'add a key to .env' instead of a fake list.
   const [providerStatus, setProviderStatus] = useState<Record<string, string> | null>(null);
+  const [configNonce, setConfigNonce] = useState(0); // bump to re-read /api/config after a key is saved
   // Key PRESENCE per image backend (from /api/config, never values). Drives
   // the gallery dropdown's "no key in .env" hints and the smart default below.
   const [imageKeys, setImageKeys] = useState<{ gemini: boolean; openai: boolean } | null>(null);
@@ -315,7 +316,7 @@ export function App() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [configNonce]);
 
   // Settings hydration: the thinking toggle and the image-backend picker seed
   // from a hardcoded fallback (see the useState calls above) until the
@@ -648,6 +649,7 @@ export function App() {
           archiveProvider={view.provider ?? undefined}
           status={conn.status}
           onApplyProvider={changeProvider}
+          onKeySaved={() => setConfigNonce((n) => n + 1)}
           lastInputTokens={view.lastInputTokens}
           context={view.context}
           running={live.running}

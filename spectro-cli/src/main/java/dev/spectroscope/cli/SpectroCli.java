@@ -258,11 +258,7 @@ public final class SpectroCli implements Runnable {
      *  present. */
     private static boolean providerKeyPresent(String provider) {
         String env = SpectroConfig.keyEnvFor(provider);
-        if (env == null) {
-            return true; // local backend — no key needed
-        }
-        String v = System.getenv(env);
-        return v != null && !v.isBlank();
+        return env == null || SpectroConfig.hasApiKey(env); // local needs none; else env or ~/.spectro/.env
     }
 
     /** The first-run onboarding message for a keyless API provider — the CLI's

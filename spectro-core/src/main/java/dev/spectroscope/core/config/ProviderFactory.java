@@ -26,7 +26,7 @@ public final class ProviderFactory {
      * @throws IllegalStateException if anthropic is selected but ANTHROPIC_API_KEY is unset
      */
     public static LlmProvider providerFromConfig(SpectroConfig config) {
-        if ("anthropic".equals(config.provider()) && System.getenv("ANTHROPIC_API_KEY") == null) {
+        if ("anthropic".equals(config.provider()) && !SpectroConfig.hasApiKey("ANTHROPIC_API_KEY")) {
             throw new IllegalStateException(
                     "ANTHROPIC_API_KEY is not set (export ANTHROPIC_API_KEY=...).");
         }

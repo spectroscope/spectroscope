@@ -418,6 +418,24 @@
 .provider-field-note--warn {
   color: var(--sp-amber);
 }
+/* Paste-a-key affordance under the needs-key note. */
+.pp-keyinput {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pp-keyrow {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+.pp-keyrow .provider-input {
+  flex: 1;
+  min-width: 0;
+}
+.pp-keysave {
+  white-space: nowrap;
+}
 
 .provider-pop-foot {
   display: flex;

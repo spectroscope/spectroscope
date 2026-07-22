@@ -179,9 +179,9 @@ public final class DoctorCommand implements Callable<Integer> {
 
         // Provider reachability
         switch (config.provider()) {
-            case "anthropic" -> report(System.getenv("ANTHROPIC_API_KEY") != null,
-                    "ANTHROPIC_API_KEY " + (System.getenv("ANTHROPIC_API_KEY") != null
-                            ? "is set" : "is NOT set (export ANTHROPIC_API_KEY=...)"));
+            case "anthropic" -> report(SpectroConfig.hasApiKey("ANTHROPIC_API_KEY"),
+                    "ANTHROPIC_API_KEY " + (SpectroConfig.hasApiKey("ANTHROPIC_API_KEY")
+                            ? "is set" : "is NOT set (export it, or save it in the app)"));
             case "ollama" -> {
                 var version = new OllamaProvider(new OllamaOptions(config.baseUrl(), config.model()))
                         .serverVersion();

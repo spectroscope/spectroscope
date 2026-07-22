@@ -50,21 +50,38 @@ public final class AnthropicProvider implements LlmProvider {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     // maxRetries(0): spectroscope owns retry uniformly via RetryingProvider — no layered SDK retry.
-    private final AnthropicClient client =
-            AnthropicOkHttpClient.builder().fromEnv().maxRetries(0).build();
+    private final AnthropicClient client;
     private final String model;
     private final boolean promptCaching;
 
     /**
-     * Builds the provider; the API key comes from the environment (SDK
-     * {@code fromEnv()}), so constructing one requires ANTHROPIC_API_KEY.
+     * Builds the provider with an explicit API key when one was resolved (env or
+     * {@code ~/.spectro/.env}), otherwise falling back to the SDK's
+     * {@code fromEnv()}. The explicit path is what lets a key saved from the UI
+     * take effect without touching the process environment.
      *
      * @param model         the model id every request is sent to (e.g. claude-opus-4-8)
      * @param promptCaching true to place cache_control breakpoints (see {@link #buildParams})
+     * @param apiKey        the resolved key, or null/blank to read ANTHROPIC_API_KEY from the env
      */
-    public AnthropicProvider(String model, boolean promptCaching) {
+    public AnthropicProvider(String model, boolean promptCaching, String apiKey) {
         this.model = model;
         this.promptCaching = promptCaching;
+        AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder().maxRetries(0);
+        this.client = (apiKey != null && !apiKey.isBlank())
+                ? builder.apiKey(apiKey).build()
+                : builder.fromEnv().build();
+    }
+
+    /**
+     * Back-compat: the API key comes straight from the environment (SDK
+     * {@code fromEnv()}), so constructing one requires ANTHROPIC_API_KEY.
+     *
+     * @param model         the model id every request is sent to (e.g. claude-opus-4-8)
+     * @param promptCaching true to place cache_control breakpoints
+     */
+    public AnthropicProvider(String model, boolean promptCaching) {
+        this(model, promptCaching, null);
     }
 
     /**

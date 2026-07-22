@@ -524,6 +524,28 @@ class SpectroConfigTest {
     }
 
     @Test
+    void apiKeyRoundTripsThroughTheDotEnvWriteAndRead() throws java.io.IOException {
+        // Hermetic: the build test-home persists between runs, so start clean.
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        // The UI's 'save key' writes ~/.spectro/.env; resolveApiKey reads it back
+        // (user.home points into the build dir for tests). No key set -> null.
+        assertNull(SpectroConfig.resolveApiKey("OPENROUTER_API_KEY"));
+        assertFalse(SpectroConfig.hasApiKey("OPENROUTER_API_KEY"));
+
+        SpectroConfig.writeApiKey("OPENROUTER_API_KEY", "sk-or-test");
+        assertEquals("sk-or-test", SpectroConfig.resolveApiKey("OPENROUTER_API_KEY"));
+        assertTrue(SpectroConfig.hasApiKey("OPENROUTER_API_KEY"));
+
+        // Upsert: writing again replaces the line, never duplicates it.
+        SpectroConfig.writeApiKey("OPENROUTER_API_KEY", "sk-or-second");
+        assertEquals("sk-or-second", SpectroConfig.resolveApiKey("OPENROUTER_API_KEY"));
+        long lines = java.nio.file.Files.readAllLines(SpectroConfig.dotEnvPath()).stream()
+                .filter(l -> l.startsWith("OPENROUTER_API_KEY=")).count();
+        assertEquals(1, lines);
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath()); // don't leak into the build dir
+    }
+
+    @Test
     void keyEnvNamesTheApiProvidersSecretAndIsNullForLocalOnes() {
         assertEquals("ANTHROPIC_API_KEY", SpectroConfig.keyEnvFor("anthropic"));
         assertEquals("OPENAI_API_KEY", SpectroConfig.keyEnvFor("openai"));

@@ -12,8 +12,11 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -134,13 +137,74 @@ public class SessionsController {
         return out;
     }
 
+    /**
+     * Save an API key from the onboarding UI — LOCAL browsers only. Security:
+     * {@code consumes=json} makes a cross-origin POST a CORS preflight the policy
+     * rejects, and a non-local {@code Host} answers 404 ({@link FleetController#isLocalOrigin});
+     * both together block a malicious page from writing the key. It lands in
+     * {@code ~/.spectro/.env} at 0600, which the provider build reads on the next
+     * fresh chat — no restart. Presence-only: the value is never echoed back and
+     * never enters a log or a GET.
+     *
+     * @param body    the provider and its key
+     * @param request the servlet request, for the local-origin check
+     * @return 200 {@code {saved:true}} · 400 on an unknown provider or empty key · 404 when not local
+     */
+    @PostMapping(value = "/api/onboarding/key", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> saveKey(@RequestBody(required = false) KeyBody body,
+                                                       HttpServletRequest request) {
+        // Two fences: isLocalOrigin blocks a remote/rebinding caller, and the
+        // Origin check blocks CSRF from a real website — this controller sets
+        // @CrossOrigin(*) for reads, so a cross-site page could otherwise POST here
+        // (its request is still loopback + localhost-Host). A same-origin page and
+        // the Vite dev proxy send a loopback Origin; a non-browser client sends none.
+        if (!FleetController.isLocalOrigin(request) || !originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        String keyEnv = body == null ? null : SpectroConfig.keyEnvFor(body.provider());
+        if (keyEnv == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "unknown provider, or it needs no key"));
+        }
+        if (body.key() == null || body.key().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "empty key"));
+        }
+        try {
+            SpectroConfig.writeApiKey(keyEnv, body.key().trim());
+        } catch (Exception writeFailed) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "could not save the key"));
+        }
+        return ResponseEntity.ok(Map.of("saved", true, "provider", body.provider()));
+    }
+
+    /** The save-key request body (never logged). */
+    public record KeyBody(String provider, String key) {}
+
+    /** True when the request's {@code Origin} is absent (a non-browser client) or
+     *  points at loopback — a cross-site page's Origin (its own domain) fails,
+     *  closing CSRF against the write endpoints even though this controller allows
+     *  cross-origin reads.
+     *  @param request the servlet request
+     *  @return whether the Origin is safe */
+    private static boolean originIsLoopbackOrAbsent(HttpServletRequest request) {
+        String origin = request.getHeader("Origin");
+        if (origin == null || origin.isBlank()) {
+            return true;
+        }
+        try {
+            String host = java.net.URI.create(origin).getHost();
+            return "localhost".equals(host) || "127.0.0.1".equals(host)
+                    || "::1".equals(host) || "[::1]".equals(host);
+        } catch (RuntimeException malformed) {
+            return false;
+        }
+    }
+
     /** Whether an env-provided key is present and non-blank — presence only,
      *  the value never leaves the process.
      *  @param name the environment variable to probe
      *  @return true when set and non-blank */
     private static boolean envKeySet(String name) {
-        String v = System.getenv(name);
-        return v != null && !v.isBlank();
+        return SpectroConfig.hasApiKey(name); // env OR ~/.spectro/.env (keys saved from the UI)
     }
 
     /**
@@ -242,9 +306,8 @@ public class SessionsController {
         List<String> fallback = "openai".equals(provider) ? OPENAI_MODELS : List.of();
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-            String key = "openrouter".equals(provider)
-                    ? System.getenv("OPENROUTER_API_KEY")
-                    : System.getenv("OPENAI_API_KEY");
+            String key = SpectroConfig.resolveApiKey(
+                    "openrouter".equals(provider) ? "OPENROUTER_API_KEY" : "OPENAI_API_KEY");
             boolean hasKey = key != null && !key.isBlank();
             String base = SpectroConfig.effectiveOpenAiBaseUrl(provider, c.baseUrl());
 
@@ -284,7 +347,7 @@ public class SessionsController {
      * @return the model ids the API reports, newest first, or the curated list
      */
     private List<String> anthropicModels() {
-        String key = System.getenv("ANTHROPIC_API_KEY");
+        String key = SpectroConfig.resolveApiKey("ANTHROPIC_API_KEY");
         if (key == null || key.isBlank()) {
             return ANTHROPIC_MODELS;
         }

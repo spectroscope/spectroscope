@@ -22,6 +22,7 @@ export function ProviderPicker({
   status,
   providerStatus,
   onApply,
+  onKeySaved,
 }: {
   provider: string;
   /** The current model, so the chip shows it and the form prefills the real one. */
@@ -31,6 +32,9 @@ export function ProviderPicker({
    *  Drives the honest 'no key — add it to .env' message instead of a fake list. */
   providerStatus?: Record<string, string>;
   onApply: (provider: string, model: string) => void;
+  /** Called after a key is saved to ~/.spectro/.env, so the app re-reads /api/config
+   *  and the provider flips from needs-key to ready. */
+  onKeySaved?: () => void;
 }) {
   const lang = useLang();
   const [open, setOpen] = useState(false);
@@ -144,10 +148,9 @@ export function ProviderPicker({
           <label className="provider-field">
             <span className="provider-field-label">{t(lang, "pp.model")}</span>
             {mode === "needs-key" ? (
-              // An API provider with no key: no fake model list — say what to do.
-              <span className="provider-field-note provider-field-note--warn">
-                {t(lang, "pp.needsKey")}
-              </span>
+              // An API provider with no key: no fake model list — say what to do,
+              // and let the operator paste the key straight into ~/.spectro/.env.
+              <KeyInput provider={sel} onSaved={onKeySaved} />
             ) : mode === "list" ? (
               <select
                 className="provider-select"
@@ -210,6 +213,69 @@ export function ProviderPicker({
             </button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+/** The needs-key affordance: paste an API key and save it to ~/.spectro/.env
+ *  (0600) via the local-origin endpoint. The field is masked; the value only ever
+ *  leaves as the POST body. On success the app re-reads /api/config so the
+ *  provider flips from needs-key to ready — no restart, a new chat uses it. */
+function KeyInput({ provider, onSaved }: { provider: string; onSaved?: () => void }) {
+  const lang = useLang();
+  const de = lang === "de";
+  const [key, setKey] = useState("");
+  const [state, setState] = useState<"idle" | "saving" | "ok" | "err">("idle");
+
+  const save = async (): Promise<void> => {
+    if (key.trim() === "") return;
+    setState("saving");
+    try {
+      const res = await fetch("/api/onboarding/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider, key: key.trim() }),
+      });
+      if (res.ok) {
+        setState("ok");
+        setKey("");
+        onSaved?.();
+      } else {
+        setState("err");
+      }
+    } catch {
+      setState("err");
+    }
+  };
+
+  return (
+    <div className="pp-keyinput">
+      <span className="provider-field-note provider-field-note--warn">{t(lang, "pp.needsKey")}</span>
+      <div className="pp-keyrow">
+        <input
+          className="provider-input"
+          type="password"
+          autoComplete="off"
+          value={key}
+          placeholder={de ? "api-key hier einfügen" : "paste your api key"}
+          onChange={(e) => setKey(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") void save();
+          }}
+        />
+        <button
+          type="button"
+          className="primary pp-keysave"
+          disabled={state === "saving" || key.trim() === ""}
+          onClick={() => void save()}
+        >
+          {t(lang, state === "saving" ? "pp.keySaving" : "pp.keySave")}
+        </button>
+      </div>
+      {state === "ok" && <span className="provider-field-note">{t(lang, "pp.keySaved")}</span>}
+      {state === "err" && (
+        <span className="provider-field-note provider-field-note--warn">{t(lang, "pp.keyErr")}</span>
       )}
     </div>
   );
