@@ -24,7 +24,7 @@
     "directories": { "output": "release" },
     "files": ["dist/**"],
     "extraResources": [
-      { "from": "../spectro-server/build/libs/spectro-server-0.1.0.jar", "to": "spectro-server.jar" },
+      { "from": "build/spectro-server.jar", "to": "spectro-server.jar" },
       { "from": "jre", "to": "jre" }
     ]
   }
