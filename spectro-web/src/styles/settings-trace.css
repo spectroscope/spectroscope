@@ -414,6 +414,10 @@
   font-size: 0.72rem;
   color: var(--text-faint);
 }
+/* The no-key note: amber, so 'add a key to .env' reads as an action, not a shrug. */
+.provider-field-note--warn {
+  color: var(--sp-amber);
+}
 
 .provider-pop-foot {
   display: flex;

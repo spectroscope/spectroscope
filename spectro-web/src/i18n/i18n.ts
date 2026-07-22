@@ -191,6 +191,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.customPh": { de: "Modellnamen eingeben", en: "Type a model name" },
   "pp.keepPh": { de: "leer = aktuelles Modell behalten", en: "empty = keep the current model" },
   "pp.noList": { de: "gerade keine Modell-Liste vom Backend; Modell-ID eintippen", en: "no model list from the backend right now; type the model id" },
+  "pp.needsKey": { de: "kein Key gesetzt — trag ihn in die .env (siehe Hilfe)", en: "no key set — add it to your .env (see the help)" },
 
   // right panel
   "rp.agents": { de: "Agenten", en: "Agents" },

@@ -42,6 +42,8 @@ export function AppHeader(props: {
   /** Live: the interactive picker. Replay: a static chip with the view's provider. */
   viewingLive: boolean;
   provider?: string;
+  /** Per-provider onboarding status from /api/config, forwarded to the picker. */
+  providerStatus?: Record<string, string>;
   model?: string;
   archiveProvider?: string;
   status: ConnectionStatus;
@@ -210,6 +212,7 @@ export function AppHeader(props: {
           provider={props.provider ?? FALLBACK_PROVIDER_LABEL}
           model={props.model ?? ""}
           status={props.status}
+          providerStatus={props.providerStatus}
           onApply={props.onApplyProvider}
         />
       ) : (

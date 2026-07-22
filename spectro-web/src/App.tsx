@@ -120,6 +120,9 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
   const [serverCfg, setServerCfg] = useState<{ provider: string; model: string } | null>(null); // /api/config boot truth
+  // Per-provider onboarding status from /api/config (ready | needs-key | local),
+  // so the picker shows 'add a key to .env' instead of a fake list.
+  const [providerStatus, setProviderStatus] = useState<Record<string, string> | null>(null);
   // Key PRESENCE per image backend (from /api/config, never values). Drives
   // the gallery dropdown's "no key in .env" hints and the smart default below.
   const [imageKeys, setImageKeys] = useState<{ gemini: boolean; openai: boolean } | null>(null);
@@ -288,6 +291,10 @@ export function App() {
         // rather than claiming "no key" against a server that never said so.
         if (alive && c && typeof c.geminiKey === "string") {
           setImageKeys({ gemini: c.geminiKey === "true", openai: c.openaiKey === "true" });
+        }
+        // Older servers do not report provider status — leave null (no hints).
+        if (alive && c && c.providerStatus && typeof c.providerStatus === "object") {
+          setProviderStatus(c.providerStatus as Record<string, string>);
         }
       })
       .catch(() => {});
@@ -622,6 +629,7 @@ export function App() {
           onOpenKeymap={() => setKeymapOpen(true)}
           viewingLive={viewingLive}
           provider={curProvider}
+          providerStatus={providerStatus ?? undefined}
           model={curModel}
           archiveProvider={view.provider ?? undefined}
           status={conn.status}

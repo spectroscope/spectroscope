@@ -12,27 +12,24 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { PROVIDERS, modelFieldMode } from "./providerPickerMode";
 
-const PROVIDERS = ["anthropic", "ollama", "openai"] as const;
 const CUSTOM = "__custom__";
-
-// A sensible model prefill per provider (the real current model wins).
-const DEFAULT_MODEL: Record<string, string> = {
-  anthropic: "claude-opus-4-8",
-  ollama: "qwen3",
-  openai: "gpt-4o-mini",
-};
 
 export function ProviderPicker({
   provider,
   model: activeModel,
   status,
+  providerStatus,
   onApply,
 }: {
   provider: string;
   /** The current model, so the chip shows it and the form prefills the real one. */
   model?: string;
   status: ConnectionStatus;
+  /** Per-provider onboarding status from /api/config: ready | needs-key | local.
+   *  Drives the honest 'no key — add it to .env' message instead of a fake list. */
+  providerStatus?: Record<string, string>;
   onApply: (provider: string, model: string) => void;
 }) {
   const lang = useLang();
@@ -47,7 +44,7 @@ export function ProviderPicker({
   useEffect(() => {
     if (open) {
       setSel(provider);
-      setModel(activeModel || DEFAULT_MODEL[provider] || "");
+      setModel(activeModel || "");
       setCustom(false);
     }
   }, [open, provider, activeModel]);
@@ -97,6 +94,7 @@ export function ProviderPicker({
   // The dropdown always carries the seeded/current model, even when the
   // fetched list doesn't — the selection must show reality, never lie.
   const options = model !== "" && !custom && !models.includes(model) ? [model, ...models] : models;
+  const mode = modelFieldMode(sel, providerStatus, models);
 
   return (
     <div className="provider-picker" ref={ref}>
@@ -125,7 +123,7 @@ export function ProviderPicker({
               value={sel}
               onChange={(e) => {
                 setSel(e.target.value);
-                setModel(DEFAULT_MODEL[e.target.value] ?? "");
+                setModel("");
                 setCustom(false);
               }}
             >
@@ -138,7 +136,12 @@ export function ProviderPicker({
           </label>
           <label className="provider-field">
             <span className="provider-field-label">{t(lang, "pp.model")}</span>
-            {models.length > 0 ? (
+            {mode === "needs-key" ? (
+              // An API provider with no key: no fake model list — say what to do.
+              <span className="provider-field-note provider-field-note--warn">
+                {t(lang, "pp.needsKey")}
+              </span>
+            ) : mode === "list" ? (
               <select
                 className="provider-select"
                 value={custom ? CUSTOM : model}
