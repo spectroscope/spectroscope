@@ -9,6 +9,8 @@ import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
+import { SCENARIOS } from "../scenario/registry";
+import { loc, type Dsl } from "../scenario/dsl";
 
 export function Sidebar(props: {
   /** null = the live socket session is shown. */
@@ -20,8 +22,11 @@ export function Sidebar(props: {
   onNewChat: () => void;
   /** Opens the session-import dialog (spectroscope JSONL or Claude Code transcript). */
   onImport: () => void;
-  /** Opens the scenario picker (scripted demo runs) — its own surface. */
+  /** Opens the scenario picker modal — kept alongside the inline scenario rows
+   *  below (a redundant second path; the owner may retire the modal later). */
   onScenarios: () => void;
+  /** Play a scenario inline from the list — replays it like a session. */
+  onSelectScenario: (dsl: Dsl) => void;
   /** The entered fleet's contextId, or null when a session is shown. */
   activeFleet: string | null;
   /** Enter a fleet — inspect its agents like a session. */
@@ -82,8 +87,9 @@ export function Sidebar(props: {
         {t(lang, "nav.newChat")}
       </button>
 
-      {/* Scenarios get their OWN area (owner decision): scripted demo runs
-          live on a dedicated surface, never mixed into the session list. */}
+      {/* Owner (2026-07-22) reversed the earlier "own area" call: scenarios are now
+          ALSO listed inline in the session list below. This button + its modal are
+          kept for now (a redundant second path — owner may retire them). */}
       <button
         type="button"
         className="ghost sidebar-scenarios"
@@ -172,6 +178,27 @@ export function Sidebar(props: {
             <p className="sidebar-note">{t(lang, "nav.none")}</p>
           )}
           {failed && <p className="sidebar-note">{t(lang, "nav.unreachable")}</p>}
+
+          <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
+          <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
+            {SCENARIOS.map((s) => (
+              <button
+                type="button"
+                key={`scenario:${s.id}`}
+                className={`session-row scenario-row${props.activeId === `scenario:${s.id}` && props.activeFleet === null ? " active" : ""}`}
+                title={loc(s.prompt, lang)}
+                onClick={() => props.onSelectScenario(s)}
+              >
+                <span className="session-title">
+                  <svg className="scenario-glyph" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+                    <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
+                  </svg>
+                  {loc(s.name, lang)}
+                </span>
+                <span className="session-meta">{lang === "de" ? "szenario · demo" : "scenario · demo"}</span>
+              </button>
+            ))}
+          </nav>
         </>
       ) : (
         <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>

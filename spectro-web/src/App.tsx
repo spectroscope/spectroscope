@@ -613,6 +613,7 @@ export function App() {
           onNewChat={newChat}
           onImport={() => setImportOpen(true)}
           onScenarios={() => setScenariosOpen(true)}
+          onSelectScenario={openScenario}
           activeFleet={enteredFleet}
           onSelectFleet={enterFleet}
           onSpawnNode={() => setSpawnDialogOpen(true)}

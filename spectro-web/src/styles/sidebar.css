@@ -38,6 +38,9 @@
   vertical-align: 1px;
 }
 .sidebar-eyebrow-row { display: flex; align-items: baseline; justify-content: space-between; }
+.scenario-eyebrow { margin-top: var(--sp-2); }
+.scenario-glyph { margin-right: 5px; color: var(--sand); flex: none; vertical-align: -1px; }
+.scenario-row .session-title { color: var(--text-dim); }
 .sidebar-import {
   background: none; border: 1px solid transparent; border-radius: var(--radius-chip);
   color: var(--text-faint); font: inherit; font-size: var(--fs-11); text-transform: uppercase;
