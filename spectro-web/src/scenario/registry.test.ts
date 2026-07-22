@@ -8,7 +8,7 @@ type ToolCall = Extract<RunEvent, { type: "tool_call" }>;
 
 describe("registry", () => {
   it("has the built-in scenarios", () => {
-    expect(SCENARIOS.map((s) => s.id).sort()).toEqual(["buildplan", "coding", "context", "diskshell", "fanout", "permission", "research"]);
+    expect(SCENARIOS.map((s) => s.id).sort()).toEqual(["buildplan", "codereview", "coding", "context", "darkmode", "diskshell", "fanout", "imagegen", "permission", "research"]);
   });
 
   it("context scenario: the window fills to 'high', then a compaction shrinks it", () => {
@@ -45,6 +45,22 @@ describe("registry", () => {
     const fo = SCENARIOS.find((s) => s.id === "fanout")!;
     const ev = compile(fo, "en");
     expect(ev.filter((e) => e.type === "agent_spawn").length).toBe(3);
+  });
+
+  it("codereview scenario writes a target then fans out three reviewers", () => {
+    const ev = compile(SCENARIOS.find((s) => s.id === "codereview")!, "en");
+    expect(ev.filter((e) => e.type === "agent_spawn").length).toBe(3);
+    expect(ev.some((e) => e.type === "tool_call" && e.agentId === "main" && e.name === "write_file")).toBe(true);
+  });
+
+  it("imagegen scenario emits two image_generated events with provider, model and blob path", () => {
+    const ev = compile(SCENARIOS.find((s) => s.id === "imagegen")!, "en");
+    const imgs = ev.filter((e): e is Extract<RunEvent, { type: "image_generated" }> => e.type === "image_generated");
+    expect(imgs.length).toBe(2);
+    expect(imgs[0].provider).toBe("gemini");
+    expect(imgs[0].model).toBe("imagen-3.0");
+    expect(imgs[0].blobPath).toContain(".spectro/images/");
+    expect(imgs[0].sha256).toMatch(/^[0-9a-f]{64}$/);
   });
 
   it("coding scenario: phases with a planner spawn and two parallel implementers that WRITE", () => {

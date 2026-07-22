@@ -18,6 +18,13 @@ const SUBAGENT_RESULT_DURATION_MS = 21400;
 /** Synthetic timestamp spacing between consecutive events. */
 const EVENT_SPACING_MS = 1200;
 const estTok = (chars: number) => Math.round(chars / 4);
+/** A deterministic, language-independent 64-hex stand-in for a real image digest
+ *  (a scenario has no blob store; only the value's shape matters for the demo). */
+const fakeSha = (seed: string) => {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return h.toString(16).padStart(8, "0").repeat(8).slice(0, 64);
+};
 
 // Plain `Omit<RunEvent, "ts">` doesn't work here: `keyof` on a union type
 // collapses to only the keys common to every member (just "type" and "ts"),
@@ -170,6 +177,13 @@ export function compile(dsl: Dsl, lang: Lang, baseTs = 1_783_000_000_000): RunEv
       gatedTool("main", `mcp__${server}__${tool}`, step.input ?? {}, step.gate, step.result ? loc(step.result, lang) : undefined, step.error, true);
     }
     else if ("tool" in step) gatedTool("main", step.tool, step.input ?? {}, step.gate, step.result ? loc(step.result, lang) : undefined, step.error, false);
+    else if ("image" in step) {
+      const callId = nextCall();
+      const prompt = loc(step.image, lang);
+      push({ type: "image_generated", agentId: "main", callId, prompt,
+        provider: step.provider ?? "gemini", model: step.model ?? "imagen-3.0",
+        mediaType: "image/png", blobPath: `.spectro/images/${callId}.png`, sha256: fakeSha(callId) });
+    }
     else if ("spawn" in step) expandSpawn(step);
     else if ("fanout" in step) expandFanout(step);
   }

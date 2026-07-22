@@ -1,4 +1,4 @@
-// The seven built-in scenarios, ported from the LLM_Simulator (all bilingual).
+// The ten built-in scenarios, ported from the LLM_Simulator (all bilingual).
 // Each is a Dsl the compiler turns into a deterministic RunEvent stream —
 // scripted demo runs that need no server, no key and no Ollama.
 
@@ -234,4 +234,79 @@ const context: Dsl = {
   ],
 };
 
-export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, coding, research, context];
+const codereview: Dsl = {
+  id: "codereview",
+  name: { en: "Three-lens code review · 3 subagents", de: "Drei-Linsen-Code-Review · 3 Subagenten" },
+  prompt: {
+    en: "Review parse_ages(csv_line) with three lenses in parallel — correctness, security, readability — then give me a verdict table.",
+    de: "Prüfe parse_ages(csv_line) mit drei Linsen parallel — Korrektheit, Sicherheit, Lesbarkeit — und gib mir dann eine Urteilstabelle.",
+  },
+  provider: "ollama",
+  steps: [
+    { think: { en: "I write the target, then fan out three reviewers onto it.", de: "Ich schreibe das Ziel, dann fächere ich drei Reviewer darauf auf." } },
+    { write: "review_target.py", result: { en: "ok, wrote review_target.py", de: "ok, review_target.py geschrieben" } },
+    { fanout: { label: "review", tool: "review", agents: [
+      { id: "correctness", task: { en: "Check correctness", de: "Prüfe Korrektheit" },
+        steps: [
+          { read: "review_target.py", result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]" },
+          { status: { en: "checking bounds & types", de: "prüfe Grenzen & Typen" } },
+          { say: { en: "## Correctness\n- Off-by-one: `[1:]` silently drops the first age.", de: "## Korrektheit\n- Off-by-one: `[1:]` verwirft still das erste Alter." } },
+        ] },
+      { id: "security", task: { en: "Check security", de: "Prüfe Sicherheit" },
+        steps: [
+          { read: "review_target.py", result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]" },
+          { status: { en: "checking untrusted input", de: "prüfe ungeprüfte Eingaben" } },
+          { say: { en: "## Security\n- `eval()` on input → arbitrary code execution.", de: "## Sicherheit\n- `eval()` auf Eingabe → beliebige Codeausführung." } },
+        ] },
+      { id: "readability", task: { en: "Check readability", de: "Prüfe Lesbarkeit" },
+        steps: [
+          { read: "review_target.py", result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]" },
+          { status: { en: "checking names & clarity", de: "prüfe Namen & Klarheit" } },
+          { say: { en: "## Readability\n- One-letter name `a` hides what each value is.", de: "## Lesbarkeit\n- Ein-Buchstaben-Name `a` verbirgt, was jeder Wert ist." } },
+        ] },
+    ] } },
+    { think: { en: "Three findings back — I merge them into a verdict table.", de: "Drei Funde zurück — ich fasse sie in einer Urteilstabelle zusammen." } },
+    { say: { en: "| lens | verdict |\n| correctness | off-by-one slice |\n| security | eval() on input |\n| readability | one-letter names |", de: "| Linse | Urteil |\n| Korrektheit | Off-by-one-Slice |\n| Sicherheit | eval() auf Eingabe |\n| Lesbarkeit | Ein-Buchstaben-Namen |" } },
+  ],
+};
+
+const darkmode: Dsl = {
+  id: "darkmode",
+  name: { en: "build_plan · dark mode", de: "build_plan · Dark Mode" },
+  prompt: {
+    en: "Add a dark mode toggle to the web UI. Plan it first with the build_plan tool (max 5 steps, no files), then summarize.",
+    de: "Füge der Web-UI einen Dark-Mode-Umschalter hinzu. Plane es zuerst mit dem build_plan-Tool (max. 5 Schritte, keine Dateien), dann fasse zusammen.",
+  },
+  provider: "ollama",
+  steps: [
+    { think: { en: "A planning task — I delegate it to a build_plan subagent.", de: "Eine Planungsaufgabe — ich delegiere sie an einen build_plan-Subagenten." } },
+    { spawn: "worker-1", label: "build_plan",
+      task: { en: "Plan a dark-mode toggle. Max 5 steps, no files.", de: "Plane einen Dark-Mode-Umschalter. Max. 5 Schritte, keine Dateien." },
+      steps: [
+        { think: { en: "I load the 'writing-plans' skill first.", de: "Ich lade zuerst die 'writing-plans'-Skill." } },
+        { status: { en: "Reading the token layer and the theme switch", de: "Token-Ebene und Theme-Umschalter lesen" } },
+        { say: { en: "# Plan: dark mode\n1. Add a `[data-theme]` token set\n2. A toggle in the header\n3. Persist the choice to localStorage\n4. Respect prefers-color-scheme\n5. Test both themes", de: "# Plan: Dark Mode\n1. Ein `[data-theme]`-Token-Set\n2. Ein Umschalter im Header\n3. Die Wahl in localStorage persistieren\n4. prefers-color-scheme beachten\n5. Beide Themes testen" } },
+      ] },
+    { think: { en: "The five-step plan covers it. I condense it to three bullets.", de: "Der Fünf-Schritte-Plan deckt es ab. Ich verdichte ihn auf drei Punkte." } },
+    { say: { en: "Summary:\n- a token-driven `[data-theme]` set\n- a header toggle, persisted\n- honors the OS preference", de: "Zusammenfassung:\n- ein token-getriebenes `[data-theme]`-Set\n- ein Header-Umschalter, persistiert\n- respektiert die OS-Vorgabe" } },
+  ],
+};
+
+const imagegen: Dsl = {
+  id: "imagegen",
+  name: { en: "Image generation · draft & refine", de: "Bildgenerierung · Entwurf & Verfeinerung" },
+  prompt: {
+    en: "Generate a logo for a coffee roastery — a minimal line-art coffee bean. Draft one, then refine it.",
+    de: "Erzeuge ein Logo für eine Kaffeerösterei — eine minimale Line-Art-Kaffeebohne. Entwirf eins, dann verfeinere es.",
+  },
+  provider: "ollama",
+  steps: [
+    { think: { en: "I draft an image, look at it, then refine the prompt.", de: "Ich entwerfe ein Bild, sehe es an, dann verfeinere ich den Prompt." } },
+    { image: { en: "minimal line-art coffee bean logo, centered, single stroke", de: "minimales Line-Art-Kaffeebohnen-Logo, zentriert, ein Strich" } },
+    { say: { en: "The draft is centered, but the stroke weight is uneven. I refine it.", de: "Der Entwurf ist zentriert, aber die Strichstärke ist ungleichmäßig. Ich verfeinere." } },
+    { image: { en: "minimal line-art coffee bean logo, uniform 2px stroke, warm amber accent", de: "minimales Line-Art-Kaffeebohnen-Logo, gleichmäßiger 2px-Strich, warmer Amber-Akzent" } },
+    { say: { en: "The refined logo has a clean uniform stroke and a warm amber accent — done.", de: "Das verfeinerte Logo hat einen sauberen gleichmäßigen Strich und einen warmen Amber-Akzent — fertig." } },
+  ],
+};
+
+export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, coding, research, context, codereview, darkmode, imagegen];

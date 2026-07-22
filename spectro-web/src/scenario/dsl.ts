@@ -22,6 +22,7 @@ export type Step =
   | { usage: { in: number; out: number } }
   | { context: { parts: { label: Localized; chars: number; estTokens: number }[] } }
   | { compact: { removedTurns: number; summaryChars: number } }
+  | { image: Localized; provider?: string; model?: string }
   | { spawn: string; label?: string; task: Localized; steps: Step[] }
   | { fanout: { label?: string; tool: string; agents: { id: string; task: Localized; steps: Step[] }[] } };
 
