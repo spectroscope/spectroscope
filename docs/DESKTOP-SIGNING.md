@@ -157,12 +157,34 @@ codesign -dv --verbose=2 "$APP" | grep -E 'Authority|TeamIdentifier'
 ```
 A stapled, notarized dmg opens on **double-click** with no warning, even offline.
 
-## 8. Wire it into the release
+## 8. Wire it into the release — DONE
 
-In `scripts/build-desktop-runkit.sh`, gate on whether a Developer ID is present:
-sign + notarize when it is, fall back to the current ad-hoc `--sign -` when it
-isn't (so the script keeps working on machines without the cert). Keep the
-credentials in the keychain / env, **never** in the repo.
+`scripts/build-desktop-runkit.sh` already does all of the above, auto-selected:
+
+- **Identity** — it uses `SIGN_IDENTITY` if set, else auto-detects a "Developer
+  ID Application" cert from the keychain (and **refuses the Valtech one**). No
+  cert → it falls back to the ad-hoc `--sign -` path unchanged, so the script
+  still works on machines without a Developer ID.
+- **JRE** — with an identity it signs every Mach-O in the bundled runtime
+  inside-out (step 2b) with the hardened runtime + `build/entitlements.mac.plist`
+  **before** electron-builder seals the app, then reseals + hard-verifies.
+- **Notarize** — if a notarytool profile exists (`NOTARY_PROFILE`, default
+  `spectro-notary`) it submits, waits, staples, and validates the `.dmg`. No
+  profile → it signs but skips notarization and says so.
+
+`package.json` → `build.mac` carries `hardenedRuntime` + the entitlements, so
+electron-builder signs the Electron framework and helper apps correctly.
+
+Run the signed build:
+```bash
+# one-time: store the notarization profile (step 3), then just:
+scripts/build-desktop-runkit.sh
+# or pin the identity / profile explicitly:
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+  NOTARY_PROFILE="spectro-notary" scripts/build-desktop-runkit.sh
+```
+
+Keep the credentials in the keychain / env, **never** in the repo.
 
 ## Gotchas
 

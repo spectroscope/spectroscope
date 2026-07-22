@@ -29,7 +29,11 @@
       { "from": "jre", "to": "jre" }
     ],
     "mac": {
-      "icon": "icon.icns"
+      "icon": "icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     }
   }
 }
