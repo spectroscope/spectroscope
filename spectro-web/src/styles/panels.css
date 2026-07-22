@@ -95,6 +95,25 @@
 .ws-row-glyph { flex: none; width: 12px; color: var(--text-faint); }
 .ws-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-row-size { margin-left: auto; flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+.ws-divider {
+  flex: none;
+  height: 8px;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.ws-divider::before {
+  content: "";
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background var(--t-fast);
+}
+.ws-divider:hover::before,
+.ws-divider:focus-visible::before { background: var(--accent); }
+.ws-divider:focus-visible { outline: none; }
 .ws-preview {
   flex: 1 1 60%;
   min-height: 0;

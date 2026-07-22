@@ -4,11 +4,13 @@
 // run in an opaque origin and can never reach the spectroscope UI), markdown through
 // the shared Markdown component, images inline, everything else as text.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Markdown } from "../components/Markdown";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { fileUrl, formatBytes, previewKind } from "./preview";
+import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
 import type { WorkspaceInfo } from "../state/reducer";
 
 interface FileNode {
@@ -150,6 +152,52 @@ export function WorkspaceTab({
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
 
+  // Resizable tree/preview divider: `split` is the tree's % of the vertical space.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const [split, setSplit] = useState<number>(() => {
+    try {
+      return readStoredSplit(localStorage.getItem(WS_SPLIT_KEY));
+    } catch {
+      return readStoredSplit(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(WS_SPLIT_KEY, String(Math.round(split)));
+    } catch {
+      /* storage blocked — the split just resets on the next load */
+    }
+  }, [split]);
+  const applySplitFromClientY = (clientY: number): void => {
+    const tree = treeRef.current;
+    const cont = containerRef.current;
+    if (tree === null || cont === null) return;
+    const top = tree.getBoundingClientRect().top;
+    const height = cont.getBoundingClientRect().bottom - top;
+    if (height <= 0) return;
+    setSplit(clampSplitPct(((clientY - top) / height) * 100));
+  };
+  const onDividerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    dragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onDividerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (dragging.current) applySplitFromClientY(e.clientY);
+  };
+  const onDividerUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const onDividerKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    setSplit((s) => clampSplitPct(s + (e.key === "ArrowUp" ? -4 : 4)));
+  };
+
   const sessionId = workspace?.sessionId;
   const load = useCallback((): void => {
     fetch(sessionId === undefined ? "/api/files" : `/api/files?session=${encodeURIComponent(sessionId)}`)
@@ -176,7 +224,7 @@ export function WorkspaceTab({
   if (tree === null) return <p className="ctx-empty">{t(lang, "ws.loading")}</p>;
 
   return (
-    <div className="ws">
+    <div className="ws" ref={containerRef}>
       <div className="ws-head">
         <span className="ws-root mono" title={workspace !== null ? workspace.path : t(lang, "ws.rootTitle")}>
           {tree.root}/
@@ -201,7 +249,7 @@ export function WorkspaceTab({
           ⟳
         </button>
       </div>
-      <div className="ws-tree" role="tree" aria-label="Workspace">
+      <div className="ws-tree" role="tree" aria-label="Workspace" ref={treeRef} style={{ flex: `0 0 ${split}%` }}>
         {tree.entries.length === 0 ? (
           <p className="ws-note">{t(lang, "ws.empty")}</p>
         ) : (
@@ -216,6 +264,17 @@ export function WorkspaceTab({
         )}
         {tree.truncated && <p className="ws-note">{t(lang, "ws.truncated")}</p>}
       </div>
+      <div
+        className="ws-divider"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={lang === "de" ? "trenner ziehen, um die höhe zu ändern" : "drag to resize"}
+        tabIndex={0}
+        onPointerDown={onDividerDown}
+        onPointerMove={onDividerMove}
+        onPointerUp={onDividerUp}
+        onKeyDown={onDividerKey}
+      />
       <div className="ws-preview">
         {selected === null ? (
           <p className="ws-note">{t(lang, "ws.hint")}</p>
