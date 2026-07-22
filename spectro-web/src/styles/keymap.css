@@ -105,3 +105,73 @@
   color: var(--text-faint);
   font-size: var(--fs-12);
 }
+
+/* First-run onboarding sheet — reuses the keymap backdrop + panel. */
+.ob-intro {
+  margin: 0 0 var(--sp-4);
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.ob-opts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.ob-opt {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: var(--sp-3) var(--sp-4);
+}
+.ob-opt-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-bottom: var(--sp-1);
+}
+.ob-opt-badge {
+  padding: 2px 8px 3px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.ob-opt-title {
+  font-weight: 600;
+  font-size: var(--fs-13);
+  color: var(--text);
+}
+.ob-opt-tag {
+  margin-left: auto;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.ob-opt-tag--free {
+  color: var(--accent);
+}
+.ob-opt-body {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
+.ob-opt-body a {
+  color: var(--accent);
+}
+.ob-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+}
+.ob-foot-note {
+  margin: 0;
+  color: var(--text-faint);
+  font-size: var(--fs-12);
+}

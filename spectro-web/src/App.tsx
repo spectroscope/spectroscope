@@ -18,6 +18,8 @@ import { ImportDialog } from "./components/ImportDialog";
 import { GateBar } from "./components/GateBar";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
+import { Onboarding } from "./components/Onboarding";
+import { ONBOARDED_KEY, shouldOnboard } from "./components/onboardingFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { compile } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
@@ -100,6 +102,18 @@ export function App() {
   const [doctorOpen, setDoctorOpen] = useState(false); // calibration/status page
   const [keymapOpen, setKeymapOpen] = useState(false); // the ? shortcut sheet (edu port)
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false); // start a fleet node from the sidebar
+  const [onboardingOpen, setOnboardingOpen] = useState(false); // first-run backend info sheet (once)
+  // First run: no 'onboarded' flag yet → show the one-time backend picker so the
+  // first screen is never "Opus selected and nothing works".
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(ONBOARDED_KEY);
+    } catch {
+      /* storage may be blocked (tests, private mode) — default to showing it */
+    }
+    if (shouldOnboard(stored)) setOnboardingOpen(true);
+  }, []);
   // Global keymap shortcut: ? opens the sheet, Escape closes it. Guarded while
   // typing so it never eats a keystroke in the composer or a filter (edu port).
   useEffect(() => {
@@ -836,6 +850,17 @@ export function App() {
 
       <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
+      <Onboarding
+        open={onboardingOpen}
+        onClose={() => {
+          setOnboardingOpen(false);
+          try {
+            localStorage.setItem(ONBOARDED_KEY, "1");
+          } catch {
+            /* storage may be blocked — the sheet just shows again next time */
+          }
+        }}
+      />
       {spawnDialogOpen && (
         <div className="fleet-spawn-modal-backdrop" role="presentation" onClick={() => setSpawnDialogOpen(false)}>
           <div className="fleet-spawn-modal" onClick={(e) => e.stopPropagation()}>
