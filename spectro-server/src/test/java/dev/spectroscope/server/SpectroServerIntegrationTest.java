@@ -329,6 +329,22 @@ class SpectroServerIntegrationTest {
         };
     }
 
+    /** The last frame of a given type, asserting at least one arrived. */
+    private static JsonNode lastOfType(List<JsonNode> events, String type) {
+        JsonNode found = null;
+        for (JsonNode e : events) {
+            if (type.equals(e.path("type").asText())) {
+                found = e;
+            }
+        }
+        assertTrue(found != null, "no " + type + " frame in " + events);
+        return found;
+    }
+
+    private static long providerInfoCount(List<JsonNode> events) {
+        return events.stream().filter(e -> "provider_info".equals(e.path("type").asText())).count();
+    }
+
     @Test
     void anAttachedImageBecomesABlobAndTheRunStartCarriesReferencesOnly() throws Exception {
         byte[] imageBytes = {(byte) 0x89, 'P', 'N', 'G', 13, 10, 26, 10}; // PNG signature
@@ -701,6 +717,152 @@ class SpectroServerIntegrationTest {
         // the openai host follows the configured base url unchanged.
         assertEquals("127.0.0.1:" + ollamaMock.getAddress().getPort(),
                 switched.path("host").asText());
+    }
+
+    @Test
+    void theHeaderPickerAcceptsTheWiderProviderSet() throws Exception {
+        // v0.2.0 added lmstudio/openrouter/gemini; the live switch must accept
+        // them, not just the original three. lmstudio is the openai-compatible
+        // local preset — no key — so the switch completes to a provider_info.
+        List<JsonNode> events = new ArrayList<>();
+        CountDownLatch unused = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "never", unused))
+                    .join();
+            socket.sendText("""
+                    {"type":"set_provider","provider":"lmstudio","model":"some-local"}""", true);
+            for (int i = 0; i < 100 && providerInfoCount(events) < 2; i++) {
+                Thread.sleep(100);
+            }
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        }
+
+        assertTrue(events.stream().noneMatch(e -> "error".equals(e.path("type").asText())),
+                "lmstudio must not be refused, got " + events);
+        JsonNode switched = lastOfType(events, "provider_info");
+        assertEquals("lmstudio", switched.path("provider").asText());
+        assertEquals("some-local", switched.path("model").asText());
+    }
+
+    @Test
+    void anUnknownProviderIsStillRefusedWithTheFullAllowedList() throws Exception {
+        List<JsonNode> events = new ArrayList<>();
+        CountDownLatch unused = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "never", unused))
+                    .join();
+            socket.sendText("""
+                    {"type":"set_provider","provider":"bogus"}""", true);
+            for (int i = 0; i < 100
+                    && events.stream().noneMatch(e -> "error".equals(e.path("type").asText())); i++) {
+                Thread.sleep(100);
+            }
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        }
+
+        JsonNode error = lastOfType(events, "error");
+        assertTrue(error.path("message").asText().contains("Unknown provider"), "got " + error);
+        // The refusal must list all six providers, not the stale three.
+        assertTrue(error.path("message").asText().contains("lmstudio"),
+                "the allowed list must be the full six, got: " + error.path("message").asText());
+    }
+
+    @Test
+    void aBlankModelSwitchTakesTheTargetsDefaultNotTheCarriedModel() throws Exception {
+        // A switch with no model must NOT carry the previous provider's model
+        // (that shoved the Claude id into a local backend). Switch to openai
+        // with a distinctive model, then to ollama with a BLANK model: the
+        // second frame must show ollama's default (qwen3), not the carried id.
+        List<JsonNode> events = new ArrayList<>();
+        CountDownLatch unused = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "never", unused))
+                    .join();
+            socket.sendText("""
+                    {"type":"set_provider","provider":"openai","model":"carried-marker"}""", true);
+            socket.sendText("""
+                    {"type":"set_provider","provider":"ollama"}""", true);
+            for (int i = 0; i < 100 && providerInfoCount(events) < 3; i++) {
+                Thread.sleep(100);
+            }
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        }
+
+        JsonNode last = lastOfType(events, "provider_info");
+        assertEquals("ollama", last.path("provider").asText());
+        assertEquals("qwen3", last.path("model").asText(),
+                "a blank-model switch must use the target default, not carry 'carried-marker'");
+    }
+
+    @Test
+    void aKeyRequiringSwitchIsRefusedWhenItsKeyIsAbsent() throws Exception {
+        // Env-adaptive so it is never flaky: gemini needs GEMINI_API_KEY. With a key
+        // present the switch succeeds; without one it must be refused AT SWITCH TIME
+        // (naming the key) — never a lying header chip whose failure is a deferred 401.
+        boolean hasKey = dev.spectroscope.core.config.SpectroConfig.hasApiKey("GEMINI_API_KEY");
+        List<JsonNode> events = new ArrayList<>();
+        CountDownLatch unused = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "never", unused))
+                    .join();
+            socket.sendText("""
+                    {"type":"set_provider","provider":"gemini","model":"gemini-2.5-flash"}""", true);
+            for (int i = 0; i < 100 && providerInfoCount(events) < 2
+                    && events.stream().noneMatch(e -> "error".equals(e.path("type").asText())); i++) {
+                Thread.sleep(100);
+            }
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        }
+
+        if (hasKey) {
+            assertTrue(events.stream().noneMatch(e -> "error".equals(e.path("type").asText())),
+                    "with a key present the gemini switch must succeed, got " + events);
+            assertEquals("gemini", lastOfType(events, "provider_info").path("provider").asText());
+        } else {
+            JsonNode error = lastOfType(events, "error");
+            assertTrue(error.path("message").asText().contains("GEMINI_API_KEY"),
+                    "a keyless gemini switch must be refused, naming the key, got: "
+                            + error.path("message").asText());
+        }
+    }
+
+    @Test
+    void aBlankModelSwitchToADefaultlessCloudProviderIsRefusedNotFabricated() throws Exception {
+        // gemini has no honest default model, so a blank-model switch must refuse
+        // rather than fabricate the Claude id under a Google endpoint. Env-adaptive:
+        // with no key the key check refuses first; with a key it is the model check.
+        // Either way: NO gemini provider_info (no lying chip).
+        boolean hasKey = dev.spectroscope.core.config.SpectroConfig.hasApiKey("GEMINI_API_KEY");
+        List<JsonNode> events = new ArrayList<>();
+        CountDownLatch unused = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "never", unused))
+                    .join();
+            socket.sendText("""
+                    {"type":"set_provider","provider":"gemini"}""", true); // blank model
+            for (int i = 0; i < 100
+                    && events.stream().noneMatch(e -> "error".equals(e.path("type").asText())); i++) {
+                Thread.sleep(100);
+            }
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        }
+
+        assertTrue(events.stream().noneMatch(e -> "provider_info".equals(e.path("type").asText())
+                        && "gemini".equals(e.path("provider").asText())),
+                "a blank-model gemini switch must not flip the chip, got " + events);
+        String msg = lastOfType(events, "error").path("message").asText();
+        assertTrue(hasKey ? msg.contains("needs a model") : msg.contains("GEMINI_API_KEY"),
+                "expected the " + (hasKey ? "'needs a model'" : "GEMINI_API_KEY") + " refusal, got: " + msg);
     }
 
     @Test

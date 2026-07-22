@@ -432,16 +432,42 @@ public final class SessionConnection {
      * agent and its history stay put. A missing key (anthropic) is reported and the
      * switch is refused, exactly like the CLI's provider construction.
      *
-     * @param providerName "anthropic" | "ollama" | "openai" — anything else is refused
-     * @param model the model to pair with the switch; blank keeps the current one
+     * @param providerName one of {@link SpectroConfig#KNOWN_PROVIDERS} (anthropic,
+     *        ollama, openai, lmstudio, openrouter, gemini) — anything else is refused
+     * @param model the model to pair with the switch; blank picks the new provider's
+     *        default, never the previous provider's model. A provider with no honest
+     *        default (gemini, openrouter) needs an explicit model.
      */
     public void onSetProvider(String providerName, String model) {
-        if (!Set.of("anthropic", "ollama", "openai").contains(providerName)) {
-            sendError("Unknown provider: \"" + providerName + "\" (allowed: anthropic, ollama, openai).");
+        if (!SpectroConfig.isKnownProvider(providerName)) {
+            sendError("Unknown provider: \"" + providerName + "\" (allowed: "
+                    + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").");
+            return;
+        }
+        // Refuse a key-requiring cloud provider with no key AT SWITCH TIME, so the
+        // header chip never flips to a backend whose only failure mode is a deferred
+        // 401 on the next run (openai is exempt — the compat escape hatch, see
+        // SpectroConfig#switchRequiresKey).
+        if (SpectroConfig.switchRequiresKey(providerName)
+                && !SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(providerName))) {
+            sendError("\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
+                    + " — set a key in Settings, then switch.");
             return;
         }
         SpectroConfig current = activeConfig.get();
-        String useModel = (model != null && !model.isBlank()) ? model.trim() : current.model();
+        String useModel;
+        if (model != null && !model.isBlank()) {
+            useModel = model.trim();
+        } else {
+            // A blank model on a switch must NOT carry the previous provider's model
+            // (that shoved the Claude id into ollama/lmstudio). Resolve the target's
+            // own default; a provider with no honest default needs an explicit model.
+            useModel = SpectroConfig.defaultModelFor(providerName);
+            if (useModel == null) {
+                sendError("\"" + providerName + "\" needs a model — pick one in the picker.");
+                return;
+            }
+        }
         SpectroConfig derived = current.withProvider(providerName, useModel);
         LlmProvider next;
         try {

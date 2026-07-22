@@ -133,6 +133,12 @@ public record SpectroConfig(
     // these as the single source instead of re-declaring the same literals.
     static final Set<String> KNOWN_PROVIDERS =
             Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini");
+    /** A stable, human-readable listing of {@link #KNOWN_PROVIDERS} for error
+     *  messages — {@link Set#of} has no guaranteed iteration order, so it is
+     *  spelled out once and shared by config validation and the live picker
+     *  switch instead of being rebuilt (in a different order) in each place. */
+    public static final String KNOWN_PROVIDERS_DISPLAY =
+            "anthropic, ollama, openai, lmstudio, openrouter, gemini";
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
@@ -429,7 +435,7 @@ public record SpectroConfig(
         SpectroConfig base = folded.merged();
 
         validateKnown("provider", base.provider(), KNOWN_PROVIDERS,
-                "anthropic, ollama, openai");
+                KNOWN_PROVIDERS_DISPLAY);
         validateKnown("image provider", base.imageProvider(), KNOWN_IMAGE_PROVIDERS,
                 "gemini, openai");
         // A typo must not silently disable what the owner configured — the same
@@ -443,15 +449,8 @@ public record SpectroConfig(
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
         if (!explicitModel) {
-            String fallback = switch (base.provider()) {
-                case "ollama" -> "qwen3";
-                // LM Studio (and the openai preset when pointed at one) serves whatever
-                // model is loaded, ignoring the id — never the Claude default. lmstudio
-                // was missing here, which surfaced as the "opus for lmstudio" bug.
-                case "lmstudio", "openai" -> "local-model";
-                default -> base.model();
-            };
-            if (!fallback.equals(base.model())) {
+            String fallback = defaultModelFor(base.provider());
+            if (fallback != null && !fallback.equals(base.model())) {
                 base = new SpectroConfig(base.provider(), fallback, base.baseUrl(),
                         base.compactionThreshold(), base.permissionMode(), base.autoApprove(),
                         base.imageProvider(), base.thinking(), base.mcpServers(),
@@ -532,6 +531,44 @@ public record SpectroConfig(
                 imageProvider, thinking, mcpServers,
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, chromeBinary);
+    }
+
+    /** Whether {@code provider} is a selectable LLM backend — the single source
+     *  shared by config validation and the live header-picker switch, so the two
+     *  cannot drift apart. */
+    public static boolean isKnownProvider(String provider) {
+        return KNOWN_PROVIDERS.contains(provider);
+    }
+
+    /**
+     * The default model for a provider when none is set explicitly, or {@code null}
+     * when the provider has no honest default. A local backend serves whatever model
+     * is loaded — lmstudio and the openai preset ignore the id — or a small default
+     * (ollama), never the Claude id: that was the "opus for lmstudio" bug. anthropic
+     * defaults to its real model; gemini and openrouter have NO baked default, so
+     * they return null and the caller must obtain an explicit model rather than
+     * fabricate a foreign id (a live switch to them would otherwise send a Claude id
+     * to a non-Claude endpoint). Shared by boot resolution ({@link #finishResolve})
+     * and a live provider switch, so a switch can never carry the previous model.
+     */
+    public static String defaultModelFor(String provider) {
+        return switch (provider) {
+            case "ollama" -> "qwen3";
+            case "lmstudio", "openai" -> "local-model";
+            case "anthropic" -> DEFAULTS.model(); // claude-opus-4-8, a real anthropic model
+            default -> null; // gemini, openrouter: no baked default — the caller decides
+        };
+    }
+
+    /** Whether a LIVE provider switch to {@code provider} requires an API key to be
+     *  present. True for the cloud services that cannot work without one (anthropic,
+     *  gemini, openrouter). False for the local backends (ollama, lmstudio) AND for
+     *  openai — openai is the generic OpenAI-compatible escape hatch, routinely
+     *  pointed at a keyless local server via a custom base url, so a switch to it
+     *  stays tolerant (its default-endpoint keyless gap is pre-existing and out of
+     *  this method's scope). */
+    public static boolean switchRequiresKey(String provider) {
+        return keyEnvFor(provider) != null && !"openai".equals(provider);
     }
 
     /**

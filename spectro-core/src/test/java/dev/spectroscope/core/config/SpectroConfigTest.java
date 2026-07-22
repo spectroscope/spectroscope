@@ -140,6 +140,31 @@ class SpectroConfigTest {
     }
 
     @Test
+    void defaultModelForResolvesEachProvidersDefault() {
+        // The shared source for boot resolution AND the live picker switch: a
+        // switch must land on the TARGET's default, never carry the old model.
+        assertEquals("qwen3", SpectroConfig.defaultModelFor("ollama"));
+        assertEquals("local-model", SpectroConfig.defaultModelFor("lmstudio"));
+        assertEquals("local-model", SpectroConfig.defaultModelFor("openai"));
+        assertEquals("claude-opus-4-8", SpectroConfig.defaultModelFor("anthropic"));
+        // gemini/openrouter have NO honest default — null, so a switch asks for a
+        // model instead of fabricating the Claude id under a non-Claude endpoint.
+        assertNull(SpectroConfig.defaultModelFor("gemini"));
+        assertNull(SpectroConfig.defaultModelFor("openrouter"));
+    }
+
+    @Test
+    void switchRequiresKeyOnlyForKeyRequiringCloudProviders() {
+        assertTrue(SpectroConfig.switchRequiresKey("anthropic"));
+        assertTrue(SpectroConfig.switchRequiresKey("gemini"));
+        assertTrue(SpectroConfig.switchRequiresKey("openrouter"));
+        // Local backends need no key; openai is the keyless-capable compat escape hatch.
+        assertFalse(SpectroConfig.switchRequiresKey("ollama"));
+        assertFalse(SpectroConfig.switchRequiresKey("lmstudio"));
+        assertFalse(SpectroConfig.switchRequiresKey("openai"));
+    }
+
+    @Test
     void environmentSitsBelowTheSettingsFiles(@TempDir Path projectDir)
             throws IOException {
         writeProjectSettings(projectDir, """
