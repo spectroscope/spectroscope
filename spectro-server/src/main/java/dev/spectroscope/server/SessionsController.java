@@ -107,9 +107,9 @@ public class SessionsController {
      * @return provider and model as strings — empty (never null) when unset
      */
     @GetMapping("/api/config")
-    public Map<String, String> config() {
+    public Map<String, Object> config() {
         SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, Object> out = new LinkedHashMap<>();
         out.put("provider", c.provider() == null ? "" : c.provider());
         out.put("model", c.model() == null ? "" : c.model());
         // Settings page (additive): the boot log level, read-only in the UI —
@@ -120,6 +120,17 @@ public class SessionsController {
         // the keyless ones in the dropdown.
         out.put("geminiKey", String.valueOf(envKeySet("GEMINI_API_KEY")));
         out.put("openaiKey", String.valueOf(envKeySet("OPENAI_API_KEY")));
+        // Onboarding status per LLM provider (presence only, never values): the
+        // picker shows an honest "needs-key — add it to .env" line instead of a
+        // fake model list, and the first-run dialog points people at a backend
+        // that will actually answer. Local backends (ollama/lmstudio) report
+        // "local"; the client reads their reachability from the model list.
+        Map<String, String> providerStatus = new LinkedHashMap<>();
+        for (String p : List.of("anthropic", "openai", "openrouter", "ollama", "lmstudio")) {
+            String keyEnv = SpectroConfig.keyEnvFor(p);
+            providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
+        }
+        out.put("providerStatus", providerStatus);
         return out;
     }
 

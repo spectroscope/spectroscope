@@ -651,6 +651,33 @@ public record SpectroConfig(
                 || "openrouter".equals(provider);
     }
 
+    /** The environment variable carrying a provider's API key, or {@code null}
+     *  for the local backends (ollama, lmstudio) that authenticate with nothing.
+     *  The single source for both the provider construction and the onboarding
+     *  status the faces show.
+     *  @param provider the provider name
+     *  @return the key env var name, or null when the provider is local */
+    public static String keyEnvFor(String provider) {
+        return switch (provider) {
+            case "anthropic" -> "ANTHROPIC_API_KEY";
+            case "openai" -> "OPENAI_API_KEY";
+            case "openrouter" -> "OPENROUTER_API_KEY";
+            default -> null; // ollama, lmstudio: local, no key
+        };
+    }
+
+    /** A provider's onboarding status for the first-run dialog and the picker:
+     *  an API provider is {@code "ready"} once its key is present and
+     *  {@code "needs-key"} otherwise; a local provider (ollama, lmstudio) is
+     *  {@code "local"} — its readiness is a reachability question the live model
+     *  list answers, not a key check.
+     *  @param provider   the provider name
+     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank
+     *  @return "ready" | "needs-key" | "local" */
+    public static String onboardingStatus(String provider, boolean keyPresent) {
+        return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
+    }
+
     /** This provider's API key from the environment — {@code OPENROUTER_API_KEY}
      *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
      *  @return the key, or null when unset */

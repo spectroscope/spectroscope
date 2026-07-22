@@ -523,6 +523,28 @@ class SpectroConfigTest {
                 SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://my-box:8000"));
     }
 
+    @Test
+    void keyEnvNamesTheApiProvidersSecretAndIsNullForLocalOnes() {
+        assertEquals("ANTHROPIC_API_KEY", SpectroConfig.keyEnvFor("anthropic"));
+        assertEquals("OPENAI_API_KEY", SpectroConfig.keyEnvFor("openai"));
+        assertEquals("OPENROUTER_API_KEY", SpectroConfig.keyEnvFor("openrouter"));
+        // The local backends need no key — reachability decides them instead.
+        assertNull(SpectroConfig.keyEnvFor("ollama"));
+        assertNull(SpectroConfig.keyEnvFor("lmstudio"));
+    }
+
+    @Test
+    void onboardingStatusReflectsKeyPresenceForApiProvidersAndLocalForTheRest() {
+        // API providers: ready once the key is set, needs-key otherwise.
+        assertEquals("needs-key", SpectroConfig.onboardingStatus("anthropic", false));
+        assertEquals("ready", SpectroConfig.onboardingStatus("anthropic", true));
+        assertEquals("needs-key", SpectroConfig.onboardingStatus("openrouter", false));
+        // Local backends never need a key — their readiness is a reachability
+        // question the model list answers, not a key check.
+        assertEquals("local", SpectroConfig.onboardingStatus("ollama", true));
+        assertEquals("local", SpectroConfig.onboardingStatus("lmstudio", false));
+    }
+
     // ---- imageModel / sttModel / chromeBinary (settings productization) ----------------
 
     @Test
