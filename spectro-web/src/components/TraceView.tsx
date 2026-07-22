@@ -327,7 +327,10 @@ function TraceDetail({ entry, lang, chain, onJump }: {
       </div>
       <CopyButton text={() => detailText(mode, entry.type, entry.payload)} />
       {mode === "insight" ? (
-        <JsonTree value={entry.payload} />
+        // Expand every level of the event from the start — no clicking open the
+        // nested {…} (e.g. a plan's steps, a context_info's parts). Real events
+        // never nest anywhere near this deep, so 99 reads as "all".
+        <JsonTree value={entry.payload} defaultDepth={99} />
       ) : mode === "compact" ? (
         <div className="trace-detail-lines">
           {lines.map((ln, i) => (
