@@ -1,10 +1,13 @@
-<h1 data-ch="15b" id="ch-fleet">the fleet: Spectro.panel() and the orchestrator</h1>
+<h1 data-ch="15b" id="ch-fleet">the fleet: many agents, one spectrum</h1>
 
 <p>Subagents fan out under one main agent. The fleet is the next level:
-several full agents, each with its own model, tools and workspace, run
-in parallel and merge into one spectrum. That is the
-<code>spectro-orchestrator</code> module (migration phase 5), and its
-facade follows the frozen five-lines style exactly:</p>
+several full agents, each with its own model, tools and workspace, run in
+parallel and merge into one spectrum. They can share a single JVM, or run
+as separate processes on separate machines that report to a hub. Either
+way you enter a fleet like a session and watch it on the lenses you
+already know. That is the <code>spectro-orchestrator</code> module
+(migration phase 5), and its facade follows the frozen five-lines style
+exactly:</p>
 
 <pre><code>var panel = Spectro.panel().model(Anthropic.opus());
 panel.agent("bugs").task("Find bugs in the diff");
@@ -21,7 +24,7 @@ stream rides along verbatim, and a result message records completed or
 failed before the panel's own <code>run_end</code> closes the spectrum.
 One broken lane never kills the fleet; it fails loudly and alone.</p>
 
-<!--SVG:14-orchestrator-fleet|The fleet architecture: the frozen facade, lanes as core agents, the bus with its envelopes, one aggregator into one stream.-->
+<!--SVG:14-orchestrator-fleet|The code fleet: every lane a full core agent on its own virtual thread, every event wrapped in a bus envelope, one aggregator draining the topic into one EventStream, the same blocking for-loop as a single agent.-->
 
 <h2 id="fleet-bus">what rides the bus</h2>
 
@@ -29,21 +32,121 @@ One broken lane never kills the fleet; it fails loudly and alone.</p>
 envelope: sender, contextId, taskId, a per-sender sequence, a causal
 parentId chain, a topic for session isolation, and the RunEvent itself,
 verbatim. Addressing is self-addressing: consumers correlate by taskId
-within a contextId instead of from/to routing. The transport behind it
-is a seam. In-memory serves the facade today; a process transport is the
-designed next step, and a broker only joins if reality ever demands
-one.</p>
+within a contextId instead of from/to routing. The transport behind it is
+a seam. In-memory serves a fleet inside one JVM; a process transport
+(<code>ProcessBus</code> over a small TCP hub) carries a fleet spread
+across processes and machines. The envelopes and their consumers are
+identical either way, so nothing downstream can tell the two apart.</p>
 
 <div class="callout"><div class="co-title">where it docks</div>
-<p>The bus's future home is the tracing seam: one registry in the core
-where the JSONL sink, an OTLP exporter and the bus publisher hang side
-by side. Until that port lands, the panel publishes from the outside.
-The envelopes and their consumers stay identical either way.</p></div>
+<p>The bus publishes through the same tracing seam the JSONL sink uses:
+one registry in the core where the session file and the bus publisher
+hang side by side, durability first (JSONL before bus). A node's local
+session file is always the anchor; the bus is what makes it visible to
+the rest of the fleet.</p></div>
 
-<h2 id="fleet-spectrum">watching a fleet</h2>
+<h2 id="fleet-node">spectro node: the process fleet</h2>
 
-<p>The spectrum tab folds a panel run with no extra wiring: the panel is
-a lane, every agent is a lane, task/status/result pulses and gate states
-land where they belong, and a lane click pins the trace. Export a panel
-run to JSONL and the import dialog replays the whole fleet, exactly as
-recorded.</p>
+<p>A fleet does not have to live in one program. The launcher runs one
+prompt as a fleet node whose whole event stream rides the bus to a
+hub:</p>
+
+<pre><code>spectro node -p "Review the input handling" \
+    --hub 127.0.0.1:7700 --context pr-42 --role security</code></pre>
+
+<p>The node runs headless, exactly like <code>spectro run</code>, and
+publishes as it goes. <code>--context</code> names the fleet to join (the
+bus topic derives from it) and is required; <code>--hub host:port</code>
+(or <code>$SPECTRO_HUB</code>) names the hub. Options fill in the rest:
+<code>--id</code> (default <code>node-&lt;pid&gt;</code>),
+<code>--role</code> (default worker),
+<code>--permissions</code> (<code>readonly</code> by default,
+<code>auto</code>, or <code>ask</code>), <code>--max-turns</code>, and
+<code>--linger</code>. The local session JSONL stays the durability
+anchor, so a dead or stalled hub never blocks the run: events past the
+buffers are dropped from the <em>bus view</em> only, counted and warned
+loudly, while at-least-once still holds for everything the outbox
+accepted. Each process start stamps a fresh wall-clock epoch, so a
+restarted node reads as a new stream on the bus, delivered rather than
+misread as a redelivery.</p>
+
+<p>By default a node connects, runs once, and exits.
+<code>--linger</code> keeps it connected and controllable after the run,
+until a stop arrives over the hub (or, in production, SIGTERM).
+<code>--permissions ask</code> parks each gated tool for an operator to
+answer over the hub instead of a fixed yes or no (see the control plane
+below).</p>
+
+<h2 id="fleet-hub">code fleets on the hub</h2>
+
+<p>A <code>Spectro.panel()</code> fleet runs in one JVM by default and
+returns one merged EventStream. Set <code>$SPECTRO_HUB</code> (or build
+the panel with a hub address) and each lane also mirrors its frames to
+the hub as a node, so a code fleet becomes live-visible in a running
+cockpit and the canvas draws its real spawn edges. The invariant holds
+where it matters: the returned EventStream stays byte-identical on the
+local in-memory spine, the hub is a purely additive mirror, and a dead
+hub never delays the run's close.</p>
+
+<h2 id="fleet-enter">entering a fleet</h2>
+
+<p>Fleets are first-class, like sessions. The sidebar has two segments,
+<code>sessions</code> and <code>fleets</code>; switch to fleets and every
+one the hub has seen is a row with its sigil, its name, and its agent
+count (online of total). A fleet with a parked gate floats to the top.
+Click a row to enter the fleet: its events feed the same tabs, and you
+land on the Spectrum with every agent visible at once, one lane each.</p>
+
+<p>The graph tab, for an entered fleet, becomes the fleet canvas: a
+spectral DAG. One node per agent (never one per event), its body a
+compact spectral band folded from that agent's slice of the stream;
+causal rails wire the topology, read from the event payloads (spawn
+ocean, task an amber comet in flight, result teal). Click an agent to
+open its own trace. A wide fan-out of same-role siblings folds into one
+group card (marked with a count) that you click to expand, and the canvas
+shrinks node bodies as the fleet grows, so a large fleet stays readable
+rather than turning to hairball. A MiniMap and pan-zoom come with it.
+Export a fleet run to JSONL and the import dialog replays the whole
+thing, exactly as recorded.</p>
+
+<h2 id="fleet-control">the control plane</h2>
+
+<p>Watching is one thing; driving is another. The honest state is that
+most driving still happens from the CLI (<code>spectro node</code>) or
+from code (<code>Spectro.panel()</code>). What the cockpit adds is a
+small set of first-class controls over the hub.</p>
+
+<p><strong>Spawn.</strong> The canvas carries a "spawn a node" panel, and
+the sidebar opens the same form as a dialog so you can start the first
+node before any exists. The web spawn is deliberately read-only: the
+endpoint is reachable from a browser, so it must never launch a node that
+writes or runs code. It is also opt-in
+(<code>SPECTRO_ALLOW_SPAWN</code>, off by default) and needs a running
+hub. For a node with full rights the form hands you a copy-paste
+<code>spectro node …</code> command, built from the same fields plus the
+live hub port, with an ask-or-auto toggle. You run that in your own
+terminal.</p>
+
+<p><strong>Stop.</strong> A connected agent card carries a
+<code>&#x2297;</code> button that sends a stop to the node over the hub.
+Best-effort, and it says so: the click confirms the verb was sent, not
+that the node has stopped (the control plane has no ack). The node leaves
+the roster when it actually ends; re-click if a stop was lost, and
+SIGTERM is the ultimate backstop.</p>
+
+<p><strong>Answer a gate.</strong> A node started with
+<code>--permissions ask</code> parks each gated tool instead of denying
+it. The parked gate surfaces in the fleet's Spectrum lane and in the same
+gate bar you use for your own session, docked above the footer. Approve
+or deny inline and the answer travels to the node over the hub. There is
+no "remember" here: a remote node keeps its own allowlist, not yours.
+Like stop it is best-effort; if the node left first, its own close denies
+the orphaned gate, so the gate clears either way.</p>
+
+<div class="callout"><div class="co-title">who can drive</div>
+<p>Every fleet write, and the roster read itself, is gated to a local
+origin: a loopback caller <em>and</em> a localhost Host header (the Host
+check is the DNS-rebinding defense). A remote or rebound page gets a 404
+with no hint the endpoint exists. Spawn adds its opt-in flag and forces
+the node read-only on top. The bus carries prompts, reasoning and tool
+I/O, so its face is treated as sensitively as the ability to spawn.</p></div>

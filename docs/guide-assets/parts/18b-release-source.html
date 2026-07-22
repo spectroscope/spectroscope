@@ -1,0 +1,134 @@
+<!-- ============================== CH 32 ============================== -->
+<h1 data-ch="32" id="ch-release"><span class="ch-num">Chapter 32</span>Releases &amp; working with the source</h1>
+
+<p class="lead">Two libraries go to Maven Central, one download per app module goes
+to the GitHub release, and the whole tree is MIT and reproducible from a script.
+Rule of thumb: every module ships <em>something</em>. This chapter is the map of what
+that something is, and how to work with the source that builds it.</p>
+
+<h2 id="ch-release-ships">What a release ships</h2>
+<p>The seven modules split cleanly into reusable Java (published to Maven Central so
+you can depend on it) and runnable faces (attached to the GitHub release, one download
+each). One module is the exception, and it is called out below.</p>
+
+<table class="tbl">
+  <tr><th>module</th><th>build</th><th>ships as</th></tr>
+  <tr><td><code>spectro-core</code></td><td>Gradle · java-library</td><td>Maven Central library</td></tr>
+  <tr><td><code>spectro-orchestrator</code></td><td>Gradle · java-library</td><td>Maven Central library (POM pins core at the same version)</td></tr>
+  <tr><td><code>spectro-cli</code></td><td>Gradle · application</td><td>GitHub asset <code>spectro-&lt;v&gt;.zip</code> (the terminal face, <code>bin/spectro</code>)</td></tr>
+  <tr><td><code>spectro-server</code></td><td>Gradle · Spring Boot</td><td>GitHub asset <code>spectro-server-&lt;v&gt;.jar</code> (executable; embeds the built web UI)</td></tr>
+  <tr><td><code>spectro-mcp-notes</code></td><td>Gradle · application</td><td>GitHub asset <code>spectro-mcp-notes-&lt;v&gt;.zip</code> (the sample MCP server)</td></tr>
+  <tr><td><code>spectro-desktop</code></td><td>npm · Electron</td><td>GitHub asset <code>spectroscope-&lt;v&gt;-&lt;arch&gt;.dmg</code> (the desktop run kit; bundles server + JRE)</td></tr>
+  <tr><td><code>spectro-web</code></td><td>npm · Vite</td><td><strong>not a standalone download</strong> — built into the server jar (and the desktop kit)</td></tr>
+</table>
+
+<!--SVG:01-gradle-modules|Diagram 01 — the Gradle build: five JVM modules with their dependency edges and the version catalog, plus the two npm toolchains (spectro-web, spectro-desktop) that live next to the JVM graph on purpose. What ships from each is the subject of this chapter.-->
+
+<p><strong>Why the web has no download.</strong> <code>spectro-web</code> is a single-page
+app; it needs the server's REST and WebSocket API on the same origin, so a bundle handed
+out on its own could not run. The release build compiles the UI <em>first</em>, writing
+its output straight into <code>spectro-server</code>'s static resources, so the server jar
+below already carries the current UI. The desktop kit carries that same server jar, so the
+web face is present in three assets and standalone in none.</p>
+
+<p><code>scripts/build-release-assets.sh</code> produces every GitHub asset in one pass
+into <code>build/release-assets/</code>; the two libraries are the exception and go to
+Maven Central instead. On a machine without a full JDK/Node for the Electron step,
+<code>SKIP_DESKTOP=1</code> builds everything except the <code>.dmg</code>.</p>
+
+<h2 id="ch-release-libs">The libraries on Maven Central</h2>
+<p>The two headless modules are published under the <strong>verified namespace</strong>
+<code>dev.spectroscope</code>. Depend on the orchestrator and you get the core transitively:</p>
+<pre>dependencies {
+  implementation("dev.spectroscope:spectro-core:0.1.0")
+  implementation("dev.spectroscope:spectro-orchestrator:0.1.0")  // POM pins spectro-core at 0.1.0
+}</pre>
+<p><code>v0.1.0</code> is the first published version. <strong>Maven Central is
+append-only</strong>: a published version cannot be pulled or overwritten, only superseded,
+so the next release is always a bump (<code>0.1.0 → 0.1.1 → …</code>), never a re-publish.
+That is why the release ritual gates hard before the single irreversible step.</p>
+<p>Only these two ship to Maven. <code>spectro-server</code> is a Spring Boot application:
+its plain <code>jar</code> is a thin, non-runnable shell, so it ships as an executable
+<code>bootJar</code> on the GitHub release, never to Maven. <code>spectro-web</code> and
+<code>spectro-desktop</code> are npm/frontend modules and cannot go to Maven Central at all.</p>
+
+<h2 id="ch-release-desktop">The desktop run kit</h2>
+<p>The <code>.dmg</code> is a <strong>self-contained</strong> app. The Electron shell
+(<code>spectro-desktop</code>) spawns and supervises the server, and the build bundles both
+the server jar <em>and</em> a <code>jlink</code>'d JRE into the app, so the target machine
+needs no Java installed: double-click, the server starts with it, the cockpit opens. When
+the window closes, the shell reaps its child JVM. The script that builds it is
+<code>scripts/build-desktop-runkit.sh</code>.</p>
+<p>Two honest limits, and the release notes state them:</p>
+<ul>
+  <li><strong>Per-platform.</strong> Electron and the bundled JRE are OS/arch specific, and
+      the script builds the <em>host</em> target only. Windows, Linux and Intel each need
+      building on and for themselves.</li>
+  <li><strong>Ad-hoc signed, not notarized.</strong> On first download macOS reports an
+      <em>"unidentified developer"</em>; open it once with right-click → Open (or clear the
+      quarantine flag with <code>xattr -cr</code>) and it launches normally from then on. A
+      local build has no quarantine flag and starts directly.</li>
+</ul>
+<p>For a zero-warning, plain double-click app you need a paid <strong>Apple Developer
+Program</strong> membership, a Developer ID Application certificate, and notarization. The
+one spectroscope-specific twist is signing the bundled JRE under the hardened runtime; the
+full end-to-end procedure is <code>docs/DESKTOP-SIGNING.md</code>. Sign only with the
+ad-hoc identity (<code>-</code>) otherwise, never a corporate certificate the machine may
+happen to list.</p>
+
+<h2 id="ch-release-source">Working with the source</h2>
+<p>The layout is the module table above, read as folders. <code>settings.gradle.kts</code>
+includes the five JVM modules (<code>spectro-core</code>, <code>-cli</code>,
+<code>-server</code>, <code>-mcp-notes</code>, <code>-orchestrator</code>); the two npm
+modules (<code>spectro-web</code>, <code>spectro-desktop</code>) sit next to the Gradle
+build with their own toolchains, on purpose — a Java backend and JS frontends are separate
+worlds and the build does not pretend otherwise. The gate is two commands:</p>
+<pre>./gradlew build                          # the whole JVM suite + all tests
+( cd spectro-web &amp;&amp; npm test )           # the web UI suite (vitest)</pre>
+<p>Neither needs an API key: the tests run against fake providers and scripted local
+servers, and the one live contract check self-skips unless <code>ANTHROPIC_API_KEY</code>
+is set (chapter 31 has the full inventory). The whole tree is <strong>MIT licensed</strong>
+(<code>LICENSE</code>, © 2026 Christopher Ezell) — use it, fork it, ship it, keep the notice.</p>
+
+<h2 id="ch-release-ritual">The release ritual</h2>
+<p>Cutting a release is a written runbook, <code>docs/RELEASE-PLAYBOOK.md</code>
+(<code>RELEASING.md</code> is the narrower "just Maven Central" companion; the two agree).
+The order exists to put every irreversible step behind a green gate:</p>
+<ol>
+  <li><strong>Preflight</strong> — clean tree, on <code>main</code>, and a version strictly
+      higher than the last published (Central is append-only).</li>
+  <li><strong>Bump versions together</strong> — the two Maven libs
+      (<code>spectro-core</code>, <code>spectro-orchestrator</code>) and the app versions
+      that name the assets (<code>spectro-cli</code>, <code>-server</code>,
+      <code>-mcp-notes</code>, and <code>spectro-desktop/package.json</code>).</li>
+  <li><strong>Full green gate</strong> — <code>./gradlew test</code> plus the two
+      <code>javadoc</code> tasks, then vitest. At <code>v0.1.0</code> the baseline was
+      <strong>678 JUnit</strong> (one skipped: the live-Opus check) and <strong>383
+      vitest</strong>.</li>
+  <li><strong>Dry-run the publish</strong> — <code>publishToMavenLocal</code> for both libs
+      confirms GPG signing and POM generation (every artifact gets a <code>.asc</code>; the
+      orchestrator POM depends on <code>spectro-core</code> at the same version) without
+      touching the portal.</li>
+  <li><strong>Commit + tag</strong> <code>v&lt;v&gt;</code>, push both.</li>
+  <li><strong>Publish the libraries</strong> — <code>./gradlew
+      publishAndReleaseToMavenCentral</code>. This is the one irreversible step; wait for
+      the coordinates to resolve on <code>repo1.maven.org</code> before trusting them.</li>
+  <li><strong>Build the assets</strong> — <code>scripts/build-release-assets.sh</code>,
+      then <code>gh release create v&lt;v&gt;</code> with everything in
+      <code>build/release-assets/</code>.</li>
+  <li><strong>Flip the install snippets</strong> — the landing page and the dev portal go
+      from "planned" to the real coordinates; push is deploy, so verify the live copy last.</li>
+</ol>
+<p>One-time owner prerequisites (a Central Portal token and GPG key in
+<code>~/.gradle/gradle.properties</code>, a full JDK for <code>jlink</code>, Node for the
+web bundle and Electron, and <code>gh</code> authenticated) are listed at the top of the
+playbook. The gitignored build artifacts (<code>jre/</code>, <code>build/</code>) never get
+committed.</p>
+
+<h2 id="ch-release-mark">The brand mark</h2>
+<p>The mark is a spectrum. Five vertical lines of different weights and colours, read left
+to right — the same figure the event stream makes when it fans into its lines. It sits on
+the cover of this guide. Colour lives only on the lines (a coral edge, amber, a broad teal,
+cyan, a brown edge); the wordmark is always <strong>lowercase</strong>, one word, set flat
+with no shadow and no glow. That restraint is deliberate and matches the interface, where
+colour is reserved for the spectral lines and nothing else carries it.</p>

@@ -21,7 +21,7 @@
 <!-- ============================== CH 12 ============================== -->
 <h1 data-ch="12" id="ch-tools"><span class="ch-num">Chapter 12</span>The tool belt</h1>
 
-<p class="lead">Eighteen built-in tools, plus one dynamic adapter per connected MCP tool.
+<p class="lead">Twenty-two built-in tools, plus one dynamic adapter per connected MCP tool.
 Every tool obeys one iron contract: <strong>it never throws</strong> — failures come back
 as a string starting <code>ERROR:</code>, which the model reads and self-corrects from.
 Every model-supplied path passes the sandbox. Every mutation passes the gate.</p>
@@ -131,9 +131,9 @@ surfacing live in the parent's UI. Telling the parent what you do is never dange
 <h2 id="ch-tools-who">Who gets which tools</h2>
 <table class="tbl">
   <tr><th>agent</th><th>registry</th></tr>
-  <tr><td><code>main</code></td><td>all of the above (17 named + MCP; <code>use_skill</code> when skills exist)</td></tr>
-  <tr><td><code>worker-N</code></td><td>list_dir, read_file, write_file, run_command, edit_file, glob, grep, use_skill*, <strong>report_status</strong></td></tr>
+  <tr><td><code>main</code></td><td>all of the above (21 named + MCP; <code>use_skill</code> when skills exist)</td></tr>
+  <tr><td><code>worker-N</code></td><td>list_dir, read_file, write_file, run_command, edit_file, glob, grep, view_image, view_file, use_skill*, <strong>report_status</strong></td></tr>
   <tr><td><code>explore-N</code></td><td>list_dir, read_file, glob, grep, <strong>report_status</strong> — read-only <em>by construction</em>: everything else simply is not in its registry</td></tr>
 </table>
 <p class="small">* when skills are installed. Children never receive: spawn/dev tools
-(nesting depth 1 is structural), generate_image, web_fetch, update_plan, MCP tools.</p>
+(nesting depth 1 is structural), generate_image, web_fetch, web_search, browse_page, update_plan, MCP tools.</p>

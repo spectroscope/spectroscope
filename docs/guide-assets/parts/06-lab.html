@@ -1,82 +1,113 @@
 <!-- ============================== CH 7 ============================== -->
 <h1 data-ch="7" id="ch-lab"><span class="ch-num">Chapter 7</span>The Lab</h1>
 
-<p class="lead">The Lab is spectroscope's step-through debugger for agent runs — and its best
+<p class="lead">The Lab is spectroscope's step-through debugger for agent runs, and its best
 classroom. Events do not flow through automatically: they queue behind a client-side
-<strong>dam</strong>, and you advance them click by click while chat, map and JSONL strip
+<strong>dam</strong>, and you advance them one boundary at a time while chat, map and JSONL strip
 move in perfect lockstep. It works on live runs and on any archived replay.</p>
 
 <h2 id="ch-lab-idea">The dam</h2>
-<p>Live events keep queueing even while the Lab is closed. Each <strong>Step</strong>
-applies the next event(s) through the <em>same pure reducer</em> the chat uses, plus two
-pure folds underneath: the scene model the Flow map paints, and a strict Petri marking.
-The invariant is literal: the stepped UI state always equals “fold of everything applied
-so far”. Because the server genuinely waits on permission futures, a token sitting at
-the gate is the real system state — not a simulation.</p>
+<p>Live events keep queueing even while the Lab is closed. Each step applies the next event(s)
+through the <em>same pure reducer</em> the chat uses, plus two pure folds underneath: the scene
+model the Flow map paints, and a strict Petri marking. The invariant is literal: the stepped UI
+state always equals “fold of everything applied so far”. Because the server genuinely waits on
+permission futures, a token sitting at the gate is the real system state, not a simulation.</p>
 
-<!--SHOT:03-lab-flow-start|A freshly loaded scenario: the dam holds all events (“61 waiting”), the Step button names the next event type, and the Flow map shows the idle system.-->
+<!--SHOT:03-lab-flow-start|A freshly loaded scenario: the dam holds every event (the “now” band reads “ready to run · 61 waiting”) and the Flow map shows the idle system, waiting for the first step.-->
 
-<h2 id="ch-lab-controls">The controls</h2>
+<h2 id="ch-lab-transport">The transport</h2>
+<p>Two things frame the map. Above it floats the <strong>“now” band</strong>: a plain-language line
+of what the run is doing at the current step (“the model is thinking”, “writing hello.txt to disk”,
+“the permission gate is deciding”, “orchestrating 3 workers”, “done · control is with you”), and
+next to it the size of the dam (“<code>n waiting</code>”, or “<code>waiting for server …</code>” when
+a live run has drained the queue). Before the first step it reads “ready to run”. Because the band
+names the folded scene, a scrubbed replay always tells you where it is.</p>
+
+<p>Below the map sits the <strong>scrub bar</strong>. Four buttons drive it: reset (<code>⟲</code>),
+step back (<code>‹</code>), play / pause (<code>▸ / ❚❚</code>) and step forward (<code>›</code>). A
+slider walks the run's <strong>coarse-step boundaries</strong>, so a drag always lands on a whole
+step, never mid-block; a “<code>step 4 / 27</code>” counter reads out where you are. Scrubbing pauses
+auto-play. Grain and speed are one rung down, behind a small <strong>more</strong> disclosure that a
+live run rarely needs:</p>
+
 <table class="tbl">
   <tr><th>control</th><th>behaviour</th></tr>
-  <tr><td><strong>Step</strong></td><td>applies the next block; the button shows the upcoming event type inline (<code>Step tool_call</code>)</td></tr>
-  <tr><td><strong>‹ Step back</strong></td><td>undoes the last step group — chat, map and strip re-fold backwards</td></tr>
-  <tr><td><strong>Blocks | Single</strong></td><td>the grain: one click = one meaningful block (a whole thinking run, a whole answer run, or one event) — or exactly one JSONL line</td></tr>
-  <tr><td><strong>Flow switch</strong></td><td>opens the dam into a paced auto-play — a timer steps at the chosen tempo instead of teleporting to the end</td></tr>
-  <tr><td><strong>Tempo</strong></td><td>0.5×–16×/s slider (default 0.8 steps/s)</td></tr>
-  <tr><td><strong>Reset</strong></td><td>re-queues everything applied</td></tr>
+  <tr><td><strong>› Step forward</strong></td><td>applies the next block (or one JSONL line in Single grain); the “now” band, chat, map and strip all move together</td></tr>
+  <tr><td><strong>‹ Step back</strong></td><td>undoes the last step group, re-folding chat, map and strip backwards from scratch</td></tr>
+  <tr><td><strong>▸ Play / ❚❚ Pause</strong></td><td>opens the dam into a paced auto-play: a timer steps at the chosen speed instead of teleporting to the end</td></tr>
+  <tr><td><strong>⟲ Reset</strong></td><td>re-queues everything applied and returns to the start</td></tr>
+  <tr><td><strong>Blocks | Single</strong> <span class="dim">(more)</span></td><td>the grain: one click = one meaningful block (a whole thinking run, a whole answer run, or one event), or exactly one JSONL line</td></tr>
+  <tr><td><strong>Speed</strong> <span class="dim">(more)</span></td><td>the auto-play slider, roughly 0.5×–16×/s (default 0.8/s)</td></tr>
 </table>
 
-<p>The panes left and right of the map — the fully functional chat and the JSONL strip —
-are drag-resizable and collapsed by default, so the map gets the room. The strip shows
-applied lines, the just-fired line highlighted, the dam divider (“▮▮ dam · n waiting”),
-then the dimmed queue; every row expands to the full event.</p>
+<p>Every button has a keyboard twin, guarded so it never eats a keystroke while you type in a field:
+<code>space</code> or <code>→</code> steps forward, <code>←</code> steps back, <code>f</code> toggles
+flow (auto-play), and <code>r</code> resets. Press <code>?</code> at any time for the full sheet
+(see <a href="#ch-lab-keymap">the keymap</a>).</p>
+
+<p>The panes left and right of the map, the fully functional chat and the JSONL strip, are
+drag-resizable and collapsed by default, so the map gets the room. The strip shows applied lines,
+the just-fired line highlighted, the dam divider (“<code>▮▮ dam · n waiting</code>”), then the dimmed
+queue; every row expands to the full event, and an “All” toggle drops the render window for very long
+sessions.</p>
 
 <h2 id="ch-lab-flow">The Flow map (React Flow)</h2>
 
-<!--SHOT:04-lab-flow-mid|Mid-run: the coral packet sits on the Agent hub (“plans the next step”), the tool chips and the OS band below it, the LLM zone to the right — with live disclosures on every node.-->
+<!--SHOT:04-lab-flow-mid|Mid-run: the coral packet sits on the Agent hub, its tool belt below the Loop and Permission-gate rows, the OS band under that, the LLM zone to the right, with live disclosures on every node.-->
 
-<p>The default view is a literal systems map. On the left, the <strong>AGENT SYSTEM ·
-YOUR MAC</strong> zone: the user, the <strong>Agent hub</strong> (live activity line, the
-Loop row, the <strong>Permission gate</strong> row that colors with the gate state, the
-tool chips) and the <strong>OPERATING SYSTEM</strong> band — disk (animated platter, the
-touched file as a pill), shell (the running command), MCP client and network stack. On
-the right, <strong>OUTSIDE</strong>: the LLM (neural-net animation while thinking, model
-name, reasoning/answer stream slices per agent), the network and the MCP server.</p>
+<p>The centre is a literal systems map. On the left, the <strong>AGENT SYSTEM · YOUR MAC</strong>
+zone: the user, the <strong>Agent hub</strong> (live activity line, the Loop row, the
+<strong>Permission gate</strong> row that colors with the gate state, and the tool belt) and the
+<strong>OPERATING SYSTEM</strong> band, disk (animated platter, the touched file as a pill), shell
+(the running command), MCP client and network stack. On the right, <strong>OUTSIDE</strong>: the LLM
+(neural-net animation while thinking, model name, reasoning and answer stream slices per agent), the
+network and the MCP server.</p>
 
 <p>One coral packet rides the rails to wherever the current event happens. The map is
 <strong>honest about locality</strong>: with a local provider (Ollama) the LLM node sits
-<em>inside</em> your machine and nothing crosses the boundary; switching to a cloud
-provider re-places it beyond a dashed <strong>network boundary</strong> — live, because
-the layout follows the selected provider.</p>
+<em>inside</em> your machine and nothing crosses the boundary; switching to a cloud provider
+re-places it beyond a dashed <strong>network boundary</strong>, live, because the layout follows the
+selected provider.</p>
 
-<!--SHOT:04b-lab-flow-subagents|Parallel subagents: each child gets its own loop card inside the machine zone with its own coral packet — two dots flying to the shared LLM = real parallelism, visible.-->
+<!--SHOT:04b-lab-flow-subagents|Parallel subagents: each child gets its own loop card inside the machine zone with its own coral packet, two dots flying to the shared LLM, real parallelism made visible.-->
 
-<p>Every node carries disclosures with the real data: the agent's system context and
-current tool call, the LLM's per-agent reasoning and answer streams, the disk's file,
-the shell's command, the MCP client's call. Subagents pop in as their own loop cards
-with lifecycle badges and disappear when the root run ends.</p>
+<p>Every node carries disclosures with the real data. The Agent hub now shows a <strong>tool belt</strong>:
+the chips <code>read_file</code>, <code>write_file</code>, <code>list_dir</code>,
+<code>run_command</code>, <code>use_skill</code>, <code>call_mcp</code> and <code>generate_image</code>,
+with the active one lit. Its <em>system context</em> disclosure holds the main agent's system prompt,
+the live context budget (estimated tokens against the compaction threshold, with a bar per segment)
+and the current tool call as a JSON tree, or, when the active tool is <code>generate_image</code>, a
+small generated-image thumbnail with its prompt caption. The LLM node reveals per-agent reasoning and
+answer streams; the disk shows its file, the shell its command, the MCP client its call. Subagents pop
+in as their own loop cards with lifecycle badges and disappear when the root run ends.</p>
+
+<h2 id="ch-lab-keymap">The keymap</h2>
+
+<p>Press <code>?</code> anywhere (or the header's keyboard button) to open the <strong>keymap</strong>:
+a game-style shortcut sheet that pairs each keycap with a small icon of what it does. It documents the
+Lab's real keys, <code>space</code>/<code>→</code> step forward, <code>←</code> step back,
+<code>f</code> flow, and <code>r</code> reset, alongside <code>?</code> to reopen the sheet and
+<code>esc</code> to close it. Close it with <code>Esc</code>, the ×, or a backdrop click. The footer
+states the one rule worth knowing: shortcuts pause while you type in a field.</p>
 
 <h2 id="ch-lab-petri">Under the hood: the Petri marking</h2>
 
-<p>The stepper also folds every event into a strict Petri net, for the formally minded:
-places are the stations a request passes through (<em>User, LLM, Tool, Gate</em>),
-transitions are the RunEvents, and one token moves. A <strong>Log</strong> place
-accumulates a token per fired transition, so its marking literally counts the JSONL
-lines — that is the invariant the JSONL strip's highlight rides on. Guards keep the net
-consistent: a move only fires when the source place holds the token, otherwise it
-degrades to a pulse (parallel tool calls, odd foreign replays). The marking has no view
-of its own anymore; it is the Lab's bookkeeping, not its face.</p>
+<p>The stepper also folds every event into a strict Petri net, for the formally minded: places are
+the stations a request passes through (<em>User, LLM, Tool, Gate</em>), transitions are the
+RunEvents, and one token moves. A <strong>Log</strong> place accumulates a token per fired
+transition, so its marking literally counts the JSONL lines, which is the invariant the strip's
+highlight rides on. Guards keep the net consistent: a move only fires when the source place holds the
+token, otherwise it degrades to a pulse (parallel tool calls, odd foreign replays). The marking has
+no view of its own; it is the Lab's bookkeeping, not its face.</p>
 
 <h2 id="ch-lab-scenarios">Scenarios: deterministic demo runs</h2>
 
-<!--SHOT:02-scenario-picker|The scenario picker: seven scripted demo runs, compiled deterministically — no LLM, no API key. Each opens in the Lab with the dam closed.-->
+<!--SHOT:02-scenario-picker|The scenario picker: seven scripted demo runs, compiled deterministically, no LLM, no API key. Each opens in the Lab with the dam closed.-->
 
-<p>The sidebar's <strong>Scenarios</strong> button opens seven built-in demo runs. Each is
-authored once in a bilingual DSL and <em>compiled</em> to a deterministic RunEvent stream —
-real wire format, fixed timestamps, no model involved. Picking one lands in the Lab with
-the stepper at event zero; it rides the same replay path as any stored session, so every
-tab renders it.</p>
+<p>The sidebar's <strong>Scenarios</strong> button opens seven built-in demo runs. Each is authored
+once in a bilingual DSL and <em>compiled</em> to a deterministic RunEvent stream: real wire format,
+fixed timestamps, no model involved. Picking one lands in the Lab with the stepper at event zero; it
+rides the same replay path as any stored session, so every tab renders it.</p>
 
 <table class="tbl">
   <tr><th>scenario</th><th>what it demonstrates</th></tr>
@@ -86,14 +117,13 @@ tab renders it.</p>
   <tr><td><code>Disk &amp; shell · read / write</code></td><td>the disk/shell stations: read → write → list → a gated <code>npm test</code></td></tr>
   <tr><td><code>Coding · 4 phases, parallel workers</code></td><td>a realistic dev run: explore → plan (subagent) → implement (two parallel workers writing files) → verify (gated test run)</td></tr>
   <tr><td><code>Research · consolidate + critical review</code></td><td>parallel source sweep with MCP searches, a consolidation draft, an adversarial critic child that finds a contradiction, the corrected answer</td></tr>
-  <tr><td><code>Context window · fill &amp; compact</code></td><td>no subagents — three big reads fill the context ring (ok → warn → high), then a compaction drops the meter and the run continues</td></tr>
+  <tr><td><code>Context window · fill &amp; compact</code></td><td>no subagents: three big reads fill the context ring (ok → warn → high), then a compaction drops the meter and the run continues</td></tr>
 </table>
 
 <div class="callout">
   <div class="co-title">Why scenarios exist</div>
-  <p>Live model behaviour is non-deterministic — a workshop demo that depends on the model
-  calling exactly the right tool at the right moment will betray you. Scenarios make every
-  mechanism of the harness — gates, subagents, MCP, compaction — steppable and repeatable,
-  offline, in either language. (Most screenshots in Part II use the “coding” scenario for
-  exactly this reason.)</p>
+  <p>Live model behaviour is non-deterministic: a workshop demo that depends on the model calling
+  exactly the right tool at the right moment will betray you. Scenarios make every mechanism of the
+  harness (gates, subagents, MCP, compaction) steppable and repeatable, offline, in either language.
+  (Most screenshots in Part II use the “coding” scenario for exactly this reason.)</p>
 </div>

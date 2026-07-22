@@ -3,32 +3,94 @@
 
 <p class="lead">Everything the loop needs from a model sits behind one narrow port:
 <code>Iterable&lt;ProviderEvent&gt; stream(request)</code>. Swap the implementation and
-the loop never notices — which is why spectroscope can switch between a cloud API and a local
+the loop never notices, which is why spectroscope can switch between a cloud API and a local
 model mid-session.</p>
 
-<h2 id="ch-providers-three">The three backends</h2>
+<!--SVG:03-provider-port|One port, many backends: the loop only ever sees stream(request). Anthropic, Ollama and the OpenAI-compatible family each implement it; the retry decorator wraps whichever one you picked.-->
+
+<h2 id="ch-providers-three">The backends</h2>
+<p>Five provider ids resolve to three implementations. The three OpenAI-compatible ids
+(<code>openai</code>, <code>lmstudio</code>, <code>openrouter</code>) share one wire
+protocol and differ only in which host they talk to and whether a key is attached.</p>
+
 <table class="tbl">
-  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai</th></tr>
+  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai-compatible</th></tr>
+  <tr><td>provider id</td><td><code>anthropic</code></td><td><code>ollama</code></td><td><code>openai</code> · <code>lmstudio</code> · <code>openrouter</code></td></tr>
+  <tr><td>implementation</td><td><code>AnthropicProvider</code></td><td><code>OllamaProvider</code></td><td><code>OpenAiCompatProvider</code></td></tr>
   <tr><td>transport</td><td>official SDK, SSE</td><td>NDJSON over <code>POST /api/chat</code></td><td>SSE over <code>POST /v1/chat/completions</code></td></tr>
-  <tr><td>auth</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td>Bearer optional (LM Studio &amp; friends run keyless)</td></tr>
-  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td><code>local-model</code> (the loaded one)</td></tr>
-  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td>—</td></tr>
+  <tr><td>endpoint</td><td><code>api.anthropic.com</code> (fixed)</td><td><code>localhost:11434</code> (default)</td><td>openai → <code>api.openai.com</code>; lmstudio → <code>localhost:1234</code>; openrouter → <code>openrouter.ai/api</code> (a set <code>baseUrl</code> overrides the preset)</td></tr>
+  <tr><td>key</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td><code>OPENAI_API_KEY</code> (openai) · none (lmstudio) · <code>OPENROUTER_API_KEY</code> (openrouter)</td></tr>
+  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td>name one for the cloud ids; a local server just serves the model it has loaded</td></tr>
+  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td><code>reasoning_content</code> deltas split out (LM Studio, vLLM)</td></tr>
   <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td></tr>
 </table>
+
+<p><strong>One wire, three hosts, no guessing.</strong> spectroscope used to redirect a
+keyless <code>openai</code> to a local LM Studio endpoint on your behalf. That guess is
+gone: the provider id names the endpoint, the key only authenticates. <code>openai</code>
+now always means the cloud; for a local OpenAI-compatible server (LM Studio, llama.cpp,
+vLLM) pick <code>lmstudio</code> or set an explicit <code>baseUrl</code>. Same wire either
+way.</p>
+
+<h2 id="ch-providers-start">First run — choosing a backend</h2>
+<p>Out of the box the provider is <code>anthropic</code> with <code>claude-opus-4-8</code>,
+which needs a key. On its first boot every face (<code>spectro run</code>, the web chat,
+<code>spectro node</code>, <code>spectro doctor</code>, the server) checks whether a
+<code>~/.spectro/settings.json</code> exists yet; when none does, it writes one from your
+current environment base (whatever you exported, or put in <code>./.env</code>), so day one
+your settings file mirrors exactly what you already had and nothing changes behind your
+back. With nothing set at all you land on the Anthropic default, and a run without a key
+stops with a readable “no key” message instead of a mystery failure.</p>
+
+<p>No Anthropic key on hand? Two of the backends are keyless and local:</p>
+<ul>
+  <li><strong>ollama</strong> — install it, pull a model, and it serves
+      <code>localhost:11434</code>. Set <code>provider=ollama</code>; no key.</li>
+  <li><strong>lmstudio</strong> — run LM Studio in server mode with a model loaded, and it
+      serves <code>localhost:1234</code>. Set <code>provider=lmstudio</code>; no key.</li>
+</ul>
+<p>The two cloud OpenAI-compatible backends do need a key: <code>openai</code>
+(<code>OPENAI_API_KEY</code>) and <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>).
+Set the provider in <code>~/.spectro/settings.json</code>, through
+<code>SPECTRO_PROVIDER</code>, with a <code>--provider</code> flag, or from the header
+picker. The CLI tour is the guided path: <code>spectro tour</code> → Settings
+<code>[s]</code> picks a provider, takes the key hidden, and can save it to
+<code>./.env</code> for you.</p>
+
+<h2 id="ch-providers-env-key">Putting a key in the .env</h2>
+<p>The simplest home for a secret is a <code>./.env</code> file in the repo root: it is
+gitignored, and spectroscope reads it as the environment base at startup. One
+<code>KEY=value</code> per line, no quotes:</p>
+<pre># ./.env — gitignored; the environment base layer
+ANTHROPIC_API_KEY=sk-ant-...        # anthropic
+OPENAI_API_KEY=sk-...               # openai (the cloud); also the image backend's key
+OPENROUTER_API_KEY=sk-or-...        # openrouter
+# ollama and lmstudio need no key</pre>
+<p>The <code>.env</code> is only the <em>base</em> layer: a value in
+<code>~/.spectro/settings.json</code> (or a flag) wins over it, and
+<code>spectro doctor</code> names any <code>SPECTRO_*</code> variable that is set <em>and</em>
+shadowed, so a value that isn't taking effect never fools you. Keys are secrets: they never
+enter a session file, the event stream, or the first-run settings seed. In the tour,
+<code>[w]</code> “save key to .env” writes the file for you (gitignored, mode 600). The
+image-generation keys (<code>GEMINI_API_KEY</code>, <code>OPENAI_API_KEY</code>) live in the
+same file — chapter 17.</p>
 
 <h2 id="ch-providers-switch">Switching mid-session</h2>
 
 <!--SHOT:17-provider-picker|The header picker: provider select plus a real model dropdown — Ollama's list is live from the server, cloud lists are curated, and a custom model is always typeable.-->
 
-<p>The header chip opens the picker. The model dropdown is honest: for Ollama it lists
-what is actually installed (live from <code>/api/tags</code>), for the cloud providers a
-curated set, with “Custom model …” always available; an empty list degrades to free
-text. Apply sends <code>set_provider</code> — and because the agent is built once per
-connection (it carries your history), the switch swaps a delegate <em>inside</em> the
-provider port instead of rebuilding anything. It takes effect on the next prompt,
-history intact. Selecting Anthropic without a key is refused with a readable error, and
-the map in the Lab re-places the LLM node inside or beyond the network boundary to
-match. </p>
+<p>The header chip opens the picker. It switches the headline backends (anthropic, ollama,
+openai) and the model; the two extra OpenAI-compatible ids (lmstudio, openrouter) are
+chosen in settings (<code>SPECTRO_PROVIDER</code> or <code>~/.spectro/settings.json</code>)
+or with a <code>--provider</code> flag. The model dropdown is honest: for Ollama it lists
+what is actually installed (live from <code>/api/tags</code>), for Anthropic what your key
+can use (its Models API), for an OpenAI-compatible endpoint whatever <code>/v1/models</code>
+returns, each with a curated fallback and “Custom model …” always available; an empty list
+degrades to free text. Apply sends <code>set_provider</code>, and because the agent is built
+once per connection (it carries your history), the switch swaps a delegate <em>inside</em>
+the provider port instead of rebuilding anything. It takes effect on the next prompt,
+history intact. Selecting Anthropic without a key is refused with a readable error, and the
+map in the Lab re-places the LLM node inside or beyond the network boundary to match.</p>
 
 <!--MERMAID:02-provider-switch|set_provider: validate, build the new backend (key check included), swap the delegate. The next run_start reports the new provider — no new event type needed.-->
 
@@ -59,7 +121,9 @@ window, so the threshold must see them (chapter 28).</p>
           └─ RetryingProvider (all faces, unless maxRetries=0)
               └─ AnthropicProvider | OllamaProvider | OpenAiCompatProvider</pre>
 <p>All wrapping happens at one chokepoint (<code>providerFromConfig()</code>), so the
-CLI, the server, headless runs and the scheduler behave identically.</p>
+CLI, the server, headless runs and the scheduler behave identically. The one
+OpenAiCompatProvider serves all three OpenAI-compatible ids — only its endpoint and key
+differ.</p>
 
 <!-- ============================== CH 17 ============================== -->
 <h1 data-ch="17" id="ch-senses"><span class="ch-num">Chapter 17</span>Seeing, hearing, speaking, painting</h1>

@@ -6,7 +6,7 @@ REST endpoints, and a single WebSocket that carries RunEvents in one direction a
 small set of client frames in the other. Open <code>http://localhost:8080</code> after
 <code>./spectro web</code> and you are looking at the chat.</p>
 
-<!--SHOT:01-home-empty|The empty app: sidebar with the session archive, header with thinking toggle · language toggle · design drawer · provider chip, the four tabs, and the composer waiting. “Ask spectroscope.”-->
+<!--SHOT:01-home-empty|The empty app: sidebar with the session archive, header with thinking toggle · language toggle · design drawer · provider chip, the six tabs, and the composer waiting. “Ask spectroscope.”-->
 
 <h2 id="ch-chat-anatomy">The anatomy of the screen</h2>
 <ul>
@@ -18,7 +18,7 @@ small set of client frames in the other. Open <code>http://localhost:8080</code>
       the <strong>DE/EN</strong> toggle, the design drawer, the <strong>provider picker</strong>
       chip, the <strong>context ring</strong> (appears once tokens flow) and the Stop button
       while a run is active.</li>
-  <li><strong>Tab bar</strong>: Chat · Graph · Trace · Lab — four lenses over the same state.</li>
+  <li><strong>Tab bar</strong>: chat · spectrum · trace · graph · text · lab — six lowercase lenses over the same state (the labels are wire vocabulary; trace carries a live frame count).</li>
   <li><strong>Footer</strong>: run and session token totals in tabular numerals, a run status
       dot, and the connection dot.</li>
 </ul>

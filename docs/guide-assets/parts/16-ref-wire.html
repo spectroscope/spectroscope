@@ -72,8 +72,11 @@ fields ride separately for the compaction trigger only; a cancel mid-stream surf
       arguments arrive as a JSON <em>string</em> and are re-parsed (unparseable →
       <code>{"raw": …}</code>).</li>
   <li>Bearer auth only when a key is present — LM Studio and friends run keyless.</li>
-  <li>If the base URL still equals the Ollama default, it swaps to
-      <code>http://localhost:1234</code> (LM Studio's port).</li>
+  <li>Endpoint by provider name, no key-based swap: <code>openai</code> &rarr;
+      <code>https://api.openai.com</code>, <code>lmstudio</code> &rarr;
+      <code>http://localhost:1234</code>, <code>openrouter</code> &rarr;
+      <code>https://openrouter.ai/api</code>; an explicit <code>baseUrl</code> always
+      wins. One wire protocol, three hosts.</li>
 </ul>
 
 <!-- ============================== CH 25 ============================== -->
@@ -126,9 +129,11 @@ it.”</p>
 <!-- ============================== CH 26 ============================== -->
 <h1 data-ch="26" id="ch-rest"><span class="ch-num">Chapter 26</span>The REST API</h1>
 
-<p class="lead">Read-only by design — the socket carries every mutation — with exactly
-two exceptions: the transcription POST and the guarded session DELETE. Bound to
-127.0.0.1; auth and TLS are a deliberate course boundary.</p>
+<p class="lead">The session stream is read-only over REST — the socket carries run
+mutations — but a handful of control writes exist: the transcription POST, the guarded
+session DELETE, the three settings PUTs, the workspace picker and the image copy-to-workspace
+POST (plus the fleet control POSTs). Bound to 127.0.0.1; auth and TLS are a deliberate course
+boundary.</p>
 
 <table class="tbl dense">
   <tr><th>endpoint</th><th>returns</th><th>notes &amp; guards</th></tr>

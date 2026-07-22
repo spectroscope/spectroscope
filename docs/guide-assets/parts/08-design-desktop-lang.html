@@ -21,7 +21,9 @@ mid-stream.</p>
 
 <p>A design is a token override set — nothing structural changes. Selecting one flips a
 <code>data-design</code> attribute on <code>&lt;html&gt;</code> and the UI re-expresses
-itself instantly, no reload; a FOUC guard applies the saved design before first paint.</p>
+itself instantly, no reload; a FOUC guard applies the saved design before first paint.
+There used to be a shelf of extra skins; the picker was pruned to the three brand
+designs, and any retired id left in older browser state folds back to the default.</p>
 
 <table class="tbl">
   <tr><th>design</th><th><code>data-design</code></th><th>character</th><th>ground / accent</th><th>particles</th></tr>
@@ -47,9 +49,14 @@ effect switches work the same way.</p>
 <!-- ============================== CH 10 ============================== -->
 <h1 data-ch="10" id="ch-desktop"><span class="ch-num">Chapter 10</span>The desktop face</h1>
 
-<p class="lead">A JVM cannot live inside Electron's main process — so the desktop app is
+<p class="lead">A JVM cannot live inside Electron's main process, so the desktop face is
 honest about it: a thin shell that <em>supervises</em> the real server as a child process
-and points a window at it. The lesson of this face is process management, not IPC.</p>
+and points a window at it. Packaged, it goes one step further and carries everything it
+supervises — the server jar and a whole Java runtime — so a fresh machine needs no system
+Java. Double-click, the server starts with it, the cockpit opens. The lesson of this face
+is process management, not IPC.</p>
+
+<!--SVG:09-launcher-desktop|The launcher-and-desktop map. <code>./spectro desktop</code> is one of the launcher's commands; the middle band traces the desktop supervisor step by step, from the stale-instance stop through the health poll to the live tray.-->
 
 <h2 id="ch-desktop-seq">The supervision sequence</h2>
 
@@ -57,13 +64,41 @@ and points a window at it. The lesson of this face is process management, not IP
 
 <p><code>./spectro desktop</code> prepares the ground (stops a stale instance — Electron's
 single-instance lock would otherwise hand a relaunch to the <em>old</em> build; builds the
-boot jar; clears the macOS quarantine flag from fresh Electron binaries; puts the
-resolved JDK on the PATH). The Electron main process then finds a free port, spawns
+boot jar; clears the macOS quarantine flag from fresh Electron binaries on first run; puts
+the resolved JDK on the PATH). The Electron main process then finds a free port, spawns
 <code>java -jar spectro-server.jar --server.port=P</code>, polls <code>/api/health</code>
 every 500&nbsp;ms for up to 30&nbsp;s, and opens a 1200×800 window on
 <code>http://127.0.0.1:P</code> — the same React UI, talking over the same WebSocket. The
 renderer gets no Node API at all (<code>contextIsolation</code> on,
 <code>nodeIntegration</code> off): it is an ordinary web page.</p>
+
+<h2 id="ch-desktop-runkit">A self-contained run kit</h2>
+<p>That dev flow expects a JDK on the machine. The packaged app does not.
+<code>scripts/build-desktop-runkit.sh</code> bundles two things into the <code>.dmg</code>
+as Electron <code>extraResources</code>: the <strong>server jar</strong> and a
+<strong>jlink'd Java runtime</strong> (a trimmed JRE built straight from your JDK). Run
+packaged, the shell resolves both from inside its own bundle — the jar from the app
+resources, <code>java</code> from the bundled <code>jre/bin/java</code> — so a fresh
+machine needs no system Java at all. Double-click the app, the server boots on the bundled
+runtime, the cockpit window opens: the same React UI over the same WebSocket. (In dev the
+shell falls back to the <code>java</code> on your PATH and the jar from the Gradle build.)
+The app wears the brand — <code>productName</code> spectroscope, a brand app icon that the
+build script regenerates from <code>icon.svg</code> when <code>rsvg-convert</code> is
+present.</p>
+<ul>
+  <li><strong>First launch is a right-click.</strong> The default build is
+      <em>ad-hoc signed</em> (free, no Apple account). That clears the “is damaged” gate,
+      but on first download macOS still calls it an unidentified developer: right-click the
+      app → <em>Open</em> once (or <code>xattr -cr</code>), and it launches normally ever
+      after.</li>
+  <li><strong>Zero-warning distribution is a paid path.</strong> A plain double-click with
+      no prompt needs an Apple Developer ID plus notarization. The bundled JRE is the one
+      twist — its dylibs and JIT need signing and the right entitlements. The full recipe,
+      end to end, is in <code>docs/DESKTOP-SIGNING.md</code>.</li>
+  <li><strong>Built for the host.</strong> The bundled runtime and the Electron binary are
+      OS- and CPU-specific, so the script builds for the machine you run it on; a Windows,
+      Linux, or Intel kit means running the build there.</li>
+</ul>
 
 <h2 id="ch-desktop-tray">Tray, notifications, quitting</h2>
 <ul>
@@ -77,20 +112,21 @@ renderer gets no Node API at all (<code>contextIsolation</code> on,
       (Spring Boot closes sockets and finishes the current JSONL line); if the process still
       lives after five seconds, SIGKILL follows.</li>
   <li><strong>Startup failures clean up.</strong> If health never turns green, the shell
-      kills the JVM before showing the error — no headless server left behind. A missing
-      <code>java</code> shows “Java 21 is required”.</li>
+      kills the JVM before showing the error — no headless server left behind. In dev a
+      missing <code>java</code> shows “Java 21 is required”; the packaged run kit carries its
+      own runtime, so it cannot miss.</li>
 </ul>
 
 <!-- ============================== CH 11 ============================== -->
 <h1 data-ch="11" id="ch-lang"><span class="ch-num">Chapter 11</span>Two languages</h1>
 
-<p class="lead">The UI chrome ships fully bilingual — German (the default) and English —
+<p class="lead">The UI chrome ships fully bilingual — English (the default) and German —
 switched live by the header toggle. This guide's screenshots use the English chrome.</p>
 
 <ul>
   <li><strong>Chrome only, content never.</strong> Sidebar, header, dialogs, panels, tool
       cards, Lab toolbar, the in-map SVG texts, trace chrome, settings page, footer — all
-      switch live (~330 dictionary entries). Chat content, tool payloads and the JSONL wire
+      switch live (~460 dictionary entries). Chat content, tool payloads and the JSONL wire
       never run through translation: a session keeps its own language.</li>
   <li><strong>Wire values stay English.</strong> Plan statuses (<code>pending / in_progress /
       completed</code>), A2A states and stop reasons are canonical English on the wire —

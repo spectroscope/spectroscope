@@ -29,7 +29,7 @@ is reproducible from the repository.</p>
   <dt>Terminal captures</dt><dd>real output of <code>./spectro</code> and <code>./spectro doctor</code> on 2026-07-16, ANSI stripped at build time.</dd>
   <dt>Assembly</dt><dd><code>python3 docs/guide-assets/build_user_guide.py</code> — inlines the fonts (from the server's static assets), all images as data URIs, and the content parts from <code>docs/guide-assets/parts/</code> into the self-contained <code>docs/USER-GUIDE.html</code>.</dd>
   <dt>PDF</dt><dd>headless Chrome: <code>--headless --no-pdf-header-footer --print-to-pdf=docs/USER-GUIDE.pdf docs/USER-GUIDE.html</code>. Dark pages incl. margins come from the thead/tfoot page-spacer technique with <code>@page margin 0</code>.</dd>
-  <dt>Source of truth</dt><dd>all facts verified against the tree at the phase-5 migration state (2026-07-20); gate at capture time: 540 JUnit + 310 vitest, 0 failures.</dd>
+  <dt>Source of truth</dt><dd>all facts verified against the v0.1.0 source tree; gate: 678 JUnit + 383 vitest, 0 failures.</dd>
 </div>
 
 <!-- ============================== CREDITS ============================== -->

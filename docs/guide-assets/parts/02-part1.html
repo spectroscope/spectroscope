@@ -67,7 +67,7 @@ every chapter.</p>
   <dt>Build</dt><dd>Gradle 9.6.1, Kotlin DSL, version catalog, five JVM modules + two npm toolchains (Vite/React web UI, Electron shell).</dd>
   <dt>LLM access</dt><dd>One narrow <code>LlmProvider</code> port; behind it Anthropic (official SDK, SSE), Ollama (NDJSON) and any OpenAI-compatible server (SSE) — switchable mid-session.</dd>
   <dt>Frameworks</dt><dd>Spring <em>Framework</em> as a library in the core (RestClient + declarative HTTP interfaces); Spring <em>Boot</em> 3.5.3 only in <code>spectro-server</code>; picocli in the CLI; React 19 + React Flow in the browser.</dd>
-  <dt>Tests</dt><dd>354 JUnit + 252 vitest, all key-free: fake providers, scripted HTTP servers, process seams. <code>./gradlew build</code> needs no API key and no network model.</dd>
+  <dt>Tests</dt><dd>678 JUnit + 383 vitest, all key-free: fake providers, scripted HTTP servers, process seams. <code>./gradlew build</code> needs no API key and no network model.</dd>
 </div>
 
 <!-- ============================== CH 2 ============================== -->
@@ -167,7 +167,7 @@ chapter where the details live.</p>
   <tr><td><strong>Design system</strong></td><td>Three brand designs — spectro dark, spectro bright, spectro white — switchable in place, particle/scroll effects, one-step persistence.</td><td>9</td></tr>
   <tr><td><strong>Desktop app</strong></td><td>Electron shell that spawns and supervises the server JVM: health checks, tray, native cron notifications.</td><td>10</td></tr>
   <tr><td><strong>DE/EN chrome</strong></td><td>The whole UI chrome switches between German and English live; content keeps its language.</td><td>11</td></tr>
-  <tr><td><strong>Tool belt</strong></td><td>18 built-in tools — files, shell, search, web fetch, plan, skills, spawns — plus every connected MCP tool.</td><td>12</td></tr>
+  <tr><td><strong>Tool belt</strong></td><td>22 built-in tools — files, shell, grep/glob, web fetch + search, page browse, image + document view, plan, skills, spawns — plus every connected MCP tool.</td><td>12</td></tr>
   <tr><td><strong>Permission system</strong></td><td>ask/auto/readonly modes, a blocking broker, prefix-scoped allowlist, “always allow” with optional persistence.</td><td>13</td></tr>
   <tr><td><strong>Hooks</strong></td><td>Config-driven shell guards around every tool call: <code>pre_tool_use</code> can block before the gate, <code>post_tool_use</code> observes.</td><td>13</td></tr>
   <tr><td><strong>Subagents</strong></td><td>Explore/worker children with their own context, visible A2A task/status/result protocol, four development role tools.</td><td>14</td></tr>
