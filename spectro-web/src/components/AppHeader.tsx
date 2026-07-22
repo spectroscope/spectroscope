@@ -37,6 +37,8 @@ export function AppHeader(props: {
   onToggleSettings: () => void;
   doctorOpen: boolean;
   onToggleDoctor: () => void;
+  /** Opens the ? keymap overlay (edu port). */
+  onOpenKeymap: () => void;
   /** Live: the interactive picker. Replay: a static chip with the view's provider. */
   viewingLive: boolean;
   provider?: string;
@@ -155,6 +157,20 @@ export function AppHeader(props: {
         onClick={toggleLang}
       >
         {lang.toUpperCase()}
+      </button>
+
+      {/* keymap — the ? shortcut sheet (edu port). */}
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={lang === "de" ? "Tastaturkürzel" : "keyboard shortcuts"}
+        title={lang === "de" ? "Tastaturkürzel (?)" : "keyboard shortcuts (?)"}
+        onClick={props.onOpenKeymap}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <rect x="1.5" y="4" width="13" height="8" rx="1.6" />
+          <path d="M4 6.5h0M6.5 6.5h0M9 6.5h0M11.5 6.5h0M5 9.5h6" />
+        </svg>
       </button>
 
       {/* spectro doctor — the calibration/status page. Reference-lamp glyph:

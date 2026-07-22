@@ -13,7 +13,8 @@ import { Resizer } from "../components/Resizer";
 import { setChatW, setTraceW, toggleChat, toggleTrace, useLayout } from "../state/layout";
 import type { PendingAttachment } from "../components/AttachmentPreview";
 import { backToLive, loadReplay, step, useStepper } from "../state/stepper";
-import { LabControls, LabHint } from "./LabControls";
+import { LabHint } from "./LabControls";
+import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
 
@@ -150,9 +151,9 @@ export function LabView(props: {
       />
 
       <section className="lab-center" aria-label="System-Map (Flow)">
-        <LabControls running={props.running} />
-
-        <FlowMap scene={st.scene} applied={st.applied} provider={props.provider} model={props.model} systemPrompt={sysPrompt ?? undefined} />
+        <LabTransport running={props.running}>
+          <FlowMap scene={st.scene} applied={st.applied} provider={props.provider} model={props.model} systemPrompt={sysPrompt ?? undefined} />
+        </LabTransport>
 
         <LabHint />
       </section>
