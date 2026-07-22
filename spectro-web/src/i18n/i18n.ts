@@ -466,6 +466,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.send": { de: "Senden", en: "Send" },
   "chat.thinkingLive": { de: "denkt …", en: "thinking …" },
   "chat.chars": { de: "{n} Zeichen", en: "{n} chars" },
+  "chat.usageTitle": { de: "Tokens dieser Antwort (rein · raus) und wie lange sie gedauert hat", en: "This answer's tokens (in · out) and how long it took" },
   "chat.historyAria": { de: "Verlauf des Agenten-Laufs", en: "Agent run history" },
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },
   "info.compacted": { de: "Verlauf kompaktiert: {n} Turns zusammengefasst", en: "History compacted: {n} turns summarized" },

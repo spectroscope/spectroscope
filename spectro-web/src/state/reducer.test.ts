@@ -55,7 +55,9 @@ describe("reduce — happy path", () => {
     const state = reduceAll(initialState, happyPath);
     expect(state.turns).toEqual([
       { kind: "user", text: "Summarize pom.xml" },
-      { kind: "assistant", agentId: "main", text: "The pom declares one module.", thinking: "" },
+      // the usage event (ts 5) stamps the answer's tokens + duration (from ts 3, its first delta)
+      { kind: "assistant", agentId: "main", text: "The pom declares one module.", thinking: "",
+        usage: { inputTokens: 120, outputTokens: 30 }, durationMs: 2 },
     ]);
   });
 
@@ -123,6 +125,21 @@ describe("reduce — thinking (reasoning stream)", () => {
       { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: {}, ts: 3 },
     ]);
     expect(state.thinkingActive).toBe(false);
+  });
+
+  it("stamps the answer's usage and duration onto its assistant turn (the per-message footer)", () => {
+    const state = reduceAll(initialState, [
+      run, // ts 1 (run_start)
+      { type: "thinking_delta", agentId: "main", text: "let me", ts: 1000 }, // turn starts here
+      { type: "text_delta", agentId: "main", text: "the answer", ts: 1500 },
+      { type: "usage", agentId: "main", inputTokens: 120, outputTokens: 34, ts: 3300 },
+    ]);
+    const last = state.turns[state.turns.length - 1] as {
+      kind: string; usage?: { inputTokens: number; outputTokens: number }; durationMs?: number;
+    };
+    expect(last.kind).toBe("assistant");
+    expect(last.usage).toEqual({ inputTokens: 120, outputTokens: 34 });
+    expect(last.durationMs).toBe(2300); // 3300 - 1000 (turn's first event)
   });
 
   it("keeps the buffer on a thinking-only turn (never answered)", () => {

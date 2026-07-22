@@ -259,6 +259,13 @@
 .thinking--active .thinking-glyph { color: var(--accent); }
 .thinking-label { font-weight: 500; letter-spacing: var(--track-heading); }
 .thinking-meta { margin-left: auto; color: var(--text-faint); font-family: var(--font-mono); }
+/* Per-message token/duration footer — quiet, under the answer. */
+.assistant-meta {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-11);
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
 .thinking-live {
   margin-left: auto;
   display: inline-flex;

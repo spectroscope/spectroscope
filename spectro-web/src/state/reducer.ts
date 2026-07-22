@@ -23,7 +23,14 @@ export type UserAttachment = { name: string; mediaType: string; dataBase64: stri
 
 export type Turn =
   | { kind: "user"; text: string; attachments?: UserAttachment[] }
-  | { kind: "assistant"; agentId: string; text: string; thinking: string }
+  | {
+      kind: "assistant"; agentId: string; text: string; thinking: string;
+      /** Set from this turn's `usage` event: the tokens the answer cost, and how
+       *  long the turn took (its first event → the usage). Undefined until it
+       *  arrives (a torn/streaming turn simply has no footer yet). */
+      usage?: { inputTokens: number; outputTokens: number };
+      durationMs?: number;
+    }
   | { kind: "tool"; callId: string }
   /** agentId marks an info line that belongs to a subagent's thread (spawn). */
   | {
@@ -173,6 +180,9 @@ export interface UiState {
    *  switch. Defaults to "ask" so a state built without ever seeing the frame
    *  (e.g. a bare initialState in a test) still matches the server's default. */
   permissionMode: string;
+  /** ts of the current assistant turn's first event, per agent — so the `usage`
+   *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
+  assistantTurnStart: Record<string, number>;
 }
 
 export const initialState: UiState = {
@@ -196,6 +206,7 @@ export const initialState: UiState = {
   workspace: null,
   providerInfo: null,
   permissionMode: "ask",
+  assistantTurnStart: {},
 };
 
 /** Upsert an agent by id; patch is a partial or a function of the current row. */
@@ -252,6 +263,24 @@ function appendTrace(s: UiState, entry: Omit<TraceEntry, "seq">): UiState {
   const trace =
     appended.length > TRACE_CAP ? appended.slice(appended.length - TRACE_CAP) : appended;
   return { ...s, trace };
+}
+
+/** Stamp usage + duration onto the LAST assistant turn of an agent (the answer
+ *  the usage belongs to). No matching turn → the turns are returned unchanged. */
+function stampAssistantUsage(
+  turns: Turn[],
+  agentId: string,
+  patch: { usage: { inputTokens: number; outputTokens: number }; durationMs?: number },
+): Turn[] {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (turn.kind === "assistant" && turn.agentId === agentId) {
+      const next = turns.slice();
+      next[i] = { ...turn, ...patch };
+      return next;
+    }
+  }
+  return turns;
 }
 
 function patchCard(s: UiState, callId: string, patch: Partial<ToolCard>): UiState {
@@ -403,7 +432,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
       }
       return addTurn(
-        { ...state, thinkingActive: true },
+        { ...state, thinkingActive: true, assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts } },
         { kind: "assistant", agentId: event.agentId, text: "", thinking: event.text },
       );
     }
@@ -420,7 +449,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
       }
       return addTurn(
-        { ...state, thinkingActive: false },
+        { ...state, thinkingActive: false, assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts } },
         { kind: "assistant", agentId: event.agentId, text: event.text, thinking: "" },
       );
     }
@@ -489,9 +518,15 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         tone: "warn",
       });
 
-    case "usage":
+    case "usage": {
+      const start = state.assistantTurnStart[event.agentId];
       return {
         ...state,
+        // The per-message footer: this turn's token cost + how long it took.
+        turns: stampAssistantUsage(state.turns, event.agentId, {
+          usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens },
+          durationMs: start !== undefined ? Math.max(0, event.ts - start) : undefined,
+        }),
         usage: {
           inputTokens: state.usage.inputTokens + event.inputTokens,
           outputTokens: state.usage.outputTokens + event.outputTokens,
@@ -509,6 +544,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
             ? event.inputTokens + (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0)
             : state.lastInputTokens,
       };
+    }
 
     case "run_end":
       // A subagent's run_end must not flip the UI to "ready" mid-run.

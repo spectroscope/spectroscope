@@ -21,6 +21,22 @@ const fleet: RunEvent[] = [
   { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 2000 },
 ];
 
+describe("buildSpectrum reasoning divider", () => {
+  it("divides distinct reasoning segments so the aggregated thinking is not one blob", () => {
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts: 1000 },
+      { type: "thinking_delta", agentId: "main", text: "First, ", ts: 1100 },
+      { type: "thinking_delta", agentId: "main", text: "I plan.", ts: 1150 }, // continuous → no divider
+      { type: "text_delta", agentId: "main", text: "working", ts: 1200 },
+      { type: "thinking_delta", agentId: "main", text: "Now I verify.", ts: 1300 }, // resumed → divider
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 1400 },
+    ];
+    const main = buildSpectrum(events).lanes[0];
+    expect(main.thinking).toBe("First, I plan.\n\n———\n\nNow I verify.");
+    expect(main.thinking).not.toContain("First, ———"); // no divider WITHIN a segment
+  });
+});
+
 describe("buildSpectrum", () => {
   it("folds one lane per agent, in first-seen order", () => {
     const m = buildSpectrum(fleet);

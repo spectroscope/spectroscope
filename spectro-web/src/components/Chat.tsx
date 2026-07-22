@@ -11,7 +11,7 @@ import type { CSSProperties } from "react";
 import type { ClientMessage } from "../events";
 import type { Turn, UiState } from "../state/reducer";
 import { groupTurns } from "../state/threads";
-import { agentAccent } from "../format";
+import { agentAccent, formatDuration } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -165,6 +165,14 @@ export function Chat(props: {
                 {liveView && state.running && i === lastIndex && (
                   <span className="caret pulse" aria-hidden="true" />
                 )}
+              </div>
+            )}
+            {/* Per-message footer: this answer's token cost + how long it took
+                (from its usage event; the trace JSON carries the same numbers). */}
+            {turn.usage !== undefined && (
+              <div className="assistant-meta tabular" title={t(lang, "chat.usageTitle")}>
+                {turn.usage.inputTokens} in · {turn.usage.outputTokens} out
+                {turn.durationMs !== undefined && ` · ${formatDuration(turn.durationMs)}`}
               </div>
             )}
           </div>
