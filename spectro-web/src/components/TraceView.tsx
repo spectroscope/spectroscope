@@ -15,7 +15,7 @@ import { LLM_DIR_GLYPH, SummaryLine, TEXT_FIELD_EVENTS, llmDirection, wireHost, 
 import type { LlmDir } from "./eventSummary";
 import { DETAIL_MODES, detailLines, detailText } from "./traceDetail";
 import type { DetailMode } from "./traceDetail";
-import { causalChain, reasoningPairs } from "./traceChain";
+import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -167,12 +167,15 @@ const TraceRow = memo(function TraceRow(props: {
   lens: "" | "hi" | "anchor" | "dim";
   /** Lens pairing: the action that followed this thinking block, if any. */
   pair?: { seq: number; label: string };
+  /** Lens: the block-ending thinking row carries the WHOLE block's reasoning
+   *  text (every thinking_delta of the block joined), untruncated. */
+  blockText?: string;
   /** The open row's causal chain (undefined while closed — keeps memo calm). */
   chain?: TraceEntry[];
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
-  const { entry, dt, proto, host, open, lang, lens, pair } = props;
+  const { entry, dt, proto, host, open, lang, lens, pair, blockText } = props;
   // The DIR flag now reads as the LLM direction (derived from the type); the
   // socket direction moves into the tooltip.
   const ld = llmDirection(entry.type);
@@ -234,6 +237,12 @@ const TraceRow = memo(function TraceRow(props: {
           <SummaryLine text={summarize(entry, lang)} field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined} />
         </span>
       </button>
+      {blockText !== undefined && blockText !== "" && (
+        <div className="trace-reason" aria-label={t(lang, "trace.reasonBlock")}>
+          <span className="trace-reason-kicker mono">{t(lang, "trace.reasonBlock")}</span>
+          <p className="trace-reason-text">{blockText}</p>
+        </div>
+      )}
       {pair !== undefined && (
         <button
           type="button"
@@ -452,6 +461,9 @@ export function TraceView(props: {
   // Said-vs-did pairs for the lens: block-ending thinking frame -> the next
   // same-agent action. Computed on the FULL stream so pairs survive filters.
   const pairs = useMemo(() => (lensOn ? reasoningPairs(allEntries) : new Map<number, number>()), [lensOn, allEntries]);
+  // The whole reasoning text behind each block, keyed by the block-ending seq —
+  // the lens shows the complete thought, not just the fragment on one row.
+  const blockTexts = useMemo(() => (lensOn ? reasoningBlockText(allEntries) : new Map<number, string>()), [lensOn, allEntries]);
   const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
   const hasThinking = useMemo(
     () => allEntries.some((e) => e.type === "thinking_delta"),
@@ -598,21 +610,32 @@ export function TraceView(props: {
   // Space steps to the NEXT visible entry while one is open — the trace reads
   // like the Lab stepper then: open a frame, tap through the stream. The next
   // row is opened, focused and centred; Enter still toggles a focused row.
-  const openNextEntry = (): void => {
-    const at = visible.findIndex((e) => e.seq === openSeq);
-    if (at < 0 || at + 1 >= visible.length) return;
-    const next = visible[at + 1];
-    setOpenSeq(next.seq);
+  const openAt = (index: number): void => {
+    if (index < 0 || index >= visible.length) return;
+    const target = visible[index];
+    setOpenSeq(target.seq);
     // The row button exists BEFORE the re-render (only the detail expands),
     // so focus + centring can happen synchronously — no frame callback.
-    const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${next.seq}"]`);
+    const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${target.seq}"]`);
     row?.focus({ preventScroll: true });
     row?.scrollIntoView({ block: "center" });
   };
+  const openNextEntry = (): void => openAt(visible.findIndex((e) => e.seq === openSeq) + 1);
+  const openPrevEntry = (): void => {
+    const at = visible.findIndex((e) => e.seq === openSeq);
+    if (at > 0) openAt(at - 1);
+  };
+  // Space or → step to the next frame, ← to the previous — the trace reads like
+  // the Lab stepper: open a frame, tap through the stream both ways.
   const onKeyDown = (e: React.KeyboardEvent): void => {
-    if (e.key !== " " || openSeq === null) return;
-    e.preventDefault(); // the row buttons would re-toggle on space otherwise
-    openNextEntry();
+    if (openSeq === null) return;
+    if (e.key === " " || e.key === "ArrowRight") {
+      e.preventDefault();
+      openNextEntry();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      openPrevEntry();
+    }
   };
 
   return (
@@ -792,6 +815,7 @@ export function TraceView(props: {
                         ? { seq: pairTarget.seq, label: `${pairTarget.type} · ${summarize(pairTarget, lang).slice(0, 60)}` }
                         : undefined
                     }
+                    blockText={lensOn ? blockTexts.get(e.seq) : undefined}
                     chain={openSeq === e.seq ? openChain : undefined}
                     onJump={jumpTo}
                     onToggle={onToggle}

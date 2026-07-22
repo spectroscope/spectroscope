@@ -646,6 +646,20 @@
 }
 .trace-pair:hover { color: var(--text); background: var(--surface-2); }
 .trace-pair .mono { color: var(--text-dim); }
+/* Reasoning lens: the whole thinking block behind an action, untruncated. */
+.trace-reason {
+  border-left: 2px solid var(--ev-reasoning);
+  padding: var(--sp-1) var(--sp-4) var(--sp-1) var(--sp-6);
+}
+.trace-reason-kicker { display: block; font-size: var(--fs-11); color: var(--ev-reasoning); opacity: 0.85; }
+.trace-reason-text {
+  margin: 2px 0 0;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
 
 /* ---------- Causal chain strip (spectro-explain feature 2) ---------- */
 .trace-chain {

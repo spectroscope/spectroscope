@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { TraceEntry } from "../state/reducer";
-import { causalChain, reasoningPairs } from "./traceChain";
+import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 
 const E = (seq: number, type: string, agentId: string | undefined, payload: Record<string, unknown>): TraceEntry => ({
   seq,
@@ -69,5 +69,26 @@ describe("reasoningPairs", () => {
       E(3, "text_delta", "main", { text: "answer" }),
     ];
     expect(reasoningPairs(s).get(1)).toBe(3);
+  });
+});
+
+describe("reasoningBlockText", () => {
+  it("joins a block's full thinking text onto the block-ending seq", () => {
+    // seq 3+4 are one main block (ends at 4); the map keys the ENDING seq.
+    const blocks = reasoningBlockText(stream);
+    expect(blocks.get(4)).toBe("rm needs a gate…asking first.");
+    expect(blocks.has(3)).toBe(false); // only the block-ending frame carries the text
+  });
+
+  it("keeps separate agents' blocks apart", () => {
+    const s: TraceEntry[] = [
+      E(1, "thinking_delta", "a", { text: "A1 " }),
+      E(2, "thinking_delta", "a", { text: "A2" }),
+      E(3, "thinking_delta", "b", { text: "B1" }),
+      E(4, "tool_call", "b", { callId: "c", name: "x", input: {} }),
+    ];
+    const blocks = reasoningBlockText(s);
+    expect(blocks.get(2)).toBe("A1 A2");
+    expect(blocks.get(3)).toBe("B1");
   });
 });

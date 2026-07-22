@@ -125,3 +125,35 @@ export function reasoningPairs(entries: TraceEntry[]): Map<number, number> {
   }
   return pairs;
 }
+
+/**
+ * Full reasoning text per block (reasoning lens): for the LAST frame of each
+ * consecutive same-agent thinking block, the WHOLE block's text — every
+ * thinking_delta of the block joined in order, untruncated. So the lens can
+ * show the complete thought behind an action, not just the fragment on one row.
+ * Returns a map from the block-ending thinking seq to the joined text.
+ */
+export function reasoningBlockText(entries: TraceEntry[]): Map<number, string> {
+  const blocks = new Map<number, string>();
+  let start = -1; // index of the current block's first thinking frame
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (e.type !== "thinking_delta") {
+      start = -1;
+      continue;
+    }
+    if (start < 0) start = i;
+    const next = entries[i + 1];
+    const blockEnds =
+      next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
+    if (blockEnds) {
+      let text = "";
+      for (let k = start; k <= i; k++) {
+        text += str(payload(entries[k])["text"]) ?? "";
+      }
+      blocks.set(e.seq, text);
+      start = -1;
+    }
+  }
+  return blocks;
+}

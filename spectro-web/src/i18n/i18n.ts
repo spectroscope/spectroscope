@@ -70,6 +70,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.lensNote": { de: "Reasoning ist der Selbstbericht des Modells, aufgezeichnet neben dem, was es dann tat. Kein Fenster in die Gewichte.", en: "Reasoning is the model's self-report, recorded next to what it then did. Not a window into the weights." },
   "trace.lensNone": { de: "Keine Reasoning-Events in diesem Stream. Entweder ist die Aufzeichnung aus (Thinking-Schalter) oder das Modell hat keine gesendet.", en: "No reasoning events in this stream. Either capture is off (thinking toggle) or the model sent none." },
   "trace.pairThen": { de: "danach:", en: "then:" },
+  "trace.reasonBlock": { de: "reasoning", en: "reasoning" },
   "trace.pairJump": { de: "Zur Aktion springen, die auf diesen Denk-Block folgte", en: "Jump to the action that followed this thinking block" },
 
   // causal chain (spectro-explain, deterministic)
@@ -98,10 +99,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "gate.histDenied": { de: "abgelehnt", en: "denied" },
 
   // explain panel (the why layer)
-  "explain.toggle": { de: "explain", en: "explain" },
-  "explain.toggleTitle": { de: "Lauf-Zusammenfassung und Gate-Erklärungen, deterministisch aus dem Stream", en: "Run summary and gate explanations, deterministic from the stream" },
+  "explain.toggle": { de: "gates", en: "gates" },
+  "explain.toggleTitle": { de: "Die Gate-Why-Ladder: Lauf-Zusammenfassung + warum jedes Gate fragte, deterministisch aus dem Stream", en: "The gate why-ladder: run summary + why each gate asked, deterministic from the stream" },
   "explain.aria": { de: "Explain-Panel", en: "Explain panel" },
-  "explain.kicker": { de: "the why layer", en: "the why layer" },
+  "explain.kicker": { de: "the gate why-ladder", en: "the gate why-ladder" },
   "explain.empty": { de: "Noch kein Lauf aufgezeichnet. Das Panel faltet seine Fakten aus dem Stream.", en: "No run recorded yet. The panel folds its facts from the stream." },
   "explain.summary": { de: "Lauf-Zusammenfassung", en: "run summary" },
   "explain.duration": { de: "Dauer", en: "duration" },
