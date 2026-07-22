@@ -5,10 +5,10 @@
 // the spectral tick colors — langfuse structure, spectroscope skin.
 
 import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
-import { Background, Controls, Handle, MiniMap, Position, ReactFlow } from "@xyflow/react";
+import { Handle, MiniMap, Position } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode, NodeProps } from "@xyflow/react";
-import * as dagre from "dagre";
-import "@xyflow/react/dist/style.css";
+import { GraphCanvas } from "../reactflow/GraphCanvas";
+import { layoutDagre } from "../reactflow/layoutDagre";
 import type { RunEvent } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -138,20 +138,6 @@ function SpectralNode({ data }: NodeProps) {
 
 const nodeTypes = { spectral: SpectralNode };
 
-/** Top-down dagre layout, same pattern as the graph tab's layoutGraph. */
-function layout(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "TB", nodesep: 40, ranksep: 56 });
-  g.setDefaultEdgeLabel(() => ({}));
-  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H });
-  for (const e of edges) g.setEdge(e.source, e.target);
-  dagre.layout(g);
-  return nodes.map((n) => {
-    const p = g.node(n.id);
-    return { ...n, position: { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 } };
-  });
-}
-
 export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, onStop }: {
   model: FleetModel;
   events: RunEvent[];
@@ -221,7 +207,7 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
       animated: e.kind === "task",
       style: { stroke: EDGE_COLOR[e.kind], strokeWidth: 1.4 },
     }));
-    return { nodes: layout(flowNodes, flowEdges), edges: flowEdges };
+    return { nodes: layoutDagre(flowNodes, flowEdges, { nodeW: NODE_W, nodeH: NODE_H }), edges: flowEdges };
   }, [legible, events, collapseGroup, onStop]);
 
   // A group card expands; an agent card drills into its own trace. The collapse
@@ -245,23 +231,19 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
   }
 
   return (
-    <div className="fleet-canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        onNodeClick={onNodeClick}
-        fitView
-        minZoom={0.2}
-        panOnDrag={[1, 2]}
-        proOptions={{ hideAttribution: true }}
-      >
-        <Background />
-        <Controls showInteractive={false} />
+    <GraphCanvas
+      className="fleet-canvas"
+      nodes={nodes}
+      edges={edges}
+      nodeTypes={nodeTypes}
+      onNodeClick={onNodeClick}
+      minZoom={0.2}
+      miniMap={
         <MiniMap pannable zoomable
           nodeColor={(n) => clusterColor((n.data as unknown as SpectralNodeData).node.cluster)} />
-        {contextId !== undefined && <FleetSpawn contextId={contextId} hubPort={hubPort ?? null} />}
-      </ReactFlow>
-    </div>
+      }
+    >
+      {contextId !== undefined && <FleetSpawn contextId={contextId} hubPort={hubPort ?? null} />}
+    </GraphCanvas>
   );
 }

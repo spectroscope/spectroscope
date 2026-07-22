@@ -2,10 +2,10 @@
 // replay share buildGraph — the app hands this component the SAME raw event
 // array it already holds, so there is no second fetch path.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Background, Controls, Handle, Position, ReactFlow } from "@xyflow/react";
+import { Handle, Position } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode, NodeProps } from "@xyflow/react";
-import * as dagre from "dagre"; // namespace import: @types/dagre has NO default export
-import "@xyflow/react/dist/style.css";
+import { GraphCanvas } from "../reactflow/GraphCanvas";
+import { layoutDagre } from "../reactflow/layoutDagre";
 import type { RunEvent } from "../events";
 import { formatRelMs, formatTokens } from "../format";
 import { CopyButton } from "../components/CopyButton";
@@ -44,16 +44,7 @@ const LAYOUT_THROTTLE_MS = 300;
 // After dagre, the lane pass shifts sequentially spawned subagent subtrees
 // sideways so 2 subagents read as 2 parallel lanes (and 3 as 3).
 export function layoutGraph(nodes: FlowNode[], edges: FlowEdge[]): FlowNode[] {
-  const g = new dagre.graphlib.Graph();
-  g.setGraph({ rankdir: "TB", nodesep: 40, ranksep: 56 });
-  g.setDefaultEdgeLabel(() => ({}));
-  for (const n of nodes) g.setNode(n.id, { width: NODE_W, height: NODE_H });
-  for (const e of edges) g.setEdge(e.source, e.target);
-  dagre.layout(g);
-  const laid = nodes.map((n) => {
-    const p = g.node(n.id);
-    return { ...n, position: { x: p.x - NODE_W / 2, y: p.y - NODE_H / 2 } };
-  });
+  const laid = layoutDagre(nodes, edges, { nodeW: NODE_W, nodeH: NODE_H });
   const gn = (n: FlowNode): GraphNode => (n.data as { graphNode: GraphNode }).graphNode;
   const shifts = laneShifts(
     laid.map((n) => ({ agentId: gn(n).agentId, kind: gn(n).kind, x: n.position.x })),
@@ -217,14 +208,14 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
       <div className="graph-body">
         {/* Right mouse button pans the canvas (context menu suppressed), the
             left button only clicks/selects — owner request. */}
-        <div className="graph-canvas" onContextMenu={(e) => e.preventDefault()}>
-          <ReactFlow nodes={flowNodes} edges={flowEdges} nodeTypes={nodeTypes}
-            onNodeClick={onNodeClick} fitView proOptions={{ hideAttribution: true }}
-            panOnDrag={[1, 2]}>
-            <Background />
-            <Controls showInteractive={false} />
-          </ReactFlow>
-        </div>
+        <GraphCanvas
+          className="graph-canvas"
+          suppressContextMenu
+          nodes={flowNodes}
+          edges={flowEdges}
+          nodeTypes={nodeTypes}
+          onNodeClick={onNodeClick}
+        />
         {selected && <GraphDetail node={selected} onClose={() => setSelectedId(null)} />}
       </div>
       )}
