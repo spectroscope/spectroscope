@@ -235,6 +235,11 @@ public class SessionsController {
      * @return chat-capable model ids, newest first, or the curated fallback
      */
     private List<String> openaiModels(String provider) {
+        // Curated fallback ONLY for real OpenAI — gpt-4o etc. are its models. A
+        // local (lmstudio) or gateway (openrouter) backend that isn't answering
+        // returns EMPTY, so the picker says 'not reachable' instead of showing a
+        // misleading OpenAI list for a server that serves whatever you loaded.
+        List<String> fallback = "openai".equals(provider) ? OPENAI_MODELS : List.of();
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
             String key = "openrouter".equals(provider)
@@ -264,9 +269,9 @@ public class SessionsController {
                     .map(ModelRow::id)
                     .limit(60)
                     .toList();
-            return ids.isEmpty() ? OPENAI_MODELS : ids;
+            return ids.isEmpty() ? fallback : ids;
         } catch (Exception apiUnreachable) {
-            return OPENAI_MODELS;
+            return fallback;
         }
     }
 

@@ -176,7 +176,9 @@ export function ProviderPicker({
                     if (e.key === "Enter") apply();
                   }}
                 />
-                <span className="provider-field-note">{t(lang, "pp.noList")}</span>
+                <span className="provider-field-note">
+                  {t(lang, providerStatus?.[sel] === "local" ? "pp.localDown" : "pp.noList")}
+                </span>
               </>
             )}
           </label>

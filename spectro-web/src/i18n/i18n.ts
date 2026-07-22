@@ -192,6 +192,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.keepPh": { de: "leer = aktuelles Modell behalten", en: "empty = keep the current model" },
   "pp.noList": { de: "gerade keine Modell-Liste vom Backend; Modell-ID eintippen", en: "no model list from the backend right now; type the model id" },
   "pp.needsKey": { de: "kein Key gesetzt — trag ihn in die .env (siehe Hilfe)", en: "no key set — add it to your .env (see the help)" },
+  "pp.localDown": { de: "backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)", en: "backend not reachable — start ollama / LM Studio (or type a model id)" },
 
   // right panel
   "rp.agents": { de: "Agenten", en: "Agents" },
