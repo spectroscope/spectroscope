@@ -54,4 +54,8 @@ export interface SessionMeta {
   startedAt: number;
   firstPrompt: string;
   tokens: number;
+  /** distinct agents that ran (main + subagents); absent from pre-0.2.x servers. */
+  agentCount?: number;
+  /** top-level (main-agent) turns — the steppable conversation. */
+  turnCount?: number;
 }

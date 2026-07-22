@@ -278,8 +278,11 @@ public final class SessionStore {
      * @param firstPrompt the prompt that opened the session
      * @param tokens      input plus output tokens summed over the whole file
      * @param provider    the recorded provider label, "-" when absent
+     * @param agentCount  distinct agents that ran (main + every subagent)
+     * @param turnCount   top-level, main-agent turns — the steppable conversation
      */
-    public record SessionInfo(String id, long startedAt, String firstPrompt, int tokens, String provider) {}
+    public record SessionInfo(String id, long startedAt, String firstPrompt, int tokens,
+            String provider, int agentCount, int turnCount) {}
 
     /**
      * Overview over all sessions — a fold over the event files.
@@ -326,7 +329,9 @@ public final class SessionStore {
                         start.ts(),
                         start.prompt(),
                         sumTokens(events),
-                        Optional.ofNullable(start.provider()).orElse("-")));
+                        Optional.ofNullable(start.provider()).orElse("-"),
+                        countAgents(events),
+                        countMainTurns(events)));
     }
 
     /**
@@ -343,6 +348,40 @@ public final class SessionStore {
                 .sum();
     }
 
+    /** Distinct agents that ran in the file — one run_start per agent (the main
+     *  agent and every subagent write into the same session file). */
+    private static int countAgents(List<RunEvent> events) {
+        return (int) events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .map(RunEvent.RunStart::agentId)
+                .distinct()
+                .count();
+    }
+
+    /** Top-level turns: turn_start fires once per agent per turn, so restrict to
+     *  the main agent to count the STEPPABLE conversation turns, not subagent ones. */
+    private static int countMainTurns(List<RunEvent> events) {
+        String main = mainAgentId(events);
+        return (int) events.stream()
+                .filter(RunEvent.TurnStart.class::isInstance)
+                .map(RunEvent.TurnStart.class::cast)
+                .filter(turn -> main.equals(turn.agentId()))
+                .count();
+    }
+
+    /** The main agent, found STRUCTURALLY — the first run_start without a parentId
+     *  (JSONL-FORMAT.md §5.2), falling back to the conventional id. */
+    private static String mainAgentId(List<RunEvent> events) {
+        return events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .filter(start -> start.parentId() == null)
+                .map(RunEvent.RunStart::agentId)
+                .findFirst()
+                .orElse(MAIN_AGENT_ID);
+    }
+
     /**
      * Resume: reconstruct the provider history from events. Hard rule — every
      * tool_call needs its tool_result; orphaned calls (crash mid tool round) are
@@ -355,17 +394,10 @@ public final class SessionStore {
      */
     public static List<ProviderMessage> loadSession(String id) throws IOException {
         List<RunEvent> events = readSessionEvents(id);
-        // Interop hardening: the main agent is found STRUCTURALLY — the first
-        // run_start without a parentId — not by its name. This edition writes
-        // "main", but the shared format only promises the structure, and the
-        // format doc's own compact example ids ("a0") replay just as well.
-        String mainAgentId = events.stream()
-                .filter(RunEvent.RunStart.class::isInstance)
-                .map(RunEvent.RunStart.class::cast)
-                .filter(start -> start.parentId() == null)
-                .map(RunEvent.RunStart::agentId)
-                .findFirst()
-                .orElse(MAIN_AGENT_ID);
+        // Interop hardening: the main agent is found STRUCTURALLY (first run_start
+        // without a parentId), not by its name — see mainAgentId(). This edition
+        // writes "main", but the shared format only promises the structure.
+        String mainAgentId = mainAgentId(events);
         Reconstruction state = new Reconstruction();
         events.stream()
                 .filter(event -> agentIdOf(event)

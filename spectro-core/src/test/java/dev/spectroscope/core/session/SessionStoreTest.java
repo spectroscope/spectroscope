@@ -83,6 +83,27 @@ class SessionStoreTest {
     }
 
     @Test
+    void listSessionsCountsAgentsAndOnlyMainAgentTurns() {
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        // main agent runs two turns...
+        store.append(new RunEvent.RunStart("r1", "main", null, "Do the thing", "ollama", null, 1L));
+        store.append(new RunEvent.TurnStart("main", 1, 2L));
+        store.append(new RunEvent.TurnStart("main", 2, 3L));
+        // ...then spawns a subagent that runs its own run_start + turn.
+        store.append(new RunEvent.AgentSpawn("worker-1", "main", "sub task", 4L));
+        store.append(new RunEvent.RunStart("r2", "worker-1", "main", "sub task", "ollama", null, 5L));
+        store.append(new RunEvent.TurnStart("worker-1", 1, 6L));
+
+        SessionStore.SessionInfo info = SessionStore.listSessions().stream()
+                .filter(session -> session.id().equals(id))
+                .findFirst().orElseThrow();
+        assertEquals(2, info.agentCount(), "main + worker-1 both ran");
+        assertEquals(2, info.turnCount(),
+                "only the two main-agent turns are steppable, not the subagent's");
+    }
+
+    @Test
     void loadSessionReconstructsTheProviderHistory() throws IOException {
         String id = freshId();
         SessionStore store = new SessionStore(id);

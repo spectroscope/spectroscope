@@ -154,7 +154,15 @@ export function Sidebar(props: {
                   {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
                 </span>
                 <span className="session-meta tabular">
-                  {relativeTime(s.startedAt, Date.now(), lang)} &middot; {formatTokens(s.tokens)} tokens
+                  {relativeTime(s.startedAt, Date.now(), lang)}
+                  {(s.agentCount ?? 0) > 1 && (
+                    <> &middot; {s.agentCount} {lang === "de" ? "Agenten" : "agents"}</>
+                  )}
+                  {(s.turnCount ?? 0) > 0 && (
+                    <> &middot; {s.turnCount} {lang === "de" ? "Turns" : "turns"}</>
+                  )}
+                  {" "}
+                  &middot; {formatTokens(s.tokens)} tokens
                 </span>
               </button>
             ))}
