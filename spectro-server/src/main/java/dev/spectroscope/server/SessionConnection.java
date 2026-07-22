@@ -488,29 +488,53 @@ public final class SessionConnection {
     }
 
     /**
-     * The Files tab's folder picker: pin THIS session's workspace to a chosen
-     * directory. Only possible before the agent exists — afterwards the file
-     * sandbox, glob/grep, run_command and every subagent are already anchored
-     * there, so a late switch is refused with a readable error.
+     * The new-chat workspace chooser: pin THIS session's workspace by MODE. Only
+     * possible before the agent exists — afterwards the file sandbox, glob/grep,
+     * run_command and every subagent are already anchored there, so a late switch
+     * is refused with a readable error.
+     * <ul>
+     *   <li>{@code random} — a throwaway per-session temp folder (the default,
+     *       even when a workspace is configured, so it can bypass one).</li>
+     *   <li>{@code default} — the configured workspace, or the fixed
+     *       {@code ~/spectroscope-workspace} when none is set.</li>
+     *   <li>{@code set} — a specific folder ({@code path}) the operator picked.</li>
+     * </ul>
      *
-     * @param path the absolute directory the native picker returned
+     * @param mode one of {@code random | default | set} (empty defaults to set)
+     * @param path the picked directory — required for {@code set}, ignored otherwise
      */
-    public void onSetWorkspace(String path) {
-        if (path == null || path.isBlank()) {
-            sendError("set_workspace needs a path.");
-            return;
-        }
+    public void onSetWorkspace(String mode, String path) {
         if (agent != null) {
             sendError("The workspace is fixed once the agent has run — start a new chat to change it.");
             return;
         }
         try {
             ensureStore(); // the announcement carries the session id
-            String picked = path.strip();
+            String picked;
+            switch (mode) {
+                case "random" -> picked = WorkspaceResolver.locate(null, store.id()).toString();
+                case "default" -> {
+                    String configured = activeConfig.get().workspace();
+                    picked = (configured != null && !configured.isBlank())
+                            ? configured.strip()
+                            : WorkspaceResolver.defaultDir().toString();
+                }
+                case "set" -> {
+                    if (path == null || path.isBlank()) {
+                        sendError("set_workspace 'set' needs a path.");
+                        return;
+                    }
+                    picked = path.strip();
+                }
+                default -> {
+                    sendError("Unknown workspace mode: \"" + mode + "\" (random | default | set).");
+                    return;
+                }
+            }
             workspace = WorkspaceResolver.resolve(picked, store.id());
             // The pin is SHARED state: the REST side (/api/files) must root the
             // Files tab at the same folder the sandbox uses, and a resume in
-            // this server process finds the picked folder again.
+            // this server process finds the folder again.
             SessionWorkspaces.pin(store.id(), picked);
             workspaceAnnounced = false; // re-announce: the Files tab re-roots live
             sendWorkspaceInfo();

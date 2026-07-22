@@ -71,6 +71,14 @@
 }
 .empty-hint svg { flex-shrink: 0; }
 
+/* New-chat workspace chooser (random | default | set folder). */
+.ws-chooser { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.ws-chooser-label { font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.ws-chooser-opts { display: inline-flex; gap: 3px; border: 1px solid var(--border); border-radius: var(--radius-chip); padding: 2px; }
+.ws-chooser-opt { background: none; border: 0; border-radius: var(--radius-chip); color: var(--text-faint); font: inherit; font-size: var(--fs-12); padding: 3px var(--sp-2); cursor: pointer; }
+.ws-chooser-opt:hover { color: var(--text); }
+.ws-chooser-opt--on { background: var(--accent-soft); color: var(--accent); }
+
 /* User turn: compact raised card with eyebrow. */
 .user-turn {
   width: fit-content;

@@ -22,6 +22,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class WorkspaceResolverTest {
 
     @Test
+    void defaultDirIsAFixedPersistentFolderUnderHome() {
+        // The "default" workspace-chooser fallback — same folder every time,
+        // distinct from the per-session temp dir, and it creates nothing here.
+        assertEquals(
+                Path.of(System.getProperty("user.home"), "spectroscope-workspace").toAbsolutePath().normalize(),
+                WorkspaceResolver.defaultDir());
+    }
+
+    @Test
     void configuredPathIsCreatedAndNormalized(@TempDir Path tmp) {
         Path configured = tmp.resolve("nested/./agent-work");
         Path resolved = WorkspaceResolver.resolve(configured.toString(), "20260716-abc");

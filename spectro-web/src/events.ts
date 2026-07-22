@@ -45,7 +45,7 @@ export type ClientMessage =
   | { type: "set_image_provider"; provider: string } // image generation backend
   | { type: "set_thinking"; enabled: boolean } // reasoning visibility toggle
   | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
-  | { type: "set_workspace"; path: string } // pin THIS session's workspace (before the first run)
+  | { type: "set_workspace"; mode?: "random" | "default" | "set"; path?: string } // pin THIS session's workspace by mode (before the first run)
   | { type: "set_permission_mode"; mode: string }; // switch ask/auto/readonly mid-session (composer gear)
 
 // GET /api/sessions — the sidebar list (REST contract, design/BUILD-PLAN.md).

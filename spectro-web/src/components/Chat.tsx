@@ -21,6 +21,7 @@ import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { formatTimer, micButtonState } from "./voiceButton";
 import { ComposerGear } from "./ComposerGear";
+import { WorkspaceChooser } from "./WorkspaceChooser";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -46,6 +47,9 @@ export function Chat(props: {
   /** The one place client frames leave the app (App.tsx) — the composer
    *  gear uses it directly to send set_permission_mode. */
   sendClient: (msg: ClientMessage) => boolean;
+  /** Opens the native folder picker (App's pickWorkspace) for the "set folder"
+   *  choice in the new-chat workspace chooser; live sessions only. */
+  onPickFolder?: () => void;
 }) {
   const { state, liveView } = props;
   const lang = useLang();
@@ -233,6 +237,9 @@ export function Chat(props: {
               </svg>
               {t(lang, "chat.emptyHint")}
             </p>
+            {liveView && props.onPickFolder && (
+              <WorkspaceChooser sendClient={props.sendClient} onPickFolder={props.onPickFolder} />
+            )}
           </div>
         ) : (
           <div className="history">

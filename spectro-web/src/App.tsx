@@ -732,6 +732,7 @@ export function App() {
               onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
               onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
               sendClient={sendClient}
+              onPickFolder={pickWorkspace}
             />
             {imagesOpen && (
               <>
