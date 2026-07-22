@@ -33,3 +33,5 @@ spectro-desktop/jre/
 .idea/
 .vscode/
 *.iml
+.run/
+logs/

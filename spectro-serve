@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# spectro-server launcher — house style (cli-launcher skill). Zero-dep: bash +
+# coreutils + curl + lsof, runs before anything is installed.
+#
+# Commands: start [--port N] [--env-file F] [--no-open] | stop | restart
+#           | status | logs [-f] | doctor | open | help
+# No argument -> overview (banner + live status + URL box).
+#
+# --env-file loads KEY=value lines into the environment before boot (the same
+# contract ./spectro uses); ./.env is auto-loaded when present. Every exported
+# var (SPECTRO_PROVIDER, ANTHROPIC_API_KEY, SPECTRO_HUB_PORT, ...) passes straight
+# through to the JVM, so this is also how you hand the server its provider + keys.
+set -u
+cd "$(dirname "$0")" || exit 1
+
+# ------------------------------- CONFIG ---------------------------------------
+PROJECT="spectro-server"
+DEFAULT_PORT=8080
+HEALTH_PATH="/api/health"                    # DB-free liveness (200 = up)
+URL_PATHS=(/ /api/health /api/config)        # shown in start AND status
+# START_CMD runs the server in the foreground and MUST listen on $PORT. The
+# packaged boot jar is preferred (fast); ensure_built builds it once if missing.
+start_cmd() { exec java -jar "$(server_jar)" --server.port="$PORT"; }
+# Kept as function NAMES: the checks' own || and | would otherwise collide with
+# the |-delimited "name|test|fix" parsing in cmd_doctor.
+DOCTOR_CHECKS=(
+  "java 21+ on PATH|chk_java|install a JDK 21+ (https://adoptium.net), put java on PATH"
+  "server jar built or buildable|chk_jar|run ./gradlew :spectro-server:bootJar"
+  "a backend is configured|chk_backend|set SPECTRO_PROVIDER=ollama, or add a key to .env"
+)
+# --------------------------- generic below ------------------------------------
+
+RUN_DIR=".run"; LOG_DIR="logs"
+PID_FILE="$RUN_DIR/$PROJECT.pid"; PORT_FILE="$RUN_DIR/$PROJECT.port"
+LOG_FILE="$LOG_DIR/$PROJECT.log"
+PORT_ENV_VAR="SPECTRO_SERVER_PORT"
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  C_CY=$'\033[38;5;51m'; C_VI=$'\033[38;5;141m'; C_OK=$'\033[38;5;42m'
+  C_WA=$'\033[38;5;214m'; C_ER=$'\033[38;5;203m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'; C_0=$'\033[0m'
+else C_CY=; C_VI=; C_OK=; C_WA=; C_ER=; C_DIM=; C_B=; C_0=; fi
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s\n' "${C_OK}[ok]${C_0} $*"; }
+warn() { printf '%s\n' "${C_WA}[!]${C_0} $*"; }
+die()  { printf '%s\n' "${C_ER}[x]${C_0} $*" >&2; exit 1; }
+banner() { printf '%s\n' "${C_VI}  ${C_B}${PROJECT}${C_0}${C_VI} launcher${C_0} ${C_DIM}(spectroscope)${C_0}"; }
+
+# The boot jar path for the current version (read from the build file, never pinned).
+server_jar() {
+  local ver; ver="$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)"
+  printf '%s\n' "spectro-server/build/libs/spectro-server-${ver}.jar"
+}
+ensure_built() {
+  [ -f "$(server_jar)" ] && return 0
+  say "${C_DIM}  building the server jar (first run) ...${C_0}"
+  ./gradlew -q :spectro-server:bootJar >>"$LOG_FILE" 2>&1 || die "bootJar build failed - see $LOG_FILE"
+}
+
+# doctor checks — functions so their internal || / | never collide with the
+# |-delimited DOCTOR_CHECKS parsing.
+chk_java()    { java -version 2>&1 | grep -Eq 'version .(2[1-9]|[3-9][0-9])'; }
+chk_jar()     { [ -f "$(server_jar)" ] || command -v ./gradlew >/dev/null 2>&1; }
+chk_backend() { [ -n "${SPECTRO_PROVIDER:-}" ] || [ -f .env ] || [ -f "$HOME/.spectro/settings.json" ]; }
+
+# KEY=value loader — same contract as ./spectro: skip #/blank, require =, strip
+# one layer of surrounding quotes, drop an inline comment on an unquoted value.
+load_env_file() {
+  local f="$1"; [ -f "$f" ] || return 0
+  local line key val
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue;; esac
+    case "$line" in *=*) ;; *) continue;; esac
+    key="${line%%=*}"; val="${line#*=}"
+    key="$(printf '%s' "$key" | tr -d '[:space:]')"
+    case "$val" in
+      \"*\") val="${val%\"}"; val="${val#\"}";;
+      \'*\') val="${val%\'}"; val="${val#\'}";;
+      *) val="${val%%#*}"; val="$(printf '%s' "$val" | sed 's/[[:space:]]*$//')";;
+    esac
+    [ -n "$key" ] && export "$key=$val"
+  done < "$f"
+  say "${C_DIM}  loaded env from $f${C_0}"
+}
+
+resolve_port() {
+  if [ -n "${FLAG_PORT:-}" ]; then PORT="$FLAG_PORT"
+  elif [ -f "$PORT_FILE" ]; then PORT="$(cat "$PORT_FILE")"
+  elif [ -n "${!PORT_ENV_VAR:-}" ]; then PORT="${!PORT_ENV_VAR}"
+  else PORT="$DEFAULT_PORT"; fi
+}
+pid_running() { [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
+port_pid() { lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1; }
+is_up() { curl -fsS --max-time 2 "http://127.0.0.1:$PORT$HEALTH_PATH" >/dev/null 2>&1; }
+
+url_box() {
+  printf '%s\n' "${C_CY}  http://localhost:$PORT${C_0}"
+  for p in "${URL_PATHS[@]}"; do printf '%s\n' "${C_DIM}    -> http://localhost:$PORT$p${C_0}"; done
+}
+
+cmd_start() {
+  resolve_port
+  mkdir -p "$RUN_DIR" "$LOG_DIR"
+  if pid_running; then warn "$PROJECT already running (PID $(cat "$PID_FILE"), port $PORT)"; url_box; return 0; fi
+  local other; other="$(port_pid)"
+  [ -n "$other" ] && die "port $PORT held by PID $other (not ours) - pick another --port or stop it"
+  load_env_file "${FLAG_ENV_FILE:-.env}"     # env-file / ./.env -> exported -> inherited by the JVM
+  ensure_built
+  rm -f "$PID_FILE"
+  echo "$PORT" > "$PORT_FILE"
+  say "${C_VI}starting${C_0} $PROJECT on port $PORT ..."
+  set -m                                      # own process group so stop kills the whole tree
+  start_cmd >>"$LOG_FILE" 2>&1 &
+  echo $! > "$PID_FILE"
+  set +m
+  local spin='|/-\' i=0
+  for _ in $(seq 1 80); do                    # health-wait with spinner (max 40s: Spring Boot)
+    is_up && break
+    pid_running || { warn "process exited early - see $LOG_FILE"; return 1; }
+    printf '\r  %s waiting for health ...' "${spin:i++%4:1}"; sleep 0.5
+  done
+  printf '\r%*s\r' 40 ''
+  if is_up; then
+    ok "up (PID $(cat "$PID_FILE"), log $LOG_FILE)"; url_box
+    if [ -z "${FLAG_NO_OPEN:-}" ]; then open_url; fi
+    return 0
+  else
+    warn "no health after 40s - see $LOG_FILE"; return 1
+  fi
+}
+
+kill_tree() {
+  local pid="$1" sig
+  for sig in TERM KILL; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    kill "-$sig" "-$pid" 2>/dev/null || kill "-$sig" "$pid" 2>/dev/null
+    for _ in $(seq 1 16); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.5; done
+  done
+}
+
+cmd_stop() {
+  resolve_port
+  local pid; pid="$( [ -f "$PID_FILE" ] && cat "$PID_FILE" || true )"
+  [ -n "$pid" ] && kill_tree "$pid"
+  local lp; lp="$(port_pid)"                  # orphan fallback: whatever still listens is ours
+  [ -n "$lp" ] && kill_tree "$lp"
+  rm -f "$PID_FILE" "$PORT_FILE"
+  if [ -n "$pid$lp" ]; then ok "$PROJECT stopped${pid:+ (PID $pid)}"; else warn "$PROJECT not running"; fi
+}
+
+cmd_status() {
+  resolve_port; banner
+  if is_up; then printf '  %s running\n' "${C_OK}●${C_0}"
+    say "  pid   $( [ -f "$PID_FILE" ] && cat "$PID_FILE" || port_pid )"
+    say "  port  $PORT   health ${C_OK}200${C_0}"; url_box
+  else printf '  %s stopped\n' "${C_DIM}○${C_0}"
+    say "  port  $PORT   health ${C_DIM}--${C_0}"; fi
+}
+
+cmd_logs() { [ -f "$LOG_FILE" ] || die "no log ($LOG_FILE)"; [ "${1:-}" = "-f" ] && exec tail -f "$LOG_FILE" || tail -n 40 "$LOG_FILE"; }
+open_url() { local u="http://localhost:$PORT/"; (command -v open >/dev/null && open "$u") || (command -v xdg-open >/dev/null && xdg-open "$u") || say "open: $u"; }
+cmd_open() { resolve_port; open_url; }
+
+cmd_doctor() {
+  banner; local bad=0
+  for chk in "${DOCTOR_CHECKS[@]}"; do
+    IFS='|' read -r name test fix <<<"$chk"
+    if eval "$test" >/dev/null 2>&1; then ok "$name"
+    else warn "$name  ${C_DIM}-> $fix${C_0}"; bad=$((bad+1)); fi
+  done
+  [ "$bad" -eq 0 ] && say "${C_OK}all good.${C_0}" || say "${C_WA}$bad point(s) to sort out.${C_0}"
+  return 0
+}
+
+cmd_help() {
+  banner; say ""
+  printf '  %-34s %s\n' "start [--port N] [--env-file F]" "start + health-wait + open (--no-open to skip)"
+  printf '  %-34s %s\n' "stop"    "stop (SIGTERM -> SIGKILL, whole tree)"
+  printf '  %-34s %s\n' "restart" "stop + start"
+  printf '  %-34s %s\n' "status"  "live status + URL with paths"
+  printf '  %-34s %s\n' "logs [-f]" "last log lines (or follow)"
+  printf '  %-34s %s\n' "doctor"  "check prerequisites (with fixes)"
+  printf '  %-34s %s\n' "open"    "open the browser on the URL"
+  say ""
+  say "${C_DIM}  --env-file F (default ./.env) loads KEY=value into the env before boot;${C_0}"
+  say "${C_DIM}  every var passes through to the JVM (provider, keys, SPECTRO_HUB_PORT).${C_0}"
+  say ""
+  resolve_port; url_box
+}
+
+overview() { cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs doctor open  |  '$0 help' for details${C_0}"; }
+
+ARGS=(); while [ $# -gt 0 ]; do case "$1" in
+  --port) FLAG_PORT="$2"; shift 2;;
+  --env-file) FLAG_ENV_FILE="$2"; shift 2;;
+  --no-open) FLAG_NO_OPEN=1; shift;;
+  *) ARGS+=("$1"); shift;;
+esac; done
+set -- "${ARGS[@]:-}"
+
+case "${1:-overview}" in
+  start) cmd_start;;
+  stop) cmd_stop;;
+  restart) cmd_stop; cmd_start;;
+  status) cmd_status;;
+  logs) shift; cmd_logs "${1:-}";;
+  doctor) cmd_doctor;;
+  open) cmd_open;;
+  help|-h|--help) cmd_help;;
+  overview) overview;;
+  *) die "unknown command: $1  ('$0 help')";;
+esac
