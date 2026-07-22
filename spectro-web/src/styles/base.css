@@ -185,6 +185,41 @@ body {
   cursor: default;
 }
 
+/* Resume button: the confident .primary FILL reads as a raw blue button on the
+   light designs (paper/still, where --accent is a saturated blue). There it
+   wears the quiet .soft-primary look — matching the New chat button. The dark
+   design keeps the amber fill, which is right there (owner request). */
+[data-design="paper"] .resume-btn,
+[data-design="still"] .resume-btn {
+  background-color: var(--surface-2);
+  background-image:
+    linear-gradient(var(--glint), transparent 55%),
+    linear-gradient(var(--accent-soft), var(--accent-soft)),
+    linear-gradient(var(--shade), var(--shade));
+  border: 1px solid var(--accent-glow);
+  box-shadow: inset 0 1px 0 var(--glint);
+  color: var(--text);
+  font-weight: 600;
+}
+[data-design="paper"] .resume-btn:hover:not(:disabled),
+[data-design="still"] .resume-btn:hover:not(:disabled) {
+  background-color: var(--surface-2);
+  background-image:
+    linear-gradient(var(--glint), transparent 55%),
+    linear-gradient(var(--accent-glow), var(--accent-glow));
+  border-color: var(--accent);
+  box-shadow: inset 0 1px 0 var(--glint);
+  transform: none;
+}
+[data-design="paper"] .resume-btn:active:not(:disabled),
+[data-design="still"] .resume-btn:active:not(:disabled) {
+  background-image:
+    linear-gradient(var(--accent-soft), var(--accent-soft)),
+    linear-gradient(var(--shade), var(--shade));
+  box-shadow: inset 0 1px 0 var(--glint);
+  transform: none;
+}
+
 .ghost {
   background: transparent;
   border: 1px solid var(--border-strong);

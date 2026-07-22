@@ -369,7 +369,7 @@ export function Chat(props: {
             {props.onResume !== undefined && (
               <button
                 type="button"
-                className="primary"
+                className="primary resume-btn"
                 title={t(lang, "arch.resumeTitle")}
                 onClick={props.onResume}
               >
