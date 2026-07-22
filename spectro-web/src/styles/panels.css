@@ -144,6 +144,13 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* Syntax highlighting for the file preview — brand spectral palette, both themes
+   (the --sp-* tokens carry their own light-design values). Read-only, no glow. */
+.ws-code .hl-keyword { color: var(--sp-violet); }
+.ws-code .hl-string  { color: var(--sp-teal); }
+.ws-code .hl-number  { color: var(--sp-ocean); }
+.ws-code .hl-comment { color: var(--text-faint); font-style: italic; }
+
 .ws-md { flex: 1; overflow-y: auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); }
 .ws-note { margin: var(--sp-2); font-size: var(--fs-12); color: var(--text-dim); }
 

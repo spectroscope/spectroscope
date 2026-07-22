@@ -9,6 +9,7 @@ import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerE
 import { Markdown } from "../components/Markdown";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { hlLangForPath, tokenize } from "./highlight";
 import { fileUrl, formatBytes, previewKind } from "./preview";
 import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
 import type { WorkspaceInfo } from "../state/reducer";
@@ -79,6 +80,26 @@ function Tree({
   );
 }
 
+/** Read-only syntax highlighting for recognised languages; plain text otherwise. */
+function HighlightedText({ path, text }: { path: string; text: string }) {
+  const lang = hlLangForPath(path);
+  if (lang === null) return <pre className="ws-text">{text}</pre>;
+  const tokens = tokenize(text, lang);
+  return (
+    <pre className="ws-text ws-code">
+      {tokens.map((tok, idx) =>
+        tok.cls === "plain" ? (
+          tok.text
+        ) : (
+          <span key={idx} className={`hl hl-${tok.cls}`}>
+            {tok.text}
+          </span>
+        ),
+      )}
+    </pre>
+  );
+}
+
 function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
   const lang = useLang();
   const kind = previewKind(path);
@@ -132,7 +153,7 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
       </div>
     );
   }
-  return <pre className="ws-text">{text}</pre>;
+  return <HighlightedText path={path} text={text} />;
 }
 
 export function WorkspaceTab({
