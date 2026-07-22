@@ -19,7 +19,7 @@ import { GateBar } from "./components/GateBar";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
-import { ONBOARDED_KEY, shouldOnboard } from "./components/onboardingFlag";
+import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { compile } from "./scenario/compile";
 import type { Dsl } from "./scenario/dsl";
@@ -102,18 +102,15 @@ export function App() {
   const [doctorOpen, setDoctorOpen] = useState(false); // calibration/status page
   const [keymapOpen, setKeymapOpen] = useState(false); // the ? shortcut sheet (edu port)
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false); // start a fleet node from the sidebar
-  const [onboardingOpen, setOnboardingOpen] = useState(false); // first-run backend info sheet (once)
-  // First run: no 'onboarded' flag yet → show the one-time backend picker so the
-  // first screen is never "Opus selected and nothing works".
-  useEffect(() => {
-    let stored: string | null = null;
+  const [onboardingOpen, setOnboardingOpen] = useState(false); // first-run backend info sheet
+  const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
     try {
-      stored = localStorage.getItem(ONBOARDED_KEY);
+      return !shouldOnboard(localStorage.getItem(ONBOARDED_KEY));
     } catch {
-      /* storage may be blocked (tests, private mode) — default to showing it */
+      /* storage blocked (tests, private mode) — treat as not dismissed */
+      return false;
     }
-    if (shouldOnboard(stored)) setOnboardingOpen(true);
-  }, []);
+  });
   // Global keymap shortcut: ? opens the sheet, Escape closes it. Guarded while
   // typing so it never eats a keystroke in the composer or a filter (edu port).
   useEffect(() => {
@@ -319,6 +316,16 @@ export function App() {
       alive = false;
     };
   }, [configNonce]);
+
+  // First-run backend sheet: shown only when it hasn't been dismissed AND the boot
+  // provider is unusable (needs-key) — a configured/ready setup never sees it, and
+  // saving a key auto-dismisses it. Readiness-gated because the localStorage flag
+  // alone is fragile (per-origin, blocked in the desktop shell).
+  useEffect(() => {
+    setOnboardingOpen(
+      shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus),
+    );
+  }, [onboardingDismissed, serverCfg, providerStatus]);
 
   // Settings hydration: the thinking toggle and the image-backend picker seed
   // from a hardcoded fallback (see the useState calls above) until the
@@ -862,10 +869,11 @@ export function App() {
         open={onboardingOpen}
         onClose={() => {
           setOnboardingOpen(false);
+          setOnboardingDismissed(true);
           try {
             localStorage.setItem(ONBOARDED_KEY, "1");
           } catch {
-            /* storage may be blocked — the sheet just shows again next time */
+            /* storage may be blocked — readiness gating still hides it once configured */
           }
         }}
       />
