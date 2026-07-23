@@ -125,3 +125,75 @@ describe("sceneToFlow", () => {
     expect(think.some((s) => s.agent === "worker-1" && s.text.includes("child reasoning"))).toBe(true);
   });
 });
+
+describe("sceneToFlow — the edu-upstreamed flags (card 42)", () => {
+  const T = 1;
+  const start: RunEvent = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "go",
+    provider: "ollama",
+    ts: T,
+  };
+
+  it("defaults exactly like before: all zones, boundary rule, ext services", () => {
+    const scene = [start].reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail([start]), {
+      local: false,
+      provider: "anthropic",
+      model: "m",
+    });
+    const nodeIds = flow.nodes.map((n) => n.id);
+    expect(nodeIds).toContain("z-mac");
+    expect(nodeIds).toContain("z-outside");
+    expect(nodeIds).toContain("z-boundary");
+    expect(nodeIds).toContain("netz");
+    expect(nodeIds).toContain("mcpserver");
+  });
+
+  it("declutter keeps only the OS band frame and drops the outside world", () => {
+    // The edu lessons' tighter camera — flag-gated, never the default.
+    const scene = [start].reduce(advanceScene, initialScene());
+    const flow = sceneToFlow(scene, deriveDetail([start]), {
+      local: true,
+      provider: "ollama",
+      model: "m",
+      declutter: true,
+    });
+    const nodeIds = flow.nodes.map((n) => n.id);
+    expect(nodeIds).toContain("z-os");
+    expect(nodeIds).not.toContain("z-mac");
+    expect(nodeIds).not.toContain("z-boundary");
+    expect(nodeIds).not.toContain("netz");
+    expect(nodeIds).not.toContain("mcpserver");
+  });
+
+  it("subSlots reserves fixed worker slots so early cards never slide", () => {
+    const spawnOne: RunEvent[] = [
+      start,
+      { type: "agent_spawn", agentId: "worker-1", task: "t", ts: T } as RunEvent,
+    ];
+    const scene1 = spawnOne.reduce(advanceScene, initialScene());
+    const one = sceneToFlow(scene1, deriveDetail(spawnOne), {
+      local: true,
+      provider: "ollama",
+      model: "m",
+      subSlots: 3,
+    });
+    const spawnTwo: RunEvent[] = [
+      ...spawnOne,
+      { type: "agent_spawn", agentId: "worker-2", task: "t", ts: T } as RunEvent,
+    ];
+    const scene2 = spawnTwo.reduce(advanceScene, initialScene());
+    const two = sceneToFlow(scene2, deriveDetail(spawnTwo), {
+      local: true,
+      provider: "ollama",
+      model: "m",
+      subSlots: 3,
+    });
+    const yOf = (flow: { nodes: { id: string; position: { y: number } }[] }, id: string) =>
+      flow.nodes.find((n) => n.id === id)!.position.y;
+    expect(yOf(one, "sub-worker-1")).toBe(yOf(two, "sub-worker-1")); // slot pinned
+  });
+});

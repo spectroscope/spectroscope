@@ -1,6 +1,6 @@
 // sceneNow — a short, bilingual "what is happening right now" line derived from a
-// folded Scene. The Lab's floating "now" band names the current station with it,
-// so a scrubbed replay always says where the run is. Pure, no DOM.
+// folded Scene. Shared by the simulator's floating step-band and the edu lessons'
+// "now" bar, so both name the current station the same way. Pure, no DOM.
 
 import type { Scene } from "./labScene";
 
