@@ -432,6 +432,7 @@ export function App() {
       state: foldArchive(events),
       events,
     });
+    setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setImportOpen(false);
   };
 
@@ -458,6 +459,10 @@ export function App() {
       state: foldArchive(events),
       events,
     });
+    // Loading a CHAT scenario must LEAVE an entered fleet — otherwise the
+    // header shows the scenario while every tab (the lab included) still
+    // renders the fleet's events. Owner-found: dialog-load after a fleet.
+    setEnteredFleet(null);
     setTab("lab");
   };
 
