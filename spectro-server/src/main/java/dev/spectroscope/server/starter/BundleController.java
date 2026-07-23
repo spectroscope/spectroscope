@@ -1,6 +1,8 @@
 package dev.spectroscope.server.starter;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import dev.spectroscope.server.FleetController;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -24,7 +26,10 @@ import java.util.Map;
  *
  * <p>No {@code @CrossOrigin}: the scaffold endpoint writes files, so it stays
  * same-origin only (like {@link dev.spectroscope.server.SettingsController}) —
- * a foreign page cannot make the local server write to disk.
+ * a foreign page cannot make the local server write to disk. Preflight alone
+ * does not stop DNS rebinding (a rebound hostname IS same-origin), so the
+ * write additionally wears the {@link FleetController#isLocalOrigin} fence,
+ * the same standard as every fleet write.
  */
 @RestController
 public class BundleController {
@@ -61,7 +66,11 @@ public class BundleController {
      *         bundle; 409 files already present; 500 on an I/O failure
      */
     @PostMapping("/api/bundles/{id}/scaffold")
-    public ResponseEntity<?> scaffold(@PathVariable String id, @RequestBody JsonNode body) {
+    public ResponseEntity<?> scaffold(@PathVariable String id, @RequestBody JsonNode body,
+                                      HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build(); // blank 404, like the fleet writes
+        }
         String dirText = body.path("dir").asText("").strip();
         if (dirText.isEmpty()) {
             return ResponseEntity.badRequest().body(Map.of("message", "A target folder ('dir') is required."));

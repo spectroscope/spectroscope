@@ -209,7 +209,10 @@ public class FleetController {
      * @param request the servlet request
      * @return true only for a loopback peer with a localhost Host
      */
-    static boolean isLocalOrigin(HttpServletRequest request) {
+    /** The shared fence for every local-only WRITE endpoint (fleet control,
+     *  key save, bundle scaffold — also called cross-package): loopback caller
+     *  AND a local Host header, so a DNS-rebound hostname fails too. */
+    public static boolean isLocalOrigin(HttpServletRequest request) {
         return isLoopback(request.getRemoteAddr()) && isLocalHostName(request.getServerName());
     }
 

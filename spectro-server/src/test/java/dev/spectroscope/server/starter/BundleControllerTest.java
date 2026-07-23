@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockHttpServletRequest;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -27,6 +28,11 @@ class BundleControllerTest {
         if (dir != null) node.put("dir", dir);
         if (build != null) node.put("build", build);
         return node;
+    }
+
+    /** A loopback caller — MockHttpServletRequest's defaults are 127.0.0.1/localhost. */
+    private MockHttpServletRequest local() {
+        return new MockHttpServletRequest();
     }
 
     @Test
@@ -56,8 +62,21 @@ class BundleControllerTest {
     }
 
     @Test
+    void scaffoldRefusesANonLocalCaller(@TempDir Path dir) {
+        // The disk-writing endpoint wears the same isLocalOrigin fence as every
+        // fleet write: a rebound hostname / remote caller gets a blank 404 and
+        // NOTHING is written. (DNS rebinding makes a request same-origin, so
+        // the missing-@CrossOrigin preflight argument alone is not enough.)
+        MockHttpServletRequest remote = new MockHttpServletRequest();
+        remote.setRemoteAddr("203.0.113.7"); // TEST-NET, not loopback
+        var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"), remote);
+        assertEquals(404, response.getStatusCode().value());
+        assertFalse(Files.exists(dir.resolve("build.gradle.kts")));
+    }
+
+    @Test
     void scaffoldWritesEveryFileIntoThePickedFolder(@TempDir Path dir) throws Exception {
-        var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"));
+        var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"), local());
         assertEquals(200, response.getStatusCode().value());
         assertTrue(Files.exists(dir.resolve("settings.gradle.kts")));
         assertTrue(Files.exists(dir.resolve("build.gradle.kts")));
@@ -68,7 +87,7 @@ class BundleControllerTest {
     @Test
     void scaffoldRefusesToOverwriteExistingFiles(@TempDir Path dir) throws Exception {
         Files.writeString(dir.resolve("build.gradle.kts"), "// mine, keep it");
-        var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"));
+        var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"), local());
         assertEquals(409, response.getStatusCode().value());
         // the conflict is reported and NOTHING else was written
         assertFalse(Files.exists(dir.resolve("settings.gradle.kts")));
@@ -77,19 +96,19 @@ class BundleControllerTest {
 
     @Test
     void scaffoldNeedsADir() {
-        assertEquals(400, controller.scaffold("five-lines", body(null, "gradle")).getStatusCode().value());
-        assertEquals(400, controller.scaffold("five-lines", body("   ", "gradle")).getStatusCode().value());
+        assertEquals(400, controller.scaffold("five-lines", body(null, "gradle"), local()).getStatusCode().value());
+        assertEquals(400, controller.scaffold("five-lines", body("   ", "gradle"), local()).getStatusCode().value());
     }
 
     @Test
     void scaffoldRejectsANonDirectory(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("a-file");
         Files.writeString(file, "x");
-        assertEquals(400, controller.scaffold("five-lines", body(file.toString(), "gradle")).getStatusCode().value());
+        assertEquals(400, controller.scaffold("five-lines", body(file.toString(), "gradle"), local()).getStatusCode().value());
     }
 
     @Test
     void scaffoldUnknownBundleIs404(@TempDir Path dir) {
-        assertEquals(404, controller.scaffold("nope", body(dir.toString(), "gradle")).getStatusCode().value());
+        assertEquals(404, controller.scaffold("nope", body(dir.toString(), "gradle"), local()).getStatusCode().value());
     }
 }

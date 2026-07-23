@@ -38,6 +38,22 @@ describe("collapseFleetGraph — aggregate-by-name", () => {
     expect(out.edges[0]).toMatchObject({ source: "panel", target: group.id, kind: "spawn" });
   });
 
+  it("never folds under an unreachable threshold (the canvas's expanded mode)", () => {
+    // FleetCanvas implements "expanded" as minGroup: Number.MAX_SAFE_INTEGER —
+    // pin that the sentinel really means "no groups, every agent individual".
+    const graph: FleetGraph = {
+      nodes: [
+        anode("panel", { role: "conductor" }),
+        ...Array.from({ length: 8 }, (_, i) =>
+          anode(`w${i}`, { role: "worker", spawnedBy: "panel" })),
+      ],
+      edges: Array.from({ length: 8 }, (_, i) => spawn("panel", `w${i}`)),
+    };
+    const out = collapseFleetGraph(graph, { minGroup: Number.MAX_SAFE_INTEGER });
+    expect(out.nodes.every((n) => n.kind === "agent")).toBe(true);
+    expect(out.nodes).toHaveLength(9);
+  });
+
   it("folds the members' activity span into the group (min first, max last)", () => {
     const graph: FleetGraph = {
       nodes: [
