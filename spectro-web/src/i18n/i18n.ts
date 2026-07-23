@@ -420,6 +420,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.particleTag": { de: "Partikel", en: "Particles" },
   "set.scrollFx": { de: "Scroll-Effekte", en: "Scroll effects" },
   "set.particleFx": { de: "Partikel-Effekte", en: "Particle effects" },
+  "set.timelineFx": { de: "Timing-Balken im Trace", en: "Timing bars (trace)" },
   "set.noSignature": { de: "Dieses Skin hat keine Partikel-Signatur.", en: "This skin has no particle signature." },
   "set.saved": { de: "✓ gespeichert", en: "✓ saved" },
   "set.title": { de: "Einstellungen", en: "Settings" },
