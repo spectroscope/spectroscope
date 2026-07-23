@@ -51,6 +51,16 @@ export function ImportDialog(props: {
     };
   }, []);
 
+  // Escape closes — the DoctorPanel pattern; all three picker dialogs lacked it.
+  const { onClose } = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const load = (raw: string, label: string): void => {
     try {
       const { events, kind } = detectAndLoad(raw);

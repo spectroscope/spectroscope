@@ -4,7 +4,7 @@
 // session and land in the Lab (stepped from event 0); fleet scenarios compile
 // the same way but open in the fleet view so the topology reads at a glance.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { SCENARIOS } from "../scenario/registry";
 import type { Dsl } from "../scenario/dsl";
 import { loc } from "../scenario/dsl";
@@ -16,6 +16,16 @@ type ScnTab = "chats" | "fleet";
 export function ScenarioDialog(props: { onPick: (dsl: Dsl) => void; onClose: () => void }) {
   const lang = useLang();
   const [tab, setTab] = useState<ScnTab>("chats");
+
+  // Escape closes — the DoctorPanel pattern; all three picker dialogs lacked it.
+  const { onClose } = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // A fleet scenario shows under the fleet tab; everything else under chats.
   const shown = SCENARIOS.filter((s) => (tab === "fleet" ? s.fleet === true : s.fleet !== true));

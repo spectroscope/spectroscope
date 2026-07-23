@@ -41,7 +41,9 @@ public class BundleController {
                 .map(b -> Map.<String, Object>of(
                         "id", b.id(), "name", b.name(), "description", b.description(), "fleet", b.fleet()))
                 .toList();
-        return Map.of("bundles", items, "buildTools", List.of("gradle", "maven"), "version", StarterBundles.VERSION);
+        return Map.of("bundles", items,
+                "buildTools", List.of("gradle", "maven", "python", "bash"),
+                "version", StarterBundles.VERSION);
     }
 
     /** GET /api/bundles/{id}?build=gradle — the rendered file set (copy-paste). */

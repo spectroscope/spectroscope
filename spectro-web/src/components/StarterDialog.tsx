@@ -1,7 +1,9 @@
 // Starter bundles (card 50): a newcomer picks a ready-made project — five lines,
-// a fleet, or a small team — for Gradle or Maven, then either copies the files or
-// scaffolds them straight into a folder they pick. The bundles + the scaffold live
-// server-side (BundleController); this is only the chooser.
+// a fleet, or a small team — for Gradle, Maven, the Python edition, or plain
+// bash driving the CLI — then either copies the files or scaffolds them straight
+// into a folder they pick. The bundles + the scaffold live server-side
+// (BundleController); this is only the chooser. The tool tabs come from the
+// catalog, so a new edition server-side appears here without a client change.
 
 import { useEffect, useState } from "react";
 import { CopyButton } from "./CopyButton";
@@ -15,14 +17,13 @@ interface BundleInfo {
   fleet: boolean;
 }
 
-type BuildTool = "gradle" | "maven";
-
 export function StarterDialog(props: { onClose: () => void }) {
   const lang = useLang();
   const [bundles, setBundles] = useState<BundleInfo[] | null>(null);
+  const [tools, setTools] = useState<string[]>(["gradle", "maven"]);
   const [version, setVersion] = useState("");
   const [sel, setSel] = useState<string | null>(null);
-  const [tool, setTool] = useState<BuildTool>("gradle");
+  const [tool, setTool] = useState<string>("gradle");
   const [files, setFiles] = useState<Record<string, string> | null>(null);
   const [scaffold, setScaffold] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,11 +34,24 @@ export function StarterDialog(props: { onClose: () => void }) {
       .then((c) => {
         if (c) {
           setBundles(c.bundles as BundleInfo[]);
+          if (Array.isArray(c.buildTools) && c.buildTools.length > 0) {
+            setTools(c.buildTools as string[]);
+          }
           setVersion(String(c.version ?? ""));
         }
       })
       .catch(() => setBundles([]));
   }, []);
+
+  // Escape closes — the DoctorPanel pattern, owner report (the dialog trapped).
+  const { onClose } = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // Fetch the rendered file set whenever the selection or build tool changes.
   useEffect(() => {
@@ -133,7 +147,7 @@ export function StarterDialog(props: { onClose: () => void }) {
         {sel !== null && files !== null && (
           <div className="starter-detail">
             <div className="starter-tools">
-              {(["gradle", "maven"] as const).map((tl) => (
+              {tools.map((tl) => (
                 <button
                   key={tl}
                   type="button"

@@ -41,7 +41,7 @@ class BundleControllerTest {
         @SuppressWarnings("unchecked")
         List<Map<String, Object>> bundles = (List<Map<String, Object>>) out.get("bundles");
         assertEquals(3, bundles.size());
-        assertEquals(List.of("gradle", "maven"), out.get("buildTools"));
+        assertEquals(List.of("gradle", "maven", "python", "bash"), out.get("buildTools"));
     }
 
     @Test
@@ -54,6 +54,59 @@ class BundleControllerTest {
         @SuppressWarnings("unchecked")
         Map<String, String> files = (Map<String, String>) map.get("files");
         assertTrue(files.containsKey("pom.xml"));
+    }
+
+    @Test
+    void pythonRendersTheRealEditionApiAndStaysHonestAboutInstall() {
+        // The Python edition is pre-release (no PyPI artifact yet) — the bundle
+        // must say so instead of shipping a requirements line that cannot
+        // install, and the code must be the REAL facade (kwargs sugar, bare
+        // tool names), never a transliteration of the Java file.
+        var response = controller.get("five-lines", "python");
+        assertEquals(200, response.getStatusCode().value());
+        @SuppressWarnings("unchecked")
+        Map<String, String> files =
+                (Map<String, String>) ((Map<String, Object>) response.getBody()).get("files");
+        assertTrue(files.containsKey("main.py"));
+        assertTrue(files.containsKey("README.md"));
+        String py = files.get("main.py");
+        assertTrue(py.contains("from spectroscope import Spectro, Anthropic, Tools"));
+        assertTrue(py.contains("tools=[Tools.read_file"), "bare factories, kwargs form");
+        assertTrue(files.get("README.md").contains("pre-release"), "honest install note");
+    }
+
+    @Test
+    void pythonFleetBundlesFanOutViaSpawnAgentsNeverAPanel() {
+        // No Spectro.panel() exists in Python — the fleet story is honest
+        // subagent fan-out (spawn_agents), and the panel API must not appear.
+        for (String id : List.of("fleet", "multi-agent")) {
+            var response = controller.get(id, "python");
+            assertEquals(200, response.getStatusCode().value());
+            @SuppressWarnings("unchecked")
+            Map<String, String> files =
+                    (Map<String, String>) ((Map<String, Object>) response.getBody()).get("files");
+            String py = files.get("main.py");
+            assertTrue(py.contains("Tools.spawn_agents"), id + " fans out via spawn_agents");
+            assertTrue(!py.contains("panel("), id + " must not claim the panel API");
+        }
+    }
+
+    @Test
+    void bashBundlesDriveTheRealCli() {
+        var single = controller.get("five-lines", "bash");
+        @SuppressWarnings("unchecked")
+        Map<String, String> singleFiles =
+                (Map<String, String>) ((Map<String, Object>) single.getBody()).get("files");
+        assertTrue(singleFiles.get("run.sh").contains("spectro run -p"));
+
+        var fleet = controller.get("fleet", "bash");
+        @SuppressWarnings("unchecked")
+        Map<String, String> fleetFiles =
+                (Map<String, String>) ((Map<String, Object>) fleet.getBody()).get("files");
+        String sh = fleetFiles.get("run.sh");
+        assertTrue(sh.contains("spectro node"), "a fleet in bash is spectro node processes");
+        assertTrue(sh.contains("--hub"), "nodes join over the hub");
+        assertTrue(sh.contains("--context"), "the fleet is named by its context");
     }
 
     @Test

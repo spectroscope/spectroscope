@@ -24,9 +24,10 @@ public final class StarterBundles {
     public static final String GROUP = "dev.spectroscope";
     public static final String VERSION = "0.2.0";
 
-    /** The build tools a bundle can be rendered for. */
+    /** The editions a bundle can be rendered for: the two JVM build tools, the
+     *  Python edition, and plain bash driving the CLI. */
     public enum BuildTool {
-        GRADLE, MAVEN;
+        GRADLE, MAVEN, PYTHON, BASH;
 
         /** Case-insensitive parse; defaults to GRADLE for an unknown/blank value. */
         public static BuildTool of(String raw) {
@@ -35,6 +36,8 @@ public final class StarterBundles {
             }
             return switch (raw.trim().toLowerCase()) {
                 case "maven", "mvn", "pom" -> MAVEN;
+                case "python", "py" -> PYTHON;
+                case "bash", "sh", "shell" -> BASH;
                 default -> GRADLE;
             };
         }
@@ -184,14 +187,172 @@ public final class StarterBundles {
             return null;
         }
         Map<String, String> out = new LinkedHashMap<>();
-        if (tool == BuildTool.MAVEN) {
-            out.put("pom.xml", pom(bundle));
-        } else {
-            out.put("settings.gradle.kts", "rootProject.name = \"" + bundle.artifact() + "\"\n");
-            out.put("build.gradle.kts", gradleBuild(bundle));
+        switch (tool) {
+            case MAVEN -> {
+                out.put("pom.xml", pom(bundle));
+                out.put(bundle.sourcePath(), bundle.source());
+            }
+            case PYTHON -> {
+                // The Python edition is pre-release (no PyPI artifact yet), so the
+                // README carries the honest install path instead of a requirements
+                // line that could not install. The code is the REAL Python facade
+                // (kwargs sugar, bare tool factories) — never a Java transliteration.
+                out.put("README.md", pythonReadme(bundle));
+                out.put("main.py", pythonSource(bundle));
+            }
+            case BASH -> {
+                out.put("README.md", bashReadme(bundle));
+                out.put("run.sh", bashSource(bundle));
+            }
+            default -> {
+                out.put("settings.gradle.kts", "rootProject.name = \"" + bundle.artifact() + "\"\n");
+                out.put("build.gradle.kts", gradleBuild(bundle));
+                out.put(bundle.sourcePath(), bundle.source());
+            }
         }
-        out.put(bundle.sourcePath(), bundle.source());
         return out;
+    }
+
+    // ---- the Python edition (pre-release; honest fan-out via spawn_agents) ----
+
+    private static String pythonReadme(Bundle bundle) {
+        return """
+                # %s (Python)
+
+                Needs the spectroscope **Python edition** — pre-release, not on PyPI
+                yet: install it as a local package (`pip install -e spectro/` inside
+                the edition's checkout; the public repository opens with its release).
+                Set `ANTHROPIC_API_KEY`, or point the config at Ollama / any
+                OpenAI-compatible server. Then: `python main.py`.
+                """.formatted(bundle.name());
+    }
+
+    private static String pythonSource(Bundle bundle) {
+        return switch (bundle.id()) {
+            case "fleet" -> """
+                    from spectroscope import Spectro, Anthropic, Tools
+
+                    # A review fan-out, the Python way: the agent spawns subagents via the
+                    # spawn_agents tool (sequential, depth 1). The Java edition's fleet-
+                    # panel API does not exist here — this is the honest equivalent, one
+                    # stream carrying every agent's events.
+                    agent = Spectro.agent(
+                        model=Anthropic.opus(),
+                        tools=[Tools.read_file, Tools.spawn_agents],
+                        workspace="/tmp/review",
+                    )
+
+                    PROMPT = (
+                        "Review the diff in changes.patch with three parallel reviewers: "
+                        "one for bugs, one for performance, one for security. "
+                        "Spawn them with spawn_agents, then summarize by priority."
+                    )
+
+                    for event in agent.run(PROMPT):
+                        print(event)   # every agent, one stream
+                    """;
+            case "multi-agent" -> """
+                    from spectroscope import Spectro, Anthropic, Tools
+
+                    # A small team, the Python way: workers spawned via spawn_agents share
+                    # the workspace and each write a slice. (No fleet-panel API in the
+                    # Python edition — subagent fan-out is the honest team story.)
+                    agent = Spectro.agent(
+                        model=Anthropic.opus(),
+                        tools=[Tools.read_file, Tools.write_file, Tools.spawn_agents],
+                        workspace="/tmp/release",
+                    )
+
+                    PROMPT = (
+                        "Prepare the release: spawn one worker to write RELEASE_NOTES.md "
+                        "summarizing the changes and one to write a short README.md for "
+                        "new users, then merge their results into a checklist."
+                    )
+
+                    for event in agent.run(PROMPT):
+                        print(event)   # every agent, one stream
+                    """;
+            default -> """
+                    from spectroscope import Spectro, Anthropic, Tools
+
+                    # The five lines, Python edition: one call, tools as bare names.
+                    agent = Spectro.agent(
+                        model=Anthropic.opus(),
+                        tools=[Tools.read_file, Tools.write_file, Tools.run_command],
+                        workspace="/tmp/scratch",
+                    )
+
+                    for event in agent.run("Write hello.txt with a greeting, then read it back"):
+                        print(event)   # the stream IS the observability
+                    """;
+        };
+    }
+
+    // ---- bash: driving the real CLI (spectro run / spectro node) -------------
+
+    private static String bashReadme(Bundle bundle) {
+        String extra = bundle.fleet()
+                ? """
+
+                  The fleet variant needs a running hub: start the cockpit with
+                  `SPECTRO_HUB_PORT=7700` and the nodes join it over loopback —
+                  watch them under the sidebar's `fleets` segment.
+                  """
+                : "";
+        return """
+                # %s (bash)
+
+                Drives the spectroscope CLI — `./spectro` from the release zip (or the
+                repo checkout) on your PATH, a provider configured (`ANTHROPIC_API_KEY`
+                or a local Ollama). Then: `chmod +x run.sh && ./run.sh`.
+                %s""".formatted(bundle.name(), extra);
+    }
+
+    private static String bashSource(Bundle bundle) {
+        return switch (bundle.id()) {
+            case "fleet" -> """
+                    #!/usr/bin/env bash
+                    # A review swarm as PROCESSES: three spectro nodes, one hub, one fleet.
+                    # Start the cockpit first: SPECTRO_HUB_PORT=7700 spectro web
+                    set -euo pipefail
+
+                    HUB="${SPECTRO_HUB:-127.0.0.1:7700}"
+                    CONTEXT="pr-review"
+
+                    spectro node -p "Find bugs in the diff"              --hub "$HUB" --context "$CONTEXT" --role bugs     --id bugs-1 &
+                    spectro node -p "Check the hot queries"              --hub "$HUB" --context "$CONTEXT" --role perf     --id perf-1 &
+                    spectro node -p "Look for injection and secrets"     --hub "$HUB" --context "$CONTEXT" --role security --id security-1 &
+
+                    wait   # every node publishes its whole stream to the hub as it runs
+                    echo "fleet $CONTEXT done — enter it in the cockpit's fleets sidebar"
+                    """;
+            case "multi-agent" -> """
+                    #!/usr/bin/env bash
+                    # A small team as processes: two writers share a workspace over one
+                    # fleet context; ask-mode parks their write gates in the cockpit for
+                    # you to answer (the gate bar) instead of a fixed yes or no.
+                    # Start the cockpit first: SPECTRO_HUB_PORT=7700 spectro web
+                    set -euo pipefail
+
+                    HUB="${SPECTRO_HUB:-127.0.0.1:7700}"
+                    CONTEXT="release"
+
+                    spectro node -p "Write RELEASE_NOTES.md summarizing the changes" \\
+                        --hub "$HUB" --context "$CONTEXT" --role notes --id notes-1 --permissions ask &
+                    spectro node -p "Write a short README.md for new users" \\
+                        --hub "$HUB" --context "$CONTEXT" --role docs --id docs-1 --permissions ask &
+
+                    wait
+                    echo "team $CONTEXT done — the cockpit's fleet views have the whole story"
+                    """;
+            default -> """
+                    #!/usr/bin/env bash
+                    # The five lines as one line: a headless run, the event stream on stdout.
+                    set -euo pipefail
+
+                    spectro run -p "Write hello.txt with a greeting, then read it back"
+                    """;
+        };
     }
 
     private static String deps(Bundle bundle, String coreLine, String orchLine) {
