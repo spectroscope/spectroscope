@@ -99,6 +99,66 @@ describe("fleetStore", () => {
     await hydrateFleet();
     expect(__getFleet().roster).toEqual([]);
   });
+
+  it("hydrates each node's ring replay too — a parked gate is visible to a fresh browser", async () => {
+    // The roster alone cannot show a gate parked BEFORE this browser opened;
+    // the aggregator holds the ring, so hydration pulls /api/fleet/{node}/events
+    // per node and folds the frames like live ones.
+    const gate: RunEvent = {
+      type: "permission_request",
+      agentId: "security-1",
+      callId: "g1",
+      name: "write_file",
+      input: {},
+      ts: 5,
+    };
+    __setTestHooks({
+      fetch: async (url) => {
+        const path = String(url);
+        if (path.endsWith("/api/fleet")) {
+          return fakeResponse({ enabled: true, nodes: [node("security-1")] });
+        }
+        if (path.endsWith("/api/fleet/security-1/events")) {
+          return fakeResponse({
+            node: "security-1",
+            events: [
+              {
+                sender: "security-1",
+                epoch: 7,
+                contextId: "pr-42",
+                taskId: "t",
+                sequence: 3,
+                parentId: null,
+                topic: "run.security-1",
+                ts: 5,
+                payload: gate,
+              },
+            ],
+          });
+        }
+        throw new Error("unexpected fetch " + path);
+      },
+    });
+    await hydrateFleet();
+    expect(__getFleet().events).toEqual([gate]);
+    expect(__getFleets().some((f) => f.pendingGate)).toBe(true);
+  });
+
+  it("drops a live frame the hydration already delivered (same sender/epoch/sequence)", async () => {
+    const frame = eventFrame("a", 2);
+    __setTestHooks({
+      fetch: async (url) => {
+        const path = String(url);
+        if (path.endsWith("/api/fleet")) {
+          return fakeResponse({ enabled: true, nodes: [node("a")] });
+        }
+        return fakeResponse({ node: "a", events: [(frame as { frame: unknown }).frame] });
+      },
+    });
+    await hydrateFleet();
+    fleetPushLive([frame as unknown as RunEvent]); // the socket redelivers it
+    expect(__getFleet().events).toHaveLength(1);
+  });
 });
 
 // --- multi-fleet keying (P0 spine): coexisting fleets stay separate ---

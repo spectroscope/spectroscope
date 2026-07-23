@@ -11,6 +11,7 @@ import {
   buildFleet,
   EMPTY_FLEET,
   isFleetFrame,
+  type FleetEnvelope,
   type FleetFrame,
   type FleetModel,
   type FleetNode,
@@ -52,6 +53,10 @@ function subscribe(cb: () => void): () => void {
 }
 
 let frames: FleetFrame[] = [];
+// Envelope identities already folded (contextId·sender·epoch·sequence) — the
+// hydration replay and the live socket overlap for frames in flight while the
+// page loads; the store keeps exactly one of each.
+let seenEnvelopes = new Set<string>();
 // The loopback hub port from GET /api/fleet (null when the hub is off) — the
 // spawn panel prints it into the exact copy-paste node command.
 let hubPort: number | null = null;
@@ -148,13 +153,34 @@ function changedContexts(incoming: FleetFrame[]): Set<string> {
   return changed;
 }
 
+/** One fleet_event's identity for the hydration/live dedup. */
+function envelopeKey(frame: FleetFrame): string | null {
+  if (frame.type !== "fleet_event") return null; // rosters are latest-wins, never deduped
+  const e = frame.frame;
+  return `${e.contextId}·${e.sender}·${e.epoch}·${e.sequence}`;
+}
+
+/** Accept only frames the store has not folded yet (see seenEnvelopes). */
+function acceptNew(incoming: FleetFrame[]): FleetFrame[] {
+  const fresh: FleetFrame[] = [];
+  for (const frame of incoming) {
+    const key = envelopeKey(frame);
+    if (key !== null) {
+      if (seenEnvelopes.has(key)) continue;
+      seenEnvelopes.add(key);
+    }
+    fresh.push(frame);
+  }
+  return fresh;
+}
+
 /** Ingest a live socket batch: pull out the fleet frames the reducer ignores,
  *  fold (per fleet), and notify. A batch with no fleet frames is a no-op. */
 export function fleetPushLive(batch: RunEvent[]): void {
   // Filter over unknown[]: isFleetFrame is an (event: unknown) => event is
   // FleetFrame guard, and FleetFrame is not a RunEvent subtype, so narrowing
   // straight off RunEvent[] can't apply the guard (tsc -b rejects the cast).
-  const incoming = (batch as unknown[]).filter(isFleetFrame);
+  const incoming = acceptNew((batch as unknown[]).filter(isFleetFrame));
   if (incoming.length === 0) {
     return;
   }
@@ -237,9 +263,12 @@ export function fleetLoadScenario(contextId: string, events: RunEvent[]): void {
 // The fetch seam — swappable in tests via __setTestHooks.
 let doFetch: typeof fetch = (...args) => fetch(...args);
 
-/** Hydrate the roster once from GET /api/fleet, so a tab opened after nodes
- *  joined shows them immediately; live fleet_roster frames take over (latest-
- *  wins). A hub that is off, or any failure, leaves it empty. */
+/** Hydrate once from GET /api/fleet: the roster, PLUS each node's ring replay
+ *  (GET /api/fleet/{node}/events) — so a browser opened after the fact still
+ *  sees the fleet's recent history, most importantly a gate parked BEFORE this
+ *  page loaded. Live frames take over from there; the envelope dedup drops the
+ *  overlap. Bounded honestly by the hub ring — older evicted frames stay gone.
+ *  A hub that is off, or any failure, leaves the view empty (never throws). */
 export async function hydrateFleet(): Promise<void> {
   try {
     const res = await doFetch("/api/fleet");
@@ -255,6 +284,30 @@ export async function hydrateFleet(): Promise<void> {
     frames = [roster, ...frames]; // oldest frame; a later live roster overrides it
     rebuild(changedContexts([roster]));
     emit();
+
+    // Per-node ring replay, all nodes in parallel; a failed node is skipped.
+    const replays = await Promise.all(
+      body.nodes.map(async (n) => {
+        try {
+          const r = await doFetch(`/api/fleet/${encodeURIComponent(n.id)}/events`);
+          if (!r.ok) return [];
+          const data = (await r.json()) as { events?: FleetEnvelope[] };
+          return Array.isArray(data.events) ? data.events : [];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const envelopes = replays
+      .flat()
+      .filter((e): e is FleetEnvelope => e !== null && typeof e === "object" && "payload" in e)
+      .sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.sequence - b.sequence));
+    const fresh = acceptNew(envelopes.map((frame) => ({ type: "fleet_event" as const, frame })));
+    if (fresh.length > 0) {
+      frames = [...frames, ...fresh];
+      rebuild(changedContexts(fresh));
+      emit();
+    }
   } catch {
     // The fleet view simply stays empty — never break the app over a probe.
   }
@@ -335,6 +388,7 @@ export function __getFleetOf(contextId: string): FleetModel {
 /** Reset all module state — call in beforeEach so tests never bleed. */
 export function __resetForTests(): void {
   frames = [];
+  seenEnvelopes = new Set();
   hubPort = null;
   byContext = new Map();
   merged = EMPTY_FLEET;

@@ -93,21 +93,70 @@ hub never delays the run's close.</p>
 <p>Fleets are first-class, like sessions. The sidebar has two segments,
 <code>sessions</code> and <code>fleets</code>; switch to fleets and every
 one the hub has seen is a row with its sigil, its name, and its agent
-count (online of total). A fleet with a parked gate floats to the top.
-Click a row to enter the fleet: its events feed the same tabs, and you
-land on the Spectrum with every agent visible at once, one lane each.</p>
+count (online of total). A fleet with a parked gate floats to the top and
+wears a pulsing <code>gate open</code> chip. Click a row to enter the
+fleet: its events feed the same tabs. The chat tab becomes the fleet's
+home — a short getting-started panel with the spawn form, instead of a
+stale session chat — and the Spectrum shows every agent at once, one
+lane each. A browser opened after the fact is not blind to history:
+entering pulls each node's recent frames from the hub's replay ring, so
+a gate parked before you arrived is still there waiting. The ring is
+bounded and the view says so; the node's own JSONL stays the full
+record.</p>
+
+<!--SHOT:26-fleet-home|An entered fleet: the fleets segment in the sidebar, the fleet's sigil and counts, and the fleet home with its getting-started panel and spawn form.-->
+
+<p>No hub at hand? The scenario dialog has a <code>fleet</code> tab with
+scripted fleet runs — deterministic, no LLM, no key — that load as a
+replay fleet and light up every fleet view, including the canvas and the
+machine room below. That is the fastest way to see the whole surface
+before wiring a real hub.</p>
 
 <p>The graph tab, for an entered fleet, becomes the fleet canvas: a
 spectral DAG. One node per agent (never one per event), its body a
-compact spectral band folded from that agent's slice of the stream;
-causal rails wire the topology, read from the event payloads (spawn
-ocean, task an amber comet in flight, result teal). Click an agent to
-open its own trace. A wide fan-out of same-role siblings folds into one
-group card (marked with a count) that you click to expand, and the canvas
-shrinks node bodies as the fleet grows, so a large fleet stays readable
-rather than turning to hairball. A MiniMap and pan-zoom come with it.
-Export a fleet run to JSONL and the import dialog replays the whole
-thing, exactly as recorded.</p>
+compact spectral band folded from that agent's slice of the stream, plus
+an activity span that answers "who was slow" at a glance; causal rails
+wire the topology, read from the event payloads (spawn ocean, task an
+amber comet in flight, result teal). Click an agent to open its own
+trace. A wide fan-out of same-role siblings folds into one group card
+(marked with a count) — an <code>aggregated&nbsp;·&nbsp;expanded</code>
+toggle in the corner switches between the folded reading and every card
+on its own — and the canvas shrinks node bodies as the fleet grows, so a
+large fleet stays readable rather than turning to hairball. A MiniMap
+and pan-zoom come with it. Export a fleet run to JSONL and the import
+dialog replays the whole thing, exactly as recorded.</p>
+
+<!--SHOT:27-fleet-canvas|The fleet canvas: one spectral node per agent, spawn and task rails between them, the aggregated · expanded toggle, and the MiniMap.-->
+
+<h2 id="fleet-machine">the machine room</h2>
+
+<p>The lab tab of an entered fleet is the machine room: the whole fleet
+as ONE agent-system diagram, drawn with the same pieces as the
+single-run map. Every node is its own small agent loop — task, lifecycle
+state, gate color, and the exact thing it is doing right now — and they
+all share one machine: the OS band (disk, shell, MCP chain) lights up
+for whichever node is on it, and packets ride the rails exactly as in
+the single-run lab.</p>
+
+<p>The LLM stations are honest about locality. Nodes on a remote
+provider rail across the network boundary to a station outside; a node
+on Ollama rides to a local station inside the machine. A mixed fleet
+shows both stations with each node wired to its own; a purely local
+fleet shows no remote box at all, because there is no traffic that would
+cross the boundary. A process fleet without a <code>main</code> node
+draws no user station either — nothing enters from a person there, so
+nothing pretends to.</p>
+
+<!--SHOT:28-fleet-machine-room|The machine room mid-replay: four nodes as agent loops on one shared machine, the gate line green on the working node, rails fanning into the local LLM station.-->
+
+<p>Below the map sits its own transport: a scrubber over the fleet's
+event stream, step buttons, and play. At the right edge the room follows
+the live stream; scrub back and a counter says how many events you are
+behind. Play from the edge restarts from the beginning — the same
+recording, replayed at a followable pace. Arrow keys step, space toggles
+play. A live fleet and a loaded scenario drive it identically, because
+the whole room is a pure fold over the same events every other lens
+reads.</p>
 
 <h2 id="fleet-control">the control plane</h2>
 
@@ -137,11 +186,14 @@ SIGTERM is the ultimate backstop.</p>
 <p><strong>Answer a gate.</strong> A node started with
 <code>--permissions ask</code> parks each gated tool instead of denying
 it. The parked gate surfaces in the fleet's Spectrum lane and in the same
-gate bar you use for your own session, docked above the footer. Approve
+gate bar you use for your own session, docked above the footer — on
+every tab of the entered fleet, the machine room included. Approve
 or deny inline and the answer travels to the node over the hub. There is
 no "remember" here: a remote node keeps its own allowlist, not yours.
 Like stop it is best-effort; if the node left first, its own close denies
 the orphaned gate, so the gate clears either way.</p>
+
+<!--SHOT:29-fleet-gate|A real parked gate: the security node waits at its write_file, the lane and the sidebar row wear the gate-open chip, and the gate bar offers deny or allow — the answer rides the hub.-->
 
 <div class="callout"><div class="co-title">who can drive</div>
 <p>Every fleet write, and the roster read itself, is gated to a local
