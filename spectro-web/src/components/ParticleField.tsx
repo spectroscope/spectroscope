@@ -64,8 +64,12 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
       line("--sp-ocean", "#2CB1C4"),
       line("--sp-violet", "#8B7CF0"),
     ];
-    // The brand drift runs at half tempo (owner 2026-07-20).
-    const speed = 0.5;
+    // The brand drift tempo. At half speed (owner 2026-07-20) the slowest
+    // marks moved <0.1 px/frame and, since positions snap to whole pixels
+    // for crispness, they visibly stuttered; nudged up so motion crosses
+    // pixel boundaries smoothly without changing the mark SIZE (owner
+    // 2026-07-23: "a little faster, the size is perfect").
+    const speed = 0.85;
 
     let w = 0;
     let h = 0;
