@@ -52,6 +52,7 @@ import type { PendingAttachment } from "./components/AttachmentPreview";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
+import { FleetLab } from "./lab/FleetLab";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
 import { FleetHome } from "./spectrum/FleetHome";
@@ -916,19 +917,29 @@ export function App() {
             explainReady={!serverCfg || !providerStatus || providerStatus[serverCfg.provider] !== "needs-key"}
           />
         ) : tab === "lab" ? (
-          <LabView
-            replay={replay}
-            liveEvents={liveEvents}
-            running={live.running}
-            provider={viewingLive ? curProvider : (view.provider ?? undefined)}
-            model={viewingLive ? curModel : undefined}
-            onSend={send}
-            onDecide={decide}
-            onReturnToLive={returnToLive}
-            onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
-            onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
-            sendClient={sendClient}
-          />
+          enteredFleet !== null ? (
+            /* The fleet machine room (card 59): the entered fleet as ONE
+               composed agent-system diagram — every node its own loop on the
+               shared OS/LLM rails, with its own scrub/live transport. */
+            <FleetLab
+              model={enteredFleetModel}
+              running={enteredFleetModel.roster.some((node) => node.connected)}
+            />
+          ) : (
+            <LabView
+              replay={replay}
+              liveEvents={liveEvents}
+              running={live.running}
+              provider={viewingLive ? curProvider : (view.provider ?? undefined)}
+              model={viewingLive ? curModel : undefined}
+              onSend={send}
+              onDecide={decide}
+              onReturnToLive={returnToLive}
+              onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
+              onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
+              sendClient={sendClient}
+            />
+          )
         ) : (
           <TraceView
             entries={traceEntries}
@@ -950,9 +961,10 @@ export function App() {
         )}
         {/* The FLEET gate: a node in ask mode parked a tool; answer it over the
             hub. Same bar, no "remember" (a remote node has no allowlist here).
-            Suppressed on the lab tab, which shows own-session content, mirroring
-            the session gate's tab guard above. */}
-        {enteredFleet !== null && tab !== "lab" && fleetGate.length > 0 && (
+            Shown on EVERY tab while a fleet is entered — since card 59 the lab
+            tab renders the fleet's machine room, so the old own-session guard
+            fell. */}
+        {enteredFleet !== null && fleetGate.length > 0 && (
           <GateBar
             pending={fleetGate}
             cards={{}}

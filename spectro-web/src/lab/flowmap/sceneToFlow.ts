@@ -91,7 +91,8 @@ export const STATE_COLOR: Record<SubagentInfo["state"], string> = {
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
 
-function activity(
+/** One loop's activity line (text + color) — shared with the fleet machine room. */
+export function activity(
   f: Focus,
   disk: DiskState,
   file: string | null,
