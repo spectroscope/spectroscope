@@ -227,7 +227,7 @@ describe("deriveDetail — the generated image (real blob, card 42 follow-up)", 
       } as RunEvent,
     ];
     const d = deriveDetail(events);
-    expect(d.genImage["main"]).toEqual({ file: "img-2.png", prompt: "a mountain dog" });
+    expect(d.genImage["main"]).toEqual({ src: "/api/images/img-2.png", prompt: "a mountain dog" });
   });
 
   it("is empty when no image was generated", () => {

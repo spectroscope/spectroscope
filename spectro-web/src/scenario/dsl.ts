@@ -22,7 +22,14 @@ export type Step =
   | { usage: { in: number; out: number } }
   | { context: { parts: { label: Localized; chars: number; estTokens: number }[] } }
   | { compact: { removedTurns: number; summaryChars: number } }
-  | { image: Localized; provider?: string; model?: string }
+  | {
+      image: Localized;
+      provider?: string;
+      model?: string;
+      /** A bundled demo asset path (e.g. /demo/beach-cat.jpg) served by the app
+       *  itself — the UI then renders the REAL image instead of the placeholder. */
+      asset?: string;
+    }
   | { spawn: string; label?: string; task: Localized; steps: Step[] }
   | { fanout: { label?: string; tool: string; agents: { id: string; task: Localized; steps: Step[] }[] } };
 

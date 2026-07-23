@@ -393,7 +393,7 @@ export function compile(dsl: Dsl, lang: Lang, baseTs = 1_783_000_000_000): RunEv
         provider: step.provider ?? "gemini",
         model: step.model ?? "imagen-3.0",
         mediaType: "image/png",
-        blobPath: `.spectro/images/${callId}.png`,
+        blobPath: step.asset ?? `.spectro/images/${callId}.png`,
         sha256: fakeSha(callId),
       });
     } else if ("spawn" in step) expandSpawn(step);

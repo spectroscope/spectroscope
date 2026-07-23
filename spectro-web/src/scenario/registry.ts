@@ -773,8 +773,8 @@ const imagegen: Dsl = {
   id: "imagegen",
   name: { en: "Image generation · draft & refine", de: "Bildgenerierung · Entwurf & Verfeinerung" },
   prompt: {
-    en: "Generate a logo for a coffee roastery — a minimal line-art coffee bean. Draft one, then refine it.",
-    de: "Erzeuge ein Logo für eine Kaffeerösterei — eine minimale Line-Art-Kaffeebohne. Entwirf eins, dann verfeinere es.",
+    en: "Make a poster image: a cat lounging on a beach with sunglasses and a cocktail. Draft one, then refine it.",
+    de: "Erzeuge ein Poster-Bild: eine Katze am Strand mit Sonnenbrille und Cocktail. Entwirf eins, dann verfeinere es.",
   },
   provider: "ollama",
   steps: [
@@ -786,26 +786,201 @@ const imagegen: Dsl = {
     },
     {
       image: {
-        en: "minimal line-art coffee bean logo, centered, single stroke",
-        de: "minimales Line-Art-Kaffeebohnen-Logo, zentriert, ein Strich",
+        en: "a cat on a beach with sunglasses, holding a cocktail",
+        de: "eine Katze am Strand mit Sonnenbrille, mit einem Cocktail",
       },
     },
     {
       say: {
-        en: "The draft is centered, but the stroke weight is uneven. I refine it.",
-        de: "Der Entwurf ist zentriert, aber die Strichstärke ist ungleichmäßig. Ich verfeinere.",
+        en: "The draft has the right idea, but the pose is stiff and the light is flat. I refine the prompt.",
+        de: "Der Entwurf trifft die Idee, aber die Pose ist steif und das Licht flach. Ich verfeinere den Prompt.",
       },
     },
     {
+      // The refined result ships as a bundled demo asset — the agent card
+      // (expanded view) and the gallery panel render the REAL image.
       image: {
-        en: "minimal line-art coffee bean logo, uniform 2px stroke, warm amber accent",
-        de: "minimales Line-Art-Kaffeebohnen-Logo, gleichmäßiger 2px-Strich, warmer Amber-Akzent",
+        en: "A cute fluffy cat relaxing on a beach lounge chair, aviator sunglasses, tropical cocktail with a paper umbrella, palm trees and turquoise ocean, sunny, photorealistic, high detail",
+        de: "Eine flauschige Katze entspannt auf einem Strandliegestuhl, Pilotenbrille, tropischer Cocktail mit Papierschirmchen, Palmen und türkisfarbenes Meer, sonnig, fotorealistisch, hoher Detailgrad",
+      },
+      asset: "/demo/beach-cat.jpg",
+    },
+    {
+      say: {
+        en: "The refined poster lands: relaxed pose, warm light, the cocktail reads clearly — done.",
+        de: "Das verfeinerte Poster sitzt: entspannte Pose, warmes Licht, der Cocktail ist klar lesbar — fertig.",
+      },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Bug hunt — a CHAT-side fan-out (owner: more subagent scenarios): the main
+// agent spawns three lenses over one diff via spawn_agents, then merges.
+// Unlike the fleet twins, this one steps through the Lab with subagent cards.
+// ---------------------------------------------------------------------------
+const bughunt: Dsl = {
+  id: "bughunt",
+  name: { en: "Bug hunt · 3 lenses as subagents", de: "Bug-Jagd · 3 Linsen als Subagenten" },
+  prompt: {
+    en: "Hunt bugs in retry.ts with three lenses in parallel — correctness, performance, security — then give me one prioritized list.",
+    de: "Jage Bugs in retry.ts mit drei Linsen parallel — Korrektheit, Performance, Sicherheit — dann gib mir EINE priorisierte Liste.",
+  },
+  provider: "ollama",
+  steps: [
+    {
+      think: {
+        en: "One diff, three independent readings. I fan out three subagents, one lens each, and merge their findings by severity.",
+        de: "Ein Diff, drei unabhängige Lesarten. Ich fächere drei Subagenten auf, je eine Linse, und merge die Funde nach Schwere.",
+      },
+    },
+    { read: "src/retry.ts" },
+    {
+      fanout: {
+        tool: "spawn_agents",
+        agents: [
+          {
+            id: "correctness-1",
+            task: { en: "Read retry.ts for logic bugs", de: "Lies retry.ts auf Logikfehler" },
+            steps: [
+              { read: "src/retry.ts" },
+              {
+                think: {
+                  en: "The backoff doubles BEFORE the first wait — attempt one already sleeps 2x.",
+                  de: "Der Backoff verdoppelt VOR dem ersten Warten — Versuch eins schläft schon 2x.",
+                },
+              },
+              {
+                status: {
+                  en: "found: off-by-one in the backoff ladder",
+                  de: "Fund: Off-by-one in der Backoff-Leiter",
+                },
+              },
+            ],
+          },
+          {
+            id: "perf-1",
+            task: { en: "Check retry.ts for hot-path costs", de: "Prüfe retry.ts auf Hot-Path-Kosten" },
+            steps: [
+              { read: "src/retry.ts" },
+              {
+                think: {
+                  en: "A fresh AbortController per attempt allocates in the hot loop; hoist it.",
+                  de: "Ein frischer AbortController pro Versuch alloziert in der heißen Schleife; rausziehen.",
+                },
+              },
+              {
+                status: {
+                  en: "found: avoidable allocation per retry",
+                  de: "Fund: vermeidbare Allokation pro Retry",
+                },
+              },
+            ],
+          },
+          {
+            id: "security-1",
+            task: {
+              en: "Scan retry.ts for injection and secrets",
+              de: "Scanne retry.ts auf Injection und Secrets",
+            },
+            steps: [
+              { read: "src/retry.ts" },
+              {
+                think: {
+                  en: "The retry log prints the full request — including the Authorization header. That is a secret in plain text.",
+                  de: "Das Retry-Log druckt den vollen Request — inklusive Authorization-Header. Das ist ein Secret im Klartext.",
+                },
+              },
+              {
+                status: {
+                  en: "found: bearer token leaks into the log",
+                  de: "Fund: Bearer-Token leakt ins Log",
+                },
+              },
+            ],
+          },
+        ],
       },
     },
     {
       say: {
-        en: "The refined logo has a clean uniform stroke and a warm amber accent — done.",
-        de: "Das verfeinerte Logo hat einen sauberen gleichmäßigen Strich und einen warmen Amber-Akzent — fertig.",
+        en: "Prioritized:\n1. SECURITY — the retry log leaks the Authorization header (fix first)\n2. CORRECTNESS — backoff doubles before the first wait (off-by-one)\n3. PERF — hoist the AbortController out of the loop",
+        de: "Priorisiert:\n1. SECURITY — das Retry-Log leakt den Authorization-Header (zuerst fixen)\n2. KORREKTHEIT — Backoff verdoppelt vor dem ersten Warten (Off-by-one)\n3. PERF — AbortController aus der Schleife ziehen",
+      },
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Research, attacked — sequential subagents (owner): a researcher drafts, an
+// adversarial reviewer attacks the draft, the main agent synthesizes what
+// SURVIVED. The honest-review choreography as a steppable demo.
+// ---------------------------------------------------------------------------
+const adversarial: Dsl = {
+  id: "adversarial",
+  name: {
+    en: "Research · draft, attack, synthesize",
+    de: "Research · Entwurf, Angriff, Synthese",
+  },
+  prompt: {
+    en: "Should we adopt HTTP/3 at the edge? Research it, then have the draft adversarially reviewed before you answer.",
+    de: "Sollten wir HTTP/3 an der Edge einführen? Recherchiere, lass den Entwurf adversarial reviewen und antworte erst dann.",
+  },
+  provider: "ollama",
+  steps: [
+    {
+      think: {
+        en: "Two subagents, in sequence: one drafts the case, one attacks it. I only keep what survives the attack.",
+        de: "Zwei Subagenten, nacheinander: einer entwirft die Argumentation, einer greift sie an. Ich behalte nur, was den Angriff übersteht.",
+      },
+    },
+    {
+      spawn: "researcher-1",
+      task: {
+        en: "Draft the case for HTTP/3 at the edge, with sources",
+        de: "Entwirf die Argumentation für HTTP/3 an der Edge, mit Quellen",
+      },
+      steps: [
+        { read: "docs/edge-stack.md" },
+        {
+          think: {
+            en: "QUIC removes head-of-line blocking and speeds up lossy-network handshakes; CDN support is broad by now.",
+            de: "QUIC beseitigt Head-of-Line-Blocking und beschleunigt Handshakes in lossy Netzen; CDN-Support ist inzwischen breit.",
+          },
+        },
+        {
+          status: {
+            en: "draft: adopt — faster handshakes, no HoL blocking, broad CDN support",
+            de: "Entwurf: einführen — schnellere Handshakes, kein HoL-Blocking, breiter CDN-Support",
+          },
+        },
+      ],
+    },
+    {
+      spawn: "adversary-1",
+      task: {
+        en: "Attack the draft: find what breaks or is overstated",
+        de: "Greif den Entwurf an: finde, was bricht oder übertrieben ist",
+      },
+      steps: [
+        {
+          think: {
+            en: "UDP is throttled or dropped by some enterprise middleboxes — the fallback path to H2 must stay first-class. And QUIC costs more CPU per byte at the origin.",
+            de: "UDP wird von manchen Enterprise-Middleboxes gedrosselt oder verworfen — der Fallback auf H2 muss erstklassig bleiben. Und QUIC kostet am Origin mehr CPU pro Byte.",
+          },
+        },
+        {
+          status: {
+            en: "attack: 2 hits — middlebox UDP throttling, origin CPU cost. The latency claim SURVIVES.",
+            de: "Angriff: 2 Treffer — Middlebox-UDP-Drosselung, Origin-CPU-Kosten. Der Latenz-Claim ÜBERLEBT.",
+          },
+        },
+      ],
+    },
+    {
+      say: {
+        en: "Synthesis (post-attack): adopt HTTP/3 at the EDGE only — the latency win survived review; keep H2 fallback first-class (middlebox throttling is real) and leave origin connections on H2 for now (CPU cost).",
+        de: "Synthese (nach dem Angriff): HTTP/3 nur an der EDGE einführen — der Latenz-Gewinn überlebte den Review; H2-Fallback erstklassig halten (Middlebox-Drosselung ist real) und Origin-Verbindungen vorerst auf H2 lassen (CPU-Kosten).",
       },
     },
   ],
@@ -896,6 +1071,8 @@ const fleetswarm: Dsl = {
 
 export const SCENARIOS: Dsl[] = [
   buildplan,
+  bughunt,
+  adversarial,
   fanout,
   permission,
   diskshell,

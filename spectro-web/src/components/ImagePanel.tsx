@@ -6,6 +6,7 @@
 import { useState } from "react";
 import type { GeneratedImage } from "../state/reducer";
 import { t } from "../i18n/i18n";
+import { imageUrl, isDemoImage } from "../lab/flowmap/imageUrl";
 import { useLang } from "../state/lang";
 
 /** The blob store is addressed by file name only — strip the directory part. */
@@ -107,7 +108,7 @@ export function ImagePanel(props: {
           <p className="image-panel-empty">{t(lang, "img.empty")}</p>
         ) : (
           newestFirst.map((image) => {
-            const url = `/api/images/${fileName(image.blobPath)}`;
+            const url = imageUrl(image.blobPath);
             return (
               <a
                 key={image.callId}
@@ -122,7 +123,7 @@ export function ImagePanel(props: {
                 <span className="image-meta">
                   <span className="badge">{image.provider}</span>
                   <span className="mono image-model">{image.model}</span>
-                  {props.sessionId !== undefined && (
+                  {props.sessionId !== undefined && !isDemoImage(image.blobPath) && (
                     <button
                       type="button"
                       className="image-copy"

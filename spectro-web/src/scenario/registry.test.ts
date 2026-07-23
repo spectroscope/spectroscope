@@ -9,7 +9,9 @@ type ToolCall = Extract<RunEvent, { type: "tool_call" }>;
 describe("registry", () => {
   it("has the built-in scenarios", () => {
     expect(SCENARIOS.map((s) => s.id).sort()).toEqual([
+      "adversarial",
       "agentsmd",
+      "bughunt",
       "buildplan",
       "codereview",
       "coding",

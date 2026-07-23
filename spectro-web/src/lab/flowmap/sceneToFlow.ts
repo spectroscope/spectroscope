@@ -9,6 +9,7 @@ import type { Edge, Node } from "@xyflow/react";
 import type { DiskState, Focus, GateState, Loop, Scene, SubagentInfo } from "../labScene";
 import type { RunEvent } from "../../events";
 import { t, type Lang } from "../../i18n/i18n";
+import { imageUrl } from "./imageUrl";
 
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
@@ -33,10 +34,11 @@ export interface Detail {
   /** rolling last-N chars of the reasoning / answer streams, per agent. */
   think: Record<string, string>;
   answer: Record<string, string>;
-  /** the LAST generated image per agent — the REAL blob's file name (served
-   *  by GET /api/images/<file>) plus its prompt; scripted sessions whose blob
-   *  does not exist fall back to the placeholder at render time. */
-  genImage: Record<string, { file: string; prompt: string } | undefined>;
+  /** the LAST generated image per agent — its browser URL (a store blob via
+   *  GET /api/images/<file>, or a bundled /demo/ asset from a scripted
+   *  scenario) plus its prompt; a missing blob falls back to the placeholder
+   *  at render time. */
+  genImage: Record<string, { src: string; prompt: string } | undefined>;
 }
 
 const CAP = 420;
@@ -55,10 +57,7 @@ export function deriveDetail(applied: RunEvent[]): Detail {
   for (const e of applied) {
     switch (e.type) {
       case "image_generated":
-        d.genImage[e.agentId] = {
-          file: e.blobPath.slice(e.blobPath.lastIndexOf("/") + 1),
-          prompt: e.prompt,
-        };
+        d.genImage[e.agentId] = { src: imageUrl(e.blobPath), prompt: e.prompt };
         break;
       case "run_start":
         d.think[e.agentId] = "";

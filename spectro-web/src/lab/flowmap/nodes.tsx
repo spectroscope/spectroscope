@@ -177,7 +177,7 @@ export function AgentNode({ data }: NodeProps) {
     prompt: string;
     systemPrompt: string | null;
     tool: { name: string; input: unknown } | null;
-    genImage: { file: string; prompt: string } | null;
+    genImage: { src: string; prompt: string } | null;
   };
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
@@ -278,7 +278,7 @@ export function AgentNode({ data }: NodeProps) {
       <div className="pf-panelbox pf-genimg-panel">
         <div className="pf-panelbox__label">{t(lang, "map.ctx.genImage")}</div>
         <div className="pf-genimg-wrap">
-          <GenImage src={`/api/images/${encodeURIComponent(d.genImage.file)}`} alt={d.genImage.prompt} />
+          <GenImage src={d.genImage.src} alt={d.genImage.prompt} />
           <span className="pf-genimg-cap">{d.genImage.prompt}</span>
         </div>
       </div>

@@ -27,6 +27,7 @@ module) is deliberately NOT this card: it depends on the platform/repo split
 | `flowmap/NeuralNet.tsx`, `flowmap/glyphs.tsx` | the LLM/station visuals                                           |
 | `flowmap/positions.ts`                        | drag-pinning + position merge across re-folds                     |
 | `flowmap/expandContext.ts`                    | `ExpandAllContext` (default false)                                |
+| `flowmap/imageUrl.ts`                         | blobPath → browser URL (store blob vs bundled /demo asset)        |
 | `flowmap/flowmap.css`                         | the engine's whole look (tokens only)                             |
 | `FlowMap.tsx`                                 | the single-run canvas shell around all of the above               |
 | + the `.test.ts` siblings                     | the engine's behavior pins travel with it                         |

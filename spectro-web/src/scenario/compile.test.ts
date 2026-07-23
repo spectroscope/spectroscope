@@ -315,3 +315,25 @@ describe("compile compact step", () => {
     expect(convo(after)).toBeLessThan(convo(before) + 4000);
   });
 });
+
+describe("image step — bundled demo asset (owner: the beach cat)", () => {
+  it("uses the asset path as blobPath so the UI can render the real image", () => {
+    const events = compile(
+      {
+        id: "x",
+        name: "x",
+        prompt: "p",
+        steps: [{ image: "a beach cat", asset: "/demo/beach-cat.jpg" }],
+      },
+      "en",
+    );
+    const img = events.find((e) => e.type === "image_generated") as { blobPath: string };
+    expect(img.blobPath).toBe("/demo/beach-cat.jpg");
+  });
+
+  it("keeps the deterministic fake blobPath without an asset", () => {
+    const events = compile({ id: "x", name: "x", prompt: "p", steps: [{ image: "a coffee bean" }] }, "en");
+    const img = events.find((e) => e.type === "image_generated") as { blobPath: string };
+    expect(img.blobPath).toMatch(/^\.spectro\/images\/.+\.png$/);
+  });
+});

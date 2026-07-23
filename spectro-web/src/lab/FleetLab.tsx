@@ -26,12 +26,25 @@ import type { FleetModel } from "../spectrum/fleetModel";
 import { buildFleetLabScene } from "./fleetLabScene";
 import { fleetToFlow } from "./flowmap/fleetToFlow";
 import { activity, deriveDetail } from "./flowmap/sceneToFlow";
+import { ExpandAllContext } from "./flowmap/expandContext";
+import { DEFAULT_INTERVAL_MS, MAX_INTERVAL_MS, MIN_INTERVAL_MS } from "../state/stepper";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { nodeTypes } from "./flowmap/nodes";
 import { edgeTypes } from "./flowmap/PacketEdge";
 import "@xyflow/react/dist/style.css";
 import "./flowmap/flowmap.css";
+
+/** Same stored preference as the single-run Lab — ONE card-view choice. */
+const VIEW_STORAGE_KEY = "spectroscope.lab.view";
+
+function storedExpanded(): boolean {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === "expanded";
+  } catch {
+    return false;
+  }
+}
 
 const MINIMAP_COLOR: Record<string, string> = {
   subagent: "var(--agent-worker)",
@@ -41,8 +54,8 @@ const MINIMAP_COLOR: Record<string, string> = {
   ext: "var(--border-strong)",
 };
 
-/** Auto-play pace — one event per tick; snappy but followable. */
-const PLAY_INTERVAL_MS = 110;
+/** The tempo slider snaps in steps of this many milliseconds. */
+const TEMPO_SLIDER_STEP_MS = 20;
 
 /** True while the user is typing, so transport keys never eat keystrokes. */
 function isTyping(target: EventTarget | null): boolean {
@@ -61,6 +74,19 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
   // cursor === null → follow the live edge (every new event applies at once).
   const [cursor, setCursor] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
+  // The card-view choice (shared with the single-run Lab) + the replay tempo
+  // (same owner-tuned default and range as the stepper — 110ms/event was a
+  // blur, owner report).
+  const [expanded, setExpanded] = useState<boolean>(storedExpanded);
+  const [intervalMs, setIntervalMs] = useState(DEFAULT_INTERVAL_MS);
+  const pickView = (next: boolean): void => {
+    setExpanded(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next ? "expanded" : "compact");
+    } catch {
+      // private mode: the toggle simply does not stick
+    }
+  };
   const at = cursor ?? total;
   const clamped = Math.max(0, Math.min(at, total));
 
@@ -76,9 +102,9 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
         }
         return cur + 1;
       });
-    }, PLAY_INTERVAL_MS);
+    }, intervalMs);
     return () => clearInterval(id);
-  }, [playing, total]);
+  }, [playing, total, intervalMs]);
 
   // Keyboard: ←/→ scrub one event, space toggles play. Tab-gated by this mount.
   useEffect(() => {
@@ -150,53 +176,75 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
             {t(lang, "fleetlab.behind", { n: total - clamped })}
           </span>
         )}
+        <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
+          <button
+            type="button"
+            className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+            aria-pressed={!expanded}
+            title={t(lang, "lab.viewCompactTitle")}
+            onClick={() => pickView(false)}
+          >
+            {t(lang, "lab.viewCompact")}
+          </button>
+          <button
+            type="button"
+            className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+            aria-pressed={expanded}
+            title={t(lang, "lab.viewExpandedTitle")}
+            onClick={() => pickView(true)}
+          >
+            {t(lang, "lab.viewExpanded")}
+          </button>
+        </div>
       </div>
 
       <div className="lab-flowmap" onContextMenu={(e) => e.preventDefault()}>
-        <ReactFlow
-          className="pf-flow"
-          nodes={nodes}
-          edges={edges}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          nodesConnectable={false}
-          elementsSelectable={false}
-          panOnDrag={[1, 2]}
-          fitView
-          fitViewOptions={{ padding: 0.14 }}
-          minZoom={0.25}
-          maxZoom={1.8}
-          proOptions={{ hideAttribution: true }}
-          defaultEdgeOptions={{ type: "rail" }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="var(--border-strong)" />
-          <Controls showInteractive={false} />
-          <MiniMap
-            pannable
-            zoomable
-            maskColor="color-mix(in srgb, var(--bg) 72%, transparent)"
-            nodeColor={(nd) => MINIMAP_COLOR[nd.type ?? ""] ?? "transparent"}
-            nodeStrokeColor="var(--border-strong)"
-          />
-          <Panel position="bottom-left">
-            <div className="pf-legend">
-              <span>
-                <i className="on" />
-                {t(lang, "map.legend.activeRail")}
-              </span>
-              <span>
-                <i />
-                {t(lang, "map.legend.inside")}
-              </span>
-              <span>
-                <i className="net" />
-                {t(lang, "map.legend.out")}
-              </span>
-            </div>
-          </Panel>
-        </ReactFlow>
+        <ExpandAllContext.Provider value={expanded}>
+          <ReactFlow
+            className="pf-flow"
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            nodesConnectable={false}
+            elementsSelectable={false}
+            panOnDrag={[1, 2]}
+            fitView
+            fitViewOptions={{ padding: 0.14 }}
+            minZoom={0.25}
+            maxZoom={1.8}
+            proOptions={{ hideAttribution: true }}
+            defaultEdgeOptions={{ type: "rail" }}
+          >
+            <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="var(--border-strong)" />
+            <Controls showInteractive={false} />
+            <MiniMap
+              pannable
+              zoomable
+              maskColor="color-mix(in srgb, var(--bg) 72%, transparent)"
+              nodeColor={(nd) => MINIMAP_COLOR[nd.type ?? ""] ?? "transparent"}
+              nodeStrokeColor="var(--border-strong)"
+            />
+            <Panel position="bottom-left">
+              <div className="pf-legend">
+                <span>
+                  <i className="on" />
+                  {t(lang, "map.legend.activeRail")}
+                </span>
+                <span>
+                  <i />
+                  {t(lang, "map.legend.inside")}
+                </span>
+                <span>
+                  <i className="net" />
+                  {t(lang, "map.legend.out")}
+                </span>
+              </div>
+            </Panel>
+          </ReactFlow>
+        </ExpandAllContext.Provider>
       </div>
 
       <div className="lab-transport">
@@ -268,6 +316,24 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
             {clamped + " / " + total + (following ? " · " + t(lang, "fleetlab.live") : "")}
           </span>
         </div>
+        <details className="lab-advanced">
+          <summary title={de ? "tempo" : "tempo"}>{de ? "mehr" : "more"}</summary>
+          <div className="lab-advanced-body">
+            <label className="lab-speed" title={t(lang, "lab.tempoTitle")}>
+              <span className="lab-speed-label">{t(lang, "lab.tempo")}</span>
+              <input
+                type="range"
+                min={MIN_INTERVAL_MS}
+                max={MAX_INTERVAL_MS}
+                step={TEMPO_SLIDER_STEP_MS}
+                value={MIN_INTERVAL_MS + MAX_INTERVAL_MS - intervalMs}
+                onChange={(e) => setIntervalMs(MIN_INTERVAL_MS + MAX_INTERVAL_MS - Number(e.target.value))}
+                aria-label={t(lang, "lab.tempoTitle")}
+              />
+              <span className="lab-speed-rate mono tabular">{(1000 / intervalMs).toFixed(1)}×/s</span>
+            </label>
+          </div>
+        </details>
       </div>
     </section>
   );
