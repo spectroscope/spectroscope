@@ -16,6 +16,7 @@ import type { LlmDir } from "./eventSummary";
 import { DETAIL_MODES, detailLines, detailText } from "./traceDetail";
 import type { DetailMode } from "./traceDetail";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
+import { timelineFractions } from "./traceTimeline";
 import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -165,6 +166,9 @@ const TraceRow = memo(function TraceRow(props: {
   lang: Lang;
   /** Reasoning lens: "" while the lens is off, else the row's role class. */
   lens: "" | "hi" | "anchor" | "dim";
+  /** Timeline lens: this row's wait as a fraction of the largest visible gap
+   *  (drives the proportional bar), or null while the lens is off / no bar. */
+  tl: number | null;
   /** Lens pairing: the action that followed this thinking block, if any. */
   pair?: { seq: number; label: string };
   /** Lens: the block-ending thinking row carries the WHOLE block's reasoning
@@ -175,7 +179,7 @@ const TraceRow = memo(function TraceRow(props: {
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
-  const { entry, dt, proto, host, open, lang, lens, pair, blockText } = props;
+  const { entry, dt, proto, host, open, lang, lens, tl, pair, blockText } = props;
   // The DIR flag now reads as the LLM direction (derived from the type); the
   // socket direction moves into the tooltip.
   const ld = llmDirection(entry.type);
@@ -193,7 +197,8 @@ const TraceRow = memo(function TraceRow(props: {
     <>
       <button
         type="button"
-        className={`trace-row${entry.type === "system_context" || entry.type === "session_resume" ? " trace-row--sys" : ""}${lens === "" ? "" : ` trace-row--${lens}`}`}
+        className={`trace-row${entry.type === "system_context" || entry.type === "session_resume" ? " trace-row--sys" : ""}${lens === "" ? "" : ` trace-row--${lens}`}${tl !== null && tl > 0 ? " trace-row--tl" : ""}`}
+        style={tl !== null && tl > 0 ? ({ "--tl": tl } as CSSProperties) : undefined}
         aria-expanded={open}
         data-seq={entry.seq}
         onClick={() => props.onToggle(entry.seq)}
@@ -381,6 +386,9 @@ export function TraceView(props: {
   // survives reloads and applies to live and replay alike.
   const { prefs } = useDesignPrefs();
   const lensOn = prefs.reasoningLens;
+  // Timeline lens (langfuse P1.3): same persistence pattern as the reasoning
+  // lens; the two compose (dimmed rows still wear their wait bars).
+  const tlOn = prefs.timelineLens;
   // Replay scrubber: cap the visible stream at one frame (null = the live
   // end). Scrubbing back reads the run exactly as far as it had happened.
   const [capSeq, setCapSeq] = useState<number | null>(null);
@@ -457,6 +465,13 @@ export function TraceView(props: {
       return `${e.type} ${e.agentId ?? ""} ${compactJson(e.payload)}`.toLowerCase().includes(q);
     });
   }, [allEntries, query, llmDir, active, agentFilter, capSeq]);
+
+  // Timeline lens: waits normalized over the VISIBLE rows (filters change what
+  // "the largest gap" means — the bars answer the question for what you see).
+  const tlFractions = useMemo(
+    () => (tlOn ? timelineFractions(visible.map((e) => e.ts)) : null),
+    [tlOn, visible],
+  );
 
   // Said-vs-did pairs for the lens: block-ending thinking frame -> the next
   // same-agent action. Computed on the FULL stream so pairs survive filters.
@@ -727,6 +742,16 @@ export function TraceView(props: {
         >
           {t(lang, "trace.lens")}
         </button>
+        {/* Timeline lens (langfuse P1.3): the Δt column, made scannable. */}
+        <button
+          type="button"
+          className={`trace-lens mono${tlOn ? " trace-lens--on" : ""}`}
+          aria-pressed={tlOn}
+          title={t(lang, "trace.timelineTitle")}
+          onClick={() => applyAndSaveDesign({ timelineLens: !tlOn })}
+        >
+          {t(lang, "trace.timeline")}
+        </button>
         <button
           type="button"
           className={`trace-lens mono${explainOpen ? " trace-lens--on" : ""}`}
@@ -805,6 +830,7 @@ export function TraceView(props: {
                     key={e.seq}
                     entry={e}
                     dt={i === 0 ? null : Math.max(0, e.ts - visible[i - 1].ts)}
+                    tl={tlFractions === null ? null : tlFractions[i]}
                     proto={metaBySeq.get(e.seq)?.proto ?? "—"}
                     host={metaBySeq.get(e.seq)?.host ?? "—"}
                     open={openSeq === e.seq}

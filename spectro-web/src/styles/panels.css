@@ -478,6 +478,21 @@
 .trace-row { width: 100%; background: none; border: 0; color: var(--text); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-12); text-align: left; transition: background var(--t-fast); }
 .trace-row:hover { background: var(--surface); }
 .trace-row[aria-expanded="true"] { background: var(--surface-2); }
+/* Timeline lens: the row wears its wait as a proportional bottom bar (--tl is
+   the wait as a fraction of the largest visible gap). Behind the text, never
+   over it — a latency read, not a decoration. */
+.trace-row--tl { position: relative; }
+.trace-row--tl::after {
+  content: "";
+  position: absolute;
+  left: var(--sp-4);
+  bottom: 0;
+  height: 2px;
+  width: calc(var(--tl, 0) * (100% - 2 * var(--sp-4)));
+  background: var(--accent);
+  opacity: 0.5;
+  pointer-events: none;
+}
 /* A jump (chain chip or a Spectrum-event click) flashes its row so the eye lands. */
 .trace-row--flash { animation: trace-flash 1.2s var(--ease); }
 @keyframes trace-flash {

@@ -18,6 +18,8 @@ export interface DesignPrefs {
   /** Trace view: the reasoning lens (card 13) — a view mode, persisted like
    *  every other preference so it survives reloads, live and replay alike. */
   reasoningLens: boolean;
+  /** Trace view: the timeline lens — proportional wait bars per row. */
+  timelineLens: boolean;
 }
 
 /** Catalog for the picker: swatch colors + whether the design ships a particle
@@ -40,7 +42,7 @@ export const DESIGNS: ReadonlyArray<{
 
 const DESIGN_IDS = DESIGNS.map((d) => d.id);
 export const STORAGE_KEY = "spectroscope:design";
-export const DEFAULT_PREFS: DesignPrefs = { design: "spectroscope", scroll: true, particles: true, reasoningLens: false };
+export const DEFAULT_PREFS: DesignPrefs = { design: "spectroscope", scroll: true, particles: true, reasoningLens: false, timelineLens: false };
 
 // Side-effect seams — real localStorage + DOM by default, swappable in tests
 // (the suite runs in plain Node with no jsdom, so it injects in-memory versions).
@@ -70,6 +72,7 @@ export function parsePrefs(raw: string | null): DesignPrefs {
       scroll: typeof p.scroll === "boolean" ? p.scroll : DEFAULT_PREFS.scroll,
       particles: typeof p.particles === "boolean" ? p.particles : DEFAULT_PREFS.particles,
       reasoningLens: typeof p.reasoningLens === "boolean" ? p.reasoningLens : DEFAULT_PREFS.reasoningLens,
+      timelineLens: typeof p.timelineLens === "boolean" ? p.timelineLens : DEFAULT_PREFS.timelineLens,
     };
   } catch {
     return DEFAULT_PREFS;
@@ -134,7 +137,8 @@ export function isDirty(): boolean {
     draft.design !== saved.design ||
     draft.scroll !== saved.scroll ||
     draft.particles !== saved.particles ||
-    draft.reasoningLens !== saved.reasoningLens
+    draft.reasoningLens !== saved.reasoningLens ||
+    draft.timelineLens !== saved.timelineLens
   );
 }
 
