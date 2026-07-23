@@ -72,7 +72,10 @@ function Row({
         <span className="lab-line-seq tabular">{seq}</span>
         <span className="lab-line-type mono">{event.type}</span>
         <span className="lab-line-sum">
-          <SummaryLine text={summarize(event)} field={TEXT_FIELD_EVENTS.has(event.type) ? "text" : undefined} />
+          <SummaryLine
+            text={summarize(event)}
+            field={TEXT_FIELD_EVENTS.has(event.type) ? "text" : undefined}
+          />
         </span>
       </button>
       {open && (
@@ -126,7 +129,9 @@ export function LabTrace({
         </span>
       </div>
       <div className="lab-trace-scroll">
-        {appliedStart > 0 && <div className="lab-line lab-line--gap">{t(lang, "lt.earlier", { n: appliedStart })}</div>}
+        {appliedStart > 0 && (
+          <div className="lab-line lab-line--gap">{t(lang, "lt.earlier", { n: appliedStart })}</div>
+        )}
         {shownApplied.map((event, i) => {
           const seq = appliedStart + i + 1;
           const isCurrent = appliedStart + i === applied.length - 1;
@@ -146,10 +151,17 @@ export function LabTrace({
           <span className="lab-dam-line" />
         </div>
         {shownQueue.map((event, i) => (
-          <Row key={`q${applied.length + i + 1}`} event={event} seq={applied.length + i + 1} variant="queued" />
+          <Row
+            key={`q${applied.length + i + 1}`}
+            event={event}
+            seq={applied.length + i + 1}
+            variant="queued"
+          />
         ))}
         {queue.length > shownQueue.length && (
-          <div className="lab-line lab-line--gap">{t(lang, "lt.moreWaiting", { n: queue.length - shownQueue.length })}</div>
+          <div className="lab-line lab-line--gap">
+            {t(lang, "lt.moreWaiting", { n: queue.length - shownQueue.length })}
+          </div>
         )}
       </div>
     </aside>

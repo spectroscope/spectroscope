@@ -102,13 +102,9 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
         {/* The gate outcome, made visible: an allowed call is didactically
             different from a permission-free one — it went through the gate. */}
         {card.permission !== undefined && (
-          <span className={`gate-chip gate-${card.permission}`}>
-            {t(lang, `gate.${card.permission}`)}
-          </span>
+          <span className={`gate-chip gate-${card.permission}`}>{t(lang, `gate.${card.permission}`)}</span>
         )}
-        <span className={`tool-status status-${denied ? "denied" : card.status}`}>
-          {statusLabel}
-        </span>
+        <span className={`tool-status status-${denied ? "denied" : card.status}`}>{statusLabel}</span>
         {duration !== null && <span className="badge tabular">{duration}</span>}
         <svg
           className={`chevron${open ? " open" : ""}`}

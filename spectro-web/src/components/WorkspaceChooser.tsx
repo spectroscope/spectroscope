@@ -25,9 +25,23 @@ export function WorkspaceChooser(props: {
   };
 
   const opts: { key: Mode; label: string; hint: string }[] = [
-    { key: "random", label: de ? "wegwerf" : "random", hint: de ? "frischer temp-ordner pro chat" : "a fresh temp folder per chat" },
-    { key: "default", label: de ? "standard" : "default", hint: de ? "dein default-workspace (oder ~/spectroscope-workspace)" : "your default workspace (or ~/spectroscope-workspace)" },
-    { key: "set", label: de ? "ordner wählen…" : "set folder…", hint: de ? "einen bestimmten ordner picken" : "pick a specific folder" },
+    {
+      key: "random",
+      label: de ? "wegwerf" : "random",
+      hint: de ? "frischer temp-ordner pro chat" : "a fresh temp folder per chat",
+    },
+    {
+      key: "default",
+      label: de ? "standard" : "default",
+      hint: de
+        ? "dein default-workspace (oder ~/spectroscope-workspace)"
+        : "your default workspace (or ~/spectroscope-workspace)",
+    },
+    {
+      key: "set",
+      label: de ? "ordner wählen…" : "set folder…",
+      hint: de ? "einen bestimmten ordner picken" : "pick a specific folder",
+    },
   ];
 
   return (

@@ -89,8 +89,7 @@ export function buildTextFeed(events: readonly RunEvent[]): FeedSegment[] {
         break;
       case "tool_result": {
         const name = toolNames.get(e.callId) ?? e.callId;
-        push("marker", e.agentId,
-            `[tool_result ${name}${e.isError ? " ERROR" : ""} · ${e.durationMs}ms]`);
+        push("marker", e.agentId, `[tool_result ${name}${e.isError ? " ERROR" : ""} · ${e.durationMs}ms]`);
         if (e.output !== "") {
           push("output", e.agentId, e.output);
         }
@@ -139,8 +138,8 @@ export function buildTextFeed(events: readonly RunEvent[]): FeedSegment[] {
 /** The feed as ONE plain-text string — what the copy button hands out. */
 export function feedToPlainText(segments: readonly FeedSegment[]): string {
   return segments
-      .map((s) => (s.agentId !== "main" && s.agentId !== "" ? `[${s.agentId}] ` : "") + s.text)
-      .join("\n");
+    .map((s) => (s.agentId !== "main" && s.agentId !== "" ? `[${s.agentId}] ` : "") + s.text)
+    .join("\n");
 }
 
 /** The wire types that are SOCKET-ONLY UI frames — never in the JSONL file. */
@@ -153,6 +152,6 @@ const SOCKET_ONLY_TYPES = new Set(["workspace_info", "provider_info", "permissio
  */
 export function eventsToJsonl(events: readonly RunEvent[]): string[] {
   return events
-      .filter((e) => !SOCKET_ONLY_TYPES.has((e as { type: string }).type))
-      .map((e) => JSON.stringify(e));
+    .filter((e) => !SOCKET_ONLY_TYPES.has((e as { type: string }).type))
+    .map((e) => JSON.stringify(e));
 }

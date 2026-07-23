@@ -74,8 +74,22 @@ export function RightPanel({
           {tabBtn("context", t(lang, "rp.context"))}
           {tabBtn("files", t(lang, "rp.files"))}
         </div>
-        <button type="button" className="icon-button rp-close" aria-label={t(lang, "rp.close")} onClick={onClose}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <button
+          type="button"
+          className="icon-button rp-close"
+          aria-label={t(lang, "rp.close")}
+          onClick={onClose}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
             <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
         </button>
@@ -86,11 +100,7 @@ export function RightPanel({
         ) : activeTab === "plan" ? (
           <PlanTab plan={plan} />
         ) : activeTab === "files" ? (
-          <WorkspaceTab
-            workspace={workspace}
-            onPickFolder={onPickFolder}
-            canPickFolder={canPickFolder}
-          />
+          <WorkspaceTab workspace={workspace} onPickFolder={onPickFolder} canPickFolder={canPickFolder} />
         ) : (
           <SystemContextTab selected={selected} provider={provider} model={model} thinking={thinking} />
         )}

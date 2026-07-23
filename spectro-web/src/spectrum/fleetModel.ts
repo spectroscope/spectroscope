@@ -35,8 +35,7 @@ export interface FleetEnvelope {
 /** The two socket-only fleet frames — never in the JSONL, not RunEvents; the
  *  server sends them only when the hub is enabled. */
 export type FleetFrame =
-  | { type: "fleet_roster"; nodes: FleetNode[] }
-  | { type: "fleet_event"; frame: FleetEnvelope };
+  { type: "fleet_roster"; nodes: FleetNode[] } | { type: "fleet_event"; frame: FleetEnvelope };
 
 export interface FleetModel {
   /** The roster: latest-wins full state, one entry per node the hub ever saw. */

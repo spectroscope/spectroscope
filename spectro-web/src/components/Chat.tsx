@@ -239,7 +239,17 @@ export function Chat(props: {
             {/* The little sign (owner 2026-07-20): the gear up top holds the
                 design switch (spectro white included) and the particle dials. */}
             <p className="empty-hint">
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <svg
+                viewBox="0 0 24 24"
+                width="13"
+                height="13"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
@@ -287,10 +297,7 @@ export function Chat(props: {
       {liveView ? (
         <div className="composer">
           <div className="composer-column">
-            <AttachmentPreview
-              attachments={attachments.pending}
-              onRemove={attachments.removeAt}
-            />
+            <AttachmentPreview attachments={attachments.pending} onRemove={attachments.removeAt} />
             {mic.recording && (
               <div className="recording-indicator" aria-live="polite">
                 <span className="dot accent pulse" aria-hidden="true" />
@@ -315,8 +322,17 @@ export function Chat(props: {
                 title={t(lang, "chat.attach")}
                 onClick={attachments.openFilePicker}
               >
-                <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor"
-                  strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <svg
+                  viewBox="0 0 16 16"
+                  width="16"
+                  height="16"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
                   <rect x="2" y="3" width="12" height="10" rx="1.5" />
                   <circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
                   <path d="M2 11l3.5-3.5L9 11l2.5-2.5L14 11" />
@@ -341,7 +357,11 @@ export function Chat(props: {
               />
               <button
                 type="button"
-                className={mic.recording ? "icon-button attach-button mic-button recording" : "icon-button attach-button mic-button"}
+                className={
+                  mic.recording
+                    ? "icon-button attach-button mic-button recording"
+                    : "icon-button attach-button mic-button"
+                }
                 aria-label={mic.title}
                 aria-pressed={mic.recording}
                 title={mic.title}
@@ -353,8 +373,17 @@ export function Chat(props: {
                     <rect x="3" y="3" width="10" height="10" rx="1.5" />
                   </svg>
                 ) : (
-                  <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor"
-                    strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <svg
+                    viewBox="0 0 16 16"
+                    width="16"
+                    height="16"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    aria-hidden="true"
+                  >
                     <rect x="6" y="1.5" width="4" height="8" rx="2" />
                     <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" />
                     <path d="M8 12v2.5M5.5 14.5h5" />
@@ -427,4 +456,3 @@ function DeleteButton({ onDelete }: { onDelete: () => void }) {
     </button>
   );
 }
-

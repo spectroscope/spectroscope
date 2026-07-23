@@ -22,7 +22,7 @@
   --surface-3: #e5e5ea;
   --border: rgba(0, 0, 0, 0.11);
   --border-strong: rgba(0, 0, 0, 0.22);
-  --scrim: rgba(29, 29, 31, 0.40);
+  --scrim: rgba(29, 29, 31, 0.4);
   --glint: rgba(255, 255, 255, 0.6);
   --glint-bright: rgba(255, 255, 255, 0.95);
   --hairline: rgba(0, 0, 0, 0.08);
@@ -36,11 +36,11 @@
   --accent-pressed: #005bb8;
   --accent-soft: rgba(0, 113, 227, 0.16);
   --accent-glow: rgba(0, 113, 227, 0.24);
-  --sand: #6e6e73;           /* calm graphite eyebrows — the Apple way */
+  --sand: #6e6e73; /* calm graphite eyebrows — the Apple way */
   --sand-glow: rgba(110, 110, 115, 0.16);
   --ok: #248a3d;
   --warn: #c07600;
-  --warn-soft: rgba(192, 118, 0, 0.10);
+  --warn-soft: rgba(192, 118, 0, 0.1);
   --error: #d70015;
   --error-soft: rgba(215, 0, 21, 0.08);
   --agent-root: #0071e3;

@@ -22,12 +22,13 @@ function Node({ name, value, depth, last }: { name?: string; value: unknown; dep
   const [open, setOpen] = useState(depth < 2);
   const pad = { paddingLeft: depth * 14 };
 
-  const key = name !== undefined ? (
-    <>
-      <span className="pf-json__key">"{name}"</span>
-      <Punct>: </Punct>
-    </>
-  ) : null;
+  const key =
+    name !== undefined ? (
+      <>
+        <span className="pf-json__key">"{name}"</span>
+        <Punct>: </Punct>
+      </>
+    ) : null;
 
   if (!isObj) {
     return (

@@ -15,11 +15,15 @@ describe("layoutDagre", () => {
   });
 
   it("is deterministic — same input yields the same positions", () => {
-    const build = () => layoutDagre(
-      [node("a"), node("b"), node("c")],
-      [{ id: "e1", source: "a", target: "b" }, { id: "e2", source: "a", target: "c" }],
-      { nodeW: 200, nodeH: 80 },
-    );
+    const build = () =>
+      layoutDagre(
+        [node("a"), node("b"), node("c")],
+        [
+          { id: "e1", source: "a", target: "b" },
+          { id: "e2", source: "a", target: "c" },
+        ],
+        { nodeW: 200, nodeH: 80 },
+      );
     expect(build().map((n) => n.position)).toEqual(build().map((n) => n.position));
   });
 

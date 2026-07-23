@@ -65,13 +65,9 @@ export function TextView({ events }: { events: readonly RunEvent[] }) {
           </button>
         </div>
         <span className="textview-note">
-          {mode === "jsonl"
-            ? t(lang, "tf.jsonlNote", { n: jsonl.length })
-            : t(lang, "tf.textNote")}
+          {mode === "jsonl" ? t(lang, "tf.jsonlNote", { n: jsonl.length }) : t(lang, "tf.textNote")}
         </span>
-        <CopyButton
-          text={() => (mode === "jsonl" ? jsonl.join("\n") : feedToPlainText(feed))}
-        />
+        <CopyButton text={() => (mode === "jsonl" ? jsonl.join("\n") : feedToPlainText(feed))} />
       </div>
 
       {events.length === 0 ? (
@@ -91,9 +87,7 @@ export function TextView({ events }: { events: readonly RunEvent[] }) {
           <div className="tf-feed">
             {feed.map((s, i) => (
               <div key={i} className={`tf tf--${s.kind}`}>
-                {s.agentId !== "main" && s.agentId !== "" && (
-                  <span className="tf-agent">[{s.agentId}]</span>
-                )}
+                {s.agentId !== "main" && s.agentId !== "" && <span className="tf-agent">[{s.agentId}]</span>}
                 {s.text}
               </div>
             ))}

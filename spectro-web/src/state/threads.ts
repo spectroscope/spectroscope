@@ -31,11 +31,7 @@ function ownerOf(turn: Turn, cards: Record<string, ToolCard>): string {
   }
 }
 
-export function groupTurns(
-  turns: Turn[],
-  cards: Record<string, ToolCard>,
-  agents: AgentInfo[],
-): ChatBlock[] {
+export function groupTurns(turns: Turn[], cards: Record<string, ToolCard>, agents: AgentInfo[]): ChatBlock[] {
   const byId = new Map(agents.map((a) => [a.id, a]));
   const blocks: ChatBlock[] = [];
   turns.forEach((turn, index) => {

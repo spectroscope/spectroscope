@@ -7,7 +7,14 @@ import type { CSSProperties } from "react";
 import type { ClientMessage, RunEvent } from "./events";
 import { connect } from "./transport/ws";
 import type { Connection, ConnectionStatus } from "./transport/ws";
-import { initialState, normalizeReplay, recordOutgoing, recordResumeMarker, reduceAll, traceFromEvents } from "./state/reducer";
+import {
+  initialState,
+  normalizeReplay,
+  recordOutgoing,
+  recordResumeMarker,
+  reduceAll,
+  traceFromEvents,
+} from "./state/reducer";
 import type { UiState } from "./state/reducer";
 import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
@@ -28,7 +35,15 @@ import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
-import { openRightPanel, setActiveRightTab, setImagesW, setRightPanelW, setSidebarW, toggleRightPanel, useLayout } from "./state/layout";
+import {
+  openRightPanel,
+  setActiveRightTab,
+  setImagesW,
+  setRightPanelW,
+  setSidebarW,
+  toggleRightPanel,
+  useLayout,
+} from "./state/layout";
 import { TextView } from "./components/TextView";
 import { TraceView } from "./components/TraceView";
 import { UsageFooter } from "./components/UsageFooter";
@@ -41,8 +56,19 @@ import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
-import { backToLive as labBackToLive, pushLive as labPushLive, resetLive as labResetLive } from "./state/stepper";
-import { fleetPushLive, fleetLoadScenario, hydrateFleet, useFleet, useFleetHubPort, fleetPending } from "./state/fleetStore";
+import {
+  backToLive as labBackToLive,
+  pushLive as labPushLive,
+  resetLive as labResetLive,
+} from "./state/stepper";
+import {
+  fleetPushLive,
+  fleetLoadScenario,
+  hydrateFleet,
+  useFleet,
+  useFleetHubPort,
+  fleetPending,
+} from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -120,7 +146,10 @@ export function App() {
       const el = e.target as HTMLElement | null;
       const typing =
         el !== null &&
-        (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.tagName === "SELECT" || el.isContentEditable);
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.tagName === "SELECT" ||
+          el.isContentEditable);
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "?") {
         e.preventDefault();
@@ -152,7 +181,10 @@ export function App() {
   // edge: width = distance from the pointer to the row's right edge.
   const resizeRightPanel = (clientX: number): void => {
     const r = chatRowRef.current?.getBoundingClientRect();
-    if (r) setRightPanelW(Math.max(RIGHT_PANEL_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - CHAT_RESERVED_MIN_WIDTH_PX)));
+    if (r)
+      setRightPanelW(
+        Math.max(RIGHT_PANEL_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - CHAT_RESERVED_MIN_WIDTH_PX)),
+      );
   };
 
   // The gallery resizes from its left edge too (owner 2026-07-20): width =
@@ -162,7 +194,8 @@ export function App() {
     const panel = chatRowRef.current?.querySelector(".image-panel");
     const row = chatRowRef.current?.getBoundingClientRect();
     const r = panel?.getBoundingClientRect();
-    if (r && row) setImagesW(Math.max(240, Math.min(r.right - clientX, row.width - CHAT_RESERVED_MIN_WIDTH_PX)));
+    if (r && row)
+      setImagesW(Math.max(240, Math.min(r.right - clientX, row.width - CHAT_RESERVED_MIN_WIDTH_PX)));
   };
 
   // Design switcher: the live (draft) skin drives the particle backdrop and the
@@ -187,10 +220,7 @@ export function App() {
       onStatus: (status, retryDelayMs) =>
         setConn({
           status,
-          retryAt:
-            status === "closed" && retryDelayMs !== undefined
-              ? Date.now() + retryDelayMs
-              : null,
+          retryAt: status === "closed" && retryDelayMs !== undefined ? Date.now() + retryDelayMs : null,
         }),
     });
     connRef.current = connection;
@@ -302,7 +332,8 @@ export function App() {
     fetch("/api/config")
       .then((r) => (r.ok ? r.json() : null))
       .then((c) => {
-        if (alive && c && typeof c.provider === "string") setServerCfg({ provider: c.provider, model: c.model ?? "" });
+        if (alive && c && typeof c.provider === "string")
+          setServerCfg({ provider: c.provider, model: c.model ?? "" });
         // Older servers do not report key presence — leave null (no hints)
         // rather than claiming "no key" against a server that never said so.
         if (alive && c && typeof c.geminiKey === "string") {
@@ -324,9 +355,7 @@ export function App() {
   // saving a key auto-dismisses it. Readiness-gated because the localStorage flag
   // alone is fragile (per-origin, blocked in the desktop shell).
   useEffect(() => {
-    setOnboardingOpen(
-      shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus),
-    );
+    setOnboardingOpen(shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus));
   }, [onboardingDismissed, serverCfg, providerStatus]);
 
   // Settings hydration: the thinking toggle and the image-backend picker seed
@@ -479,8 +508,7 @@ export function App() {
 
   // Only real stored sessions can be resumed (scenarios and imports have no
   // JSONL on this server to append to).
-  const canResume =
-    replay !== null && !replay.id.startsWith("scenario:") && !replay.id.startsWith("import:");
+  const canResume = replay !== null && !replay.id.startsWith("scenario:") && !replay.id.startsWith("import:");
 
   // Delete the selected stored session for good (JSONL + blobs). The button
   // itself carries the two-step confirm; here only the irreversible call.
@@ -505,9 +533,13 @@ export function App() {
   // win over the own live/replay session. The fold-tabs (spectrum/graph/text)
   // take a flat RunEvent[] and re-fold, so entering a fleet needs no tab change.
   const enteredFleetModel = useFleet(enteredFleet ?? undefined);
-  const tabEvents = enteredFleet !== null
-    ? enteredFleetModel.events
-    : (viewingLive ? liveEvents : (replay?.events ?? []));
+  // Memoized so the downstream fold-memos (trace, timeline) see a stable
+  // reference — the ternary alone would re-derive on every render.
+  const tabEvents = useMemo(
+    () =>
+      enteredFleet !== null ? enteredFleetModel.events : viewingLive ? liveEvents : (replay?.events ?? []),
+    [enteredFleet, enteredFleetModel.events, viewingLive, liveEvents, replay],
+  );
   // The entered fleet's parked permission gates (block 4): the same GateBar,
   // but answered over REST to the node (POST /api/fleet/{node}/gate) instead of
   // the session socket. Best-effort like stop — if the node left, its own close
@@ -530,20 +562,23 @@ export function App() {
   // useCallback so the reference stays stable across App re-renders (a live
   // socket batch, say): otherwise it would re-key FleetCanvas's layout memo and
   // re-run dagre on every render while a fleet is open.
-  const stopFleetNode = useCallback((agentId: string): void => {
-    const ok = window.confirm(
-      lang === "de"
-        ? `node "${agentId}" stoppen? (best-effort — bei verlorenem stop nochmal klicken)`
-        : `stop node "${agentId}"? (best-effort — re-click if a stop is lost)`,
-    );
-    if (!ok) return;
-    void fetch(`/api/fleet/${encodeURIComponent(agentId)}/stop`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-    }).catch(() => {
-      // best-effort: SIGTERM (or a re-click) is the fallback for a lost stop
-    });
-  }, [lang]);
+  const stopFleetNode = useCallback(
+    (agentId: string): void => {
+      const ok = window.confirm(
+        lang === "de"
+          ? `node "${agentId}" stoppen? (best-effort — bei verlorenem stop nochmal klicken)`
+          : `stop node "${agentId}"? (best-effort — re-click if a stop is lost)`,
+      );
+      if (!ok) return;
+      void fetch(`/api/fleet/${encodeURIComponent(agentId)}/stop`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      }).catch(() => {
+        // best-effort: SIGTERM (or a re-click) is the fallback for a lost stop
+      });
+    },
+    [lang],
+  );
   // The trace tab is a fold-tab too: an entered fleet's frames become inbound
   // trace entries (drill-in shows the MEMBER's wire, not the own session).
   const traceEntries = useMemo(
@@ -690,15 +725,31 @@ export function App() {
             same event stream, three different lenses. */}
         {/* Brand voice: tab labels are lowercase wire vocabulary. */}
         <nav className="tab-nav" role="tablist" aria-label="View">
-          <button type="button" role="tab" aria-selected={tab === "chat"}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "chat"}
             className={tab === "chat" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("chat")}>chat</button>
-          <button type="button" role="tab" aria-selected={tab === "spectrum"}
+            onClick={() => setTab("chat")}
+          >
+            chat
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "spectrum"}
             className={tab === "spectrum" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("spectrum")}>spectrum</button>
-          <button type="button" role="tab" aria-selected={tab === "trace"}
+            onClick={() => setTab("spectrum")}
+          >
+            spectrum
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "trace"}
             className={tab === "trace" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("trace")}>
+            onClick={() => setTab("trace")}
+          >
             trace
             {view.trace.length > 0 && (
               <span className="tab-count tabular" aria-label={`${view.trace.length} frames`}>
@@ -706,15 +757,33 @@ export function App() {
               </span>
             )}
           </button>
-          <button type="button" role="tab" aria-selected={tab === "graph"}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "graph"}
             className={tab === "graph" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("graph")}>graph</button>
-          <button type="button" role="tab" aria-selected={tab === "text"}
+            onClick={() => setTab("graph")}
+          >
+            graph
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "text"}
             className={tab === "text" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("text")}>text</button>
-          <button type="button" role="tab" aria-selected={tab === "lab"}
+            onClick={() => setTab("text")}
+          >
+            text
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "lab"}
             className={tab === "lab" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("lab")}>lab</button>
+            onClick={() => setTab("lab")}
+          >
+            lab
+          </button>
         </nav>
 
         {tab === "chat" ? (
@@ -728,76 +797,78 @@ export function App() {
               onSpawn={() => setSpawnDialogOpen(true)}
             />
           ) : (
-          /* Chat + gallery share the tab area; the graph tab is untouched.
+            /* Chat + gallery share the tab area; the graph tab is untouched.
              The right panel (agents + system context) docks on the far right. */
-          <div
-            className="chat-row"
-            data-reveal
-            ref={chatRowRef}
-            style={{ "--right-panel-w": `${layout.rightPanelW}px` } as CSSProperties}
-          >
-            <Chat
-              state={view}
-              liveView={viewingLive}
-              onSend={send}
-              onReturnToLive={returnToLive}
-              onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
-              onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
-              sendClient={sendClient}
-              onPickFolder={pickWorkspace}
-            />
-            {imagesOpen && (
-              <>
-                <Resizer
-                  collapsed={false}
-                  chevron="right"
-                  label={t(lang, "img.title")}
-                  onResize={resizeImages}
-                  onToggle={() => setImagesOpen(false)}
-                />
-                <ImagePanel
-                  images={view.images}
-                  provider={imageProvider}
-                  keys={imageKeys}
-                  width={layout.imagesW}
-                  onProviderChange={changeImageProvider}
-                  onClose={() => setImagesOpen(false)}
-                  sessionId={viewingLive ? live.workspace?.sessionId : undefined}
-                />
-              </>
-            )}
-            {layout.rightPanelOpen && (
-              <>
-                <Resizer
-                  collapsed={false}
-                  chevron="right"
-                  label="Panel"
-                  onResize={resizeRightPanel}
-                  onToggle={toggleRightPanel}
-                />
-                <RightPanel
-                  agents={view.agents}
-                  plan={view.plan}
-                  activeTab={layout.activeRightTab}
-                  onTab={setActiveRightTab}
-                  onClose={toggleRightPanel}
-                  provider={curProvider}
-                  model={curModel}
-                  thinking={thinking}
-                  workspace={view.workspace}
-                  onPickFolder={viewingLive ? pickWorkspace : undefined}
-                  canPickFolder={canPickWorkspace}
-                />
-              </>
-            )}
-          </div>
+            <div
+              className="chat-row"
+              data-reveal
+              ref={chatRowRef}
+              style={{ "--right-panel-w": `${layout.rightPanelW}px` } as CSSProperties}
+            >
+              <Chat
+                state={view}
+                liveView={viewingLive}
+                onSend={send}
+                onReturnToLive={returnToLive}
+                onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
+                onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
+                sendClient={sendClient}
+                onPickFolder={pickWorkspace}
+              />
+              {imagesOpen && (
+                <>
+                  <Resizer
+                    collapsed={false}
+                    chevron="right"
+                    label={t(lang, "img.title")}
+                    onResize={resizeImages}
+                    onToggle={() => setImagesOpen(false)}
+                  />
+                  <ImagePanel
+                    images={view.images}
+                    provider={imageProvider}
+                    keys={imageKeys}
+                    width={layout.imagesW}
+                    onProviderChange={changeImageProvider}
+                    onClose={() => setImagesOpen(false)}
+                    sessionId={viewingLive ? live.workspace?.sessionId : undefined}
+                  />
+                </>
+              )}
+              {layout.rightPanelOpen && (
+                <>
+                  <Resizer
+                    collapsed={false}
+                    chevron="right"
+                    label="Panel"
+                    onResize={resizeRightPanel}
+                    onToggle={toggleRightPanel}
+                  />
+                  <RightPanel
+                    agents={view.agents}
+                    plan={view.plan}
+                    activeTab={layout.activeRightTab}
+                    onTab={setActiveRightTab}
+                    onClose={toggleRightPanel}
+                    provider={curProvider}
+                    model={curModel}
+                    thinking={thinking}
+                    workspace={view.workspace}
+                    onPickFolder={viewingLive ? pickWorkspace : undefined}
+                    canPickFolder={canPickWorkspace}
+                  />
+                </>
+              )}
+            </div>
           )
         ) : tab === "spectrum" ? (
           <SpectrumView
             events={tabEvents}
-            running={enteredFleet !== null
-              ? enteredFleetModel.roster.some((node) => node.connected)
-              : viewingLive && live.running}
+            running={
+              enteredFleet !== null
+                ? enteredFleetModel.roster.some((node) => node.connected)
+                : viewingLive && live.running
+            }
             onOpenTrace={(agentId) => {
               setTraceAgent(agentId);
               setTab("trace");
@@ -906,7 +977,11 @@ export function App() {
         }}
       />
       {spawnDialogOpen && (
-        <div className="fleet-spawn-modal-backdrop" role="presentation" onClick={() => setSpawnDialogOpen(false)}>
+        <div
+          className="fleet-spawn-modal-backdrop"
+          role="presentation"
+          onClick={() => setSpawnDialogOpen(false)}
+        >
           <div className="fleet-spawn-modal" onClick={(e) => e.stopPropagation()}>
             <FleetSpawnForm
               contextId={enteredFleet ?? ""}

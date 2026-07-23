@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { TraceEntry } from "../state/reducer";
 import { buildRunSummary, gateExplanations } from "./explainModel";
 
-const E = (seq: number, type: string, agentId: string | undefined, payload: Record<string, unknown>): TraceEntry => ({
+const E = (
+  seq: number,
+  type: string,
+  agentId: string | undefined,
+  payload: Record<string, unknown>,
+): TraceEntry => ({
   seq,
   dir: "in",
   ts: 1000 + seq * 100,
@@ -54,7 +59,12 @@ describe("gateExplanations", () => {
   it("joins each request with its recorded outcome and the mode at ask time", () => {
     const gates = gateExplanations(stream);
     expect(gates).toHaveLength(2);
-    expect(gates[0]).toMatchObject({ callId: "c1", name: "run_command", outcome: "denied", modeAtAsk: "ask" });
+    expect(gates[0]).toMatchObject({
+      callId: "c1",
+      name: "run_command",
+      outcome: "denied",
+      modeAtAsk: "ask",
+    });
     expect(gates[1]).toMatchObject({ callId: "c2", outcome: "pending", modeAtAsk: "ask" });
   });
 

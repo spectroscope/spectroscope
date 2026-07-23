@@ -32,9 +32,11 @@ export function DoctorPanel(props: {
   const [settings, setSettings] = useState<SettingsView | null | "failed">(null);
   const [sessions, setSessions] = useState<number | null | "failed">(null);
 
+  const { open, onClose } = props;
+
   // Re-probe on every open — doctor measures, it never caches.
   useEffect(() => {
-    if (!props.open) return;
+    if (!open) return;
     setConfig(null);
     setSettings(null);
     setSessions(null);
@@ -49,16 +51,16 @@ export function DoctorPanel(props: {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((list) => setSessions((list as SessionMeta[]).length))
       .catch(() => setSessions("failed"));
-  }, [props.open]);
+  }, [open]);
 
   useEffect(() => {
-    if (!props.open) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") props.onClose();
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [props.open, props.onClose]);
+  }, [open, onClose]);
 
   if (!props.open) return null;
 
@@ -112,10 +114,7 @@ export function DoctorPanel(props: {
     {
       key: "doc.logging",
       verdict: "ok",
-      value:
-        settings !== null && settings !== "failed"
-          ? String(settings.effective.logLevel ?? "info")
-          : "…",
+      value: settings !== null && settings !== "failed" ? String(settings.effective.logLevel ?? "info") : "…",
     },
     {
       key: "doc.mode",
@@ -141,8 +140,22 @@ export function DoctorPanel(props: {
           <span className="settings-hint mono" aria-live="polite">
             {loading ? "…" : healthy ? t(lang, "doc.healthy") : t(lang, "doc.unhealthy")}
           </span>
-          <button type="button" className="icon-button" aria-label={t(lang, "common.close")} onClick={props.onClose}>
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t(lang, "common.close")}
+            onClick={props.onClose}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>
@@ -155,7 +168,9 @@ export function DoctorPanel(props: {
               <li key={c.key} className="doctor-row">
                 <span className={`dot ${c.verdict}`} aria-hidden="true" />
                 <span className="doctor-label">{t(lang, c.key)}</span>
-                <span className="doctor-value mono" title={c.value}>{c.value}</span>
+                <span className="doctor-value mono" title={c.value}>
+                  {c.value}
+                </span>
               </li>
             ))}
           </ul>

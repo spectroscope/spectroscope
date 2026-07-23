@@ -21,7 +21,7 @@ describe("detailLines", () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toContain('"type":"run_start"');
     // real newlines inside a field stay escaped - the line is ONE wire line
-    expect(lines[1]).toContain('\\n');
+    expect(lines[1]).toContain("\\n");
     expect(lines[1].includes("\n")).toBe(false);
   });
 

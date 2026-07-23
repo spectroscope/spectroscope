@@ -112,15 +112,43 @@ export function LabTransport(props: { running: boolean; children: ReactNode }) {
 
       <div className="lab-transport">
         <div className="lab-ctrl-btns">
-          <button type="button" onClick={reset} disabled={cursor === 0}
-            title={t(lang, "lab.reset")} aria-label={t(lang, "lab.reset")}>⟲</button>
-          <button type="button" onClick={stepBack} disabled={flowing || cursor === 0}
-            title={t(lang, "lab.stepBackTitle")} aria-label="Step back">‹</button>
-          <button type="button" className="play" onClick={() => setMode(flowing ? "step" : "flow")}
-            disabled={atEnd && !flowing} title={flowing ? "pause" : de ? "abspielen" : "play"}
-            aria-label={flowing ? "pause" : "play"}>{flowing ? "❚❚" : "▸"}</button>
-          <button type="button" onClick={step} disabled={flowing || atEnd}
-            title={t(lang, "lab.stepTitle")} aria-label="Step forward">›</button>
+          <button
+            type="button"
+            onClick={reset}
+            disabled={cursor === 0}
+            title={t(lang, "lab.reset")}
+            aria-label={t(lang, "lab.reset")}
+          >
+            ⟲
+          </button>
+          <button
+            type="button"
+            onClick={stepBack}
+            disabled={flowing || cursor === 0}
+            title={t(lang, "lab.stepBackTitle")}
+            aria-label="Step back"
+          >
+            ‹
+          </button>
+          <button
+            type="button"
+            className="play"
+            onClick={() => setMode(flowing ? "step" : "flow")}
+            disabled={atEnd && !flowing}
+            title={flowing ? "pause" : de ? "abspielen" : "play"}
+            aria-label={flowing ? "pause" : "play"}
+          >
+            {flowing ? "❚❚" : "▸"}
+          </button>
+          <button
+            type="button"
+            onClick={step}
+            disabled={flowing || atEnd}
+            title={t(lang, "lab.stepTitle")}
+            aria-label="Step forward"
+          >
+            ›
+          </button>
         </div>
         <div className="lab-scrub">
           <input
@@ -141,7 +169,12 @@ export function LabTransport(props: { running: boolean; children: ReactNode }) {
           <summary title={de ? "grain + tempo" : "grain + tempo"}>{de ? "mehr" : "more"}</summary>
           <div className="lab-advanced-body">
             <div className="lab-grain" role="radiogroup" aria-label={t(lang, "lab.grainAria")}>
-              {([["coarse", t(lang, "lab.blocks")], ["fine", t(lang, "lab.single")]] as const).map(([g, label]) => (
+              {(
+                [
+                  ["coarse", t(lang, "lab.blocks")],
+                  ["fine", t(lang, "lab.single")],
+                ] as const
+              ).map(([g, label]) => (
                 <button
                   key={g}
                   type="button"

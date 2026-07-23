@@ -127,7 +127,9 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
   if (kind === "html") {
     // The iframe sandbox plus the server's CSP sandbox header: scripts may
     // run, but in an opaque origin — no cookies, no /api, no parent access.
-    return <iframe className="ws-frame" sandbox="allow-scripts" src={fileUrl(path, sessionId)} title={path} />;
+    return (
+      <iframe className="ws-frame" sandbox="allow-scripts" src={fileUrl(path, sessionId)} title={path} />
+    );
   }
   if (kind === "image") {
     return (
@@ -139,7 +141,11 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
   if (error !== null) {
     return (
       <p className="ws-note">
-        {error === 415 ? t(lang, "ws.binary") : error === 413 ? t(lang, "ws.tooBig") : t(lang, "ws.loadError")}
+        {error === 415
+          ? t(lang, "ws.binary")
+          : error === 413
+            ? t(lang, "ws.tooBig")
+            : t(lang, "ws.loadError")}
       </p>
     );
   }
@@ -270,7 +276,13 @@ export function WorkspaceTab({
           ⟳
         </button>
       </div>
-      <div className="ws-tree" role="tree" aria-label="Workspace" ref={treeRef} style={{ flex: `0 0 ${split}%` }}>
+      <div
+        className="ws-tree"
+        role="tree"
+        aria-label="Workspace"
+        ref={treeRef}
+        style={{ flex: `0 0 ${split}%` }}
+      >
         {tree.entries.length === 0 ? (
           <p className="ws-note">{t(lang, "ws.empty")}</p>
         ) : (

@@ -153,18 +153,19 @@ export const LLM_DIR_LABEL: Record<LlmDir, string> = {
  * stay local. Everything harness-internal (gate, plan, introspection, A2A)
  * never leaves the process: "—".
  */
-export function wireProtocol(
-  type: string,
-  provider: string | null,
-  toolName: string | null,
-): string {
+export function wireProtocol(type: string, provider: string | null, toolName: string | null): string {
   const llmStream = provider === "ollama" ? "NDJSON" : provider === null ? "—" : "SSE";
   switch (type) {
     case "tool_call":
     case "tool_result":
       if (toolName !== null && toolName.startsWith("mcp__")) return "JSON-RPC";
-      if (toolName === "web_fetch" || toolName === "generate_image"
-          || toolName === "web_search" || toolName === "browse_page") return "HTTP";
+      if (
+        toolName === "web_fetch" ||
+        toolName === "generate_image" ||
+        toolName === "web_search" ||
+        toolName === "browse_page"
+      )
+        return "HTTP";
       return "local";
     case "image_generated":
       return "HTTP";

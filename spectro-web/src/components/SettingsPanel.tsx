@@ -25,12 +25,7 @@ import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { setLang, useLang } from "../state/lang";
-import {
-  fetchSettings,
-  putSettings,
-  originLabel,
-  type SettingsView,
-} from "../state/serverSettings";
+import { fetchSettings, putSettings, originLabel, type SettingsView } from "../state/serverSettings";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
 
 function Switch({
@@ -94,13 +89,7 @@ function OriginRow({
  *  fire a PUT per key and risk two in-flight writes resolving out of order.
  *  Resyncs its draft whenever the server-resolved value changes under it
  *  (e.g. a reset elsewhere in the page refreshed the view). */
-function DraftInput({
-  value,
-  onCommit,
-}: {
-  value: string;
-  onCommit: (next: string) => void;
-}) {
+function DraftInput({ value, onCommit }: { value: string; onCommit: (next: string) => void }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
@@ -189,7 +178,10 @@ export function SettingsPanel({
       model: settingsModel,
       // Quiet background persist for the auto-snap (no "saved" flash) — and a
       // self-contained writer, since saveUser is defined below the early return.
-      onModelChange: (m) => void putSettings("user", { model: m === "" ? null : m }).then(setView).catch(() => {}),
+      onModelChange: (m) =>
+        void putSettings("user", { model: m === "" ? null : m })
+          .then(setView)
+          .catch(() => {}),
       autoPick: true,
     },
   );
@@ -267,8 +259,22 @@ export function SettingsPanel({
           <span className="settings-hint" aria-live="polite">
             {savedFlash ? t(lang, "set.saved") : ""}
           </span>
-          <button type="button" className="icon-button" aria-label={t(lang, "common.close")} onClick={onClose}>
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t(lang, "common.close")}
+            onClick={onClose}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>
@@ -290,7 +296,9 @@ export function SettingsPanel({
           )}
 
           {/* ---- Design — auto-saves on selection (owner decision) ---- */}
-          <div className="settings-label" id="skin-label">{t(lang, "set.secDesign")}</div>
+          <div className="settings-label" id="skin-label">
+            {t(lang, "set.secDesign")}
+          </div>
           <div className="design-picker" role="radiogroup" aria-labelledby="skin-label">
             {DESIGNS.map((d) => (
               <button
@@ -346,7 +354,10 @@ export function SettingsPanel({
               role="radio"
               aria-checked={lang === "de"}
               className={`settings-seg-option${lang === "de" ? " settings-seg-option--active" : ""}`}
-              onClick={() => { setLang("de"); flash(); }}
+              onClick={() => {
+                setLang("de");
+                flash();
+              }}
             >
               Deutsch
             </button>
@@ -355,14 +366,25 @@ export function SettingsPanel({
               role="radio"
               aria-checked={lang === "en"}
               className={`settings-seg-option${lang === "en" ? " settings-seg-option--active" : ""}`}
-              onClick={() => { setLang("en"); flash(); }}
+              onClick={() => {
+                setLang("en");
+                flash();
+              }}
             >
               English
             </button>
           </div>
 
-          {loadFailed && <p className="settings-note settings-error" aria-live="polite">{t(lang, "set.loadError")}</p>}
-          {saveError && <p className="settings-note settings-error" aria-live="polite">{saveError}</p>}
+          {loadFailed && (
+            <p className="settings-note settings-error" aria-live="polite">
+              {t(lang, "set.loadError")}
+            </p>
+          )}
+          {saveError && (
+            <p className="settings-note settings-error" aria-live="polite">
+              {saveError}
+            </p>
+          )}
 
           {view && (
             <>
@@ -378,11 +400,17 @@ export function SettingsPanel({
                     onChange={(e) => saveUser({ provider: e.target.value, model: null })}
                   >
                     {PROVIDERS.map((p) => (
-                      <option key={p} value={p}>{p}</option>
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
                     ))}
                   </select>
-                  <OriginRow view={view} field="provider" lang={lang}
-                    onReset={() => saveUser({ provider: null })} />
+                  <OriginRow
+                    view={view}
+                    field="provider"
+                    lang={lang}
+                    onReset={() => saveUser({ provider: null })}
+                  />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.model")}</span>
@@ -397,8 +425,12 @@ export function SettingsPanel({
                     onKeySaved={onKeySaved}
                   />
                   {settingsModelMode !== "needs-key" && (
-                    <OriginRow view={view} field="model" lang={lang}
-                      onReset={() => saveUser({ model: null })} />
+                    <OriginRow
+                      view={view}
+                      field="model"
+                      lang={lang}
+                      onReset={() => saveUser({ model: null })}
+                    />
                   )}
                 </label>
                 <label className="settings-field">
@@ -410,8 +442,12 @@ export function SettingsPanel({
                     <option value="on">{t(lang, "set.on")}</option>
                     <option value="off">{t(lang, "set.off")}</option>
                   </select>
-                  <OriginRow view={view} field="thinking" lang={lang}
-                    onReset={() => saveUser({ thinking: null })} />
+                  <OriginRow
+                    view={view}
+                    field="thinking"
+                    lang={lang}
+                    onReset={() => saveUser({ thinking: null })}
+                  />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.imageBackend")}</span>
@@ -424,11 +460,17 @@ export function SettingsPanel({
                     }
                   >
                     {IMAGE_PROVIDERS.map((p) => (
-                      <option key={p} value={p}>{p}</option>
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
                     ))}
                   </select>
-                  <OriginRow view={view} field="imageProvider" lang={lang}
-                    onReset={() => saveUser({ imageProvider: null })} />
+                  <OriginRow
+                    view={view}
+                    field="imageProvider"
+                    lang={lang}
+                    onReset={() => saveUser({ imageProvider: null })}
+                  />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.imageModel")}</span>
@@ -441,11 +483,17 @@ export function SettingsPanel({
                       String(view.effective.imageProvider ?? "gemini"),
                       String(view.effective.imageModel ?? ""),
                     ).map((m) => (
-                      <option key={m} value={m}>{m}</option>
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
                     ))}
                   </select>
-                  <OriginRow view={view} field="imageModel" lang={lang}
-                    onReset={() => saveUser({ imageModel: null })} />
+                  <OriginRow
+                    view={view}
+                    field="imageModel"
+                    lang={lang}
+                    onReset={() => saveUser({ imageModel: null })}
+                  />
                 </label>
               </div>
 
@@ -461,10 +509,18 @@ export function SettingsPanel({
                 <p className="settings-note">{t(lang, "set.wsNone")}</p>
               )}
               <div className="settings-ws">
-                <OriginRow view={view} field="workspace" lang={lang}
+                <OriginRow
+                  view={view}
+                  field="workspace"
+                  lang={lang}
                   onReset={() => saveUser({ workspace: null })}
-                  resetTitle={t(lang, "set.wsResetToEnv")} />
-                <button type="button" className="ghost settings-forget" onClick={() => void pickDefaultWorkspace()}>
+                  resetTitle={t(lang, "set.wsResetToEnv")}
+                />
+                <button
+                  type="button"
+                  className="ghost settings-forget"
+                  onClick={() => void pickDefaultWorkspace()}
+                >
                   {t(lang, "set.pick")}
                 </button>
               </div>
@@ -479,11 +535,17 @@ export function SettingsPanel({
                   onChange={(e) => saveUser({ logLevel: e.target.value })}
                 >
                   {LOG_LEVELS.map((l) => (
-                    <option key={l} value={l}>{l}</option>
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
                   ))}
                 </select>
-                <OriginRow view={view} field="logLevel" lang={lang}
-                  onReset={() => saveUser({ logLevel: null })} />
+                <OriginRow
+                  view={view}
+                  field="logLevel"
+                  lang={lang}
+                  onReset={() => saveUser({ logLevel: null })}
+                />
               </label>
               <p className="settings-note">{t(lang, "set.logHint")}</p>
               <p className="settings-note">{t(lang, "set.logApplies")}</p>
@@ -498,8 +560,12 @@ export function SettingsPanel({
                     value={String(view.effective.chromeBinary ?? "")}
                     onCommit={(v) => saveUser({ chromeBinary: v === "" ? null : v })}
                   />
-                  <OriginRow view={view} field="chromeBinary" lang={lang}
-                    onReset={() => saveUser({ chromeBinary: null })} />
+                  <OriginRow
+                    view={view}
+                    field="chromeBinary"
+                    lang={lang}
+                    onReset={() => saveUser({ chromeBinary: null })}
+                  />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.sttModel")}</span>
@@ -507,8 +573,12 @@ export function SettingsPanel({
                     value={String(view.effective.sttModel ?? "")}
                     onCommit={(v) => saveUser({ sttModel: v === "" ? null : v })}
                   />
-                  <OriginRow view={view} field="sttModel" lang={lang}
-                    onReset={() => saveUser({ sttModel: null })} />
+                  <OriginRow
+                    view={view}
+                    field="sttModel"
+                    lang={lang}
+                    onReset={() => saveUser({ sttModel: null })}
+                  />
                 </label>
               </div>
             </>

@@ -1,9 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { buildGearModel, overridableFields, parseBlockJson, parseLocalOverrideValue, rulesWith, rulesWithout, MODES } from "./workspaceGear";
+import {
+  buildGearModel,
+  overridableFields,
+  parseBlockJson,
+  parseLocalOverrideValue,
+  rulesWith,
+  rulesWithout,
+  MODES,
+} from "./workspaceGear";
 
 const wsInfo = { sessionId: "s-1", path: "/Users/x/SpectroDemo", configured: true };
-const view = { effective: { permissionMode: "ask" }, origins: {}, files: {},
-  layers: { project: { autoApprove: ["run_command:git status*"] } }, workspace: "/Users/x/SpectroDemo" } as never;
+const view = {
+  effective: { permissionMode: "ask" },
+  origins: {},
+  files: {},
+  layers: { project: { autoApprove: ["run_command:git status*"] } },
+  workspace: "/Users/x/SpectroDemo",
+} as never;
 
 describe("workspaceGear model", () => {
   it("builds the pinned model from the settings view", () => {
@@ -46,8 +59,10 @@ it("local overrides offer only session-scoped scalars", () => {
 });
 
 it("parseBlockJson answers ok or a readable error", () => {
-  expect(parseBlockJson('{ "notes": { "command": "/x" } }')).toEqual(
-    { ok: true, value: { notes: { command: "/x" } } });
+  expect(parseBlockJson('{ "notes": { "command": "/x" } }')).toEqual({
+    ok: true,
+    value: { notes: { command: "/x" } },
+  });
   const bad = parseBlockJson("{ nope");
   expect(bad.ok).toBe(false);
   if (!bad.ok) expect(bad.error.length).toBeGreaterThan(0);

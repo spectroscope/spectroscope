@@ -16,7 +16,10 @@
           var raw = localStorage.getItem("spectroscope:design");
           var p = raw ? JSON.parse(raw) : {};
           var ids = ["classic", "nebula", "nocturne", "obsidian", "staffwise", "neon-riot"];
-          document.documentElement.setAttribute("data-design", ids.indexOf(p.design) >= 0 ? p.design : "classic");
+          document.documentElement.setAttribute(
+            "data-design",
+            ids.indexOf(p.design) >= 0 ? p.design : "classic",
+          );
         } catch (e) {
           /* storage blocked — classic stands */
         }

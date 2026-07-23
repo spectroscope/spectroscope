@@ -9,19 +9,36 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { RunEvent } from "../events";
 import { buildOverview, activityAt, type Activity, type OverviewNode } from "./overviewModel";
 
-const PAD = 10;        // outer padding
+const PAD = 10; // outer padding
 const MIN_INNER = 300; // never lay out narrower than the drawer minimum
 const MAX_INNER = 720; // a reading width — the pane centers wider canvases
-const ACT_H = 26;      // activity height
-const V_GAP = 8;       // vertical gap between activities
-const BAR_H = 3;       // split/join bar height
-const BR_GAP = 6;      // gap between branch columns
-const BR_HEAD = 14;    // branch header (agent id) height
-const CHAR_PX = 6.2;   // ≈ width of one 10px ui-monospace character
+const ACT_H = 26; // activity height
+const V_GAP = 8; // vertical gap between activities
+const BAR_H = 3; // split/join bar height
+const BR_GAP = 6; // gap between branch columns
+const BR_HEAD = 14; // branch header (agent id) height
+const CHAR_PX = 6.2; // ≈ width of one 10px ui-monospace character
 
-interface PlacedAct { a: Activity; x: number; y: number; w: number; }
-interface PlacedBar { y: number; x: number; w: number; blockId: string; blockFrom: number; }
-interface PlacedHead { x: number; y: number; w: number; text: string; blockFrom: number; }
+interface PlacedAct {
+  a: Activity;
+  x: number;
+  y: number;
+  w: number;
+}
+interface PlacedBar {
+  y: number;
+  x: number;
+  w: number;
+  blockId: string;
+  blockFrom: number;
+}
+interface PlacedHead {
+  x: number;
+  y: number;
+  w: number;
+  text: string;
+  blockFrom: number;
+}
 
 interface Layout {
   acts: PlacedAct[];
@@ -35,8 +52,7 @@ interface Layout {
 /** Lay the flow out into the ACTUAL pane width — widen the pane and every
  *  box (and its visible text) widens with it, up to a reading width. */
 function layout(nodes: OverviewNode[], paneW: number): Layout {
-  const inner = Math.min(MAX_INNER,
-    Math.max(MIN_INNER, paneW - PAD * 2 - 8 /* scrollbar allowance */));
+  const inner = Math.min(MAX_INNER, Math.max(MIN_INNER, paneW - PAD * 2 - 8 /* scrollbar allowance */));
   const spineW = inner;
   const width = inner + PAD * 2;
   const cx = width / 2;
@@ -62,7 +78,13 @@ function layout(nodes: OverviewNode[], paneW: number): Layout {
     let maxH = 0;
     nd.branches.forEach((b, bi) => {
       const bx = left + bi * (brW + BR_GAP);
-      heads.push({ x: bx, y, w: brW, text: b.label ? `${b.agentId} · ${b.label}` : b.agentId, blockFrom: nd.from });
+      heads.push({
+        x: bx,
+        y,
+        w: brW,
+        text: b.label ? `${b.agentId} · ${b.label}` : b.agentId,
+        blockFrom: nd.from,
+      });
       let by = y + BR_HEAD;
       for (const a of b.activities) {
         acts.push({ a, x: bx, y: by, w: brW });
@@ -137,12 +159,22 @@ export function FlowOverview({ events, n, onSeek }: FlowOverviewProps) {
             key={`bar${i}`}
             data-oid={b.blockId}
             className={`pf-ov__bar ${b.blockId === currentId ? "is-current" : ""}`}
-            x={b.x} y={b.y} width={b.w} height={BAR_H} rx={1.5}
+            x={b.x}
+            y={b.y}
+            width={b.w}
+            height={BAR_H}
+            rx={1.5}
             onClick={() => seek(b.blockFrom + 1)}
           />
         ))}
         {lay.heads.map((h, i) => (
-          <text key={`head${i}`} className="pf-ov__branch" x={h.x + h.w / 2} y={h.y + BR_HEAD - 4} textAnchor="middle">
+          <text
+            key={`head${i}`}
+            className="pf-ov__branch"
+            x={h.x + h.w / 2}
+            y={h.y + BR_HEAD - 4}
+            textAnchor="middle"
+          >
             {fit(h.text, h.w)}
           </text>
         ))}
@@ -155,16 +187,16 @@ export function FlowOverview({ events, n, onSeek }: FlowOverviewProps) {
             tabIndex={onSeek ? 0 : undefined}
             aria-label={a.label}
             onClick={() => seek(a.from + 1)}
-            onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") seek(a.from + 1); }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") seek(a.from + 1);
+            }}
           >
             <title>{`${a.label} · ${a.from + 1}–${a.to + 1}`}</title>
             <rect x={x} y={y} width={w} height={ACT_H} rx={6} />
             <text x={x + w / 2} y={y + ACT_H / 2 + 3.5} textAnchor="middle">
               {fit(a.label, w)}
             </text>
-            {a.gate && (
-              <circle className={`pf-ov__gate is-${a.gate}`} cx={x + w - 7} cy={y + 7} r={3.5} />
-            )}
+            {a.gate && <circle className={`pf-ov__gate is-${a.gate}`} cx={x + w - 7} cy={y + 7} r={3.5} />}
           </g>
         ))}
       </svg>

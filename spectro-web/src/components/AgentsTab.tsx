@@ -44,15 +44,16 @@ export function AgentsTab({
               <span className="agent-card-head">
                 <span className={`agent-dot agent-dot--${a.state}`} aria-hidden="true" />
                 <span className="agent-card-name mono">
-                  {a.label !== null ? `${a.label} · ` : ""}{a.id}
+                  {a.label !== null ? `${a.label} · ` : ""}
+                  {a.id}
                 </span>
                 {isMain && <span className="agent-role-tag">{t(lang, "agents.main")}</span>}
-                <span className={`agent-badge agent-badge--${a.state}`}>{t(lang, `map.life.${a.state}`)}</span>
+                <span className={`agent-badge agent-badge--${a.state}`}>
+                  {t(lang, `map.life.${a.state}`)}
+                </span>
               </span>
               {a.task !== "" && <span className="agent-card-task">{a.task}</span>}
-              {a.lastStatus !== null && (
-                <span className="agent-card-status">» {a.lastStatus}</span>
-              )}
+              {a.lastStatus !== null && <span className="agent-card-status">» {a.lastStatus}</span>}
               <span className="agent-card-meta mono tabular">
                 {tokenLabel(a.inTokens)} in · {tokenLabel(a.outTokens)} out
               </span>

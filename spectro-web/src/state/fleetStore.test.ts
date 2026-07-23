@@ -25,8 +25,15 @@ function eventFrame(sender: string, epoch: number): FleetFrame {
   return {
     type: "fleet_event",
     frame: {
-      sender, epoch, contextId: "c", taskId: "t", sequence: 0, parentId: null,
-      topic: "run." + sender, ts: 1, payload: { type: "text_delta", agentId: sender, text: "x", ts: 1 },
+      sender,
+      epoch,
+      contextId: "c",
+      taskId: "t",
+      sequence: 0,
+      parentId: null,
+      topic: "run." + sender,
+      ts: 1,
+      payload: { type: "text_delta", agentId: sender, text: "x", ts: 1 },
     },
   };
 }
@@ -84,7 +91,11 @@ describe("fleetStore", () => {
   });
 
   it("never throws when the probe fails", async () => {
-    __setTestHooks({ fetch: async () => { throw new Error("network down"); } });
+    __setTestHooks({
+      fetch: async () => {
+        throw new Error("network down");
+      },
+    });
     await hydrateFleet();
     expect(__getFleet().roster).toEqual([]);
   });
@@ -100,18 +111,39 @@ function ctxEvent(sender: string, ctx: string, sequence: number, payload: RunEve
   return {
     type: "fleet_event",
     frame: {
-      sender, epoch: 0, contextId: ctx, taskId: "t", sequence, parentId: null,
-      topic: ctx + ".events", ts: payload.ts, payload,
+      sender,
+      epoch: 0,
+      contextId: ctx,
+      taskId: "t",
+      sequence,
+      parentId: null,
+      topic: ctx + ".events",
+      ts: payload.ts,
+      payload,
     },
   };
 }
 
-const delta = (sender: string, text: string): RunEvent =>
-  ({ type: "text_delta", agentId: sender, text, ts: 1 });
-const gateRequest = (sender: string, callId: string, ts: number): RunEvent =>
-  ({ type: "permission_request", agentId: sender, callId, name: "run_command", input: {}, ts });
-const gateDecision = (callId: string, allowed: boolean, ts: number): RunEvent =>
-  ({ type: "permission_decision", callId, allowed, ts });
+const delta = (sender: string, text: string): RunEvent => ({
+  type: "text_delta",
+  agentId: sender,
+  text,
+  ts: 1,
+});
+const gateRequest = (sender: string, callId: string, ts: number): RunEvent => ({
+  type: "permission_request",
+  agentId: sender,
+  callId,
+  name: "run_command",
+  input: {},
+  ts,
+});
+const gateDecision = (callId: string, allowed: boolean, ts: number): RunEvent => ({
+  type: "permission_decision",
+  callId,
+  allowed,
+  ts,
+});
 
 describe("fleetStore multi-fleet keying", () => {
   beforeEach(() => __resetForTests());
@@ -132,7 +164,10 @@ describe("fleetStore multi-fleet keying", () => {
 
   it("summarizes agent/online counts and a pending gate per fleet", () => {
     fleetPushLive([
-      { type: "fleet_roster", nodes: [ctxNode("a", "ctxA", true), ctxNode("b", "ctxA", false)] } as unknown as RunEvent,
+      {
+        type: "fleet_roster",
+        nodes: [ctxNode("a", "ctxA", true), ctxNode("b", "ctxA", false)],
+      } as unknown as RunEvent,
       ctxEvent("a", "ctxA", 0, gateRequest("a", "c1", 2)) as unknown as RunEvent,
     ]);
     const summary = __getFleets().find((f) => f.contextId === "ctxA")!;
@@ -178,14 +213,26 @@ describe("fleetPending", () => {
     // an operator can answer it (agentId names the node the answer POSTs to).
     const pending = fleetPending(
       model([
-        { type: "permission_request", agentId: "node-a", callId: "c1", name: "write_file", input: { path: "a.txt" }, ts: 1 },
-        { type: "permission_request", agentId: "node-b", callId: "c2", name: "run_command", input: { cmd: "ls" }, ts: 2 },
+        {
+          type: "permission_request",
+          agentId: "node-a",
+          callId: "c1",
+          name: "write_file",
+          input: { path: "a.txt" },
+          ts: 1,
+        },
+        {
+          type: "permission_request",
+          agentId: "node-b",
+          callId: "c2",
+          name: "run_command",
+          input: { cmd: "ls" },
+          ts: 2,
+        },
         { type: "permission_decision", callId: "c1", allowed: true, ts: 3 },
       ]),
     );
-    expect(pending).toEqual([
-      { callId: "c2", agentId: "node-b", name: "run_command", input: { cmd: "ls" } },
-    ]);
+    expect(pending).toEqual([{ callId: "c2", agentId: "node-b", name: "run_command", input: { cmd: "ls" } }]);
   });
 
   it("keeps the parked order — first-parked first (the queue the GateBar shows)", () => {

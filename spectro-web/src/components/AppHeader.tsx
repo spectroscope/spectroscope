@@ -98,21 +98,21 @@ export function AppHeader(props: {
         aria-expanded={props.imagesOpen}
         onClick={props.onToggleImages}
       >
-          <svg
-            viewBox="0 0 16 16"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="2" y="3" width="12" height="10" rx="2" />
-            <circle cx="6" cy="6.5" r="1" fill="currentColor" stroke="none" />
-            <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
-          </svg>
+        <svg
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2" y="3" width="12" height="10" rx="2" />
+          <circle cx="6" cy="6.5" r="1" fill="currentColor" stroke="none" />
+          <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
+        </svg>
         {props.imageCount > 0 && (
           <span className="image-toggle-count tabular" aria-hidden="true">
             {props.imageCount}
@@ -128,7 +128,17 @@ export function AppHeader(props: {
           aria-expanded={props.panelOpen}
           onClick={props.onTogglePanel}
         >
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <rect x="2" y="3" width="12" height="10" rx="2" />
             <path d="M10 3v10" />
           </svg>
@@ -169,7 +179,17 @@ export function AppHeader(props: {
         title={lang === "de" ? "Tastaturkürzel (?)" : "keyboard shortcuts (?)"}
         onClick={props.onOpenKeymap}
       >
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <rect x="1.5" y="4" width="13" height="8" rx="1.6" />
           <path d="M4 6.5h0M6.5 6.5h0M9 6.5h0M11.5 6.5h0M5 9.5h6" />
         </svg>
@@ -185,7 +205,16 @@ export function AppHeader(props: {
         aria-expanded={props.doctorOpen}
         onClick={props.onToggleDoctor}
       >
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
           <circle cx="5" cy="8" r="2.2" />
           <path d="M10 4.5v7M12.5 6v4M15 7v2" />
         </svg>
@@ -201,7 +230,17 @@ export function AppHeader(props: {
       >
         {/* A real GEAR — the button opens the settings PAGE now; the old sun
             icon read as a theme toggle and nobody found the settings. */}
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>

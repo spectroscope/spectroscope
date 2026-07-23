@@ -15,10 +15,7 @@ function ago(lastSeen: number, now: number): string {
   return `${Math.round(secs / 3600)}h`;
 }
 
-export function FleetRoster(props: {
-  roster: FleetNode[];
-  epochBySender: Record<string, number>;
-}) {
+export function FleetRoster(props: { roster: FleetNode[]; epochBySender: Record<string, number> }) {
   const lang = useLang();
   const now = Date.now();
   return (
@@ -39,10 +36,7 @@ export function FleetRoster(props: {
             <li key={node.id}>
               <div className={`fleet-node fleet-node--${node.connected ? "online" : "offline"}`}>
                 <span className="fleet-node-head">
-                  <span
-                    className={`dot ${node.connected ? "ok pulse" : "faint"}`}
-                    aria-hidden="true"
-                  />
+                  <span className={`dot ${node.connected ? "ok pulse" : "faint"}`} aria-hidden="true" />
                   <span className="fleet-node-id mono">{node.id}</span>
                   <span className="fleet-node-role">{node.role}</span>
                   {epoch !== undefined && epoch > 0 && (
@@ -50,14 +44,18 @@ export function FleetRoster(props: {
                       {t(lang, "fleet.epoch", { n: epoch })}
                     </span>
                   )}
-                  <span className={`fleet-node-state fleet-node-state--${node.connected ? "online" : "offline"}`}>
+                  <span
+                    className={`fleet-node-state fleet-node-state--${node.connected ? "online" : "offline"}`}
+                  >
                     {t(lang, node.connected ? "fleet.online" : "fleet.offline")}
                   </span>
                 </span>
                 {node.capabilities.length > 0 && (
                   <span className="fleet-node-caps">
                     {node.capabilities.map((cap) => (
-                      <span key={cap} className="fleet-cap mono">{cap}</span>
+                      <span key={cap} className="fleet-cap mono">
+                        {cap}
+                      </span>
                     ))}
                   </span>
                 )}

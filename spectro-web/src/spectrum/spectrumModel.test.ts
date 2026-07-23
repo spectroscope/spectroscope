@@ -5,17 +5,62 @@ import { buildSpectrum, MAX_LANE_TICKS, MAX_LANE_THINKING } from "./spectrumMode
 // A small fleet run: main spawns a worker, the worker hits a gate, reports
 // back, the run ends. Timestamps rise in steps of 100ms from t=1000.
 const fleet: RunEvent[] = [
-  { type: "run_start", runId: "r1", agentId: "main", prompt: "audit the repo", provider: "anthropic", ts: 1000 },
+  {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "audit the repo",
+    provider: "anthropic",
+    ts: 1000,
+  },
   { type: "thinking_delta", agentId: "main", text: "plan…", ts: 1100 },
   { type: "text_delta", agentId: "main", text: "ok", ts: 1200 },
   { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "scan files", ts: 1300 },
-  { type: "agent_message", from: "main", to: "worker-1", role: "task", state: "submitted", text: "scan files", ts: 1350 },
+  {
+    type: "agent_message",
+    from: "main",
+    to: "worker-1",
+    role: "task",
+    state: "submitted",
+    text: "scan files",
+    ts: 1350,
+  },
   { type: "run_start", runId: "r2", agentId: "worker-1", parentId: "main", prompt: "scan files", ts: 1400 },
-  { type: "tool_call", agentId: "worker-1", callId: "c1", name: "run_command", input: { cmd: "ls" }, ts: 1500 },
-  { type: "permission_request", agentId: "worker-1", callId: "c1", name: "run_command", input: { cmd: "ls" }, ts: 1600 },
+  {
+    type: "tool_call",
+    agentId: "worker-1",
+    callId: "c1",
+    name: "run_command",
+    input: { cmd: "ls" },
+    ts: 1500,
+  },
+  {
+    type: "permission_request",
+    agentId: "worker-1",
+    callId: "c1",
+    name: "run_command",
+    input: { cmd: "ls" },
+    ts: 1600,
+  },
   { type: "permission_decision", callId: "c1", allowed: true, ts: 1700 },
-  { type: "tool_result", agentId: "worker-1", callId: "c1", output: "ok", isError: false, durationMs: 5, ts: 1800 },
-  { type: "agent_message", from: "worker-1", to: "main", role: "result", state: "completed", text: "done", ts: 1900 },
+  {
+    type: "tool_result",
+    agentId: "worker-1",
+    callId: "c1",
+    output: "ok",
+    isError: false,
+    durationMs: 5,
+    ts: 1800,
+  },
+  {
+    type: "agent_message",
+    from: "worker-1",
+    to: "main",
+    role: "result",
+    state: "completed",
+    text: "done",
+    ts: 1900,
+  },
   { type: "run_end", runId: "r2", stopReason: "end_turn", ts: 1950 },
   { type: "usage", agentId: "main", inputTokens: 100, outputTokens: 20, ts: 1980 },
   { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 2000 },
@@ -90,9 +135,7 @@ describe("buildSpectrum", () => {
   });
 
   it("thins dense token streams but never structural marks, and reports the drop", () => {
-    const flood: RunEvent[] = [
-      { type: "run_start", runId: "r1", agentId: "main", prompt: "p", ts: 1000 },
-    ];
+    const flood: RunEvent[] = [{ type: "run_start", runId: "r1", agentId: "main", prompt: "p", ts: 1000 }];
     for (let i = 0; i < MAX_LANE_TICKS + 800; i++) {
       flood.push({ type: "text_delta", agentId: "main", text: "x", ts: 1001 + i });
     }

@@ -69,7 +69,6 @@ export function useProviderModels(
     // needs-key→ready when a key is saved, which must refetch the real list with
     // no provider round-trip. model/callbacks are read fresh from `latest` so a
     // snap can't loop back into another fetch and can't act on a stale model.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider, providerStatus?.[provider]]);
 
   return { models, mode: modelFieldMode(provider, providerStatus, models) };

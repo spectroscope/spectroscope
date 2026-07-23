@@ -26,7 +26,15 @@ const run: RunEvent[] = [
   { type: "text_delta", agentId: "main", text: "Hel", ts: T } as RunEvent,
   { type: "text_delta", agentId: "main", text: "lo", ts: T } as RunEvent,
   { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: {}, ts: T } as RunEvent,
-  { type: "tool_result", agentId: "main", callId: "c1", output: "x", isError: false, durationMs: 1, ts: T } as RunEvent,
+  {
+    type: "tool_result",
+    agentId: "main",
+    callId: "c1",
+    output: "x",
+    isError: false,
+    durationMs: 1,
+    ts: T,
+  } as RunEvent,
   { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T } as RunEvent,
 ];
 
@@ -58,12 +66,7 @@ describe("stepper", () => {
     step(); // turn_start
     step(); // the whole text run in ONE click — nothing more
     let s = __getState();
-    expect(s.applied.map((e) => e.type)).toEqual([
-      "run_start",
-      "turn_start",
-      "text_delta",
-      "text_delta",
-    ]);
+    expect(s.applied.map((e) => e.type)).toEqual(["run_start", "turn_start", "text_delta", "text_delta"]);
     step(); // tool_call is its own step
     s = __getState();
     expect(s.applied[s.applied.length - 1].type).toBe("tool_call");

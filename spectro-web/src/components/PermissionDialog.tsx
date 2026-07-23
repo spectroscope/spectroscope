@@ -20,11 +20,7 @@ export function PermissionDialog(props: {
    *  checkbox stays hidden (behind a small hint) rather than offering a
    *  write that would 404. */
   workspaceConfigured: boolean;
-  onDecide: (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ) => void;
+  onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
 }) {
   const { permission } = props;
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -50,9 +46,7 @@ export function PermissionDialog(props: {
       return;
     }
     if (e.key !== "Tab") return;
-    const focusables = dialogRef.current?.querySelectorAll<HTMLElement>(
-      'button, [tabindex="0"]',
-    );
+    const focusables = dialogRef.current?.querySelectorAll<HTMLElement>('button, [tabindex="0"]');
     if (focusables === undefined || focusables.length === 0) return;
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
@@ -105,11 +99,7 @@ export function PermissionDialog(props: {
           </label>
           {remember && props.workspaceConfigured && (
             <label className="modal-remember-persist">
-              <input
-                type="checkbox"
-                checked={persist}
-                onChange={(e) => setPersist(e.target.checked)}
-              />{" "}
+              <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />{" "}
               {t(lang, "perm.persist")}
             </label>
           )}

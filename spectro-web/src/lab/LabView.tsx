@@ -36,11 +36,7 @@ export function LabView(props: {
   /** The current model name, shown in the Map's LLM node. */
   model?: string;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
-  onDecide: (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ) => void;
+  onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
   onReturnToLive: () => void;
   /** Present only for resumable archives — passed through to the Lab's chat. */
   onResume?: () => void;
@@ -119,17 +115,23 @@ export function LabView(props: {
   const rowRef = useRef<HTMLDivElement>(null);
   const resizeChat = (clientX: number): void => {
     const r = rowRef.current?.getBoundingClientRect();
-    if (r) setChatW(Math.max(LAB_CHAT_MIN_WIDTH_PX,
-        Math.min(clientX - r.left, r.width - LAB_CENTER_MIN_WIDTH_PX)));
+    if (r)
+      setChatW(
+        Math.max(LAB_CHAT_MIN_WIDTH_PX, Math.min(clientX - r.left, r.width - LAB_CENTER_MIN_WIDTH_PX)),
+      );
   };
   const resizeTrace = (clientX: number): void => {
     const r = rowRef.current?.getBoundingClientRect();
-    if (r) setTraceW(Math.max(LAB_TRACE_MIN_WIDTH_PX,
-        Math.min(r.right - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX)));
+    if (r)
+      setTraceW(
+        Math.max(LAB_TRACE_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX)),
+      );
   };
-  const rowClass =
-    `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;
-  const rowStyle = { "--lab-chat-w": `${layout.chatW}px`, "--lab-trace-w": `${layout.traceW}px` } as CSSProperties;
+  const rowClass = `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;
+  const rowStyle = {
+    "--lab-chat-w": `${layout.chatW}px`,
+    "--lab-trace-w": `${layout.traceW}px`,
+  } as CSSProperties;
 
   return (
     <div className={rowClass} ref={rowRef} style={rowStyle}>
@@ -152,7 +154,13 @@ export function LabView(props: {
 
       <section className="lab-center" aria-label="System-Map (Flow)">
         <LabTransport running={props.running}>
-          <FlowMap scene={st.scene} applied={st.applied} provider={props.provider} model={props.model} systemPrompt={sysPrompt ?? undefined} />
+          <FlowMap
+            scene={st.scene}
+            applied={st.applied}
+            provider={props.provider}
+            model={props.model}
+            systemPrompt={sysPrompt ?? undefined}
+          />
         </LabTransport>
 
         <LabHint />

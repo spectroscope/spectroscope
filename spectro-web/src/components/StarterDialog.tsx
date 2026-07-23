@@ -82,7 +82,7 @@ export function StarterDialog(props: { onClose: () => void }) {
       });
       const body = await res.json().catch(() => ({}));
       if (res.status === 200) {
-        setScaffold(t(lang, "starter.wrote", { n: (body.written?.length ?? 0), dir: body.dir ?? path }));
+        setScaffold(t(lang, "starter.wrote", { n: body.written?.length ?? 0, dir: body.dir ?? path }));
       } else if (res.status === 409) {
         setScaffold(t(lang, "starter.conflict", { files: (body.conflicts ?? []).join(", ") }));
       } else {
@@ -104,7 +104,12 @@ export function StarterDialog(props: { onClose: () => void }) {
         <h2 id="starter-title">{t(lang, "starter.title")}</h2>
         <p className="import-hint">
           {t(lang, "starter.hint")}
-          {version !== "" && <> · <span className="mono">dev.spectroscope:spectro-core:{version}</span></>}
+          {version !== "" && (
+            <>
+              {" "}
+              · <span className="mono">dev.spectroscope:spectro-core:{version}</span>
+            </>
+          )}
         </p>
 
         <div className="scn-list">

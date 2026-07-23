@@ -81,9 +81,7 @@ export function ImportDialog(props: {
           <span className="eyebrow sand">Import</span>
         </div>
         <h2 id="import-title">{t(lang, "imp.title")}</h2>
-        <p className="import-hint">
-          {t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" })}
-        </p>
+        <p className="import-hint">{t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" })}</p>
 
         {transcripts.length > 0 && (
           <>
@@ -115,7 +113,10 @@ export function ImportDialog(props: {
           className="import-paste"
           placeholder={t(lang, "imp.placeholder")}
           value={text}
-          onChange={(e) => { setText(e.target.value); setError(null); }}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
           rows={6}
         />
         {error !== null && <p className="import-error">{error}</p>}

@@ -7,10 +7,24 @@ import type { RunEvent } from "../events";
 import { claudeCodeToRunEvents } from "./claudeCode";
 
 const SPECTRO_TYPES = new Set([
-  "run_start", "turn_start", "text_delta", "thinking_delta", "tool_call",
-  "permission_request", "permission_decision", "tool_result", "agent_spawn",
-  "compaction", "usage", "run_end", "error", "image_generated", "context_info",
-  "agent_message", "voice_input", "plan",
+  "run_start",
+  "turn_start",
+  "text_delta",
+  "thinking_delta",
+  "tool_call",
+  "permission_request",
+  "permission_decision",
+  "tool_result",
+  "agent_spawn",
+  "compaction",
+  "usage",
+  "run_end",
+  "error",
+  "image_generated",
+  "context_info",
+  "agent_message",
+  "voice_input",
+  "plan",
 ]);
 
 export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectroscope" | "claude-code" } {

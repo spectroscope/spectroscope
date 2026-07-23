@@ -30,7 +30,15 @@ describe("petriModel", () => {
       toolCall(),
       { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: {}, ts: T },
       { type: "permission_decision", callId: "c1", allowed: true, ts: T },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "ok", isError: false, durationMs: 5, ts: T },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "ok",
+        isError: false,
+        durationMs: 5,
+        ts: T,
+      },
       { type: "usage", agentId: "main", inputTokens: 10, outputTokens: 2, ts: T },
       { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T },
     ];
@@ -56,7 +64,15 @@ describe("petriModel", () => {
       toolCall(),
       { type: "permission_request", agentId: "main", callId: "c1", name: "x", input: {}, ts: T },
       { type: "permission_decision", callId: "c1", allowed: false, ts: T },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "denied", isError: true, durationMs: 1, ts: T },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "denied",
+        isError: true,
+        durationMs: 1,
+        ts: T,
+      },
       { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T },
     ]);
     expect(transitions).toEqual(["prompt", "call", "ask", "decide", "result", "done"]);
@@ -66,11 +82,24 @@ describe("petriModel", () => {
     let m = initialMarking();
     m = fire(m, runStart()).marking;
     m = fire(m, toolCall()).marking;
-    m = fire(m, { type: "permission_request", agentId: "main", callId: "c1", name: "x", input: {}, ts: T } as RunEvent).marking;
+    m = fire(m, {
+      type: "permission_request",
+      agentId: "main",
+      callId: "c1",
+      name: "x",
+      input: {},
+      ts: T,
+    } as RunEvent).marking;
     const denied = fire(m, { type: "permission_decision", callId: "c1", allowed: false, ts: T } as RunEvent);
     expect(denied.firing.isError).toBe(true);
     const result = fire(denied.marking, {
-      type: "tool_result", agentId: "main", callId: "c1", output: "no", isError: true, durationMs: 1, ts: T,
+      type: "tool_result",
+      agentId: "main",
+      callId: "c1",
+      output: "no",
+      isError: true,
+      durationMs: 1,
+      ts: T,
     } as RunEvent);
     expect(result.firing.isError).toBe(true);
   });

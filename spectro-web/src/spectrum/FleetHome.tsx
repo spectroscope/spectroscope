@@ -47,11 +47,13 @@ export function FleetHome(props: {
         </p>
 
         <div className="fleet-home-card">
-          <p className="fleet-home-card-label mono">{de ? "einen node starten (terminal)" : "start a node (terminal)"}</p>
+          <p className="fleet-home-card-label mono">
+            {de ? "einen node starten (terminal)" : "start a node (terminal)"}
+          </p>
           <div className="fleet-home-code">
             <code className="mono">{cmd}</code>
             <button type="button" className="fleet-home-copy" onClick={copy}>
-              {copied ? (de ? "kopiert" : "copied") : (de ? "kopieren" : "copy")}
+              {copied ? (de ? "kopiert" : "copied") : de ? "kopieren" : "copy"}
             </button>
           </div>
           <div className="fleet-home-actions">

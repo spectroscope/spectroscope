@@ -17,7 +17,7 @@ function Option(props: { badge: string; free: boolean; title: string; body: Reac
         <span className="ob-opt-badge mono">{props.badge}</span>
         <span className="ob-opt-title">{props.title}</span>
         <span className={`ob-opt-tag${props.free ? " ob-opt-tag--free" : ""}`}>
-          {props.free ? (de ? "kostenlos, lokal" : "free, local") : (de ? "braucht einen key" : "needs a key")}
+          {props.free ? (de ? "kostenlos, lokal" : "free, local") : de ? "braucht einen key" : "needs a key"}
         </span>
       </div>
       <p className="ob-opt-body">{props.body}</p>
@@ -38,8 +38,15 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="km-head">
-          <span className="km-title">{de ? "willkommen — wähl ein backend" : "welcome — pick a backend"}</span>
-          <button type="button" className="km-close" onClick={props.onClose} aria-label={de ? "schließen" : "close"}>
+          <span className="km-title">
+            {de ? "willkommen — wähl ein backend" : "welcome — pick a backend"}
+          </span>
+          <button
+            type="button"
+            className="km-close"
+            onClick={props.onClose}
+            aria-label={de ? "schließen" : "close"}
+          >
             ×
           </button>
         </div>
@@ -57,9 +64,23 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
             title={de ? "lokal, kostenlos" : "local, free"}
             body={
               de ? (
-                <>installier <a href="https://ollama.com" target="_blank" rel="noreferrer">ollama</a>, dann <code>ollama pull qwen3</code> (oder ein anderes Modell). spectroscope spricht mit ihm auf <code>:11434</code>.</>
+                <>
+                  installier{" "}
+                  <a href="https://ollama.com" target="_blank" rel="noreferrer">
+                    ollama
+                  </a>
+                  , dann <code>ollama pull qwen3</code> (oder ein anderes Modell). spectroscope spricht mit
+                  ihm auf <code>:11434</code>.
+                </>
               ) : (
-                <>install <a href="https://ollama.com" target="_blank" rel="noreferrer">ollama</a>, then <code>ollama pull qwen3</code> (or any model). spectroscope talks to it on <code>:11434</code>.</>
+                <>
+                  install{" "}
+                  <a href="https://ollama.com" target="_blank" rel="noreferrer">
+                    ollama
+                  </a>
+                  , then <code>ollama pull qwen3</code> (or any model). spectroscope talks to it on{" "}
+                  <code>:11434</code>.
+                </>
               )
             }
           />
@@ -69,9 +90,23 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
             title="LM Studio"
             body={
               de ? (
-                <>lad <a href="https://lmstudio.ai" target="_blank" rel="noreferrer">LM Studio</a>, lade ein Modell, starte den Server (<code>:1234</code>) und wähl oben den Anbieter <code>lmstudio</code>.</>
+                <>
+                  lad{" "}
+                  <a href="https://lmstudio.ai" target="_blank" rel="noreferrer">
+                    LM Studio
+                  </a>
+                  , lade ein Modell, starte den Server (<code>:1234</code>) und wähl oben den Anbieter{" "}
+                  <code>lmstudio</code>.
+                </>
               ) : (
-                <>download <a href="https://lmstudio.ai" target="_blank" rel="noreferrer">LM Studio</a>, load a model, start its server (<code>:1234</code>), then pick provider <code>lmstudio</code> in the header.</>
+                <>
+                  download{" "}
+                  <a href="https://lmstudio.ai" target="_blank" rel="noreferrer">
+                    LM Studio
+                  </a>
+                  , load a model, start its server (<code>:1234</code>), then pick provider{" "}
+                  <code>lmstudio</code> in the header.
+                </>
               )
             }
           />
@@ -81,9 +116,16 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
             title={de ? "anthropic · openai · openrouter" : "anthropic · openai · openrouter"}
             body={
               de ? (
-                <>trag deinen Key in eine <code>.env</code> neben spectroscope: <code>ANTHROPIC_API_KEY=…</code> (oder <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code>) und starte neu.</>
+                <>
+                  trag deinen Key in eine <code>.env</code> neben spectroscope:{" "}
+                  <code>ANTHROPIC_API_KEY=…</code> (oder <code>OPENAI_API_KEY</code> /{" "}
+                  <code>OPENROUTER_API_KEY</code>) und starte neu.
+                </>
               ) : (
-                <>add your key to a <code>.env</code> next to spectroscope: <code>ANTHROPIC_API_KEY=…</code> (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code>), then restart.</>
+                <>
+                  add your key to a <code>.env</code> next to spectroscope: <code>ANTHROPIC_API_KEY=…</code>{" "}
+                  (or <code>OPENAI_API_KEY</code> / <code>OPENROUTER_API_KEY</code>), then restart.
+                </>
               )
             }
           />

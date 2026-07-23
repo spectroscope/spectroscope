@@ -20,7 +20,11 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
   const lang = useLang();
   const de = lang === "de";
   const [fields, setFields] = useState<NodeSpawnFields>({
-    prompt: "", context: props.contextId, role: "worker", id: "", linger: false,
+    prompt: "",
+    context: props.contextId,
+    role: "worker",
+    id: "",
+    linger: false,
   });
   const [cliPerm, setCliPerm] = useState<NodePermission>("ask");
   const [status, setStatus] = useState<SpawnStatus>({ kind: "idle" });
@@ -32,7 +36,10 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
 
   const spawn = async (): Promise<void> => {
     if (!fields.prompt.trim() || !fields.context.trim()) {
-      setStatus({ kind: "error", msg: de ? "aufgabe und context sind pflicht" : "task and context are required" });
+      setStatus({
+        kind: "error",
+        msg: de ? "aufgabe und context sind pflicht" : "task and context are required",
+      });
       return;
     }
     setStatus({ kind: "spawning" });
@@ -49,16 +56,27 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
         }),
       });
       if (res.status === 202) {
-        setStatus({ kind: "ok", msg: de ? "gestartet — erscheint gleich im roster (read-only)" : "spawning — it joins the roster shortly (read-only)" });
+        setStatus({
+          kind: "ok",
+          msg: de
+            ? "gestartet — erscheint gleich im roster (read-only)"
+            : "spawning — it joins the roster shortly (read-only)",
+        });
         setFields((f) => ({ ...f, prompt: "" }));
       } else if (res.status === 404) {
         // The server 404s uniformly (no enablement oracle), so the client cannot
         // know the exact cause — name the requirements, don't pin one.
-        setStatus({ kind: "error", msg: de
-          ? "web-spawn nicht verfügbar (braucht SPECTRO_ALLOW_SPAWN, einen laufenden hub und einen erreichbaren node-launcher — siehe server-log). nutze den CLI-befehl unten."
-          : "web spawn unavailable (needs SPECTRO_ALLOW_SPAWN, a running hub, and a reachable node launcher — check the server log). use the CLI command below." });
+        setStatus({
+          kind: "error",
+          msg: de
+            ? "web-spawn nicht verfügbar (braucht SPECTRO_ALLOW_SPAWN, einen laufenden hub und einen erreichbaren node-launcher — siehe server-log). nutze den CLI-befehl unten."
+            : "web spawn unavailable (needs SPECTRO_ALLOW_SPAWN, a running hub, and a reachable node launcher — check the server log). use the CLI command below.",
+        });
       } else if (res.status === 429) {
-        setStatus({ kind: "error", msg: de ? "zu viele spawns — kurz warten" : "too many spawns — wait a moment" });
+        setStatus({
+          kind: "error",
+          msg: de ? "zu viele spawns — kurz warten" : "too many spawns — wait a moment",
+        });
       } else {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         setStatus({ kind: "error", msg: body.error ?? (de ? "spawn abgelehnt" : "spawn rejected") });
@@ -71,7 +89,10 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
   const copy = (): void => {
     void navigator.clipboard
       ?.writeText(cmd)
-      .then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); })
+      .then(() => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      })
       .catch(() => {});
   };
 
@@ -79,30 +100,62 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
     <div className="fleet-spawn-panel">
       <div className="fleet-spawn-head">
         <span className="fleet-spawn-title mono">{de ? "node starten" : "spawn a node"}</span>
-        <button type="button" className="fleet-spawn-close" onClick={props.onClose} aria-label={de ? "schließen" : "close"}>×</button>
+        <button
+          type="button"
+          className="fleet-spawn-close"
+          onClick={props.onClose}
+          aria-label={de ? "schließen" : "close"}
+        >
+          ×
+        </button>
       </div>
 
       <label className="fleet-spawn-field">
         <span>{de ? "aufgabe" : "task"}</span>
-        <textarea rows={2} value={fields.prompt} onChange={(e) => set("prompt", e.target.value)}
-          placeholder={de ? "was soll der node tun?" : "what should the node do?"} />
+        <textarea
+          rows={2}
+          value={fields.prompt}
+          onChange={(e) => set("prompt", e.target.value)}
+          placeholder={de ? "was soll der node tun?" : "what should the node do?"}
+        />
       </label>
       <div className="fleet-spawn-row">
-        <label className="fleet-spawn-field"><span>context</span>
-          <input value={fields.context} onChange={(e) => set("context", e.target.value)}
-            placeholder={de ? "flotten-name, z. b. pr-42" : "fleet name, e.g. pr-42"} /></label>
-        <label className="fleet-spawn-field"><span>role</span>
-          <RoleField role={fields.role} onRoleChange={(r) => set("role", r)} /></label>
-      </div>
-      <div className="fleet-spawn-row">
-        <label className="fleet-spawn-field"><span>id</span>
-          <input value={fields.id} onChange={(e) => set("id", e.target.value)} placeholder="auto" /></label>
-        <label className="fleet-spawn-check">
-          <input type="checkbox" checked={fields.linger} onChange={(e) => set("linger", e.target.checked)} /> linger
+        <label className="fleet-spawn-field">
+          <span>context</span>
+          <input
+            value={fields.context}
+            onChange={(e) => set("context", e.target.value)}
+            placeholder={de ? "flotten-name, z. b. pr-42" : "fleet name, e.g. pr-42"}
+          />
+        </label>
+        <label className="fleet-spawn-field">
+          <span>role</span>
+          <RoleField role={fields.role} onRoleChange={(r) => set("role", r)} />
         </label>
       </div>
-      <button type="button" className="fleet-spawn-go" onClick={() => void spawn()} disabled={status.kind === "spawning"}>
-        {status.kind === "spawning" ? (de ? "starte…" : "spawning…") : (de ? "read-only starten" : "spawn (read-only)")}
+      <div className="fleet-spawn-row">
+        <label className="fleet-spawn-field">
+          <span>id</span>
+          <input value={fields.id} onChange={(e) => set("id", e.target.value)} placeholder="auto" />
+        </label>
+        <label className="fleet-spawn-check">
+          <input type="checkbox" checked={fields.linger} onChange={(e) => set("linger", e.target.checked)} />{" "}
+          linger
+        </label>
+      </div>
+      <button
+        type="button"
+        className="fleet-spawn-go"
+        onClick={() => void spawn()}
+        disabled={status.kind === "spawning"}
+      >
+        {status.kind === "spawning"
+          ? de
+            ? "starte…"
+            : "spawning…"
+          : de
+            ? "read-only starten"
+            : "spawn (read-only)"}
       </button>
       {status.msg && <p className={`fleet-spawn-status fleet-spawn-status--${status.kind}`}>{status.msg}</p>}
 
@@ -113,18 +166,23 @@ export function FleetSpawnForm(props: { contextId: string; hubPort: number | nul
       </p>
       <div className="fleet-spawn-cli-perm">
         {(["ask", "auto"] as const).map((p) => (
-          <button key={p} type="button"
+          <button
+            key={p}
+            type="button"
             className={`fleet-spawn-perm${cliPerm === p ? " fleet-spawn-perm--on" : ""}`}
-            onClick={() => setCliPerm(p)}>
+            onClick={() => setCliPerm(p)}
+          >
             {p}
           </button>
         ))}
-        <span className="fleet-spawn-perm-hint">{de ? "ask = du bestätigst jedes tool im cockpit" : "ask = you approve each tool in the cockpit"}</span>
+        <span className="fleet-spawn-perm-hint">
+          {de ? "ask = du bestätigst jedes tool im cockpit" : "ask = you approve each tool in the cockpit"}
+        </span>
       </div>
       <div className="fleet-spawn-cli">
         <code className="mono">{cmd}</code>
         <button type="button" className="fleet-spawn-copy" onClick={copy}>
-          {copied ? (de ? "kopiert" : "copied") : (de ? "kopieren" : "copy")}
+          {copied ? (de ? "kopiert" : "copied") : de ? "kopieren" : "copy"}
         </button>
       </div>
     </div>

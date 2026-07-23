@@ -1,0 +1,8 @@
+# build output + deps
+dist
+node_modules
+# Deliberate formatting zones — prettier would destroy their table character:
+# the i18n dict is one line per key (a 500-row translation table), and the
+# stylesheet files keep one-line rules (scan like a table, diff like one).
+src/i18n/i18n.ts
+src/styles/

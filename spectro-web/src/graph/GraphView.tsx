@@ -62,9 +62,14 @@ const kindLabel = (kind: GraphNode["kind"], lang: Lang): string => t(lang, `gk.$
 function SpectroNode({ data }: NodeProps) {
   const node = (data as { graphNode: GraphNode }).graphNode;
   const lang = useLang();
-  const classes = ["graph-node", `graph-node--${node.kind}`,
+  const classes = [
+    "graph-node",
+    `graph-node--${node.kind}`,
     node.running ? "graph-node--running" : "",
-    node.status === "error" ? "graph-node--error" : ""].filter(Boolean).join(" ");
+    node.status === "error" ? "graph-node--error" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className={classes}>
       <Handle type="target" position={Position.Top} />
@@ -74,13 +79,17 @@ function SpectroNode({ data }: NodeProps) {
       <span className="graph-node__preview">{node.preview || "\u00a0"}</span>
       <span className="graph-node__foot">
         <span className="graph-node__rel tabular">{formatRelMs(node.relMs)}</span>
-        {node.kind === "tool" && node.durationMs !== undefined &&
-          <span className="graph-node__badge tabular">{node.durationMs} ms</span>}
-        {node.kind === "turn" && node.tokens !== undefined &&
+        {node.kind === "tool" && node.durationMs !== undefined && (
+          <span className="graph-node__badge tabular">{node.durationMs} ms</span>
+        )}
+        {node.kind === "turn" && node.tokens !== undefined && (
           <span className="graph-node__badge tabular">
             {formatTokens(node.tokens.input)} in &middot; {formatTokens(node.tokens.output)} out
-          </span>}
-        {node.status === "error" && <span className="graph-node__badge graph-node__badge--error">{t(lang, "chat.error")}</span>}
+          </span>
+        )}
+        {node.status === "error" && (
+          <span className="graph-node__badge graph-node__badge--error">{t(lang, "chat.error")}</span>
+        )}
       </span>
       <Handle type="source" position={Position.Bottom} />
     </div>
@@ -106,7 +115,11 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
   const [view, setView] = useState<GraphViewMode>(initialView);
   const switchView = (v: GraphViewMode) => {
     setView(v);
-    try { localStorage.setItem(VIEW_KEY, v); } catch { /* private mode */ }
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* private mode */
+    }
   };
 
   // Replay cursor: how many events are visible. Live mode always shows all.
@@ -120,11 +133,15 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
   // Time-lapse: advance along the ts gaps, accelerated and capped.
   useEffect(() => {
     if (!playing || !isReplay) return;
-    if (cursor >= events.length) { setPlaying(false); return; }
-    const gap = cursor === 0 ? 0
-      : Math.max(0, events[cursor].ts - events[cursor - 1].ts);
-    const timer = setTimeout(() => setCursor((c) => c + 1),
-      Math.min(gap / TIME_LAPSE_SPEEDUP, TIME_LAPSE_MAX_STEP_MS));
+    if (cursor >= events.length) {
+      setPlaying(false);
+      return;
+    }
+    const gap = cursor === 0 ? 0 : Math.max(0, events[cursor].ts - events[cursor - 1].ts);
+    const timer = setTimeout(
+      () => setCursor((c) => c + 1),
+      Math.min(gap / TIME_LAPSE_SPEEDUP, TIME_LAPSE_MAX_STEP_MS),
+    );
     return () => clearTimeout(timer);
   }, [playing, cursor, events, isReplay]);
 
@@ -148,8 +165,12 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const lastLayout = useRef(0);
   useEffect(() => {
-    const immediate: FlowNode[] = graph.nodes.map((n) => ({ id: n.id, type: "spectroscope",
-      position: positions.current.get(n.id) ?? { x: 0, y: 0 }, data: { graphNode: n } }));
+    const immediate: FlowNode[] = graph.nodes.map((n) => ({
+      id: n.id,
+      type: "spectroscope",
+      position: positions.current.get(n.id) ?? { x: 0, y: 0 },
+      data: { graphNode: n },
+    }));
     setFlowNodes(immediate); // pulse/status/text immediately, keep the old positions
     const wait = Math.max(0, LAYOUT_THROTTLE_MS - (Date.now() - lastLayout.current));
     const timer = setTimeout(() => {
@@ -170,7 +191,12 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
     <div className="graph-view">
       <div className="graph-viewbar">
         <div className="lab-grain" role="radiogroup" aria-label="Graph view">
-          {([["flow", "Flow"], ["graph", "Graph"]] as const).map(([v, label]) => (
+          {(
+            [
+              ["flow", "Flow"],
+              ["graph", "Graph"],
+            ] as const
+          ).map(([v, label]) => (
             <button
               key={v}
               type="button"
@@ -186,11 +212,37 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
       </div>
       {isReplay && (
         <div className="graph-replay-bar">
-          <button type="button" onClick={() => { setPlaying(false); setCursor(events.length); }}>{t(lang, "gv.full")}</button>
-          <button type="button" onClick={() => { if (cursor >= events.length) setCursor(0); setPlaying(true); }}>{t(lang, "gv.lapse")}</button>
-          <button type="button" onClick={() => setPlaying(false)}>{t(lang, "gv.pause")}</button>
-          <input type="range" min={0} max={events.length} value={cursor}
-            onChange={(e) => { setPlaying(false); setCursor(Number(e.target.value)); }} />
+          <button
+            type="button"
+            onClick={() => {
+              setPlaying(false);
+              setCursor(events.length);
+            }}
+          >
+            {t(lang, "gv.full")}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (cursor >= events.length) setCursor(0);
+              setPlaying(true);
+            }}
+          >
+            {t(lang, "gv.lapse")}
+          </button>
+          <button type="button" onClick={() => setPlaying(false)}>
+            {t(lang, "gv.pause")}
+          </button>
+          <input
+            type="range"
+            min={0}
+            max={events.length}
+            value={cursor}
+            onChange={(e) => {
+              setPlaying(false);
+              setCursor(Number(e.target.value));
+            }}
+          />
           <span className="tabular">{t(lang, "gv.events", { n: cursor, total: events.length })}</span>
         </div>
       )}
@@ -199,25 +251,30 @@ export function GraphView({ events, isReplay }: GraphViewProps) {
           <FlowOverview
             events={events}
             n={isReplay ? cursor : events.length}
-            onSeek={isReplay
-              ? (to) => { setPlaying(false); setCursor(Math.min(to, events.length)); }
-              : undefined}
+            onSeek={
+              isReplay
+                ? (to) => {
+                    setPlaying(false);
+                    setCursor(Math.min(to, events.length));
+                  }
+                : undefined
+            }
           />
         </div>
       ) : (
-      <div className="graph-body">
-        {/* Right mouse button pans the canvas (context menu suppressed), the
+        <div className="graph-body">
+          {/* Right mouse button pans the canvas (context menu suppressed), the
             left button only clicks/selects — owner request. */}
-        <GraphCanvas
-          className="graph-canvas"
-          suppressContextMenu
-          nodes={flowNodes}
-          edges={flowEdges}
-          nodeTypes={nodeTypes}
-          onNodeClick={onNodeClick}
-        />
-        {selected && <GraphDetail node={selected} onClose={() => setSelectedId(null)} />}
-      </div>
+          <GraphCanvas
+            className="graph-canvas"
+            suppressContextMenu
+            nodes={flowNodes}
+            edges={flowEdges}
+            nodeTypes={nodeTypes}
+            onNodeClick={onNodeClick}
+          />
+          {selected && <GraphDetail node={selected} onClose={() => setSelectedId(null)} />}
+        </div>
       )}
     </div>
   );
@@ -235,7 +292,9 @@ function GraphDetail({ node, onClose }: { node: GraphNode; onClose: () => void }
           <span className="graph-node__eyebrow">{kindLabel(node.kind, lang)}</span>
           <h3>{node.label}</h3>
         </div>
-        <button type="button" onClick={onClose}>{t(lang, "common.close")}</button>
+        <button type="button" onClick={onClose}>
+          {t(lang, "common.close")}
+        </button>
       </div>
 
       {/* Timing block: when it started on the run's clock, how long it
@@ -243,10 +302,19 @@ function GraphDetail({ node, onClose }: { node: GraphNode; onClose: () => void }
       <p className="graph-detail__timing tabular">
         {t(lang, "gv.started", { t: formatRelMs(node.relMs) })}
         {node.durationMs !== undefined && <> &middot; {node.durationMs} ms</>}
-        {node.tokens !== undefined &&
-          <> &middot; {formatTokens(node.tokens.input)} in / {formatTokens(node.tokens.output)} out</>}
-        {node.kind === "answer" && node.detail.inputTokens !== undefined &&
-          <> &middot; {formatTokens(node.detail.inputTokens)} in / {formatTokens(node.detail.outputTokens ?? 0)} out</>}
+        {node.tokens !== undefined && (
+          <>
+            {" "}
+            &middot; {formatTokens(node.tokens.input)} in / {formatTokens(node.tokens.output)} out
+          </>
+        )}
+        {node.kind === "answer" && node.detail.inputTokens !== undefined && (
+          <>
+            {" "}
+            &middot; {formatTokens(node.detail.inputTokens)} in /{" "}
+            {formatTokens(node.detail.outputTokens ?? 0)} out
+          </>
+        )}
         {node.status !== undefined && <> &middot; {node.status}</>}
         {node.detail.stopReason !== undefined && <> &middot; {node.detail.stopReason}</>}
       </p>
@@ -254,24 +322,15 @@ function GraphDetail({ node, onClose }: { node: GraphNode; onClose: () => void }
       <div className="graph-detail__events">
         <div className="graph-detail__events-head">
           <h4>Events &middot; {node.events.length}</h4>
-          <CopyButton
-            text={() => JSON.stringify(node.events, null, 2)}
-            label={t(lang, "common.copyAll")}
-          />
+          <CopyButton text={() => JSON.stringify(node.events, null, 2)} label={t(lang, "common.copyAll")} />
         </div>
         {node.events.map((e, i) => (
           <div className="graph-detail__event" key={`${node.id}:${i}`}>
-            <JsonTree
-              value={e}
-              rootLabel={e.type}
-              defaultDepth={i === primaryEventIndex(node) ? 2 : 0}
-            />
+            <JsonTree value={e} rootLabel={e.type} defaultDepth={i === primaryEventIndex(node) ? 2 : 0} />
           </div>
         ))}
         {node.droppedEvents !== undefined && node.droppedEvents > 0 && (
-          <p className="graph-detail__note">
-            {t(lang, "gv.omitted", { n: node.droppedEvents })}
-          </p>
+          <p className="graph-detail__note">{t(lang, "gv.omitted", { n: node.droppedEvents })}</p>
         )}
       </div>
     </aside>

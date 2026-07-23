@@ -11,15 +11,15 @@ export function LabHint() {
     <p className="lab-hint">
       {lang === "de" ? (
         <>
-          Das Coral-Paket wandert pro <span className="mono">Step</span> eine Station weiter —
-          links das <span className="mono">Agentensystem</span> (Agent + Betriebssystem), rechts
-          die externen Dienste (<span className="mono">LLM</span>, Netz, MCP-Server).
+          Das Coral-Paket wandert pro <span className="mono">Step</span> eine Station weiter — links das{" "}
+          <span className="mono">Agentensystem</span> (Agent + Betriebssystem), rechts die externen Dienste (
+          <span className="mono">LLM</span>, Netz, MCP-Server).
         </>
       ) : (
         <>
           The coral packet moves one station per <span className="mono">Step</span> — the{" "}
-          <span className="mono">agent system</span> (agent + operating system) on the left,
-          the external services (<span className="mono">LLM</span>, network, MCP server) on the right.
+          <span className="mono">agent system</span> (agent + operating system) on the left, the external
+          services (<span className="mono">LLM</span>, network, MCP server) on the right.
         </>
       )}
     </p>

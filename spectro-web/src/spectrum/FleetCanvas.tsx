@@ -24,8 +24,11 @@ const NODE_H = 82;
 
 // Role -> brand agent-colour var, the cluster tint. Unknown roles fall back.
 const CLUSTER_VAR: Record<string, string> = {
-  worker: "--agent-worker", explore: "--agent-explore", root: "--agent-root",
-  conductor: "--agent-root", panel: "--agent-root",
+  worker: "--agent-worker",
+  explore: "--agent-explore",
+  root: "--agent-root",
+  conductor: "--agent-root",
+  panel: "--agent-root",
 };
 const clusterColor = (cluster: string): string => `var(${CLUSTER_VAR[cluster] ?? "--agent-extra"})`;
 
@@ -69,7 +72,9 @@ function SpectralNode({ data }: NodeProps) {
     isGroup ? "fleet-node-card--group" : "",
     d.detail !== "full" ? `fleet-node-card--${d.detail}` : "",
     node.pendingGate ? "fleet-node-card--gate pulse" : "",
-  ].filter(Boolean).join(" ");
+  ]
+    .filter(Boolean)
+    .join(" ");
   const style = { "--cluster": clusterColor(node.cluster) } as CSSProperties;
   return (
     <div className={classes} style={style}>
@@ -80,13 +85,22 @@ function SpectralNode({ data }: NodeProps) {
         <span className="fleet-node-card-id mono">{isGroup ? node.role : node.id}</span>
         {isGroup ? (
           <span className="fleet-node-count mono">
-            ×{node.count}{node.descendants.length > 0 ? ` +${node.descendants.length}` : ""}
-            <span className="fleet-node-expand" aria-hidden="true">▸</span>
+            ×{node.count}
+            {node.descendants.length > 0 ? ` +${node.descendants.length}` : ""}
+            <span className="fleet-node-expand" aria-hidden="true">
+              ▸
+            </span>
           </span>
         ) : node.groupId !== undefined && d.onCollapse ? (
-          <button type="button" className="fleet-node-collapse mono nodrag"
+          <button
+            type="button"
+            className="fleet-node-collapse mono nodrag"
             title="fold back into the group"
-            onClick={(e) => { e.stopPropagation(); d.onCollapse!(node.groupId!); }}>
+            onClick={(e) => {
+              e.stopPropagation();
+              d.onCollapse!(node.groupId!);
+            }}
+          >
             ▾ {node.role}
           </button>
         ) : node.role !== "" ? (
@@ -98,7 +112,10 @@ function SpectralNode({ data }: NodeProps) {
             className="fleet-node-stop nodrag"
             title="stop this node"
             aria-label={`stop ${node.id}`}
-            onClick={(e) => { e.stopPropagation(); d.onStop!(node.id); }}
+            onClick={(e) => {
+              e.stopPropagation();
+              d.onStop!(node.id);
+            }}
           >
             ⊗
           </button>
@@ -109,16 +126,31 @@ function SpectralNode({ data }: NodeProps) {
           {isGroup ? (
             // a "deck" motif — many agents stacked behind one card
             [3, 6.5, 10].map((y, i) => (
-              <line key={i} x1="0" y1={y} x2={200 - i * 20} y2={y}
-                stroke="var(--cluster)" strokeWidth={1.4} opacity={0.35 + i * 0.22} />
+              <line
+                key={i}
+                x1="0"
+                y1={y}
+                x2={200 - i * 20}
+                y2={y}
+                stroke="var(--cluster)"
+                strokeWidth={1.4}
+                opacity={0.35 + i * 0.22}
+              />
             ))
           ) : (
             <>
               <line x1="0" y1="7" x2="200" y2="7" className="fleet-node-baseline" />
               {(d.lane?.ticks ?? []).map((tick, i) => (
-                <rect key={i} x={tick.x * 198 + 1} y={2}
-                  width={tick.kind === "gate" ? 2.4 : 1.2} height={10} rx={0.5}
-                  fill={TICK_COLOR[tick.kind]} opacity={tick.kind === "token" ? 0.7 : 0.95} />
+                <rect
+                  key={i}
+                  x={tick.x * 198 + 1}
+                  y={2}
+                  width={tick.kind === "gate" ? 2.4 : 1.2}
+                  height={10}
+                  rx={0.5}
+                  fill={TICK_COLOR[tick.kind]}
+                  opacity={tick.kind === "token" ? 0.7 : 0.95}
+                />
               ))}
             </>
           )}
@@ -143,7 +175,14 @@ function SpectralNode({ data }: NodeProps) {
 
 const nodeTypes = { spectral: SpectralNode };
 
-export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, onStop }: {
+export function FleetCanvas({
+  model,
+  events,
+  onOpenTrace,
+  contextId,
+  hubPort,
+  onStop,
+}: {
   model: FleetModel;
   events: RunEvent[];
   /** Drill into an agent's own trace (reuses the sidebar/spectrum hand-off). */
@@ -179,11 +218,12 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
   // expanded mode nothing folds (an unreachable threshold); the LOD tier still
   // degrades on its own, so a huge fleet stays renderable.
   const legible = useMemo(
-    () => collapseFleetGraph(buildFleetGraph(model), {
-      minGroup: mode === "expanded" ? Number.MAX_SAFE_INTEGER : 6,
-      maxNodes: 24,
-      expanded: [...expanded],
-    }),
+    () =>
+      collapseFleetGraph(buildFleetGraph(model), {
+        minGroup: mode === "expanded" ? Number.MAX_SAFE_INTEGER : 6,
+        maxNodes: 24,
+        expanded: [...expanded],
+      }),
     [model, expanded, mode],
   );
 
@@ -196,7 +236,10 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
     setExpanded((prev) => {
       let changed = false;
       const next = new Set<string>();
-      prev.forEach((id) => { if (live.has(id)) next.add(id); else changed = true; });
+      prev.forEach((id) => {
+        if (live.has(id)) next.add(id);
+        else changed = true;
+      });
       return changed ? next : prev;
     });
   }, [legible]);
@@ -210,7 +253,7 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
       position: { x: 0, y: 0 },
       data: {
         node: n,
-        lane: n.kind === "agent" ? laneById.get(n.id) ?? null : null,
+        lane: n.kind === "agent" ? (laneById.get(n.id) ?? null) : null,
         detail: legible.detail,
         onCollapse: n.groupId !== undefined ? collapseGroup : undefined,
         onStop: n.kind === "agent" ? onStop : undefined,
@@ -228,14 +271,17 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
 
   // A group card expands; an agent card drills into its own trace. The collapse
   // chip inside an expanded member stops propagation, so it never lands here.
-  const onNodeClick = useCallback((_e: MouseEvent, flow: FlowNode) => {
-    const node = (flow.data as unknown as SpectralNodeData).node;
-    if (node.kind === "group") {
-      setExpanded((prev) => new Set(prev).add(node.id));
-    } else if (onOpenTrace) {
-      onOpenTrace(node.id);
-    }
-  }, [onOpenTrace]);
+  const onNodeClick = useCallback(
+    (_e: MouseEvent, flow: FlowNode) => {
+      const node = (flow.data as unknown as SpectralNodeData).node;
+      if (node.kind === "group") {
+        setExpanded((prev) => new Set(prev).add(node.id));
+      } else if (onOpenTrace) {
+        onOpenTrace(node.id);
+      }
+    },
+    [onOpenTrace],
+  );
 
   if (nodes.length === 0) {
     return (
@@ -255,8 +301,11 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
       onNodeClick={onNodeClick}
       minZoom={0.2}
       miniMap={
-        <MiniMap pannable zoomable
-          nodeColor={(n) => clusterColor((n.data as unknown as SpectralNodeData).node.cluster)} />
+        <MiniMap
+          pannable
+          zoomable
+          nodeColor={(n) => clusterColor((n.data as unknown as SpectralNodeData).node.cluster)}
+        />
       }
     >
       <div className="fleet-mode nodrag" role="group" aria-label={t(lang, "fleet.modeAria")}>

@@ -65,14 +65,7 @@ export function ContextRing(props: {
         onClick={() => setOpen((o) => !o)}
       >
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} aria-hidden="true">
-          <circle
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={R}
-            fill="none"
-            stroke="var(--border)"
-            strokeWidth="2.5"
-          />
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="var(--border)" strokeWidth="2.5" />
           <circle
             cx={SIZE / 2}
             cy={SIZE / 2}
@@ -118,8 +111,7 @@ export function ContextRing(props: {
             </>
           ) : (
             <p className="context-note">
-              Live introspection (context_info) is additive — the ring uses the last
-              usage event.
+              Live introspection (context_info) is additive — the ring uses the last usage event.
             </p>
           )}
         </div>

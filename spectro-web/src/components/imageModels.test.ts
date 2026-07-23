@@ -10,10 +10,7 @@ describe("imageModelOptions", () => {
   it("keeps a custom/stale current model as a leading option so it is never dropped", () => {
     // e.g. an openai model still selected right after switching to gemini, or a
     // newer model set via env that isn't in the curated list.
-    expect(imageModelOptions("gemini", "dall-e-3")).toEqual([
-      "dall-e-3",
-      ...IMAGE_MODELS.gemini,
-    ]);
+    expect(imageModelOptions("gemini", "dall-e-3")).toEqual(["dall-e-3", ...IMAGE_MODELS.gemini]);
   });
 
   it("never duplicates a current model that is already in the list", () => {

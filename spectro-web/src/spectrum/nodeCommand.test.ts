@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
 import { buildNodeCommand, type NodeSpawnFields } from "./nodeCommand";
 
-const base: NodeSpawnFields = { prompt: "scan the logs", context: "pr-42", role: "worker", id: "", linger: false };
+const base: NodeSpawnFields = {
+  prompt: "scan the logs",
+  context: "pr-42",
+  role: "worker",
+  id: "",
+  linger: false,
+};
 
 describe("buildNodeCommand", () => {
   it("builds a minimal command: every value shell-quoted, ask by default for a full-power node", () => {
@@ -38,7 +44,11 @@ describe("buildNodeCommand", () => {
   });
 
   it("omits --permissions for readonly (the node default), fills quoted placeholders for empty fields", () => {
-    const cmd = buildNodeCommand({ prompt: "", context: "", role: "worker", id: "", linger: false }, 7000, "readonly");
+    const cmd = buildNodeCommand(
+      { prompt: "", context: "", role: "worker", id: "", linger: false },
+      7000,
+      "readonly",
+    );
     expect(cmd).not.toContain("--permissions");
     expect(cmd).toContain("--context '<context>'");
     expect(cmd).toContain("-p '<prompt>'");

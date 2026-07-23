@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import type { TraceEntry } from "../state/reducer";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 
-const E = (seq: number, type: string, agentId: string | undefined, payload: Record<string, unknown>): TraceEntry => ({
+const E = (
+  seq: number,
+  type: string,
+  agentId: string | undefined,
+  payload: Record<string, unknown>,
+): TraceEntry => ({
   seq,
   dir: "in",
   ts: 1000 + seq,

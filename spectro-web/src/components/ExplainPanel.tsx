@@ -38,8 +38,22 @@ export function ExplainPanel(props: {
     <aside className="explain-panel" aria-label={t(lang, "explain.aria")}>
       <header className="explain-head">
         <span className="explain-kicker mono">{t(lang, "explain.kicker")}</span>
-        <button type="button" className="icon-button" aria-label={t(lang, "common.close")} onClick={props.onClose}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={t(lang, "common.close")}
+          onClick={props.onClose}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
             <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
         </button>
@@ -51,11 +65,22 @@ export function ExplainPanel(props: {
         <>
           <section className="explain-section">
             <h3 className="explain-title">{t(lang, "explain.summary")}</h3>
-            <p className="explain-prompt" title={summary.prompt}>{summary.prompt}</p>
+            <p className="explain-prompt" title={summary.prompt}>
+              {summary.prompt}
+            </p>
             <dl className="explain-facts">
-              <div><dt>{t(lang, "explain.duration")}</dt><dd className="mono tabular">{formatDuration(summary.durationMs)}</dd></div>
-              <div><dt>{t(lang, "explain.agents")}</dt><dd className="mono">{summary.agents.join(" · ") || "—"}</dd></div>
-              <div><dt>{t(lang, "explain.turns")}</dt><dd className="mono tabular">{summary.turns}</dd></div>
+              <div>
+                <dt>{t(lang, "explain.duration")}</dt>
+                <dd className="mono tabular">{formatDuration(summary.durationMs)}</dd>
+              </div>
+              <div>
+                <dt>{t(lang, "explain.agents")}</dt>
+                <dd className="mono">{summary.agents.join(" · ") || "—"}</dd>
+              </div>
+              <div>
+                <dt>{t(lang, "explain.turns")}</dt>
+                <dd className="mono tabular">{summary.turns}</dd>
+              </div>
               <div>
                 <dt>{t(lang, "explain.tools")}</dt>
                 <dd className="mono tabular">
@@ -71,7 +96,8 @@ export function ExplainPanel(props: {
                     ok: summary.gatesAllowed,
                     no: summary.gatesDenied,
                   })}
-                  {summary.gatesPending > 0 && ` · ${t(lang, "explain.gatesPending", { n: summary.gatesPending })}`}
+                  {summary.gatesPending > 0 &&
+                    ` · ${t(lang, "explain.gatesPending", { n: summary.gatesPending })}`}
                 </dd>
               </div>
               <div>
@@ -82,10 +108,16 @@ export function ExplainPanel(props: {
                 </dd>
               </div>
               {summary.errors > 0 && (
-                <div><dt>{t(lang, "explain.errors")}</dt><dd className="mono tabular">{summary.errors}</dd></div>
+                <div>
+                  <dt>{t(lang, "explain.errors")}</dt>
+                  <dd className="mono tabular">{summary.errors}</dd>
+                </div>
               )}
               {summary.stopReason !== null && (
-                <div><dt>{t(lang, "explain.stop")}</dt><dd className="mono">{summary.stopReason}</dd></div>
+                <div>
+                  <dt>{t(lang, "explain.stop")}</dt>
+                  <dd className="mono">{summary.stopReason}</dd>
+                </div>
               )}
             </dl>
             {summary.toolsByName.length > 0 && (
@@ -115,9 +147,7 @@ export function ExplainPanel(props: {
                       {g.name}
                       <span className="explain-gate-agent">{g.agentId}</span>
                     </button>
-                    <p className="explain-gate-why">
-                      {t(lang, whyKey(g.modeAtAsk), { name: g.name })}
-                    </p>
+                    <p className="explain-gate-why">{t(lang, whyKey(g.modeAtAsk), { name: g.name })}</p>
                   </li>
                 ))}
               </ul>

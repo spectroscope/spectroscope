@@ -13,26 +13,79 @@ export interface AttachmentRef {
 }
 
 export type RunEvent =
-  | { type: "run_start";           runId: string; agentId: string; parentId?: string; prompt: string; provider?: string; attachments?: AttachmentRef[]; ts: number } // provider?, attachments? both additive
-  | { type: "turn_start";          agentId: string; turn: number; ts: number }
-  | { type: "text_delta";          agentId: string; text: string; ts: number }
-  | { type: "thinking_delta";      agentId: string; text: string; ts: number } // reasoning stream, additive
-  | { type: "tool_call";           agentId: string; callId: string; name: string; input: unknown; ts: number }
-  | { type: "permission_request";  agentId: string; callId: string; name: string; input: unknown; ts: number }
+  | {
+      type: "run_start";
+      runId: string;
+      agentId: string;
+      parentId?: string;
+      prompt: string;
+      provider?: string;
+      attachments?: AttachmentRef[];
+      ts: number;
+    } // provider?, attachments? both additive
+  | { type: "turn_start"; agentId: string; turn: number; ts: number }
+  | { type: "text_delta"; agentId: string; text: string; ts: number }
+  | { type: "thinking_delta"; agentId: string; text: string; ts: number } // reasoning stream, additive
+  | { type: "tool_call"; agentId: string; callId: string; name: string; input: unknown; ts: number }
+  | { type: "permission_request"; agentId: string; callId: string; name: string; input: unknown; ts: number }
   | { type: "permission_decision"; callId: string; allowed: boolean; ts: number }
-  | { type: "tool_result";         agentId: string; callId: string; output: string; isError: boolean; durationMs: number; ts: number }
-  | { type: "agent_spawn";         agentId: string; parentId: string; task: string; ts: number }
-  | { type: "compaction";          agentId: string; removedTurns: number; summaryChars: number; ts: number } // additive
-  | { type: "usage";               agentId: string; inputTokens: number; outputTokens: number;
+  | {
+      type: "tool_result";
+      agentId: string;
+      callId: string;
+      output: string;
+      isError: boolean;
+      durationMs: number;
+      ts: number;
+    }
+  | { type: "agent_spawn"; agentId: string; parentId: string; task: string; ts: number }
+  | { type: "compaction"; agentId: string; removedTurns: number; summaryChars: number; ts: number } // additive
+  | {
+      type: "usage";
+      agentId: string;
+      inputTokens: number;
+      outputTokens: number;
       /** Additive (Anthropic prompt caching): absent when the provider reported none.
        *  inputTokens stays the RAW uncached remainder — the true context size is the sum. */
-      cacheReadTokens?: number; cacheCreationTokens?: number; ts: number }
-  | { type: "run_end";             runId: string; stopReason: string; ts: number }
-  | { type: "error";               agentId?: string; message: string; ts: number }
-  | { type: "image_generated";     agentId: string; callId: string; prompt: string; provider: string; model: string; mediaType: string; blobPath: string; sha256: string; ts: number } // additive
-  | { type: "context_info";        agentId: string; turn: number; messages: number; estimatedTokens: number; threshold: number; parts: { label: string; chars: number; estTokens: number }[]; ts: number } // additive: context introspection
-  | { type: "agent_message";       from: string; to: string; role: string; state: string; text: string; label?: string; ts: number } // A2A-lite, additive: task/status/result between agents
-  | { type: "plan";                agentId: string; steps: { text: string; status: string }[]; ts: number }; // additive: the main agent's TODO list, latest-wins
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+      ts: number;
+    }
+  | { type: "run_end"; runId: string; stopReason: string; ts: number }
+  | { type: "error"; agentId?: string; message: string; ts: number }
+  | {
+      type: "image_generated";
+      agentId: string;
+      callId: string;
+      prompt: string;
+      provider: string;
+      model: string;
+      mediaType: string;
+      blobPath: string;
+      sha256: string;
+      ts: number;
+    } // additive
+  | {
+      type: "context_info";
+      agentId: string;
+      turn: number;
+      messages: number;
+      estimatedTokens: number;
+      threshold: number;
+      parts: { label: string; chars: number; estTokens: number }[];
+      ts: number;
+    } // additive: context introspection
+  | {
+      type: "agent_message";
+      from: string;
+      to: string;
+      role: string;
+      state: string;
+      text: string;
+      label?: string;
+      ts: number;
+    } // A2A-lite, additive: task/status/result between agents
+  | { type: "plan"; agentId: string; steps: { text: string; status: string }[]; ts: number }; // additive: the main agent's TODO list, latest-wins
 
 // Client -> server frames (socket protocol, design/BUILD-PLAN.md). The server
 // sends nothing but RunEvent JSON in the other direction. user_message

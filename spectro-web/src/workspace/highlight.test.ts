@@ -26,7 +26,7 @@ describe("tokenize", () => {
   const samples: Record<string, string> = {
     java: 'public class Foo {\n  // greet\n  int n = 42; // count\n  String s = "hi\\n";\n}\n',
     python: '# module\ndef f(x):\n    """doc\n    lines"""\n    return x + 1\n',
-    shell: '#!/bin/sh\nif [ -n "$x" ]; then\n  echo \'done\'\nfi\n',
+    shell: "#!/bin/sh\nif [ -n \"$x\" ]; then\n  echo 'done'\nfi\n",
     json: '{\n  "k": true,\n  "n": 12.5,\n  "z": null\n}\n',
   };
   for (const [lang, src] of Object.entries(samples)) {

@@ -24,11 +24,7 @@ export function GateBar(props: {
    *  a FLEET gate passes false — a remote node has no allowlist we control, so
    *  remember would be an inert, misleading control (block 4). */
   allowRemember?: boolean;
-  onDecide: (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ) => void;
+  onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
 }) {
   const lang = useLang();
   const [expanded, setExpanded] = useState(false);
@@ -39,11 +35,7 @@ export function GateBar(props: {
   if (current === undefined) return null;
 
   const decide = (allowed: boolean): void => {
-    props.onDecide(
-      current.callId,
-      allowed,
-      allowed ? { remember, persist: remember && persist } : undefined,
-    );
+    props.onDecide(current.callId, allowed, allowed ? { remember, persist: remember && persist } : undefined);
     setRemember(false);
     setPersist(false);
   };
@@ -75,21 +67,13 @@ export function GateBar(props: {
         )}
         {props.allowRemember !== false && (
           <label className="gate-remember">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-            />
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             {t(lang, "gate.remember")}
           </label>
         )}
         {props.allowRemember !== false && remember && props.workspaceConfigured && (
           <label className="gate-remember">
-            <input
-              type="checkbox"
-              checked={persist}
-              onChange={(e) => setPersist(e.target.checked)}
-            />
+            <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />
             {t(lang, "gate.persist")}
           </label>
         )}
@@ -106,8 +90,17 @@ export function GateBar(props: {
           aria-label={t(lang, expanded ? "gate.collapse" : "gate.expandAria")}
           onClick={() => setExpanded((v) => !v)}
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
-            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             {expanded ? <path d="M4 10l4-4 4 4" /> : <path d="M4 6l4 4 4-4" />}
           </svg>
         </button>
@@ -121,9 +114,7 @@ export function GateBar(props: {
               <span className="gate-history-label mono">{t(lang, "gate.recorded")}</span>
               {decided.map((c) => (
                 <span key={c.callId} className="gate-history-row mono">
-                  <span
-                    className={`gate-outcome gate-outcome--${c.permission}`}
-                  >
+                  <span className={`gate-outcome gate-outcome--${c.permission}`}>
                     {t(lang, c.permission === "allowed" ? "gate.histAllowed" : "gate.histDenied")}
                   </span>
                   {c.name}

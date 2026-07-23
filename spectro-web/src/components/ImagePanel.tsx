@@ -51,24 +51,27 @@ export function ImagePanel(props: {
         return;
       }
       const body = (await res.json().catch(() => null)) as { message?: string } | null;
-      window.alert(t(lang, "img.copyFailed") + (body?.message ? ` ${body.message}` : ` (HTTP ${res.status})`));
+      window.alert(
+        t(lang, "img.copyFailed") + (body?.message ? ` ${body.message}` : ` (HTTP ${res.status})`),
+      );
     } catch {
       window.alert(t(lang, "img.copyFailed"));
     }
   };
 
   return (
-    <aside className="image-panel" style={props.width !== undefined ? { width: props.width } : undefined} aria-label={t(lang, "img.aria")}>
+    <aside
+      className="image-panel"
+      style={props.width !== undefined ? { width: props.width } : undefined}
+      aria-label={t(lang, "img.aria")}
+    >
       <div className="image-panel-head">
         <span className="eyebrow">{t(lang, "img.title")}</span>
         <span className="badge tabular">{props.images.length}</span>
 
         <label className="image-provider">
           <span className="image-provider-label">Provider</span>
-          <select
-            value={props.provider}
-            onChange={(e) => props.onProviderChange(e.target.value)}
-          >
+          <select value={props.provider} onChange={(e) => props.onProviderChange(e.target.value)}>
             <option value="gemini">
               gemini{props.keys && !props.keys.gemini ? ` · ${t(lang, "img.noKey")}` : ""}
             </option>

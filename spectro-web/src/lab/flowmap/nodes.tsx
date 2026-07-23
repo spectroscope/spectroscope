@@ -35,7 +35,15 @@ function Handles() {
   );
 }
 
-function Disclosure({ label, children, open: openDefault = false }: { label: string; children: ReactNode; open?: boolean }) {
+function Disclosure({
+  label,
+  children,
+  open: openDefault = false,
+}: {
+  label: string;
+  children: ReactNode;
+  open?: boolean;
+}) {
   const [open, setOpen] = useState(openDefault);
   return (
     <div className="pf-disc">
@@ -48,10 +56,21 @@ function Disclosure({ label, children, open: openDefault = false }: { label: str
   );
 }
 
-interface Activity { text: string; color: string; }
+interface Activity {
+  text: string;
+  color: string;
+}
 
 /** The tool chips the agent hub shows (the tool belt + the extension actions). */
-const AGENT_TOOL_CHIPS = ["read_file", "write_file", "list_dir", "run_command", "use_skill", "call_mcp", "generate_image"];
+const AGENT_TOOL_CHIPS = [
+  "read_file",
+  "write_file",
+  "list_dir",
+  "run_command",
+  "use_skill",
+  "call_mcp",
+  "generate_image",
+];
 
 /** A tiny "generated image" thumbnail (a placeholder gradient, not a real asset)
  *  shown when the agent's active tool is generate_image. */
@@ -88,7 +107,9 @@ export function UserNode({ data }: NodeProps) {
       <div className="pf-user__sub">{d.active ? t(lang, "map.user.typing") : "PROMPT"}</div>
       {d.prompt && (
         <Disclosure label="Prompt">
-          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>{d.prompt}</div>
+          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+            {d.prompt}
+          </div>
         </Disclosure>
       )}
       <Handles />
@@ -101,17 +122,28 @@ export function UserNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 export function AgentNode({ data }: NodeProps) {
   const d = data as {
-    active: boolean; error: boolean; focus: Focus; activity: Activity;
-    gate: GateState; gateNote: string; gateColor: string; activeTool: string | null;
-    ctxParts: CtxPart[] | null; ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
-    prompt: string; systemPrompt: string | null; tool: { name: string; input: unknown } | null;
+    active: boolean;
+    error: boolean;
+    focus: Focus;
+    activity: Activity;
+    gate: GateState;
+    gateNote: string;
+    gateColor: string;
+    activeTool: string | null;
+    ctxParts: CtxPart[] | null;
+    ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
+    prompt: string;
+    systemPrompt: string | null;
+    tool: { name: string; input: unknown } | null;
   };
   const lang = useLang();
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
   const maxTok = Math.max(1, ...(d.ctxParts ?? []).map((p) => p.estTokens));
   const isGenImage = d.tool?.name === "generate_image";
   return (
-    <div className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}`}>
+    <div
+      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}`}
+    >
       <div className="pf-agent__head">
         <div className="pf-agent__title">
           <span className="pf-avatar">◆</span>
@@ -133,13 +165,19 @@ export function AgentNode({ data }: NodeProps) {
           <span className="pf-lock" style={{ color: d.gateColor }} />
           {t(lang, "map.node.gate")}
         </span>
-        <span className="pf-row__note" style={{ color: d.gateColor }}>{d.gateNote}</span>
+        <span className="pf-row__note" style={{ color: d.gateColor }}>
+          {d.gateNote}
+        </span>
       </div>
 
-      <div className="pf-eyebrow" style={{ marginTop: 10 }}>Tools</div>
+      <div className="pf-eyebrow" style={{ marginTop: 10 }}>
+        Tools
+      </div>
       <div className="pf-tools">
         {AGENT_TOOL_CHIPS.map((tool) => (
-          <span key={tool} className={`pf-chip${d.activeTool === tool ? " pf-chip--on" : ""}`}>{tool}</span>
+          <span key={tool} className={`pf-chip${d.activeTool === tool ? " pf-chip--on" : ""}`}>
+            {tool}
+          </span>
         ))}
       </div>
 
@@ -147,17 +185,24 @@ export function AgentNode({ data }: NodeProps) {
         {d.systemPrompt && (
           <div className="pf-panelbox">
             <div className="pf-panelbox__label">{t(lang, "map.ctx.systemPrompt")}</div>
-            <div className="pf-prose nowheel" style={{ textAlign: "left" }}>{d.systemPrompt}</div>
+            <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+              {d.systemPrompt}
+            </div>
           </div>
         )}
         {d.ctxParts && d.ctxTotals && (
           <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} / {d.ctxTotals.threshold.toLocaleString()} tok</div>
+            <div className="pf-panelbox__label">
+              {t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} /{" "}
+              {d.ctxTotals.threshold.toLocaleString()} tok
+            </div>
             <div className="pf-ctx">
               {d.ctxParts.map((p) => (
                 <div className="pf-ctx__row" key={p.label}>
                   <span>{p.label}</span>
-                  <span className="pf-ctx__bar"><span className="pf-ctx__fill" style={{ width: `${(p.estTokens / maxTok) * 100}%` }} /></span>
+                  <span className="pf-ctx__bar">
+                    <span className="pf-ctx__fill" style={{ width: `${(p.estTokens / maxTok) * 100}%` }} />
+                  </span>
                   <span className="pf-ctx__tok">{p.estTokens}</span>
                 </div>
               ))}
@@ -166,7 +211,9 @@ export function AgentNode({ data }: NodeProps) {
         )}
         {d.tool && isGenImage ? (
           <div className="pf-panelbox pf-genimg-panel">
-            <div className="pf-panelbox__label">{t(lang, "map.ctx.toolCall")} · {d.tool.name}</div>
+            <div className="pf-panelbox__label">
+              {t(lang, "map.ctx.toolCall")} · {d.tool.name}
+            </div>
             <div className="pf-genimg-wrap">
               <GenImage />
               <span className="pf-genimg-cap">
@@ -176,7 +223,9 @@ export function AgentNode({ data }: NodeProps) {
           </div>
         ) : d.tool ? (
           <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{t(lang, "map.ctx.toolCall")} · {d.tool.name}</div>
+            <div className="pf-panelbox__label">
+              {t(lang, "map.ctx.toolCall")} · {d.tool.name}
+            </div>
             <div className="nowheel" style={{ maxHeight: 150, overflow: "auto" }}>
               <JsonTree value={d.tool.input} defaultDepth={3} />
             </div>
@@ -225,21 +274,46 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
     <>
       <div className="pf-disk" data-disk={disk}>
         <svg width="76" height="54" viewBox="0 0 76 54">
-          <circle className="pf-ripple" cx="30" cy="30" r="12" fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+          <circle
+            className="pf-ripple"
+            cx="30"
+            cy="30"
+            r="12"
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="1.2"
+          />
           <g className="pf-platter">
-            <circle cx="30" cy="30" r="16" fill="var(--surface-3)" stroke="var(--border-strong)" strokeWidth="1.5" />
+            <circle
+              cx="30"
+              cy="30"
+              r="16"
+              fill="var(--surface-3)"
+              stroke="var(--border-strong)"
+              strokeWidth="1.5"
+            />
             <circle cx="30" cy="30" r="10" fill="none" stroke="var(--border-strong)" />
             <circle cx="30" cy="30" r="2" fill="var(--border-strong)" />
             <circle cx="30" cy="17" r="1.8" fill="var(--accent)" />
           </g>
           <g className="pf-arm">
-            <line x1="58" y1="12" x2="40" y2="26" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" />
+            <line
+              x1="58"
+              y1="12"
+              x2="40"
+              y2="26"
+              stroke="var(--text-dim)"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
             <circle cx="58" cy="12" r="2.6" fill="var(--text-dim)" />
           </g>
         </svg>
       </div>
       {disk && disk !== "idle" && (
-        <div className={`pf-filepill${disk === "write" ? " pf-filepill--write" : ""}`}>{file ?? t(lang, "map.act.file")}</div>
+        <div className={`pf-filepill${disk === "write" ? " pf-filepill--write" : ""}`}>
+          {file ?? t(lang, "map.act.file")}
+        </div>
       )}
     </>
   );
@@ -249,20 +323,31 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
 function ShellBody({ command, active }: { command?: string | null; active: boolean }) {
   const lang = useLang();
   const shown = command
-    ? (command.length > SHELL_PREVIEW_CHARS ? `${command.slice(0, SHELL_PREVIEW_CHARS - 1)}…` : command)
+    ? command.length > SHELL_PREVIEW_CHARS
+      ? `${command.slice(0, SHELL_PREVIEW_CHARS - 1)}…`
+      : command
     : "";
   return (
     <>
       <div className={`pf-shell${active ? " pf-shell--on" : ""}`}>
         <span className="pf-shell__prompt">$</span>
-        {shown
-          ? <span key={shown} className="pf-shell__cmd" style={{ "--n": shown.length } as CSSProperties}>{shown}</span>
-          : <span className="pf-shell__idle">{t(lang, "map.gate.none")}</span>}
+        {shown ? (
+          <span key={shown} className="pf-shell__cmd" style={{ "--n": shown.length } as CSSProperties}>
+            {shown}
+          </span>
+        ) : (
+          <span className="pf-shell__idle">{t(lang, "map.gate.none")}</span>
+        )}
         <span className="pf-shell__cursor" />
       </div>
       {command && (
         <Disclosure label={t(lang, "map.shell.cmd")}>
-          <div className="pf-panelbox pf-mono nowheel" style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}>$ {command}</div>
+          <div
+            className="pf-panelbox pf-mono nowheel"
+            style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}
+          >
+            $ {command}
+          </div>
         </Disclosure>
       )}
     </>
@@ -270,11 +355,21 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
 }
 
 /** The active MCP call line plus its JSON disclosure. */
-function McpBody({ active, mcp, tool }: { active: boolean; mcp?: string | null; tool?: { name: string; input: unknown } | null }) {
+function McpBody({
+  active,
+  mcp,
+  tool,
+}: {
+  active: boolean;
+  mcp?: string | null;
+  tool?: { name: string; input: unknown } | null;
+}) {
   const lang = useLang();
   return (
     <>
-      <div className={`pf-os__line${active ? " pf-os__line--on" : ""}`}>{mcp ?? t(lang, "map.gate.none")}</div>
+      <div className={`pf-os__line${active ? " pf-os__line--on" : ""}`}>
+        {mcp ?? t(lang, "map.gate.none")}
+      </div>
       {tool && (
         <Disclosure label={t(lang, "map.mcp.call")}>
           <div className="pf-panelbox">
@@ -291,9 +386,13 @@ function McpBody({ active, mcp, tool }: { active: boolean; mcp?: string | null; 
 
 export function OsNode({ data }: NodeProps) {
   const d = data as {
-    kind: "disk" | "shell" | "net" | "mcp"; active: boolean;
-    disk?: "idle" | "read" | "write"; file?: string | null;
-    command?: string | null; mcp?: string | null; tool?: { name: string; input: unknown } | null;
+    kind: "disk" | "shell" | "net" | "mcp";
+    active: boolean;
+    disk?: "idle" | "read" | "write";
+    file?: string | null;
+    command?: string | null;
+    mcp?: string | null;
+    tool?: { name: string; input: unknown } | null;
   };
   const lang = useLang();
 
@@ -328,7 +427,14 @@ export function OsNode({ data }: NodeProps) {
 // LLM
 // ---------------------------------------------------------------------------
 export function LlmNode({ data }: NodeProps) {
-  const d = data as { active: boolean; local: boolean; provider: string; model: string; think: AgentStream[]; answer: AgentStream[] };
+  const d = data as {
+    active: boolean;
+    local: boolean;
+    provider: string;
+    model: string;
+    think: AgentStream[];
+    answer: AgentStream[];
+  };
   const lang = useLang();
   // One shared model, many callers: every agent's stream renders as its own
   // marked entry — subagents indented and tinted so the interleaving reads.
@@ -349,10 +455,14 @@ export function LlmNode({ data }: NodeProps) {
   return (
     <div className={`pf-card pf-llm${d.active ? " pf-card--active pf-llm--active" : ""}`}>
       <div className="pf-llm__halo" />
-      <div className="pf-llm__net"><NeuralNet active={d.active} /></div>
+      <div className="pf-llm__net">
+        <NeuralNet active={d.active} />
+      </div>
       <div className="pf-llm__name">LLM</div>
       <div className="pf-llm__model">{d.model || d.provider}</div>
-      <div className="pf-llm__loc"><b>{d.local ? t(lang, "map.local") : t(lang, "map.remote")}</b> · {d.provider}</div>
+      <div className="pf-llm__loc">
+        <b>{d.local ? t(lang, "map.local") : t(lang, "map.remote")}</b> · {d.provider}
+      </div>
       {(d.think.length > 0 || d.answer.length > 0) && (
         <Disclosure label={t(lang, "map.llm.reasoning")}>
           {section("Thinking", d.think)}
@@ -384,7 +494,9 @@ export function ExtNode({ data }: NodeProps) {
     <div className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}>
       <div className="pf-ext__head">MCP-Server</div>
       <AluChip active={d.active} />
-      <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>{d.mcp ?? t(lang, "map.extServer")}</div>
+      <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>
+        {d.mcp ?? t(lang, "map.extServer")}
+      </div>
       <Handles />
     </div>
   );
@@ -396,9 +508,17 @@ export function ExtNode({ data }: NodeProps) {
 export function SubagentNode({ data }: NodeProps) {
   const lang = useLang();
   const d = data as {
-    id: string; label: string | null; task: string; state: SubagentInfo["state"];
-    stateLabel: string; stateColor: string; lastStatus: string | null; activity: Activity;
-    focus: Focus; active: boolean; think: string;
+    id: string;
+    label: string | null;
+    task: string;
+    state: SubagentInfo["state"];
+    stateLabel: string;
+    stateColor: string;
+    lastStatus: string | null;
+    activity: Activity;
+    focus: Focus;
+    active: boolean;
+    think: string;
   };
   return (
     <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
@@ -407,7 +527,9 @@ export function SubagentNode({ data }: NodeProps) {
           <span className="pf-sub__dot" style={{ background: d.stateColor }} />
           {d.label ? `${d.label} · ${d.id}` : d.id}
         </span>
-        <span className="pf-badge" style={{ color: d.stateColor }}>{d.stateLabel}</span>
+        <span className="pf-badge" style={{ color: d.stateColor }}>
+          {d.stateLabel}
+        </span>
       </div>
       <div className="pf-sub__task">{d.task}</div>
       <div className="pf-sub__status" style={{ color: d.activity.color }}>
@@ -420,7 +542,11 @@ export function SubagentNode({ data }: NodeProps) {
             <div className="pf-panelbox__label">{t(lang, "map.sub.order")}</div>
             <div className="pf-prose nowheel">{d.task}</div>
           </div>
-          {d.lastStatus && <div className="pf-kv">{t(lang, "map.sub.lastStatus")} <b>{d.lastStatus}</b></div>}
+          {d.lastStatus && (
+            <div className="pf-kv">
+              {t(lang, "map.sub.lastStatus")} <b>{d.lastStatus}</b>
+            </div>
+          )}
         </Disclosure>
       )}
       <Handles />

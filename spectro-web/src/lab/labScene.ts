@@ -129,8 +129,18 @@ function prettyMcp(name: string): string {
 }
 
 /** The clean-slate activity fields, reused by run_start / tool_result / run_end. */
-function idleActivity(): Pick<Loop, "disk" | "gate" | "activeTool" | "activeFile" | "activeCommand" | "activeMcp"> {
-  return { disk: "idle", gate: "none", activeTool: null, activeFile: null, activeCommand: null, activeMcp: null };
+function idleActivity(): Pick<
+  Loop,
+  "disk" | "gate" | "activeTool" | "activeFile" | "activeCommand" | "activeMcp"
+> {
+  return {
+    disk: "idle",
+    gate: "none",
+    activeTool: null,
+    activeFile: null,
+    activeCommand: null,
+    activeMcp: null,
+  };
 }
 
 /**
@@ -184,7 +194,10 @@ export function advanceLoop(loop: Loop, event: RunEvent): Loop {
 function upsertCard(cards: SubagentInfo[], id: string, patch: Partial<SubagentInfo>): SubagentInfo[] {
   const at = cards.findIndex((c) => c.id === id);
   if (at < 0) {
-    return [...cards, { id, label: null, task: "", state: "submitted", lastStatus: null, ...initialLoop(), ...patch }];
+    return [
+      ...cards,
+      { id, label: null, task: "", state: "submitted", lastStatus: null, ...initialLoop(), ...patch },
+    ];
   }
   const next = [...cards];
   next[at] = { ...next[at], ...patch };
@@ -196,7 +209,11 @@ function foldChild(cards: SubagentInfo[], id: string, event: RunEvent): Subagent
   const at = cards.findIndex((c) => c.id === id);
   if (at < 0) {
     const fresh: SubagentInfo = {
-      id, label: null, task: "", state: "submitted", lastStatus: null,
+      id,
+      label: null,
+      task: "",
+      state: "submitted",
+      lastStatus: null,
       ...advanceLoop(initialLoop(), event),
     };
     return [...cards, fresh];
@@ -218,8 +235,11 @@ export function advanceScene(scene: Scene, event: RunEvent): Scene {
       case "task":
         return {
           ...scene,
-          subagents: upsertCard(scene.subagents, event.to,
-            { task: event.text, label: event.label ?? null, state: "submitted" }),
+          subagents: upsertCard(scene.subagents, event.to, {
+            task: event.text,
+            label: event.label ?? null,
+            state: "submitted",
+          }),
         };
       case "status":
         return {
@@ -230,8 +250,9 @@ export function advanceScene(scene: Scene, event: RunEvent): Scene {
       case "result":
         return {
           ...scene,
-          subagents: upsertCard(scene.subagents, event.from,
-            { state: event.state === "completed" ? "completed" : "failed" }),
+          subagents: upsertCard(scene.subagents, event.from, {
+            state: event.state === "completed" ? "completed" : "failed",
+          }),
           activeChild: event.from,
         };
       default:
@@ -282,7 +303,16 @@ export function advanceScene(scene: Scene, event: RunEvent): Scene {
       // A CHILD's own run_end (a different runId, no agentId) must NOT clear the
       // subagents — only the root run ending retires them.
       if (scene.rootRunId !== null && event.runId !== scene.rootRunId) return scene;
-      return { ...scene, ...idleActivity(), focus: "user", isError: false, subagents: [], activeChild: null, rootRunId: null, gateOwners: {} };
+      return {
+        ...scene,
+        ...idleActivity(),
+        focus: "user",
+        isError: false,
+        subagents: [],
+        activeChild: null,
+        rootRunId: null,
+        gateOwners: {},
+      };
     default:
       // Every other main event moves the main loop.
       return { ...scene, ...advanceLoop(scene, event) };

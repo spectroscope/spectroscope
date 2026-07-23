@@ -35,14 +35,41 @@ export const DESIGNS: ReadonlyArray<{
   bg: string;
   accent: string;
 }> = [
-  { id: "spectroscope", label: "spectro dark", sub: "espresso · amber line", particles: true, bg: "#17120D", accent: "#CE9440" },
-  { id: "paper", label: "spectro bright", sub: "paper · logo blue", particles: true, bg: "#F6F4EE", accent: "#2E7EA6" },
-  { id: "still", label: "spectro white", sub: "minimal white · one blue", particles: false, bg: "#fbfbfd", accent: "#0071e3" },
+  {
+    id: "spectroscope",
+    label: "spectro dark",
+    sub: "espresso · amber line",
+    particles: true,
+    bg: "#17120D",
+    accent: "#CE9440",
+  },
+  {
+    id: "paper",
+    label: "spectro bright",
+    sub: "paper · logo blue",
+    particles: true,
+    bg: "#F6F4EE",
+    accent: "#2E7EA6",
+  },
+  {
+    id: "still",
+    label: "spectro white",
+    sub: "minimal white · one blue",
+    particles: false,
+    bg: "#fbfbfd",
+    accent: "#0071e3",
+  },
 ];
 
 const DESIGN_IDS = DESIGNS.map((d) => d.id);
 export const STORAGE_KEY = "spectroscope:design";
-export const DEFAULT_PREFS: DesignPrefs = { design: "spectroscope", scroll: true, particles: true, reasoningLens: false, timelineLens: false };
+export const DEFAULT_PREFS: DesignPrefs = {
+  design: "spectroscope",
+  scroll: true,
+  particles: true,
+  reasoningLens: false,
+  timelineLens: false,
+};
 
 // Side-effect seams — real localStorage + DOM by default, swappable in tests
 // (the suite runs in plain Node with no jsdom, so it injects in-memory versions).

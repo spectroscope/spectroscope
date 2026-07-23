@@ -56,7 +56,8 @@ export function FlowMap(props: {
 
   const detail = useMemo(() => deriveDetail(applied), [applied]);
   const flow = useMemo(
-    () => sceneToFlow(scene, detail, { local, provider: provider ?? "", model: model ?? "", systemPrompt, lang }),
+    () =>
+      sceneToFlow(scene, detail, { local, provider: provider ?? "", model: model ?? "", systemPrompt, lang }),
     [scene, detail, local, provider, model, systemPrompt, lang],
   );
 
@@ -117,11 +118,26 @@ export function FlowMap(props: {
 
         <Panel position="bottom-left">
           <div className="pf-legend">
-            <span><i className="on" />{t(lang, "map.legend.activeRail")}</span>
-            <span><i />{t(lang, "map.legend.inside")}</span>
-            <span><i className="net" />{t(lang, "map.legend.out")}</span>
-            <span><b style={{ background: "var(--ok)" }} />{t(lang, "map.legend.read")}</span>
-            <span><b style={{ background: "var(--accent)" }} />{t(lang, "map.legend.writeLive")}</span>
+            <span>
+              <i className="on" />
+              {t(lang, "map.legend.activeRail")}
+            </span>
+            <span>
+              <i />
+              {t(lang, "map.legend.inside")}
+            </span>
+            <span>
+              <i className="net" />
+              {t(lang, "map.legend.out")}
+            </span>
+            <span>
+              <b style={{ background: "var(--ok)" }} />
+              {t(lang, "map.legend.read")}
+            </span>
+            <span>
+              <b style={{ background: "var(--accent)" }} />
+              {t(lang, "map.legend.writeLive")}
+            </span>
           </div>
         </Panel>
       </ReactFlow>

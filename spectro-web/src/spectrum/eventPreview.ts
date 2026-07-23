@@ -36,24 +36,57 @@ export function eventPreview(event: RunEvent): EventPreview {
   const type = event.type;
   let detail: string;
   switch (event.type) {
-    case "run_start": detail = event.prompt; break;
-    case "turn_start": detail = `turn ${event.turn}`; break;
+    case "run_start":
+      detail = event.prompt;
+      break;
+    case "turn_start":
+      detail = `turn ${event.turn}`;
+      break;
     case "text_delta":
-    case "thinking_delta": detail = event.text; break;
-    case "tool_call": detail = `${event.name} ${compact(event.input)}`; break;
-    case "permission_request": detail = event.name; break;
-    case "permission_decision": detail = event.allowed ? "allowed" : "denied"; break;
-    case "tool_result": detail = `${event.isError ? "error · " : ""}${event.output}`; break;
-    case "agent_spawn": detail = event.task; break;
-    case "agent_message": detail = `${event.from} → ${event.to} · ${event.role}: ${event.text}`; break;
-    case "usage": detail = `${event.inputTokens} in · ${event.outputTokens} out`; break;
-    case "run_end": detail = event.stopReason; break;
-    case "error": detail = event.message; break;
-    case "image_generated": detail = event.prompt; break;
-    case "compaction": detail = `removed ${event.removedTurns} turn(s)`; break;
-    case "context_info": detail = `~${event.estimatedTokens} tokens · ${event.messages} msgs`; break;
-    case "plan": detail = `${event.steps.length} step(s)`; break;
-    default: detail = ""; // an unknown/future wire type: the bare type, no preview
+    case "thinking_delta":
+      detail = event.text;
+      break;
+    case "tool_call":
+      detail = `${event.name} ${compact(event.input)}`;
+      break;
+    case "permission_request":
+      detail = event.name;
+      break;
+    case "permission_decision":
+      detail = event.allowed ? "allowed" : "denied";
+      break;
+    case "tool_result":
+      detail = `${event.isError ? "error · " : ""}${event.output}`;
+      break;
+    case "agent_spawn":
+      detail = event.task;
+      break;
+    case "agent_message":
+      detail = `${event.from} → ${event.to} · ${event.role}: ${event.text}`;
+      break;
+    case "usage":
+      detail = `${event.inputTokens} in · ${event.outputTokens} out`;
+      break;
+    case "run_end":
+      detail = event.stopReason;
+      break;
+    case "error":
+      detail = event.message;
+      break;
+    case "image_generated":
+      detail = event.prompt;
+      break;
+    case "compaction":
+      detail = `removed ${event.removedTurns} turn(s)`;
+      break;
+    case "context_info":
+      detail = `~${event.estimatedTokens} tokens · ${event.messages} msgs`;
+      break;
+    case "plan":
+      detail = `${event.steps.length} step(s)`;
+      break;
+    default:
+      detail = ""; // an unknown/future wire type: the bare type, no preview
   }
   return { type, detail: clip(detail) };
 }

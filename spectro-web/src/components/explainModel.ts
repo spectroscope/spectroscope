@@ -118,9 +118,7 @@ export function buildRunSummary(entries: TraceEntry[]): RunSummary {
     turns,
     toolCalls,
     toolErrors,
-    toolsByName: [...toolCount.entries()]
-      .map(([name, n]) => ({ name, n }))
-      .sort((a, b) => b.n - a.n),
+    toolsByName: [...toolCount.entries()].map(([name, n]) => ({ name, n })).sort((a, b) => b.n - a.n),
     gatesAsked,
     gatesAllowed,
     gatesDenied,

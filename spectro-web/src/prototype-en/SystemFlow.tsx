@@ -5,7 +5,18 @@
 // preserved while stepping; flipping the provider re-lays-out the whole map.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, Panel, useEdgesState, useNodesState, type Edge, type Node } from "@xyflow/react";
+import {
+  ReactFlow,
+  Background,
+  BackgroundVariant,
+  Controls,
+  MiniMap,
+  Panel,
+  useEdgesState,
+  useNodesState,
+  type Edge,
+  type Node,
+} from "@xyflow/react";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { DEMO_SYSTEM_PROMPT, SCENARIOS, eventLabel } from "./demoScript";
 import { deriveDetail, sceneToFlow } from "./sceneToFlow";
@@ -24,8 +35,12 @@ const GENOMES = [
 ];
 
 const MINIMAP_COLOR: Record<string, string> = {
-  agent: "var(--accent)", subagent: "var(--agent-worker)", llm: "var(--sand)",
-  user: "var(--text-dim)", os: "var(--border-strong)", ext: "var(--border-strong)",
+  agent: "var(--accent)",
+  subagent: "var(--agent-worker)",
+  llm: "var(--sand)",
+  user: "var(--text-dim)",
+  os: "var(--border-strong)",
+  ext: "var(--border-strong)",
 };
 
 export function SystemFlow() {
@@ -38,12 +53,18 @@ export function SystemFlow() {
   const [scenarioId, setScenarioId] = useState(SCENARIOS[0].id);
 
   const local = provider === "ollama";
-  const events = useMemo(() => SCENARIOS.find((s) => s.id === scenarioId)?.events ?? SCENARIOS[0].events, [scenarioId]);
+  const events = useMemo(
+    () => SCENARIOS.find((s) => s.id === scenarioId)?.events ?? SCENARIOS[0].events,
+    [scenarioId],
+  );
   const TOTAL = events.length;
 
   const scene = useMemo(() => events.slice(0, n).reduce(advanceScene, initialScene()), [events, n]);
   const detail = useMemo(() => deriveDetail(events.slice(0, n)), [events, n]);
-  const flow = useMemo(() => sceneToFlow(scene, detail, { local, provider, model, systemPrompt: DEMO_SYSTEM_PROMPT }), [scene, detail, local, provider, model]);
+  const flow = useMemo(
+    () => sceneToFlow(scene, detail, { local, provider, model, systemPrompt: DEMO_SYSTEM_PROMPT }),
+    [scene, detail, local, provider, model],
+  );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -70,10 +91,13 @@ export function SystemFlow() {
   // Auto-play: advance one event per `speed` ms.
   useEffect(() => {
     if (!playing) return;
-    if (n >= TOTAL) { setPlaying(false); return; }
+    if (n >= TOTAL) {
+      setPlaying(false);
+      return;
+    }
     const t = setTimeout(() => setN((x) => Math.min(TOTAL, x + 1)), speed);
     return () => clearTimeout(t);
-  }, [playing, n, speed]);
+  }, [playing, n, speed, TOTAL]);
 
   // Genome switch — flip the one attribute; every token-based node reskins.
   useEffect(() => {
@@ -81,7 +105,10 @@ export function SystemFlow() {
   }, [design]);
 
   // Switching scenario restarts the timeline.
-  useEffect(() => { setN(0); setPlaying(false); }, [scenarioId]);
+  useEffect(() => {
+    setN(0);
+    setPlaying(false);
+  }, [scenarioId]);
 
   const atEnd = n >= TOTAL;
   const current = n > 0 ? events[n - 1] : null;
@@ -129,7 +156,9 @@ export function SystemFlow() {
         <Panel position="top-left">
           <div className="pf-panel-tl">
             <div className="pf-brand">
-              <span className="pf-brand__mark"><span /></span>
+              <span className="pf-brand__mark">
+                <span />
+              </span>
               <div>
                 <div className="pf-brand__title">spectroscope · System-Map</div>
                 <div className="pf-brand__sub">React Flow prototype</div>
@@ -143,40 +172,113 @@ export function SystemFlow() {
           <div className="pf-bar">
             <div className="pf-bar__label">Timeline</div>
             <div className="pf-bar__group">
-              <button className="pf-btn" onClick={() => setN(0)} disabled={n === 0} title="Reset">⏮</button>
-              <button className="pf-btn" onClick={() => { setPlaying(false); setN((x) => Math.max(0, x - 1)); }} disabled={n === 0} title="Step back">◀</button>
-              <button className="pf-btn pf-btn--primary" onClick={togglePlay} title={playing ? "Pause" : "Play"}>{playing ? "⏸" : atEnd ? "↻" : "▶"}</button>
-              <button className="pf-btn" onClick={() => { setPlaying(false); setN((x) => Math.min(TOTAL, x + 1)); }} disabled={atEnd} title="Step forward">▶▏</button>
+              <button className="pf-btn" onClick={() => setN(0)} disabled={n === 0} title="Reset">
+                ⏮
+              </button>
+              <button
+                className="pf-btn"
+                onClick={() => {
+                  setPlaying(false);
+                  setN((x) => Math.max(0, x - 1));
+                }}
+                disabled={n === 0}
+                title="Step back"
+              >
+                ◀
+              </button>
+              <button
+                className="pf-btn pf-btn--primary"
+                onClick={togglePlay}
+                title={playing ? "Pause" : "Play"}
+              >
+                {playing ? "⏸" : atEnd ? "↻" : "▶"}
+              </button>
+              <button
+                className="pf-btn"
+                onClick={() => {
+                  setPlaying(false);
+                  setN((x) => Math.min(TOTAL, x + 1));
+                }}
+                disabled={atEnd}
+                title="Step forward"
+              >
+                ▶▏
+              </button>
             </div>
             <div className="pf-progress">
-              <div className="pf-progress__track"><div className="pf-progress__fill" style={{ width: `${(n / TOTAL) * 100}%` }} /></div>
+              <div className="pf-progress__track">
+                <div className="pf-progress__fill" style={{ width: `${(n / TOTAL) * 100}%` }} />
+              </div>
               <div className="pf-progress__meta">
-                <span>{n} / {TOTAL}</span>
+                <span>
+                  {n} / {TOTAL}
+                </span>
                 <span className="pf-progress__ev">{current ? eventLabel(current) : "idle"}</span>
               </div>
             </div>
 
             <div className="pf-bar__group">
-              <span className="pf-bar__label" style={{ margin: 0 }}>Scenario</span>
-              <select className="pf-select" value={scenarioId} onChange={(e) => setScenarioId(e.target.value)} style={{ flex: 1 }}>
-                {SCENARIOS.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+              <span className="pf-bar__label" style={{ margin: 0 }}>
+                Scenario
+              </span>
+              <select
+                className="pf-select"
+                value={scenarioId}
+                onChange={(e) => setScenarioId(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                {SCENARIOS.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
               </select>
             </div>
 
             <div className="pf-bar__group" style={{ justifyContent: "space-between" }}>
-              <span className="pf-bar__label" style={{ margin: 0 }}>Speed</span>
-              <input className="pf-range" type="range" min={250} max={1600} step={50} value={1850 - speed} onChange={(e) => setSpeed(1850 - Number(e.target.value))} />
+              <span className="pf-bar__label" style={{ margin: 0 }}>
+                Speed
+              </span>
+              <input
+                className="pf-range"
+                type="range"
+                min={250}
+                max={1600}
+                step={50}
+                value={1850 - speed}
+                onChange={(e) => setSpeed(1850 - Number(e.target.value))}
+              />
             </div>
 
             <div className="pf-bar__group">
-              <select className="pf-select" value={provider} onChange={(e) => pickProvider(e.target.value)} style={{ flex: 1 }}>
-                {PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              <select
+                className="pf-select"
+                value={provider}
+                onChange={(e) => pickProvider(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                {PROVIDERS.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="pf-bar__group">
-              <span className="pf-bar__label" style={{ margin: 0 }}>Skin</span>
-              <select className="pf-select" value={design} onChange={(e) => setDesign(e.target.value)} style={{ flex: 1 }}>
-                {GENOMES.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              <span className="pf-bar__label" style={{ margin: 0 }}>
+                Skin
+              </span>
+              <select
+                className="pf-select"
+                value={design}
+                onChange={(e) => setDesign(e.target.value)}
+                style={{ flex: 1 }}
+              >
+                {GENOMES.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.name}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
@@ -185,11 +287,26 @@ export function SystemFlow() {
         {/* ---- legend ---- */}
         <Panel position="bottom-left">
           <div className="pf-legend">
-            <span><i className="on" />active rail (where it happens)</span>
-            <span><i />in the agent system</span>
-            <span><i className="net" />to the outside (net)</span>
-            <span><b style={{ background: "var(--ok)" }} />read</span>
-            <span><b style={{ background: "var(--accent)" }} />write · live packet</span>
+            <span>
+              <i className="on" />
+              active rail (where it happens)
+            </span>
+            <span>
+              <i />
+              in the agent system
+            </span>
+            <span>
+              <i className="net" />
+              to the outside (net)
+            </span>
+            <span>
+              <b style={{ background: "var(--ok)" }} />
+              read
+            </span>
+            <span>
+              <b style={{ background: "var(--accent)" }} />
+              write · live packet
+            </span>
           </div>
         </Panel>
       </ReactFlow>

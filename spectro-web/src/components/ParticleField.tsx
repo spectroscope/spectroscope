@@ -125,7 +125,12 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
         ctx.globalAlpha = breathe;
         ctx.fillStyle = p.color;
         // Blocky marks: a square pixel, or a 3.2× tall bar for a spectral ray.
-        ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.r), Math.round(p.spectral ? p.r * 3.2 : p.r));
+        ctx.fillRect(
+          Math.round(p.x),
+          Math.round(p.y),
+          Math.round(p.r),
+          Math.round(p.spectral ? p.r * 3.2 : p.r),
+        );
       }
       ctx.globalAlpha = 1;
     };
@@ -158,5 +163,8 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
   }, [active, style, design]);
 
   if (!active) return null;
-  return createPortal(<canvas ref={canvasRef} className="particle-field" aria-hidden="true" />, document.body);
+  return createPortal(
+    <canvas ref={canvasRef} className="particle-field" aria-hidden="true" />,
+    document.body,
+  );
 }

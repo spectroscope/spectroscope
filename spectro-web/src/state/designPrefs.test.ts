@@ -42,7 +42,13 @@ describe("designPrefs store", () => {
 
   it("setDraft applies the new prefs and marks the store dirty", () => {
     setDraft({ design: "paper", particles: false });
-    expect(lastApplied()).toEqual({ design: "paper", scroll: true, particles: false, reasoningLens: false, timelineLens: false });
+    expect(lastApplied()).toEqual({
+      design: "paper",
+      scroll: true,
+      particles: false,
+      reasoningLens: false,
+      timelineLens: false,
+    });
     expect(isDirty()).toBe(true);
   });
 
@@ -60,7 +66,13 @@ describe("designPrefs store", () => {
     expect(isDirty()).toBe(true);
     revertDesign();
     expect(isDirty()).toBe(false);
-    expect(lastApplied()).toEqual({ design: "still", scroll: true, particles: true, reasoningLens: false, timelineLens: false });
+    expect(lastApplied()).toEqual({
+      design: "still",
+      scroll: true,
+      particles: true,
+      reasoningLens: false,
+      timelineLens: false,
+    });
   });
 
   it("parsePrefs seeds from storage and rejects an unknown design id", () => {

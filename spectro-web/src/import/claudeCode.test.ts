@@ -24,7 +24,9 @@ describe("claudeCode adapter (linear)", () => {
     const call = events.find((e) => e.type === "tool_call");
     expect(call).toBeTruthy();
     const callId = (call as { callId: string }).callId;
-    expect(events.some((e) => e.type === "tool_result" && e.callId === callId && e.output.includes("config.json"))).toBe(true);
+    expect(
+      events.some((e) => e.type === "tool_result" && e.callId === callId && e.output.includes("config.json")),
+    ).toBe(true);
   });
 
   it("maps usage", () => {
@@ -50,7 +52,9 @@ describe("claudeCode adapter (modern format)", () => {
     const spawn = events.find((e) => e.type === "agent_spawn");
     expect(spawn).toBeTruthy();
     expect((spawn as { agentId: string }).agentId).toBe("agent-1");
-    expect(events.some((e) => e.type === "agent_message" && e.role === "result" && e.from === "agent-1")).toBe(true);
+    expect(
+      events.some((e) => e.type === "agent_message" && e.role === "result" && e.from === "agent-1"),
+    ).toBe(true);
   });
 
   it("folds to a clean terminal scene", () => {
@@ -62,7 +66,8 @@ describe("claudeCode adapter (modern format)", () => {
 
 describe("claudeCode adapter (Task subagents via sidechains)", () => {
   const events = parseTranscript(ccSubagent);
-  const spawn = events.find((e) => e.type === "agent_spawn") as Extract<import("../events").RunEvent, { type: "agent_spawn" }> | undefined;
+  const spawn = events.find((e) => e.type === "agent_spawn") as
+    Extract<import("../events").RunEvent, { type: "agent_spawn" }> | undefined;
 
   it("emits agent_spawn for a Task tool_use", () => {
     expect(spawn).toBeTruthy();
@@ -75,7 +80,9 @@ describe("claudeCode adapter (Task subagents via sidechains)", () => {
   });
 
   it("closes the child with a result message and the parent tool_result", () => {
-    expect(events.some((e) => e.type === "agent_message" && e.role === "result" && e.from === spawn!.agentId)).toBe(true);
+    expect(
+      events.some((e) => e.type === "agent_message" && e.role === "result" && e.from === spawn!.agentId),
+    ).toBe(true);
     expect(events.some((e) => e.type === "tool_result" && e.callId === spawn!.agentId)).toBe(true);
   });
 

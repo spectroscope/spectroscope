@@ -13,22 +13,66 @@ const buildplan: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "The user wants a plan. I delegate it to a planner subagent via build_plan.", de: "Der User will einen Plan. Ich delegiere ihn an einen Planer-Subagenten via build_plan." } },
-    { spawn: "worker-1", label: "build_plan",
-      task: { en: "Plan how to add a --version flag. Max 5 steps, no files.", de: "Plane das Hinzufügen eines --version-Flags. Max. 5 Schritte, keine Dateien." },
+    {
+      think: {
+        en: "The user wants a plan. I delegate it to a planner subagent via build_plan.",
+        de: "Der User will einen Plan. Ich delegiere ihn an einen Planer-Subagenten via build_plan.",
+      },
+    },
+    {
+      spawn: "worker-1",
+      label: "build_plan",
+      task: {
+        en: "Plan how to add a --version flag. Max 5 steps, no files.",
+        de: "Plane das Hinzufügen eines --version-Flags. Max. 5 Schritte, keine Dateien.",
+      },
       steps: [
-        { think: { en: "First I load the 'writing-plans' skill.", de: "Zuerst lade ich die 'writing-plans'-Skill." } },
+        {
+          think: {
+            en: "First I load the 'writing-plans' skill.",
+            de: "Zuerst lade ich die 'writing-plans'-Skill.",
+          },
+        },
         { status: { en: "Reading task and existing files", de: "Aufgabe und vorhandene Dateien lesen" } },
-        { say: { en: "# Plan: --version flag\n1. picocli @Option …", de: "# Plan: --version-Flag\n1. picocli @Option …" } },
-      ] },
-    { think: { en: "The plan is solid. I verify the current Main class.", de: "Der Plan ist solide. Ich prüfe die aktuelle Main-Klasse." } },
-    { read: "spectro-cli/src/main/java/dev/spectroscope/cli/Main.java",
-      result: { en: "public final class Main { … }", de: "public final class Main { … }" } },
-    { run: "./gradlew test --quiet", gate: "allow",
-      result: { en: "BUILD SUCCESSFUL in 12s\n42 tests, 0 failures", de: "BUILD SUCCESSFUL in 12s\n42 Tests, 0 Fehler" } },
+        {
+          say: {
+            en: "# Plan: --version flag\n1. picocli @Option …",
+            de: "# Plan: --version-Flag\n1. picocli @Option …",
+          },
+        },
+      ],
+    },
+    {
+      think: {
+        en: "The plan is solid. I verify the current Main class.",
+        de: "Der Plan ist solide. Ich prüfe die aktuelle Main-Klasse.",
+      },
+    },
+    {
+      read: "spectro-cli/src/main/java/dev/spectroscope/cli/Main.java",
+      result: { en: "public final class Main { … }", de: "public final class Main { … }" },
+    },
+    {
+      run: "./gradlew test --quiet",
+      gate: "allow",
+      result: {
+        en: "BUILD SUCCESSFUL in 12s\n42 tests, 0 failures",
+        de: "BUILD SUCCESSFUL in 12s\n42 Tests, 0 Fehler",
+      },
+    },
     { mcp: "notes__search_notes", input: { query: "version flag conventions", limit: 5 }, gate: "deny" },
-    { think: { en: "Even without the notes the plan is enough.", de: "Auch ohne die Notizen reicht der Plan." } },
-    { say: { en: "Here is the finished 5-step plan for the --version flag …", de: "Hier ist der fertige 5-Schritte-Plan für das --version-Flag …" } },
+    {
+      think: {
+        en: "Even without the notes the plan is enough.",
+        de: "Auch ohne die Notizen reicht der Plan.",
+      },
+    },
+    {
+      say: {
+        en: "Here is the finished 5-step plan for the --version flag …",
+        de: "Hier ist der fertige 5-Schritte-Plan für das --version-Flag …",
+      },
+    },
   ],
 };
 
@@ -42,17 +86,70 @@ const fanout: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "I fan out into three parallel reviewers.", de: "Ich fächere in drei parallele Reviewer auf." } },
-    { fanout: { label: "review", tool: "review", agents: [
-      { id: "bugs", task: { en: "Find bugs in the diff", de: "Finde Bugs im Diff" },
-        steps: [{ think: { en: "I check null checks and bounds.", de: "Ich prüfe Null-Checks und Grenzen." } }, { status: { en: "checking null checks", de: "prüfe Null-Checks" } }, { say: { en: "## Bugs\n- Off-by-one in the pager.", de: "## Bugs\n- Off-by-one im Pager." } }] },
-      { id: "perf", task: { en: "Check performance", de: "Prüfe Performance" },
-        steps: [{ think: { en: "I look for N+1 queries.", de: "Ich suche N+1-Queries." } }, { status: { en: "checking queries", de: "prüfe Queries" } }, { say: { en: "## Performance\n- N+1 in ListRepo.findAll().", de: "## Performance\n- N+1 in ListRepo.findAll()." } }] },
-      { id: "security", task: { en: "Check security", de: "Prüfe Sicherheit" },
-        steps: [{ think: { en: "I check injection and secrets.", de: "Ich prüfe Injection und Secrets." } }, { read: "src/main/java/app/Db.java", result: 'String sql = "SELECT * FROM u WHERE id=" + id;' }, { status: { en: "checking injection", de: "prüfe Injection" } }, { say: { en: "## Security\n- SQL concat → injection.", de: "## Sicherheit\n- SQL-Concat → Injection." } }] },
-    ] } },
-    { think: { en: "All three reviews are back. I prioritize the security finding.", de: "Alle drei Reviews sind zurück. Ich priorisiere den Security-Fund." } },
-    { say: { en: "Summary: 1 critical security finding, 1 bug, 1 performance issue …", de: "Zusammenfassung: 1 kritischer Security-Fund, 1 Bug, 1 Performance-Problem …" } },
+    {
+      think: {
+        en: "I fan out into three parallel reviewers.",
+        de: "Ich fächere in drei parallele Reviewer auf.",
+      },
+    },
+    {
+      fanout: {
+        label: "review",
+        tool: "review",
+        agents: [
+          {
+            id: "bugs",
+            task: { en: "Find bugs in the diff", de: "Finde Bugs im Diff" },
+            steps: [
+              { think: { en: "I check null checks and bounds.", de: "Ich prüfe Null-Checks und Grenzen." } },
+              { status: { en: "checking null checks", de: "prüfe Null-Checks" } },
+              { say: { en: "## Bugs\n- Off-by-one in the pager.", de: "## Bugs\n- Off-by-one im Pager." } },
+            ],
+          },
+          {
+            id: "perf",
+            task: { en: "Check performance", de: "Prüfe Performance" },
+            steps: [
+              { think: { en: "I look for N+1 queries.", de: "Ich suche N+1-Queries." } },
+              { status: { en: "checking queries", de: "prüfe Queries" } },
+              {
+                say: {
+                  en: "## Performance\n- N+1 in ListRepo.findAll().",
+                  de: "## Performance\n- N+1 in ListRepo.findAll().",
+                },
+              },
+            ],
+          },
+          {
+            id: "security",
+            task: { en: "Check security", de: "Prüfe Sicherheit" },
+            steps: [
+              { think: { en: "I check injection and secrets.", de: "Ich prüfe Injection und Secrets." } },
+              { read: "src/main/java/app/Db.java", result: 'String sql = "SELECT * FROM u WHERE id=" + id;' },
+              { status: { en: "checking injection", de: "prüfe Injection" } },
+              {
+                say: {
+                  en: "## Security\n- SQL concat → injection.",
+                  de: "## Sicherheit\n- SQL-Concat → Injection.",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      think: {
+        en: "All three reviews are back. I prioritize the security finding.",
+        de: "Alle drei Reviews sind zurück. Ich priorisiere den Security-Fund.",
+      },
+    },
+    {
+      say: {
+        en: "Summary: 1 critical security finding, 1 bug, 1 performance issue …",
+        de: "Zusammenfassung: 1 kritischer Security-Fund, 1 Bug, 1 Performance-Problem …",
+      },
+    },
   ],
 };
 
@@ -65,12 +162,27 @@ const permission: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "Deleting is risky, that needs your approval.", de: "Löschen ist riskant, das braucht deine Freigabe." } },
+    {
+      think: {
+        en: "Deleting is risky, that needs your approval.",
+        de: "Löschen ist riskant, das braucht deine Freigabe.",
+      },
+    },
     { run: "rm -rf data/tmp", gate: "deny" },
-    { think: { en: "Denied. I delete nothing and only take a look.", de: "Abgelehnt. Ich lösche nichts und schaue nur." } },
+    {
+      think: {
+        en: "Denied. I delete nothing and only take a look.",
+        de: "Abgelehnt. Ich lösche nichts und schaue nur.",
+      },
+    },
     { list: "data/tmp", result: "cache.bin\nsession.log" },
     { run: "git status --short", gate: "allow", result: " M src/app.ts" },
-    { say: { en: "I deleted nothing (denied). Git shows one changed file.", de: "Ich habe nichts gelöscht (abgelehnt). Git zeigt eine geänderte Datei." } },
+    {
+      say: {
+        en: "I deleted nothing (denied). Git shows one changed file.",
+        de: "Ich habe nichts gelöscht (abgelehnt). Git zeigt eine geänderte Datei.",
+      },
+    },
   ],
 };
 
@@ -90,7 +202,12 @@ const diskshell: Dsl = {
     { list: "src", result: "app.ts\nconfig.json\nindex.ts" },
     { think: { en: "And run the tests.", de: "Und die Tests ausführen." } },
     { run: "npm test", gate: "allow", result: "12 passed, 0 failed" },
-    { say: { en: "Config updated (retries 3→5), src/ listed, tests green.", de: "Config aktualisiert (retries 3→5), src/ gelistet, Tests grün." } },
+    {
+      say: {
+        en: "Config updated (retries 3→5), src/ listed, tests green.",
+        de: "Config aktualisiert (retries 3→5), src/ gelistet, Tests grün.",
+      },
+    },
   ],
 };
 
@@ -109,20 +226,40 @@ const agentsmd: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "First I read the workspace's AGENTS.md — its house-rules bind me.", de: "Zuerst lese ich die AGENTS.md des Workspace — ihre Hausregeln binden mich." } },
-    { read: "AGENTS.md", result: {
-      en: "# Agent instructions\n- Always run the tests before finishing.\n- Never edit anything under generated/ — it is machine-written.",
-      de: "# Agent-Anweisungen\n- Führe vor dem Abschluss immer die Tests aus.\n- Ändere niemals etwas unter generated/ — es ist maschinengeschrieben." } },
-    { think: {
-      en: "generated/messages.ts is off-limits per AGENTS.md. I edit the source template it is generated from, and leave the generated file untouched.",
-      de: "generated/messages.ts ist laut AGENTS.md tabu. Ich ändere die Quell-Vorlage, aus der sie generiert wird, und lasse die generierte Datei in Ruhe." } },
+    {
+      think: {
+        en: "First I read the workspace's AGENTS.md — its house-rules bind me.",
+        de: "Zuerst lese ich die AGENTS.md des Workspace — ihre Hausregeln binden mich.",
+      },
+    },
+    {
+      read: "AGENTS.md",
+      result: {
+        en: "# Agent instructions\n- Always run the tests before finishing.\n- Never edit anything under generated/ — it is machine-written.",
+        de: "# Agent-Anweisungen\n- Führe vor dem Abschluss immer die Tests aus.\n- Ändere niemals etwas unter generated/ — es ist maschinengeschrieben.",
+      },
+    },
+    {
+      think: {
+        en: "generated/messages.ts is off-limits per AGENTS.md. I edit the source template it is generated from, and leave the generated file untouched.",
+        de: "generated/messages.ts ist laut AGENTS.md tabu. Ich ändere die Quell-Vorlage, aus der sie generiert wird, und lasse die generierte Datei in Ruhe.",
+      },
+    },
     { read: "src/messages.template.ts", result: 'export const greeting = "hello";' },
     { write: "src/messages.template.ts", result: "ok, wrote 1 file" },
-    { think: { en: "AGENTS.md says: run the tests before finishing.", de: "AGENTS.md sagt: vor dem Abschluss die Tests ausführen." } },
+    {
+      think: {
+        en: "AGENTS.md says: run the tests before finishing.",
+        de: "AGENTS.md sagt: vor dem Abschluss die Tests ausführen.",
+      },
+    },
     { run: "npm test", gate: "allow", result: "14 passed, 0 failed" },
-    { say: {
-      en: "Followed AGENTS.md: left generated/ untouched, edited the source template instead, and ran the tests (green) before finishing.",
-      de: "AGENTS.md befolgt: generated/ unangetastet gelassen, stattdessen die Quell-Vorlage geändert und vor dem Abschluss die Tests ausgeführt (grün)." } },
+    {
+      say: {
+        en: "Followed AGENTS.md: left generated/ untouched, edited the source template instead, and ran the tests (green) before finishing.",
+        de: "AGENTS.md befolgt: generated/ unangetastet gelassen, stattdessen die Quell-Vorlage geändert und vor dem Abschluss die Tests ausgeführt (grün).",
+      },
+    },
   ],
 };
 
@@ -142,37 +279,114 @@ const coding: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "Phase 1/4 — EXPLORE. I read the client and its test before touching anything.", de: "Phase 1/4 — ERKUNDEN. Ich lese den Client und seinen Test, bevor ich etwas anfasse." } },
-    { read: "src/http/client.ts", result: "export async function get(url) { return fetch(url); } // no retries" },
+    {
+      think: {
+        en: "Phase 1/4 — EXPLORE. I read the client and its test before touching anything.",
+        de: "Phase 1/4 — ERKUNDEN. Ich lese den Client und seinen Test, bevor ich etwas anfasse.",
+      },
+    },
+    {
+      read: "src/http/client.ts",
+      result: "export async function get(url) { return fetch(url); } // no retries",
+    },
     { read: "test/client.test.ts", result: "it('gets', …) // happy path only" },
-    { think: { en: "Phase 2/4 — PLAN. A planner subagent drafts the steps.", de: "Phase 2/4 — PLANEN. Ein Planer-Subagent entwirft die Schritte." } },
-    { spawn: "planner", label: "build_plan",
-      task: { en: "Plan retry logic for get(): backoff, max 3 attempts, then a test.", de: "Plane Retry-Logik für get(): Backoff, max. 3 Versuche, dazu ein Test." },
+    {
+      think: {
+        en: "Phase 2/4 — PLAN. A planner subagent drafts the steps.",
+        de: "Phase 2/4 — PLANEN. Ein Planer-Subagent entwirft die Schritte.",
+      },
+    },
+    {
+      spawn: "planner",
+      label: "build_plan",
+      task: {
+        en: "Plan retry logic for get(): backoff, max 3 attempts, then a test.",
+        de: "Plane Retry-Logik für get(): Backoff, max. 3 Versuche, dazu ein Test.",
+      },
       steps: [
-        { think: { en: "Small surface: wrap fetch in a loop with exponential backoff.", de: "Kleine Fläche: fetch in eine Schleife mit exponentiellem Backoff wickeln." } },
+        {
+          think: {
+            en: "Small surface: wrap fetch in a loop with exponential backoff.",
+            de: "Kleine Fläche: fetch in eine Schleife mit exponentiellem Backoff wickeln.",
+          },
+        },
         { status: { en: "drafting the 3-step plan", de: "entwerfe den 3-Schritte-Plan" } },
-        { say: { en: "# Plan\n1. retry(fn, 3, backoff) helper\n2. use it in get()\n3. test: fails twice, succeeds third", de: "# Plan\n1. retry(fn, 3, backoff)-Helfer\n2. in get() verwenden\n3. Test: scheitert zweimal, klappt beim dritten" } },
-      ] },
-    { think: { en: "Phase 3/4 — IMPLEMENT. Two workers in parallel: code and test.", de: "Phase 3/4 — IMPLEMENTIEREN. Zwei Worker parallel: Code und Test." } },
-    { fanout: { label: "develop", tool: "develop", agents: [
-      { id: "impl", task: { en: "Implement retry() and wire it into get()", de: "retry() implementieren und in get() einbauen" },
-        steps: [
-          { think: { en: "Loop, await backoff, rethrow on the last attempt.", de: "Schleife, Backoff awaiten, beim letzten Versuch rethrown." } },
-          { status: { en: "writing src/http/retry.ts", de: "schreibe src/http/retry.ts" } },
-          { write: "src/http/retry.ts", result: "ok, wrote 1 file" },
-          { say: { en: "retry() in place, get() now uses it.", de: "retry() steht, get() nutzt es jetzt." } },
-        ] },
-      { id: "tester", task: { en: "Write the failing-then-passing retry test", de: "Den erst-rot-dann-grün Retry-Test schreiben" },
-        steps: [
-          { think: { en: "Mock fetch: two rejections, then a 200.", de: "fetch mocken: zwei Rejections, dann ein 200." } },
-          { status: { en: "writing test/retry.test.ts", de: "schreibe test/retry.test.ts" } },
-          { write: "test/retry.test.ts", result: "ok, wrote 1 file" },
-          { say: { en: "Test covers the backoff path.", de: "Der Test deckt den Backoff-Pfad ab." } },
-        ] },
-    ] } },
-    { think: { en: "Phase 4/4 — VERIFY. Run the suite; shell needs your approval.", de: "Phase 4/4 — VERIFIZIEREN. Suite ausführen; die Shell braucht deine Freigabe." } },
+        {
+          say: {
+            en: "# Plan\n1. retry(fn, 3, backoff) helper\n2. use it in get()\n3. test: fails twice, succeeds third",
+            de: "# Plan\n1. retry(fn, 3, backoff)-Helfer\n2. in get() verwenden\n3. Test: scheitert zweimal, klappt beim dritten",
+          },
+        },
+      ],
+    },
+    {
+      think: {
+        en: "Phase 3/4 — IMPLEMENT. Two workers in parallel: code and test.",
+        de: "Phase 3/4 — IMPLEMENTIEREN. Zwei Worker parallel: Code und Test.",
+      },
+    },
+    {
+      fanout: {
+        label: "develop",
+        tool: "develop",
+        agents: [
+          {
+            id: "impl",
+            task: {
+              en: "Implement retry() and wire it into get()",
+              de: "retry() implementieren und in get() einbauen",
+            },
+            steps: [
+              {
+                think: {
+                  en: "Loop, await backoff, rethrow on the last attempt.",
+                  de: "Schleife, Backoff awaiten, beim letzten Versuch rethrown.",
+                },
+              },
+              { status: { en: "writing src/http/retry.ts", de: "schreibe src/http/retry.ts" } },
+              { write: "src/http/retry.ts", result: "ok, wrote 1 file" },
+              {
+                say: {
+                  en: "retry() in place, get() now uses it.",
+                  de: "retry() steht, get() nutzt es jetzt.",
+                },
+              },
+            ],
+          },
+          {
+            id: "tester",
+            task: {
+              en: "Write the failing-then-passing retry test",
+              de: "Den erst-rot-dann-grün Retry-Test schreiben",
+            },
+            steps: [
+              {
+                think: {
+                  en: "Mock fetch: two rejections, then a 200.",
+                  de: "fetch mocken: zwei Rejections, dann ein 200.",
+                },
+              },
+              { status: { en: "writing test/retry.test.ts", de: "schreibe test/retry.test.ts" } },
+              { write: "test/retry.test.ts", result: "ok, wrote 1 file" },
+              { say: { en: "Test covers the backoff path.", de: "Der Test deckt den Backoff-Pfad ab." } },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      think: {
+        en: "Phase 4/4 — VERIFY. Run the suite; shell needs your approval.",
+        de: "Phase 4/4 — VERIFIZIEREN. Suite ausführen; die Shell braucht deine Freigabe.",
+      },
+    },
     { run: "npm test", gate: "allow", result: "14 passed, 0 failed (2 new)" },
-    { say: { en: "Done: retry with backoff shipped, covered by a test, suite green — explored, planned, built in parallel, verified.", de: "Fertig: Retry mit Backoff eingebaut, per Test abgedeckt, Suite grün — erkundet, geplant, parallel gebaut, verifiziert." } },
+    {
+      say: {
+        en: "Done: retry with backoff shipped, covered by a test, suite green — explored, planned, built in parallel, verified.",
+        de: "Fertig: Retry mit Backoff eingebaut, per Test abgedeckt, Suite grün — erkundet, geplant, parallel gebaut, verifiziert.",
+      },
+    },
   ],
 };
 
@@ -185,42 +399,136 @@ const coding: Dsl = {
 const research: Dsl = {
   id: "research",
   fleet: true,
-  name: { en: "Research · consolidate + critical review", de: "Research · Konsolidierung + kritisches Review" },
+  name: {
+    en: "Research · consolidate + critical review",
+    de: "Research · Konsolidierung + kritisches Review",
+  },
   prompt: {
     en: "Should we adopt HTTP/3 for our API edge? Research pros/cons, consolidate, and review the draft critically before answering.",
     de: "Sollten wir HTTP/3 für unsere API-Edge einführen? Recherchiere Pro/Contra, konsolidiere und reviewe den Entwurf kritisch, bevor du antwortest.",
   },
   provider: "ollama",
   steps: [
-    { think: { en: "I sweep two sources in parallel, then merge before anything ships.", de: "Ich durchsuche zwei Quellen parallel und führe dann zusammen, bevor etwas rausgeht." } },
-    { fanout: { label: "research", tool: "research", agents: [
-      { id: "docs", task: { en: "Scan the IETF/QUIC docs for HTTP/3 trade-offs", de: "IETF/QUIC-Doku nach HTTP/3-Trade-offs durchsuchen" },
-        steps: [
-          { think: { en: "RFC 9114 and QUIC loss recovery are the core.", de: "RFC 9114 und QUIC Loss Recovery sind der Kern." } },
-          { mcp: "docs__search", input: { query: "HTTP/3 QUIC head-of-line blocking" }, gate: "allow", result: "QUIC removes TCP HoL blocking; UDP path required" },
-          { status: { en: "reading RFC notes", de: "lese RFC-Notizen" } },
-          { say: { en: "Docs: no TCP head-of-line blocking, but UDP must be open end-to-end.", de: "Doku: kein TCP-Head-of-Line-Blocking, aber UDP muss Ende-zu-Ende offen sein." } },
-        ] },
-      { id: "web", task: { en: "Find real-world adoption reports", de: "Praxisberichte zur Einführung finden" },
-        steps: [
-          { think: { en: "Look for CDN and big-API adoption numbers.", de: "Nach CDN- und Big-API-Adoptionszahlen suchen." } },
-          { mcp: "web__search", input: { query: "HTTP/3 production adoption report" }, gate: "allow", result: "major CDNs default to h3; some corp networks still block UDP/443" },
-          { status: { en: "collecting adoption data", de: "sammle Adoptionsdaten" } },
-          { say: { en: "Field reports: CDNs default to h3; corporate networks blocking UDP are the main regression risk.", de: "Praxis: CDNs defaulten auf h3; UDP-blockende Firmennetze sind das Hauptrisiko." } },
-        ] },
-    ] } },
-    { think: { en: "CONSOLIDATE. Both sweeps agree on the upside; the risk is UDP reachability. Drafting.", de: "KONSOLIDIEREN. Beide Recherchen einig beim Nutzen; das Risiko ist UDP-Erreichbarkeit. Ich entwerfe." } },
-    { say: { en: "Draft: adopt HTTP/3 at the edge with TCP fallback (Alt-Svc), because HoL blocking disappears and CDNs already default to it.", de: "Entwurf: HTTP/3 an der Edge einführen mit TCP-Fallback (Alt-Svc), weil HoL-Blocking verschwindet und CDNs es bereits defaulten." } },
-    { spawn: "critic", label: "review",
-      task: { en: "Challenge the draft: what breaks it? Check the fallback claim.", de: "Fordere den Entwurf heraus: Woran scheitert er? Prüfe die Fallback-Behauptung." },
+    {
+      think: {
+        en: "I sweep two sources in parallel, then merge before anything ships.",
+        de: "Ich durchsuche zwei Quellen parallel und führe dann zusammen, bevor etwas rausgeht.",
+      },
+    },
+    {
+      fanout: {
+        label: "research",
+        tool: "research",
+        agents: [
+          {
+            id: "docs",
+            task: {
+              en: "Scan the IETF/QUIC docs for HTTP/3 trade-offs",
+              de: "IETF/QUIC-Doku nach HTTP/3-Trade-offs durchsuchen",
+            },
+            steps: [
+              {
+                think: {
+                  en: "RFC 9114 and QUIC loss recovery are the core.",
+                  de: "RFC 9114 und QUIC Loss Recovery sind der Kern.",
+                },
+              },
+              {
+                mcp: "docs__search",
+                input: { query: "HTTP/3 QUIC head-of-line blocking" },
+                gate: "allow",
+                result: "QUIC removes TCP HoL blocking; UDP path required",
+              },
+              { status: { en: "reading RFC notes", de: "lese RFC-Notizen" } },
+              {
+                say: {
+                  en: "Docs: no TCP head-of-line blocking, but UDP must be open end-to-end.",
+                  de: "Doku: kein TCP-Head-of-Line-Blocking, aber UDP muss Ende-zu-Ende offen sein.",
+                },
+              },
+            ],
+          },
+          {
+            id: "web",
+            task: { en: "Find real-world adoption reports", de: "Praxisberichte zur Einführung finden" },
+            steps: [
+              {
+                think: {
+                  en: "Look for CDN and big-API adoption numbers.",
+                  de: "Nach CDN- und Big-API-Adoptionszahlen suchen.",
+                },
+              },
+              {
+                mcp: "web__search",
+                input: { query: "HTTP/3 production adoption report" },
+                gate: "allow",
+                result: "major CDNs default to h3; some corp networks still block UDP/443",
+              },
+              { status: { en: "collecting adoption data", de: "sammle Adoptionsdaten" } },
+              {
+                say: {
+                  en: "Field reports: CDNs default to h3; corporate networks blocking UDP are the main regression risk.",
+                  de: "Praxis: CDNs defaulten auf h3; UDP-blockende Firmennetze sind das Hauptrisiko.",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      think: {
+        en: "CONSOLIDATE. Both sweeps agree on the upside; the risk is UDP reachability. Drafting.",
+        de: "KONSOLIDIEREN. Beide Recherchen einig beim Nutzen; das Risiko ist UDP-Erreichbarkeit. Ich entwerfe.",
+      },
+    },
+    {
+      say: {
+        en: "Draft: adopt HTTP/3 at the edge with TCP fallback (Alt-Svc), because HoL blocking disappears and CDNs already default to it.",
+        de: "Entwurf: HTTP/3 an der Edge einführen mit TCP-Fallback (Alt-Svc), weil HoL-Blocking verschwindet und CDNs es bereits defaulten.",
+      },
+    },
+    {
+      spawn: "critic",
+      label: "review",
+      task: {
+        en: "Challenge the draft: what breaks it? Check the fallback claim.",
+        de: "Fordere den Entwurf heraus: Woran scheitert er? Prüfe die Fallback-Behauptung.",
+      },
       steps: [
-        { think: { en: "The draft assumes Alt-Svc fallback is seamless — is it, on first connect?", de: "Der Entwurf nimmt an, der Alt-Svc-Fallback sei nahtlos — ist er das beim Erstkontakt?" } },
+        {
+          think: {
+            en: "The draft assumes Alt-Svc fallback is seamless — is it, on first connect?",
+            de: "Der Entwurf nimmt an, der Alt-Svc-Fallback sei nahtlos — ist er das beim Erstkontakt?",
+          },
+        },
         { status: { en: "attacking the fallback assumption", de: "greife die Fallback-Annahme an" } },
-        { say: { en: "CONTRADICTION: first connections are TCP anyway (Alt-Svc is learned), so 'seamless h3-first' overstates it. Also: measure UDP-blocked share before committing.", de: "WIDERSPRUCH: Erstverbindungen laufen ohnehin über TCP (Alt-Svc wird erst gelernt), 'nahtlos h3-first' übertreibt also. Außerdem: UDP-Block-Anteil messen, bevor wir uns festlegen." } },
-      ] },
-    { think: { en: "The critic is right — I verify the UDP-blocked share before finalizing.", de: "Der Kritiker hat recht — ich prüfe den UDP-Block-Anteil, bevor ich abschließe." } },
-    { mcp: "web__search", input: { query: "share of clients with UDP 443 blocked" }, gate: "allow", result: "~3-5% of enterprise clients; consumer <1%" },
-    { say: { en: "Final: adopt HTTP/3 at the edge. First contact stays TCP (Alt-Svc upgrade), ~3-5% enterprise clients stay on h2 — acceptable. Rollout with per-network fallback metrics.", de: "Final: HTTP/3 an der Edge einführen. Erstkontakt bleibt TCP (Alt-Svc-Upgrade), ~3–5 % Enterprise-Clients bleiben auf h2 — akzeptabel. Rollout mit Fallback-Metriken pro Netz." } },
+        {
+          say: {
+            en: "CONTRADICTION: first connections are TCP anyway (Alt-Svc is learned), so 'seamless h3-first' overstates it. Also: measure UDP-blocked share before committing.",
+            de: "WIDERSPRUCH: Erstverbindungen laufen ohnehin über TCP (Alt-Svc wird erst gelernt), 'nahtlos h3-first' übertreibt also. Außerdem: UDP-Block-Anteil messen, bevor wir uns festlegen.",
+          },
+        },
+      ],
+    },
+    {
+      think: {
+        en: "The critic is right — I verify the UDP-blocked share before finalizing.",
+        de: "Der Kritiker hat recht — ich prüfe den UDP-Block-Anteil, bevor ich abschließe.",
+      },
+    },
+    {
+      mcp: "web__search",
+      input: { query: "share of clients with UDP 443 blocked" },
+      gate: "allow",
+      result: "~3-5% of enterprise clients; consumer <1%",
+    },
+    {
+      say: {
+        en: "Final: adopt HTTP/3 at the edge. First contact stays TCP (Alt-Svc upgrade), ~3-5% enterprise clients stay on h2 — acceptable. Rollout with per-network fallback metrics.",
+        de: "Final: HTTP/3 an der Edge einführen. Erstkontakt bleibt TCP (Alt-Svc-Upgrade), ~3–5 % Enterprise-Clients bleiben auf h2 — akzeptabel. Rollout mit Fallback-Metriken pro Netz.",
+      },
+    },
   ],
 };
 
@@ -250,22 +558,62 @@ const context: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "Three long docs. Every read lands in my context window — watch the gauge.", de: "Drei lange Dokus. Jeder Read landet in meinem Context-Window — beobachte die Anzeige." } },
+    {
+      think: {
+        en: "Three long docs. Every read lands in my context window — watch the gauge.",
+        de: "Drei lange Dokus. Jeder Read landet in meinem Context-Window — beobachte die Anzeige.",
+      },
+    },
     { read: "docs/01-architecture.md", result: "(9,000 lines of architecture notes …)" },
-    { say: { en: "Chapter 1 digested: the host, two bridges, one gateway VM.", de: "Kapitel 1 verdaut: der Host, zwei Bridges, eine Gateway-VM." } },
+    {
+      say: {
+        en: "Chapter 1 digested: the host, two bridges, one gateway VM.",
+        de: "Kapitel 1 verdaut: der Host, zwei Bridges, eine Gateway-VM.",
+      },
+    },
     CTX(26400),
     { think: { en: "A quarter full. Next document.", de: "Ein Viertel voll. Nächstes Dokument." } },
     { read: "docs/02-network-topology.md", result: "(12,000 lines: four nets, IP plan, WireGuard …)" },
-    { say: { en: "Chapter 2 digested: four nets, the lab bridge is isolated.", de: "Kapitel 2 verdaut: vier Netze, die Lab-Bridge ist isoliert." } },
+    {
+      say: {
+        en: "Chapter 2 digested: four nets, the lab bridge is isolated.",
+        de: "Kapitel 2 verdaut: vier Netze, die Lab-Bridge ist isoliert.",
+      },
+    },
     CTX(63800),
-    { think: { en: "Over 60% — the meter turns amber. One more read fits.", de: "Über 60 % — die Anzeige wird gelb. Ein Read passt noch." } },
+    {
+      think: {
+        en: "Over 60% — the meter turns amber. One more read fits.",
+        de: "Über 60 % — die Anzeige wird gelb. Ein Read passt noch.",
+      },
+    },
     { read: "docs/08-rebuild-runbook.md", result: "(15,000 lines: the full rebuild runbook …)" },
-    { say: { en: "Chapter 3 digested: the rebuild runbook, step by step.", de: "Kapitel 3 verdaut: das Rebuild-Runbook, Schritt für Schritt." } },
+    {
+      say: {
+        en: "Chapter 3 digested: the rebuild runbook, step by step.",
+        de: "Kapitel 3 verdaut: das Rebuild-Runbook, Schritt für Schritt.",
+      },
+    },
     CTX(87200),
-    { think: { en: "87% — nearly full. The harness now COMPACTS: old turns become one summary.", de: "87 % — fast voll. Der Harness KOMPAKTIERT jetzt: alte Turns werden EINE Zusammenfassung." } },
+    {
+      think: {
+        en: "87% — nearly full. The harness now COMPACTS: old turns become one summary.",
+        de: "87 % — fast voll. Der Harness KOMPAKTIERT jetzt: alte Turns werden EINE Zusammenfassung.",
+      },
+    },
     { compact: { removedTurns: 6, summaryChars: 3200 } },
-    { think: { en: "The window is small again; the summary carries the essence forward.", de: "Das Fenster ist wieder klein; die Zusammenfassung trägt die Essenz weiter." } },
-    { say: { en: "One summary of all three docs: a single host, four isolated nets, and a rebuild path — delivered on a freshly compacted window.", de: "Eine Zusammenfassung aller drei Dokus: ein Host, vier isolierte Netze und ein Rebuild-Pfad — geliefert auf frisch kompaktiertem Fenster." } },
+    {
+      think: {
+        en: "The window is small again; the summary carries the essence forward.",
+        de: "Das Fenster ist wieder klein; die Zusammenfassung trägt die Essenz weiter.",
+      },
+    },
+    {
+      say: {
+        en: "One summary of all three docs: a single host, four isolated nets, and a rebuild path — delivered on a freshly compacted window.",
+        de: "Eine Zusammenfassung aller drei Dokus: ein Host, vier isolierte Netze und ein Rebuild-Pfad — geliefert auf frisch kompaktiertem Fenster.",
+      },
+    },
   ],
 };
 
@@ -279,30 +627,87 @@ const codereview: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "I write the target, then fan out three reviewers onto it.", de: "Ich schreibe das Ziel, dann fächere ich drei Reviewer darauf auf." } },
-    { write: "review_target.py", result: { en: "ok, wrote review_target.py", de: "ok, review_target.py geschrieben" } },
-    { fanout: { label: "review", tool: "review", agents: [
-      { id: "correctness", task: { en: "Check correctness", de: "Prüfe Korrektheit" },
-        steps: [
-          { read: "review_target.py", result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]" },
-          { status: { en: "checking bounds & types", de: "prüfe Grenzen & Typen" } },
-          { say: { en: "## Correctness\n- Off-by-one: `[1:]` silently drops the first age.", de: "## Korrektheit\n- Off-by-one: `[1:]` verwirft still das erste Alter." } },
-        ] },
-      { id: "security", task: { en: "Check security", de: "Prüfe Sicherheit" },
-        steps: [
-          { read: "review_target.py", result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]" },
-          { status: { en: "checking untrusted input", de: "prüfe ungeprüfte Eingaben" } },
-          { say: { en: "## Security\n- `eval()` on input → arbitrary code execution.", de: "## Sicherheit\n- `eval()` auf Eingabe → beliebige Codeausführung." } },
-        ] },
-      { id: "readability", task: { en: "Check readability", de: "Prüfe Lesbarkeit" },
-        steps: [
-          { read: "review_target.py", result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]" },
-          { status: { en: "checking names & clarity", de: "prüfe Namen & Klarheit" } },
-          { say: { en: "## Readability\n- One-letter name `a` hides what each value is.", de: "## Lesbarkeit\n- Ein-Buchstaben-Name `a` verbirgt, was jeder Wert ist." } },
-        ] },
-    ] } },
-    { think: { en: "Three findings back — I merge them into a verdict table.", de: "Drei Funde zurück — ich fasse sie in einer Urteilstabelle zusammen." } },
-    { say: { en: "| lens | verdict |\n| correctness | off-by-one slice |\n| security | eval() on input |\n| readability | one-letter names |", de: "| Linse | Urteil |\n| Korrektheit | Off-by-one-Slice |\n| Sicherheit | eval() auf Eingabe |\n| Lesbarkeit | Ein-Buchstaben-Namen |" } },
+    {
+      think: {
+        en: "I write the target, then fan out three reviewers onto it.",
+        de: "Ich schreibe das Ziel, dann fächere ich drei Reviewer darauf auf.",
+      },
+    },
+    {
+      write: "review_target.py",
+      result: { en: "ok, wrote review_target.py", de: "ok, review_target.py geschrieben" },
+    },
+    {
+      fanout: {
+        label: "review",
+        tool: "review",
+        agents: [
+          {
+            id: "correctness",
+            task: { en: "Check correctness", de: "Prüfe Korrektheit" },
+            steps: [
+              {
+                read: "review_target.py",
+                result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]",
+              },
+              { status: { en: "checking bounds & types", de: "prüfe Grenzen & Typen" } },
+              {
+                say: {
+                  en: "## Correctness\n- Off-by-one: `[1:]` silently drops the first age.",
+                  de: "## Korrektheit\n- Off-by-one: `[1:]` verwirft still das erste Alter.",
+                },
+              },
+            ],
+          },
+          {
+            id: "security",
+            task: { en: "Check security", de: "Prüfe Sicherheit" },
+            steps: [
+              {
+                read: "review_target.py",
+                result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]",
+              },
+              { status: { en: "checking untrusted input", de: "prüfe ungeprüfte Eingaben" } },
+              {
+                say: {
+                  en: "## Security\n- `eval()` on input → arbitrary code execution.",
+                  de: "## Sicherheit\n- `eval()` auf Eingabe → beliebige Codeausführung.",
+                },
+              },
+            ],
+          },
+          {
+            id: "readability",
+            task: { en: "Check readability", de: "Prüfe Lesbarkeit" },
+            steps: [
+              {
+                read: "review_target.py",
+                result: "def parse_ages(csv_line): return [eval(a) for a in csv_line.split(',')[1:]]",
+              },
+              { status: { en: "checking names & clarity", de: "prüfe Namen & Klarheit" } },
+              {
+                say: {
+                  en: "## Readability\n- One-letter name `a` hides what each value is.",
+                  de: "## Lesbarkeit\n- Ein-Buchstaben-Name `a` verbirgt, was jeder Wert ist.",
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      think: {
+        en: "Three findings back — I merge them into a verdict table.",
+        de: "Drei Funde zurück — ich fasse sie in einer Urteilstabelle zusammen.",
+      },
+    },
+    {
+      say: {
+        en: "| lens | verdict |\n| correctness | off-by-one slice |\n| security | eval() on input |\n| readability | one-letter names |",
+        de: "| Linse | Urteil |\n| Korrektheit | Off-by-one-Slice |\n| Sicherheit | eval() auf Eingabe |\n| Lesbarkeit | Ein-Buchstaben-Namen |",
+      },
+    },
   ],
 };
 
@@ -315,16 +720,52 @@ const darkmode: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "A planning task — I delegate it to a build_plan subagent.", de: "Eine Planungsaufgabe — ich delegiere sie an einen build_plan-Subagenten." } },
-    { spawn: "worker-1", label: "build_plan",
-      task: { en: "Plan a dark-mode toggle. Max 5 steps, no files.", de: "Plane einen Dark-Mode-Umschalter. Max. 5 Schritte, keine Dateien." },
+    {
+      think: {
+        en: "A planning task — I delegate it to a build_plan subagent.",
+        de: "Eine Planungsaufgabe — ich delegiere sie an einen build_plan-Subagenten.",
+      },
+    },
+    {
+      spawn: "worker-1",
+      label: "build_plan",
+      task: {
+        en: "Plan a dark-mode toggle. Max 5 steps, no files.",
+        de: "Plane einen Dark-Mode-Umschalter. Max. 5 Schritte, keine Dateien.",
+      },
       steps: [
-        { think: { en: "I load the 'writing-plans' skill first.", de: "Ich lade zuerst die 'writing-plans'-Skill." } },
-        { status: { en: "Reading the token layer and the theme switch", de: "Token-Ebene und Theme-Umschalter lesen" } },
-        { say: { en: "# Plan: dark mode\n1. Add a `[data-theme]` token set\n2. A toggle in the header\n3. Persist the choice to localStorage\n4. Respect prefers-color-scheme\n5. Test both themes", de: "# Plan: Dark Mode\n1. Ein `[data-theme]`-Token-Set\n2. Ein Umschalter im Header\n3. Die Wahl in localStorage persistieren\n4. prefers-color-scheme beachten\n5. Beide Themes testen" } },
-      ] },
-    { think: { en: "The five-step plan covers it. I condense it to three bullets.", de: "Der Fünf-Schritte-Plan deckt es ab. Ich verdichte ihn auf drei Punkte." } },
-    { say: { en: "Summary:\n- a token-driven `[data-theme]` set\n- a header toggle, persisted\n- honors the OS preference", de: "Zusammenfassung:\n- ein token-getriebenes `[data-theme]`-Set\n- ein Header-Umschalter, persistiert\n- respektiert die OS-Vorgabe" } },
+        {
+          think: {
+            en: "I load the 'writing-plans' skill first.",
+            de: "Ich lade zuerst die 'writing-plans'-Skill.",
+          },
+        },
+        {
+          status: {
+            en: "Reading the token layer and the theme switch",
+            de: "Token-Ebene und Theme-Umschalter lesen",
+          },
+        },
+        {
+          say: {
+            en: "# Plan: dark mode\n1. Add a `[data-theme]` token set\n2. A toggle in the header\n3. Persist the choice to localStorage\n4. Respect prefers-color-scheme\n5. Test both themes",
+            de: "# Plan: Dark Mode\n1. Ein `[data-theme]`-Token-Set\n2. Ein Umschalter im Header\n3. Die Wahl in localStorage persistieren\n4. prefers-color-scheme beachten\n5. Beide Themes testen",
+          },
+        },
+      ],
+    },
+    {
+      think: {
+        en: "The five-step plan covers it. I condense it to three bullets.",
+        de: "Der Fünf-Schritte-Plan deckt es ab. Ich verdichte ihn auf drei Punkte.",
+      },
+    },
+    {
+      say: {
+        en: "Summary:\n- a token-driven `[data-theme]` set\n- a header toggle, persisted\n- honors the OS preference",
+        de: "Zusammenfassung:\n- ein token-getriebenes `[data-theme]`-Set\n- ein Header-Umschalter, persistiert\n- respektiert die OS-Vorgabe",
+      },
+    },
   ],
 };
 
@@ -337,11 +778,36 @@ const imagegen: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "I draft an image, look at it, then refine the prompt.", de: "Ich entwerfe ein Bild, sehe es an, dann verfeinere ich den Prompt." } },
-    { image: { en: "minimal line-art coffee bean logo, centered, single stroke", de: "minimales Line-Art-Kaffeebohnen-Logo, zentriert, ein Strich" } },
-    { say: { en: "The draft is centered, but the stroke weight is uneven. I refine it.", de: "Der Entwurf ist zentriert, aber die Strichstärke ist ungleichmäßig. Ich verfeinere." } },
-    { image: { en: "minimal line-art coffee bean logo, uniform 2px stroke, warm amber accent", de: "minimales Line-Art-Kaffeebohnen-Logo, gleichmäßiger 2px-Strich, warmer Amber-Akzent" } },
-    { say: { en: "The refined logo has a clean uniform stroke and a warm amber accent — done.", de: "Das verfeinerte Logo hat einen sauberen gleichmäßigen Strich und einen warmen Amber-Akzent — fertig." } },
+    {
+      think: {
+        en: "I draft an image, look at it, then refine the prompt.",
+        de: "Ich entwerfe ein Bild, sehe es an, dann verfeinere ich den Prompt.",
+      },
+    },
+    {
+      image: {
+        en: "minimal line-art coffee bean logo, centered, single stroke",
+        de: "minimales Line-Art-Kaffeebohnen-Logo, zentriert, ein Strich",
+      },
+    },
+    {
+      say: {
+        en: "The draft is centered, but the stroke weight is uneven. I refine it.",
+        de: "Der Entwurf ist zentriert, aber die Strichstärke ist ungleichmäßig. Ich verfeinere.",
+      },
+    },
+    {
+      image: {
+        en: "minimal line-art coffee bean logo, uniform 2px stroke, warm amber accent",
+        de: "minimales Line-Art-Kaffeebohnen-Logo, gleichmäßiger 2px-Strich, warmer Amber-Akzent",
+      },
+    },
+    {
+      say: {
+        en: "The refined logo has a clean uniform stroke and a warm amber accent — done.",
+        de: "Das verfeinerte Logo hat einen sauberen gleichmäßigen Strich und einen warmen Amber-Akzent — fertig.",
+      },
+    },
   ],
 };
 
@@ -360,32 +826,85 @@ const fleetswarm: Dsl = {
   },
   provider: "ollama",
   steps: [
-    { think: { en: "Three independent slices — I dispatch a worker for each and let them run in parallel.", de: "Drei unabhängige Scheiben — ich schicke je einen Worker los und lasse sie parallel laufen." } },
-    { fanout: { label: "dispatch", tool: "dispatch", agents: [
-      { id: "worker-build", task: { en: "Build the release binary", de: "Das Release-Binary bauen" },
-        steps: [
-          { think: { en: "Compile, then package.", de: "Kompilieren, dann packen." } },
-          { status: { en: "compiling", de: "kompiliere" } },
-          { run: "./gradlew build", gate: "allow", result: "BUILD SUCCESSFUL" },
-          { say: { en: "Binary built.", de: "Binary gebaut." } },
-        ] },
-      { id: "worker-notes", task: { en: "Write the release notes", de: "Die Release-Notes schreiben" },
-        steps: [
-          { think: { en: "Summarize the merged changes since the last tag.", de: "Die gemergten Änderungen seit dem letzten Tag zusammenfassen." } },
-          { write: "release-notes/next.md", result: "ok, wrote 1 file" },
-          { say: { en: "Notes drafted.", de: "Notes entworfen." } },
-        ] },
-      { id: "worker-docs", task: { en: "Refresh the docs", de: "Die Docs auffrischen" },
-        steps: [
-          { think: { en: "Bump the version and the quickstart snippet.", de: "Version und Quickstart-Snippet anheben." } },
-          { write: "docs/quickstart.md", result: "ok, wrote 1 file" },
-          { say: { en: "Docs refreshed.", de: "Docs aufgefrischt." } },
-        ] },
-    ] } },
-    { think: { en: "All three slices are back. I merge and tag.", de: "Alle drei Scheiben sind zurück. Ich merge und tagge." } },
+    {
+      think: {
+        en: "Three independent slices — I dispatch a worker for each and let them run in parallel.",
+        de: "Drei unabhängige Scheiben — ich schicke je einen Worker los und lasse sie parallel laufen.",
+      },
+    },
+    {
+      fanout: {
+        label: "dispatch",
+        tool: "dispatch",
+        agents: [
+          {
+            id: "worker-build",
+            task: { en: "Build the release binary", de: "Das Release-Binary bauen" },
+            steps: [
+              { think: { en: "Compile, then package.", de: "Kompilieren, dann packen." } },
+              { status: { en: "compiling", de: "kompiliere" } },
+              { run: "./gradlew build", gate: "allow", result: "BUILD SUCCESSFUL" },
+              { say: { en: "Binary built.", de: "Binary gebaut." } },
+            ],
+          },
+          {
+            id: "worker-notes",
+            task: { en: "Write the release notes", de: "Die Release-Notes schreiben" },
+            steps: [
+              {
+                think: {
+                  en: "Summarize the merged changes since the last tag.",
+                  de: "Die gemergten Änderungen seit dem letzten Tag zusammenfassen.",
+                },
+              },
+              { write: "release-notes/next.md", result: "ok, wrote 1 file" },
+              { say: { en: "Notes drafted.", de: "Notes entworfen." } },
+            ],
+          },
+          {
+            id: "worker-docs",
+            task: { en: "Refresh the docs", de: "Die Docs auffrischen" },
+            steps: [
+              {
+                think: {
+                  en: "Bump the version and the quickstart snippet.",
+                  de: "Version und Quickstart-Snippet anheben.",
+                },
+              },
+              { write: "docs/quickstart.md", result: "ok, wrote 1 file" },
+              { say: { en: "Docs refreshed.", de: "Docs aufgefrischt." } },
+            ],
+          },
+        ],
+      },
+    },
+    {
+      think: {
+        en: "All three slices are back. I merge and tag.",
+        de: "Alle drei Scheiben sind zurück. Ich merge und tagge.",
+      },
+    },
     { run: "git tag v1.2.0", gate: "allow", result: "tagged v1.2.0" },
-    { say: { en: "Release cut: binary, notes and docs merged, tagged v1.2.0.", de: "Release geschnürt: Binary, Notes und Docs gemergt, v1.2.0 getaggt." } },
+    {
+      say: {
+        en: "Release cut: binary, notes and docs merged, tagged v1.2.0.",
+        de: "Release geschnürt: Binary, Notes und Docs gemergt, v1.2.0 getaggt.",
+      },
+    },
   ],
 };
 
-export const SCENARIOS: Dsl[] = [buildplan, fanout, permission, diskshell, agentsmd, coding, research, context, codereview, darkmode, imagegen, fleetswarm];
+export const SCENARIOS: Dsl[] = [
+  buildplan,
+  fanout,
+  permission,
+  diskshell,
+  agentsmd,
+  coding,
+  research,
+  context,
+  codereview,
+  darkmode,
+  imagegen,
+  fleetswarm,
+];

@@ -32,7 +32,15 @@ describe("buildTextFeed — the <think> boundaries", () => {
     const events: RunEvent[] = [
       { type: "thinking_delta", agentId: "main", text: "I should look.", ts },
       { type: "tool_call", agentId: "main", callId: "c1", name: "list_dir", input: { path: "apps" }, ts },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "cli\nweb", isError: false, durationMs: 9, ts },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "cli\nweb",
+        isError: false,
+        durationMs: 9,
+        ts,
+      },
     ];
     expect(feedTexts(events)).toEqual([
       "<think>",
@@ -60,7 +68,14 @@ describe("buildTextFeed — the <think> boundaries", () => {
       { type: "text_delta", agentId: "main", text: " more", ts },
     ];
     expect(feedTexts(events)).toEqual([
-      "<think>", "first", "</think>", "answer", "<think>", "second", "</think>", " more",
+      "<think>",
+      "first",
+      "</think>",
+      "answer",
+      "<think>",
+      "second",
+      "</think>",
+      " more",
     ]);
   });
 });
@@ -69,7 +84,15 @@ describe("buildTextFeed — tools, gate, children", () => {
   it("carries the full tool result output and marks errors", () => {
     const events: RunEvent[] = [
       { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: { path: "x" }, ts },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "ERROR: not found", isError: true, durationMs: 2, ts },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "ERROR: not found",
+        isError: true,
+        durationMs: 2,
+        ts,
+      },
     ];
     expect(feedTexts(events)).toEqual([
       '[tool_call read_file {"path":"x"}]',
@@ -80,7 +103,14 @@ describe("buildTextFeed — tools, gate, children", () => {
 
   it("shows the permission gate as protocol markers", () => {
     const events: RunEvent[] = [
-      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: { command: "ls" }, ts },
+      {
+        type: "permission_request",
+        agentId: "main",
+        callId: "c1",
+        name: "run_command",
+        input: { command: "ls" },
+        ts,
+      },
       { type: "permission_decision", callId: "c1", allowed: true, ts },
     ];
     expect(feedTexts(events)).toEqual([

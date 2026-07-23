@@ -18,7 +18,14 @@ import { SpectrumBand, TICK_COLOR } from "./SpectrumBand";
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
 const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
 
-function LaneRow({ lane, running, events, t0, onOpen, onFocusEvent }: {
+function LaneRow({
+  lane,
+  running,
+  events,
+  t0,
+  onOpen,
+  onFocusEvent,
+}: {
   lane: Lane;
   running: boolean;
   events: RunEvent[];
@@ -37,7 +44,10 @@ function LaneRow({ lane, running, events, t0, onOpen, onFocusEvent }: {
         onClick={() => onOpen(lane.id)}
       >
         <span className="spectrum-rail-head">
-          <span className={`dot ${lane.state === "failed" ? "error" : lane.state === "working" ? "accent" : lane.state === "completed" ? "ok" : "faint"}${live ? " pulse" : ""}`} aria-hidden="true" />
+          <span
+            className={`dot ${lane.state === "failed" ? "error" : lane.state === "working" ? "accent" : lane.state === "completed" ? "ok" : "faint"}${live ? " pulse" : ""}`}
+            aria-hidden="true"
+          />
           <span className="spectrum-id mono">{lane.id}</span>
           {lane.label !== null && <span className="spectrum-label mono">{lane.label}</span>}
           {lane.pendingGate && <span className="spectrum-gate mono pulse">{t(lang, "sp.gateOpen")}</span>}
@@ -109,19 +119,14 @@ export function SpectrumView(props: {
                 onFocusEvent={props.onFocusEvent}
               />
               {lane.thinking !== "" && (
-                <ThinkingDisclosure
-                  text={lane.thinking}
-                  active={running && lane.state === "working"}
-                />
+                <ThinkingDisclosure text={lane.thinking} active={running && lane.state === "working"} />
               )}
             </div>
           ))}
         </div>
       )}
 
-      {dropped > 0 && (
-        <p className="spectrum-note mono">{t(lang, "sp.dropped", { n: dropped })}</p>
-      )}
+      {dropped > 0 && <p className="spectrum-note mono">{t(lang, "sp.dropped", { n: dropped })}</p>}
     </div>
   );
 }

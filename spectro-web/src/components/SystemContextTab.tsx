@@ -14,10 +14,22 @@ import { Markdown } from "./Markdown";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-interface ToolInfo { name: string; description: string; needsPermission: boolean }
-interface SkillInfo { name: string; description: string }
+interface ToolInfo {
+  name: string;
+  description: string;
+  needsPermission: boolean;
+}
+interface SkillInfo {
+  name: string;
+  description: string;
+}
 interface RoleProfile {
-  type: string; kind: string; systemPrompt: string; tools: string[]; readOnly: boolean; skill: string | null;
+  type: string;
+  kind: string;
+  systemPrompt: string;
+  tools: string[];
+  readOnly: boolean;
+  skill: string | null;
 }
 interface ContextInfo {
   systemPrompt: string;
@@ -64,25 +76,34 @@ function buildRawContextText(
   const isMain = selected === null || selected.parentId === null;
   const rule = (label: string): string => `\n\n──────── ${label} ────────\n`;
   if (isMain) {
-    return ctx.systemPrompt +
+    return (
+      ctx.systemPrompt +
       rule(t(lang, "ctx.rule.model")) +
       `Provider: ${overlay.provider}\nModel:    ${overlay.model}\nThinking: ${overlay.thinking ? t(lang, "ctx.on") : t(lang, "ctx.off")}` +
       rule(`TOOLS (${ctx.tools.length})`) +
-      ctx.tools.map((tl) => `${tl.name}${tl.needsPermission ? " [gate]" : ""} — ${tl.description}`).join("\n") +
+      ctx.tools
+        .map((tl) => `${tl.name}${tl.needsPermission ? " [gate]" : ""} — ${tl.description}`)
+        .join("\n") +
       rule(`SKILLS (${ctx.skills.length})`) +
-      (ctx.skills.length === 0 ? t(lang, "ctx.none") : ctx.skills.map((s) => `${s.name} — ${s.description}`).join("\n")) +
+      (ctx.skills.length === 0
+        ? t(lang, "ctx.none")
+        : ctx.skills.map((s) => `${s.name} — ${s.description}`).join("\n")) +
       rule(`MCP-SERVER (${ctx.mcpServers.length})`) +
       (ctx.mcpServers.length === 0 ? t(lang, "ctx.noneConfigured") : ctx.mcpServers.join("\n")) +
       rule(`${t(lang, "ctx.rule.roles")} (${ctx.subagentProfiles.length})`) +
       ctx.subagentProfiles
-        .map((p) => `${p.type} (${p.kind === "dev" ? "dev" : "spawn"}${p.readOnly ? ", read-only" : ""}${p.skill !== null ? `, skill: ${p.skill}` : ""})`)
-        .join("\n");
+        .map(
+          (p) =>
+            `${p.type} (${p.kind === "dev" ? "dev" : "spawn"}${p.readOnly ? ", read-only" : ""}${p.skill !== null ? `, skill: ${p.skill}` : ""})`,
+        )
+        .join("\n")
+    );
   }
   return profile
     ? profile.systemPrompt +
-      (selected!.task ? rule(t(lang, "ctx.rule.task")) + selected!.task : "") +
-      rule(`TOOLS (${profile.tools.length})`) +
-      profile.tools.join("\n")
+        (selected!.task ? rule(t(lang, "ctx.rule.task")) + selected!.task : "") +
+        rule(`TOOLS (${profile.tools.length})`) +
+        profile.tools.join("\n")
     : t(lang, "ctx.noProfileRaw");
 }
 
@@ -107,15 +128,23 @@ export function SystemContextTab({
     setError(false);
     fetch("/api/context")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((c) => { if (alive) setCtx(c as ContextInfo); })
-      .catch(() => { if (alive) setError(true); });
-    return () => { alive = false; };
+      .then((c) => {
+        if (alive) setCtx(c as ContextInfo);
+      })
+      .catch(() => {
+        if (alive) setError(true);
+      });
+    return () => {
+      alive = false;
+    };
   }, []);
 
   // The raw view closes on Escape and whenever the selected agent changes.
   useEffect(() => {
     if (!rawOpen) return;
-    const onKey = (e: KeyboardEvent): void => { if (e.key === "Escape") setRawOpen(false); };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setRawOpen(false);
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [rawOpen]);
@@ -132,23 +161,47 @@ export function SystemContextTab({
 
   const profile = isMain ? undefined : profileFor(selected!, ctx.subagentProfiles);
   const rawTitle = `${t(lang, "rp.context")} · ${isMain ? "main" : selected!.id}`;
-  const rawText = buildRawContextText(ctx, selected, profile,
-    { provider: shownProvider, model: shownModel, thinking }, lang);
+  const rawText = buildRawContextText(
+    ctx,
+    selected,
+    profile,
+    { provider: shownProvider, model: shownModel, thinking },
+    lang,
+  );
 
   return (
     <div className="ctx">
       <div className="ctx-head">
         <p className="ctx-lead">
           {lang === "de" ? (
-            <>Das geht ans <span className="mono">LLM</span> <em>bevor</em> du etwas schickst —{" "}</>
+            <>
+              Das geht ans <span className="mono">LLM</span> <em>bevor</em> du etwas schickst —{" "}
+            </>
           ) : (
-            <>This goes to the <span className="mono">LLM</span> <em>before</em> you send anything —{" "}</>
+            <>
+              This goes to the <span className="mono">LLM</span> <em>before</em> you send anything —{" "}
+            </>
           )}
           {isMain ? t(lang, "ctx.leadMain") : t(lang, "ctx.leadSub", { id: selected?.id ?? "" })}
         </p>
-        <button type="button" className="ctx-raw-btn" onClick={() => setRawOpen(true)} title={t(lang, "ctx.rawTitle")}>
+        <button
+          type="button"
+          className="ctx-raw-btn"
+          onClick={() => setRawOpen(true)}
+          title={t(lang, "ctx.rawTitle")}
+        >
           Raw
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="12"
+            height="12"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <path d="M6 2H2v4M10 14h4v-4M2 2l5 5M14 14l-5-5" />
           </svg>
         </button>
@@ -165,9 +218,18 @@ export function SystemContextTab({
 
           <Section title={t(lang, "ctx.model")}>
             <dl className="ctx-kv">
-              <div><dt>Provider</dt><dd className="mono">{shownProvider}</dd></div>
-              <div><dt>{t(lang, "ctx.model")}</dt><dd className="mono">{shownModel}</dd></div>
-              <div><dt>Thinking</dt><dd>{thinking ? t(lang, "ctx.on") : t(lang, "ctx.off")}</dd></div>
+              <div>
+                <dt>Provider</dt>
+                <dd className="mono">{shownProvider}</dd>
+              </div>
+              <div>
+                <dt>{t(lang, "ctx.model")}</dt>
+                <dd className="mono">{shownModel}</dd>
+              </div>
+              <div>
+                <dt>Thinking</dt>
+                <dd>{thinking ? t(lang, "ctx.on") : t(lang, "ctx.off")}</dd>
+              </div>
             </dl>
           </Section>
 
@@ -176,7 +238,11 @@ export function SystemContextTab({
               {ctx.tools.map((tl) => (
                 <li key={tl.name}>
                   <span className="ctx-tool-name mono">{tl.name}</span>
-                  {tl.needsPermission && <span className="ctx-perm" title={t(lang, "ctx.gateTitle")}>gate</span>}
+                  {tl.needsPermission && (
+                    <span className="ctx-perm" title={t(lang, "ctx.gateTitle")}>
+                      gate
+                    </span>
+                  )}
                   <span className="ctx-tool-desc">{tl.description}</span>
                 </li>
               ))}
@@ -203,7 +269,11 @@ export function SystemContextTab({
               <p className="ctx-none">{t(lang, "ctx.noneConfigured")}</p>
             ) : (
               <ul className="ctx-mcp">
-                {ctx.mcpServers.map((m) => <li key={m} className="mono">{m}</li>)}
+                {ctx.mcpServers.map((m) => (
+                  <li key={m} className="mono">
+                    {m}
+                  </li>
+                ))}
               </ul>
             )}
             <p className="ctx-note">{t(lang, "ctx.mcpNote")}</p>
@@ -232,7 +302,15 @@ export function SystemContextTab({
   );
 }
 
-function SubagentContext({ agent, profile, lang }: { agent: AgentInfo; profile: RoleProfile | undefined; lang: Lang }) {
+function SubagentContext({
+  agent,
+  profile,
+  lang,
+}: {
+  agent: AgentInfo;
+  profile: RoleProfile | undefined;
+  lang: Lang;
+}) {
   if (profile === undefined) {
     return <p className="ctx-empty">{t(lang, "ctx.noProfile", { id: agent.id })}</p>;
   }
@@ -240,10 +318,24 @@ function SubagentContext({ agent, profile, lang }: { agent: AgentInfo; profile: 
     <>
       <Section title={t(lang, "ctx.role")}>
         <dl className="ctx-kv">
-          <div><dt>{t(lang, "ctx.type")}</dt><dd className="mono">{profile.type}</dd></div>
-          <div><dt>{t(lang, "ctx.kind")}</dt><dd>{profile.kind === "dev" ? t(lang, "ctx.kindDev") : t(lang, "ctx.kindSpawn")}</dd></div>
-          <div><dt>{t(lang, "ctx.access")}</dt><dd>{profile.readOnly ? t(lang, "ctx.readOnly") : t(lang, "ctx.full")}</dd></div>
-          {profile.skill !== null && <div><dt>Skill</dt><dd className="mono">{profile.skill}</dd></div>}
+          <div>
+            <dt>{t(lang, "ctx.type")}</dt>
+            <dd className="mono">{profile.type}</dd>
+          </div>
+          <div>
+            <dt>{t(lang, "ctx.kind")}</dt>
+            <dd>{profile.kind === "dev" ? t(lang, "ctx.kindDev") : t(lang, "ctx.kindSpawn")}</dd>
+          </div>
+          <div>
+            <dt>{t(lang, "ctx.access")}</dt>
+            <dd>{profile.readOnly ? t(lang, "ctx.readOnly") : t(lang, "ctx.full")}</dd>
+          </div>
+          {profile.skill !== null && (
+            <div>
+              <dt>Skill</dt>
+              <dd className="mono">{profile.skill}</dd>
+            </div>
+          )}
         </dl>
       </Section>
 
@@ -261,7 +353,11 @@ function SubagentContext({ agent, profile, lang }: { agent: AgentInfo; profile: 
 
       <Section title={`Tools (${profile.tools.length})`}>
         <ul className="ctx-mcp">
-          {profile.tools.map((tl) => <li key={tl} className="mono">{tl}</li>)}
+          {profile.tools.map((tl) => (
+            <li key={tl} className="mono">
+              {tl}
+            </li>
+          ))}
         </ul>
         <p className="ctx-note">{t(lang, "ctx.noNesting")}</p>
       </Section>
@@ -276,7 +372,10 @@ function RawModal({ title, text, onClose }: { title: string; text: string; onClo
   const lang = useLang();
   const copy = (): void => {
     navigator.clipboard?.writeText(text).then(
-      () => { setCopied(true); window.setTimeout(() => setCopied(false), 1500); },
+      () => {
+        setCopied(true);
+        window.setTimeout(() => setCopied(false), 1500);
+      },
       () => {},
     );
   };
@@ -286,9 +385,25 @@ function RawModal({ title, text, onClose }: { title: string; text: string; onClo
         <div className="raw-modal-head">
           <span className="raw-modal-title">{title}</span>
           <span className="raw-modal-meta mono tabular">{t(lang, "ctx.chars", { n: text.length })}</span>
-          <button type="button" className="raw-modal-copy" onClick={copy}>{copied ? t(lang, "ctx.copied") : t(lang, "ctx.copy")}</button>
-          <button type="button" className="icon-button raw-modal-close" aria-label={t(lang, "common.close")} onClick={onClose}>
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <button type="button" className="raw-modal-copy" onClick={copy}>
+            {copied ? t(lang, "ctx.copied") : t(lang, "ctx.copy")}
+          </button>
+          <button
+            type="button"
+            className="icon-button raw-modal-close"
+            aria-label={t(lang, "common.close")}
+            onClick={onClose}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>

@@ -79,10 +79,15 @@ function persist(): void {
 function set(patch: Partial<LayoutState>): void {
   const next = { ...state, ...patch };
   if (
-    next.sidebarW === state.sidebarW && next.chatW === state.chatW && next.traceW === state.traceW &&
-    next.chatOpen === state.chatOpen && next.traceOpen === state.traceOpen &&
-    next.rightPanelOpen === state.rightPanelOpen && next.rightPanelW === state.rightPanelW &&
-    next.imagesW === state.imagesW && next.activeRightTab === state.activeRightTab
+    next.sidebarW === state.sidebarW &&
+    next.chatW === state.chatW &&
+    next.traceW === state.traceW &&
+    next.chatOpen === state.chatOpen &&
+    next.traceOpen === state.traceOpen &&
+    next.rightPanelOpen === state.rightPanelOpen &&
+    next.rightPanelW === state.rightPanelW &&
+    next.imagesW === state.imagesW &&
+    next.activeRightTab === state.activeRightTab
   ) {
     return; // no change — no emit
   }
@@ -91,21 +96,41 @@ function set(patch: Partial<LayoutState>): void {
   for (const l of listeners) l();
 }
 
-export function setSidebarW(w: number): void { set({ sidebarW: clampW(w, 180, 560) }); }
-export function setChatW(w: number): void { set({ chatW: clampW(w, 200, 1200) }); }
-export function setTraceW(w: number): void { set({ traceW: clampW(w, 200, 1200) }); }
-export function toggleChat(): void { set({ chatOpen: !state.chatOpen }); }
-export function toggleTrace(): void { set({ traceOpen: !state.traceOpen }); }
-export function setRightPanelW(w: number): void { set({ rightPanelW: clampW(w, 260, 720) }); }
+export function setSidebarW(w: number): void {
+  set({ sidebarW: clampW(w, 180, 560) });
+}
+export function setChatW(w: number): void {
+  set({ chatW: clampW(w, 200, 1200) });
+}
+export function setTraceW(w: number): void {
+  set({ traceW: clampW(w, 200, 1200) });
+}
+export function toggleChat(): void {
+  set({ chatOpen: !state.chatOpen });
+}
+export function toggleTrace(): void {
+  set({ traceOpen: !state.traceOpen });
+}
+export function setRightPanelW(w: number): void {
+  set({ rightPanelW: clampW(w, 260, 720) });
+}
 // The image gallery holds generated images the user wants to actually SEE, so
 // its width goes as wide as the chat can spare (the resize handler already
 // reserves CHAT_RESERVED_MIN_WIDTH_PX for the chat) — a 1200px ceiling like the
 // chat pane, not the old 720 that capped image viewing well below the viewport.
-export function setImagesW(w: number): void { set({ imagesW: clampW(w, 240, 1200) }); }
-export function toggleRightPanel(): void { set({ rightPanelOpen: !state.rightPanelOpen }); }
+export function setImagesW(w: number): void {
+  set({ imagesW: clampW(w, 240, 1200) });
+}
+export function toggleRightPanel(): void {
+  set({ rightPanelOpen: !state.rightPanelOpen });
+}
 /** Opens the panel if closed (idempotent) — the workspace announcement uses it. */
-export function openRightPanel(): void { if (!state.rightPanelOpen) set({ rightPanelOpen: true }); }
-export function setActiveRightTab(tab: RightTab): void { set({ activeRightTab: tab }); }
+export function openRightPanel(): void {
+  if (!state.rightPanelOpen) set({ rightPanelOpen: true });
+}
+export function setActiveRightTab(tab: RightTab): void {
+  set({ activeRightTab: tab });
+}
 
 function subscribe(cb: () => void): () => void {
   listeners.add(cb);

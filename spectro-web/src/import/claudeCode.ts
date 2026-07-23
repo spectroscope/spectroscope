@@ -35,14 +35,16 @@ interface CCBlock {
 /** Records without timestamps get synthetic ones this far apart — the
  *  closing run_end derives from the same step, keeping ts monotonic. */
 const SYNTHETIC_TS_STEP_MS = 1000;
-const tsOf = (r: CCRecord, i: number, base: number) => (r.timestamp ? Date.parse(r.timestamp) : base + i * SYNTHETIC_TS_STEP_MS);
+const tsOf = (r: CCRecord, i: number, base: number) =>
+  r.timestamp ? Date.parse(r.timestamp) : base + i * SYNTHETIC_TS_STEP_MS;
 
 // "Task" is the classic subagent tool; newer Claude Code versions call it "Agent".
 const isSpawnTool = (name: unknown): boolean => name === "Task" || name === "Agent";
 
 const asText = (content: unknown): string => {
   if (typeof content === "string") return content;
-  if (Array.isArray(content)) return content.map((b: CCBlock | string) => (typeof b === "string" ? b : b.text ?? "")).join("");
+  if (Array.isArray(content))
+    return content.map((b: CCBlock | string) => (typeof b === "string" ? b : (b.text ?? ""))).join("");
   return "";
 };
 
@@ -59,10 +61,13 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
   for (const r of recs) {
     const content = r.type === "assistant" ? r.message?.content : null;
     if (Array.isArray(content)) {
-      for (const b of content as CCBlock[]) if (b?.type === "tool_use" && isSpawnTool(b.name) && typeof b.id === "string") taskIds.add(b.id);
+      for (const b of content as CCBlock[])
+        if (b?.type === "tool_use" && isSpawnTool(b.name) && typeof b.id === "string") taskIds.add(b.id);
     }
   }
-  const byUuid = new Map(recs.filter((r) => typeof r.uuid === "string").map((r) => [r.uuid as string, r] as const));
+  const byUuid = new Map(
+    recs.filter((r) => typeof r.uuid === "string").map((r) => [r.uuid as string, r] as const),
+  );
   const ownerOf = (r: CCRecord): string | null => {
     let cur: CCRecord | undefined = r;
     const seen = new Set<string>();
@@ -81,7 +86,14 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
       const owner = ownerOf(r);
       if (!owner) return; // orphaned sidechain: skip, never crash
       if (!childStarted.has(owner)) {
-        out.push({ type: "run_start", runId: `cc-${owner}`, agentId: owner, parentId: "main", prompt: "subtask", ts });
+        out.push({
+          type: "run_start",
+          runId: `cc-${owner}`,
+          agentId: owner,
+          parentId: "main",
+          prompt: "subtask",
+          ts,
+        });
         out.push({ type: "turn_start", agentId: owner, turn: 1, ts });
         childStarted.add(owner);
       }
@@ -90,12 +102,22 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
         for (const b of content as CCBlock[]) {
           // Signature-only thinking / empty text blocks would render as empty
           // activities and empty stream slices — skip them.
-          if (b?.type === "thinking" && (b.thinking ?? "") !== "") out.push({ type: "thinking_delta", agentId: owner, text: b.thinking ?? "", ts });
-          else if (b?.type === "text" && (b.text ?? "") !== "") out.push({ type: "text_delta", agentId: owner, text: b.text ?? "", ts });
+          if (b?.type === "thinking" && (b.thinking ?? "") !== "")
+            out.push({ type: "thinking_delta", agentId: owner, text: b.thinking ?? "", ts });
+          else if (b?.type === "text" && (b.text ?? "") !== "")
+            out.push({ type: "text_delta", agentId: owner, text: b.text ?? "", ts });
           else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
             out.push({ type: "tool_call", agentId: owner, callId: b.id, name: b.name, input: b.input, ts });
           } else if (b?.type === "tool_result" && typeof b.tool_use_id === "string") {
-            out.push({ type: "tool_result", agentId: owner, callId: b.tool_use_id, output: asText(b.content), isError: !!b.is_error, durationMs: 0, ts });
+            out.push({
+              type: "tool_result",
+              agentId: owner,
+              callId: b.tool_use_id,
+              output: asText(b.content),
+              isError: !!b.is_error,
+              durationMs: 0,
+              ts,
+            });
           }
         }
       }
@@ -115,9 +137,25 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
               if (childStarted.has(b.tool_use_id)) {
                 out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: "end_turn", ts });
               }
-              out.push({ type: "agent_message", from: b.tool_use_id, to: "main", role: "result", state: b.is_error ? "failed" : "completed", text: asText(b.content), ts });
+              out.push({
+                type: "agent_message",
+                from: b.tool_use_id,
+                to: "main",
+                role: "result",
+                state: b.is_error ? "failed" : "completed",
+                text: asText(b.content),
+                ts,
+              });
             }
-            out.push({ type: "tool_result", agentId: "main", callId: b.tool_use_id, output: asText(b.content), isError: !!b.is_error, durationMs: 0, ts });
+            out.push({
+              type: "tool_result",
+              agentId: "main",
+              callId: b.tool_use_id,
+              output: asText(b.content),
+              isError: !!b.is_error,
+              durationMs: 0,
+              ts,
+            });
           }
         }
       }
@@ -125,26 +163,57 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
       const content = r.message?.content;
       if (Array.isArray(content)) {
         for (const b of content as CCBlock[]) {
-          if (b?.type === "thinking" && (b.thinking ?? "") !== "") out.push({ type: "thinking_delta", agentId: "main", text: b.thinking ?? "", ts });
-          else if (b?.type === "text" && (b.text ?? "") !== "") out.push({ type: "text_delta", agentId: "main", text: b.text ?? "", ts });
+          if (b?.type === "thinking" && (b.thinking ?? "") !== "")
+            out.push({ type: "thinking_delta", agentId: "main", text: b.thinking ?? "", ts });
+          else if (b?.type === "text" && (b.text ?? "") !== "")
+            out.push({ type: "text_delta", agentId: "main", text: b.text ?? "", ts });
           else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
             if (isSpawnTool(b.name)) {
               const task = typeof b.input?.description === "string" ? b.input.description : "subtask";
               const label = typeof b.input?.subagent_type === "string" ? b.input.subagent_type : "task";
               out.push({ type: "agent_spawn", agentId: b.id, parentId: "main", task, ts });
-              out.push({ type: "agent_message", from: "main", to: b.id, role: "task", state: "submitted", text: task, label, ts });
+              out.push({
+                type: "agent_message",
+                from: "main",
+                to: b.id,
+                role: "task",
+                state: "submitted",
+                text: task,
+                label,
+                ts,
+              });
             } else {
-              out.push({ type: "tool_call", agentId: "main", callId: b.id, name: b.name, input: b.input, ts });
+              out.push({
+                type: "tool_call",
+                agentId: "main",
+                callId: b.id,
+                name: b.name,
+                input: b.input,
+                ts,
+              });
             }
           }
         }
       }
       const u = r.message?.usage;
-      if (u) out.push({ type: "usage", agentId: "main", inputTokens: u.input_tokens ?? 0, outputTokens: u.output_tokens ?? 0, ts });
+      if (u)
+        out.push({
+          type: "usage",
+          agentId: "main",
+          inputTokens: u.input_tokens ?? 0,
+          outputTokens: u.output_tokens ?? 0,
+          ts,
+        });
     }
   });
 
-  if (started) out.push({ type: "run_end", runId, stopReason: "end_turn", ts: base + recs.length * SYNTHETIC_TS_STEP_MS });
+  if (started)
+    out.push({
+      type: "run_end",
+      runId,
+      stopReason: "end_turn",
+      ts: base + recs.length * SYNTHETIC_TS_STEP_MS,
+    });
   return out;
 }
 

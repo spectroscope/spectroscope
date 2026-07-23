@@ -87,12 +87,7 @@ function JsonNode(props: {
   return (
     <>
       <div className="json-line" style={indent}>
-        <button
-          type="button"
-          className="json-toggle"
-          aria-expanded={open}
-          onClick={() => setOpen((o) => !o)}
-        >
+        <button type="button" className="json-toggle" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
           <span className="json-caret" aria-hidden="true">
             {open ? "▾" : "▸"}
           </span>

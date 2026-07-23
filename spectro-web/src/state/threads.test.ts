@@ -6,8 +6,14 @@ import type { AgentInfo, ToolCard, Turn } from "./reducer";
 import { groupTurns, type ChatBlock } from "./threads";
 
 const worker: AgentInfo = {
-  id: "worker-1", parentId: "main", label: "build_plan", task: "Plan the flag",
-  state: "working", lastStatus: null, inTokens: 0, outTokens: 0,
+  id: "worker-1",
+  parentId: "main",
+  label: "build_plan",
+  task: "Plan the flag",
+  state: "working",
+  lastStatus: null,
+  inTokens: 0,
+  outTokens: 0,
 };
 
 const cards: Record<string, ToolCard> = {
@@ -59,8 +65,7 @@ describe("groupTurns", () => {
   });
 
   it("an unknown child still threads, with an empty task", () => {
-    const blocks2 = groupTurns(
-      [{ kind: "assistant", agentId: "ghost-9", text: "hi", thinking: "" }], {}, []);
+    const blocks2 = groupTurns([{ kind: "assistant", agentId: "ghost-9", text: "hi", thinking: "" }], {}, []);
     const th = blocks2[0] as Extract<ChatBlock, { kind: "thread" }>;
     expect(th.kind).toBe("thread");
     expect(th.task).toBe("");

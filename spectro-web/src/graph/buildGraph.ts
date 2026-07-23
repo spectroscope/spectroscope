@@ -7,34 +7,48 @@ export type NodeKind = "user" | "turn" | "tool" | "subagent" | "answer";
 export type ToolStatus = "pending" | "ok" | "error";
 
 export interface GraphNode {
-  id: string;             // stable, taken directly from the events: runId/agentId/callId
+  id: string; // stable, taken directly from the events: runId/agentId/callId
   kind: NodeKind;
   label: string;
   agentId: string;
-  running: boolean;       // true = pulse animation in the renderer
-  status?: ToolStatus;    // tool only: pending -> ok | error
-  durationMs?: number;    // tool: result duration; turn: last delta ts - turn_start ts
-  startTs: number;        // ts of the event that created the node
-  relMs: number;          // ms since the owning root run's run_start ("t+2.31s")
-  preview?: string;       // tool: one-line input (60); turn: first 60 chars; answer: first 80
+  running: boolean; // true = pulse animation in the renderer
+  status?: ToolStatus; // tool only: pending -> ok | error
+  durationMs?: number; // tool: result duration; turn: last delta ts - turn_start ts
+  startTs: number; // ts of the event that created the node
+  relMs: number; // ms since the owning root run's run_start ("t+2.31s")
+  preview?: string; // tool: one-line input (60); turn: first 60 chars; answer: first 80
   tokens?: { input: number; output: number }; // turn/subagent: from usage events
   /** The raw events that formed this node — the detail panel's evidence.
    *  Turn deltas are capped at the first 50; droppedEvents counts the rest. */
   events: RunEvent[];
   droppedEvents?: number;
   detail: {
-    text?: string;        // turn/answer: aggregated text; user: full prompt
-    input?: unknown; output?: string; isError?: boolean;  // tool
-    task?: string;                                         // subagent
-    stopReason?: string;                                   // answer
-    inputTokens?: number; outputTokens?: number;           // subagent/answer
+    text?: string; // turn/answer: aggregated text; user: full prompt
+    input?: unknown;
+    output?: string;
+    isError?: boolean; // tool
+    task?: string; // subagent
+    stopReason?: string; // answer
+    inputTokens?: number;
+    outputTokens?: number; // subagent/answer
   };
 }
-export interface GraphEdge { id: string; source: string; target: string }
-export interface Graph { nodes: GraphNode[]; edges: GraphEdge[] }
+export interface GraphEdge {
+  id: string;
+  source: string;
+  target: string;
+}
+export interface Graph {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+}
 
 /** What the lane pass needs of a laid-out node (renderer-agnostic). */
-export interface LaidNode { agentId: string; kind: NodeKind; x: number }
+export interface LaidNode {
+  agentId: string;
+  kind: NodeKind;
+  x: number;
+}
 
 /** Parallel lanes: every subagent subtree gets its own x-band. dagre already
  *  spreads TRULY concurrent branches; sequentially spawned children stack in
@@ -88,30 +102,36 @@ export function buildGraph(events: RunEvent[]): Graph {
   const edges: GraphEdge[] = [];
   const nodeById = new Map<string, GraphNode>();
   const edgeIds = new Set<string>();
-  const lastNode = new Map<string, string>();    // last node in the causal flow per agent
+  const lastNode = new Map<string, string>(); // last node in the causal flow per agent
   const currentTurn = new Map<string, string>(); // active turn node per agent (text_delta target)
-  const fanOut = new Map<string, string[]>();    // open tool/subagent nodes since the turn started
+  const fanOut = new Map<string, string[]>(); // open tool/subagent nodes since the turn started
   const usage = new Map<string, { input: number; output: number }>();
   const agentByRunId = new Map<string, string>();
-  const parentOf = new Map<string, string>();   // child agentId -> parent agentId
+  const parentOf = new Map<string, string>(); // child agentId -> parent agentId
   const runByAgent = new Map<string, string>(); // current run per agent (namespace of the turn ids)
-  const rootRuns = new Set<string>();           // runIds of all root runs (one per prompt)
+  const rootRuns = new Set<string>(); // runIds of all root runs (one per prompt)
   let rootAgentId = "";
   let rootStartTs = 0; // run_start ts of the current root run — the t+ origin
 
-  function addNode(n: GraphNode): void { nodes.push(n); nodeById.set(n.id, n); }
+  function addNode(n: GraphNode): void {
+    nodes.push(n);
+    nodeById.set(n.id, n);
+  }
   const rel = (ts: number): number => Math.max(0, ts - rootStartTs);
   function addEdge(source: string | undefined, target: string): void {
     if (!source || source === target) return;
     const id = `${source}->${target}`;
     if (edgeIds.has(id)) return;
-    edgeIds.add(id); edges.push({ id, source, target });
+    edgeIds.add(id);
+    edges.push({ id, source, target });
   }
   // A new node attaches to the open fan-out (parallel tools/subagents), otherwise to the last node.
   function connectFrom(agentId: string, target: string): void {
     const open = fanOut.get(agentId) ?? [];
-    if (open.length > 0) { for (const s of open) addEdge(s, target); fanOut.set(agentId, []); }
-    else addEdge(lastNode.get(agentId), target);
+    if (open.length > 0) {
+      for (const s of open) addEdge(s, target);
+      fanOut.set(agentId, []);
+    } else addEdge(lastNode.get(agentId), target);
   }
 
   for (const event of events) {
@@ -124,11 +144,20 @@ export function buildGraph(events: RunEvent[]): Graph {
           // The turn counter restarts at 1 per run(), so the turn
           // ids below carry the runId as a namespace — otherwise the second
           // prompt of the same session collides with the first (duplicate ids).
-          rootRuns.add(event.runId); rootAgentId = event.agentId;
+          rootRuns.add(event.runId);
+          rootAgentId = event.agentId;
           rootStartTs = event.ts; // every prompt restarts the t+ clock
-          addNode({ id: event.runId, kind: "user", label: short(event.prompt),
-            agentId: event.agentId, running: false, startTs: event.ts, relMs: 0,
-            events: [event], detail: { text: event.prompt } });
+          addNode({
+            id: event.runId,
+            kind: "user",
+            label: short(event.prompt),
+            agentId: event.agentId,
+            running: false,
+            startTs: event.ts,
+            relMs: 0,
+            events: [event],
+            detail: { text: event.prompt },
+          });
           connectFrom(event.agentId, event.runId); // a follow-up prompt hangs off the last answer
           lastNode.set(event.agentId, event.runId);
         } else {
@@ -144,23 +173,44 @@ export function buildGraph(events: RunEvent[]): Graph {
         const id = `${runByAgent.get(event.agentId) ?? ""}:${event.agentId}:turn:${event.turn}`;
         const prev = nodeById.get(currentTurn.get(event.agentId) ?? "");
         if (prev) prev.running = false; // this agent's previous turn is done
-        addNode({ id, kind: "turn", label: `Turn ${event.turn}`, agentId: event.agentId,
-          running: true, startTs: event.ts, relMs: rel(event.ts), preview: "",
-          events: [event], detail: { text: "" } });
+        addNode({
+          id,
+          kind: "turn",
+          label: `Turn ${event.turn}`,
+          agentId: event.agentId,
+          running: true,
+          startTs: event.ts,
+          relMs: rel(event.ts),
+          preview: "",
+          events: [event],
+          detail: { text: "" },
+        });
         connectFrom(event.agentId, id);
-        currentTurn.set(event.agentId, id); lastNode.set(event.agentId, id);
+        currentTurn.set(event.agentId, id);
+        lastNode.set(event.agentId, id);
         break;
       }
       case "text_delta": {
         // NO node of its own — aggregate into the active turn node.
         let turnId = currentTurn.get(event.agentId);
-        if (!turnId) { // defensive: a session with no turn_start -> implicit turn 0
+        if (!turnId) {
+          // defensive: a session with no turn_start -> implicit turn 0
           turnId = `${runByAgent.get(event.agentId) ?? ""}:${event.agentId}:turn:0`;
           if (!nodeById.has(turnId)) {
-            addNode({ id: turnId, kind: "turn", label: "Turn 0", agentId: event.agentId,
-              running: true, startTs: event.ts, relMs: rel(event.ts), preview: "",
-              events: [], detail: { text: "" } });
-            connectFrom(event.agentId, turnId); lastNode.set(event.agentId, turnId);
+            addNode({
+              id: turnId,
+              kind: "turn",
+              label: "Turn 0",
+              agentId: event.agentId,
+              running: true,
+              startTs: event.ts,
+              relMs: rel(event.ts),
+              preview: "",
+              events: [],
+              detail: { text: "" },
+            });
+            connectFrom(event.agentId, turnId);
+            lastNode.set(event.agentId, turnId);
           }
           currentTurn.set(event.agentId, turnId);
         }
@@ -180,13 +230,23 @@ export function buildGraph(events: RunEvent[]): Graph {
         break;
       }
       case "tool_call": {
-        addNode({ id: event.callId, kind: "tool", label: event.name, agentId: event.agentId,
-          running: true, status: "pending", startTs: event.ts, relMs: rel(event.ts),
-          preview: clip(compactJson(event.input), TOOL_INPUT_PREVIEW_CHARS), events: [event],
-          detail: { input: event.input } });
+        addNode({
+          id: event.callId,
+          kind: "tool",
+          label: event.name,
+          agentId: event.agentId,
+          running: true,
+          status: "pending",
+          startTs: event.ts,
+          relMs: rel(event.ts),
+          preview: clip(compactJson(event.input), TOOL_INPUT_PREVIEW_CHARS),
+          events: [event],
+          detail: { input: event.input },
+        });
         addEdge(currentTurn.get(event.agentId) ?? lastNode.get(event.agentId), event.callId);
         const open = fanOut.get(event.agentId) ?? [];
-        open.push(event.callId); fanOut.set(event.agentId, open); // fan out
+        open.push(event.callId);
+        fanOut.set(event.agentId, open); // fan out
         break;
       }
       case "permission_request":
@@ -200,31 +260,44 @@ export function buildGraph(events: RunEvent[]): Graph {
         // Same callId -> the SAME node: only a status change, duration, output.
         const node = nodeById.get(event.callId);
         if (!node) break;
-        node.running = false; node.status = event.isError ? "error" : "ok";
+        node.running = false;
+        node.status = event.isError ? "error" : "ok";
         node.durationMs = event.durationMs;
-        node.detail.output = event.output; node.detail.isError = event.isError;
+        node.detail.output = event.output;
+        node.detail.isError = event.isError;
         node.events.push(event);
         break;
       }
       case "agent_spawn": {
         parentOf.set(event.agentId, event.parentId);
-        addNode({ id: event.agentId, kind: "subagent", label: short(event.task),
-          agentId: event.agentId, running: true, startTs: event.ts, relMs: rel(event.ts),
-          tokens: { input: 0, output: 0 }, events: [event],
-          detail: { task: event.task, inputTokens: 0, outputTokens: 0 } });
+        addNode({
+          id: event.agentId,
+          kind: "subagent",
+          label: short(event.task),
+          agentId: event.agentId,
+          running: true,
+          startTs: event.ts,
+          relMs: rel(event.ts),
+          tokens: { input: 0, output: 0 },
+          events: [event],
+          detail: { task: event.task, inputTokens: 0, outputTokens: 0 },
+        });
         addEdge(currentTurn.get(event.parentId) ?? lastNode.get(event.parentId), event.agentId);
         const open = fanOut.get(event.parentId) ?? [];
-        open.push(event.agentId); fanOut.set(event.parentId, open);
+        open.push(event.agentId);
+        fanOut.set(event.parentId, open);
         lastNode.set(event.agentId, event.agentId); // child events hang under the subagent node
         break;
       }
       case "usage": {
         const u = usage.get(event.agentId) ?? { input: 0, output: 0 };
-        u.input += event.inputTokens; u.output += event.outputTokens;
+        u.input += event.inputTokens;
+        u.output += event.outputTokens;
         usage.set(event.agentId, u);
         const sub = nodeById.get(event.agentId);
         if (sub?.kind === "subagent") {
-          sub.detail.inputTokens = u.input; sub.detail.outputTokens = u.output;
+          sub.detail.inputTokens = u.input;
+          sub.detail.outputTokens = u.output;
           sub.tokens = { input: u.input, output: u.output };
         }
         // The turn that consumed these tokens is the agent's active turn —
@@ -248,13 +321,26 @@ export function buildGraph(events: RunEvent[]): Graph {
           // The answer's evidence: the closing turn's text deltas (already
           // capped there) plus the run_end that sealed it.
           const closing = turnNode?.events.filter((e) => e.type === "text_delta") ?? [];
-          addNode({ id, kind: "answer", label: "Answer", agentId, running: false,
-            startTs: event.ts, relMs: rel(event.ts),
+          addNode({
+            id,
+            kind: "answer",
+            label: "Answer",
+            agentId,
+            running: false,
+            startTs: event.ts,
+            relMs: rel(event.ts),
             preview: clip(turnNode?.detail.text ?? "", ANSWER_PREVIEW_CHARS),
-            events: [...closing, event], droppedEvents: turnNode?.droppedEvents,
-            detail: { text: turnNode?.detail.text ?? "", stopReason: event.stopReason,
-              inputTokens: u?.input, outputTokens: u?.output } });
-          connectFrom(agentId, id); lastNode.set(agentId, id);
+            events: [...closing, event],
+            droppedEvents: turnNode?.droppedEvents,
+            detail: {
+              text: turnNode?.detail.text ?? "",
+              stopReason: event.stopReason,
+              inputTokens: u?.input,
+              outputTokens: u?.output,
+            },
+          });
+          connectFrom(agentId, id);
+          lastNode.set(agentId, id);
           for (const n of nodes) n.running = false; // run over, nothing pulses anymore
         } else {
           const sub = nodeById.get(agentId); // child run done: the subagent stops

@@ -13,10 +13,7 @@ import { useLang } from "../state/lang";
 
 type ScnTab = "chats" | "fleet";
 
-export function ScenarioDialog(props: {
-  onPick: (dsl: Dsl) => void;
-  onClose: () => void;
-}) {
+export function ScenarioDialog(props: { onPick: (dsl: Dsl) => void; onClose: () => void }) {
   const lang = useLang();
   const [tab, setTab] = useState<ScnTab>("chats");
 
@@ -50,12 +47,7 @@ export function ScenarioDialog(props: {
             <p className="ws-note">{t(lang, "scn.empty.fleet")}</p>
           ) : (
             shown.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                className="scn-row"
-                onClick={() => props.onPick(s)}
-              >
+              <button key={s.id} type="button" className="scn-row" onClick={() => props.onPick(s)}>
                 <span className="scn-name">{loc(s.name, lang)}</span>
                 <span className="scn-prompt">{loc(s.prompt, lang)}</span>
               </button>

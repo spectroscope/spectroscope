@@ -24,7 +24,10 @@ export type UserAttachment = { name: string; mediaType: string; dataBase64: stri
 export type Turn =
   | { kind: "user"; text: string; attachments?: UserAttachment[] }
   | {
-      kind: "assistant"; agentId: string; text: string; thinking: string;
+      kind: "assistant";
+      agentId: string;
+      text: string;
+      thinking: string;
       /** Set from this turn's `usage` event: the tokens the answer cost, and how
        *  long the turn took (its first event → the usage). Undefined until it
        *  arrives (a torn/streaming turn simply has no footer yet). */
@@ -34,11 +37,15 @@ export type Turn =
   | { kind: "tool"; callId: string }
   /** agentId marks an info line that belongs to a subagent's thread (spawn). */
   | {
-      kind: "info"; text: string; tone: "neutral" | "warn"; agentId?: string;
+      kind: "info";
+      text: string;
+      tone: "neutral" | "warn";
+      agentId?: string;
       /** Optional i18n key + vars — set by the reducer for its own info lines so
        *  the chat can render them in the live chrome language; `text` stays the
        *  English fallback (and keeps old tests/callers working). */
-      infoKey?: string; infoVars?: Record<string, string | number>;
+      infoKey?: string;
+      infoVars?: Record<string, string | number>;
     }
   | { kind: "error"; text: string };
 
@@ -216,7 +223,16 @@ function upsertAgent(
   patch: Partial<AgentInfo> | ((a: AgentInfo) => Partial<AgentInfo>),
 ): AgentInfo[] {
   const at = agents.findIndex((a) => a.id === id);
-  const blank: AgentInfo = { id, parentId: null, label: null, task: "", state: "submitted", lastStatus: null, inTokens: 0, outTokens: 0 };
+  const blank: AgentInfo = {
+    id,
+    parentId: null,
+    label: null,
+    task: "",
+    state: "submitted",
+    lastStatus: null,
+    inTokens: 0,
+    outTokens: 0,
+  };
   if (at < 0) {
     const p = typeof patch === "function" ? patch(blank) : patch;
     return [...agents, { ...blank, ...p }];
@@ -231,22 +247,39 @@ function upsertAgent(
 function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | null): AgentInfo[] {
   switch (event.type) {
     case "run_start":
-      return upsertAgent(agents, event.agentId,
-        { parentId: event.parentId ?? null, state: "working", ...(event.parentId == null ? { label: null } : {}) });
+      return upsertAgent(agents, event.agentId, {
+        parentId: event.parentId ?? null,
+        state: "working",
+        ...(event.parentId == null ? { label: null } : {}),
+      });
     case "agent_spawn":
       return upsertAgent(agents, event.agentId, { parentId: event.parentId, task: event.task });
     case "agent_message":
-      if (event.role === "task") return upsertAgent(agents, event.to, { task: event.text, label: event.label ?? null, state: "submitted" });
-      if (event.role === "status") return upsertAgent(agents, event.from, { state: "working", lastStatus: event.text });
-      if (event.role === "result") return upsertAgent(agents, event.from, { state: event.state === "completed" ? "completed" : "failed" });
+      if (event.role === "task")
+        return upsertAgent(agents, event.to, {
+          task: event.text,
+          label: event.label ?? null,
+          state: "submitted",
+        });
+      if (event.role === "status")
+        return upsertAgent(agents, event.from, { state: "working", lastStatus: event.text });
+      if (event.role === "result")
+        return upsertAgent(agents, event.from, {
+          state: event.state === "completed" ? "completed" : "failed",
+        });
       return agents;
     case "usage":
-      return upsertAgent(agents, event.agentId, (a) => ({ inTokens: a.inTokens + event.inputTokens, outTokens: a.outTokens + event.outputTokens }));
+      return upsertAgent(agents, event.agentId, (a) => ({
+        inTokens: a.inTokens + event.inputTokens,
+        outTokens: a.outTokens + event.outputTokens,
+      }));
     case "run_end":
       // The ROOT run finished — mark the main agent done (subagents got their
       // own result message). A child's run_end has a different runId: ignore.
       if (rootRunId !== null && event.runId !== rootRunId) return agents;
-      return agents.map((a) => (a.parentId === null && a.state === "working" ? { ...a, state: "completed" } : a));
+      return agents.map((a) =>
+        a.parentId === null && a.state === "working" ? { ...a, state: "completed" } : a,
+      );
     default:
       return agents;
   }
@@ -260,8 +293,7 @@ const TRACE_CAP = 5000;
 function appendTrace(s: UiState, entry: Omit<TraceEntry, "seq">): UiState {
   const last = s.trace[s.trace.length - 1];
   const appended = [...s.trace, { seq: (last?.seq ?? 0) + 1, ...entry }];
-  const trace =
-    appended.length > TRACE_CAP ? appended.slice(appended.length - TRACE_CAP) : appended;
+  const trace = appended.length > TRACE_CAP ? appended.slice(appended.length - TRACE_CAP) : appended;
   return { ...s, trace };
 }
 
@@ -325,7 +357,10 @@ export function reduce(state: UiState, event: RunEvent): UiState {
   // boundary — the pure RunEvent switch below stays sealed to wire events.
   if (raw.type === "workspace_info") {
     const w = event as unknown as WorkspaceInfo;
-    return { ...traced, workspace: { sessionId: w.sessionId, path: w.path, configured: w.configured === true } };
+    return {
+      ...traced,
+      workspace: { sessionId: w.sessionId, path: w.path, configured: w.configured === true },
+    };
   }
   // Same boundary rule for provider_info: connect + every switch announce the
   // active backend; the chip/map/host column follow wire truth, latest wins.
@@ -395,7 +430,10 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       const attachments = state.outboxAttachments ?? undefined;
       const placeholder =
         !attachments?.length && event.attachments?.length
-          ? "\n" + event.attachments.map((a) => `[image ${a.sha256.slice(0, ATTACHMENT_SHA_PREVIEW_CHARS)}]`).join(" ")
+          ? "\n" +
+            event.attachments
+              .map((a) => `[image ${a.sha256.slice(0, ATTACHMENT_SHA_PREVIEW_CHARS)}]`)
+              .join(" ")
           : "";
       return addTurn(
         {
@@ -432,7 +470,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
       }
       return addTurn(
-        { ...state, thinkingActive: true, assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts } },
+        {
+          ...state,
+          thinkingActive: true,
+          assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
+        },
         { kind: "assistant", agentId: event.agentId, text: "", thinking: event.text },
       );
     }
@@ -449,7 +491,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
       }
       return addTurn(
-        { ...state, thinkingActive: false, assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts } },
+        {
+          ...state,
+          thinkingActive: false,
+          assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
+        },
         { kind: "assistant", agentId: event.agentId, text: event.text, thinking: "" },
       );
     }

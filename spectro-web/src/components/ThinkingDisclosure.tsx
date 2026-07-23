@@ -11,12 +11,7 @@ export function ThinkingDisclosure(props: { text: string; active: boolean }) {
   const lang = useLang();
   return (
     <div className={`thinking${props.active ? " thinking--active" : ""}`}>
-      <button
-        type="button"
-        className="thinking-head"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
+      <button type="button" className="thinking-head" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
         <svg
           className="thinking-glyph"
           viewBox="0 0 16 16"

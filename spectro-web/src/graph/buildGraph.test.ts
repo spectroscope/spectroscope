@@ -9,9 +9,24 @@ describe("buildGraph", () => {
       { type: "turn_start", agentId: "a0", turn: 1, ts: 2 },
       { type: "text_delta", agentId: "a0", text: "I am reading ", ts: 3 },
       { type: "text_delta", agentId: "a0", text: "the file.", ts: 4 },
-      { type: "tool_call", agentId: "a0", callId: "c1", name: "read_file", input: { path: "README.md" }, ts: 5 },
+      {
+        type: "tool_call",
+        agentId: "a0",
+        callId: "c1",
+        name: "read_file",
+        input: { path: "README.md" },
+        ts: 5,
+      },
       { type: "compaction", agentId: "a0", removedTurns: 2, summaryChars: 900, ts: 6 }, // must create no node
-      { type: "tool_result", agentId: "a0", callId: "c1", output: "# spectroscope", isError: false, durationMs: 120, ts: 7 },
+      {
+        type: "tool_result",
+        agentId: "a0",
+        callId: "c1",
+        output: "# spectroscope",
+        isError: false,
+        durationMs: 120,
+        ts: 7,
+      },
       { type: "turn_start", agentId: "a0", turn: 2, ts: 8 },
       { type: "text_delta", agentId: "a0", text: "The README starts with # spectroscope.", ts: 9 },
       { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 10 },
@@ -26,7 +41,10 @@ describe("buildGraph", () => {
     expect(nodes.find((n) => n.id === "r1:answer")?.detail.text).toContain("# spectroscope");
     expect(nodes.every((n) => !n.running)).toBe(true);
     expect(edges.map((e) => e.id)).toEqual([
-      "r1->r1:a0:turn:1", "r1:a0:turn:1->c1", "c1->r1:a0:turn:2", "r1:a0:turn:2->r1:answer",
+      "r1->r1:a0:turn:1",
+      "r1:a0:turn:1->c1",
+      "c1->r1:a0:turn:2",
+      "r1:a0:turn:2->r1:answer",
     ]);
   });
 
@@ -36,8 +54,24 @@ describe("buildGraph", () => {
       { type: "turn_start", agentId: "a0", turn: 1, ts: 2 },
       { type: "tool_call", agentId: "a0", callId: "c1", name: "read_file", input: { path: "a.txt" }, ts: 3 },
       { type: "tool_call", agentId: "a0", callId: "c2", name: "read_file", input: { path: "b.txt" }, ts: 4 },
-      { type: "tool_result", agentId: "a0", callId: "c2", output: "ERROR: b.txt not found", isError: true, durationMs: 15, ts: 5 },
-      { type: "tool_result", agentId: "a0", callId: "c1", output: "Contents of A", isError: false, durationMs: 90, ts: 6 },
+      {
+        type: "tool_result",
+        agentId: "a0",
+        callId: "c2",
+        output: "ERROR: b.txt not found",
+        isError: true,
+        durationMs: 15,
+        ts: 5,
+      },
+      {
+        type: "tool_result",
+        agentId: "a0",
+        callId: "c1",
+        output: "Contents of A",
+        isError: false,
+        durationMs: 90,
+        ts: 6,
+      },
       { type: "run_end", runId: "r2", stopReason: "end_turn", ts: 7 },
     ];
     // Intermediate state before the results: both tools pending and running
@@ -46,9 +80,9 @@ describe("buildGraph", () => {
     expect(mid.every((n) => n.running)).toBe(true);
     const { nodes, edges } = buildGraph(events);
     const ids = edges.map((e) => e.id);
-    expect(ids).toContain("r2:a0:turn:1->c1");   // fan out
+    expect(ids).toContain("r2:a0:turn:1->c1"); // fan out
     expect(ids).toContain("r2:a0:turn:1->c2");
-    expect(ids).toContain("c1->r2:answer");      // fan back in
+    expect(ids).toContain("c1->r2:answer"); // fan back in
     expect(ids).toContain("c2->r2:answer");
     expect(nodes.find((n) => n.id === "c1")?.status).toBe("ok");
     expect(nodes.find((n) => n.id === "c2")?.status).toBe("error");
@@ -59,10 +93,25 @@ describe("buildGraph", () => {
       { type: "run_start", runId: "r3", agentId: "a0", prompt: "Investigate the repo", ts: 1 },
       { type: "turn_start", agentId: "a0", turn: 1, ts: 2 },
       { type: "agent_spawn", agentId: "a1", parentId: "a0", task: "Count the markdown files", ts: 3 },
-      { type: "run_start", runId: "r3s", agentId: "a1", parentId: "a0", prompt: "Count the markdown files", ts: 4 },
+      {
+        type: "run_start",
+        runId: "r3s",
+        agentId: "a1",
+        parentId: "a0",
+        prompt: "Count the markdown files",
+        ts: 4,
+      },
       { type: "turn_start", agentId: "a1", turn: 1, ts: 5 },
       { type: "tool_call", agentId: "a1", callId: "c9", name: "list_dir", input: { path: "." }, ts: 6 },
-      { type: "tool_result", agentId: "a1", callId: "c9", output: "12 files", isError: false, durationMs: 40, ts: 7 },
+      {
+        type: "tool_result",
+        agentId: "a1",
+        callId: "c9",
+        output: "12 files",
+        isError: false,
+        durationMs: 40,
+        ts: 7,
+      },
       { type: "turn_start", agentId: "a1", turn: 2, ts: 8 },
       { type: "text_delta", agentId: "a1", text: "There are 12 markdown files.", ts: 9 },
       { type: "usage", agentId: "a1", inputTokens: 500, outputTokens: 60, ts: 10 },
@@ -79,8 +128,8 @@ describe("buildGraph", () => {
     expect(sub.running).toBe(false); // the child's run_end stops the node
     expect(edges.map((e) => e.id)).toEqual([
       "r3->r3:a0:turn:1",
-      "r3:a0:turn:1->a1",     // spawn hangs off the parent turn
-      "a1->r3s:a1:turn:1",    // the child turn hangs off the subagent node, NOT off a0
+      "r3:a0:turn:1->a1", // spawn hangs off the parent turn
+      "a1->r3s:a1:turn:1", // the child turn hangs off the subagent node, NOT off a0
       "r3s:a1:turn:1->c9",
       "c9->r3s:a1:turn:2",
       "r3s:a1:turn:2->r3:a0:turn:2", // the finished child chain flows BACK into the parent
@@ -173,10 +222,32 @@ describe("buildGraph", () => {
       { type: "turn_start", agentId: "a0", turn: 1, ts: 1500 },
       { type: "text_delta", agentId: "a0", text: "Reading ", ts: 1600 },
       { type: "text_delta", agentId: "a0", text: "the build file now.", ts: 1700 },
-      { type: "tool_call", agentId: "a0", callId: "c1", name: "read_file", input: { path: "build.gradle.kts" }, ts: 2000 },
-      { type: "permission_request", agentId: "a0", callId: "c1", name: "read_file", input: { path: "build.gradle.kts" }, ts: 2050 },
+      {
+        type: "tool_call",
+        agentId: "a0",
+        callId: "c1",
+        name: "read_file",
+        input: { path: "build.gradle.kts" },
+        ts: 2000,
+      },
+      {
+        type: "permission_request",
+        agentId: "a0",
+        callId: "c1",
+        name: "read_file",
+        input: { path: "build.gradle.kts" },
+        ts: 2050,
+      },
       { type: "permission_decision", callId: "c1", allowed: true, ts: 2100 },
-      { type: "tool_result", agentId: "a0", callId: "c1", output: "plugins { }", isError: false, durationMs: 400, ts: 2500 },
+      {
+        type: "tool_result",
+        agentId: "a0",
+        callId: "c1",
+        output: "plugins { }",
+        isError: false,
+        durationMs: 400,
+        ts: 2500,
+      },
       { type: "turn_start", agentId: "a0", turn: 2, ts: 2600 },
       { type: "text_delta", agentId: "a0", text: "The build file declares no plugins.", ts: 2700 },
       { type: "usage", agentId: "a0", inputTokens: 120, outputTokens: 30, ts: 2800 },
@@ -203,7 +274,10 @@ describe("buildGraph", () => {
     expect(tool.preview).toBe('{"path":"build.gradle.kts"}');
     // The full approval story is part of the tool node's evidence.
     expect(tool.events.map((e) => e.type)).toEqual([
-      "tool_call", "permission_request", "permission_decision", "tool_result",
+      "tool_call",
+      "permission_request",
+      "permission_decision",
+      "tool_result",
     ]);
 
     const answer = nodes.find((n) => n.kind === "answer")!;
@@ -213,8 +287,9 @@ describe("buildGraph", () => {
   });
 
   it("caps the stored turn deltas at 50 and counts the overflow", () => {
-    const deltas: RunEvent[] = Array.from({ length: 60 }, (_, i) =>
-      ({ type: "text_delta", agentId: "a0", text: "x", ts: 20 + i }) as RunEvent,
+    const deltas: RunEvent[] = Array.from(
+      { length: 60 },
+      (_, i) => ({ type: "text_delta", agentId: "a0", text: "x", ts: 20 + i }) as RunEvent,
     );
     const events: RunEvent[] = [
       { type: "run_start", runId: "r8", agentId: "a0", prompt: "chatty", ts: 1 },

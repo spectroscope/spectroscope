@@ -18,8 +18,7 @@ export interface MicView {
 }
 
 /** The hint the server returns in its 503 body — mirrored in the tooltip. */
-export const STT_SETUP_HINT =
-  "Speech-to-text is not installed — run bash scripts/setup-stt.sh.";
+export const STT_SETUP_HINT = "Speech-to-text is not installed — run bash scripts/setup-stt.sh.";
 
 /**
  * Decides how the mic button presents itself.
@@ -29,9 +28,18 @@ export const STT_SETUP_HINT =
  * - idle: enabled, ready to record.
  * While a run streams the composer is busy, so the button is disabled then too.
  */
-export function micButtonState(phase: MicPhase, available: boolean, running: boolean, lang: Lang = "en"): MicView {
+export function micButtonState(
+  phase: MicPhase,
+  available: boolean,
+  running: boolean,
+  lang: Lang = "en",
+): MicView {
   if (!available) {
-    return { title: lang === "en" ? STT_SETUP_HINT : t(lang, "mic.sttHint"), recording: false, disabled: true };
+    return {
+      title: lang === "en" ? STT_SETUP_HINT : t(lang, "mic.sttHint"),
+      recording: false,
+      disabled: true,
+    };
   }
   if (phase === "transcribing") {
     return { title: t(lang, "mic.transcribing"), recording: false, disabled: true };

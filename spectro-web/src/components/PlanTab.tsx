@@ -27,7 +27,9 @@ export function PlanTab({ plan }: { plan: PlanStep[] | null }) {
           <div className={`agent-card agent-card--${step.status}`}>
             <span className="agent-card-head">
               <span className={`agent-dot agent-dot--${step.status}`} aria-hidden="true" />
-              <span className={`agent-badge agent-badge--${step.status}`}>{statusLabel(step.status, lang)}</span>
+              <span className={`agent-badge agent-badge--${step.status}`}>
+                {statusLabel(step.status, lang)}
+              </span>
             </span>
             <span className="agent-card-task">{step.text}</span>
           </div>

@@ -13,10 +13,17 @@ import { t, type Lang } from "../../i18n/i18n";
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
 // ---------------------------------------------------------------------------
-export interface CtxPart { label: string; chars: number; estTokens: number; }
+export interface CtxPart {
+  label: string;
+  chars: number;
+  estTokens: number;
+}
 
 /** One agent's slice of the shared LLM's reasoning/answer stream. */
-export interface AgentStream { agent: string; text: string; }
+export interface AgentStream {
+  agent: string;
+  text: string;
+}
 export interface Detail {
   prompt: string;
   ctxParts: CtxPart[] | null;
@@ -69,38 +76,67 @@ export function deriveDetail(applied: RunEvent[]): Detail {
 // ---------------------------------------------------------------------------
 export const gateNote = (g: GateState, lang: Lang): string => t(lang, `map.gate.${g}`);
 export const GATE_COLOR: Record<GateState, string> = {
-  none: "var(--border-strong)", pending: "var(--warn)", allowed: "var(--ok)", denied: "var(--error)",
+  none: "var(--border-strong)",
+  pending: "var(--warn)",
+  allowed: "var(--ok)",
+  denied: "var(--error)",
 };
 export const lifecycleLabel = (s: SubagentInfo["state"], lang: Lang): string => t(lang, `map.life.${s}`);
 export const STATE_COLOR: Record<SubagentInfo["state"], string> = {
-  submitted: "var(--text-faint)", working: "var(--warn)", completed: "var(--ok)", failed: "var(--error)",
+  submitted: "var(--text-faint)",
+  working: "var(--warn)",
+  completed: "var(--ok)",
+  failed: "var(--error)",
 };
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
 
 function activity(
-  f: Focus, disk: DiskState, file: string | null, cmd: string | null,
-  mcp: string | null, gate: GateState, lang: Lang,
+  f: Focus,
+  disk: DiskState,
+  file: string | null,
+  cmd: string | null,
+  mcp: string | null,
+  gate: GateState,
+  lang: Lang,
 ) {
   const file_ = file ?? t(lang, "map.act.file");
   switch (f) {
-    case "llm": return { text: t(lang, "map.act.thinking"), color: "var(--accent)" };
-    case "disk": return disk === "write"
-      ? { text: t(lang, "map.act.writes", { f: file_ }), color: "var(--accent)" }
-      : { text: t(lang, "map.act.reads", { f: file_ }), color: "var(--ok)" };
-    case "cmd": return { text: `$ ${cut(cmd ?? "run_command", 26)}`, color: "var(--sand)" };
-    case "mcp": return { text: mcp ?? "mcp-server", color: "var(--sand)" };
-    case "gate": return { text: gateNote(gate, lang), color: GATE_COLOR[gate] };
-    case "agent": return { text: t(lang, "map.act.plans"), color: "var(--text-dim)" };
-    default: return { text: t(lang, "map.gate.none"), color: "var(--text-faint)" };
+    case "llm":
+      return { text: t(lang, "map.act.thinking"), color: "var(--accent)" };
+    case "disk":
+      return disk === "write"
+        ? { text: t(lang, "map.act.writes", { f: file_ }), color: "var(--accent)" }
+        : { text: t(lang, "map.act.reads", { f: file_ }), color: "var(--ok)" };
+    case "cmd":
+      return { text: `$ ${cut(cmd ?? "run_command", 26)}`, color: "var(--sand)" };
+    case "mcp":
+      return { text: mcp ?? "mcp-server", color: "var(--sand)" };
+    case "gate":
+      return { text: gateNote(gate, lang), color: GATE_COLOR[gate] };
+    case "agent":
+      return { text: t(lang, "map.act.plans"), color: "var(--text-dim)" };
+    default:
+      return { text: t(lang, "map.gate.none"), color: "var(--text-faint)" };
   }
 }
 
 // ---------------------------------------------------------------------------
 // Layout — two hand-authored placements; the flip swaps the whole thing.
 // ---------------------------------------------------------------------------
-interface XY { x: number; y: number; }
-interface Zone { id: string; x: number; y: number; w: number; h: number; variant: "mac" | "os" | "outside"; label: string; }
+interface XY {
+  x: number;
+  y: number;
+}
+interface Zone {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  variant: "mac" | "os" | "outside";
+  label: string;
+}
 interface Layout {
   pos: Record<string, XY>;
   zones: Zone[];
@@ -156,7 +192,13 @@ const LAYOUTS: { remote: Layout; local: Layout } = {
 
 // focus → the node the packet rests on (gate stays at the agent).
 const FOCUS_NODE: Record<Focus, string> = {
-  user: "user", agent: "agent", gate: "agent", llm: "llm", disk: "os-disk", cmd: "os-shell", mcp: "os-mcp",
+  user: "user",
+  agent: "agent",
+  gate: "agent",
+  llm: "llm",
+  disk: "os-disk",
+  cmd: "os-shell",
+  mcp: "os-mcp",
 };
 
 const SUB_MAX = 3;
@@ -184,7 +226,10 @@ function subagentYs(count: number, bandTop: number, bandBottom: number, preferre
   return Array.from({ length: count }, (_, i) => Math.round(start + i * step));
 }
 
-export interface FlowResult { nodes: Node[]; edges: Edge[]; }
+export interface FlowResult {
+  nodes: Node[];
+  edges: Edge[];
+}
 
 export function sceneToFlow(
   scene: Scene,
@@ -198,7 +243,9 @@ export function sceneToFlow(
 
   // ----- zones (non-interactive background) -----
   const ZONE_LABEL: Record<Zone["variant"], string> = {
-    mac: t(lang, "map.zone.mac"), os: t(lang, "map.zone.os"), outside: t(lang, "map.zone.outside"),
+    mac: t(lang, "map.zone.mac"),
+    os: t(lang, "map.zone.os"),
+    outside: t(lang, "map.zone.outside"),
   };
   for (const z of L.zones) {
     if (z.variant === "outside" && opts.local) {
@@ -235,7 +282,15 @@ export function sceneToFlow(
   N("user", "user", { active: scene.focus === "user", prompt: detail.prompt });
 
   // ----- agent hub -----
-  const mainAct = activity(scene.focus, scene.disk, scene.activeFile, scene.activeCommand, scene.activeMcp, scene.gate, lang);
+  const mainAct = activity(
+    scene.focus,
+    scene.disk,
+    scene.activeFile,
+    scene.activeCommand,
+    scene.activeMcp,
+    scene.gate,
+    lang,
+  );
   N("agent", "agent", {
     active: scene.focus === "agent" || scene.focus === "gate",
     error: scene.isError,
@@ -264,10 +319,21 @@ export function sceneToFlow(
   const mcpUser = loops.find((l) => l.loop.activeMcp !== null);
   const mcpInUse = mcpUser !== undefined;
   const mcpTool = mcpUser ? detail.tool[mcpUser.id] : undefined;
-  N("os-disk", "os", { kind: "disk", active: atDisk !== undefined, disk: atDisk?.loop.disk ?? "idle", file: atDisk?.loop.activeFile ?? null });
-  N("os-shell", "os", { kind: "shell", active: atCmd !== undefined, command: atCmd?.loop.activeCommand ?? null });
+  N("os-disk", "os", {
+    kind: "disk",
+    active: atDisk !== undefined,
+    disk: atDisk?.loop.disk ?? "idle",
+    file: atDisk?.loop.activeFile ?? null,
+  });
+  N("os-shell", "os", {
+    kind: "shell",
+    active: atCmd !== undefined,
+    command: atCmd?.loop.activeCommand ?? null,
+  });
   N("os-mcp", "os", {
-    kind: "mcp", active: mcpInUse, mcp: mcpUser?.loop.activeMcp ?? null,
+    kind: "mcp",
+    active: mcpInUse,
+    mcp: mcpUser?.loop.activeMcp ?? null,
     tool: mcpTool?.name?.startsWith("mcp__") ? mcpTool : null,
   });
   N("os-net", "os", { kind: "net", active: mcpInUse });
@@ -317,19 +383,37 @@ export function sceneToFlow(
   // ----- edges (the rails) -----
   const net = !opts.local; // LLM legs cross the boundary only when remote
   const E = (
-    id: string, source: string, target: string, sh: string, th: string,
-    active: boolean, opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean } = {},
+    id: string,
+    source: string,
+    target: string,
+    sh: string,
+    th: string,
+    active: boolean,
+    opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean } = {},
   ) => {
     edges.push({
-      id, source, target, sourceHandle: sh, targetHandle: th, type: "rail",
-      data: { active, net: opt.net ?? false, err: opt.err ?? false, dim: opt.dim ?? false, flow: opt.flow ?? active },
+      id,
+      source,
+      target,
+      sourceHandle: sh,
+      targetHandle: th,
+      type: "rail",
+      data: {
+        active,
+        net: opt.net ?? false,
+        err: opt.err ?? false,
+        dim: opt.dim ?? false,
+        flow: opt.flow ?? active,
+      },
       zIndex: active ? 1001 : 1,
     });
   };
 
   const mainLit = FOCUS_NODE[scene.focus];
   const litUserAgent = scene.focus === "agent" || scene.focus === "gate" || scene.focus === "user";
-  E("e-user-agent", "user", "agent", "rs", "lt", litUserAgent, { err: scene.isError && scene.focus === "user" });
+  E("e-user-agent", "user", "agent", "rs", "lt", litUserAgent, {
+    err: scene.isError && scene.focus === "user",
+  });
   E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net });
   E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", mainLit === "os-disk");
   E("e-agent-osshell", "agent", "os-shell", "bs", "tt", mainLit === "os-shell");
@@ -339,7 +423,9 @@ export function sceneToFlow(
   // own rail below); the chain from the client outward is shared.
   const mcpErr = !!mcpUser?.loop.isError;
   const mainOnMcp = scene.activeMcp !== null;
-  E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", mainLit === "os-mcp" || mainOnMcp, { err: mcpErr && mcpUser?.id === "main" });
+  E("e-agent-osmcp", "agent", "os-mcp", "bs", "tt", mainLit === "os-mcp" || mainOnMcp, {
+    err: mcpErr && mcpUser?.id === "main",
+  });
   E("e-osmcp-osnet", "os-mcp", "os-net", "rs", "lt", mcpInUse, { err: mcpErr });
   E("e-osnet-netz", "os-net", "netz", "rs", "lt", mcpInUse, { net: true, err: mcpErr });
   E("e-netz-mcpserver", "netz", "mcpserver", "rs", "lt", mcpInUse, { net: true, err: mcpErr });

@@ -7,7 +7,7 @@
 
 import type { CSSProperties } from "react";
 
-const d = (v: number): CSSProperties => ({ animationDelay: `${v}s` } as CSSProperties);
+const d = (v: number): CSSProperties => ({ animationDelay: `${v}s` }) as CSSProperties;
 
 // ---------------------------------------------------------------------------
 // Keyboard — the user typing
@@ -27,10 +27,27 @@ export function Keyboard({ active }: { active: boolean }) {
     <div className={`pf-kbd${active ? " pf-kbd--on" : ""}`}>
       <svg viewBox="0 0 62 24" width="72" height="28" aria-hidden="true">
         {keys.map((k) => (
-          <rect key={`${k.x}-${k.y}`} className="pf-kbd__key" x={k.x} y={k.y} width={k.w} height={5.5} rx={1.2} style={d(k.delay)} />
+          <rect
+            key={`${k.x}-${k.y}`}
+            className="pf-kbd__key"
+            x={k.x}
+            y={k.y}
+            width={k.w}
+            height={5.5}
+            rx={1.2}
+            style={d(k.delay)}
+          />
         ))}
         <rect className="pf-kbd__key" x={3} y={17} width={9} height={5.5} rx={1.2} style={d(0.7)} />
-        <rect className="pf-kbd__key pf-kbd__space" x={15} y={17} width={28} height={5.5} rx={1.2} style={d(0.2)} />
+        <rect
+          className="pf-kbd__key pf-kbd__space"
+          x={15}
+          y={17}
+          width={28}
+          height={5.5}
+          rx={1.2}
+          style={d(0.2)}
+        />
         <rect className="pf-kbd__key" x={47} y={17} width={9} height={5.5} rx={1.2} style={d(1.0)} />
       </svg>
     </div>
@@ -75,7 +92,7 @@ export function AluChip({ active }: { active: boolean }) {
   const cells: { x: number; y: number; delay: number }[] = [];
   for (let r = 0; r < 3; r++) {
     for (let c = 0; c < 4; c++) {
-      cells.push({ x: 13 + c * 6, y: 9 + r * 6, delay: ((r * 4 + c) * 37 % 11) / 16 });
+      cells.push({ x: 13 + c * 6, y: 9 + r * 6, delay: (((r * 4 + c) * 37) % 11) / 16 });
     }
   }
   const pins = [9, 15, 21]; // pin rows on each side
@@ -93,7 +110,16 @@ export function AluChip({ active }: { active: boolean }) {
         <rect className="pf-alu__chip" x="10" y="6" width="24" height="22" rx="2.5" />
         {/* crunching cells */}
         {cells.map((cell) => (
-          <rect key={`${cell.x}-${cell.y}`} className="pf-alu__cell" x={cell.x} y={cell.y} width={4} height={4} rx={0.8} style={d(cell.delay)} />
+          <rect
+            key={`${cell.x}-${cell.y}`}
+            className="pf-alu__cell"
+            x={cell.x}
+            y={cell.y}
+            width={4}
+            height={4}
+            rx={0.8}
+            style={d(cell.delay)}
+          />
         ))}
       </svg>
     </div>

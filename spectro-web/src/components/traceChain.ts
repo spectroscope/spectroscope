@@ -50,14 +50,26 @@ export function causalChain(entries: TraceEntry[], target: TraceEntry): TraceEnt
     switch (cur.type) {
       case "tool_result":
         prev =
-          lastBefore(entries, cur.seq, (e) => e.type === "permission_decision" && str(payload(e)["callId"]) === callId) ??
+          lastBefore(
+            entries,
+            cur.seq,
+            (e) => e.type === "permission_decision" && str(payload(e)["callId"]) === callId,
+          ) ??
           lastBefore(entries, cur.seq, (e) => e.type === "tool_call" && str(payload(e)["callId"]) === callId);
         break;
       case "permission_decision":
-        prev = lastBefore(entries, cur.seq, (e) => e.type === "permission_request" && str(payload(e)["callId"]) === callId);
+        prev = lastBefore(
+          entries,
+          cur.seq,
+          (e) => e.type === "permission_request" && str(payload(e)["callId"]) === callId,
+        );
         break;
       case "permission_request":
-        prev = lastBefore(entries, cur.seq, (e) => e.type === "tool_call" && str(payload(e)["callId"]) === callId);
+        prev = lastBefore(
+          entries,
+          cur.seq,
+          (e) => e.type === "tool_call" && str(payload(e)["callId"]) === callId,
+        );
         break;
       case "tool_call":
       case "text_delta":
@@ -106,14 +118,16 @@ export function causalChain(entries: TraceEntry[], target: TraceEntry): TraceEnt
 export function reasoningPairs(entries: TraceEntry[]): Map<number, number> {
   const pairs = new Map<number, number>();
   const isAction = (e: TraceEntry): boolean =>
-    e.type === "tool_call" || e.type === "permission_request" || e.type === "text_delta" || e.type === "error";
+    e.type === "tool_call" ||
+    e.type === "permission_request" ||
+    e.type === "text_delta" ||
+    e.type === "error";
 
   for (let i = 0; i < entries.length; i++) {
     const e = entries[i];
     if (e.type !== "thinking_delta") continue;
     const next = entries[i + 1];
-    const blockEnds =
-      next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
+    const blockEnds = next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
     if (!blockEnds) continue;
     for (let j = i + 1; j < entries.length; j++) {
       const cand = entries[j];
@@ -144,8 +158,7 @@ export function reasoningBlockText(entries: TraceEntry[]): Map<number, string> {
     }
     if (start < 0) start = i;
     const next = entries[i + 1];
-    const blockEnds =
-      next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
+    const blockEnds = next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
     if (blockEnds) {
       let text = "";
       for (let k = start; k <= i; k++) {

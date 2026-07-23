@@ -52,9 +52,17 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
     let node = nodes.get(id);
     if (node === undefined) {
       node = {
-        id, role: "", connected: false, epoch: model.epochBySender[id] ?? 0,
-        state: "idle", pendingGate: false, spawnedBy: null, inTokens: 0, outTokens: 0,
-        firstTs: null, lastTs: null,
+        id,
+        role: "",
+        connected: false,
+        epoch: model.epochBySender[id] ?? 0,
+        state: "idle",
+        pendingGate: false,
+        spawnedBy: null,
+        inTokens: 0,
+        outTokens: 0,
+        firstTs: null,
+        lastTs: null,
       };
       nodes.set(id, node);
     }
@@ -92,9 +100,7 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
   };
 
   for (const event of model.events) {
-    const actor = event.type === "agent_message"
-      ? event.from
-      : "agentId" in event ? event.agentId : null;
+    const actor = event.type === "agent_message" ? event.from : "agentId" in event ? event.agentId : null;
     if (actor != null && typeof event.ts === "number") stamp(actor, event.ts);
     switch (event.type) {
       case "run_start": {

@@ -93,7 +93,14 @@ export function ProviderPicker({
         <span className="mono">{provider}</span>
         {activeModel && <span className="provider-chip-model mono">{activeModel}</span>}
         <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" className="provider-caret">
-          <path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M3 4.5 L6 7.5 L9 4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </button>
 

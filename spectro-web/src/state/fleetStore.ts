@@ -58,7 +58,7 @@ let hubPort: number | null = null;
 // Per-context models, cached so useSyncExternalStore sees a stable reference for
 // a fleet that did not change this push.
 let byContext = new Map<string, FleetModel>();
-// The all-frames merged model — the no-arg useFleet()/​__getFleet() view.
+// The all-frames merged model — the no-arg useFleet() / __getFleet() view.
 let merged: FleetModel = EMPTY_FLEET;
 // The sidebar list, cached; a new array only when something changed.
 let summaries: FleetSummary[] = [];
@@ -203,7 +203,12 @@ export function fleetLoadScenario(contextId: string, events: RunEvent[]): void {
     }
   }
   const roster: FleetNode[] = [...roles].map(([id, role]) => ({
-    id, role, capabilities: [], topic, connected: false, lastSeen: 0,
+    id,
+    role,
+    capabilities: [],
+    topic,
+    connected: false,
+    lastSeen: 0,
   }));
   const fresh: FleetFrame[] = [
     { type: "fleet_roster", nodes: roster },
@@ -281,7 +286,7 @@ export function fleetPending(model: FleetModel): PendingPermission[] {
  *  contextId = that one fleet's model (the entered-fleet event source). */
 export function useFleet(contextId?: string): FleetModel {
   const getSnap = useCallback(
-    () => (contextId === undefined ? merged : byContext.get(contextId) ?? EMPTY_FLEET),
+    () => (contextId === undefined ? merged : (byContext.get(contextId) ?? EMPTY_FLEET)),
     [contextId],
   );
   return useSyncExternalStore(subscribe, getSnap, getSnap);
@@ -295,7 +300,11 @@ export function useFleets(): FleetSummary[] {
 /** React binding: the loopback hub port (null when the hub is off), for the
  *  spawn panel's copy-paste node command. */
 export function useFleetHubPort(): number | null {
-  return useSyncExternalStore(subscribe, () => hubPort, () => hubPort);
+  return useSyncExternalStore(
+    subscribe,
+    () => hubPort,
+    () => hubPort,
+  );
 }
 function getSummaries(): FleetSummary[] {
   return summaries;

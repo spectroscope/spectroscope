@@ -78,7 +78,7 @@ describe("parseMarkdown blocks", () => {
   });
 
   it("parses a fenced code block with language", () => {
-    const blocks = parseMarkdown('```java\nvar x = 1;\n```\ndanach');
+    const blocks = parseMarkdown("```java\nvar x = 1;\n```\ndanach");
     const code = blocks[0] as Extract<Block, { kind: "code" }>;
     expect(code.lang).toBe("java");
     expect(code.text).toBe("var x = 1;");
@@ -114,7 +114,10 @@ describe("parseMarkdown blocks", () => {
   });
 
   it("appends hanging continuation lines to their item", () => {
-    const list = parseMarkdown("- erster Punkt\n  geht weiter\n- zweiter")[0] as Extract<Block, { kind: "list" }>;
+    const list = parseMarkdown("- erster Punkt\n  geht weiter\n- zweiter")[0] as Extract<
+      Block,
+      { kind: "list" }
+    >;
     expect(list.items.length).toBe(2);
     expect(plain(list.items[0].children)).toBe("erster Punkt geht weiter");
   });
@@ -129,7 +132,10 @@ describe("parseMarkdown blocks", () => {
   });
 
   it("parses a GFM table with alignment", () => {
-    const table = parseMarkdown("| Name | Wert |\n|:-----|-----:|\n| a | 1 |\n| b | 2 |")[0] as Extract<Block, { kind: "table" }>;
+    const table = parseMarkdown("| Name | Wert |\n|:-----|-----:|\n| a | 1 |\n| b | 2 |")[0] as Extract<
+      Block,
+      { kind: "table" }
+    >;
     expect(table.header.length).toBe(2);
     expect(table.align).toEqual(["left", "right"]);
     expect(table.rows.length).toBe(2);

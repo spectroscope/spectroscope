@@ -14,8 +14,15 @@ function event(sender: string, epoch: number, sequence: number, payload: RunEven
   return {
     type: "fleet_event",
     frame: {
-      sender, epoch, contextId: "ctx", taskId: sender + "#task", sequence,
-      parentId: null, topic: "run." + sender, ts: payload.ts, payload,
+      sender,
+      epoch,
+      contextId: "ctx",
+      taskId: sender + "#task",
+      sequence,
+      parentId: null,
+      topic: "run." + sender,
+      ts: payload.ts,
+      payload,
     },
   };
 }

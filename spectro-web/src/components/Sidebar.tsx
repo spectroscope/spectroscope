@@ -110,7 +110,13 @@ export function Sidebar(props: {
         title={t(lang, "nav.startersTitle")}
       >
         <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-          <path d="M8 2v12M2 8h12" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" fill="none" />
+          <path
+            d="M8 2v12M2 8h12"
+            stroke="currentColor"
+            strokeWidth="1.6"
+            strokeLinecap="round"
+            fill="none"
+          />
         </svg>
         {t(lang, "nav.starters")}
       </button>
@@ -118,14 +124,18 @@ export function Sidebar(props: {
       <div className="sidebar-eyebrow-row">
         <div className="sidebar-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
           <button
-            type="button" role="tab" aria-selected={nav === "sessions"}
+            type="button"
+            role="tab"
+            aria-selected={nav === "sessions"}
             className={`sidebar-seg-btn${nav === "sessions" ? " active" : ""}`}
             onClick={() => setNav("sessions")}
           >
             Sessions
           </button>
           <button
-            type="button" role="tab" aria-selected={nav === "fleets"}
+            type="button"
+            role="tab"
+            aria-selected={nav === "fleets"}
             className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
             onClick={() => setNav("fleets")}
           >
@@ -134,14 +144,22 @@ export function Sidebar(props: {
           </button>
         </div>
         {nav === "sessions" && (
-          <button type="button" className="sidebar-import" onClick={props.onImport}
-            title={t(lang, "nav.importTitle")}>
+          <button
+            type="button"
+            className="sidebar-import"
+            onClick={props.onImport}
+            title={t(lang, "nav.importTitle")}
+          >
             Import
           </button>
         )}
         {nav === "fleets" && (
-          <button type="button" className="sidebar-import sidebar-spawn" onClick={props.onSpawnNode}
-            title={lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)"}>
+          <button
+            type="button"
+            className="sidebar-import sidebar-spawn"
+            onClick={props.onSpawnNode}
+            title={lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)"}
+          >
             + node
           </button>
         )}
@@ -175,12 +193,17 @@ export function Sidebar(props: {
                 <span className="session-meta tabular">
                   {relativeTime(s.startedAt, Date.now(), lang)}
                   {(s.agentCount ?? 0) > 1 && (
-                    <> &middot; {s.agentCount} {lang === "de" ? "Agenten" : "agents"}</>
+                    <>
+                      {" "}
+                      &middot; {s.agentCount} {lang === "de" ? "Agenten" : "agents"}
+                    </>
                   )}
                   {(s.turnCount ?? 0) > 0 && (
-                    <> &middot; {s.turnCount} {lang === "de" ? "Turns" : "turns"}</>
-                  )}
-                  {" "}
+                    <>
+                      {" "}
+                      &middot; {s.turnCount} {lang === "de" ? "Turns" : "turns"}
+                    </>
+                  )}{" "}
                   &middot; {formatTokens(s.tokens)} tokens
                 </span>
               </button>
@@ -203,7 +226,13 @@ export function Sidebar(props: {
                 onClick={() => props.onSelectScenario(s)}
               >
                 <span className="session-title">
-                  <svg className="scenario-glyph" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true">
+                  <svg
+                    className="scenario-glyph"
+                    viewBox="0 0 16 16"
+                    width="10"
+                    height="10"
+                    aria-hidden="true"
+                  >
                     <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
                   </svg>
                   {loc(s.name, lang)}

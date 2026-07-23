@@ -7,13 +7,13 @@
 import type { RunEvent } from "../events";
 
 export type TickKind =
-  | "token"      // text_delta            — teal
-  | "reasoning"  // thinking_delta        — violet ("the line you follow")
-  | "tool"       // tool_call/result      — amber
-  | "gate"       // permission events     — red (violet while pending)
-  | "subagent"   // spawn + agent_message — ocean
-  | "lifecycle"  // run/turn boundaries   — faint
-  | "error";     // error / failed result — red, full height
+  | "token" // text_delta            — teal
+  | "reasoning" // thinking_delta        — violet ("the line you follow")
+  | "tool" // tool_call/result      — amber
+  | "gate" // permission events     — red (violet while pending)
+  | "subagent" // spawn + agent_message — ocean
+  | "lifecycle" // run/turn boundaries   — faint
+  | "error"; // error / failed result — red, full height
 
 export interface LaneTick {
   /** Position on the shared time axis, normalized 0..1. */
@@ -101,7 +101,18 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
     let l = acc.get(id);
     if (l === undefined) {
       l = {
-        lane: { id, parentId: null, label: null, task: "", state: "submitted", lastStatus: null, pendingGate: false, inTokens: 0, outTokens: 0, thinking: "" },
+        lane: {
+          id,
+          parentId: null,
+          label: null,
+          task: "",
+          state: "submitted",
+          lastStatus: null,
+          pendingGate: false,
+          inTokens: 0,
+          outTokens: 0,
+          thinking: "",
+        },
         ticks: [],
       };
       acc.set(id, l);
@@ -151,9 +162,8 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
         const merged = l.lane.thinking + (resumed ? LANE_THINKING_SEP : "") + event.text;
         // Bounded, latest wins: keep the tail so the peek shows the most
         // recent reasoning rather than an unbounded transcript.
-        l.lane.thinking = merged.length > MAX_LANE_THINKING
-          ? merged.slice(merged.length - MAX_LANE_THINKING)
-          : merged;
+        l.lane.thinking =
+          merged.length > MAX_LANE_THINKING ? merged.slice(merged.length - MAX_LANE_THINKING) : merged;
         tick(event.agentId, { ts, kind: "reasoning", seq });
         break;
       }

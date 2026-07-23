@@ -21,7 +21,17 @@ const ids = (flow: { nodes: { id: string }[] }) => flow.nodes.map((n) => n.id);
 describe("sceneToFlow", () => {
   it("emits the core agent-system, OS band and external nodes", () => {
     const flow = build([runStart("anthropic")], false, "anthropic");
-    for (const id of ["user", "agent", "os-disk", "os-shell", "os-mcp", "os-net", "llm", "netz", "mcpserver"]) {
+    for (const id of [
+      "user",
+      "agent",
+      "os-disk",
+      "os-shell",
+      "os-mcp",
+      "os-net",
+      "llm",
+      "netz",
+      "mcpserver",
+    ]) {
       expect(ids(flow)).toContain(id);
     }
     // background zones
@@ -45,8 +55,14 @@ describe("sceneToFlow", () => {
   });
 
   it("lays out three subagents with equal, non-clumping vertical spacing inside the band", () => {
-    const flow = build([runStart("ollama"), spawn("worker-1"), spawn("worker-2"), spawn("worker-3")], true, "ollama");
-    const subs = flow.nodes.filter((n) => n.id.startsWith("sub-")).sort((a, b) => a.position.y - b.position.y);
+    const flow = build(
+      [runStart("ollama"), spawn("worker-1"), spawn("worker-2"), spawn("worker-3")],
+      true,
+      "ollama",
+    );
+    const subs = flow.nodes
+      .filter((n) => n.id.startsWith("sub-"))
+      .sort((a, b) => a.position.y - b.position.y);
     expect(subs).toHaveLength(3);
     const gap1 = subs[1].position.y - subs[0].position.y;
     const gap2 = subs[2].position.y - subs[1].position.y;
@@ -69,7 +85,14 @@ describe("sceneToFlow", () => {
     const events: RunEvent[] = [
       runStart("ollama"),
       spawn("worker-1"),
-      { type: "tool_call", agentId: "worker-1", callId: "k1", name: "write_file", input: { path: "docs/plan.md" }, ts: T } as RunEvent,
+      {
+        type: "tool_call",
+        agentId: "worker-1",
+        callId: "k1",
+        name: "write_file",
+        input: { path: "docs/plan.md" },
+        ts: T,
+      } as RunEvent,
     ];
     const flow = build(events, true, "ollama");
     const disk = flow.nodes.find((n) => n.id === "os-disk")!;
@@ -85,7 +108,14 @@ describe("sceneToFlow", () => {
     const events: RunEvent[] = [
       runStart("ollama"),
       spawn("worker-1"),
-      { type: "run_start", runId: "rc", agentId: "worker-1", parentId: "main", prompt: "task", ts: T } as RunEvent,
+      {
+        type: "run_start",
+        runId: "rc",
+        agentId: "worker-1",
+        parentId: "main",
+        prompt: "task",
+        ts: T,
+      } as RunEvent,
       { type: "thinking_delta", agentId: "worker-1", text: "child reasoning", ts: T } as RunEvent,
     ];
     const flow = build(events, true, "ollama");

@@ -8,7 +8,15 @@ const history: RunEvent[] = [
   { type: "run_start", runId: "r1", agentId: "main", prompt: "say test", ts: 1 },
   { type: "text_delta", agentId: "main", text: "OK then", ts: 2 },
   { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: { path: "a.txt" }, ts: 3 },
-  { type: "tool_result", agentId: "main", callId: "c1", output: "hello", isError: false, durationMs: 5, ts: 4 },
+  {
+    type: "tool_result",
+    agentId: "main",
+    callId: "c1",
+    output: "hello",
+    isError: false,
+    durationMs: 5,
+    ts: 4,
+  },
   // never re-enters the provider history -> must not count towards the re-upload
   { type: "thinking_delta", agentId: "main", text: "xxxxxxxxxxxxxxxxxxxx", ts: 5 },
   { type: "usage", agentId: "main", inputTokens: 10, outputTokens: 5, ts: 6 },
@@ -28,7 +36,14 @@ describe("summarizeHistory", () => {
   it("ignores subagent run_starts when counting prompts", () => {
     const withChild: RunEvent[] = [
       ...history,
-      { type: "run_start", runId: "r2", agentId: "explore-1", parentId: "main", prompt: "scout", ts: 8 } as RunEvent,
+      {
+        type: "run_start",
+        runId: "r2",
+        agentId: "explore-1",
+        parentId: "main",
+        prompt: "scout",
+        ts: 8,
+      } as RunEvent,
     ];
     expect(summarizeHistory(withChild).prompts).toBe(1);
   });
@@ -40,8 +55,23 @@ describe("summarizeHistory", () => {
       ...history,
       { type: "run_start", runId: "r2", agentId: "explore-1", parentId: "main", prompt: "scout", ts: 8 },
       { type: "text_delta", agentId: "explore-1", text: "a very long child answer", ts: 9 },
-      { type: "tool_call", agentId: "explore-1", callId: "c9", name: "grep", input: { pattern: "x" }, ts: 10 },
-      { type: "tool_result", agentId: "explore-1", callId: "c9", output: "many child hits", isError: false, durationMs: 2, ts: 11 },
+      {
+        type: "tool_call",
+        agentId: "explore-1",
+        callId: "c9",
+        name: "grep",
+        input: { pattern: "x" },
+        ts: 10,
+      },
+      {
+        type: "tool_result",
+        agentId: "explore-1",
+        callId: "c9",
+        output: "many child hits",
+        isError: false,
+        durationMs: 2,
+        ts: 11,
+      },
     ] as RunEvent[];
     expect(summarizeHistory(withChildWork).approxChars).toBe(summarizeHistory(history).approxChars);
   });

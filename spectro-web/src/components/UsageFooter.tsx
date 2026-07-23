@@ -29,14 +29,15 @@ export function UsageFooter(props: { state: UiState; connection: ConnectionStatu
   return (
     <footer className="usage-footer">
       <span className="usage tabular">
-        {t(lang, "footer.run")} {formatTokens(runUsage.inputTokens)} in &middot; {formatTokens(runUsage.outputTokens)}{" "}
-        out
+        {t(lang, "footer.run")} {formatTokens(runUsage.inputTokens)} in &middot;{" "}
+        {formatTokens(runUsage.outputTokens)} out
       </span>
       <span className="footer-diamond" aria-hidden="true">
         &middot;
       </span>
       <span className="usage tabular">
-        {t(lang, "footer.session")} {formatTokens(usage.inputTokens)} in &middot; {formatTokens(usage.outputTokens)} out
+        {t(lang, "footer.session")} {formatTokens(usage.inputTokens)} in &middot;{" "}
+        {formatTokens(usage.outputTokens)} out
       </span>
       <span className="footer-spacer" />
       <span className="footer-status">

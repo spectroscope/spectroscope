@@ -11,7 +11,14 @@ import type { TraceEntry } from "../state/reducer";
 import { agentAccent, compactJson, formatTokens } from "../format";
 import { CopyButton } from "./CopyButton";
 import { JsonTree } from "./JsonTree";
-import { LLM_DIR_GLYPH, SummaryLine, TEXT_FIELD_EVENTS, llmDirection, wireHost, wireProtocol } from "./eventSummary";
+import {
+  LLM_DIR_GLYPH,
+  SummaryLine,
+  TEXT_FIELD_EVENTS,
+  llmDirection,
+  wireHost,
+  wireProtocol,
+} from "./eventSummary";
 import type { LlmDir } from "./eventSummary";
 import { DETAIL_MODES, detailLines, detailText } from "./traceDetail";
 import type { DetailMode } from "./traceDetail";
@@ -185,7 +192,9 @@ const TraceRow = memo(function TraceRow(props: {
   const ld = llmDirection(entry.type);
   const socket = entry.dir === "out" ? "client→server" : "server→client";
   const dirLabel: Record<LlmDir, string> = {
-    to: t(lang, "trace.dirTo"), from: t(lang, "trace.dirFrom"), internal: t(lang, "trace.dirInternal"),
+    to: t(lang, "trace.dirTo"),
+    from: t(lang, "trace.dirFrom"),
+    internal: t(lang, "trace.dirInternal"),
   };
   const dirTitle =
     entry.type === "system_context"
@@ -206,10 +215,7 @@ const TraceRow = memo(function TraceRow(props: {
         <span className="trace-col trace-col--num tabular">{entry.seq}</span>
         <span className="trace-col tabular">{clock(entry.ts)}</span>
         <span className="trace-col trace-col--dt tabular">{dt === null ? "" : `+${dt}`}</span>
-        <span
-          className={`trace-col trace-col--llm trace-col--llm-${ld}`}
-          title={dirTitle}
-        >
+        <span className={`trace-col trace-col--llm trace-col--llm-${ld}`} title={dirTitle}>
           {LLM_DIR_GLYPH[ld]}
         </span>
         <span className="trace-col trace-col--proto" title={t(lang, "trace.protoTitle")}>
@@ -239,7 +245,10 @@ const TraceRow = memo(function TraceRow(props: {
           </span>
         </span>
         <span className="trace-col trace-col--summary">
-          <SummaryLine text={summarize(entry, lang)} field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined} />
+          <SummaryLine
+            text={summarize(entry, lang)}
+            field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined}
+          />
         </span>
       </button>
       {blockText !== undefined && blockText !== "" && (
@@ -255,7 +264,8 @@ const TraceRow = memo(function TraceRow(props: {
           title={t(lang, "trace.pairJump")}
           onClick={() => props.onJump?.(pair.seq)}
         >
-          <span aria-hidden="true">&#8627;</span> {t(lang, "trace.pairThen")} <span className="mono">{pair.label}</span>
+          <span aria-hidden="true">&#8627;</span> {t(lang, "trace.pairThen")}{" "}
+          <span className="mono">{pair.label}</span>
         </button>
       )}
       {open && (
@@ -298,7 +308,12 @@ function chainLabel(e: TraceEntry): string {
  *  lines). session_resume expands to the whole re-uploaded history: one JSONL
  *  line per event, exactly what rides back to the LLM. Above the views: the
  *  causal chain (spectro-explain feature 2), walked back to the prompt. */
-function TraceDetail({ entry, lang, chain, onJump }: {
+function TraceDetail({
+  entry,
+  lang,
+  chain,
+  onJump,
+}: {
   entry: TraceEntry;
   lang: Lang;
   /** Precomputed in the parent (only the ONE open row carries a chain, so
@@ -315,7 +330,11 @@ function TraceDetail({ entry, lang, chain, onJump }: {
           <span className="trace-chain-label mono">{t(lang, "trace.chain")}</span>
           {chain.map((link, i) => (
             <span key={link.seq} className="trace-chain-step">
-              {i > 0 && <span className="trace-chain-arrow" aria-hidden="true">&#8594;</span>}
+              {i > 0 && (
+                <span className="trace-chain-arrow" aria-hidden="true">
+                  &#8594;
+                </span>
+              )}
               {link.seq === entry.seq ? (
                 <span className="trace-chain-chip trace-chain-chip--here mono">{chainLabel(link)}</span>
               ) : (
@@ -329,12 +348,7 @@ function TraceDetail({ entry, lang, chain, onJump }: {
       )}
       <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
         {DETAIL_MODES.map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={mode === m}
-            onClick={() => setMode(m)}
-          >
+          <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
             {t(lang, `trace.mode.${m}`)}
           </button>
         ))}
@@ -397,16 +411,23 @@ export function TraceView(props: {
   // The system context is uploaded (as the "system" role) with every request but
   // is NOT a wire event, so it can't appear as a frame on its own. We fetch it
   // and prepend ONE synthetic ↑ row so the "what gets uploaded" side is visible.
-  const [ctx, setCtx] = useState<
-    { systemPrompt: string; tools: { name: string }[]; skills: { name: string }[]; mcpServers: string[] } | null
-  >(null);
+  const [ctx, setCtx] = useState<{
+    systemPrompt: string;
+    tools: { name: string }[];
+    skills: { name: string }[];
+    mcpServers: string[];
+  } | null>(null);
   useEffect(() => {
     let alive = true;
     fetch("/api/context")
       .then((r) => (r.ok ? r.json() : null))
-      .then((c) => { if (alive && c) setCtx(c); })
+      .then((c) => {
+        if (alive && c) setCtx(c);
+      })
       .catch(() => {});
-    return () => { alive = false; };
+    return () => {
+      alive = false;
+    };
   }, []);
 
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -475,15 +496,18 @@ export function TraceView(props: {
 
   // Said-vs-did pairs for the lens: block-ending thinking frame -> the next
   // same-agent action. Computed on the FULL stream so pairs survive filters.
-  const pairs = useMemo(() => (lensOn ? reasoningPairs(allEntries) : new Map<number, number>()), [lensOn, allEntries]);
+  const pairs = useMemo(
+    () => (lensOn ? reasoningPairs(allEntries) : new Map<number, number>()),
+    [lensOn, allEntries],
+  );
   // The whole reasoning text behind each block, keyed by the block-ending seq —
   // the lens shows the complete thought, not just the fragment on one row.
-  const blockTexts = useMemo(() => (lensOn ? reasoningBlockText(allEntries) : new Map<number, string>()), [lensOn, allEntries]);
-  const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
-  const hasThinking = useMemo(
-    () => allEntries.some((e) => e.type === "thinking_delta"),
-    [allEntries],
+  const blockTexts = useMemo(
+    () => (lensOn ? reasoningBlockText(allEntries) : new Map<number, string>()),
+    [lensOn, allEntries],
   );
+  const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
+  const hasThinking = useMemo(() => allEntries.some((e) => e.type === "thinking_delta"), [allEntries]);
 
   // The open row's causal chain (spectro-explain feature 2) — computed here
   // so the memoized closed rows never receive a changing prop.
@@ -572,8 +596,7 @@ export function TraceView(props: {
         url = urlByCall.get(p["callId"] as string) ?? null;
       }
       const imageProvider =
-        typeof p["provider"] === "string" && e.type === "image_generated"
-          ? (p["provider"] as string) : null;
+        typeof p["provider"] === "string" && e.type === "image_generated" ? (p["provider"] as string) : null;
       bySeq.set(e.seq, {
         proto: wireProtocol(e.type, provider, toolName),
         host: wireHost(e.type, provider, llmHost, toolName, url, imageProvider),
@@ -665,13 +688,21 @@ export function TraceView(props: {
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="trace-seg" role="group" aria-label={t(lang, "trace.dirAria")}>
-          {([
-            ["all", "all", t(lang, "trace.dirAll")],
-            ["to", "↑ LLM", t(lang, "trace.dirTo")],
-            ["from", "↓ LLM", t(lang, "trace.dirFrom")],
-            ["internal", "· intern", t(lang, "trace.dirInternal")],
-          ] as const).map(([d, label, title]) => (
-            <button key={d} type="button" aria-pressed={llmDir === d} title={title} onClick={() => setLlmDir(d)}>
+          {(
+            [
+              ["all", "all", t(lang, "trace.dirAll")],
+              ["to", "↑ LLM", t(lang, "trace.dirTo")],
+              ["from", "↓ LLM", t(lang, "trace.dirFrom")],
+              ["internal", "· intern", t(lang, "trace.dirInternal")],
+            ] as const
+          ).map(([d, label, title]) => (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={llmDir === d}
+              title={title}
+              onClick={() => setLlmDir(d)}
+            >
               {label}
             </button>
           ))}
@@ -707,7 +738,11 @@ export function TraceView(props: {
           ))}
         </div>
         {agents.length > 1 && props.onAgentFilter !== undefined && (
-          <div className="trace-chips trace-chips--agents" role="group" aria-label={t(lang, "trace.agentsAria")}>
+          <div
+            className="trace-chips trace-chips--agents"
+            role="group"
+            aria-label={t(lang, "trace.agentsAria")}
+          >
             <button
               type="button"
               className="trace-chip"
@@ -838,7 +873,10 @@ export function TraceView(props: {
                     lens={lensOn ? lensRole(e.type) : ""}
                     pair={
                       pairTarget !== undefined
-                        ? { seq: pairTarget.seq, label: `${pairTarget.type} · ${summarize(pairTarget, lang).slice(0, 60)}` }
+                        ? {
+                            seq: pairTarget.seq,
+                            label: `${pairTarget.type} · ${summarize(pairTarget, lang).slice(0, 60)}`,
+                          }
                         : undefined
                     }
                     blockText={lensOn ? blockTexts.get(e.seq) : undefined}
@@ -848,9 +886,7 @@ export function TraceView(props: {
                   />
                 );
               })}
-              {visible.length === 0 && (
-                <p className="trace-empty">{t(lang, "trace.noMatch")}</p>
-              )}
+              {visible.length === 0 && <p className="trace-empty">{t(lang, "trace.noMatch")}</p>}
             </div>
           )}
         </div>
@@ -871,8 +907,17 @@ export function TraceView(props: {
             aria-label={t(lang, "trace.toStart")}
             onClick={jumpToStart}
           >
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
-              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 16 16"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M4 3.5h8" />
               <path d="M4 11.5 8 7.5l4 4" />
             </svg>
@@ -884,8 +929,17 @@ export function TraceView(props: {
             aria-label={t(lang, "trace.toEnd")}
             onClick={jumpToEnd}
           >
-            <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
-              strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 16 16"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
               <path d="M4 4.5 8 8.5l4-4" />
               <path d="M4 12.5h8" />
             </svg>

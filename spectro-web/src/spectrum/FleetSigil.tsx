@@ -51,7 +51,13 @@ export function FleetSigil({ roster }: { roster: FleetNode[] }) {
   const width = 42;
   const height = 16;
   return (
-    <svg className="fleet-sigil" viewBox={`0 0 ${width} ${height}`} width={width} height={height} aria-hidden="true">
+    <svg
+      className="fleet-sigil"
+      viewBox={`0 0 ${width} ${height}`}
+      width={width}
+      height={height}
+      aria-hidden="true"
+    >
       {bars.map((bar, i) => (
         <rect
           key={i}
