@@ -215,9 +215,12 @@ export function Sidebar(props: {
           )}
           {failed && <p className="sidebar-note">{t(lang, "nav.unreachable")}</p>}
 
+          {/* CHAT scenarios only — the fleet ones live under the fleets segment,
+              where playing one lands you anyway (owner: the flat mixed list read
+              as mush). History first, demos below, each list sorted by kind. */}
           <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
           <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
-            {SCENARIOS.map((s) => (
+            {SCENARIOS.filter((s) => s.fleet !== true).map((s) => (
               <button
                 type="button"
                 key={`scenario:${s.id}`}
@@ -243,38 +246,71 @@ export function Sidebar(props: {
           </nav>
         </>
       ) : (
-        <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>
-          {orderedFleets.length === 0 ? (
-            <div className="fleet-empty">
-              <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
-              <button type="button" className="fleet-empty-spawn" onClick={props.onSpawnNode}>
-                + {lang === "de" ? "node starten" : "spawn a node"}
-              </button>
-            </div>
-          ) : (
-            orderedFleets.map((f) => (
+        <>
+          <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>
+            {orderedFleets.length === 0 ? (
+              <div className="fleet-empty">
+                <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
+                <button type="button" className="fleet-empty-spawn" onClick={props.onSpawnNode}>
+                  + {lang === "de" ? "node starten" : "spawn a node"}
+                </button>
+              </div>
+            ) : (
+              orderedFleets.map((f) => (
+                <button
+                  type="button"
+                  key={f.contextId}
+                  className={`session-row fleet-row${props.activeFleet === f.contextId ? " active" : ""}`}
+                  onClick={() => props.onSelectFleet(f.contextId)}
+                  title={f.contextId}
+                >
+                  <span className="session-title fleet-row-title">
+                    <FleetSigil roster={f.roster} />
+                    <span className="fleet-row-name mono">{f.contextId}</span>
+                    {f.pendingGate && (
+                      <span className="fleet-gate-chip mono pulse">{t(lang, "sp.gateOpen")}</span>
+                    )}
+                  </span>
+                  <span className="session-meta tabular">
+                    {t(lang, "fleet.count", { n: f.agentCount, online: f.onlineCount })}
+                    {f.lastActivity > 0 && ` · ${relativeTime(f.lastActivity, Date.now(), lang)}`}
+                  </span>
+                </button>
+              ))
+            )}
+          </nav>
+
+          {/* FLEET scenarios — playing one enters a replay fleet, so they live
+              here, under the fleets they become (owner: no more mixed list). */}
+          <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
+          <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
+            {SCENARIOS.filter((s) => s.fleet === true).map((s) => (
               <button
                 type="button"
-                key={f.contextId}
-                className={`session-row fleet-row${props.activeFleet === f.contextId ? " active" : ""}`}
-                onClick={() => props.onSelectFleet(f.contextId)}
-                title={f.contextId}
+                key={`scenario:${s.id}`}
+                className={`session-row scenario-row${props.activeFleet === `scenario:${s.id}` ? " active" : ""}`}
+                title={loc(s.prompt, lang)}
+                onClick={() => props.onSelectScenario(s)}
               >
-                <span className="session-title fleet-row-title">
-                  <FleetSigil roster={f.roster} />
-                  <span className="fleet-row-name mono">{f.contextId}</span>
-                  {f.pendingGate && (
-                    <span className="fleet-gate-chip mono pulse">{t(lang, "sp.gateOpen")}</span>
-                  )}
+                <span className="session-title">
+                  <svg
+                    className="scenario-glyph"
+                    viewBox="0 0 16 16"
+                    width="10"
+                    height="10"
+                    aria-hidden="true"
+                  >
+                    <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
+                  </svg>
+                  {loc(s.name, lang)}
                 </span>
-                <span className="session-meta tabular">
-                  {t(lang, "fleet.count", { n: f.agentCount, online: f.onlineCount })}
-                  {f.lastActivity > 0 && ` · ${relativeTime(f.lastActivity, Date.now(), lang)}`}
+                <span className="session-meta">
+                  {lang === "de" ? "flotten-szenario · demo" : "fleet scenario · demo"}
                 </span>
               </button>
-            ))
-          )}
-        </nav>
+            ))}
+          </nav>
+        </>
       )}
     </aside>
   );
