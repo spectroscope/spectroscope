@@ -60,6 +60,28 @@ describe("buildFleetGraph", () => {
     expect(w1.spawnedBy).toBe("root");
   });
 
+  it("stamps each agent's first/last activity from event timestamps", () => {
+    const g = buildFleetGraph(model);
+    // worker-1: spawned at 2, run_start 3, usage 7, result sent 8.
+    const w1 = g.nodes.find((n) => n.id === "worker-1")!;
+    expect(w1.firstTs).toBe(2);
+    expect(w1.lastTs).toBe(8);
+    // root acts at 1 (run_start) and 4 (the task it SENT); the result arriving
+    // at 8 is worker-1's act, not root's — a message stamps only its sender.
+    const root = g.nodes.find((n) => n.id === "root")!;
+    expect(root.firstTs).toBe(1);
+    expect(root.lastTs).toBe(4);
+  });
+
+  it("leaves a roster member with no events unstamped", () => {
+    const g = buildFleetGraph({
+      roster: [rnode("silent")], events: [], epochBySender: {},
+    });
+    const silent = g.nodes.find((n) => n.id === "silent")!;
+    expect(silent.firstTs).toBeNull();
+    expect(silent.lastTs).toBeNull();
+  });
+
   it("clears the gate once a decision lands", () => {
     const decided: FleetModel = {
       ...model,

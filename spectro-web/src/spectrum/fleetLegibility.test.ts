@@ -5,7 +5,8 @@ import type { FleetGraph, FleetGraphNode } from "./fleetGraph";
 function anode(id: string, over: Partial<FleetGraphNode> = {}): FleetGraphNode {
   return {
     id, role: "", connected: true, epoch: 0, state: "working",
-    pendingGate: false, spawnedBy: null, inTokens: 0, outTokens: 0, ...over,
+    pendingGate: false, spawnedBy: null, inTokens: 0, outTokens: 0,
+    firstTs: null, lastTs: null, ...over,
   };
 }
 const spawn = (source: string, target: string) =>
@@ -35,6 +36,22 @@ describe("collapseFleetGraph — aggregate-by-name", () => {
     // the three spawn edges collapse to one deduped panel -> group edge
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0]).toMatchObject({ source: "panel", target: group.id, kind: "spawn" });
+  });
+
+  it("folds the members' activity span into the group (min first, max last)", () => {
+    const graph: FleetGraph = {
+      nodes: [
+        anode("panel", { role: "conductor" }),
+        anode("w1", { role: "worker", spawnedBy: "panel", firstTs: 10, lastTs: 40 }),
+        anode("w2", { role: "worker", spawnedBy: "panel", firstTs: 5, lastTs: 20 }),
+        anode("w3", { role: "worker", spawnedBy: "panel" }), // unstamped — ignored
+      ],
+      edges: [spawn("panel", "w1"), spawn("panel", "w2"), spawn("panel", "w3")],
+    };
+
+    const group = collapseFleetGraph(graph, { minGroup: 3 }).nodes.find((n) => n.kind === "group")!;
+    expect(group.firstTs).toBe(5);
+    expect(group.lastTs).toBe(40);
   });
 
   it("does not collide a top-level fan-out with children of an agent literally named 'root'", () => {

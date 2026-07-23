@@ -12,7 +12,7 @@ import { layoutDagre } from "../reactflow/layoutDagre";
 import type { RunEvent } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { formatTokens } from "../format";
+import { formatDuration, formatTokens } from "../format";
 import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
 import { buildFleetGraph, type FleetEdgeKind, type FleetGraphNode } from "./fleetGraph";
 import { collapseFleetGraph, type LegibleGraph, type LegibleNode } from "./fleetLegibility";
@@ -127,6 +127,11 @@ function SpectralNode({ data }: NodeProps) {
       {d.detail === "full" && (
         <div className="fleet-node-card-foot mono tabular">
           {formatTokens(node.inTokens)} in · {formatTokens(node.outTokens)} out
+          {node.firstTs !== null && node.lastTs !== null && node.lastTs > node.firstTs && (
+            /* langfuse P1.2 — the activity span right on the card: an agent's
+               own first→last act; a group, the span across its members. */
+            <span> · {formatDuration(node.lastTs - node.firstTs)}</span>
+          )}
           {isGroup && node.descendants.length > 0 && <span> · +{node.descendants.length} rolled up</span>}
           {node.epoch > 0 && <span className="fleet-node-card-epoch"> · #{node.epoch}</span>}
         </div>

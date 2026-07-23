@@ -37,6 +37,10 @@ export interface LegibleNode {
   spawnedBy: string | null;
   inTokens: number;
   outTokens: number;
+  /** Activity window: an agent's own first/last act; a group folds the span
+   *  across its members (min first, max last). Null when never stamped. */
+  firstTs: number | null;
+  lastTs: number | null;
 }
 
 export interface LegibleGraph {
@@ -73,6 +77,7 @@ function asAgent(n: FleetGraphNode): LegibleNode {
     count: 1, members: [n.id], descendants: [],
     connected: n.connected, epoch: n.epoch, state: n.state, pendingGate: n.pendingGate,
     spawnedBy: n.spawnedBy, inTokens: n.inTokens, outTokens: n.outTokens,
+    firstTs: n.firstTs, lastTs: n.lastTs,
   };
 }
 
@@ -84,6 +89,8 @@ function absorbInto(group: LegibleNode, n: FleetGraphNode): void {
   group.pendingGate = group.pendingGate || n.pendingGate;
   group.inTokens += n.inTokens;
   group.outTokens += n.outTokens;
+  if (n.firstTs !== null && (group.firstTs === null || n.firstTs < group.firstTs)) group.firstTs = n.firstTs;
+  if (n.lastTs !== null && (group.lastTs === null || n.lastTs > group.lastTs)) group.lastTs = n.lastTs;
 }
 
 /** Reroute each edge through `rep` (original id -> representative id), dropping
@@ -158,6 +165,7 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
       count: members.length, members: members.map((m) => m.id), descendants: [],
       connected: false, epoch: 0, state: "idle", pendingGate: false,
       spawnedBy: first.spawnedBy, inTokens: 0, outTokens: 0,
+      firstTs: null, lastTs: null,
     };
     for (const m of members) {
       absorbInto(group, m);
