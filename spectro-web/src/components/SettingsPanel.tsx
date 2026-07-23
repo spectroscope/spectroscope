@@ -341,18 +341,6 @@ export function SettingsPanel({
                 flash();
               }}
             />
-            {/* The trace's timing bars (timeline lens) — same persisted pref
-                as the small toolbar chip, surfaced here so it is findable
-                (card 69: the owner lost the bars to a hidden per-browser
-                toggle). */}
-            <Switch
-              label={t(lang, "set.timelineFx")}
-              checked={prefs.timelineLens}
-              onChange={(v) => {
-                applyAndSaveDesign({ timelineLens: v });
-                flash();
-              }}
-            />
             {prefs.particles && !activeHasParticles && (
               <p className="settings-note">{t(lang, "set.noSignature")}</p>
             )}
