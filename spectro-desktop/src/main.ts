@@ -4,6 +4,7 @@
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 
@@ -38,12 +39,24 @@ function findFreePort(): Promise<number> {
 }
 
 // (b) Resolve the jar: packaged, it sits in the app resources (extraResources, package.json);
-// in dev it comes straight from the Gradle build (`./gradlew :spectro-server:bootJar`). Keep
-// the version in sync with the `version` in spectro-server/build.gradle.kts.
+// in dev it comes straight from the Gradle build (`./gradlew :spectro-server:bootJar`). The dev
+// path GLOBS the boot jar so a version bump (0.1.0 -> 0.2.0 -> ...) never breaks it — bootJar
+// writes spectro-server-<version>.jar (and a -plain.jar we must skip) into build/libs.
 function resolveJarPath(): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "spectro-server.jar")
-    : path.join(__dirname, "..", "..", "spectro-server", "build", "libs", "spectro-server-0.1.0.jar");
+  if (app.isPackaged) return path.join(process.resourcesPath, "spectro-server.jar");
+  const libs = path.join(__dirname, "..", "..", "spectro-server", "build", "libs");
+  // Newest by mtime, not by name: old versions linger in build/libs until a
+  // `clean`, and a name sort would mis-rank 0.10 below 0.2. bootJar's freshest
+  // output is always the one we want.
+  const boot = fs
+    .readdirSync(libs)
+    .filter((f) => /^spectro-server-.*\.jar$/.test(f) && !f.endsWith("-plain.jar"))
+    .map((f) => ({ f, m: fs.statSync(path.join(libs, f)).mtimeMs }))
+    .sort((a, b) => b.m - a.m);
+  if (boot.length === 0) {
+    throw new Error(`no spectro-server boot jar in ${libs} — run ./gradlew :spectro-server:bootJar`);
+  }
+  return path.join(libs, boot[0].f);
 }
 
 // (b') Resolve the java binary: the packaged app bundles its OWN runtime (extraResources `jre`,

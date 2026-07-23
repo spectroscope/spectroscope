@@ -28,7 +28,7 @@ show_help() {
     row 'resume' 'continue a session by id: ./spectro resume <id>' './gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"'
     row 'doctor' 'check Java, config layers, provider reachability' './gradlew -q --console=plain :spectro-cli:run --args="doctor"'
     row 'tour' 'guided feature tour — menu, tips, settings' './gradlew -q --console=plain tour'
-    row 'web' 'web face — Spring Boot server + browser UI on :8080' './gradlew -q --console=plain :spectro-server:bootRun'
+    row 'web' 'web face — Spring Boot server + browser UI on :8080 (--port N to move it)' './gradlew -q --console=plain :spectro-server:bootRun'
     row 'desktop' 'desktop face — Electron shell + managed Spring Boot process' './gradlew :spectro-server:bootJar && (cd spectro-desktop && npm start)'
     row 'mcp-notes' 'build the example MCP server (stdio) into a runnable dist' './gradlew -q --console=plain :spectro-mcp-notes:installDist'
     printf '\n%s\n' "${DIM}Extra arguments pass through: ./spectro repl --verbose · ./spectro run -p 'Say OK.' --json${RESET}"
@@ -109,7 +109,24 @@ case "$task" in
     doctor)        gradle :spectro-cli:run --args="doctor" ;;
     tour)          gradle tour ;;
     mcp-notes)     gradle :spectro-mcp-notes:installDist ;;
-    web)           gradle :spectro-server:bootRun ;;
+    web)
+        # Forward args to bootRun; translate the friendly --port N (or --port=N)
+        # into Spring's --server.port=N so `./spectro web --port 8090` actually
+        # moves off :8080. Anything else passes through verbatim.
+        web_args=''
+        while [ $# -gt 0 ]; do
+            case "$1" in
+                --port)   web_args+="--server.port=$2 "; shift 2 ;;
+                --port=*) web_args+="--server.port=${1#--port=} "; shift ;;
+                *)        web_args+="\"${1//\"/\\\"}\" "; shift ;;
+            esac
+        done
+        if [ -n "$web_args" ]; then
+            gradle :spectro-server:bootRun --args="$web_args"
+        else
+            gradle :spectro-server:bootRun
+        fi
+        ;;
     desktop)
         # A running instance holds Electron's single-instance lock, so a plain
         # relaunch would hand off to the OLD build instead of starting fresh. Stop
