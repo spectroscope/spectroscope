@@ -197,3 +197,40 @@ describe("sceneToFlow — the edu-upstreamed flags (card 42)", () => {
     expect(yOf(one, "sub-worker-1")).toBe(yOf(two, "sub-worker-1")); // slot pinned
   });
 });
+
+describe("deriveDetail — the generated image (real blob, card 42 follow-up)", () => {
+  it("folds the LAST image_generated per agent, with file name and prompt", () => {
+    const events: RunEvent[] = [
+      {
+        type: "image_generated",
+        agentId: "main",
+        callId: "c1",
+        prompt: "a beach cat",
+        provider: "gemini",
+        model: "m",
+        mediaType: "image/png",
+        blobPath: "/home/user/.spectro/images/img-1.png",
+        sha256: "x",
+        ts: 1,
+      } as RunEvent,
+      {
+        type: "image_generated",
+        agentId: "main",
+        callId: "c2",
+        prompt: "a mountain dog",
+        provider: "gemini",
+        model: "m",
+        mediaType: "image/png",
+        blobPath: "/home/user/.spectro/images/img-2.png",
+        sha256: "y",
+        ts: 2,
+      } as RunEvent,
+    ];
+    const d = deriveDetail(events);
+    expect(d.genImage["main"]).toEqual({ file: "img-2.png", prompt: "a mountain dog" });
+  });
+
+  it("is empty when no image was generated", () => {
+    expect(deriveDetail([]).genImage).toEqual({});
+  });
+});

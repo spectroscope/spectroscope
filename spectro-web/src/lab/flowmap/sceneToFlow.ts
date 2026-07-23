@@ -33,15 +33,33 @@ export interface Detail {
   /** rolling last-N chars of the reasoning / answer streams, per agent. */
   think: Record<string, string>;
   answer: Record<string, string>;
+  /** the LAST generated image per agent — the REAL blob's file name (served
+   *  by GET /api/images/<file>) plus its prompt; scripted sessions whose blob
+   *  does not exist fall back to the placeholder at render time. */
+  genImage: Record<string, { file: string; prompt: string } | undefined>;
 }
 
 const CAP = 420;
 const tail = (s: string, add: string) => (s + add).slice(-CAP);
 
 export function deriveDetail(applied: RunEvent[]): Detail {
-  const d: Detail = { prompt: "", ctxParts: null, ctxTotals: null, tool: {}, think: {}, answer: {} };
+  const d: Detail = {
+    prompt: "",
+    ctxParts: null,
+    ctxTotals: null,
+    tool: {},
+    think: {},
+    answer: {},
+    genImage: {},
+  };
   for (const e of applied) {
     switch (e.type) {
+      case "image_generated":
+        d.genImage[e.agentId] = {
+          file: e.blobPath.slice(e.blobPath.lastIndexOf("/") + 1),
+          prompt: e.prompt,
+        };
+        break;
       case "run_start":
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
@@ -336,6 +354,7 @@ export function sceneToFlow(
     prompt: detail.prompt,
     systemPrompt: opts.systemPrompt ?? null,
     tool: detail.tool["main"] ?? null,
+    genImage: detail.genImage["main"] ?? null,
   });
 
   // ----- OS band ----- Stations are SHARED infrastructure: disk, shell and

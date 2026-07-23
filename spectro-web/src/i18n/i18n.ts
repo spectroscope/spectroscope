@@ -302,6 +302,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "map.zone.fleetMac": { de: "FLOTTE · DEIN MAC", en: "FLEET · YOUR MAC" },
   "fleetlab.aria": { de: "Flotten-Maschinenraum", en: "Fleet machine room" },
   "lab.viewAria": { de: "Karten-Ansicht", en: "Card view" },
+  "map.ctx.genImage": { de: "generiertes Bild", en: "generated image" },
   "lab.viewCompact": { de: "kompakt", en: "compact" },
   "lab.viewExpanded": { de: "aufgeklappt", en: "expanded" },
   "lab.viewCompactTitle": { de: "Kompakte Karten — Details hinter den Aufklappern", en: "Compact cards — details behind the disclosures" },

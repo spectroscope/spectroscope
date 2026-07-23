@@ -76,7 +76,25 @@ const AGENT_TOOL_CHIPS = [
 
 /** A tiny "generated image" thumbnail (a placeholder, not a real asset) shown
  *  when the agent's active tool is generate_image. */
-function GenImage() {
+/** The generated image: the REAL blob when it exists (GET /api/images/<file>),
+ *  the gradient placeholder while generating — or when the blob is gone
+ *  (scripted sessions, cleaned stores): onError swaps back to the placeholder,
+ *  so a missing file never renders as a broken-image glyph. */
+function GenImage({ src, alt }: { src?: string; alt?: string }) {
+  const [broken, setBroken] = useState(false);
+  if (src !== undefined && !broken) {
+    return (
+      <img
+        className="pf-genimg"
+        width={72}
+        height={48}
+        style={{ objectFit: "cover" }}
+        src={src}
+        alt={alt ?? ""}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
   return (
     <svg className="pf-genimg" width="72" height="48" viewBox="0 0 72 48" aria-hidden="true">
       <defs>
@@ -159,6 +177,7 @@ export function AgentNode({ data }: NodeProps) {
     prompt: string;
     systemPrompt: string | null;
     tool: { name: string; input: unknown } | null;
+    genImage: { file: string; prompt: string } | null;
   };
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
@@ -241,6 +260,7 @@ export function AgentNode({ data }: NodeProps) {
     ) : null;
   const genImagePanel =
     d.tool && isGenImage ? (
+      // in flight: the placeholder + the requested prompt
       <div className="pf-panelbox pf-genimg-panel">
         <div className="pf-panelbox__label">
           {t(lang, "map.ctx.toolCall")} · {d.tool.name}
@@ -250,6 +270,16 @@ export function AgentNode({ data }: NodeProps) {
           <span className="pf-genimg-cap">
             {String((d.tool.input as { prompt?: string })?.prompt ?? "a generated image")}
           </span>
+        </div>
+      </div>
+    ) : d.genImage ? (
+      // done: the REAL image off the store (falls back to the placeholder
+      // when the blob is gone — scripted sessions, cleaned stores)
+      <div className="pf-panelbox pf-genimg-panel">
+        <div className="pf-panelbox__label">{t(lang, "map.ctx.genImage")}</div>
+        <div className="pf-genimg-wrap">
+          <GenImage src={`/api/images/${encodeURIComponent(d.genImage.file)}`} alt={d.genImage.prompt} />
+          <span className="pf-genimg-cap">{d.genImage.prompt}</span>
         </div>
       </div>
     ) : null;
