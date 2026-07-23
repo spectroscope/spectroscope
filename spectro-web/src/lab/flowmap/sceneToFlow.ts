@@ -265,11 +265,37 @@ export function sceneToFlow(
     /** edu: reserve this many subagent slots (the lesson's max), so a worker never
      *  slides down as its siblings spawn — its slot is fixed from the first frame. */
     subSlots?: number;
+    /** ExpandAll shells: every card is WIDE/tall, so the layout spreads — the
+     *  LLM, the boundary and the outside world shift right and the subagent
+     *  column moves clear of the 540px agent card (owner: cards overlapped). */
+    expanded?: boolean;
   },
 ): FlowResult {
   const L = opts.local ? LAYOUTS.local : LAYOUTS.remote;
   const lang: Lang = opts.lang ?? "en";
   const declutter = opts.declutter ?? false;
+  // Expanded spacing (never combined with the edu declutter camera, which has
+  // its own seating): shift the right-hand world out and the sub column clear.
+  const spread = !declutter && opts.expanded === true ? 340 : 0;
+  const subShift = !declutter && opts.expanded === true ? 330 : 0;
+  const zonesL: Zone[] = L.zones.map((z) =>
+    spread === 0
+      ? z
+      : z.variant === "mac"
+        ? { ...z, w: z.w + spread }
+        : z.variant === "outside"
+          ? { ...z, x: z.x + spread }
+          : z,
+  );
+  const boundaryL = L.boundary && spread > 0 ? { ...L.boundary, x: L.boundary.x + spread } : L.boundary;
+  const posL: Record<string, XY> = { ...L.pos };
+  if (spread > 0) {
+    for (const id of ["llm", "netz", "mcpserver"]) {
+      posL[id] = { x: posL[id].x + spread, y: posL[id].y };
+    }
+  }
+  const subBaseL: XY = { x: L.subBase.x + subShift, y: L.subBase.y };
+  const subGapL = spread > 0 ? 300 : L.subGap;
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
@@ -279,7 +305,7 @@ export function sceneToFlow(
     os: t(lang, "map.zone.os"),
     outside: t(lang, "map.zone.outside"),
   };
-  for (const z of L.zones) {
+  for (const z of zonesL) {
     // edu declutter: keep only the OS band; the "your mac" + "outside" frames go.
     if (declutter && z.variant !== "os") continue;
     nodes.push({
@@ -293,16 +319,16 @@ export function sceneToFlow(
       style: { width: z.w, height: z.h },
     });
   }
-  if (L.boundary && !declutter) {
+  if (boundaryL && !declutter) {
     nodes.push({
       id: "z-boundary",
       type: "zone",
-      position: { x: L.boundary.x, y: L.boundary.y },
+      position: { x: boundaryL.x, y: boundaryL.y },
       data: { variant: "boundary", label: t(lang, "map.zone.boundary") },
       draggable: false,
       selectable: false,
       zIndex: 1,
-      style: { width: 20, height: L.boundary.h },
+      style: { width: 20, height: boundaryL.h },
     });
   }
 
@@ -322,7 +348,7 @@ export function sceneToFlow(
     llm: hasWorkers ? { x: 1420, y: 120 } : { x: 1040, y: 120 },
   };
   const subBaseX = 1020; // the worker column sits right of the wide agent (ends ~980)
-  const posOf = (id: string): XY => (declutter && EDU_POS[id]) || L.pos[id];
+  const posOf = (id: string): XY => (declutter && EDU_POS[id]) || posL[id];
   const N = (id: string, type: string, data: Record<string, unknown>, z = 10) =>
     nodes.push({ id, type, position: posOf(id), data, zIndex: z });
 
@@ -414,10 +440,10 @@ export function sceneToFlow(
   // reserve a fixed slot per subagent (edu passes the lesson's max) so a worker
   // never slides as siblings spawn; falls back to the live count for the sim.
   const slotCount = Math.min(SUB_MAX, Math.max(subs.length, opts.subSlots ?? subs.length));
-  const subYs = subagentYs(slotCount, L.subBase.y, SUB_BAND_BOTTOM, L.subGap);
+  const subYs = subagentYs(slotCount, subBaseL.y, SUB_BAND_BOTTOM, subGapL);
   subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
-    L.pos[id] = { x: declutter ? subBaseX : L.subBase.x, y: subYs[i] };
+    posL[id] = { x: declutter ? subBaseX : subBaseL.x, y: subYs[i] };
     const act = activity(c.focus, c.disk, c.activeFile, c.activeCommand, c.activeMcp, c.gate, lang);
     N(id, "subagent", {
       id: c.id,

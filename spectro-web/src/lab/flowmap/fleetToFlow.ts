@@ -59,17 +59,24 @@ function providerLabel(nodes: FleetLabNode[]): string {
  * The machine-room layout. Deterministic for a given scene + detail, so the
  * scrubber can re-render any fold prefix.
  */
-export function fleetToFlow(scene: FleetLabScene, detail: Detail, opts: { lang?: Lang }): FlowResult {
+export function fleetToFlow(
+  scene: FleetLabScene,
+  detail: Detail,
+  opts: { lang?: Lang; expanded?: boolean },
+): FlowResult {
   const lang: Lang = opts.lang ?? "en";
   const nodes: Node[] = [];
   const edges: Edge[] = [];
 
   const cards = scene.nodes;
+  // Expanded cards open task & history inline and grow tall — widen the pitch
+  // so open cards never overlap (owner: the map must spread with the view).
+  const stepY = opts.expanded === true ? 330 : FLEET_CARD_STEP_Y;
   const cols = columnsFor(cards.length);
   const rows = Math.max(1, Math.ceil(cards.length / cols));
 
   // ---- computed frame ------------------------------------------------------
-  const gridBottom = GRID_Y + (rows - 1) * FLEET_CARD_STEP_Y + CARD_H;
+  const gridBottom = GRID_Y + (rows - 1) * stepY + CARD_H;
   const osTop = Math.max(668, gridBottom + OS_GAP);
   const gridRight = GRID_X + (cols - 1) * CARD_STEP_X + CARD_W;
   // The mac zone must hold the card grid, the OS band, and (when a local
@@ -80,7 +87,7 @@ export function fleetToFlow(scene: FleetLabScene, detail: Detail, opts: { lang?:
   const boundaryX = macW + 16;
   const outsideX = macW + 52;
   const llmX = outsideX + 40;
-  const llmY = Math.max(240, GRID_Y + Math.floor(((rows - 1) * FLEET_CARD_STEP_Y) / 2));
+  const llmY = Math.max(240, GRID_Y + Math.floor(((rows - 1) * stepY) / 2));
 
   // ---- zones ---------------------------------------------------------------
   nodes.push({
@@ -153,7 +160,7 @@ export function fleetToFlow(scene: FleetLabScene, detail: Detail, opts: { lang?:
     nodes.push({
       id,
       type: "subagent",
-      position: { x: GRID_X + col * CARD_STEP_X, y: GRID_Y + row * FLEET_CARD_STEP_Y },
+      position: { x: GRID_X + col * CARD_STEP_X, y: GRID_Y + row * stepY },
       data: {
         id: card.id,
         label: card.role === "root" ? null : card.role,

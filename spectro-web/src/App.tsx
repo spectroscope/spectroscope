@@ -69,6 +69,7 @@ import {
   useFleet,
   useFleetHubPort,
   fleetPending,
+  removeFleet,
 } from "./state/fleetStore";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
@@ -478,6 +479,7 @@ export function App() {
     // No provider state to reset: the fresh connection announces its backend
     // itself (provider_info frame) and the chip follows that.
     labResetLive(); // the Lab's dam starts empty too
+    setTab("chat"); // a fresh chat STARTS in the chat — leaving a fleet's lab/graph behind
     setConnNonce((n) => n + 1);
   };
 
@@ -668,6 +670,10 @@ export function App() {
           onStarters={() => setStartersOpen(true)}
           onSelectScenario={openScenario}
           activeFleet={enteredFleet}
+          onRemoveFleet={(contextId) => {
+            removeFleet(contextId);
+            if (enteredFleet === contextId) setEnteredFleet(null); // leave a deleted fleet
+          }}
           onSelectFleet={enterFleet}
           onSpawnNode={() => setSpawnDialogOpen(true)}
         />
@@ -899,6 +905,17 @@ export function App() {
             <FleetCanvas
               model={enteredFleetModel}
               events={tabEvents}
+              onFocusEvent={(agentId, event) => {
+                // Same hand-off as the Spectrum band: scope the trace to the
+                // event's own agent so the focused row survives the filter.
+                const evAgent =
+                  typeof (event as { agentId?: unknown }).agentId === "string"
+                    ? (event as { agentId: string }).agentId
+                    : agentId;
+                setTraceAgent(evAgent);
+                setFocusEvent(event);
+                setTab("trace");
+              }}
               /* A scripted fleet scenario has no live hub — hide the spawn panel
                  (its node command would connect to nothing). */
               contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}

@@ -35,6 +35,8 @@ export function Sidebar(props: {
   /** Open the spawn dialog — start the FIRST node from the UI (the fleet-canvas
    *  spawn panel is unreachable until a fleet already exists). */
   onSpawnNode: () => void;
+  /** Remove a DONE fleet from the list (only offered when 0 nodes online). */
+  onRemoveFleet?: (contextId: string) => void;
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -153,7 +155,9 @@ export function Sidebar(props: {
             Import
           </button>
         )}
-        {nav === "fleets" && (
+        {/* Only when fleets EXIST — the empty state below carries its own spawn
+            button, so two "+ node" affordances never show at once (owner). */}
+        {nav === "fleets" && orderedFleets.length > 0 && (
           <button
             type="button"
             className="sidebar-import sidebar-spawn"
@@ -269,6 +273,31 @@ export function Sidebar(props: {
                     <span className="fleet-row-name mono">{f.contextId}</span>
                     {f.pendingGate && (
                       <span className="fleet-gate-chip mono pulse">{t(lang, "sp.gateOpen")}</span>
+                    )}
+                    {/* Remove from the list — DONE fleets only (a live one would
+                        just reappear with its next frame, so it is not offered). */}
+                    {f.onlineCount === 0 && props.onRemoveFleet && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="fleet-row-remove mono"
+                        title={
+                          lang === "de" ? "Flotte aus der Liste entfernen" : "remove this fleet from the list"
+                        }
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          props.onRemoveFleet!(f.contextId);
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            props.onRemoveFleet!(f.contextId);
+                          }
+                        }}
+                      >
+                        ×
+                      </span>
                     )}
                   </span>
                   <span className="session-meta tabular">

@@ -133,7 +133,7 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
     [model.roster, visible, model.epochBySender],
   );
   const detail = useMemo(() => deriveDetail(visible), [visible]);
-  const flow = useMemo(() => fleetToFlow(scene, detail, { lang }), [scene, detail, lang]);
+  const flow = useMemo(() => fleetToFlow(scene, detail, { lang, expanded }), [scene, detail, lang, expanded]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);

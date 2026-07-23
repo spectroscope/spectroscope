@@ -6,7 +6,7 @@
 // scene to nodes/edges and renders the canvas. Extracted from the prototype's
 // SystemFlow orchestrator; the pure render pieces live in ./flowmap.
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useContext, useEffect, useMemo, useRef } from "react";
 import {
   ReactFlow,
   Background,
@@ -25,6 +25,7 @@ import type { RunEvent } from "../events";
 import { isLocalProvider, type Scene } from "./labScene";
 import { deriveDetail, sceneToFlow } from "./flowmap/sceneToFlow";
 import { collectDraggedIds, mergeNodePositions } from "./flowmap/positions";
+import { ExpandAllContext } from "./flowmap/expandContext";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { nodeTypes } from "./flowmap/nodes";
@@ -60,11 +61,19 @@ export function FlowMap(props: {
   const local = isLocalProvider(provider);
   const lang = useLang();
 
+  const expandAll = useContext(ExpandAllContext);
   const detail = useMemo(() => deriveDetail(applied), [applied]);
   const flow = useMemo(
     () =>
-      sceneToFlow(scene, detail, { local, provider: provider ?? "", model: model ?? "", systemPrompt, lang }),
-    [scene, detail, local, provider, model, systemPrompt, lang],
+      sceneToFlow(scene, detail, {
+        local,
+        provider: provider ?? "",
+        model: model ?? "",
+        systemPrompt,
+        lang,
+        expanded: expandAll,
+      }),
+    [scene, detail, local, provider, model, systemPrompt, lang, expandAll],
   );
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);

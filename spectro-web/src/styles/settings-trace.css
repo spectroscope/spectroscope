@@ -497,3 +497,8 @@
 .tf-explain-foot--error { color: var(--error); }
 @media (prefers-reduced-motion: reduce) { .tf-explain-cursor { animation: none; } }
 @keyframes tf-explain-blink { 50% { opacity: 0; } }
+
+/* The agent chip reads as loudly as the type chip (owner: it drowned) — the
+   generic .agent-badge got dimmed to text-faint by a later panel rule; in the
+   trace the agent IS a primary column, so it carries the type's text color. */
+.trace-col--agent .agent-badge { color: var(--text-dim); }

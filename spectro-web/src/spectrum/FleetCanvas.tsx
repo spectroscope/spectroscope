@@ -4,7 +4,15 @@
 // node per agent, never every event. Reuses the graph tab's dagre layout and
 // the spectral tick colors — langfuse structure, spectroscope skin.
 
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type MouseEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type MouseEvent,
+} from "react";
 import { Handle, MiniMap, Position } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode, NodeProps } from "@xyflow/react";
 import { GraphCanvas } from "../reactflow/GraphCanvas";
@@ -14,6 +22,8 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatDuration, formatTokens } from "../format";
 import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
+import { nearestTick } from "./SpectrumBand";
+import { eventPreview } from "./eventPreview";
 import { buildFleetGraph, type FleetEdgeKind, type FleetGraphNode } from "./fleetGraph";
 import { collapseFleetGraph, type LegibleGraph, type LegibleNode } from "./fleetLegibility";
 import type { FleetModel } from "./fleetModel";
@@ -55,16 +65,51 @@ interface SpectralNodeData {
   node: LegibleNode;
   lane: Lane | null;
   detail: LegibleGraph["detail"];
+  /** The fleet's event stream — tick.seq indexes into it (the popup's source). */
+  events?: RunEvent[];
+  /** The stream's first wall-clock ts, for the popup's relative time. */
+  t0?: number;
   /** Fold this expanded group back (only set on a member of an expanded group). */
   onCollapse?: (groupId: string) => void;
   /** Stop this node over the hub (only wired for a connected single agent). */
   onStop?: (agentId: string) => void;
+  /** Open ONE event in the trace (the popup's action — the Spectrum hand-off). */
+  onFocusEvent?: (agentId: string, event: RunEvent) => void;
 }
 
 function SpectralNode({ data }: NodeProps) {
   const d = data as unknown as SpectralNodeData;
   const node = d.node;
   const isGroup = node.kind === "group";
+  // Band scrub + preview — the Spectrum's popup, docked on the card's band
+  // (owner: the canvas ticks were mute). Same nearest-tick + eventPreview fold.
+  const [hoverSeq, setHoverSeq] = useState<number | null>(null);
+  const bandRef = useRef<HTMLDivElement>(null);
+  const nearestAt = (clientX: number): number | null => {
+    const rect = bandRef.current?.getBoundingClientRect();
+    const ticks = d.lane?.ticks ?? [];
+    if (!rect || rect.width === 0 || ticks.length === 0) return null;
+    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const idx = nearestTick(ticks, frac);
+    return idx === null ? null : (ticks[idx]?.seq ?? null);
+  };
+  const hoverTick =
+    hoverSeq !== null ? ((d.lane?.ticks ?? []).find((tk) => tk.seq === hoverSeq) ?? null) : null;
+  const hoverEvent = hoverTick && d.events ? d.events[hoverTick.seq] : undefined;
+  const preview = hoverEvent ? eventPreview(hoverEvent) : null;
+  const hoverTs =
+    hoverEvent && typeof (hoverEvent as { ts?: unknown }).ts === "number"
+      ? (hoverEvent as { ts: number }).ts
+      : null;
+  const rel =
+    hoverTs !== null && d.t0 !== undefined && hoverTs >= d.t0 ? formatDuration(hoverTs - d.t0) : null;
+  const tipLeft = hoverTick ? `${hoverTick.x * 100}%` : "0";
+  const tipTransform =
+    hoverTick && hoverTick.x < 0.2
+      ? "translateX(0)"
+      : hoverTick && hoverTick.x > 0.8
+        ? "translateX(-100%)"
+        : "translateX(-50%)";
   const live = node.state === "working" && node.connected;
   const classes = [
     "fleet-node-card",
@@ -122,39 +167,76 @@ function SpectralNode({ data }: NodeProps) {
         )}
       </div>
       {d.detail !== "dot" && (
-        <svg className="fleet-node-band" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true">
-          {isGroup ? (
-            // a "deck" motif — many agents stacked behind one card
-            [3, 6.5, 10].map((y, i) => (
-              <line
-                key={i}
-                x1="0"
-                y1={y}
-                x2={200 - i * 20}
-                y2={y}
-                stroke="var(--cluster)"
-                strokeWidth={1.4}
-                opacity={0.35 + i * 0.22}
-              />
-            ))
-          ) : (
-            <>
-              <line x1="0" y1="7" x2="200" y2="7" className="fleet-node-baseline" />
-              {(d.lane?.ticks ?? []).map((tick, i) => (
-                <rect
+        <div
+          className="fleet-node-bandwrap nodrag"
+          ref={bandRef}
+          onMouseMove={isGroup ? undefined : (e) => setHoverSeq(nearestAt(e.clientX))}
+          onMouseLeave={isGroup ? undefined : () => setHoverSeq(null)}
+          onClick={
+            isGroup
+              ? undefined
+              : (e) => {
+                  e.stopPropagation();
+                  if (hoverEvent && d.onFocusEvent) d.onFocusEvent(node.id, hoverEvent);
+                }
+          }
+        >
+          <svg className="fleet-node-band" viewBox="0 0 200 14" preserveAspectRatio="none" aria-hidden="true">
+            {isGroup ? (
+              // a "deck" motif — many agents stacked behind one card
+              [3, 6.5, 10].map((y, i) => (
+                <line
                   key={i}
-                  x={tick.x * 198 + 1}
-                  y={2}
-                  width={tick.kind === "gate" ? 2.4 : 1.2}
-                  height={10}
-                  rx={0.5}
-                  fill={TICK_COLOR[tick.kind]}
-                  opacity={tick.kind === "token" ? 0.7 : 0.95}
+                  x1="0"
+                  y1={y}
+                  x2={200 - i * 20}
+                  y2={y}
+                  stroke="var(--cluster)"
+                  strokeWidth={1.4}
+                  opacity={0.35 + i * 0.22}
                 />
-              ))}
+              ))
+            ) : (
+              <>
+                <line x1="0" y1="7" x2="200" y2="7" className="fleet-node-baseline" />
+                {(d.lane?.ticks ?? []).map((tick, i) => (
+                  <rect
+                    key={i}
+                    x={tick.x * 198 + 1}
+                    y={2}
+                    width={tick.kind === "gate" ? 2.4 : 1.2}
+                    height={10}
+                    rx={0.5}
+                    fill={TICK_COLOR[tick.kind]}
+                    opacity={tick.kind === "token" ? 0.7 : hoverTick === tick ? 1 : 0.95}
+                  />
+                ))}
+              </>
+            )}
+          </svg>
+          {hoverTick && preview && (
+            <>
+              <span className="spectrum-scrub" style={{ left: tipLeft }} aria-hidden="true" />
+              <div
+                className="spectrum-tip fleet-node-tip"
+                style={{ left: tipLeft, transform: tipTransform }}
+                role="tooltip"
+              >
+                <div className="spectrum-tip-head">
+                  <span
+                    className="spectrum-tip-dot"
+                    style={{ background: TICK_COLOR[hoverTick.kind] }}
+                    aria-hidden="true"
+                  />
+                  <span className="spectrum-tip-type mono">{preview.type}</span>
+                  {rel !== null && <span className="spectrum-tip-time mono tabular">{rel}</span>}
+                </div>
+                {preview.detail !== "" && <p className="spectrum-tip-detail">{preview.detail}</p>}
+                {d.onFocusEvent && <p className="spectrum-tip-foot mono">→ open in trace</p>}
+              </div>
             </>
           )}
-        </svg>
+        </div>
       )}
       {d.detail === "full" && (
         <div className="fleet-node-card-foot mono tabular">
@@ -179,6 +261,7 @@ export function FleetCanvas({
   model,
   events,
   onOpenTrace,
+  onFocusEvent,
   contextId,
   hubPort,
   onStop,
@@ -193,6 +276,8 @@ export function FleetCanvas({
   hubPort?: number | null;
   /** Stop a connected node over the hub (POST /api/fleet/{node}/stop). */
   onStop?: (agentId: string) => void;
+  /** Open ONE exact event in the trace (the band popup's action). */
+  onFocusEvent?: (agentId: string, event: RunEvent) => void;
 }) {
   const lang = useLang();
   // A folded group is no longer terminal: the ids here are expanded, so their
@@ -255,8 +340,11 @@ export function FleetCanvas({
         node: n,
         lane: n.kind === "agent" ? (laneById.get(n.id) ?? null) : null,
         detail: legible.detail,
+        events,
+        t0: spectrum.t0,
         onCollapse: n.groupId !== undefined ? collapseGroup : undefined,
         onStop: n.kind === "agent" ? onStop : undefined,
+        onFocusEvent,
       },
     }));
     const flowEdges: FlowEdge[] = legible.edges.map((e) => ({
@@ -267,7 +355,7 @@ export function FleetCanvas({
       style: { stroke: EDGE_COLOR[e.kind], strokeWidth: 1.4 },
     }));
     return { nodes: layoutDagre(flowNodes, flowEdges, { nodeW: NODE_W, nodeH: NODE_H }), edges: flowEdges };
-  }, [legible, events, collapseGroup, onStop]);
+  }, [legible, events, collapseGroup, onStop, onFocusEvent]);
 
   // A group card expands; an agent card drills into its own trace. The collapse
   // chip inside an expanded member stops propagation, so it never lands here.

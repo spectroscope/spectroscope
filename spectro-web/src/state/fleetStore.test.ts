@@ -3,6 +3,7 @@ import {
   fleetPushLive,
   fleetLoadScenario,
   hydrateFleet,
+  removeFleet,
   fleetPending,
   __getFleet,
   __getFleets,
@@ -355,5 +356,72 @@ describe("fleetPending", () => {
       expect(__getFleetOf("c").events.length).toBeGreaterThan(0); // the live one survives
       expect(__getFleetOf("scenario:demo").events).toHaveLength(evs.length);
     });
+  });
+});
+
+describe("removeFleet — dropping a finished fleet from the list (owner)", () => {
+  beforeEach(() => __resetForTests());
+
+  it("removes the context's frames and summaries; other fleets stay", () => {
+    fleetPushLive([
+      {
+        type: "fleet_event",
+        frame: {
+          sender: "a",
+          epoch: 0,
+          contextId: "done-fleet",
+          taskId: "t",
+          sequence: 0,
+          parentId: null,
+          topic: "done-fleet.events",
+          ts: 1,
+          payload: { type: "text_delta", agentId: "a", text: "x", ts: 1 },
+        },
+      } as unknown as RunEvent,
+      {
+        type: "fleet_event",
+        frame: {
+          sender: "b",
+          epoch: 0,
+          contextId: "other",
+          taskId: "t",
+          sequence: 0,
+          parentId: null,
+          topic: "other.events",
+          ts: 1,
+          payload: { type: "text_delta", agentId: "b", text: "y", ts: 1 },
+        },
+      } as unknown as RunEvent,
+    ]);
+    expect(
+      __getFleets()
+        .map((f) => f.contextId)
+        .sort(),
+    ).toEqual(["done-fleet", "other"]);
+    removeFleet("done-fleet");
+    expect(__getFleets().map((f) => f.contextId)).toEqual(["other"]);
+    // Its envelope identities are forgotten too — a re-run of the same fleet
+    // (same context, same sequences) folds fresh instead of being deduped away.
+    fleetPushLive([
+      {
+        type: "fleet_event",
+        frame: {
+          sender: "a",
+          epoch: 0,
+          contextId: "done-fleet",
+          taskId: "t",
+          sequence: 0,
+          parentId: null,
+          topic: "done-fleet.events",
+          ts: 2,
+          payload: { type: "text_delta", agentId: "a", text: "again", ts: 2 },
+        },
+      } as unknown as RunEvent,
+    ]);
+    expect(
+      __getFleets()
+        .map((f) => f.contextId)
+        .sort(),
+    ).toEqual(["done-fleet", "other"]);
   });
 });

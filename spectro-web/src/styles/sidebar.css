@@ -261,3 +261,15 @@
   color: var(--text-faint);
 }
 
+
+/* Remove-from-list on a DONE fleet row — quiet until hovered. */
+.fleet-row-remove {
+  margin-left: auto;
+  flex: none;
+  color: var(--text-faint);
+  border-radius: var(--radius-chip);
+  padding: 0 5px;
+  line-height: 1.4;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.fleet-row-remove:hover { color: var(--error); background: var(--surface-3); }

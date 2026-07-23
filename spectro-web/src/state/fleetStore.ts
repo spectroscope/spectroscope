@@ -260,6 +260,22 @@ export function fleetLoadScenario(contextId: string, events: RunEvent[]): void {
   emit();
 }
 
+/** Drop one fleet from the store (owner: finished fleets clutter the list).
+ *  Removes its frames, summaries and envelope identities — a later re-run of
+ *  the same context folds fresh. A LIVE fleet whose nodes still publish will
+ *  simply reappear with the next frame; deletion is honest only for done ones
+ *  (the UI offers it only when every node is offline). */
+export function removeFleet(contextId: string): void {
+  frames = frames.filter((frame) => contextOf(frame) !== contextId);
+  const prefix = `${contextId}·`;
+  for (const key of [...seenEnvelopes]) {
+    if (key.startsWith(prefix)) seenEnvelopes.delete(key);
+  }
+  byContext.delete(contextId);
+  rebuild(new Set([contextId]));
+  emit();
+}
+
 // The fetch seam — swappable in tests via __setTestHooks.
 let doFetch: typeof fetch = (...args) => fetch(...args);
 
