@@ -163,12 +163,23 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
     });
   }, []);
 
+  // Two readings of the same fleet (the one control langfuse gets right, see
+  // konzept/LANGFUSE-REVIEW.md): "aggregated" folds same-role siblings into
+  // group cards — structure at a glance; "expanded" shows every agent as its
+  // own node — following one specific run. Per-group expand still works on top.
+  const [mode, setMode] = useState<"aggregated" | "expanded">("aggregated");
+
   // Product tuning: small fleets stay fully legible as individual cards; only
-  // a genuinely wide fan-out (6+ same-role siblings) folds into a group.
+  // a genuinely wide fan-out (6+ same-role siblings) folds into a group. In
+  // expanded mode nothing folds (an unreachable threshold); the LOD tier still
+  // degrades on its own, so a huge fleet stays renderable.
   const legible = useMemo(
-    () => collapseFleetGraph(buildFleetGraph(model),
-      { minGroup: 6, maxNodes: 24, expanded: [...expanded] }),
-    [model, expanded],
+    () => collapseFleetGraph(buildFleetGraph(model), {
+      minGroup: mode === "expanded" ? Number.MAX_SAFE_INTEGER : 6,
+      maxNodes: 24,
+      expanded: [...expanded],
+    }),
+    [model, expanded, mode],
   );
 
   // Reconcile the expanded set with the current fold: drop ids that no longer
@@ -243,6 +254,20 @@ export function FleetCanvas({ model, events, onOpenTrace, contextId, hubPort, on
           nodeColor={(n) => clusterColor((n.data as unknown as SpectralNodeData).node.cluster)} />
       }
     >
+      <div className="fleet-mode nodrag" role="group" aria-label={t(lang, "fleet.modeAria")}>
+        {(["aggregated", "expanded"] as const).map((m) => (
+          <button
+            key={m}
+            type="button"
+            className={`fleet-mode-btn${mode === m ? " fleet-mode-btn--on" : ""}`}
+            aria-pressed={mode === m}
+            title={t(lang, `fleet.mode.${m}.title`)}
+            onClick={() => setMode(m)}
+          >
+            {t(lang, `fleet.mode.${m}`)}
+          </button>
+        ))}
+      </div>
       {contextId !== undefined && <FleetSpawn contextId={contextId} hubPort={hubPort ?? null} />}
     </GraphCanvas>
   );

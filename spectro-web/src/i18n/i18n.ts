@@ -185,6 +185,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleet.restarted": { de: "neugestartet — neue Prozess-Inkarnation", en: "restarted — new process incarnation" },
   "fleet.lastSeen": { de: "vor {t} gesehen", en: "seen {t} ago" },
   "fleet.noEvents": { de: "Noch keine Flotten-Events. Die Knoten sind da, ihre Linien erscheinen, sobald sie laufen.", en: "No fleet events yet. The nodes are here; their lines appear once they run." },
+  "fleet.modeAria": { de: "Graph-Lesart", en: "Graph reading" },
+  "fleet.mode.aggregated": { de: "gruppiert", en: "aggregated" },
+  "fleet.mode.aggregated.title": { de: "Gleiche Rollen zu Gruppen falten — Struktur auf einen Blick", en: "Fold same-role siblings into groups — structure at a glance" },
+  "fleet.mode.expanded": { de: "einzeln", en: "expanded" },
+  "fleet.mode.expanded.title": { de: "Jeden Agenten als eigenen Knoten zeigen — einem Lauf folgen", en: "Show every agent as its own node — follow one specific run" },
   "fleet.noEventsHint": { de: "Jeder Knoten zeichnet seine Spektrallinie, sobald er Events sendet.", en: "Each node draws its spectral line as soon as it emits events." },
 
   // permission dialog
