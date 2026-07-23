@@ -7,9 +7,30 @@ describe("timelineFractions — the timeline lens's wait bars", () => {
     expect(timelineFractions([1000])).toEqual([null]);
   });
 
-  it("normalizes each row's wait against the largest gap (linear, honest)", () => {
-    // gaps: — , 100, 300 → the 300 ms wait is the full bar, the 100 ms a third.
-    expect(timelineFractions([0, 100, 400])).toEqual([null, 100 / 300, 1]);
+  it("normalizes on a log scale so one outlier cannot flatten the rest", () => {
+    // gaps: — , 9, 99 → log1p(9)/log1p(99) = ln10/ln100 = exactly one half:
+    // the small wait keeps HALF a bar next to an 11× outlier, instead of the
+    // linear 9% sliver.
+    const [first, small, big] = timelineFractions([0, 9, 108]);
+    expect(first).toBeNull();
+    expect(small).toBeCloseTo(0.5, 10);
+    expect(big).toBe(1);
+  });
+
+  it("keeps ordinary waits visible next to a huge LLM wait (the owner's 18 s case)", () => {
+    // One 18 s wait among ~120 ms steps: linear normalization rendered the
+    // 120 ms bars at 0.7% width — invisible. Log keeps them readable while
+    // the outlier still clearly wins.
+    const [, step, outlier] = timelineFractions([0, 120, 18202]);
+    expect(step).toBeGreaterThan(0.4);
+    expect(step).toBeLessThan(outlier!);
+    expect(outlier).toBe(1);
+  });
+
+  it("stays monotonic: a longer wait never gets a shorter bar", () => {
+    const [, a, b, c] = timelineFractions([0, 50, 250, 1250]) as number[];
+    expect(a).toBeLessThan(b);
+    expect(b).toBeLessThan(c);
   });
 
   it("draws no bars when every event lands on the same instant", () => {
