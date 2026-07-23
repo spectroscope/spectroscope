@@ -557,5 +557,32 @@
   .lab-now-dot { animation: none; }
 }
 
+/* The generic mode pill (Text/JSONL, compact/expanded, …) — the fleet-mode
+   look: a tokens-only pill, so all three designs (dark/paper/white) style it
+   through their own --surface/--text ramps. */
+.lab-seg {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  flex: none;
+}
+.lab-seg-btn {
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.lab-seg-btn:hover { color: var(--text-dim); }
+.lab-seg-btn--active { background: var(--surface-3); color: var(--text); }
+
 /* The compact/expanded card-view seg, docked at the now-band's right end. */
-.lab-view-seg { margin-left: auto; flex: none; }
+.lab-view-seg { margin-left: auto; }
