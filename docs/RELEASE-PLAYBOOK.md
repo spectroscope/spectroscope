@@ -46,6 +46,8 @@ server, mcp-notes, web and desktop go to the GitHub release. `spectro-web` and
 - Clean working tree; on `main`.
 - Choose the version. Central is append-only → it must be higher than the last
   published (`git tag --list 'v*'`, and check central.sonatype.com).
+- Skim `release-notes/v<next>.md` — the draft grows during development; the
+  release day should be an edit, not archaeology.
 
 ### 2. Bump versions
 Move together:
@@ -53,6 +55,11 @@ Move together:
   `spectro-orchestrator/build.gradle.kts`.
 - **Apps (asset naming):** `version` in `spectro-cli`, `spectro-server`,
   `spectro-mcp-notes` build files and `spectro-desktop/package.json`.
+- **Then grep the tree for the OLD version string** (`grep -rn "0\.2\.0" --include='*.ts' --include='*.kts' --include='*.json' .`
+  minus lockfiles): 0.2.0 shipped with `spectro-desktop/main.ts` still
+  pinning `spectro-server-0.1.0.jar` — the desktop face died on a fresh
+  clone. Version literals outside the build files are bugs; prefer globbing
+  (the desktop launcher now globs the newest jar for exactly this reason).
 
 ### 3. Full gate — must be green before anything irreversible
 ```bash
@@ -172,3 +179,14 @@ download prompt to the normal right-click → Open. Sign with `-` (ad-hoc) only 
   If you fix a build script after tagging, move the tag (`git tag -f`, force-push)
   while the release is fresh and unconsumed.
 - **`jre/` and `build/`** are gitignored build artifacts — never commit them.
+- **Fresh-clone smoke BEFORE the tag (0.2.0 lesson):** both 0.2.0 launcher
+  bugs (`./spectro desktop` dead on a version-pinned jar path, `./spectro
+  web --port N` silently ignored) only surfaced on a fresh clone
+  (`spectroscope-cloned/` in the product home is the standing test copy).
+  Minimum smoke there: `./spectro doctor`, `./spectro web --port 8097`
+  (server must come up on 8097), `./spectro desktop`. Dev-tree behaviour
+  proves nothing about a clone.
+- **`CSC_NAME` wants the identity WITHOUT the "Developer ID Application: "
+  prefix** (0.2.0 signing lesson) — details in
+  [DESKTOP-SIGNING.md](DESKTOP-SIGNING.md); the build script handles it, do
+  not "fix" it back.
