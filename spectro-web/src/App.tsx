@@ -907,7 +907,14 @@ export function App() {
             <GraphView events={tabEvents} isReplay={!viewingLive} />
           )
         ) : tab === "text" ? (
-          <TextView events={tabEvents} />
+          <TextView
+            events={tabEvents}
+            // Explain spends the server's BASE-config provider (that is what the
+            // endpoint builds, not a live-switched session provider) — offer it
+            // unless that provider explicitly reports needs-key; unknown maps
+            // stay open and the endpoint's readable 503 covers the rest.
+            explainReady={!serverCfg || !providerStatus || providerStatus[serverCfg.provider] !== "needs-key"}
+          />
         ) : tab === "lab" ? (
           <LabView
             replay={replay}
