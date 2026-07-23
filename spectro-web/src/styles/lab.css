@@ -556,3 +556,6 @@
 @media (prefers-reduced-motion: reduce) {
   .lab-now-dot { animation: none; }
 }
+
+/* The compact/expanded card-view seg, docked at the now-band's right end. */
+.lab-view-seg { margin-left: auto; flex: none; }

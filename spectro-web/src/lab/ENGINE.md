@@ -16,20 +16,20 @@ module) is deliberately NOT this card: it depends on the platform/repo split
 
 ## Manifest (what the engine IS)
 
-| file | role |
-|---|---|
-| `labScene.ts` | the per-agent scene fold (`advanceLoop` is the shared transition) |
-| `sceneNow.ts` | names the current station (the "now" bands) |
-| `petriModel.ts` | the stepper's formal marking invariant |
-| `flowmap/sceneToFlow.ts` | scene + detail → React Flow nodes/edges (single-run layout) |
-| `flowmap/nodes.tsx` | the node cards (user/agent/os/llm/ext/subagent/zone) |
-| `flowmap/PacketEdge.tsx` | the rails + riding packets |
-| `flowmap/NeuralNet.tsx`, `flowmap/glyphs.tsx` | the LLM/station visuals |
-| `flowmap/positions.ts` | drag-pinning + position merge across re-folds |
-| `flowmap/expandContext.ts` | `ExpandAllContext` (default false) |
-| `flowmap/flowmap.css` | the engine's whole look (tokens only) |
-| `FlowMap.tsx` | the single-run canvas shell around all of the above |
-| + the `.test.ts` siblings | the engine's behavior pins travel with it |
+| file                                          | role                                                              |
+| --------------------------------------------- | ----------------------------------------------------------------- |
+| `labScene.ts`                                 | the per-agent scene fold (`advanceLoop` is the shared transition) |
+| `sceneNow.ts`                                 | names the current station (the "now" bands)                       |
+| `petriModel.ts`                               | the stepper's formal marking invariant                            |
+| `flowmap/sceneToFlow.ts`                      | scene + detail → React Flow nodes/edges (single-run layout)       |
+| `flowmap/nodes.tsx`                           | the node cards (user/agent/os/llm/ext/subagent/zone)              |
+| `flowmap/PacketEdge.tsx`                      | the rails + riding packets                                        |
+| `flowmap/NeuralNet.tsx`, `flowmap/glyphs.tsx` | the LLM/station visuals                                           |
+| `flowmap/positions.ts`                        | drag-pinning + position merge across re-folds                     |
+| `flowmap/expandContext.ts`                    | `ExpandAllContext` (default false)                                |
+| `flowmap/flowmap.css`                         | the engine's whole look (tokens only)                             |
+| `FlowMap.tsx`                                 | the single-run canvas shell around all of the above               |
+| + the `.test.ts` siblings                     | the engine's behavior pins travel with it                         |
 
 NOT engine: `FleetLab.tsx` / `fleetLabScene.ts` / `flowmap/fleetToFlow.ts`
 (they import the fleet model from `../spectrum` and stay harness-side until

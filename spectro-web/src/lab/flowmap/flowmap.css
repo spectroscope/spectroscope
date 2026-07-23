@@ -1419,3 +1419,78 @@
   color: var(--text-dim);
   line-height: 1.3;
 }
+
+/* ---- the EXPANDED card layout (ExpandAllContext) ------------------------
+   Emitted by the engine's nodes when a shell provides expandAll=true: the
+   agent card grows a second column (context beside the controls), the user
+   card carries its prompt beside it. Shells may override the widths (edu's
+   lesson camera does); these are the working defaults. */
+.pf-agent--wide {
+  width: 540px;
+}
+.pf-agent__cols {
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+}
+.pf-agent__main {
+  flex: 0 0 200px;
+  display: flex;
+  flex-direction: column;
+}
+.pf-agent__ctx {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.pf-agent__ctx > .pf-eyebrow {
+  margin-bottom: 2px;
+}
+
+/* expanded: a generated image spans the full card width beneath both columns */
+.pf-agent__genfull {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.pf-agent__genfull .pf-genimg-wrap {
+  align-items: flex-start;
+  gap: 14px;
+}
+.pf-agent__genfull .pf-genimg {
+  width: 132px;
+  height: 88px;
+}
+.pf-agent__genfull .pf-genimg-cap {
+  font-size: 12px;
+  align-self: center;
+}
+
+/* expanded: the user card with the prompt BESIDE it */
+.pf-user--wide {
+  width: 400px;
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  text-align: left;
+}
+.pf-user__col {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+.pf-user__prompt {
+  flex: 1 1 auto;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.pf-user__prompt > .pf-eyebrow {
+  margin-bottom: 4px;
+}

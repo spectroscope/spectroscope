@@ -37,7 +37,13 @@ function isTyping(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
 
-export function LabTransport(props: { running: boolean; children: ReactNode }) {
+export function LabTransport(props: {
+  running: boolean;
+  children: ReactNode;
+  /** Optional control rendered at the now-band's right end (e.g. the
+   *  compact/expanded card-view seg — shell chrome, not engine). */
+  trailing?: ReactNode;
+}) {
   const st = useStepper();
   const lang = useLang();
   const de = lang === "de";
@@ -106,6 +112,7 @@ export function LabTransport(props: { running: boolean; children: ReactNode }) {
         ) : props.running && viewingLive ? (
           <span className="lab-now-queue mono">{t(lang, "lab.waitingServer")}</span>
         ) : null}
+        {props.trailing}
       </div>
 
       {props.children}

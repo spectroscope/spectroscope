@@ -17,6 +17,20 @@ import { LabHint } from "./LabControls";
 import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
+import { ExpandAllContext } from "./flowmap/expandContext";
+import { t } from "../i18n/i18n";
+import { useLang } from "../state/lang";
+
+/** The card-view choice survives tab switches and reloads (TextView pattern). */
+const VIEW_STORAGE_KEY = "spectroscope.lab.view";
+
+function storedExpanded(): boolean {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === "expanded";
+  } catch {
+    return false;
+  }
+}
 
 // Pane-resize clamps: neither side pane shrinks below its minimum, and the
 // centre always keeps room for the stepper visuals.
@@ -46,7 +60,21 @@ export function LabView(props: {
   sendClient: (msg: ClientMessage) => boolean;
 }) {
   const st = useStepper();
+  const lang = useLang();
   const { replay, liveEvents } = props;
+
+  // Compact vs expanded agent cards (owner switch): expanded provides the
+  // engine's ExpandAllContext — every disclosure open, the context beside the
+  // agent, the prompt beside the user — exactly the edu lessons' reading.
+  const [expanded, setExpanded] = useState<boolean>(storedExpanded);
+  const pickView = (next: boolean): void => {
+    setExpanded(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next ? "expanded" : "compact");
+    } catch {
+      // private mode: the toggle simply does not stick
+    }
+  };
 
   // Flow = paced auto-play: a timer calls step() every intervalMs (fine/coarse
   // honoured by step itself). An empty queue makes step() a no-op, so live
@@ -153,14 +181,40 @@ export function LabView(props: {
       />
 
       <section className="lab-center" aria-label="System-Map (Flow)">
-        <LabTransport running={props.running}>
-          <FlowMap
-            scene={st.scene}
-            applied={st.applied}
-            provider={props.provider}
-            model={props.model}
-            systemPrompt={sysPrompt ?? undefined}
-          />
+        <LabTransport
+          running={props.running}
+          trailing={
+            <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
+              <button
+                type="button"
+                className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                aria-pressed={!expanded}
+                title={t(lang, "lab.viewCompactTitle")}
+                onClick={() => pickView(false)}
+              >
+                {t(lang, "lab.viewCompact")}
+              </button>
+              <button
+                type="button"
+                className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                aria-pressed={expanded}
+                title={t(lang, "lab.viewExpandedTitle")}
+                onClick={() => pickView(true)}
+              >
+                {t(lang, "lab.viewExpanded")}
+              </button>
+            </div>
+          }
+        >
+          <ExpandAllContext.Provider value={expanded}>
+            <FlowMap
+              scene={st.scene}
+              applied={st.applied}
+              provider={props.provider}
+              model={props.model}
+              systemPrompt={sysPrompt ?? undefined}
+            />
+          </ExpandAllContext.Provider>
         </LabTransport>
 
         <LabHint />
