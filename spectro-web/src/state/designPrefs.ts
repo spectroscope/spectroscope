@@ -68,7 +68,9 @@ export const DEFAULT_PREFS: DesignPrefs = {
   scroll: true,
   particles: true,
   reasoningLens: false,
-  timelineLens: false,
+  // Card 69 (owner): timing bars are on out of the box — subtle enough to
+  // read well idle, and the trace-toolbar chip switches them off persistently.
+  timelineLens: true,
 };
 
 // Side-effect seams — real localStorage + DOM by default, swappable in tests

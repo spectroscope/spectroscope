@@ -47,7 +47,7 @@ describe("designPrefs store", () => {
       scroll: true,
       particles: false,
       reasoningLens: false,
-      timelineLens: false,
+      timelineLens: true,
     });
     expect(isDirty()).toBe(true);
   });
@@ -71,7 +71,7 @@ describe("designPrefs store", () => {
       scroll: true,
       particles: true,
       reasoningLens: false,
-      timelineLens: false,
+      timelineLens: true,
     });
   });
 
@@ -92,6 +92,18 @@ describe("designPrefs store", () => {
     expect(isDirty()).toBe(false);
     // A stored pref without the key (older browser state) defaults to off.
     expect(parsePrefs(JSON.stringify({ design: "paper" })).reasoningLens).toBe(false);
+  });
+
+  it("timeline lens defaults ON and an explicit off sticks (card 69)", () => {
+    // Owner call 2026-07-23: the timing bars are on out of the box — a browser
+    // that never touched the toggle sees them, one that switched them off keeps
+    // them off. The trace-toolbar chip stays the one switch.
+    expect(DEFAULT_PREFS.timelineLens).toBe(true);
+    expect(parsePrefs(JSON.stringify({ design: "paper" })).timelineLens).toBe(true);
+    expect(parsePrefs(JSON.stringify({ timelineLens: false })).timelineLens).toBe(false);
+    applyAndSaveDesign({ timelineLens: false });
+    expect(JSON.parse(store.get(KEY) ?? "{}").timelineLens).toBe(false);
+    expect(readSaved().timelineLens).toBe(false);
   });
 
   it("folds a retired skin id from older storage back to the default", () => {
