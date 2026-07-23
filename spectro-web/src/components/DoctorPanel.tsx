@@ -31,6 +31,9 @@ export function DoctorPanel(props: {
   const [config, setConfig] = useState<{ provider?: string; model?: string } | null | "failed">(null);
   const [settings, setSettings] = useState<SettingsView | null | "failed">(null);
   const [sessions, setSessions] = useState<number | null | "failed">(null);
+  const [otlp, setOtlp] = useState<
+    { configured: boolean; ok?: boolean; endpoint?: string; message?: string } | null | "failed"
+  >(null);
 
   const { open, onClose } = props;
 
@@ -51,6 +54,11 @@ export function DoctorPanel(props: {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((list) => setSessions((list as SessionMeta[]).length))
       .catch(() => setSessions("failed"));
+    setOtlp(null);
+    fetch("/api/otlp/probe")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((p) => setOtlp(p as { configured: boolean; ok?: boolean; endpoint?: string; message?: string }))
+      .catch(() => setOtlp("failed"));
   }, [open]);
 
   useEffect(() => {
@@ -66,6 +74,27 @@ export function DoctorPanel(props: {
 
   const pending = (v: unknown): boolean => v === null;
   const checks: Check[] = [
+    {
+      key: "doc.otlp",
+      verdict:
+        otlp === "failed"
+          ? "error"
+          : otlp === null || !otlp.configured
+            ? "warn"
+            : otlp.ok === true
+              ? "ok"
+              : "error",
+      value:
+        otlp === "failed"
+          ? t(lang, "doc.unreachable")
+          : otlp === null
+            ? "…"
+            : !otlp.configured
+              ? t(lang, "doc.otlpOff")
+              : otlp.ok === true
+                ? `${t(lang, "doc.otlpOk")} · ${otlp.endpoint ?? ""}`
+                : `${otlp.message ?? "?"} · ${otlp.endpoint ?? ""}`,
+    },
     {
       key: "doc.api",
       verdict: config === "failed" ? "error" : "ok",

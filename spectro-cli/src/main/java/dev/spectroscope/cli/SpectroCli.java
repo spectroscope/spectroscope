@@ -21,6 +21,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.SubagentConfig;
@@ -199,6 +200,9 @@ public final class SpectroCli implements Runnable {
         // resume lands in the SAME folder it worked in before.
         store = new SessionStore(resume);
         tracing = new TracingPorts().require(new JsonlSink(store));
+        // The OTel exporter rides as a REGISTERED port (isolated, warn-once):
+        // off unless the config names an OTLP endpoint.
+        OtlpSink.fromConfig(config, store.id()).ifPresent(tracing::register);
         workspace = WorkspaceResolver.resolve(config.workspace(), store.id());
         initializeSession();
 

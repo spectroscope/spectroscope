@@ -501,7 +501,7 @@ class SpectroConfigTest {
     private static SpectroConfig configFor(String provider, String baseUrl) {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
-                null, null, null);
+                null, null, null, null, null);
     }
 
     // ---- logLevel ------------------------------------------------------

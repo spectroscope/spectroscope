@@ -82,6 +82,13 @@ import java.util.function.Function;
  * @param sttModel            path to the local whisper.cpp model file;
  *                            {@code null} means the CLI-side default —
  *                            env {@code SPECTRO_STT_MODEL}
+ * @param otlpEndpoint        OTLP traces endpoint (e.g. a local Langfuse's
+ *                            {@code http://localhost:3000/api/public/otel});
+ *                            null keeps the exporter off. Env
+ *                            {@code SPECTRO_OTLP_ENDPOINT}
+ * @param otlpBasicAuth       optional {@code pk:sk} pair sent as Basic auth
+ *                            (Langfuse project keys); null sends no auth
+ *                            header. Env {@code SPECTRO_OTLP_BASIC_AUTH}
  * @param chromeBinary        override for the system-Chrome binary used by
  *                            {@code browse_page}; {@code null} means the
  *                            built-in discovery — env {@code SPECTRO_CHROME}
@@ -103,7 +110,9 @@ public record SpectroConfig(
         String logLevel,
         String imageModel,
         String sttModel,
-        String chromeBinary) {
+        String chromeBinary,
+        String otlpEndpoint,
+        String otlpBasicAuth) {
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -151,7 +160,8 @@ public record SpectroConfig(
             "gemini", true, List.of(), 2, true, List.of(), // 2 retries; caching on; no hooks
             null, // workspace: per-session temp folder unless configured
             "info", // logLevel: file diagnostics at info; console stays WARN-quiet
-            null, null, null); // imageModel/sttModel/chromeBinary: backend/CLI/discovery defaults
+            null, null, null, // imageModel/sttModel/chromeBinary: backend/CLI/discovery defaults
+            null, null); // otlpEndpoint/otlpBasicAuth: exporter off by default
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -456,7 +466,8 @@ public record SpectroConfig(
                         base.imageProvider(), base.thinking(), base.mcpServers(),
                         base.maxRetries(), base.promptCaching(), base.hooks(),
                         base.workspace(), base.logLevel(),
-                        base.imageModel(), base.sttModel(), base.chromeBinary());
+                        base.imageModel(), base.sttModel(), base.chromeBinary(),
+                        base.otlpEndpoint(), base.otlpBasicAuth());
             }
         }
         return base;
@@ -497,7 +508,9 @@ public record SpectroConfig(
             new FieldProbe("logLevel", p -> p.logLevel),
             new FieldProbe("imageModel", p -> p.imageModel),
             new FieldProbe("sttModel", p -> p.sttModel),
-            new FieldProbe("chromeBinary", p -> p.chromeBinary));
+            new FieldProbe("chromeBinary", p -> p.chromeBinary),
+            new FieldProbe("otlpEndpoint", p -> p.otlpEndpoint),
+            new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth));
 
     /** Circularity + process-global rule: a workspace settings file must not
      *  re-point the workspace itself, nor reconfigure the one-per-process log
@@ -530,7 +543,8 @@ public record SpectroConfig(
                 compactionThreshold, permissionMode, autoApprove,
                 imageProvider, thinking, mcpServers,
                 maxRetries, promptCaching, hooks,
-                workspace, logLevel, imageModel, sttModel, chromeBinary);
+                workspace, logLevel, imageModel, sttModel, chromeBinary,
+                otlpEndpoint, otlpBasicAuth);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1029,6 +1043,8 @@ public record SpectroConfig(
         public String imageModel;
         public String sttModel;
         public String chromeBinary;
+        public String otlpEndpoint;
+        public String otlpBasicAuth;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1059,6 +1075,8 @@ public record SpectroConfig(
             out.imageModel = Optional.ofNullable(higher.imageModel).orElse(imageModel);
             out.sttModel = Optional.ofNullable(higher.sttModel).orElse(sttModel);
             out.chromeBinary = Optional.ofNullable(higher.chromeBinary).orElse(chromeBinary);
+            out.otlpEndpoint = Optional.ofNullable(higher.otlpEndpoint).orElse(otlpEndpoint);
+            out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1086,7 +1104,9 @@ public record SpectroConfig(
                     Optional.ofNullable(logLevel).orElse(DEFAULTS.logLevel()),
                     Optional.ofNullable(imageModel).orElse(DEFAULTS.imageModel()),
                     Optional.ofNullable(sttModel).orElse(DEFAULTS.sttModel()),
-                    Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()));
+                    Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()),
+                    Optional.ofNullable(otlpEndpoint).orElse(DEFAULTS.otlpEndpoint()),
+                    Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()));
         }
 
         /**
@@ -1111,6 +1131,10 @@ public record SpectroConfig(
             // per-session temp folder (resolved later, when the session id exists).
             out.workspace = env.get("SPECTRO_WORKSPACE");
             out.imageProvider = env.get("SPECTRO_IMAGE_PROVIDER");
+            // The OTLP exporter (off unless an endpoint is set): traces of every
+            // run stream to the configured backend (Langfuse, Jaeger, ...).
+            out.otlpEndpoint = env.get("SPECTRO_OTLP_ENDPOINT");
+            out.otlpBasicAuth = env.get("SPECTRO_OTLP_BASIC_AUTH");
             // SPECTRO_THINKING (1/0/true/false) sits next to SPECTRO_PROVIDER in the env layer.
             String thinking = env.get("SPECTRO_THINKING");
             if (thinking != null) {

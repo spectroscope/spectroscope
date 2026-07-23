@@ -13,6 +13,7 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPort;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.tools.StandardTools;
@@ -243,6 +244,7 @@ public final class HeadlessRunner {
         // auxiliary port (a node's bus publisher) is REGISTERED: durability
         // first, isolation for the extra consumer.
         TracingPorts tracing = new TracingPorts().require(new JsonlSink(store));
+        OtlpSink.fromConfig(config, store.id()).ifPresent(tracing::register);
         if (auxiliaryPort != null) {
             tracing.register(auxiliaryPort);
         }

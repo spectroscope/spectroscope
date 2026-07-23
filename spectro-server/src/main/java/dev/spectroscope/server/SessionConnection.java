@@ -26,6 +26,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.SwitchableProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.SubagentConfig;
@@ -252,6 +253,7 @@ public final class SessionConnection {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
             tracing = new TracingPorts().require(new JsonlSink(store));
+            OtlpSink.fromConfig(activeConfig.get(), store.id()).ifPresent(tracing::register);
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
@@ -575,6 +577,7 @@ public final class SessionConnection {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
             tracing = new TracingPorts().require(new JsonlSink(store));
+            OtlpSink.fromConfig(activeConfig.get(), store.id()).ifPresent(tracing::register);
         }
     }
 

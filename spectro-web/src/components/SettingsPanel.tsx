@@ -497,6 +497,46 @@ export function SettingsPanel({
                 </label>
               </div>
 
+              {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
+              <div className="settings-label">{t(lang, "set.secObservability")}</div>
+              <p className="settings-note">{t(lang, "set.otlpHint")}</p>
+              <div className="settings-grid">
+                <label className="settings-field">
+                  <span>{t(lang, "set.otlpEndpoint")}</span>
+                  <input
+                    type="text"
+                    placeholder="http://localhost:3000/api/public/otel"
+                    defaultValue={String(view.effective.otlpEndpoint ?? "")}
+                    onBlur={(e) =>
+                      saveUser({ otlpEndpoint: e.target.value.trim() === "" ? null : e.target.value.trim() })
+                    }
+                  />
+                  <OriginRow
+                    view={view}
+                    field="otlpEndpoint"
+                    lang={lang}
+                    onReset={() => saveUser({ otlpEndpoint: null })}
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>{t(lang, "set.otlpAuth")}</span>
+                  <input
+                    type="text"
+                    placeholder="pk-lf-… : sk-lf-…"
+                    defaultValue={String(view.effective.otlpBasicAuth ?? "")}
+                    onBlur={(e) =>
+                      saveUser({ otlpBasicAuth: e.target.value.trim() === "" ? null : e.target.value.trim() })
+                    }
+                  />
+                  <OriginRow
+                    view={view}
+                    field="otlpBasicAuth"
+                    lang={lang}
+                    onReset={() => saveUser({ otlpBasicAuth: null })}
+                  />
+                </label>
+              </div>
+
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
               <div className="settings-label">{t(lang, "set.secWorkspace")}</div>
               {view.effective.workspace ? (
