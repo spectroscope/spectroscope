@@ -966,4 +966,15 @@ class SpectroConfigTest {
         assertEquals("ready", SpectroConfig.localModelStatus(true));
         assertEquals("needs-download", SpectroConfig.localModelStatus(false));
     }
+
+    @Test
+    void spectroLocalCannotBeBuiltFromThePureConfigPath() {
+        // The pure config path cannot start a subprocess — spectro-local must go
+        // through the runtime layer (LocalProviderFactory). Fail readably, not
+        // with a cryptic "Unknown provider".
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "spectro-local", null, null, null, null, null));   // flags win over user settings
+        IllegalStateException e = assertThrows(IllegalStateException.class, config::providerFromConfig);
+        assertTrue(e.getMessage().contains("local runtime"), "readable pointer at the runtime layer");
+    }
 }

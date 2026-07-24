@@ -658,6 +658,10 @@ public record SpectroConfig(
             case "openai", "lmstudio", "openrouter", "gemini" -> new OpenAiCompatProvider(
                     new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey()));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
+            case "spectro-local" -> throw new IllegalStateException(
+                    "spectro-local runs through the bundled local runtime "
+                    + "(dev.spectroscope.core.local.LocalProviderFactory), wired by the "
+                    + "server/CLI — not the pure config path, which cannot start a subprocess");
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         };
         // The autologging proxy sits around the CONCRETE provider,
