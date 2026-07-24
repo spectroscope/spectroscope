@@ -1,6 +1,8 @@
 package dev.spectroscope.core;
 
 import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.local.ModelProfile;
+import dev.spectroscope.core.provider.LlmProvider.ToolSpec;
 import dev.spectroscope.core.events.RunEvent.ContextInfo;
 import dev.spectroscope.core.events.RunEvent.ContextPart;
 import dev.spectroscope.core.events.RunEvent.ErrorEvent;
@@ -216,8 +218,17 @@ public final class Agent {
                 PStop.StopReason stopReason = PStop.StopReason.END_TURN;
                 List<PToolCall> toolCalls = new ArrayList<>();
 
+                // Advertise tools only to a model that speaks the tool_calls
+                // protocol. The built-in reasoner (spectro-local) does not — handing
+                // it tools only invites the <fulfilment>-as-text / runaway failure
+                // mode. A null/unknown providerName defaults to advertising (the
+                // existing behavior); only a nativeTools:false model is stripped.
+                List<ToolSpec> advertisedTools =
+                        ModelProfile.forProvider(options.providerName()).nativeTools()
+                                ? options.registry().specs()
+                                : List.of();
                 ProviderRequest request = new ProviderRequest(options.systemPrompt(),
-                        List.copyOf(messages), options.registry().specs(), maxTokens,
+                        List.copyOf(messages), advertisedTools, maxTokens,
                         thinkingEnabled(), signal);
 
                 // Blocking for-each over the provider stream — text deltas are passed

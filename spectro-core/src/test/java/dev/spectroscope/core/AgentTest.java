@@ -128,6 +128,47 @@ class AgentTest {
         assertEquals("end_turn", end.stopReason());
     }
 
+    /** A model without native tool_calls (spectro-local) must be handed NO tools —
+     *  advertising them only invites the <fulfilment>/runaway failure mode. */
+    private Agent agentNamed(String providerName, FakeProvider provider) {
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool(false));   // a non-empty tool set
+        return new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("test")
+                .registry(registry)
+                .providerName(providerName)
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .build());
+    }
+
+    @Test
+    void spectroLocalIsAdvertisedNoTools() {
+        FakeProvider provider = FakeProvider.scripted(List.of(
+                new LlmProvider.PTextDelta("hi"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        try (EventStream stream = agentNamed("spectro-local", provider)
+                .run("do it", new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(e -> { });
+        }
+        assertTrue(provider.requests.get(0).tools().isEmpty(),
+                "the built-in reasoner is handed no tools");
+    }
+
+    @Test
+    void aNativeToolProviderStillGetsTools() {
+        FakeProvider provider = FakeProvider.scripted(List.of(
+                new LlmProvider.PTextDelta("hi"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        try (EventStream stream = agentNamed("anthropic", provider)
+                .run("do it", new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(e -> { });
+        }
+        assertFalse(provider.requests.get(0).tools().isEmpty(),
+                "a native-tool provider still receives the tool set");
+    }
+
     @Test
     void toolRoundTripFeedsTheResultBackInOneUserMessage() {
         JsonNode input = JSON.createObjectNode().put("value", "42");
