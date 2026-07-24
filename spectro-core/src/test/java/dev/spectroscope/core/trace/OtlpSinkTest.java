@@ -107,6 +107,32 @@ class OtlpSinkTest {
     }
 
     @Test
+    void aWedgedEpochDoesNotFreezeExportForever() throws Exception {
+        // Finding 6 (0.3.0 adversarial pass): an uncaught Error can leave a
+        // RunStart without its RunEnd, so openRuns never empties again and a
+        // REUSED sink silently stops exporting every later prompt. A fresh
+        // top-level run must un-wedge it.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch second = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api", null, "sess-wedge", body -> {
+            posted.add(body);
+            second.countDown();
+        });
+
+        // Epoch 1: a top-level run that NEVER ends (the wedge).
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"first\",\"provider\":\"p\",\"ts\":100}"));
+        sink.onEvent(ev("{\"type\":\"text_delta\",\"agentId\":\"main\",\"text\":\"hi\",\"ts\":110}"));
+
+        // Epoch 2: a fresh top-level run (no parentId) that completes cleanly.
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r2\",\"agentId\":\"main\",\"prompt\":\"second\",\"provider\":\"p\",\"ts\":200}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":210}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r2\",\"stopReason\":\"end_turn\",\"ts\":300}"));
+
+        assertTrue(second.await(5, TimeUnit.SECONDS),
+                "the second epoch's run_end still exports — the wedge did not freeze the sink");
+    }
+
+    @Test
     void buildsBasicAuthFromThePair() {
         assertNotNull(OtlpSink.basicAuthHeader("pk:sk"));
         assertEquals("Basic cGs6c2s=", OtlpSink.basicAuthHeader("pk:sk"));

@@ -128,6 +128,18 @@ class BundleControllerTest {
     }
 
     @Test
+    void scaffoldRefusesACrossSiteOrigin(@TempDir Path dir) {
+        // The Origin half of the write fence (added in the 0.3.0 hardening pass,
+        // alongside consumes=json): a cross-site page whose request still reaches
+        // loopback with a localhost Host is refused, and nothing is written.
+        MockHttpServletRequest crossSite = local();
+        crossSite.addHeader("Origin", "https://evil.example");
+        var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"), crossSite);
+        assertEquals(404, response.getStatusCode().value());
+        assertFalse(Files.exists(dir.resolve("build.gradle.kts")));
+    }
+
+    @Test
     void scaffoldWritesEveryFileIntoThePickedFolder(@TempDir Path dir) throws Exception {
         var response = controller.scaffold("five-lines", body(dir.toString(), "gradle"), local());
         assertEquals(200, response.getStatusCode().value());

@@ -87,6 +87,7 @@ public final class OtlpSink implements TracingPort {
     private final Set<String> openRuns = new HashSet<>();
     private final AtomicBoolean warned = new AtomicBoolean(false);
     private final AtomicBoolean overflowWarned = new AtomicBoolean(false);
+    private final AtomicBoolean wedgeWarned = new AtomicBoolean(false);
 
     /**
      * Build the sink when (and only when) the config carries an endpoint.
@@ -131,6 +132,22 @@ public final class OtlpSink implements TracingPort {
     @Override
     public void onEvent(RunEvent event) {
         try {
+            // A fresh top-level run (no parent) arriving while runs are still open
+            // means a previous epoch never closed: an uncaught Error (OOM,
+            // StackOverflow) can leave a RunStart without its RunEnd, and because
+            // one sink is reused across a whole connection, openRuns would stay
+            // non-empty forever and silently freeze every later prompt's export.
+            // Flush the wedged epoch's best effort and reset so exports resume.
+            if (event instanceof RunEvent.RunStart fresh
+                    && fresh.parentId() == null && !openRuns.isEmpty()) {
+                if (wedgeWarned.compareAndSet(false, true)) {
+                    log.warn("otlp: session {} began a new run with {} still open — a prior run "
+                            + "ended without a run_end; exporting best-effort and resetting",
+                            sessionId, openRuns.size());
+                }
+                exportSnapshot();
+                openRuns.clear();
+            }
             if (buffer.size() >= MAX_BUFFER) {
                 if (overflowWarned.compareAndSet(false, true)) {
                     log.warn("otlp: session {} exceeded {} buffered events — export stops growing",
@@ -144,17 +161,7 @@ public final class OtlpSink implements TracingPort {
             } else if (event instanceof RunEvent.RunEnd end) {
                 openRuns.remove(end.runId());
                 if (openRuns.isEmpty()) {
-                    String body = buildPayload(new ArrayList<>(buffer));
-                    Thread.startVirtualThread(() -> {
-                        try {
-                            poster.post(body);
-                        } catch (Exception failed) {
-                            if (warned.compareAndSet(false, true)) {
-                                log.warn("otlp: export to {} failed ({}) — runs continue, further "
-                                        + "failures stay quiet", endpoint, failed.getMessage());
-                            }
-                        }
-                    });
+                    exportSnapshot();
                 }
             }
         } catch (RuntimeException never) {
@@ -164,6 +171,24 @@ public final class OtlpSink implements TracingPort {
                         never.getMessage());
             }
         }
+    }
+
+    /** Fold the buffer-so-far and post it on a virtual thread — the one export
+     *  path, shared by the clean idle point and the wedge recovery. The snapshot
+     *  is copied on THIS thread before the VT starts, so the VT owns immutable
+     *  state; a failed post warns once and never touches the run. */
+    private void exportSnapshot() {
+        String body = buildPayload(new ArrayList<>(buffer));
+        Thread.startVirtualThread(() -> {
+            try {
+                poster.post(body);
+            } catch (Exception failed) {
+                if (warned.compareAndSet(false, true)) {
+                    log.warn("otlp: export to {} failed ({}) — runs continue, further "
+                            + "failures stay quiet", endpoint, failed.getMessage());
+                }
+            }
+        });
     }
 
     // ---- the fold: the whole session so far -> spans (deterministic ids) ----

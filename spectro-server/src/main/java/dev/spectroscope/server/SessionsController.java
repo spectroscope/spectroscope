@@ -8,7 +8,6 @@ import dev.spectroscope.core.scheduler.JobState;
 import dev.spectroscope.core.session.SessionStore;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -33,9 +32,17 @@ import java.util.regex.Pattern;
  * mutation: deleting a stored session (the socket carries every run-time
  * mutation). The endpoints read the SAME JSONL store the CLI writes, so
  * file, socket and REST all speak the one RunEvent format.
+ *
+ * <p>No {@code @CrossOrigin}: the production UI is served from this same jar
+ * (same origin) and {@code spectro-web/vite.config.ts} proxies {@code /api} to
+ * the boot server, so the dev server's browser requests are same-origin too. A
+ * wildcard read-CORS here let any page the operator visited harvest session
+ * content (prompts, tool output) and the content-addressed image names — the
+ * amplifier the 0.3.0 adversarial pass named. Dropped, matching the settings
+ * and probe controllers. The image byte serve additionally wears the
+ * loopback+Host read fence against DNS rebinding.</p>
  */
 @RestController
-@CrossOrigin(origins = "*")   // for the Vite dev server on :5173; one JAR needs no CORS
 public class SessionsController {
 
     /**
@@ -154,10 +161,10 @@ public class SessionsController {
     public ResponseEntity<Map<String, Object>> saveKey(@RequestBody(required = false) KeyBody body,
                                                        HttpServletRequest request) {
         // Two fences: isLocalOrigin blocks a remote/rebinding caller, and the
-        // Origin check blocks CSRF from a real website — this controller sets
-        // @CrossOrigin(*) for reads, so a cross-site page could otherwise POST here
-        // (its request is still loopback + localhost-Host). A same-origin page and
-        // the Vite dev proxy send a loopback Origin; a non-browser client sends none.
+        // Origin check blocks CSRF from a real website. Both are kept belt-and-
+        // braces even though the controller-wide @CrossOrigin(*) is now gone: a
+        // same-origin page and the Vite dev proxy send a loopback Origin; a
+        // non-browser client sends none; a cross-site page is refused.
         if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
@@ -389,14 +396,22 @@ public class SessionsController {
 
     /**
      * Serves one generated image from the content-addressed store under
-     * {@code ~/.spectro/images}.
+     * {@code ~/.spectro/images}. Local-only: an image can carry sensitive
+     * visual content, and its name is discoverable from the session events, so
+     * the byte serve wears the loopback+Host fence (a rebound page fails the
+     * Host check) rather than resting on name-obscurity. The UI's {@code <img>}
+     * loads it same-origin and passes.
      *
      * @param file the bare file name — must match the 64-hex-plus-extension contract
+     * @param request the servlet request, for the local-origin fence
      * @return 200 with the image bytes and matching content type; 400 for a name
-     *         outside the contract, 404 when the file is missing or unreadable
+     *         outside the contract, 404 for a non-local caller or a missing file
      */
     @GetMapping("/api/images/{file}")
-    public ResponseEntity<byte[]> image(@PathVariable String file) {
+    public ResponseEntity<byte[]> image(@PathVariable String file, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build();
+        }
         if (!IMAGE_NAME.matcher(file).matches()) {
             return ResponseEntity.badRequest().build();
         }

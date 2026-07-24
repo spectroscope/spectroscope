@@ -2,6 +2,8 @@ package dev.spectroscope.server;
 
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,8 +19,12 @@ import java.util.regex.Pattern;
 /**
  * Copies a generated image from the global content-addressed store
  * ({@code ~/.spectro/images/<sha256>.<ext>}) into a session's workspace — the
- * gallery's "copy to workspace" button. Defense in depth like every workspace
- * endpoint: the image name must be exactly a store name (64 hex + image
+ * gallery's "copy to workspace" button. This is a filesystem WRITE, so it wears
+ * the full local-origin fence like every other write endpoint (the key writer,
+ * the settings PUTs, fleet control): {@link FleetController#isLocalOrigin}
+ * against a DNS-rebound Host plus the Origin check, and {@code consumes=json}
+ * to force the preflight a foreign page cannot pass. Then defense in depth on
+ * the inputs: the image name must be exactly a store name (64 hex + image
  * extension), the session id is shape-guarded, the target name is a single
  * sanitized file name (no separators, no leading dot), and an existing target
  * answers 409 instead of overwriting.
@@ -68,29 +74,35 @@ public class ImageCopyController {
      * {@code POST /api/images/copy-to-workspace}: copies one stored image into
      * the session's workspace under the requested (or original) name.
      *
-     * @param request the copy request
-     * @return 200 {@code {path}} on success, 400 for malformed inputs, 404 for
-     *         an unknown image or workspace, 409 when the target exists
+     * @param body    the copy request
+     * @param request the servlet request, for the local-origin write fence
+     * @return 404 for a non-local caller, a rebound Host or a cross-site Origin;
+     *         else 200 {@code {path}} on success, 400 for malformed inputs, 404
+     *         for an unknown image or workspace, 409 when the target exists
      */
-    @PostMapping("/api/images/copy-to-workspace")
-    public ResponseEntity<?> copy(@RequestBody CopyRequest request) {
-        if (request.file() == null || !IMAGE_FILE.matcher(request.file()).matches()) {
+    @PostMapping(value = "/api/images/copy-to-workspace", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<?> copy(@RequestBody CopyRequest req, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)
+                || !FleetController.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        if (req.file() == null || !IMAGE_FILE.matcher(req.file()).matches()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Not a stored image name."));
         }
-        if (request.session() == null || !SESSION_ID.matcher(request.session()).matches()) {
+        if (req.session() == null || !SESSION_ID.matcher(req.session()).matches()) {
             return ResponseEntity.badRequest().body(Map.of("message", "Malformed session id."));
         }
-        Path source = imagesDir.resolve(request.file());
+        Path source = imagesDir.resolve(req.file());
         if (!Files.isRegularFile(source)) {
             return ResponseEntity.notFound().build();
         }
-        String pinned = SessionWorkspaces.pinned(request.session());
+        String pinned = SessionWorkspaces.pinned(req.session());
         Path workspace = WorkspaceResolver.locate(
-                pinned != null ? pinned : configuredWorkspace.get(), request.session());
+                pinned != null ? pinned : configuredWorkspace.get(), req.session());
         if (!Files.isDirectory(workspace)) {
             return ResponseEntity.status(404).body(Map.of("message", "Workspace not found."));
         }
-        String targetName = targetName(request.name(), request.file());
+        String targetName = targetName(req.name(), req.file());
         if (targetName == null) {
             return ResponseEntity.badRequest().body(Map.of("message", "Invalid target file name."));
         }

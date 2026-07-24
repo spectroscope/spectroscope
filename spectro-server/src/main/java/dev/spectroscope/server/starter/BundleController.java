@@ -3,6 +3,7 @@ package dev.spectroscope.server.starter;
 import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.server.FleetController;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -26,10 +27,12 @@ import java.util.Map;
  *
  * <p>No {@code @CrossOrigin}: the scaffold endpoint writes files, so it stays
  * same-origin only (like {@link dev.spectroscope.server.SettingsController}) —
- * a foreign page cannot make the local server write to disk. Preflight alone
- * does not stop DNS rebinding (a rebound hostname IS same-origin), so the
- * write additionally wears the {@link FleetController#isLocalOrigin} fence,
- * the same standard as every fleet write.
+ * a foreign page cannot make the local server write to disk. The write wears
+ * the complete write-endpoint template: {@code consumes=json} forces the
+ * preflight a cross-origin page cannot pass, {@link FleetController#isLocalOrigin}
+ * blocks a DNS-rebound hostname (which IS same-origin, so preflight alone would
+ * miss it), and {@link FleetController#originIsLoopbackOrAbsent} closes the
+ * Origin gap — the exact bar the key writer and the settings PUTs carry.
  */
 @RestController
 public class BundleController {
@@ -67,10 +70,10 @@ public class BundleController {
      * @return 200 {written, dir}; 400 missing/not-a-directory dir; 404 unknown
      *         bundle; 409 files already present; 500 on an I/O failure
      */
-    @PostMapping("/api/bundles/{id}/scaffold")
+    @PostMapping(value = "/api/bundles/{id}/scaffold", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> scaffold(@PathVariable String id, @RequestBody JsonNode body,
                                       HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build(); // blank 404, like the fleet writes
         }
         String dirText = body.path("dir").asText("").strip();

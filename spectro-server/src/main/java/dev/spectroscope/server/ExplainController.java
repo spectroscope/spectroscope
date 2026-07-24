@@ -22,7 +22,6 @@ import java.util.function.Supplier;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -43,9 +42,11 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  * <p>Security: this endpoint spends the operator's API key, so it wears BOTH
  * fences the key-write endpoint wears — {@link FleetController#isLocalOrigin}
  * against remote/rebound callers and a loopback-or-absent Origin check against
- * cross-site pages (CSRF), since the session controllers open {@code @CrossOrigin}.</p>
+ * cross-site pages (CSRF). No {@code @CrossOrigin}: a wildcard CORS policy let a
+ * foreign page deliver a large JSON body (the digest) that Spring materializes
+ * before the fence runs — a needless cross-origin DoS window on a key-spending
+ * endpoint. Same-origin only, like the settings and probe controllers.</p>
  */
-@CrossOrigin
 @RestController
 public class ExplainController {
 
