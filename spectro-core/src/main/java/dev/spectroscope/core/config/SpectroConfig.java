@@ -141,13 +141,13 @@ public record SpectroConfig(
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.
     static final Set<String> KNOWN_PROVIDERS =
-            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini");
+            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini", "spectro-local");
     /** A stable, human-readable listing of {@link #KNOWN_PROVIDERS} for error
      *  messages — {@link Set#of} has no guaranteed iteration order, so it is
      *  spelled out once and shared by config validation and the live picker
      *  switch instead of being rebuilt (in a different order) in each place. */
     public static final String KNOWN_PROVIDERS_DISPLAY =
-            "anthropic, ollama, openai, lmstudio, openrouter, gemini";
+            "anthropic, ollama, openai, lmstudio, openrouter, gemini, spectro-local";
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
@@ -569,6 +569,7 @@ public record SpectroConfig(
         return switch (provider) {
             case "ollama" -> "qwen3";
             case "lmstudio", "openai" -> "local-model";
+            case "spectro-local" -> "vibethinker-3b"; // the bundled model this build ships
             case "anthropic" -> DEFAULTS.model(); // claude-opus-4-8, a real anthropic model
             default -> null; // gemini, openrouter: no baked default — the caller decides
         };
@@ -734,6 +735,17 @@ public record SpectroConfig(
      *  @return "ready" | "needs-key" | "local" */
     public static String onboardingStatus(String provider, boolean keyPresent) {
         return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
+    }
+
+    /** The built-in local provider's picker status: {@code "ready"} once the
+     *  model file is present, else {@code "needs-download"} — the lean DMG's
+     *  first-run modal fills it. Unlike {@link #onboardingStatus}'s {@code
+     *  "local"} (a reachability question), a bundled model's readiness is a
+     *  file-presence fact the server can answer directly.
+     *  @param modelPresent whether the GGUF resolves (bundle or user models dir)
+     *  @return "ready" | "needs-download" */
+    public static String localModelStatus(boolean modelPresent) {
+        return modelPresent ? "ready" : "needs-download";
     }
 
     /** {@code ~/.spectro/.env} — where the UI's "save key" writes API keys, read

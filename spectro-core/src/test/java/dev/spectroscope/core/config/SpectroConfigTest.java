@@ -953,4 +953,17 @@ class SpectroConfigTest {
                 "nothing to seed — must report false");
         assertFalse(Files.exists(SpectroConfig.USER_SETTINGS_PATH));
     }
+
+    @Test
+    void spectroLocalIsAKeylessKnownProvider() {
+        assertTrue(SpectroConfig.isKnownProvider("spectro-local"));
+        assertNull(SpectroConfig.keyEnvFor("spectro-local"), "local, no key");
+        assertEquals("vibethinker-3b", SpectroConfig.defaultModelFor("spectro-local"));
+    }
+
+    @Test
+    void spectroLocalStatusReflectsModelPresence() {
+        assertEquals("ready", SpectroConfig.localModelStatus(true));
+        assertEquals("needs-download", SpectroConfig.localModelStatus(false));
+    }
 }
