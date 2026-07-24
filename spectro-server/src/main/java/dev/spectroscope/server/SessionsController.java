@@ -158,7 +158,7 @@ public class SessionsController {
         // @CrossOrigin(*) for reads, so a cross-site page could otherwise POST here
         // (its request is still loopback + localhost-Host). A same-origin page and
         // the Vite dev proxy send a loopback Origin; a non-browser client sends none.
-        if (!FleetController.isLocalOrigin(request) || !originIsLoopbackOrAbsent(request)) {
+        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         String keyEnv = body == null ? null : SpectroConfig.keyEnvFor(body.provider());
@@ -178,26 +178,6 @@ public class SessionsController {
 
     /** The save-key request body (never logged). */
     public record KeyBody(String provider, String key) {}
-
-    /** True when the request's {@code Origin} is absent (a non-browser client) or
-     *  points at loopback — a cross-site page's Origin (its own domain) fails,
-     *  closing CSRF against the write endpoints even though this controller allows
-     *  cross-origin reads.
-     *  @param request the servlet request
-     *  @return whether the Origin is safe */
-    private static boolean originIsLoopbackOrAbsent(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
-        if (origin == null || origin.isBlank()) {
-            return true;
-        }
-        try {
-            String host = java.net.URI.create(origin).getHost();
-            return "localhost".equals(host) || "127.0.0.1".equals(host)
-                    || "::1".equals(host) || "[::1]".equals(host);
-        } catch (RuntimeException malformed) {
-            return false;
-        }
-    }
 
     /** Whether an env-provided key is present and non-blank — presence only,
      *  the value never leaves the process.

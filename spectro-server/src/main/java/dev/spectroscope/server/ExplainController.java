@@ -94,7 +94,7 @@ public class ExplainController {
     @PostMapping(value = "/api/explain", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StreamingResponseBody> explain(@RequestBody(required = false) ExplainBody body,
                                                          HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !originIsLoopbackOrAbsent(request)) {
+        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         if (body == null || body.digest() == null || body.digest().isBlank()) {
@@ -187,21 +187,4 @@ public class ExplainController {
         }
     }
 
-    /** True when {@code Origin} is absent (non-browser) or loopback — the same
-     *  CSRF fence the key-write endpoint wears.
-     *  @param request the servlet request
-     *  @return whether the Origin is safe */
-    private static boolean originIsLoopbackOrAbsent(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
-        if (origin == null || origin.isBlank()) {
-            return true;
-        }
-        try {
-            String host = java.net.URI.create(origin).getHost();
-            return "localhost".equals(host) || "127.0.0.1".equals(host)
-                    || "::1".equals(host) || "[::1]".equals(host);
-        } catch (RuntimeException malformed) {
-            return false;
-        }
-    }
 }

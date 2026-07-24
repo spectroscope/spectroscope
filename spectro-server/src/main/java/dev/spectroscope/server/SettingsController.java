@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -43,6 +44,13 @@ import java.util.regex.Pattern;
  * UI is served from the SAME origin as this API (one jar). A wildcard CORS
  * policy on writes that can change what the agent is allowed to do was
  * needless exposure with no matching need — narrowed per the final review.</p>
+ *
+ * <p>Beyond CORS, the whole API wears {@link FleetController#isLocalOrigin}
+ * against DNS rebinding — a rebound page's requests are same-origin to the
+ * browser, so CORS never applies, and only the Host header betrays them. The
+ * read side matters too: it echoes the effective config and the raw layers,
+ * including {@code otlpBasicAuth} when configured. The PUTs additionally wear
+ * the Origin fence, the same bar as the key writer.</p>
  */
 @RestController
 public class SettingsController {
@@ -104,7 +112,9 @@ public class SettingsController {
      *                                  configured workspace
      */
     @GetMapping("/api/settings")
-    public Map<String, Object> settings(@RequestParam(value = "session", required = false) String session) {
+    public Map<String, Object> settings(@RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        requireLocal(request, false);
         Path workspace = resolveWorkspace(session);
         SpectroConfig.Resolved resolved = SpectroConfig.loadResolved(
                 SpectroConfig.Overrides.none(), launchDir, workspace);
@@ -131,12 +141,13 @@ public class SettingsController {
      *                                  an I/O failure writing the file
      */
     @PutMapping("/api/settings/user")
-    public Map<String, Object> putUser(@RequestBody JsonNode patch) {
+    public Map<String, Object> putUser(@RequestBody JsonNode patch, HttpServletRequest request) {
+        requireLocal(request, true);
         applyPatch(SettingsWriter.userSettingsFile(), SettingsWriter.Scope.USER, patch);
         if (patch.hasNonNull("logLevel")) {
             dev.spectroscope.cli.LogSetup.apply(patch.get("logLevel").asText());   // live, not just next boot
         }
-        return settings(null);
+        return settings(null, request);
     }
 
     /**
@@ -153,10 +164,11 @@ public class SettingsController {
      */
     @PutMapping("/api/settings/project")
     public Map<String, Object> putProject(@RequestParam("session") String session,
-            @RequestBody JsonNode patch) {
+            @RequestBody JsonNode patch, HttpServletRequest request) {
+        requireLocal(request, true);
         Path ws = requireWorkspace(session);
         applyPatch(ws.resolve(SpectroConfig.PROJECT_SETTINGS), SettingsWriter.Scope.PROJECT, patch);
-        return settings(session);
+        return settings(session, request);
     }
 
     /**
@@ -174,10 +186,29 @@ public class SettingsController {
      */
     @PutMapping("/api/settings/local")
     public Map<String, Object> putLocal(@RequestParam("session") String session,
-            @RequestBody JsonNode patch) {
+            @RequestBody JsonNode patch, HttpServletRequest request) {
+        requireLocal(request, true);
         Path ws = requireWorkspace(session);
         applyPatch(ws.resolve(WS_LOCAL_SETTINGS), SettingsWriter.Scope.LOCAL, patch);
-        return settings(session);
+        return settings(session, request);
+    }
+
+    /**
+     * The fence, applied before anything is read or written: 404 for a
+     * non-loopback caller or a DNS-rebound Host; writes additionally refuse a
+     * cross-site Origin (the key writer's bar). 404 — not 403 — so a refused
+     * caller cannot even fingerprint that a spectro answers here.
+     *
+     * @param request the servlet request
+     * @param write   whether the Origin fence joins (the PUTs)
+     * @throws ResponseStatusException 404 when the fence refuses
+     */
+    private static void requireLocal(HttpServletRequest request, boolean write) {
+        boolean allowed = FleetController.isLocalOrigin(request)
+                && (!write || FleetController.originIsLoopbackOrAbsent(request));
+        if (!allowed) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND);
+        }
     }
 
     /**
