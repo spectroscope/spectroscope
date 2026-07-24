@@ -51,6 +51,23 @@ the just-fired line highlighted, the dam divider (“<code>▮▮ dam · n waiti
 queue; every row expands to the full event, and an “All” toggle drops the render window for very long
 sessions.</p>
 
+<h2 id="ch-lab-view">compact | expanded</h2>
+
+<p>A small <strong>compact | expanded</strong> pill sits by the map (the same pill rides the
+fleet machine room, and the two share one preference, so the choice follows you between them).
+It changes how much of each node opens by default, not what the map means.</p>
+
+<p><strong>Compact</strong> is the working default: an agent card shows its identity, its state and
+its live token totals, and the surrounding stations (the context window, the system prompt, the
+user, the LLM) sit as tidy tiles. <strong>Expanded</strong> opens every card at once — the context
+window and the system prompt move to sit BESIDE the agent, the prompt beside the user, and each
+node card carries its task and history inline. The layout genuinely spreads to make the room, so
+nothing overlaps; it is the view for reading one run closely, where compact is the view for
+watching the shape of it. The same pill also carries the <em>Text | JSONL</em> toggle for the
+strip, so both grains are one click away.</p>
+
+<!--SHOT:31-lab-expanded|Expanded view: every node opened at once — the context window and system prompt beside the agent, the prompt beside the user, task and history inline on each card. The layout spreads so nothing overlaps; compact collapses it back to the tidy default.-->
+
 <h2 id="ch-lab-flow">The Flow map (React Flow)</h2>
 
 <!--SHOT:04-lab-flow-mid|Mid-run: the coral packet sits on the Agent hub, its tool belt below the Loop and Permission-gate rows, the OS band under that, the LLM zone to the right, with live disclosures on every node.-->

@@ -129,6 +129,8 @@ true secrets and never graduate into a settings file.</p>
   <tr><td><code>sttModel</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_STT_MODEL</code></td><td>absolute path to the whisper.cpp model (default <code>~/.spectro/models/ggml-small.bin</code>); machine-tool path</td></tr>
   <tr><td><code>chromeBinary</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_CHROME</code></td><td>override for the system-Chrome binary <code>browse_page</code> discovers automatically; machine-tool path</td></tr>
   <tr><td><code>hooks</code></td><td>array · <code>[]</code></td><td>—</td><td>pre/post tool hooks — whole-block (chapter 13)</td></tr>
+  <tr><td><code>otlpEndpoint</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_OTLP_ENDPOINT</code></td><td>the OTLP/HTTP traces endpoint; unset = the exporter is off (see Observability below)</td></tr>
+  <tr><td><code>otlpBasicAuth</code></td><td><code>pk:sk</code> · <em>unset</em></td><td><code>SPECTRO_OTLP_BASIC_AUTH</code></td><td>optional Basic-auth pair for the OTLP endpoint (Langfuse's public:secret); never echoed by any read</td></tr>
   <tr><td><code>tts</code></td><td><code>{enabled, voice}</code> · off, <code>en_US-lessac-medium</code></td><td>—</td><td>CLI-side voice output block in the same user settings file (not a <code>SpectroConfig</code> field)</td></tr>
 </table>
 <p>Every <code>SPECTRO_*</code> name in the "env base" column still works exactly as
@@ -137,6 +139,31 @@ one now defers to, and run <code>spectro doctor</code> to see which of yours are
 shadowed. The three "machine-tool path" fields are session-scoped like any other field,
 but discouraged from a committed project file — the header gear and the composer gear's
 local-overrides section are where they belong.</p>
+
+<h2 id="ch-config-observability">Observability: streaming to OTLP</h2>
+
+<p>Every run already writes its <code>session.jsonl</code>; that file is the durable record and
+never needs a network. On top of it, a run can ALSO stream its spans to any OTLP/HTTP backend —
+Langfuse, Jaeger, Phoenix, anything that speaks the OpenTelemetry protocol over HTTP. The export
+is additive: the JSONL is the anchor, and a dead backend warns once and never slows a run.</p>
+
+<p>Two settings turn it on, both off by default — the endpoint and an optional Basic-auth pair,
+either through <em>Settings → Observability</em> or the two <code>SPECTRO_OTLP_*</code> env bases
+in the table above:</p>
+
+<pre>SPECTRO_OTLP_ENDPOINT   = http://localhost:3000/api/public/otel/v1/traces   (Langfuse)
+SPECTRO_OTLP_BASIC_AUTH = pk-lf-...:sk-lf-...                               (optional)</pre>
+
+<p>The <strong>doctor</strong> carries an OTLP line: it posts an empty — but valid — OTLP batch to
+the configured endpoint and shows green when the endpoint accepts it, so you learn a real run's
+spans will land before you spend a run finding out. The auth value is never echoed. Each session
+becomes one trace whose span tree mirrors the run (agent → turns with token usage → tool calls →
+gates), carrying both Langfuse's <code>langfuse.observation.type</code> and OpenTelemetry's
+<code>gen_ai.*</code> conventions so either kind of consumer reads it. The full attribute mapping,
+the endpoint variants (Langfuse / Jaeger / Phoenix) and the backfill path for older sessions live
+in <code>docs/OBSERVABILITY.md</code>.</p>
+
+<!--SHOT:32-settings-observability|Settings → Observability: the OTLP endpoint and the optional pk:sk pair. The doctor’s OTLP line probes the endpoint for real — an empty valid batch — so a green light means a run’s spans will land.-->
 
 <h2 id="ch-config-env">Environment-only variables</h2>
 <p>Everything that used to live only in the environment has graduated to a settings
