@@ -1,57 +1,177 @@
-# spectroscope — the agent orchestrator you can watch
+<p align="center">
+  <a href="https://spectroscope.ai">
+    <img src="docs/brand/hero-banner.png" alt="spectroscope, agent orchestrator. spawn in five lines. watch every line." width="960">
+  </a>
+</p>
 
-One Java core drives every face: a terminal REPL, headless runs, a Spring web
-UI, an Electron desktop shell, an MCP server, and a fleet orchestrator. Every
-run is a stream of JSONL `RunEvent`s, the same wire format on every face, so
-anything the agent does can be watched live, stored, and replayed. spectroscope
-began as the reference harness of a build-an-agent-harness workshop and grew
-into its own product.
+<p align="center">
+  <em>the agent orchestrator you can watch. every event is like a spectral line, every agent a lane on the screen.</em>
+</p>
 
-**Architecture docs (with Mermaid):** [`docs/`](docs/) —
-[ARCHITECTURE.md](docs/ARCHITECTURE.md) (core, providers, launcher, desktop) and
-[WEB-UI.md](docs/WEB-UI.md) (state pipeline, design system, Lab).
-**User guide:** [docs/USER-GUIDE.html](docs/USER-GUIDE.html) (dark) /
-[docs/USER-GUIDE-LIGHT.html](docs/USER-GUIDE-LIGHT.html) — 120 pages, also as
-PDF next to each.
+<p align="center">
+  <a href="https://central.sonatype.com/artifact/dev.spectroscope/spectro-core"><img src="https://img.shields.io/maven-central/v/dev.spectroscope/spectro-core?label=maven%20central&color=CE9440" alt="maven central"></a>
+  <a href="https://github.com/spectroscope/spectroscope/releases"><img src="https://img.shields.io/github/v/release/spectroscope/spectroscope?label=release&color=2DD4A7" alt="github release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2CB1C4" alt="license MIT"></a>
+  <a href="https://github.com/spectroscope/spectroscope/releases/latest"><img src="https://img.shields.io/badge/macOS%20app-signed%20%2B%20notarized-C05A4C" alt="macOS app signed and notarized"></a>
+  <img src="https://img.shields.io/badge/java-21%2B-5C5142" alt="java 21+">
+</p>
 
-## Run it
+<p align="center">
+  <a href="https://spectroscope.ai">website</a> ·
+  <a href="https://spectroscope.ai/guide/">user guide</a> ·
+  <a href="https://spectroscope.dev">dev docs</a> ·
+  <a href="https://gallery.spectroscope.ai">gallery</a> ·
+  <a href="https://github.com/spectroscope/spectroscope/releases">releases</a> ·
+  <a href="release-notes/">release notes</a>
+</p>
 
-The `./spectro` launcher is the easy entry — it resolves a JDK 21+ for you (so it
-works even when your default `java` is older), loads the gitignored `./.env`, and
-dispatches the faces:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/20-spectrum-brand.png">
+  <img src="docs/guide-assets/shots-light/20-spectrum-brand.png" alt="the spectrum tab: four agents reviewing a pull request in parallel, each one a lane of colored event ticks">
+</picture>
+<p align="center"><sub><b>the spectrum</b> · four agents review a pull request in parallel; every event is a tick on its agent's lane</sub></p>
 
-```bash
-./spectro repl        # terminal REPL      ./spectro web       # web UI → :8080
-./spectro run -p "…"  # headless run       ./spectro desktop   # Electron desktop app
-./spectro doctor      # environment check  ./spectro tour      # guided feature tour
+## watch deeper
+
+spectroscope is a JVM agent harness and fleet orchestrator. One Java core drives
+every face: a terminal REPL, headless runs, a Spring Boot web UI, a signed macOS
+desktop app, an MCP example server, and a fleet of agents on a shared bus.
+
+Everything an agent does lands in one stream of typed JSONL `RunEvent`s, the
+same wire format on every face. The UI reads that stream the way a spectroscope
+reads light: watch it live, store it as plain files, replay it step by step,
+lens it for reasoning and timing, and answer permission gates while the run
+waits. There is no separate telemetry stack to deploy; the session file is the
+record.
+
+spectroscope began as the reference harness of a build-an-agent-harness
+workshop and grew into its own product.
+
+## five lines to an agent
+
+```java
+var agent = Spectro.agent()
+    .model(Anthropic.opus())
+    .tools(Tools.readFile(), Tools.runCommand())
+    .workspace(Path.of("/tmp/scratch"));
+
+for (RunEvent event : agent.run("Write hello.py and run it")) {
+    System.out.println(event);   // the stream IS the observability
+}
 ```
 
-It also knows `cron` (scheduler), `sessions` (list stored runs), `resume <id>`,
-and `mcp-notes` (build the bundled MCP example server). Raw Gradle still works
-if you prefer (needs a JDK 21+ as `JAVA_HOME`):
+The same style scales to a fleet: `Spectro.panel()` runs several lanes as full
+agents on a shared bus and hands you one merged event stream. Both artifacts
+are on Maven Central:
+
+```kotlin
+implementation("dev.spectroscope:spectro-core:0.3.0")
+implementation("dev.spectroscope:spectro-orchestrator:0.3.0")   // fleets
+```
+
+## the tour
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/21-trace-lens-brand.png">
+        <img src="docs/guide-assets/shots-light/21-trace-lens-brand.png" alt="the trace tab with the reasoning lens open">
+      </picture>
+      <br><sub><b>the trace</b> · every frame with its causal chain, a reasoning lens, and a replay scrubber</sub>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/23-permission-dialog.png">
+        <img src="docs/guide-assets/shots-light/23-permission-dialog.png" alt="a run paused at the permission gate">
+      </picture>
+      <br><sub><b>the gate</b> · writes and commands wait for allow or deny; every decision lands in the stream</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/27-fleet-canvas.png">
+        <img src="docs/guide-assets/shots-light/27-fleet-canvas.png" alt="the fleet canvas with spawn edges between agent nodes">
+      </picture>
+      <br><sub><b>the fleet canvas</b> · spawn edges and per-node spectral lines, live from the bus</sub>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/28-fleet-machine-room.png">
+        <img src="docs/guide-assets/shots-light/28-fleet-machine-room.png" alt="the machine room: a composed system diagram of a running fleet">
+      </picture>
+      <br><sub><b>the machine room</b> · a running fleet as one composed system diagram, scrubbable in time</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/22-thinking-live.png">
+        <img src="docs/guide-assets/shots-light/22-thinking-live.png" alt="chat with the model's thinking streaming live">
+      </picture>
+      <br><sub><b>thinking, live</b> · the model's self-report streams next to what it then did</sub>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/30-text-explain.png">
+        <img src="docs/guide-assets/shots-light/30-text-explain.png" alt="the text feed with the explain panel open">
+      </picture>
+      <br><sub><b>explain</b> · an LLM reading of the whole run, honestly labeled as a reading</sub>
+    </td>
+  </tr>
+</table>
+
+More in the [gallery](https://gallery.spectroscope.ai) and the
+[user guide](https://spectroscope.ai/guide/), both in light and dark.
+
+## run it
+
+Grab a [release](https://github.com/spectroscope/spectroscope/releases): the
+desktop run kit for macOS (arm64, Developer ID signed and notarized, bundles
+its own JRE, no system Java needed), the CLI zip, the server jar, or the
+mcp-notes zip. Or run from source with the `./spectro`
+launcher, which resolves a JDK 21+ for you and loads the gitignored `./.env`:
 
 ```bash
-./gradlew build                                # everything + all tests
-./gradlew :spectro-cli:run -q --console=plain    # the terminal face (REPL)
-./gradlew :spectro-server:bootRun                # the web face → http://127.0.0.1:8080
+./spectro web         # web UI → http://127.0.0.1:8080
+./spectro repl        # terminal REPL
+./spectro run -p "…"  # headless run
+./spectro desktop     # Electron desktop app
+./spectro doctor      # environment check
+./spectro tour        # guided feature tour
+```
+
+It also knows `cron`, `sessions`, `resume <id>`, and `mcp-notes`. Raw Gradle
+works too (JDK 21+ as `JAVA_HOME`):
+
+```bash
+./gradlew build                                  # everything + all tests
+./gradlew :spectro-server:bootRun                # the web face
 (cd spectro-web && npm install && npm run build) # rebuild the UI into the server jar
 ```
 
-Note: the web build writes into `spectro-server/src/main/resources/static/`,
-where the committed bundle lives, so rebuilding it dirties tracked files by
-design (one jar serves the UI). Web development wants Node 20+.
+The web build writes into `spectro-server/src/main/resources/static/`, where
+the committed bundle lives, so rebuilding it dirties tracked files by design.
+Web development wants Node 20+.
 
-Headless and scheduling:
+## observability, built in
 
-```bash
-./gradlew :spectro-cli:run -q --console=plain --args="run -p 'Say OK.' --json"
-./gradlew :spectro-cli:run -q --console=plain --args="cron list"
-./gradlew :spectro-cli:run -q --console=plain --args="doctor"
-```
+The core has a tracing seam, and two sinks ship with it: the JSONL session
+file (always on, the source of truth) and an **OTLP exporter** that maps
+sessions to GenAI-semconv spans. Point it at Langfuse, Jaeger, or any OTLP
+endpoint under settings, observability; `spectro doctor` probes the endpoint
+with an empty batch and tells you whether it answers. Details in
+[docs/OBSERVABILITY.md](docs/OBSERVABILITY.md).
 
-## Modules
+## how it is built
 
-| Module | What it is |
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/diagrams/00-one-core-five-faces.svg">
+  <img src="docs/diagrams/light/00-one-core-five-faces.svg" alt="architecture overview: one core, five faces">
+</picture>
+
+| module | what it is |
 |---|---|
 | `spectro-core` | the agent loop, providers, tools, permission gate, sessions, tracing seam |
 | `spectro-cli` | terminal face: REPL, headless runs, doctor, tour, scheduler |
@@ -61,52 +181,59 @@ Headless and scheduling:
 | `spectro-mcp-notes` | bundled example MCP server (notes search/add over stdio) |
 | `spectro-orchestrator` | the fleet: lanes as full agents on a shared bus, one merged stream |
 
-## What ships
+Runs on Spring and almost nothing else. Sixteen hand-built architecture
+diagrams live in [docs/diagrams/](docs/diagrams/), each in both themes;
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+[docs/WEB-UI.md](docs/WEB-UI.md) go deep.
 
-| Feature | What it does |
-|---|---|
-| **Settings hierarchy** | `defaults < env (SPECTRO_*) < ~/.spectro/settings.json (user; config.json read beneath it) < <launch-dir>/.spectro/settings.json (deprecated) < <workspace>/.spectro/settings.json (project) < <workspace>/.spectro/settings.local.json (local, gitignored) < CLI flags` — env is the BASE, any settings file outranks it; `spectro doctor` names every shadowed `SPECTRO_*` var. The project file travels with the repo — team conventions become checked-in settings; absolute machine paths (a workspace pin, MCP command paths) belong in the user or local file instead. See [`.spectro/settings.json.example`](.spectro/settings.json.example) for the shape, and `GET`/`PUT /api/settings` for the read/write API. Workspace-supplied config is *executed*, not just read (`mcpServers` spawns processes, `hooks` runs shell commands, a permissive `autoApprove`/`permissionMode` can auto-allow gates) — review a foreign repo's `.spectro/` before pinning it as your workspace. |
-| **Permission allowlist** | `"autoApprove": ["write_file", "run_command:git status*"]` in any settings layer. Matched requests skip the y/N question; the decision still lands in the stream as a `permission_decision` event (auditable). |
-| **Slash commands** | Inside the REPL: `/help`, `/cost`, `/model`, `/sessions`, `/compact` (force a context compaction now), `/clear` (fresh agent + fresh session file), `/exit` — plus `/skills`, `/mcp`, `/voice`. |
-| **`spectro doctor`** | Environment check: Java version, config layers, provider reachability (Anthropic key / Ollama version probe / OpenAI-compatible probe), sessions dir writable, `jobs.json` valid. |
-| **Third provider** | `"provider": "openai"` — any OpenAI-compatible server (LM Studio, llama.cpp, vLLM) over SSE streaming with fragmented tool-call assembly. Same `LlmProvider` interface, zero changes to the agent loop. |
-| **`Agent.compactNow()`** | The additive core hook behind `/compact`. |
-| **Image generation** | `generate_image` tool behind its own `ImageProvider` port — Gemini (`gemini-2.5-flash-image`) or OpenAI (`gpt-image-1`), switchable live via the web UI dropdown or `"imageProvider"`/`SPECTRO_IMAGE_PROVIDER`. Images land content-addressed under `~/.spectro/images/`, the additive `image_generated` event feeds the gallery panel. Needs `GEMINI_API_KEY` or `OPENAI_API_KEY`. |
-| **Skill engine** | `SKILL.md` packages under `~/.spectro/skills/` and `<project>/.spectro/skills/` (project wins). The catalog rides in the system prompt; bodies load on demand through the `use_skill` tool. Four examples ship in `.spectro/skills/`: `brainstorming`, `test-driven-development`, `verification`, `writing-plans`. `/skills` lists them. |
-| **In-app provider switch** | The header connection chip is a picker: switch the LLM backend (anthropic / ollama / openai) and its model mid-session. A `SwitchableProvider` swaps the delegate behind the once-built agent, so the change applies on the next prompt with history intact — no new event type. See [docs/ARCHITECTURE.md §2](docs/ARCHITECTURE.md#2-the-provider-port-and-the-runtime-switch). |
-| **Design switcher** | A settings drawer (gear) re-skins the whole UI between the three brand designs — spectro dark (espresso, default), spectro bright (paper), spectro white — via `[data-design]` token overrides, with togglable scroll + particle effects and draft→save/revert. See [docs/WEB-UI.md](docs/WEB-UI.md). |
-| **Lab (step-through replay)** | The lab tab: functional chat + the Flow map + the JSONL strip, all rendering the same *stepped* state. Events queue behind a client-side dam; step through them one by one (or open the dam), live or on an archived replay. See [docs/WEB-UI.md](docs/WEB-UI.md). |
-| **`./spectro` launcher** | One command per face (`repl`/`run`/`cron`/`sessions`/`resume`/`doctor`/`tour`/`web`/`desktop`/`mcp-notes`). Resolves a JDK 21+ automatically, loads `./.env` for every face, and (for `desktop`) builds the boot jar, stops any stale instance, and clears the Electron quarantine flag on first install. |
-| **Real tools** | `edit_file` (exact-string replace, permission-gated), `grep` + `glob` (pure-Java sandboxed search, read-only, also granted to explore subagents), `web_fetch` (URL → readable text over an injectable HTTP seam, permission-gated). All sandboxed, never-throw, no new event type. |
-| **Web search + JS browsing** | Tiered `web_search`: the Tavily API when `TAVILY_API_KEY` is set, else the keyless DuckDuckGo HTML fallback — the ACTIVE tier is named in the tool description, every result header and `spectro doctor` (a DuckDuckGo bot-check answers a readable error, never a silent empty list). `browse_page` renders JS pages through the SYSTEM Chrome headless (`--dump-dom` + virtual-time budget; argv exec, never a shell; `SPECTRO_CHROME` overrides discovery, honest hint when no browser exists). Both permission-gated network egress; `browse_page` is url-scoped in the allowlist like `web_fetch`. |
-| **Resilient loop** | Transient retry on 429/5xx/IO via a `RetryingProvider` decorator (pre-first-event only, cancel-aware; `maxRetries` / `SPECTRO_MAX_RETRIES`, default 2). Anthropic prompt caching on system + tools + the last stable message (`promptCaching` / `SPECTRO_PROMPT_CACHING`, default on; cache tokens folded back into the compaction trigger). spectroscope owns retry (SDK `maxRetries(0)`). |
-| **Agent plan** | Permission-free `update_plan` tool (main-agent only) publishes the additive `plan` event — a latest-wins TODO list surfaced in the RightPanel **Plan** tab (open / running … / done) and pretty-printed in the CLI. |
-| **Tool hooks** | A `hooks` block in the settings hierarchy (whole-block merge like `mcpServers`): `pre_tool_use` runs before the permission gate and can BLOCK (exit ≠ 0 or `{"decision":"block"}` JSON); `post_tool_use` is advisory. Config-only, fail-open timeout, tool metadata via `SPECTRO_TOOL_NAME`/`_INPUT`/`_RESULT`. `spectro doctor` reports the count. |
-| **"Always allow"** | The web permission dialog gains a session "always allow (session)" checkbox and a gated permanent option that appends a **prefix-scoped** rule (e.g. `run_command:git*`) into `.spectro/settings.json` — the same `autoApprove` list the CLI reads. `Allowlist` lives in `spectro-core`, shared by both faces. |
-| **Fleet orchestrator** | `Spectro.panel()` runs several lanes as full core agents on a shared bus (`spectro-orchestrator`): stamped envelopes, causal chain, one merged event stream — the web UI's Spectrum tab folds the fleet into lanes. |
+## providers
 
-## Provider matrix
+Six chat providers, switchable mid-session from the header picker with history
+intact:
 
-Switching lives in the settings hierarchy — quickest way, as long as no settings
-file already configures a provider: three lines in the gitignored `./.env`
-(`SPECTRO_PROVIDER=ollama`, `SPECTRO_MODEL=qwen3`,
-`SPECTRO_BASE_URL=http://localhost:11434`). Env is the BASE and any settings
-file outranks it — `spectro doctor` tells you if one of yours is currently
-shadowed; flags still win over everything. See `.env.example`.
+| provider | runs | needs |
+|---|---|---|
+| `anthropic` | cloud | `ANTHROPIC_API_KEY` |
+| `ollama` | local | a running Ollama |
+| `openai` | api.openai.com or any compatible server | `OPENAI_API_KEY` (optional for local servers) |
+| `lmstudio` | local | LM Studio's server |
+| `openrouter` | cloud | `OPENROUTER_API_KEY` |
+| `gemini` | cloud | `GEMINI_API_KEY` |
 
-| provider | transport | needs | default model |
-|---|---|---|---|
-| `anthropic` | official SDK, SSE | `ANTHROPIC_API_KEY` | `claude-opus-4-8` |
-| `ollama` | Spring `RestClient`, NDJSON + declarative `@GetExchange` probe | local Ollama | `qwen3` |
-| `openai` | Spring `RestClient`, SSE (`data:` lines) | any compatible server (`OPENAI_API_KEY` optional) | the loaded local model |
+Keys are set once, in the UI (masked, written to `~/.spectro/.env` with mode
+0600) or via CLI `set-key`; one Gemini or OpenAI key serves chat and the
+`generate_image` tool alike. Config layers from env up to per-workspace
+settings files; `spectro doctor` names anything shadowed.
 
-## Tests
+Beyond that, the tool belt covers files, shell, sandboxed grep and glob, web
+fetch, tiered web search, JS-capable page browsing through the system Chrome,
+image generation, subagents, skills, and MCP servers, all behind the same
+permission gate.
 
-`./gradlew build` runs the whole Java suite — 548 tests at last count (core:
-events round-trip, agent loop against fake providers, sessions/resume,
-compaction, subagents incl. parallelism and timeout, scheduler, allowlist, all
-three provider wire mappings against scripted local servers; server: REST + a
-full WebSocket round-trip against an Ollama mock; orchestrator: envelopes,
-panel, tracing seam). The web UI has its own suite: `cd spectro-web && npm
-test` (vitest, 310 tests). None of them needs an API key — the one live
-contract check self-skips unless `ANTHROPIC_API_KEY` is set.
+## tested
+
+The v0.3.0 gate: 747 JUnit tests and 501 vitest tests, all green before the
+release cut. The suites run without any API key; provider wire mappings
+are tested against scripted local servers, and the one live contract check
+skips itself unless a key is set. Concurrency suites (bus, hub, fleet) pass
+three consecutive runs before a release.
+
+## docs
+
+- [user guide](https://spectroscope.ai/guide/), 120+ pages, HTML and PDF, light and dark editions, real captured screens
+- [dev portal](https://spectroscope.dev) with a generated, searchable reference extracted from this source tree
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WEB-UI.md](docs/WEB-UI.md), [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)
+- [release-notes/](release-notes/) for what each version brought
+
+Found a bug or a rough edge? Open an issue; the project is young and moves
+fast.
+
+## license and credit
+
+MIT, copyright Christopher Ezell. Use it, fork it, ship it, sell with it; the
+one thing the license asks is that the copyright notice travels with copies of
+the code.
+
+If spectroscope shows up in your product or your research, a mention with a
+link back is very welcome. GitHub reads [CITATION.cff](CITATION.cff),
+so "cite this repository" in the sidebar gives you a ready-made reference.
