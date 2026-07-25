@@ -48,6 +48,7 @@ describe("designPrefs store", () => {
       particles: false,
       reasoningLens: false,
       timelineLens: true,
+      otelRows: false,
     });
     expect(isDirty()).toBe(true);
   });
@@ -72,6 +73,7 @@ describe("designPrefs store", () => {
       particles: true,
       reasoningLens: false,
       timelineLens: true,
+      otelRows: false,
     });
   });
 
@@ -104,6 +106,17 @@ describe("designPrefs store", () => {
     applyAndSaveDesign({ timelineLens: false });
     expect(JSON.parse(store.get(KEY) ?? "{}").timelineLens).toBe(false);
     expect(readSaved().timelineLens).toBe(false);
+  });
+
+  it("otel rows default OFF and an explicit on sticks (card 86)", () => {
+    // The otlp_export mirror frames sit in the trace ring either way; the
+    // chip only reveals them — off out of the box, a saved on survives.
+    expect(DEFAULT_PREFS.otelRows).toBe(false);
+    expect(parsePrefs(JSON.stringify({ design: "paper" })).otelRows).toBe(false);
+    expect(parsePrefs(JSON.stringify({ otelRows: true })).otelRows).toBe(true);
+    applyAndSaveDesign({ otelRows: true });
+    expect(JSON.parse(store.get(KEY) ?? "{}").otelRows).toBe(true);
+    expect(readSaved().otelRows).toBe(true);
   });
 
   it("folds a retired skin id from older storage back to the default", () => {

@@ -80,6 +80,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.lens": { de: "reasoning lens", en: "reasoning lens" },
   "trace.lensTitle": { de: "Denk-Events hervorheben, alles andere abblenden. Tool-Calls und Gates bleiben als Anker lesbar.", en: "Foreground thinking events, dim the rest. Tool calls and gates stay readable as anchors." },
   "trace.timeline": { de: "timeline", en: "timeline" },
+  "trace.otel": { de: "otel", en: "otel" },
+  "trace.otelTitle": { de: "OTel-Exporte zeigen — jedes Paket, das an den konfigurierten OTLP-Endpoint (z. B. Langfuse) geht", en: "Show OTel exports — every batch posted to the configured OTLP endpoint (e.g. Langfuse)" },
   "trace.timelineTitle": { de: "Jede Zeile trägt ihre Wartezeit als Balken (log-skaliert, damit ein Ausreißer den Rest nicht plättet) — wohin die Zeit ging, auf einen Blick. Δt bleibt die lineare Wahrheit.", en: "Each row wears its wait as a bar (log-scaled so one outlier cannot flatten the rest) — where the time went, at a glance. Δt stays the linear truth." },
   "trace.lensNote": { de: "Reasoning ist der Selbstbericht des Modells, aufgezeichnet neben dem, was es dann tat. Kein Fenster in die Gewichte.", en: "Reasoning is the model's self-report, recorded next to what it then did. Not a window into the weights." },
   "trace.lensNone": { de: "Keine Reasoning-Events in diesem Stream. Entweder ist die Aufzeichnung aus (Thinking-Schalter) oder das Modell hat keine gesendet.", en: "No reasoning events in this stream. Either capture is off (thinking toggle) or the model sent none." },

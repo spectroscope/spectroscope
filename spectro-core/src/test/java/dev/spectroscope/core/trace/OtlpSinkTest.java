@@ -91,6 +91,54 @@ class OtlpSinkTest {
     }
 
     @Test
+    void anExportListenerSeesTheOutcomeAndNeverBreaksTheExport() throws Exception {
+        // Card 86: the trace tab mirrors each export as a socket frame. The
+        // sink reports endpoint, span count, byte size and ok to a registered
+        // listener — and a THROWING listener must never break the exports.
+        List<OtlpSink.ExportReport> reports = new ArrayList<>();
+        CountDownLatch reported = new CountDownLatch(2);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-l", body -> {
+        }).withListener(report -> {
+            reports.add(report);
+            reported.countDown();
+            throw new RuntimeException("mirror broke");
+        });
+
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"x\",\"provider\":\"p\",\"ts\":1}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":2}"));
+        // The throwing listener must not have poisoned the machinery: a second
+        // run exports (and reports) again.
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r2\",\"agentId\":\"main\",\"prompt\":\"y\",\"provider\":\"p\",\"ts\":3}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r2\",\"stopReason\":\"end_turn\",\"ts\":4}"));
+
+        assertTrue(reported.await(5, TimeUnit.SECONDS), "both exports report");
+        OtlpSink.ExportReport first = reports.get(0);
+        assertTrue(first.ok());
+        assertEquals("http://x/api/public/otel", first.endpoint());
+        assertTrue(first.spans() >= 1, "span count rides along: " + first.spans());
+        assertTrue(first.bytes() > 0, "payload size rides along");
+        assertTrue(first.message() == null, "no message on success");
+        assertTrue(first.toString().indexOf("pk:sk") < 0, "auth never in the report");
+    }
+
+    @Test
+    void aFailedExportReportsNotOkWithTheMessage() throws Exception {
+        List<OtlpSink.ExportReport> reports = new ArrayList<>();
+        CountDownLatch reported = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://down/api", null, "sess-f", body -> {
+            throw new RuntimeException("HTTP 401 unauthorized");
+        }).withListener(report -> {
+            reports.add(report);
+            reported.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"x\",\"provider\":\"p\",\"ts\":1}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":2}"));
+        assertTrue(reported.await(5, TimeUnit.SECONDS));
+        assertTrue(!reports.get(0).ok());
+        assertTrue(String.valueOf(reports.get(0).message()).contains("401"));
+    }
+
+    @Test
     void aFailingPosterNeverThrowsIntoTheRun() throws Exception {
         AtomicInteger attempts = new AtomicInteger();
         CountDownLatch tried = new CountDownLatch(1);

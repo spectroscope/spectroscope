@@ -20,6 +20,9 @@ export interface DesignPrefs {
   reasoningLens: boolean;
   /** Trace view: the timeline lens — proportional wait bars per row. */
   timelineLens: boolean;
+  /** Trace view: show the otlp_export mirror frames (card 86) — default OFF;
+   *  the rows sit in the trace ring either way, the toggle only reveals them. */
+  otelRows: boolean;
 }
 
 /** Catalog for the picker: swatch colors + whether the design ships a particle
@@ -71,6 +74,7 @@ export const DEFAULT_PREFS: DesignPrefs = {
   // Card 69 (owner): timing bars are on out of the box — subtle enough to
   // read well idle, and the trace-toolbar chip switches them off persistently.
   timelineLens: true,
+  otelRows: false,
 };
 
 // Side-effect seams — real localStorage + DOM by default, swappable in tests
@@ -102,6 +106,7 @@ export function parsePrefs(raw: string | null): DesignPrefs {
       particles: typeof p.particles === "boolean" ? p.particles : DEFAULT_PREFS.particles,
       reasoningLens: typeof p.reasoningLens === "boolean" ? p.reasoningLens : DEFAULT_PREFS.reasoningLens,
       timelineLens: typeof p.timelineLens === "boolean" ? p.timelineLens : DEFAULT_PREFS.timelineLens,
+      otelRows: typeof p.otelRows === "boolean" ? p.otelRows : DEFAULT_PREFS.otelRows,
     };
   } catch {
     return DEFAULT_PREFS;
@@ -167,7 +172,8 @@ export function isDirty(): boolean {
     draft.scroll !== saved.scroll ||
     draft.particles !== saved.particles ||
     draft.reasoningLens !== saved.reasoningLens ||
-    draft.timelineLens !== saved.timelineLens
+    draft.timelineLens !== saved.timelineLens ||
+    draft.otelRows !== saved.otelRows
   );
 }
 

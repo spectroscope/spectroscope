@@ -403,6 +403,9 @@ export function TraceView(props: {
   // Timeline lens (langfuse P1.3): same persistence pattern as the reasoning
   // lens; the two compose (dimmed rows still wear their wait bars).
   const tlOn = prefs.timelineLens;
+  // OTel mirror rows (card 86): default off — the exports sit in the ring
+  // either way, the chip only reveals them.
+  const otelOn = prefs.otelRows;
   // Replay scrubber: cap the visible stream at one frame (null = the live
   // end). Scrubbing back reads the run exactly as far as it had happened.
   const [capSeq, setCapSeq] = useState<number | null>(null);
@@ -479,13 +482,14 @@ export function TraceView(props: {
     const q = query.trim().toLowerCase();
     return allEntries.filter((e) => {
       if (capSeq !== null && e.seq > capSeq) return false;
+      if (e.type === "otlp_export" && !otelOn) return false;
       if (agentFilter !== null && e.agentId !== undefined && e.agentId !== agentFilter) return false;
       if (llmDir !== "all" && llmDirection(e.type) !== llmDir) return false;
       if (!active.has(categoryOf(e.type))) return false;
       if (q === "") return true;
       return `${e.type} ${e.agentId ?? ""} ${compactJson(e.payload)}`.toLowerCase().includes(q);
     });
-  }, [allEntries, query, llmDir, active, agentFilter, capSeq]);
+  }, [allEntries, query, llmDir, active, agentFilter, capSeq, otelOn]);
 
   // Timeline lens: waits normalized over the VISIBLE rows (filters change what
   // "the largest gap" means — the bars answer the question for what you see).
@@ -786,6 +790,17 @@ export function TraceView(props: {
           onClick={() => applyAndSaveDesign({ timelineLens: !tlOn })}
         >
           {t(lang, "trace.timeline")}
+        </button>
+        {/* OTel mirror rows (card 86): the exports going to the configured
+            OTLP endpoint (Langfuse), one frame per batch — default off. */}
+        <button
+          type="button"
+          className={`trace-lens mono${otelOn ? " trace-lens--on" : ""}`}
+          aria-pressed={otelOn}
+          title={t(lang, "trace.otelTitle")}
+          onClick={() => applyAndSaveDesign({ otelRows: !otelOn })}
+        >
+          {t(lang, "trace.otel")}
         </button>
         <button
           type="button"

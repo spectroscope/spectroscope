@@ -79,6 +79,18 @@ public final class OtlpSink implements TracingPort {
                 .httpPost("{\"resourceSpans\":[]}");
     }
 
+    /** One export outcome for UI mirrors (card 86) — never carries auth.
+     *  message is null on success, the failure text otherwise. */
+    public record ExportReport(String endpoint, int spans, int bytes,
+                               boolean ok, String message, long ts) {}
+
+    /** Registered by the server face to mirror each export as a socket frame. */
+    public interface ExportListener {
+        void onExport(ExportReport report);
+    }
+
+    private volatile ExportListener listener;
+
     private final String endpoint;
     private final String authHeader;   // full header value or null
     private final String sessionId;
@@ -117,6 +129,14 @@ public final class OtlpSink implements TracingPort {
         this.authHeader = basicAuthHeader(basicAuth);
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
         this.poster = poster != null ? poster : this::httpPost;
+    }
+
+    /** Registers the one export mirror (card 86) — fluent, returns this.
+     *  @param next the listener the exports report to
+     *  @return this sink */
+    public OtlpSink withListener(ExportListener next) {
+        this.listener = next;
+        return this;
     }
 
     /** The Basic header for a {@code pk:sk} pair; null in, null out.
@@ -178,22 +198,42 @@ public final class OtlpSink implements TracingPort {
      *  is copied on THIS thread before the VT starts, so the VT owns immutable
      *  state; a failed post warns once and never touches the run. */
     private void exportSnapshot() {
-        String body = buildPayload(new ArrayList<>(buffer));
+        Payload payload = buildPayload(new ArrayList<>(buffer));
         Thread.startVirtualThread(() -> {
             try {
-                poster.post(body);
+                poster.post(payload.body());
+                notifyExport(payload, true, null);
             } catch (Exception failed) {
                 if (warned.compareAndSet(false, true)) {
                     log.warn("otlp: export to {} failed ({}) — runs continue, further "
                             + "failures stay quiet", endpoint, failed.getMessage());
                 }
+                notifyExport(payload, false, failed.getMessage());
             }
         });
     }
 
+    /** Tells the registered mirror (if any) — a mirror must never break the export. */
+    private void notifyExport(Payload payload, boolean ok, String message) {
+        ExportListener current = this.listener;
+        if (current == null) {
+            return;
+        }
+        try {
+            current.onExport(new ExportReport(endpoint, payload.spans(),
+                    payload.body().getBytes(StandardCharsets.UTF_8).length,
+                    ok, message, System.currentTimeMillis()));
+        } catch (RuntimeException never) {
+            log.debug("otlp export listener failed (ignored)", never);
+        }
+    }
+
+    /** A built batch + its span count — the mirror wants the number. */
+    private record Payload(String body, int spans) {}
+
     // ---- the fold: the whole session so far -> spans (deterministic ids) ----
 
-    private String buildPayload(List<RunEvent> events) {
+    private Payload buildPayload(List<RunEvent> events) {
         ObjectNode root = JSON.createObjectNode();
         ArrayNode resourceSpans = root.putArray("resourceSpans");
         ObjectNode rs = resourceSpans.addObject();
@@ -343,7 +383,7 @@ public final class OtlpSink implements TracingPort {
                     provider, aid, t1);
         }
 
-        return root.toString();
+        return new Payload(root.toString(), spans.size());
     }
 
     private void closeTurn(ArrayNode spans, String traceId, Map<String, String> agentSpan,

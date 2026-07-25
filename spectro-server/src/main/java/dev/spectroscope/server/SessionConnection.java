@@ -252,7 +252,8 @@ public final class SessionConnection {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
             tracing = new TracingPorts().require(new JsonlSink(store));
-            OtlpSink.fromConfig(activeConfig.get(), store.id()).ifPresent(tracing::register);
+            OtlpSink.fromConfig(activeConfig.get(), store.id())
+                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
@@ -580,7 +581,8 @@ public final class SessionConnection {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
             tracing = new TracingPorts().require(new JsonlSink(store));
-            OtlpSink.fromConfig(activeConfig.get(), store.id()).ifPresent(tracing::register);
+            OtlpSink.fromConfig(activeConfig.get(), store.id())
+                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
         }
     }
 
@@ -924,6 +926,34 @@ public final class SessionConnection {
             socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
         } catch (Exception ignored) {
             // A dead socket just misses the hint — the next frame retries nothing.
+        }
+    }
+
+    /**
+     * Mirrors one OTLP export outcome as a socket-only UI frame (card 86) —
+     * never appended to the JSONL, never carrying auth. The trace tab shows
+     * the frame behind its default-off "otel" toggle; export failures also
+     * stay visible in the doctor line as before. Runs on the sink's export
+     * virtual thread and holds the connection monitor like every send.
+     */
+    private synchronized void sendOtlpExport(OtlpSink.ExportReport report) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("type", "otlp_export");
+            payload.put("endpoint", report.endpoint());
+            payload.put("spans", report.spans());
+            payload.put("bytes", report.bytes());
+            payload.put("ok", report.ok());
+            if (report.message() != null) {
+                payload.put("message", report.message());
+            }
+            payload.put("ts", report.ts());
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+        } catch (Exception ignored) {
+            // A dead socket just misses the mirror — the export itself already ran.
         }
     }
 
