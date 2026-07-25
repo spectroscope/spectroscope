@@ -198,6 +198,47 @@
 
 /* ---------- Doctor page ---------- */
 .doctor-page { max-width: 34rem; }
+
+/* Live server log (card 85): mono pane under the checks, tail + copy in the
+   head row; WARN/ERROR lines tint via the status colors, never color alone
+   (the level word itself is in the line). */
+.log-pane-section { margin: 0 0 var(--sp-4); }
+.log-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+.log-tail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: none;
+  padding: 2px var(--sp-2);
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.log-tail-toggle--on { color: var(--accent); }
+.log-copy { margin-left: auto; }
+.log-pane {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.log-line { display: inline; color: var(--text-dim); }
+.log-line.warn { color: var(--warn); }
+.log-line.error { color: var(--error); }
+.log-line.faint { color: var(--text-faint); }
 .doctor-page .settings-head { gap: var(--sp-3); }
 .doctor-page .settings-hint { text-align: right; }
 .doctor-lede { margin: 0 0 var(--sp-3); font-size: var(--fs-13); color: var(--text-dim); }
