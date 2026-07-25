@@ -40,16 +40,16 @@ export const DESIGNS: ReadonlyArray<{
 }> = [
   {
     id: "spectroscope",
-    label: "spectro dark",
-    sub: "espresso · amber line",
+    label: "spectro espresso",
+    sub: "dark · amber line",
     particles: true,
     bg: "#17120D",
     accent: "#CE9440",
   },
   {
     id: "paper",
-    label: "spectro bright",
-    sub: "paper · logo blue",
+    label: "spectro paper",
+    sub: "light · logo blue",
     particles: true,
     bg: "#F6F4EE",
     accent: "#2E7EA6",

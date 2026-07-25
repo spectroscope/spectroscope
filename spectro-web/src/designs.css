@@ -2,8 +2,8 @@
    existing token names (tokens.css) — because the whole UI reads var(--token),
    flipping the attribute on <html> reskins everything in place, no reload.
    Since the phase-4 design transplant, :root IS the brand dark (espresso,
-   picker name "spectro dark") and [data-design="paper"] is the brand light
-   ("spectro bright") — both live in tokens.css. The one extra skin here is
+   picker name "spectro espresso") and [data-design="paper"] is the brand light
+   ("spectro paper") — both live in tokens.css. The one extra skin here is
    `still` ("spectro white"): a deliberately quiet all-white light theme.
    The seven retired skins (classic, nebula, nocturne, obsidian, staffwise,
    neon-riot, prisma — palettes from Fable_Designs_Pro) were removed on

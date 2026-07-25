@@ -77,8 +77,11 @@ export function SpectrumBand({
   events,
   t0,
   onFocusEvent,
+  tipBelow,
 }: {
   lane: Lane;
+  /** Open the tick preview BELOW the band — the top row would clip it. */
+  tipBelow?: boolean;
   /** The FULL event stream — a tick's `seq` indexes into it. */
   events: RunEvent[];
   /** Stream start (epoch ms) for the relative time on the popup. */
@@ -175,7 +178,7 @@ export function SpectrumBand({
         <>
           <span className="spectrum-scrub" style={{ left: anchorPos }} aria-hidden="true" />
           <div
-            className="spectrum-tip"
+            className={`spectrum-tip${tipBelow === true ? " spectrum-tip--below" : ""}`}
             style={{ left: anchorPos, transform: tipTransform }}
             role="tooltip"
             aria-live="polite"

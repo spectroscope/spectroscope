@@ -25,6 +25,7 @@ function LaneRow({
   t0,
   onOpen,
   onFocusEvent,
+  tipBelow,
 }: {
   lane: Lane;
   running: boolean;
@@ -32,6 +33,9 @@ function LaneRow({
   t0: number;
   onOpen: (id: string) => void;
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  /** The TOP row has no room above it — its tick preview opens downward
+   *  instead of being clipped by the toolbar (owner 2026-07-26). */
+  tipBelow?: boolean;
 }) {
   const lang = useLang();
   const live = running && lane.state === "working";
@@ -61,7 +65,7 @@ function LaneRow({
             ` · ${formatTokens(lane.inTokens)} in / ${formatTokens(lane.outTokens)} out`}
         </span>
       </button>
-      <SpectrumBand lane={lane} events={events} t0={t0} onFocusEvent={onFocusEvent} />
+      <SpectrumBand lane={lane} events={events} t0={t0} onFocusEvent={onFocusEvent} tipBelow={tipBelow} />
     </div>
   );
 }
@@ -108,7 +112,7 @@ export function SpectrumView(props: {
         </div>
       ) : (
         <div className="spectrum-lanes" role="list" aria-label={t(lang, "sp.lanesAria")}>
-          {model.lanes.map((lane) => (
+          {model.lanes.map((lane, laneIndex) => (
             <div key={lane.id} className="spectrum-lane-group">
               <LaneRow
                 lane={lane}
@@ -117,6 +121,7 @@ export function SpectrumView(props: {
                 t0={model.t0}
                 onOpen={props.onOpenTrace}
                 onFocusEvent={props.onFocusEvent}
+                tipBelow={laneIndex === 0}
               />
               {lane.thinking !== "" && (
                 <ThinkingDisclosure text={lane.thinking} active={running && lane.state === "working"} />
