@@ -8,12 +8,14 @@
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEventHandler } from "react";
 import { DISCLOSURE_LEVELS, setDisclosure, useDisclosure } from "../state/disclosure";
+import { CHAT_WIDTHS, setChatWidth, useChatWidth } from "../state/chatWidth";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 export function DisclosureMenu({ placement }: { placement: "up" | "down" }) {
   const lang = useLang();
   const level = useDisclosure();
+  const width = useChatWidth();
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -117,6 +119,33 @@ export function DisclosureMenu({ placement }: { placement: "up" | "down" }) {
                   <span className="wsg-mode-body">
                     <span className="wsg-mode-name mono">{l}</span>
                     <span className="wsg-mode-hint">{t(lang, `disc.${l}.hint`)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Owner 2026-07-25: the reading width lives in the same menu — how
+              wide the text column may run, not a forced width. */}
+          <div className="wsg-section">
+            <div className="wsg-section-head">
+              <span>{t(lang, "width.title")}</span>
+            </div>
+            <div className="wsg-modes" role="group" aria-label={t(lang, "width.title")}>
+              {CHAT_WIDTHS.map((w) => (
+                <div
+                  key={w}
+                  role="menuitemradio"
+                  aria-checked={width === w}
+                  className={`wsg-mode-row${width === w ? " wsg-mode-row--active" : ""}`}
+                  onClick={() => setChatWidth(w)}
+                >
+                  <span className="wsg-mode-marker" aria-hidden="true">
+                    {width === w ? "\u203A" : ""}
+                  </span>
+                  <span className="wsg-mode-body">
+                    <span className="wsg-mode-name mono">{t(lang, `width.${w}`)}</span>
+                    <span className="wsg-mode-hint">{t(lang, `width.${w}.hint`)}</span>
                   </span>
                 </div>
               ))}

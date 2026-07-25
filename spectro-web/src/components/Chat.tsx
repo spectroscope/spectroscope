@@ -24,6 +24,7 @@ import { composerButtons } from "./composerButtons";
 import type { QueuedMessage } from "../state/sendQueue";
 import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
+import { useChatWidth } from "../state/chatWidth";
 import { WorkspaceChooser } from "./WorkspaceChooser";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -71,6 +72,7 @@ export function Chat(props: {
 }) {
   const { state, liveView } = props;
   const lang = useLang();
+  const chatWidth = useChatWidth(); // the reading width, from the disclosure menu
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -246,7 +248,7 @@ export function Chat(props: {
   };
 
   return (
-    <main className="chat" {...attachments.dropHandlers}>
+    <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>
       {/* Card 78 #4: the disclosure-level menu, top-right corner of the chat
           (its twin sits in the composer row). Floats over the scroll area. */}
       <div className="chat-disc">

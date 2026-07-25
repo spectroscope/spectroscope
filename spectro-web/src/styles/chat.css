@@ -7,6 +7,10 @@
   min-height: 0;
   position: relative; /* anchors the floating disclosure menu (card 78 #4) */
 }
+/* The reading width, set in the disclosure menu (owner 2026-07-25). Raising
+   the local --content-max is enough: the history AND the composer both read
+   that token, so the column and its input stay one shape. */
+.chat--wide { --content-max: var(--content-max-wide); }
 
 /* Card 78 #4: the disclosure-level menu, floating top-right over the chat.
    Quiet until hovered — it must not compete with the messages. */
