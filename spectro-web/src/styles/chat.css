@@ -5,6 +5,35 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative; /* anchors the floating disclosure menu (card 78 #4) */
+}
+
+/* Card 78 #4: the disclosure-level menu, floating top-right over the chat.
+   Quiet until hovered — it must not compete with the messages. */
+.chat-disc {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-4);
+  z-index: var(--z-sticky);
+}
+.chat-disc .attach-button { color: var(--text-faint); }
+.chat-disc .attach-button:hover { color: var(--text); }
+/* The menu popover: compact. The composer twin sits at the FAR LEFT of its
+   row, so it left-aligns (the wsg-pop default right:0 would push it off the
+   window edge); the chat-corner instance opens DOWNWARD and right-aligned.
+   Compound selectors: workspace-gear.css loads after this file, so a bare
+   .disc-pop would lose the cascade to .wsg-pop — pinning BOTH top and bottom
+   and squeezing the popover to the anchor height (found live, card 78). */
+.wsg-pop.disc-pop {
+  width: 300px;
+  left: 0;
+  right: auto;
+}
+.wsg-pop.disc-pop--down {
+  bottom: auto;
+  top: calc(100% + 8px);
+  left: auto;
+  right: 0;
 }
 
 .chat-scroll {

@@ -27,7 +27,7 @@ export function WorkspaceChooser(props: {
   const opts: { key: Mode; label: string; hint: string }[] = [
     {
       key: "random",
-      label: de ? "wegwerf" : "random",
+      label: de ? "zufall" : "random",
       hint: de ? "frischer temp-ordner pro chat" : "a fresh temp folder per chat",
     },
     {

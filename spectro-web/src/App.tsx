@@ -35,6 +35,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
+import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
 import {
   openRightPanel,
   setActiveRightTab,
@@ -104,6 +105,17 @@ export function App() {
   // entered, feeding the tabs that fleet's events instead of the own session.
   const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>({ status: "connecting", retryAt: null });
+  // Queue-while-running (card 78 #3): messages submitted during a run wait
+  // here as chips and auto-send on run_end. Session-local — a new chat or a
+  // resume clears it with the fresh socket.
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  // Stop feedback (card 78 #2): true from the stop click until the root
+  // run_end flips running off — the button reads "stopping …" meanwhile.
+  const [stopRequested, setStopRequested] = useState(false);
+  // True from an accepted user_message until its run_start (or an error event)
+  // arrives — the drain's re-entry guard for the tiny accepted-but-not-started
+  // gap. A ref, not state: it flips inside the send path mid-commit.
+  const awaitingRunStart = useRef(false);
   const [connNonce, setConnNonce] = useState(0); // bumped by "New chat" to force a fresh socket session
   const [resumeId, setResumeId] = useState<string | null>(null); // non-null: the socket continues this stored session
   const [refreshToken, setRefreshToken] = useState(0);
@@ -216,6 +228,11 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    // A fresh socket is a fresh session — waiting chips, the drain latch and
+    // the stop feedback belong to the old one (card 78). Harmless on mount.
+    setQueue([]);
+    setStopRequested(false);
+    awaitingRunStart.current = false;
     const connection = connect({
       onEvents,
       resume: resumeId ?? undefined, // ?resume=<id>: the server reloads the JSONL history
@@ -239,6 +256,26 @@ export function App() {
     if (!running) setRefreshToken((n) => n + 1);
   }, [running]);
 
+  // Card 78: run transitions release the stop feedback and the drain latch.
+  useEffect(() => {
+    if (running) {
+      awaitingRunStart.current = false; // run_start arrived — the send gap is closed
+    } else {
+      setStopRequested(false); // run_end arrived (or nothing runs) — stop visibly took
+    }
+  }, [running]);
+  // An error event releases the latch too: a send the server refused (or a run
+  // that died before run_start) must not jam the queue until a reload. The
+  // latch is a ref (synchronous reads in the send path), so the release alone
+  // would not re-run the drain effect — the kick state makes it reactive
+  // (review find F2: a queued chip stalled until some unrelated dep changed).
+  const [drainKick, setDrainKick] = useState(0);
+  const errorTurns = live.turns.reduce((n, turn) => (turn.kind === "error" ? n + 1 : n), 0);
+  useEffect(() => {
+    awaitingRunStart.current = false;
+    setDrainKick((k) => k + 1);
+  }, [errorTurns]);
+
   // The ONE place client frames leave the app: every outgoing ClientMessage
   // is traced (dir "out") — but only when it actually hit the wire; send()
   // returns false while the socket is down and dropped frames never crossed.
@@ -253,21 +290,72 @@ export function App() {
   // the frame carries the bytes ({ mediaType, dataBase64 }); the
   // thumbnails are parked in the state and picked up by the run_start case —
   // the reducer builds the user bubble, so there is no local echo turn.
+  const sendNow = useCallback(
+    (text: string, attachments?: PendingAttachment[]): boolean => {
+      const sent = sendClient({
+        type: "user_message",
+        text,
+        ...(attachments !== undefined && attachments.length > 0
+          ? { attachments: attachments.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 })) }
+          : {}),
+      });
+      if (sent && attachments !== undefined && attachments.length > 0) {
+        const parked = attachments.map(({ name, mediaType, dataBase64 }) => ({
+          name,
+          mediaType,
+          dataBase64,
+        }));
+        setLive((s) => ({ ...s, outboxAttachments: parked }));
+      }
+      if (sent) {
+        // Latched until the server's run_start (or an error event) — the drain
+        // must not fire again in the accepted-but-not-yet-started gap.
+        awaitingRunStart.current = true;
+      }
+      return sent;
+    },
+    [sendClient],
+  );
+  // Queue-while-running (card 78 #3): the composer never locks. A submit
+  // during a run (or while the socket is down, or while a queued send is in
+  // flight) waits in the queue; the drain effect below sends it the moment
+  // the session is free. Order is preserved — the queue is the only waiting
+  // line, the direct path exists just to keep idle sends chip-flash-free.
   const send = (text: string, attachments?: PendingAttachment[]): void => {
-    const sent = sendClient({
-      type: "user_message",
-      text,
-      ...(attachments !== undefined && attachments.length > 0
-        ? { attachments: attachments.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 })) }
-        : {}),
-    });
-    if (sent && attachments !== undefined && attachments.length > 0) {
-      const parked = attachments.map(({ name, mediaType, dataBase64 }) => ({ name, mediaType, dataBase64 }));
-      setLive((s) => ({ ...s, outboxAttachments: parked }));
+    // queue.length in the guard: while chips wait, a new submit must join the
+    // line, never jump it (review find F2 — order stays submission order).
+    if (live.running || awaitingRunStart.current || conn.status !== "open" || queue.length > 0) {
+      setQueue((q) => enqueue(q, text, attachments));
+      return;
     }
+    sendNow(text, attachments);
   };
   const abort = (): void => {
-    sendClient({ type: "abort" });
+    // The visible half of stop (card 78 #1/#2): the button disarms to
+    // "stopping …" until the root run_end actually flips running off — but
+    // ONLY when the abort frame actually hit the wire. A flapped socket
+    // drops the frame (send() returns false) and a latched "stopping …"
+    // would disarm the button forever (review find F1).
+    const sent = sendClient({ type: "abort" });
+    if (sent && live.running) {
+      setStopRequested(true);
+    }
+  };
+  // The queue drain: the moment the session is free (and the socket open), the
+  // next waiting message goes out. The latch guards the accepted-but-not-yet-
+  // started gap; a failed send keeps its chip for the next attempt.
+  const connOpen = conn.status === "open";
+  useEffect(() => {
+    if (!connOpen || live.running || awaitingRunStart.current || queue.length === 0) {
+      return;
+    }
+    const next = queue[0];
+    if (sendNow(next.text, next.attachments)) {
+      setQueue((q) => removeQueued(q, next.id));
+    }
+  }, [connOpen, live.running, queue, sendNow, drainKick]);
+  const unqueue = (id: number): void => {
+    setQueue((q) => removeQueued(q, id));
   };
   const decide = (
     callId: string,
@@ -819,6 +907,7 @@ export function App() {
             >
               <Chat
                 state={view}
+                viewKey={replay?.id ?? "live"}
                 liveView={viewingLive}
                 onSend={send}
                 onReturnToLive={returnToLive}
@@ -826,6 +915,10 @@ export function App() {
                 onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
                 sendClient={sendClient}
                 onPickFolder={pickWorkspace}
+                queued={queue}
+                onUnqueue={unqueue}
+                onAbort={abort}
+                stopRequested={stopRequested}
               />
               {imagesOpen && (
                 <>

@@ -20,7 +20,10 @@ import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { formatTimer, micButtonState } from "./voiceButton";
+import { composerButtons } from "./composerButtons";
+import type { QueuedMessage } from "../state/sendQueue";
 import { ComposerGear } from "./ComposerGear";
+import { DisclosureMenu } from "./DisclosureMenu";
 import { WorkspaceChooser } from "./WorkspaceChooser";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -33,6 +36,11 @@ const DELETE_ARM_TIMEOUT_MS = 4000;
 
 export function Chat(props: {
   state: UiState;
+  /** Identity of the VIEW ("live" or the replay id) — prefixes the turn/card
+   *  React keys so a live card's local state (manual disclosure, scroll pin)
+   *  can never be reconciled onto a DIFFERENT session's same-index turn when
+   *  the app swaps views without remounting (review find F5). */
+  viewKey?: string;
   /** true when this is the live socket view, false for a replayed archive. */
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
@@ -50,6 +58,14 @@ export function Chat(props: {
   /** Opens the native folder picker (App's pickWorkspace) for the "set folder"
    *  choice in the new-chat workspace chooser; live sessions only. */
   onPickFolder?: () => void;
+  /** Messages waiting for the current run to end (card 78 #3) — App owns the
+   *  queue and its drain; the composer renders the chips. */
+  queued?: QueuedMessage[];
+  onUnqueue?: (id: number) => void;
+  /** The bottom stop button (card 78 #2) — same wire as the header stop. */
+  onAbort?: () => void;
+  /** True from the stop click until run_end: the button reads "stopping …". */
+  stopRequested?: boolean;
 }) {
   const { state, liveView } = props;
   const lang = useLang();
@@ -89,9 +105,11 @@ export function Chat(props: {
     el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT_PX)}px`;
   };
 
+  // Card 78 #3: running no longer blocks — App queues the message and sends
+  // it when the run ends (the chips above the composer show the waiting line).
   const submit = (): void => {
     const text = draft.trim();
-    if (text === "" || state.running || !liveView) return;
+    if (text === "" || !liveView) return;
     props.onSend(text, attachments.pending.length > 0 ? attachments.pending : undefined);
     setDraft("");
     attachments.clear();
@@ -108,7 +126,15 @@ export function Chat(props: {
   };
 
   const lastIndex = state.turns.length - 1;
-  const mic = micButtonState(voice.micPhase, voice.micAvailable, state.running, lang);
+  const mic = micButtonState(voice.micPhase, voice.micAvailable, lang);
+  const buttons = composerButtons(
+    {
+      running: liveView && state.running,
+      stopping: props.stopRequested === true,
+      draftEmpty: draft.trim() === "",
+    },
+    lang,
+  );
 
   // Subagent turns nest into thread blocks (one per child burst, stream order);
   // main turns render flat. Pure grouping over the reducer's chronological
@@ -118,11 +144,12 @@ export function Chat(props: {
     [state.turns, state.cards, state.agents],
   );
 
+  const vk = props.viewKey ?? "live";
   const renderTurn = (turn: Turn, i: number, inThread = false) => {
     switch (turn.kind) {
       case "user":
         return (
-          <div key={i} className="user-turn">
+          <div key={`${vk}:${i}`} className="user-turn">
             <div className="eyebrow">{t(lang, "chat.you")}</div>
             {turn.attachments !== undefined && turn.attachments.length > 0 && (
               <div className="user-attachments">
@@ -142,7 +169,7 @@ export function Chat(props: {
         );
       case "assistant":
         return (
-          <div key={i} className="assistant-turn">
+          <div key={`${vk}:${i}`} className="assistant-turn">
             {turn.agentId !== "main" && !inThread && (
               <span
                 className="agent-badge"
@@ -180,18 +207,18 @@ export function Chat(props: {
       case "tool": {
         const card = state.cards[turn.callId];
         return card !== undefined ? (
-          <ToolCard key={turn.callId} card={card} live={liveView} inThread={inThread} />
+          <ToolCard key={`${vk}:${turn.callId}`} card={card} live={liveView} inThread={inThread} />
         ) : null;
       }
       case "info":
         return (
-          <div key={i} className={`info-line ${turn.tone}`}>
+          <div key={`${vk}:${i}`} className={`info-line ${turn.tone}`}>
             {turn.infoKey !== undefined ? t(lang, turn.infoKey, turn.infoVars) : turn.text}
           </div>
         );
       case "error":
         return (
-          <div key={i} className="error-card">
+          <div key={`${vk}:${i}`} className="error-card">
             <div className="eyebrow">{t(lang, "chat.error")}</div>
             <div className="error-text">{turn.text}</div>
             {liveView && !state.running && lastUserText() !== null && (
@@ -213,6 +240,11 @@ export function Chat(props: {
 
   return (
     <main className="chat" {...attachments.dropHandlers}>
+      {/* Card 78 #4: the disclosure-level menu, top-right corner of the chat
+          (its twin sits in the composer row). Floats over the scroll area. */}
+      <div className="chat-disc">
+        <DisclosureMenu placement="down" />
+      </div>
       <div
         className="chat-scroll"
         ref={scrollRef}
@@ -266,7 +298,7 @@ export function Chat(props: {
                 renderTurn(b.turn, b.index)
               ) : (
                 <section
-                  key={`thread-${b.agentId}-${b.items[0].index}`}
+                  key={`${vk}:thread-${b.agentId}-${b.items[0].index}`}
                   className="chat-thread"
                   style={{ "--agent-color": agentAccent(b.agentId) } as CSSProperties}
                 >
@@ -297,6 +329,29 @@ export function Chat(props: {
       {liveView ? (
         <div className="composer">
           <div className="composer-column">
+            {/* The waiting line (card 78 #3): queued messages as removable
+                chips — they auto-send, oldest first, when the run ends. */}
+            {props.queued !== undefined && props.queued.length > 0 && (
+              <div className="queue-chips" role="list" aria-label={t(lang, "chat.queuedHint")}>
+                {props.queued.map((m) => (
+                  <span key={m.id} className="queue-chip" role="listitem" title={t(lang, "chat.queuedHint")}>
+                    <span className="queue-chip-text">{m.text}</span>
+                    {m.attachments !== undefined && m.attachments.length > 0 && (
+                      <span className="queue-chip-att tabular">+{m.attachments.length}</span>
+                    )}
+                    <button
+                      type="button"
+                      className="queue-chip-x"
+                      aria-label={t(lang, "chat.unqueue")}
+                      title={t(lang, "chat.unqueue")}
+                      onClick={() => props.onUnqueue?.(m.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <AttachmentPreview attachments={attachments.pending} onRemove={attachments.removeAt} />
             {mic.recording && (
               <div className="recording-indicator" aria-live="polite">
@@ -315,6 +370,9 @@ export function Chat(props: {
                 tabIndex={-1}
                 onChange={attachments.onFilePicked}
               />
+              {/* Card 78 #4: the disclosure menu's composer twin — LEFT of the
+                  first toolbox button, per the owner's placement. */}
+              <DisclosureMenu placement="up" />
               <button
                 type="button"
                 className="icon-button attach-button"
@@ -395,13 +453,23 @@ export function Chat(props: {
                 permissionMode={state.permissionMode}
                 sendClient={props.sendClient}
               />
-              <button
-                type="button"
-                className="primary send"
-                disabled={draft.trim() === "" || state.running}
-                onClick={submit}
-              >
-                {state.running ? t(lang, "chat.running") : t(lang, "chat.send")}
+              {buttons.showStop && (
+                <button
+                  type="button"
+                  className="stop composer-stop"
+                  disabled={buttons.stopDisabled}
+                  aria-label={t(lang, "chat.stopAria")}
+                  title={t(lang, "chat.stopAria")}
+                  onClick={props.onAbort}
+                >
+                  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+                    <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+                  </svg>
+                  {buttons.stopLabel}
+                </button>
+              )}
+              <button type="button" className="primary send" disabled={buttons.sendDisabled} onClick={submit}>
+                {buttons.sendLabel}
               </button>
             </div>
           </div>

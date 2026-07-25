@@ -7,7 +7,7 @@ import { formatTimer, micButtonState, STT_SETUP_HINT } from "./voiceButton";
 
 describe("micButtonState", () => {
   it("idle: enabled and ready to record", () => {
-    expect(micButtonState("idle", true, false)).toEqual({
+    expect(micButtonState("idle", true)).toEqual({
       title: "Record a voice message",
       recording: false,
       disabled: false,
@@ -15,25 +15,25 @@ describe("micButtonState", () => {
   });
 
   it("recording: enabled (press stops it) and flagged recording", () => {
-    const view = micButtonState("recording", true, false);
+    const view = micButtonState("recording", true);
     expect(view.recording).toBe(true);
     expect(view.disabled).toBe(false);
   });
 
   it("transcribing: disabled while the POST is in flight — no second recording", () => {
-    expect(micButtonState("transcribing", true, false).disabled).toBe(true);
+    expect(micButtonState("transcribing", true).disabled).toBe(true);
   });
 
   it("unavailable: disabled with the setup hint as the tooltip, whatever the phase", () => {
-    const view = micButtonState("idle", false, false);
+    const view = micButtonState("idle", false);
     expect(view.disabled).toBe(true);
     expect(view.recording).toBe(false);
     expect(view.title).toBe(STT_SETUP_HINT);
     expect(view.title).toContain("scripts/setup-stt.sh");
   });
 
-  it("disables the mic while a run is streaming (composer busy)", () => {
-    expect(micButtonState("idle", true, true).disabled).toBe(true);
+  it("stays enabled while a run streams — the transcript lands in the draft (card 78)", () => {
+    expect(micButtonState("idle", true).disabled).toBe(false);
   });
 });
 

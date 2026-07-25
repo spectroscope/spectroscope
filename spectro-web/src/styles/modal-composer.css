@@ -152,6 +152,60 @@
 
 .send { min-height: 42px; }
 
+/* Card 78 #2: the bottom stop — same accent-outline family as the header
+   stop, sized to sit next to Send; disarmed ("stopping …") while the abort
+   is on its way to the run_end. */
+.composer-stop { min-height: 42px; padding: 6px var(--sp-4); }
+.composer-stop:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+.composer-stop:disabled:hover { background: transparent; }
+
+/* Card 78 #3: the waiting line — queued messages as removable chips. */
+.queue-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  max-width: var(--content-max);
+  margin: 0 auto var(--sp-2);
+  width: 100%;
+}
+.queue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 3px var(--sp-2) 3px var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.queue-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-chip-att {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.queue-chip-x {
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-14);
+  line-height: 1;
+  padding: 0 2px;
+}
+.queue-chip-x:hover { color: var(--error); }
+
 /* The irreversible action reads as danger, and LOUDLY once armed. */
 .archive-delete { color: var(--text-dim); }
 .archive-delete:hover { color: var(--error); border-color: var(--error); background: none; }

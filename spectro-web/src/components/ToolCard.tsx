@@ -1,11 +1,14 @@
 // One card per callId — the workhorse of the chat. tool_call creates it,
-// tool_result switches the status; collapsed by default, the whole header row
-// is the toggle button. Status is always dot + text, never color alone.
+// tool_result switches the status; collapsed by default on level "normal",
+// open by default on "extended" (card 78 #4) — a manual click on THIS card
+// overrides the level until it unmounts. The whole header row is the toggle
+// button. Status is always dot + text, never color alone.
 
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ToolCard as ToolCardModel } from "../state/reducer";
 import { agentAccent, compactJson, formatDuration, prettyJson } from "../format";
+import { defaultOpen, useDisclosure } from "../state/disclosure";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -22,7 +25,9 @@ const cut = (s: string, max = IO_CLIP_CHARS): string =>
 export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?: boolean }) {
   const { card, live } = props;
   const lang = useLang();
-  const [open, setOpen] = useState(false);
+  const level = useDisclosure();
+  const [manual, setManual] = useState<boolean | null>(null);
+  const open = manual ?? defaultOpen(level, "tool");
   const [copied, setCopied] = useState(false);
 
   const denied = card.permission === "denied";
@@ -82,12 +87,7 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
 
   return (
     <div className="tool-card" style={{ "--line-color": lineColor } as CSSProperties}>
-      <button
-        type="button"
-        className="tool-card-head"
-        aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
-      >
+      <button type="button" className="tool-card-head" aria-expanded={open} onClick={() => setManual(!open)}>
         <span className={`dot ${dotTone}`} aria-hidden="true" />
         <span className="tool-name">{card.name}</span>
         {subagent && (
