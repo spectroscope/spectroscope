@@ -9,7 +9,6 @@ import dev.spectroscope.core.EventStream;
 import dev.spectroscope.core.PermissionBroker;
 import dev.spectroscope.core.RunOptions;
 import dev.spectroscope.core.config.SpectroConfig;
-import dev.spectroscope.core.config.ProviderFactory;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.WorkspaceResolver;
 import dev.spectroscope.core.events.RunEvent;
@@ -473,7 +472,7 @@ public final class SessionConnection {
         SpectroConfig derived = current.withProvider(providerName, useModel);
         LlmProvider next;
         try {
-            next = ProviderFactory.providerFromConfig(derived); // validates + anthropic key check
+            next = ServerProviders.build(derived); // spectro-local -> local runtime; else factory + key check
         } catch (RuntimeException rejected) {
             sendError(rejected.getMessage());
             return;
@@ -677,7 +676,7 @@ public final class SessionConnection {
         // The provider is wrapped in a SwitchableProvider so the header picker can
         // swap the backend mid-session (activeConfig carries any pre-run switch).
         SpectroConfig active = activeConfig.get();
-        switchable = new SwitchableProvider(ProviderFactory.providerFromConfig(active), active.provider());
+        switchable = new SwitchableProvider(ServerProviders.build(active), active.provider());
         LlmProvider provider = switchable;
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
