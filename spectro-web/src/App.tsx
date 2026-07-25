@@ -953,6 +953,7 @@ export function App() {
                 onReturnToLive={returnToLive}
                 onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
                 onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
+                exportId={canResume ? replay!.id : undefined}
                 sendClient={sendClient}
                 onPickFolder={pickWorkspace}
                 queued={queue}

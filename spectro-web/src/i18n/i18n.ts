@@ -547,6 +547,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lmn.real": { de: "Für echte Arbeit: oben im Picker einen Cloud- oder lokalen Anbieter wählen.", en: "For real work, pick a cloud or local provider in the header." },
   "lmn.gotIt": { de: "Verstanden", en: "Got it" },
 
+  "arch.export": { de: "Exportieren", en: "Export" },
+  "arch.exportTitle": { de: "Diese Session als .jsonl herunterladen — der Import liest sie wieder ein", en: "Download this session as .jsonl — the import reads it back" },
+
   // tool card views (card 94)
   "tv.modeAria": { de: "Darstellung des Tool-Aufrufs", en: "Tool call view" },
   "tv.mode.structured": { de: "struktur", en: "structured" },

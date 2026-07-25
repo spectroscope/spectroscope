@@ -66,6 +66,8 @@ export function Chat(props: {
   onAbort?: () => void;
   /** True from the stop click until run_end: the button reads "stopping …". */
   stopRequested?: boolean;
+  /** The stored session id when this archive can be exported (card 95). */
+  exportId?: string;
 }) {
   const { state, liveView } = props;
   const lang = useLang();
@@ -492,6 +494,19 @@ export function Chat(props: {
               >
                 {t(lang, "arch.resume")}
               </button>
+            )}
+            {/* Card 95: export is the mirror of the import — the stored JSONL,
+                verbatim, as a download. A plain link so the browser handles the
+                save dialog; same-origin, so the local fence sees no Origin. */}
+            {props.exportId !== undefined && (
+              <a
+                className="ghost archive-export"
+                href={`/api/sessions/${encodeURIComponent(props.exportId)}/export`}
+                download={`${props.exportId}.jsonl`}
+                title={t(lang, "arch.exportTitle")}
+              >
+                {t(lang, "arch.export")}
+              </a>
             )}
             {props.onDelete !== undefined && <DeleteButton onDelete={props.onDelete} />}
             <button type="button" className="link" onClick={props.onReturnToLive}>

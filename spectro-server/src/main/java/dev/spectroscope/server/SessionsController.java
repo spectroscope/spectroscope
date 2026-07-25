@@ -70,6 +70,46 @@ public class SessionsController {
         }
     }
 
+    /**
+     * Export one stored session as its RAW JSONL — the mirror of the existing
+     * import, so a session can leave the machine and come back byte-identical.
+     * The file is served verbatim (no re-serialization), as a download.
+     *
+     * <p>Fenced like every local endpoint, and the id is shape-checked BEFORE
+     * it becomes a file name — it is the one piece of caller input that
+     * touches the path.
+     *
+     * @param id      the session to export
+     * @param request the servlet request, for the local fence
+     * @return 200 with the JSONL body; 404 for a foreign caller, a malformed
+     *         id or a session that is not there
+     */
+    @GetMapping("/api/sessions/{id}/export")
+    public ResponseEntity<String> exportSession(@PathVariable String id, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)
+                || !FleetController.originIsLoopbackOrAbsent(request)
+                || !SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.status(404).build();
+        }
+        java.nio.file.Path file =
+                dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.resolve(id + ".jsonl").normalize();
+        // Defense in depth: the resolved file must still be a direct child.
+        if (!file.getParent().equals(
+                dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.normalize())
+                || !java.nio.file.Files.isRegularFile(file)) {
+            return ResponseEntity.status(404).build();
+        }
+        try {
+            String jsonl = java.nio.file.Files.readString(file);
+            return ResponseEntity.ok()
+                    .header("Content-Type", "application/x-ndjson; charset=utf-8")
+                    .header("Content-Disposition", "attachment; filename=\"" + id + ".jsonl\"")
+                    .body(jsonl);
+        } catch (java.io.IOException unreadable) {
+            return ResponseEntity.status(404).build();
+        }
+    }
+
     /** Session ids as the store mints them (yyyyMMdd-HHmmss-uuid8) plus the
      *  test/CLI-friendly general shape — never a path, never a dot. */
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");

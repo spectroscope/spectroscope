@@ -318,3 +318,18 @@
   gap: 0.5rem;
   margin-top: 0.8rem;
 }
+
+/* Card 95: export sits beside resume/delete — a link that downloads, styled
+   like the ghost buttons around it. */
+.archive-export {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  padding: 6px var(--sp-3);
+  text-decoration: none;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.archive-export:hover { color: var(--accent); border-color: var(--accent); }
