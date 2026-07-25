@@ -224,3 +224,43 @@
   }
 }
 
+
+/* The built-in-model download modal + the picker's local note. */
+.provider-local-note {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.82rem;
+  color: var(--ink-dim, #9a8f80);
+  line-height: 1.4;
+}
+.lm-modal {
+  max-width: 30rem;
+}
+.lm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+.lm-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-faint, rgba(140, 130, 115, 0.25));
+  overflow: hidden;
+}
+.lm-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent, #ce9440);
+  transition: width 0.4s ease;
+}
+.lm-error {
+  margin: 0.4rem 0;
+  font-size: 0.82rem;
+  color: var(--err, #d9695f);
+}
+.lm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}

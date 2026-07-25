@@ -140,6 +140,11 @@ public class SessionsController {
             String keyEnv = SpectroConfig.keyEnvFor(p);
             providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
         }
+        // The built-in local provider is its own picker entry: keyless, and
+        // "ready" once the bundled/downloaded model resolves, else "needs-download"
+        // (the picker opens the download modal). Never "needs-key".
+        providerStatus.put("spectro-local",
+                SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.present()));
         out.put("providerStatus", providerStatus);
         return out;
     }
