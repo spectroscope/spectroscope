@@ -166,6 +166,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "doc.cliHint": { de: "Das CLI prüft zusätzlich Java, Konfig-Dateien und Provider-Erreichbarkeit von der Maschine aus.", en: "The CLI additionally checks Java, config files and provider reachability from the machine." },
   "doc.log": { de: "Server-Log", en: "server log" },
   "doc.logEmpty": { de: "noch kein Log", en: "no log yet" },
+  "doc.logFull": { de: "Vollbild", en: "fullscreen" },
 
   // spectrum tab (fleet lanes)
   "sp.count": { de: "{n} Events · {lanes} Lanes", en: "{n} events · {lanes} lanes" },

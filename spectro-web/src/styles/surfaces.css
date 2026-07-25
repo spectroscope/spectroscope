@@ -221,6 +221,17 @@
   cursor: pointer;
 }
 .log-tail-toggle--on { color: var(--accent); }
+/* The knob/track slide is scoped to the header's .thinking-toggle--on — this
+   twin re-binds it for the tail switch (owner: "der Schalter schaltet sich
+   nicht ein" — it tinted but never slid). */
+.log-tail-toggle--on .thinking-toggle-track {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.log-tail-toggle--on .thinking-toggle-knob {
+  transform: translateX(14px);
+  background: var(--accent);
+}
 .log-copy { margin-left: auto; }
 .log-pane {
   max-height: 260px;
@@ -236,9 +247,25 @@
   overflow-wrap: break-word;
 }
 .log-line { display: inline; color: var(--text-dim); }
-.log-line.warn { color: var(--warn); }
-.log-line.error { color: var(--error); }
-.log-line.faint { color: var(--text-faint); }
+.log-line--warn { color: var(--warn); }
+.log-line--error { color: var(--error); }
+.log-line--faint { color: var(--text-faint); }
+/* Owner: the severity must be findable at a glance — the level token tints
+   and bolds on its own, the timestamp recedes. */
+.log-ts { color: var(--text-faint); }
+.log-level { font-weight: 600; }
+.log-level--info { color: var(--text-dim); }
+.log-level--warn { color: var(--warn); }
+.log-level--error { color: var(--error); }
+.log-expand { flex: none; }
+/* Fullscreen (raw-modal pattern): the pane grows to the modal body — full
+   height even when the log is still short. */
+.log-modal { display: flex; flex-direction: column; height: 100%; }
+.log-modal .log-pane {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
 .doctor-page .settings-head { gap: var(--sp-3); }
 .doctor-page .settings-hint { text-align: right; }
 .doctor-lede { margin: 0 0 var(--sp-3); font-size: var(--fs-13); color: var(--text-dim); }
