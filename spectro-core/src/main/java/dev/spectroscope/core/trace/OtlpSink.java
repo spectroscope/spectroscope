@@ -80,9 +80,10 @@ public final class OtlpSink implements TracingPort {
     }
 
     /** One export outcome for UI mirrors (card 86) — never carries auth.
-     *  message is null on success, the failure text otherwise. */
+     *  message is null on success, the failure text otherwise; body is the
+     *  exported OTLP JSON itself (the mirror bounds what rides the wire). */
     public record ExportReport(String endpoint, int spans, int bytes,
-                               boolean ok, String message, long ts) {}
+                               boolean ok, String message, String body, long ts) {}
 
     /** Registered by the server face to mirror each export as a socket frame. */
     public interface ExportListener {
@@ -222,7 +223,7 @@ public final class OtlpSink implements TracingPort {
         try {
             current.onExport(new ExportReport(endpoint, payload.spans(),
                     payload.body().getBytes(StandardCharsets.UTF_8).length,
-                    ok, message, System.currentTimeMillis()));
+                    ok, message, payload.body(), System.currentTimeMillis()));
         } catch (RuntimeException never) {
             log.debug("otlp export listener failed (ignored)", never);
         }

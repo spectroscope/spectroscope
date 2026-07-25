@@ -936,6 +936,10 @@ public final class SessionConnection {
      * stay visible in the doctor line as before. Runs on the sink's export
      * virtual thread and holds the connection monitor like every send.
      */
+    /** Above this, the frame carries span names instead of the full payload —
+     *  a whole-session re-export can reach megabytes, the socket must not. */
+    private static final int OTLP_FRAME_BODY_CAP_BYTES = 64 * 1024;
+
     private synchronized void sendOtlpExport(OtlpSink.ExportReport report) {
         if (!socket.isOpen()) {
             return;
@@ -950,11 +954,41 @@ public final class SessionConnection {
             if (report.message() != null) {
                 payload.put("message", report.message());
             }
+            // The content itself (owner): the full OTLP batch as a navigable
+            // tree while it fits, else the span names + an honest omission note.
+            if (report.body() != null) {
+                if (report.bytes() <= OTLP_FRAME_BODY_CAP_BYTES) {
+                    payload.put("export", mapper.readTree(report.body()));
+                } else {
+                    payload.put("exportOmitted",
+                            "payload " + report.bytes() + " bytes — span names only");
+                    payload.put("spanNames", spanNames(report.body()));
+                }
+            }
             payload.put("ts", report.ts());
             socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
         } catch (Exception ignored) {
             // A dead socket just misses the mirror — the export itself already ran.
         }
+    }
+
+    /** The span names of an OTLP batch, bounded — the over-cap frame's summary. */
+    private List<String> spanNames(String body) {
+        List<String> names = new ArrayList<>();
+        try {
+            JsonNode spans = mapper.readTree(body).path("resourceSpans").path(0)
+                    .path("scopeSpans").path(0).path("spans");
+            for (JsonNode span : spans) {
+                if (names.size() >= 100) {
+                    names.add("… +" + (spans.size() - 100) + " more");
+                    break;
+                }
+                names.add(span.path("name").asText());
+            }
+        } catch (Exception unparsable) {
+            names.add("(unparsable payload)");
+        }
+        return names;
     }
 
     /**

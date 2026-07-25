@@ -119,6 +119,10 @@ class OtlpSinkTest {
         assertTrue(first.bytes() > 0, "payload size rides along");
         assertTrue(first.message() == null, "no message on success");
         assertTrue(first.toString().indexOf("pk:sk") < 0, "auth never in the report");
+        // The owner wants the CONTENT visible in the trace: the report carries
+        // the exported body itself (the mirror decides how much rides the wire).
+        assertTrue(String.valueOf(first.body()).contains("resourceSpans"),
+                "the exported payload rides the report");
     }
 
     @Test
