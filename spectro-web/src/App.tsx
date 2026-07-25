@@ -27,6 +27,8 @@ import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
 import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
+import { LocalModelNotice } from "./components/LocalModelNotice";
+import { LOCAL_NOTICE_KEY, shouldShowLocalNotice } from "./components/localNoticeFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { StarterDialog } from "./components/StarterDialog";
 import { compile } from "./scenario/compile";
@@ -145,6 +147,9 @@ export function App() {
   const [keymapOpen, setKeymapOpen] = useState(false); // the ? shortcut sheet (edu port)
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false); // start a fleet node from the sidebar
   const [onboardingOpen, setOnboardingOpen] = useState(false); // first-run backend info sheet
+  // Built-in model first-use notice (card 91): opens once when spectro-local
+  // becomes the ACTIVE backend (wire truth); "got it" persists the dismissal.
+  const [localNoticeOpen, setLocalNoticeOpen] = useState(false);
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
     try {
       return !shouldOnboard(localStorage.getItem(ONBOARDED_KEY));
@@ -414,6 +419,28 @@ export function App() {
       }).catch(() => {});
     }
   }, [confirmedProviderInfo]);
+
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(LOCAL_NOTICE_KEY);
+    } catch {
+      /* blocked storage: the notice may repeat — better than never showing */
+    }
+    if (shouldShowLocalNotice(stored, live.providerInfo?.provider ?? null)) {
+      setLocalNoticeOpen(true);
+    }
+  }, [live.providerInfo]);
+  const dismissLocalNotice = (persist: boolean): void => {
+    setLocalNoticeOpen(false);
+    if (persist) {
+      try {
+        localStorage.setItem(LOCAL_NOTICE_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+    }
+  };
 
   // The active LLM backend (provider + model) for the header and the Lab map.
   // /api/config is the boot truth; a switch overrides it optimistically.
@@ -1098,6 +1125,12 @@ export function App() {
         onKeySaved={() => setConfigNonce((n) => n + 1)}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
+      {localNoticeOpen && (
+        <LocalModelNotice
+          onGotIt={() => dismissLocalNotice(true)}
+          onClose={() => dismissLocalNotice(false)}
+        />
+      )}
       <Onboarding
         open={onboardingOpen}
         onClose={() => {

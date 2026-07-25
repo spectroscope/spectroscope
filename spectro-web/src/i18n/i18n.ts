@@ -537,6 +537,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },
   "info.compacted": { de: "Verlauf kompaktiert: {n} Turns zusammengefasst", en: "History compacted: {n} turns summarized" },
 
+  // built-in model first-use notice (card 91)
+  "lmn.title": { de: "eingebautes modell — ein demo-reasoner", en: "built-in model — a demo reasoner" },
+  "lmn.lede": { de: "VibeThinker-3B läuft komplett lokal und ist zum AUSPROBIEREN da: kleine Text-Aufgaben, um die Mechanik zu sehen — Streaming, Thinking, Stop, Warteschlange.", en: "VibeThinker-3B runs fully local and is here to TRY things: small text prompts to watch the mechanics — streaming, thinking, stop, the queue." },
+  "lmn.goodTitle": { de: "gut für", en: "good for" },
+  "lmn.good": { de: "kurze Fragen, Reasoning zuschauen, die Oberfläche kennenlernen — ohne Key, ohne Cloud.", en: "short questions, watching it reason, learning the surface — no key, no cloud." },
+  "lmn.limitsTitle": { de: "ehrliche Grenzen", en: "honest limits" },
+  "lmn.limits": { de: "keine Tools (der Reasoner spricht das Tool-Protokoll nicht), bescheidene Qualität und Kontextgröße — Antworten können danebenliegen.", en: "no tools (the reasoner does not speak the tool protocol), modest quality and context — answers can be off." },
+  "lmn.real": { de: "Für echte Arbeit: oben im Picker einen Cloud- oder lokalen Anbieter wählen.", en: "For real work, pick a cloud or local provider in the header." },
+  "lmn.gotIt": { de: "Verstanden", en: "Got it" },
+
   // microphone (voice input)
   "mic.record": { de: "Sprachnachricht aufnehmen", en: "Record a voice message" },
   "mic.stop": { de: "Aufnahme stoppen", en: "Stop recording" },
