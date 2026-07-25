@@ -261,19 +261,24 @@
 }
 
 /* Thinking disclosure: the model's reasoning, collapsed above the answer. */
+/* Card 94 (owner: "filigraner"): thinking is a quiet left-ruled block, not a
+   bordered surface — same weight as the tool cards it sits between. */
 .thinking {
   margin: 0 0 var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
+  border: 0;
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: none;
   overflow: hidden;
+  transition: border-color var(--t-fast);
 }
+.thinking--active { border-left-color: var(--accent); }
 .thinking-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: var(--sp-2) var(--sp-3);
+  padding: 3px var(--sp-3);
   background: none;
   border: none;
   color: var(--text-dim);
@@ -283,7 +288,7 @@
   cursor: pointer;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.thinking-head:hover { background: var(--surface-2); color: var(--text); }
+.thinking-head:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); color: var(--text); }
 .thinking-glyph { flex: none; color: var(--text-faint); }
 .thinking--active .thinking-glyph { color: var(--accent); }
 .thinking-label { font-weight: 500; letter-spacing: var(--track-heading); }

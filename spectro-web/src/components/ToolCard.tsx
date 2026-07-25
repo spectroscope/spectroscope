@@ -7,25 +7,23 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ToolCard as ToolCardModel } from "../state/reducer";
-import { agentAccent, compactJson, formatDuration, prettyJson } from "../format";
+import { agentAccent, compactJson, formatDuration } from "../format";
 import { defaultOpen, useDisclosure } from "../state/disclosure";
+import { TOOL_VIEW_MODES, setToolView, useToolView } from "../state/toolView";
+import { ToolViewBody } from "./ToolViewBody";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-/** Visible input/output clip — the full payload stays in the JSON views. */
-const IO_CLIP_CHARS = 4000;
 /** Live duration count-up tick while a tool runs. */
 const RUNNING_TICK_MS = 250;
 /** How long the copy button shows its "copied" confirmation. */
 const COPY_FEEDBACK_MS = 1400;
 
-const cut = (s: string, max = IO_CLIP_CHARS): string =>
-  s.length > max ? `${s.slice(0, max)}\n... (truncated)` : s;
-
 export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?: boolean }) {
   const { card, live } = props;
   const lang = useLang();
   const level = useDisclosure();
+  const viewMode = useToolView();
   const [manual, setManual] = useState<boolean | null>(null);
   const open = manual ?? defaultOpen(level, "tool");
   const [copied, setCopied] = useState(false);
@@ -124,23 +122,35 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
 
       <div className={`tool-card-body${open ? " open" : ""}`}>
         <div className="tool-card-inner">
-          <div className="io-label">Input</div>
-          <pre className="io-block">{cut(prettyJson(card.input))}</pre>
-          <div className="io-label">Output</div>
-          {denied ? (
-            <p className="denied-line">{t(lang, "tool.deniedByUser")}</p>
-          ) : (
-            <div className="output-wrap">
-              <pre className={`io-block output${card.status === "error" ? " error" : ""}`}>
-                {card.output === undefined ? "(no result yet)" : cut(card.output)}
-              </pre>
-              {card.output !== undefined && (
-                <button type="button" className="copy" onClick={copyOutput}>
-                  {copied ? t(lang, "common.copied") : t(lang, "common.copy")}
-                </button>
-              )}
-            </div>
-          )}
+          {/* Card 94: three faces of the same call — structured (the tool AS
+              ITSELF), json (collapsible trees), raw (the untouched pair). The
+              choice is a persisted preference, like the trace lenses. */}
+          <div className="tv-modes" role="group" aria-label={t(lang, "tv.modeAria")}>
+            {TOOL_VIEW_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`tv-mode${viewMode === m ? " tv-mode--on" : ""}`}
+                aria-pressed={viewMode === m}
+                onClick={() => setToolView(m)}
+              >
+                {t(lang, `tv.mode.${m}`)}
+              </button>
+            ))}
+            {card.output !== undefined && !denied && (
+              <button type="button" className="copy tv-copy" onClick={copyOutput}>
+                {copied ? t(lang, "common.copied") : t(lang, "common.copy")}
+              </button>
+            )}
+          </div>
+          <ToolViewBody
+            mode={viewMode}
+            name={card.name}
+            input={card.input}
+            output={card.output}
+            isError={card.status === "error"}
+            denied={denied}
+          />
         </div>
       </div>
     </div>

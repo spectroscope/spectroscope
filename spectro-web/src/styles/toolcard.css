@@ -1,29 +1,27 @@
 /* ---------- Tool card ---------- */
 
+/* Card 94 (owner: "filigraner"): the card is a HAIRLINE and a left rule, not a
+   raised box — no gradient, no card shadow, no full border. The left rule keeps
+   carrying the status/agent color; everything else recedes so the content is
+   the loudest thing on screen (the Claude Code weight). */
 .tool-card {
-  background-color: var(--surface);
-  background-image: linear-gradient(var(--glint), transparent 48px);
-  border: 1px solid var(--border);
+  background: none;
+  border: 0;
   border-left: 2px solid var(--line-color, var(--border));
-  border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  margin: 0 0 var(--sp-3);
+  border-radius: 0;
+  margin: 0 0 var(--sp-2);
   overflow: hidden;
-  transition: border-color var(--t-fast), box-shadow var(--t-fast);
+  transition: border-color var(--t-fast), background var(--t-fast);
 }
-.tool-card:hover {
-  border-color: var(--border-strong);
-  border-left-color: var(--line-color, var(--border-strong));
-  box-shadow: var(--shadow-raised);
-}
+.tool-card:hover { border-left-color: var(--line-color, var(--border-strong)); }
 
 .tool-card-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  min-height: 44px;
-  padding: var(--sp-1) var(--sp-3);
+  min-height: 30px;
+  padding: 3px var(--sp-3);
   background: none;
   border: 0;
   color: var(--text);
@@ -32,7 +30,7 @@
   text-align: left;
   transition: background var(--t-fast);
 }
-.tool-card-head:hover { background: var(--surface-2); }
+.tool-card-head:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
 .tool-card-head:hover .chevron { color: var(--text); }
 
 .tool-name {
@@ -134,9 +132,7 @@
 .tool-card-inner {
   min-height: 0;
   overflow: hidden;
-  padding: 0 var(--sp-3);
-  /* Divider between header row and body — invisible while collapsed. */
-  box-shadow: inset 0 1px 0 var(--border);
+  padding: 0 var(--sp-3) var(--sp-2);
 }
 
 .io-label {
@@ -198,3 +194,114 @@
   color: var(--warn);
 }
 
+
+/* ---------- Tool view: the three faces (card 94) ---------- */
+/* Light by construction: hairline labels, one quiet well for real content,
+   no boxes around boxes. */
+
+.tv-modes {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: var(--sp-1) 0 var(--sp-2);
+}
+.tv-mode {
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  padding: 1px var(--sp-2);
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.tv-mode:hover { color: var(--text-dim); }
+.tv-mode--on { color: var(--accent); background: var(--accent-soft); }
+.tv-copy { margin-left: auto; }
+
+.tv-region { margin-bottom: var(--sp-2); }
+.tv-region:last-child { margin-bottom: 0; }
+.tv-region-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  margin-bottom: 2px;
+}
+.tv-label {
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--text-faint);
+}
+.tv-meta {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A path/name is the headline of most calls — readable, not shouted. */
+.tv-path {
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.tv-pattern { color: var(--accent); }
+.tv-in { color: var(--text-faint); }
+
+/* The one well: flat, no border, no inset shadow — just a calmer ground. */
+.tv-well {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--shade);
+  border-radius: var(--radius-chip);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.tv-well--error { color: var(--error); }
+
+/* A command reads like a command. */
+.tv-cmd { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; }
+.tv-prompt { color: var(--accent); margin-right: var(--sp-2); }
+.tv-term { color: var(--text-dim); }
+.tv-term--failed { color: var(--error); }
+
+/* Listings and matches: rows, not a blob of text. */
+.tv-entries {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  font-size: var(--fs-12);
+}
+.tv-entry {
+  color: var(--text-dim);
+  padding: 1px 0;
+  overflow-wrap: anywhere;
+}
+.tv-entry--dir { color: var(--text); }
+
+/* An edit shows both sides; the tint is the only color and it is decorative
+   (the "before"/"after" labels carry the meaning). */
+.tv-diff { display: flex; flex-direction: column; gap: var(--sp-2); }
+.tv-diff-side { display: flex; flex-direction: column; gap: 2px; }
+.tv-diff-side--before .tv-well { background: color-mix(in srgb, var(--error) 8%, var(--shade)); }
+.tv-diff-side--after .tv-well { background: color-mix(in srgb, var(--ok) 8%, var(--shade)); }
+@media (min-width: 900px) {
+  .tv-diff { flex-direction: row; }
+  .tv-diff-side { flex: 1; min-width: 0; }
+}
+
+.tv-note { margin: 0 0 var(--sp-1); font-size: var(--fs-11); color: var(--text-faint); }
+.tv-denied { margin: 0; font-size: var(--fs-12); color: var(--warn); }
