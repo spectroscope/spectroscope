@@ -284,9 +284,12 @@ public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
     /** One labeled slice of the context estimate; not a RunEvent itself, like {@link Attachment}.
      *  @param label     what the slice covers (e.g. "system prompt")
      *  @param chars     raw character count of the slice
-     *  @param estTokens the chars/4 token estimate */
+     *  @param estTokens the chars/4 token estimate
+     *  @param text      the slice's CONTENT (additive, card 86 follow-up) — what
+     *                   actually rides to the provider, capped by the emitter;
+     *                   null in pre-content sessions */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record ContextPart(String label, int chars, int estTokens) {}
+    record ContextPart(String label, int chars, int estTokens, String text) {}
 
     /**
      * A2A-lite, additive: one visible message between two agents — the protocol

@@ -72,7 +72,7 @@ export type RunEvent =
       messages: number;
       estimatedTokens: number;
       threshold: number;
-      parts: { label: string; chars: number; estTokens: number }[];
+      parts: { label: string; chars: number; estTokens: number; text?: string }[];
       ts: number;
     } // additive: context introspection
   | {

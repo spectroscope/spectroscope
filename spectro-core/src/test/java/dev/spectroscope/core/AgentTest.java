@@ -521,6 +521,13 @@ class AgentTest {
                     info.estimatedTokens(), "estimatedTokens must be the sum of its parts");
             assertEquals(100_000, info.threshold(), "threshold defaults to 100000");
         }
+        // Card 86 follow-up: the parts carry their CONTENT — what actually
+        // rides to the provider, readable in the trace's Insight view.
+        assertEquals("test", infos.get(0).parts().get(0).text(), "system prompt text verbatim");
+        assertTrue(infos.get(0).parts().get(1).text().contains("echo"),
+                "tool schema text names the tool");
+        assertTrue(infos.get(1).parts().get(2).text().contains("tool_result"),
+                "conversation text renders the history");
 
         // Without the flag the stream stays exactly as before — no context_info at all.
         FakeProvider plainProvider = FakeProvider.scripted(List.of(
@@ -529,6 +536,32 @@ class AgentTest {
         List<RunEvent> plainEvents = collect(agentWith(plainProvider, null, null));
         assertTrue(plainEvents.stream().noneMatch(RunEvent.ContextInfo.class::isInstance),
                 "without the flag no context_info is emitted");
+    }
+
+    @Test
+    void contextPartTextIsCappedButTheCharCountStaysHonest() {
+        // A whole conversation can be megabytes — the wire carries a capped
+        // text with an honest marker while chars keeps the full truth.
+        String huge = "x".repeat(40_000);
+        FakeProvider provider = FakeProvider.scripted(List.of(
+                new LlmProvider.PTextDelta("ok"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt(huge)
+                .registry(new ToolRegistry())
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .introspection(true)
+                .build());
+        RunEvent.ContextInfo info = collect(agent).stream()
+                .filter(RunEvent.ContextInfo.class::isInstance)
+                .map(RunEvent.ContextInfo.class::cast)
+                .findFirst().orElseThrow();
+        RunEvent.ContextPart system = info.parts().get(0);
+        assertEquals(40_000, system.chars(), "chars stay the full truth");
+        assertTrue(system.text().length() < 20_000, "text is capped");
+        assertTrue(system.text().endsWith("chars)"), "truncation marker names the size");
     }
 
     // ---------------------------------------------------------- attachments

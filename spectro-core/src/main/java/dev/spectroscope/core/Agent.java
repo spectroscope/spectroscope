@@ -408,10 +408,13 @@ public final class Agent {
                 .flatMap(message -> message.content().stream())
                 .mapToInt(Agent::charsOf)
                 .sum();
+        String schemaText = options.registry().specs().stream()
+                .map(spec -> spec.name() + " — " + spec.description() + "\n" + spec.inputSchema())
+                .reduce((a, b) -> a + "\n\n" + b).orElse("");
         List<ContextPart> parts = List.of(
-                part("system prompt", systemChars),
-                part("tool schemas", schemaChars),
-                part("conversation", conversationChars));
+                part("system prompt", systemChars, options.systemPrompt()),
+                part("tool schemas", schemaChars, schemaText),
+                part("conversation", conversationChars, renderConversation(messages)));
         int estimatedTokens = parts.stream().mapToInt(ContextPart::estTokens).sum();
         int threshold = options.compactionThreshold() != null
                 ? options.compactionThreshold() : 100_000;
@@ -419,11 +422,49 @@ public final class Agent {
                 estimatedTokens, threshold, parts, now());
     }
 
-    /** Builds one labeled slice of the context estimate, deriving its tokens as chars/4.
+    /** Context-part texts are capped for the wire — a whole conversation can be
+     *  megabytes; the char counts stay the full truth regardless. */
+    private static final int CONTEXT_PART_TEXT_CAP = 16_384;
+
+    /** Builds one labeled slice of the context estimate, deriving its tokens as
+     *  chars/4 and carrying the (capped) content itself — what actually rides
+     *  to the provider, readable in the trace (card 86 follow-up).
      *  @param label the slice name shown by the introspection UI
-     *  @param chars the raw character count behind the estimate */
-    private static ContextPart part(String label, int chars) {
-        return new ContextPart(label, chars, chars / 4);
+     *  @param chars the raw character count behind the estimate
+     *  @param text  the slice's content, capped here */
+    private static ContextPart part(String label, int chars, String text) {
+        return new ContextPart(label, chars, chars / 4, capped(text));
+    }
+
+    /** Caps a part text with an honest marker naming the full size. */
+    private static String capped(String text) {
+        if (text.length() <= CONTEXT_PART_TEXT_CAP) {
+            return text;
+        }
+        return text.substring(0, CONTEXT_PART_TEXT_CAP)
+                + "\n… (truncated, full size " + text.length() + " chars)";
+    }
+
+    /** Renders the provider history readably: one block per message, calls and
+     *  results in their string forms, binary payloads as size notes. */
+    private static String renderConversation(List<ProviderMessage> messages) {
+        StringBuilder sb = new StringBuilder();
+        for (ProviderMessage message : messages) {
+            sb.append(message.role()).append(":\n");
+            for (ProviderContent content : message.content()) {
+                sb.append(switch (content) {
+                    case TextContent text -> text.text();
+                    case ImageContent image ->
+                            "[image · " + image.dataBase64().length() + " base64 chars]";
+                    case DocumentContent document -> "[document " + document.name()
+                            + " · " + document.dataBase64().length() + " base64 chars]";
+                    case ToolCallContent call -> "tool_call " + call.name() + " " + call.input();
+                    case ToolResultContent result -> "tool_result " + result.output();
+                }).append("\n");
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
     }
 
     /** The char weight one content block adds; calls and results count their string forms.

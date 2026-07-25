@@ -41,7 +41,8 @@ class RunEventJsonTest {
                 new RunEvent.ImageGenerated("main", "c3", "a lighthouse at dusk", "gemini",
                         "gemini-2.5-flash-image", "image/png", "images/3f7a.png", "3f7a", 14L),
                 new RunEvent.ContextInfo("main", 2, 5, 2612, 100_000,
-                        List.of(new RunEvent.ContextPart("conversation", 10448, 2612)), 15L),
+                        List.of(new RunEvent.ContextPart("conversation", 10448, 2612, null),
+                                new RunEvent.ContextPart("system prompt", 160, 40, "You are …")), 15L),
                 new RunEvent.AgentMessage("main", "worker-1", "task", "submitted",
                         "Plan the feature", "build_plan", 16L),
                 new RunEvent.Plan("main", List.of(

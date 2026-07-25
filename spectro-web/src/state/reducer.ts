@@ -80,7 +80,7 @@ export interface ContextSnapshot {
   messages: number;
   estimatedTokens: number;
   threshold: number;
-  parts: { label: string; chars: number; estTokens: number }[];
+  parts: { label: string; chars: number; estTokens: number; text?: string }[];
 }
 
 /** One generated image — everything the gallery card needs. */
