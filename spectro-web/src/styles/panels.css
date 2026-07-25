@@ -472,7 +472,7 @@
 
 /* Shared column grid for header and rows: # | time | dt | dir | agent | type | summary. */
 .trace-head,
-.trace-row { display: grid; grid-template-columns: 48px 92px 60px 20px 64px 140px 96px 150px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center; padding: 2px var(--sp-4); }
+.trace-row { display: grid; grid-template-columns: 48px 92px 60px 20px 64px 140px 110px 96px 150px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center; padding: 2px var(--sp-4); }
 .trace-head { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); padding-top: var(--sp-2); padding-bottom: var(--sp-1); font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
 
 .trace-row { width: 100%; background: none; border: 0; color: var(--text); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-12); text-align: left; transition: background var(--t-fast); }
@@ -513,6 +513,8 @@
 .trace-col--llm { text-align: center; font-weight: 600; }
 .trace-col--proto { color: var(--text-faint); font-size: var(--fs-11); letter-spacing: 0.02em; }
 .trace-col--host { color: var(--text-faint); font-size: var(--fs-11); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Card 87: the model column — quiet mono, ellipsized like host. */
+.trace-col--model { color: var(--text-faint); font-size: var(--fs-11); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-col--llm-to { color: var(--sand); }
 .trace-col--llm-from { color: var(--accent); }
 .trace-col--llm-internal { color: var(--text-faint); }

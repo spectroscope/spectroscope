@@ -10,6 +10,13 @@ export function formatTokens(n: number): string {
 }
 
 /** 412 -> "0.4 s", 12300 -> "12 s", 96000 -> "1 m 36 s". */
+/** Local wall clock HH:MM:SS — the answer footer's start/end stamps (card 87). */
+export function clockTime(ts: number): string {
+  const d = new Date(ts);
+  const p = (n: number) => n.toString().padStart(2, "0");
+  return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 export function formatDuration(ms: number): string {
   const clamped = Math.max(0, ms);
   if (clamped < 10000) return `${(clamped / 1000).toFixed(1)} s`;

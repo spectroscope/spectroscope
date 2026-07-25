@@ -179,7 +179,7 @@ public final class Agent {
             providerLabel = options.providerName();
         }
         emit.accept(new RunStart(runId, agentId, options.parentId(), prompt,
-                providerLabel, attachments, now()));
+                providerLabel, options.provider().modelName(), attachments, now()));
         org.slf4j.LoggerFactory.getLogger(Agent.class).info(
                 "run {} started (provider {})", runId, providerLabel);
         // images BEFORE the text — the same order the Anthropic mapping expects.

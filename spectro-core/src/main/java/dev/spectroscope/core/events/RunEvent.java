@@ -61,14 +61,22 @@ public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
      * @param parentId    the spawning agent's id; null (omitted) on the main agent
      * @param prompt      the user message that started the run
      * @param provider    label of the LLM backend serving the run (additive)
+     * @param model       the model id serving the run (additive, card 87); null when unknown
      * @param attachments images riding along with the prompt (additive); null when none
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record RunStart(String runId, String agentId, String parentId, String prompt,
                     String provider,                  // additive
+                    String model,                     // additive (card 87)
                     List<Attachment> attachments,     // from additive
-                    long ts) implements RunEvent {}
+                    long ts) implements RunEvent {
+        /** Pre-card-87 arity — model unknown; Jackson keeps using the canonical. */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, List<Attachment> attachments, long ts) {
+            this(runId, agentId, parentId, prompt, provider, null, attachments, ts);
+        }
+    }
 
     /**
      * One provider round-trip begins; the loop's turn brake caps how many a run may take.

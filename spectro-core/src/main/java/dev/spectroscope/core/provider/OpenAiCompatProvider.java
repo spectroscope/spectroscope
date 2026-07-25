@@ -85,6 +85,11 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @return a lazy iterable; each {@code iterator()} call posts a fresh completion
      */
     @Override
+    public String modelName() {
+        return model;
+    }
+
+    @Override
     public Iterable<ProviderEvent> stream(ProviderRequest request) {
         return () -> new SseIterator(request);
     }

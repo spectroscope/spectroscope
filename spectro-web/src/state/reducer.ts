@@ -33,6 +33,11 @@ export type Turn =
        *  arrives (a torn/streaming turn simply has no footer yet). */
       usage?: { inputTokens: number; outputTokens: number };
       durationMs?: number;
+      /** The usage event's ts — the answer's END wall-clock; start derives as
+       *  endTs - durationMs (card 87). */
+      endTs?: number;
+      /** The model that produced this answer (run_start.model, card 87). */
+      model?: string;
     }
   | { kind: "tool"; callId: string }
   /** agentId marks an info line that belongs to a subagent's thread (spawn). */
@@ -70,6 +75,9 @@ export interface TraceEntry {
   ts: number;
   type: string;
   agentId?: string;
+  /** The model serving the run this row belongs to (card 87) — from the last
+   *  run_start's additive model; blank outside runs and in old archives. */
+  model?: string;
   payload: unknown;
 }
 
@@ -182,6 +190,9 @@ export interface UiState {
   workspace: WorkspaceInfo | null;
   /** The active backend announcement — latest wins (connect + every switch). */
   providerInfo: ProviderInfo | null;
+  /** The current (or last) run's model id — run_start.model wins, provider_info
+   *  is the live fallback; the trace rows and answer footers read it (card 87). */
+  runModel: string | null;
   /** The active permission mode ("ask" | "auto" | "readonly") — from the
    *  socket-only permission_mode_info frame, sent on connect and after every
    *  switch. Defaults to "ask" so a state built without ever seeing the frame
@@ -212,6 +223,7 @@ export const initialState: UiState = {
   plan: null,
   workspace: null,
   providerInfo: null,
+  runModel: null,
   permissionMode: "ask",
   assistantTurnStart: {},
 };
@@ -302,7 +314,12 @@ function appendTrace(s: UiState, entry: Omit<TraceEntry, "seq">): UiState {
 function stampAssistantUsage(
   turns: Turn[],
   agentId: string,
-  patch: { usage: { inputTokens: number; outputTokens: number }; durationMs?: number },
+  patch: {
+    usage: { inputTokens: number; outputTokens: number };
+    durationMs?: number;
+    endTs?: number;
+    model?: string;
+  },
 ): Turn[] {
   for (let i = turns.length - 1; i >= 0; i--) {
     const turn = turns[i];
@@ -346,11 +363,18 @@ export function reduce(state: UiState, event: RunEvent): UiState {
   // alike. The switch below may ignore an event; the wire view must not,
   // that is its whole point.
   const raw = event as { type: string; ts?: unknown; agentId?: unknown };
+  // Card 87: rows inside a run wear the run's model; the run_start row itself
+  // uses its own stamp (the pre-apply state still holds the PREVIOUS run's).
+  const rowModel =
+    raw.type === "run_start"
+      ? ((event as { model?: string }).model ?? state.providerInfo?.model)
+      : (state.runModel ?? undefined);
   const traced = appendTrace(state, {
     dir: "in",
     ts: typeof raw.ts === "number" ? raw.ts : Date.now(),
     type: raw.type,
     agentId: typeof raw.agentId === "string" ? raw.agentId : undefined,
+    ...(rowModel !== undefined && rowModel !== "" ? { model: rowModel } : {}),
     payload: event,
   });
   // The socket-only workspace_info frame is handled HERE, at the socket
@@ -442,6 +466,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           rootRunId: event.runId,
           runUsage: { inputTokens: 0, outputTokens: 0 },
           provider: event.provider ?? state.provider,
+          runModel: event.model ?? state.providerInfo?.model ?? state.runModel,
           lastStopReason: null,
           outboxAttachments: null,
         },
@@ -572,6 +597,8 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         turns: stampAssistantUsage(state.turns, event.agentId, {
           usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens },
           durationMs: start !== undefined ? Math.max(0, event.ts - start) : undefined,
+          endTs: event.ts,
+          ...(state.runModel !== null ? { model: state.runModel } : {}),
         }),
         usage: {
           inputTokens: state.usage.inputTokens + event.inputTokens,

@@ -28,6 +28,13 @@ public interface LlmProvider {
      *
      * @return the live provider label, or null to keep the build-time name
      */
+    /** The model id serving requests, or null when unknown — {@code run_start}
+     *  stamps it (additive, card 87) so every run records what answered it.
+     *  A {@link SwitchableProvider} reports its LIVE delegate's model. */
+    default String modelName() {
+        return null;
+    }
+
     default String providerName() {
         return null;
     }

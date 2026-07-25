@@ -20,9 +20,10 @@ export type RunEvent =
       parentId?: string;
       prompt: string;
       provider?: string;
+      model?: string; // additive (card 87)
       attachments?: AttachmentRef[];
       ts: number;
-    } // provider?, attachments? both additive
+    } // provider?, model?, attachments? all additive
   | { type: "turn_start"; agentId: string; turn: number; ts: number }
   | { type: "text_delta"; agentId: string; text: string; ts: number }
   | { type: "thinking_delta"; agentId: string; text: string; ts: number } // reasoning stream, additive

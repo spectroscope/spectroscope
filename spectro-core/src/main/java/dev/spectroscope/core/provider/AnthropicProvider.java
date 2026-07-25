@@ -92,6 +92,11 @@ public final class AnthropicProvider implements LlmProvider {
      * @return a lazy iterable; each {@code iterator()} call starts a fresh HTTP stream
      */
     @Override
+    public String modelName() {
+        return model;
+    }
+
+    @Override
     public Iterable<ProviderEvent> stream(ProviderRequest request) {
         return () -> new TranslatingIterator(request);
     }

@@ -56,6 +56,11 @@ public final class SwitchableProvider implements LlmProvider {
      * @return the current provider label
      */
     @Override
+    public String modelName() {
+        return delegate.get().modelName();
+    }
+
+    @Override
     public String providerName() {
         return name.get();
     }

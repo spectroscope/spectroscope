@@ -224,6 +224,10 @@ const TraceRow = memo(function TraceRow(props: {
         <span className="trace-col trace-col--host" title={t(lang, "trace.hostTitle")}>
           {host}
         </span>
+        {/* Card 87: the model serving this row's run — blank outside runs. */}
+        <span className="trace-col trace-col--model" title={entry.model ?? ""}>
+          {entry.model ?? ""}
+        </span>
         <span className="trace-col trace-col--agent">
           {entry.agentId !== undefined && (
             <span
@@ -871,6 +875,7 @@ export function TraceView(props: {
                 <span title={t(lang, "trace.llmColTitle")}>llm</span>
                 <span title={t(lang, "trace.protoTitle")}>proto</span>
                 <span title={t(lang, "trace.hostTitle")}>host</span>
+                <span>{t(lang, "trace.modelCol")}</span>
                 <span>agent</span>
                 <span>type</span>
                 <span>summary</span>

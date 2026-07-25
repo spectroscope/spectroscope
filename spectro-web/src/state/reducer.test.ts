@@ -93,7 +93,8 @@ describe("reduce — happy path", () => {
     const state = reduceAll(initialState, happyPath);
     expect(state.turns).toEqual([
       { kind: "user", text: "Summarize pom.xml" },
-      // the usage event (ts 5) stamps the answer's tokens + duration (from ts 3, its first delta)
+      // the usage event (ts 5) stamps the answer's tokens + duration (from ts 3,
+      // its first delta) + the end wall-clock (card 87 — start derives from it)
       {
         kind: "assistant",
         agentId: "main",
@@ -101,6 +102,7 @@ describe("reduce — happy path", () => {
         thinking: "",
         usage: { inputTokens: 120, outputTokens: 30 },
         durationMs: 2,
+        endTs: 5,
       },
     ]);
   });
@@ -908,5 +910,51 @@ describe("traceFromEvents — a flat inbound stream for the fleet trace tab", ()
 
   it("is empty for an empty stream", () => {
     expect(traceFromEvents([])).toEqual([]);
+  });
+});
+
+describe("card 87 — the model rides run_start into footer and trace", () => {
+  const runStart = {
+    type: "run_start",
+    runId: "r9",
+    agentId: "main",
+    prompt: "hi",
+    provider: "spectro-local",
+    model: "vibethinker-3b",
+    ts: 1000,
+  } as unknown as RunEvent;
+
+  it("stamps the answer's model and end time at usage", () => {
+    let s = reduce(initialState, runStart);
+    s = reduce(s, { type: "text_delta", agentId: "main", text: "yo", ts: 1200 } as unknown as RunEvent);
+    s = reduce(s, {
+      type: "usage",
+      agentId: "main",
+      inputTokens: 5,
+      outputTokens: 7,
+      ts: 1600,
+    } as unknown as RunEvent);
+    const answers = s.turns.filter((turn) => turn.kind === "assistant");
+    const answer = answers[answers.length - 1];
+    expect(answer.kind === "assistant" && answer.model).toBe("vibethinker-3b");
+    expect(answer.kind === "assistant" && answer.endTs).toBe(1600);
+  });
+
+  it("stamps trace rows inside the run with the run's model — the run_start row included", () => {
+    let s = reduce(initialState, runStart);
+    s = reduce(s, { type: "text_delta", agentId: "main", text: "yo", ts: 1200 } as unknown as RunEvent);
+    const rows = s.trace.filter((e) => e.type === "run_start" || e.type === "text_delta");
+    expect(rows.map((e) => e.model)).toEqual(["vibethinker-3b", "vibethinker-3b"]);
+  });
+
+  it("leaves pre-run rows and old archives blank instead of guessing", () => {
+    const s = reduce(initialState, {
+      type: "run_start",
+      runId: "r0",
+      agentId: "main",
+      prompt: "old file",
+      ts: 500,
+    } as unknown as RunEvent);
+    expect(s.trace[0].model).toBeUndefined();
   });
 });

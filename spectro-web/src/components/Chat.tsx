@@ -11,7 +11,7 @@ import type { CSSProperties } from "react";
 import type { ClientMessage } from "../events";
 import type { Turn, UiState } from "../state/reducer";
 import { groupTurns } from "../state/threads";
-import { agentAccent, formatDuration } from "../format";
+import { agentAccent, clockTime, formatDuration } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -200,6 +200,11 @@ export function Chat(props: {
               <div className="assistant-meta tabular" title={t(lang, "chat.usageTitle")}>
                 {turn.usage.inputTokens} in · {turn.usage.outputTokens} out
                 {turn.durationMs !== undefined && ` · ${formatDuration(turn.durationMs)}`}
+                {/* Card 87: the answer's wall-clock window + the model that made it. */}
+                {turn.endTs !== undefined &&
+                  turn.durationMs !== undefined &&
+                  ` · ${clockTime(turn.endTs - turn.durationMs)} → ${clockTime(turn.endTs)}`}
+                {turn.model !== undefined && ` · ${turn.model}`}
               </div>
             )}
           </div>

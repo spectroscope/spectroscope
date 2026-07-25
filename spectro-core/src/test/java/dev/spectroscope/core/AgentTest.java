@@ -44,6 +44,11 @@ class AgentTest {
         private final Deque<List<ProviderEvent>> scriptedTurns = new ArrayDeque<>();
         final List<ProviderRequest> requests = new ArrayList<>();
 
+        @Override
+        public String modelName() {
+            return "fake-model-1";
+        }
+
         @SafeVarargs
         static FakeProvider scripted(List<ProviderEvent>... turns) {
             FakeProvider provider = new FakeProvider();
@@ -536,6 +541,21 @@ class AgentTest {
         List<RunEvent> plainEvents = collect(agentWith(plainProvider, null, null));
         assertTrue(plainEvents.stream().noneMatch(RunEvent.ContextInfo.class::isInstance),
                 "without the flag no context_info is emitted");
+    }
+
+    @Test
+    void runStartStampsTheProvidersModel() {
+        // Card 87: every run records WHICH model answered it — the provider
+        // reports its live model id and run_start carries it additively.
+        FakeProvider provider = FakeProvider.scripted(List.of(
+                new LlmProvider.PTextDelta("hi"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        List<RunEvent> events = collect(agentWith(provider, null, null));
+        RunEvent.RunStart start = events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .findFirst().orElseThrow();
+        assertEquals("fake-model-1", start.model());
     }
 
     @Test

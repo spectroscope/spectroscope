@@ -61,6 +61,11 @@ public final class RetryingProvider implements LlmProvider {
 
     /** Delegates, so the {@code run_start} label reports the real provider, not the wrapper. */
     @Override
+    public String modelName() {
+        return delegate.modelName();
+    }
+
+    @Override
     public String providerName() {
         return delegate.providerName();
     }
