@@ -35,3 +35,6 @@ spectro-desktop/jre/
 *.iml
 .run/
 logs/
+
+# graphify AST-cache droppings (knowledge-graph tooling in the product home)
+graphify-out/
