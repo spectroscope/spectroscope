@@ -28,6 +28,9 @@ public class SpectroServerApplication {
         dev.spectroscope.cli.LogSetup.apply(
                 dev.spectroscope.core.config.SpectroConfig.load(
                         dev.spectroscope.core.config.SpectroConfig.Overrides.none()).logLevel());
+        // Card 90: the bundled skills reach ~/.spectro/skills exactly once —
+        // absent-only + ledgered, a courtesy that must never break the boot.
+        BundledSkills.seedFromClasspath();
         SpringApplication.run(SpectroServerApplication.class, args);
     }
 }

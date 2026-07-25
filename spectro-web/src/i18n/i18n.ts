@@ -547,6 +547,22 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lmn.real": { de: "Für echte Arbeit: oben im Picker einen Cloud- oder lokalen Anbieter wählen.", en: "For real work, pick a cloud or local provider in the header." },
   "lmn.gotIt": { de: "Verstanden", en: "Got it" },
 
+  // skills + MCP managers (card 90)
+  "skset.title": { de: "Skills", en: "Skills" },
+  "skset.note": { de: "Skills aus ~/.spectro/skills und dem Projekt. Änderungen greifen im nächsten Chat.", en: "Skills from ~/.spectro/skills and the project. Changes apply to the next chat." },
+  "skset.empty": { de: "Keine Skills. Beim ersten Start werden die eingebauten hierher kopiert.", en: "No skills. The built-in ones are copied here on first start." },
+  "skset.enable": { de: "einschalten", en: "enable" },
+  "skset.disable": { de: "ausschalten", en: "disable" },
+  "skset.deleteTitle": { de: "Skill löschen (nur eigene)", en: "Delete skill (user skills only)" },
+  "skset.deleteConfirm": { de: "wirklich?", en: "sure?" },
+  "mcpset.title": { de: "MCP-Server", en: "MCP servers" },
+  "mcpset.note": { de: "Externe MCP-Server (User-Ebene). Greifen beim nächsten Chat; der rohe JSON-Editor im Composer-Zahnrad bleibt für die Projekt-Ebene.", en: "External MCP servers (user scope). Apply to the next chat; the raw JSON editor in the composer gear stays for the project scope." },
+  "mcpset.empty": { de: "Keine MCP-Server konfiguriert.", en: "No MCP servers configured." },
+  "mcpset.namePh": { de: "name", en: "name" },
+  "mcpset.cmdPh": { de: "kommando + argumente", en: "command + args" },
+  "mcpset.add": { de: "hinzufügen", en: "add" },
+  "mcpset.remove": { de: "entfernen", en: "remove" },
+
   // microphone (voice input)
   "mic.record": { de: "Sprachnachricht aufnehmen", en: "Record a voice message" },
   "mic.stop": { de: "Aufnahme stoppen", en: "Stop recording" },

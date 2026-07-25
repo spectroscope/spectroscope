@@ -291,3 +291,50 @@
 }
 .doctor-cli { margin: 0; font-size: var(--fs-12); color: var(--text); }
 .doctor-cli-hint { margin: var(--sp-1) 0 0; font-size: var(--fs-12); color: var(--text-faint); }
+
+/* Skills + MCP managers (card 90): quiet rows in the settings page. */
+.skset { margin-top: var(--sp-4); }
+.skset-list { list-style: none; margin: var(--sp-2) 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.skset-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-12);
+}
+.skset-row:last-child { border-bottom: none; }
+.skset-name { flex: none; color: var(--text); }
+.skset-desc {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skset-del {
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+}
+.skset-del:hover { color: var(--error); border-color: var(--error); }
+.skset-del--armed,
+.skset-del--armed:hover { color: var(--error); border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+.skset-add { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+.skset-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 4px var(--sp-2);
+}
+.skset-input--wide { flex: 1; min-width: 0; }

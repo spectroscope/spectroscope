@@ -25,6 +25,7 @@ import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { setLang, useLang } from "../state/lang";
+import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import { fetchSettings, putSettings, originLabel, type SettingsView } from "../state/serverSettings";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
 
@@ -623,6 +624,10 @@ export function SettingsPanel({
               </div>
             </>
           )}
+
+          {/* ---- Skills + MCP managers (card 90) ---- */}
+          <SkillsSettings />
+          <McpSettings />
         </div>
       </section>
     </div>

@@ -83,3 +83,11 @@ tasks.withType<JavaExec>().configureEach {
     // resolves <root>/.spectro/settings.json — where the mcpServers block lives.
     workingDir = rootProject.projectDir
 }
+
+// Card 90: the repo's own skills ride every artifact (jar, DMG) — seeded into
+// ~/.spectro/skills on first start by BundledSkills, absent-only + ledgered.
+tasks.processResources {
+    from(rootProject.layout.projectDirectory.dir(".spectro/skills")) {
+        into("bundled-skills")
+    }
+}
