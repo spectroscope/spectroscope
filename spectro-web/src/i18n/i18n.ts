@@ -527,6 +527,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.queuedHint": { de: "startet nach dem laufenden Lauf", en: "sends after the current run" },
   "chat.unqueue": { de: "Aus der Warteschlange nehmen", en: "Remove from queue" },
   "disc.title": { de: "Anzeigetiefe", en: "disclosure level" },
+  "tf.extended": { de: "vollständig", en: "extended" },
+  "tf.extendedTitle": { de: "Alles zeigen, was das Protokoll trägt — auch den zusammengebauten Request (System-Prompt, Tool-Schemas, Conversation), die Token-Wahrheit, Turn-Grenzen und den Plan.", en: "Show everything the record carries — the assembled request (system prompt, tool schemas, conversation), the token truth, turn boundaries and the plan." },
+
   "width.title": { de: "Textbreite", en: "text width" },
   "width.normal": { de: "normal", en: "normal" },
   "width.normal.hint": { de: "die gewohnte Lesebreite", en: "the usual reading width" },

@@ -132,7 +132,11 @@ export function TextView({
     setExplain(EXPLAIN_IDLE);
   };
 
-  const feed = useMemo(() => buildTextFeed(events), [events]);
+  // Owner 2026-07-26 ("wollen wir nicht auch ehrlich sein"): the reading feed
+  // leaves frames out — extended shows the WHOLE record, including the
+  // assembled request (system prompt + tool schemas) and the token truth.
+  const [extended, setExtended] = useState(false);
+  const feed = useMemo(() => buildTextFeed(events, extended), [events, extended]);
   const jsonl = useMemo(() => (mode === "jsonl" ? eventsToJsonl(events) : []), [events, mode]);
 
   return (
@@ -161,6 +165,17 @@ export function TextView({
         <span className="textview-note">
           {mode === "jsonl" ? t(lang, "tf.jsonlNote", { n: jsonl.length }) : t(lang, "tf.textNote")}
         </span>
+        {mode === "text" && (
+          <button
+            type="button"
+            className={extended ? "trace-lens mono trace-lens--on" : "trace-lens mono"}
+            aria-pressed={extended}
+            title={t(lang, "tf.extendedTitle")}
+            onClick={() => setExtended((v) => !v)}
+          >
+            {t(lang, "tf.extended")}
+          </button>
+        )}
         <button
           type="button"
           className={explain.status === "streaming" ? "trace-lens mono trace-lens--on" : "trace-lens mono"}

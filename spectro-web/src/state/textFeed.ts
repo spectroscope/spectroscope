@@ -32,8 +32,16 @@ function compact(input: unknown): string {
  * Folds the event stream into the feed. Contiguous deltas of the same agent
  * and kind accumulate into one segment; a mode CHANGE closes the reasoning
  * run with its `</think>` marker — exactly the boundary the wire has.
+ *
+ * @param events   the stream to fold
+ * @param extended when true, EVERY frame shows — including the ones the
+ *   reading feed leaves out: the assembled request (`context_info`, with the
+ *   system prompt and tool schemas the model actually received), the token
+ *   truth (`usage`), turn boundaries, the plan, and the client frames the UI
+ *   itself sent. The reading feed stays exactly as it was; extended only adds
+ *   (owner 2026-07-26: "wollen wir nicht auch ehrlich sein").
  */
-export function buildTextFeed(events: readonly RunEvent[]): FeedSegment[] {
+export function buildTextFeed(events: readonly RunEvent[], extended = false): FeedSegment[] {
   const segments: FeedSegment[] = [];
   const mode = new Map<string, Mode>();
   const toolNames = new Map<string, string>();
@@ -117,6 +125,47 @@ export function buildTextFeed(events: readonly RunEvent[]): FeedSegment[] {
         closeThinking(e.agentId ?? "main");
         mode.set(e.agentId ?? "main", null);
         push("error", e.agentId ?? "main", `[error] ${e.message}`);
+        break;
+      case "turn_start":
+        if (extended) push("marker", e.agentId, `[turn_start ${e.turn}]`);
+        break;
+      case "usage":
+        if (extended) {
+          const cache = (e.cacheReadTokens ?? 0) + (e.cacheCreationTokens ?? 0);
+          push(
+            "marker",
+            e.agentId,
+            `[usage ${e.inputTokens} in · ${e.outputTokens} out` +
+              (cache > 0 ? ` · cache ${cache}` : "") +
+              "]",
+          );
+        }
+        break;
+      case "context_info":
+        // The whole assembled request — what the model was actually handed.
+        if (extended) {
+          push(
+            "marker",
+            e.agentId,
+            `[context_info turn ${e.turn} · ${e.messages} messages · est ${e.estimatedTokens} of ${e.threshold} tokens]`,
+          );
+          for (const part of e.parts) {
+            push(
+              "marker",
+              e.agentId,
+              `--- ${part.label} (${part.chars} chars, ~${part.estTokens} tokens) ---`,
+            );
+            if (part.text !== undefined && part.text !== "") {
+              push("output", e.agentId, part.text);
+            }
+          }
+        }
+        break;
+      case "plan":
+        if (extended) {
+          push("marker", e.agentId, "[plan]");
+          push("output", e.agentId, e.steps.map((s) => `${s.status.padEnd(12)} ${s.text}`).join("\n"));
+        }
         break;
       case "run_end":
         // Close every open reasoning run — a child may still be mid-thought

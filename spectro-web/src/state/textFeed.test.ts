@@ -163,3 +163,60 @@ describe("eventsToJsonl", () => {
     expect(lines[1]).toContain('"text":"hello"');
   });
 });
+
+describe("buildTextFeed — the extended feed (owner 2026-07-26)", () => {
+  const events = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts: 1 },
+    { type: "turn_start", agentId: "main", turn: 1, ts: 2 },
+    {
+      type: "context_info",
+      agentId: "main",
+      turn: 1,
+      messages: 2,
+      estimatedTokens: 300,
+      threshold: 100000,
+      parts: [
+        { label: "system prompt", chars: 40, estTokens: 10, text: "You are spectroscope, a coding agent." },
+        { label: "conversation", chars: 8, estTokens: 2, text: "USER:\ngo\n" },
+      ],
+      ts: 3,
+    },
+    { type: "text_delta", agentId: "main", text: "hi", ts: 4 },
+    { type: "usage", agentId: "main", inputTokens: 120, outputTokens: 8, ts: 5 },
+    { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 6 },
+  ] as unknown as RunEvent[];
+
+  it("the normal feed stays a reading feed — no context, no usage", () => {
+    const text = buildTextFeed(events)
+      .map((s) => s.text)
+      .join("\n");
+    expect(text).not.toContain("You are spectroscope");
+    expect(text).not.toContain("120 in");
+  });
+
+  it("extended carries the WHOLE request — the system prompt the model got", () => {
+    const segments = buildTextFeed(events, true);
+    const text = segments.map((s) => s.text).join("\n");
+    expect(text).toContain("[context_info");
+    expect(text).toContain("You are spectroscope, a coding agent.");
+    expect(text).toContain("system prompt");
+    expect(text).toContain("USER:");
+  });
+
+  it("extended shows the token truth and the turn boundaries", () => {
+    const text = buildTextFeed(events, true)
+      .map((s) => s.text)
+      .join("\n");
+    expect(text).toContain("120 in");
+    expect(text).toContain("8 out");
+    expect(text).toContain("[turn_start 1]");
+  });
+
+  it("extended never loses what the normal feed had", () => {
+    const normal = buildTextFeed(events).map((s) => s.text);
+    const extended = buildTextFeed(events, true).map((s) => s.text);
+    for (const block of normal) {
+      expect(extended).toContain(block);
+    }
+  });
+});
