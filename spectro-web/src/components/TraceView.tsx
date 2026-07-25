@@ -849,7 +849,10 @@ export function TraceView(props: {
         </div>
       )}
 
-      <div className="trace-body" onKeyDown={onKeyDown}>
+      {/* With the timeline lens on, every row gets breathing room so the wait
+          bars read as their own layer instead of touching the next row's text
+          (owner: "5 Pixel mehr oben und unten"). */}
+      <div className={`trace-body${tlOn ? " trace-body--tl" : ""}`} onKeyDown={onKeyDown}>
         <div
           className="trace-scroll"
           ref={scrollRef}
