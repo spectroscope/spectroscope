@@ -11,6 +11,12 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 > **Maven Central is append-only.** There is no unpublishing, only new versions.
 > Publish *only* after a full green gate, and the next release is always a bump
 > (0.1.0 → 0.1.1 → …), never a re-publish of an existing version.
+>
+> **Version counter — bump this line with every cut.** Published so far:
+> **0.1.0, 0.2.0, 0.3.0** (2026-07-24). Those numbers are burned forever; the
+> next release MUST be **0.3.1 or higher**. This applies to every artifact in
+> the table below, not just the Maven libs: apps and the desktop kit move to
+> the same number in step 2.
 
 ---
 
@@ -66,7 +72,8 @@ Move together:
 ./gradlew test :spectro-core:javadoc :spectro-orchestrator:javadoc   # JUnit + javadoc (warnings ok, errors abort)
 ( cd spectro-web && npx vitest run )                                  # vitest
 ```
-Baseline at v0.1.0: **JUnit 678** (1 skipped = the live-Opus test), **vitest 383**.
+Baseline at v0.3.0: **JUnit 747**, **vitest 501** (the live-Opus contract check
+self-skips without a key). A new release should never gate below the last one.
 
 ### 4. Dry-run the publish (no portal)
 ```bash
