@@ -108,38 +108,50 @@
 .ws-chooser-opt:hover { color: var(--text); }
 .ws-chooser-opt--on { background: var(--accent-soft); color: var(--accent); }
 
-/* User turn: compact raised card with eyebrow. */
+/* User turn: a flat bubble on the RIGHT (owner 2026-07-25). One solid mid
+   surface — no gradient, no border, no shadow: the side of the column is what
+   says who spoke, so the card weight can go. The "You" eyebrow stays for
+   screen readers and leaves the eye alone (sr-only below). */
 .user-turn {
   width: fit-content;
-  max-width: 100%;
-  background-color: var(--surface-2);
-  background-image: linear-gradient(var(--glint), transparent 70%);
-  border: 1px solid var(--border);
+  max-width: min(78%, 44rem);
+  margin: var(--sp-4) 0 var(--sp-3) auto; /* auto-left = pushed right */
+  background: var(--surface-3);
+  border: 0;
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: var(--sp-3) var(--sp-4);
-  margin: var(--sp-4) 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
 }
-.user-turn .eyebrow { margin-bottom: var(--sp-1); }
+/* The label is redundant next to the position — kept for assistive tech only. */
+.user-turn .eyebrow {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .user-text {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+/* Attachments ride along inside the bubble, right-aligned with it. */
+.user-turn .user-attachments { justify-content: flex-end; }
 
-/* Assistant turn: no bubble — document flow on the app background. */
+/* Assistant turn: the LEFT column — document flow on the app ground, no
+   bubble at all (owner: "wie im Screenshot"). */
 .assistant-turn { margin: 0 0 var(--sp-4); }
 .assistant-turn .agent-badge {
   display: inline-block;
   margin-bottom: var(--sp-1);
 }
-/* Assistant answer: its own quiet card, markdown-rendered (owner request).
-   Calmer than the user card — a surface, not a raised bubble. */
 .assistant-answer {
-  background-color: var(--surface);
-  background-image: linear-gradient(var(--glint), transparent 90px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: var(--sp-3) var(--sp-4);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
   line-height: 1.65;
   overflow-wrap: break-word;
 }
