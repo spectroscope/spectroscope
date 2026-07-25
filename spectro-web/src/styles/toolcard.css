@@ -132,8 +132,13 @@
 .tool-card-inner {
   min-height: 0;
   overflow: hidden;
-  padding: 0 var(--sp-3) var(--sp-2);
+  /* NO vertical padding here: with grid-template-rows 0fr the CONTENT collapses
+     to zero but padding still occupies space, so a bottom padding leaks a sliver
+     of the body under every closed card (owner spotted it). The breathing room
+     belongs to the open state only. */
+  padding: 0 var(--sp-3);
 }
+.tool-card-body.open .tool-card-inner { padding-bottom: var(--sp-2); }
 
 .io-label {
   font-size: var(--fs-11);
