@@ -13,7 +13,9 @@ import java.util.Optional;
  * Supervises one {@code llama-server} subprocess on a free localhost port. Lazy
  * and idempotent: {@link #ensureRunning} starts it once, later calls return the
  * live endpoint. The binary launch is a seam ({@link Launcher}) so tests drive a
- * stub without a real binary or a multi-GB model.
+ * stub without a real binary or a multi-GB model. While a subprocess is live, a
+ * JVM shutdown hook reaps it — a SIGTERM'd host never orphans its llama-server;
+ * a normal {@link #shutdown} deregisters the hook again.
  *
  * <p>The health budget is generous by default (a real llama-server loading a
  * multi-GB model into memory + Metal can take tens of seconds before it answers)
@@ -39,6 +41,7 @@ public final class LocalRuntime {
 
     private AutoCloseable process;
     private LocalEndpoint endpoint;
+    Thread reaper; // JVM shutdown hook while a subprocess is live (package-visible for tests)
 
     /** Production wiring — a 60s health budget for a cold multi-GB model load. */
     public LocalRuntime(Launcher launcher, String model) {
@@ -70,6 +73,8 @@ public final class LocalRuntime {
                 port = probe.getLocalPort();
             }
             process = launcher.start(modelFile, port);
+            reaper = new Thread(this::shutdown, "spectro-local-reaper");
+            Runtime.getRuntime().addShutdownHook(reaper);
             String base = "http://127.0.0.1:" + port;
             if (!healthy(base)) {
                 shutdown();
@@ -109,7 +114,9 @@ public final class LocalRuntime {
         return false;
     }
 
-    /** Reap the subprocess and forget the endpoint. Safe to call repeatedly. */
+    /** Reap the subprocess, drop the reaper hook and forget the endpoint. Safe
+     *  to call repeatedly — and it is what the reaper itself runs at JVM
+     *  shutdown, so a SIGTERM'd host never orphans its llama-server. */
     public synchronized void shutdown() {
         endpoint = null;
         if (process != null) {
@@ -119,6 +126,14 @@ public final class LocalRuntime {
                 // best-effort reap
             }
             process = null;
+        }
+        if (reaper != null) {
+            try {
+                Runtime.getRuntime().removeShutdownHook(reaper);
+            } catch (IllegalStateException jvmAlreadyShuttingDown) {
+                // the reaper itself invoked us — nothing left to deregister
+            }
+            reaper = null;
         }
     }
 }

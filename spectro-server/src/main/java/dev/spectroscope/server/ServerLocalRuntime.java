@@ -43,7 +43,8 @@ public final class ServerLocalRuntime {
         return LocalProviderFactory.build(runtime, model.path());
     }
 
-    /** Exec {@code llama-server} on the model + port; the handle destroys it on shutdown. */
+    /** Exec {@code llama-server} on the model + port; the runtime's JVM
+     *  shutdown-hook reaper closes the handle, so the child dies with the JVM. */
     private static AutoCloseable launch(Path model, int port) throws Exception {
         ProcessBuilder pb = new ProcessBuilder(binary(),
                 "-m", model.toString(),
