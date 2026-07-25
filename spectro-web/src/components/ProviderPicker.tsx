@@ -11,7 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { PROVIDERS } from "./providerPickerMode";
+import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 
 export function ProviderPicker({
@@ -118,7 +118,7 @@ export function ProviderPicker({
             >
               {PROVIDERS.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {providerDisplayName(p)}
                 </option>
               ))}
             </select>
