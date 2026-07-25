@@ -13,9 +13,7 @@ describe("the built-in provider", () => {
     expect(providerDisplayName("lmstudio")).toBe("lmstudio");
   });
   it("renders a needs-download field mode when the model is not there", () => {
-    expect(modelFieldMode("spectro-local", { "spectro-local": "needs-download" }, [])).toBe(
-      "needs-download",
-    );
+    expect(modelFieldMode("spectro-local", { "spectro-local": "needs-download" }, [])).toBe("needs-download");
   });
   it("is a plain freetext (fixed model) once ready", () => {
     expect(modelFieldMode("spectro-local", { "spectro-local": "ready" }, [])).toBe("freetext");
