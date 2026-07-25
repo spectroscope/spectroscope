@@ -8,8 +8,11 @@ import org.springframework.web.socket.config.annotation.WebSocketHandlerRegistry
 import org.springframework.web.socket.server.standard.ServletServerContainerFactoryBean;
 
 /**
- * Registers the single socket handler on /ws. setAllowedOrigins("*") is for the
- * Vite dev server (localhost:5173); a real deployment would pin the origin.
+ * Registers the single socket handler on /ws. {@code setAllowedOrigins("*")}
+ * only disables Spring's own same-origin check (which would wrongly block the
+ * vite-proxy origin); the real gate is {@link LocalOriginHandshakeInterceptor}
+ * (card 92) — the same loopback + Host + Origin fence the REST endpoints wear,
+ * port-agnostic, closing cross-site WebSocket hijacking.
  */
 @Configuration
 @EnableWebSocket
@@ -33,7 +36,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
      */
     @Override
     public void registerWebSocketHandlers(WebSocketHandlerRegistry registry) {
-        registry.addHandler(handler, "/ws").setAllowedOrigins("*");
+        registry.addHandler(handler, "/ws")
+                .addInterceptors(new LocalOriginHandshakeInterceptor())
+                .setAllowedOrigins("*");
     }
 
     /**
