@@ -12,6 +12,7 @@ import org.springframework.web.client.RestClient;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
@@ -62,9 +63,10 @@ public final class OpenAiCompatProvider implements LlmProvider {
      */
     public OpenAiCompatProvider(Options options) {
         // The JDK HttpClient transport, NOT the default HttpURLConnection one:
-        // only the JDK client's close CANCELS a streaming response promptly, so
-        // the stop button can interrupt a stalled stream instead of blocking on a
-        // drain-for-reuse (see OllamaProvider for the full rationale).
+        // closing the JDK client's RAW body stream cancels the subscription and
+        // tears the connection down promptly — the stop button's whole mechanism.
+        // (Spring's response-level close drains regardless of transport; the
+        // iterator therefore closes the raw stream, see SseIterator.)
         RestClient.Builder builder = RestClient.builder()
                 .baseUrl(options.baseUrl().replaceAll("/$", ""))
                 .requestFactory(new JdkClientHttpRequestFactory());
@@ -434,9 +436,18 @@ public final class OpenAiCompatProvider implements LlmProvider {
                             throw classifyHttpFailure(
                                     clientResponse.getStatusCode().value(), detail);
                         }
+                        // The close handle is the RAW body stream, NEVER the Spring
+                        // response: Spring's close() DRAINS the remaining body first
+                        // (StreamUtils.drain), so a mid-generation cancel would sit on
+                        // the cancelling thread reading the model's whole remaining
+                        // output while the server never sees a disconnect (15.8 s
+                        // measured against llama-server, card 78). The raw JDK stream
+                        // close cancels the body subscription and tears the connection
+                        // down — the server notices and stops generating.
+                        InputStream bodyStream = clientResponse.getBody();
                         return new OpenResponse(new BufferedReader(new InputStreamReader(
-                                clientResponse.getBody(), StandardCharsets.UTF_8)),
-                                clientResponse::close);
+                                bodyStream, StandardCharsets.UTF_8)),
+                                () -> closeBody(bodyStream));
                     }, false);
             this.lines = open.reader();
             this.closeResponse = open.close();
@@ -599,6 +610,16 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @param close  releases the underlying HTTP response
      */
     private record OpenResponse(BufferedReader reader, Runnable close) {}
+
+    /** Closes the raw body stream, quietly — closing an already-broken stream is
+     *  fine; the point is the prompt subscription cancel + connection teardown. */
+    private static void closeBody(InputStream body) {
+        try {
+            body.close();
+        } catch (IOException ignored) {
+            // the reader's own IOException path handles the aftermath
+        }
+    }
 
     // ---- request mapping ------------------------------------------------------
 

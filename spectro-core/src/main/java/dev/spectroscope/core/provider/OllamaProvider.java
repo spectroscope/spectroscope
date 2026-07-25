@@ -55,11 +55,11 @@ public final class OllamaProvider implements LlmProvider {
         this.baseUrl = options.baseUrl().replaceAll("/$", "");
         this.model = options.model();
         // The JDK HttpClient transport, NOT the default HttpURLConnection one:
-        // cancelling a run closes the streaming response, and only the JDK
-        // client's close CANCELS the body subscription promptly. The default
-        // (SimpleClientHttpRequestFactory) instead tries to DRAIN the stream for
-        // connection reuse on close, which BLOCKS when a slow or cloud model has
-        // stalled mid-stream — so the stop button could never interrupt it.
+        // closing the JDK client's RAW body stream cancels the body subscription
+        // and tears the connection down promptly — the stop button's whole
+        // mechanism. NOTE: Spring's response-level close() drains the remaining
+        // body on EVERY transport (StreamUtils.drain), so the iterator closes
+        // the raw stream, never the response (see NdjsonIterator).
         this.http = RestClient.builder()
                 .baseUrl(baseUrl)
                 .requestFactory(new JdkClientHttpRequestFactory())
@@ -301,10 +301,16 @@ public final class OllamaProvider implements LlmProvider {
                             throw classifyHttpFailure(
                                     clientResponse.getStatusCode().value(), detail, hasImages);
                         }
+                        // The close handle is the RAW body stream, NEVER the Spring
+                        // response: Spring's close() DRAINS the remaining body first,
+                        // so a mid-generation cancel would read the model's whole
+                        // remaining output on the cancelling thread while the server
+                        // never sees a disconnect (card 78). The raw JDK stream close
+                        // cancels the subscription and tears the connection down.
                         InputStream bodyStream = clientResponse.getBody();
                         return new OpenResponse(
                                 new BufferedReader(new InputStreamReader(bodyStream, StandardCharsets.UTF_8)),
-                                clientResponse::close);
+                                () -> closeBody(bodyStream));
                     }, false);
             this.lines = open.reader();
             this.closeResponse = open.close();
@@ -429,6 +435,16 @@ public final class OllamaProvider implements LlmProvider {
      * @param close  releases the underlying HTTP response
      */
     private record OpenResponse(BufferedReader reader, Runnable close) {}
+
+    /** Closes the raw body stream, quietly — closing an already-broken stream is
+     *  fine; the point is the prompt subscription cancel + connection teardown. */
+    private static void closeBody(InputStream body) {
+        try {
+            body.close();
+        } catch (IOException ignored) {
+            // the reader's own IOException path handles the aftermath
+        }
+    }
 
     // ---- request mapping ----------------------------------------------------
 

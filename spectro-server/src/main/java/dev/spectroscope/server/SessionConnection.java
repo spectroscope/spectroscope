@@ -544,11 +544,15 @@ public final class SessionConnection {
         }
     }
 
-    /** The stop button: cancel the run's signal — the same signal the loop checks. */
+    /** The stop button: cancel the run's signal — the same signal the loop checks.
+     *  Detached to a virtual thread: cancel listeners close provider streams (I/O),
+     *  and the WebSocket handler thread must neither block on that nor die on it —
+     *  a listener exception here used to ride up into Spring's decorator and CLOSE
+     *  the whole session (card 78). The frame handler stays instant either way. */
     public void onAbort() {
         CancelSignal current = this.signal;
         if (current != null) {
-            current.cancel();
+            Thread.ofVirtual().name("spectro-abort").start(current::cancel);
         }
     }
 
