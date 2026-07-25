@@ -166,10 +166,14 @@ export function WorkspaceTab({
   workspace,
   onPickFolder,
   canPickFolder,
+  refreshSignal,
 }: {
   workspace: WorkspaceInfo | null;
   /** Opens the native folder picker on the spectroscope machine (macOS dialog). */
   onPickFolder?: () => void;
+  /** Bumped by App when the live run touched the disk (tool_result/run_end) —
+   *  the tree refetches, throttled, so it never feels stale (card 89). */
+  refreshSignal?: number;
   /** False once the agent ran — then the workspace is baked in. */
   canPickFolder?: boolean;
 }) {
@@ -226,17 +230,50 @@ export function WorkspaceTab({
   };
 
   const sessionId = workspace?.sessionId;
+  // Auto-refresh dedupe (card 89): identical payloads never re-render the
+  // tree — the 5 s safety poll must not make the panel flicker.
+  const lastJson = useRef("");
   const load = useCallback((): void => {
     fetch(sessionId === undefined ? "/api/files" : `/api/files?session=${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((res) => {
-        setTree(res as FilesResponse);
         setFailed(false);
+        const next = JSON.stringify(res);
+        if (next !== lastJson.current) {
+          lastJson.current = next;
+          setTree(res as FilesResponse);
+        }
       })
       .catch(() => setFailed(true));
   }, [sessionId]);
 
   useEffect(load, [load]);
+
+  // Card 89: the tree follows the RUN — a tool wrote something (tool_result)
+  // or the run ended, App bumped the signal, the tree refetches at most once
+  // per second (trailing throttle, so the LAST write always lands).
+  const REFRESH_THROTTLE_MS = 1000;
+  const lastSignalFetch = useRef(0);
+  useEffect(() => {
+    if (refreshSignal === undefined || refreshSignal === 0) return;
+    const since = Date.now() - lastSignalFetch.current;
+    const wait = since >= REFRESH_THROTTLE_MS ? 0 : REFRESH_THROTTLE_MS - since;
+    const timer = window.setTimeout(() => {
+      lastSignalFetch.current = Date.now();
+      load();
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [refreshSignal, load]);
+
+  // The safety net for writers OUTSIDE the run (the operator's editor): a slow
+  // poll while the tab is actually visible; the dedupe above keeps it calm.
+  const SAFETY_POLL_MS = 5000;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, SAFETY_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   const toggle = (path: string): void => {
     setOpen((prev) => {

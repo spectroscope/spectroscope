@@ -27,6 +27,7 @@ export function RightPanel({
   workspace,
   onPickFolder,
   canPickFolder,
+  fsRefreshSignal,
 }: {
   agents: AgentInfo[];
   plan: PlanStep[] | null;
@@ -41,6 +42,9 @@ export function RightPanel({
   onPickFolder?: () => void;
   /** False once the agent ran — the workspace is baked in then. */
   canPickFolder?: boolean;
+  /** Bumped when the live run touched the disk — drills into the Files tab
+   *  so the tree refetches (card 89). */
+  fsRefreshSignal?: number;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = agents.find((a) => a.id === selectedId) ?? null;
@@ -100,7 +104,12 @@ export function RightPanel({
         ) : activeTab === "plan" ? (
           <PlanTab plan={plan} />
         ) : activeTab === "files" ? (
-          <WorkspaceTab workspace={workspace} onPickFolder={onPickFolder} canPickFolder={canPickFolder} />
+          <WorkspaceTab
+            workspace={workspace}
+            onPickFolder={onPickFolder}
+            canPickFolder={canPickFolder}
+            refreshSignal={fsRefreshSignal}
+          />
         ) : (
           <SystemContextTab selected={selected} provider={provider} model={model} thinking={thinking} />
         )}

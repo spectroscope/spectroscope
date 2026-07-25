@@ -130,6 +130,9 @@ export function App() {
   // A Spectrum-band click hands one exact event to the Trace (open + flash it).
   const [focusEvent, setFocusEvent] = useState<RunEvent | null>(null);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]); // raw, for the graph
+  // Card 89: bumped per rAF batch that carried a disk-relevant event — the
+  // Files tab refetches (throttled) instead of waiting for a manual reload.
+  const [fsTick, setFsTick] = useState(0);
   // Provider/model, thinking and the image backend now live in the user's
   // server-side settings (~/.spectro/settings.json) — the server builds every
   // connection's agent straight from them. The useState seeds below are only
@@ -230,6 +233,16 @@ export function App() {
     setLiveEvents((prev) => [...prev, ...batch]);
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
+    // Card 89: a tool result or a run end may have changed the workspace on
+    // disk — nudge the Files tab (it throttles + dedupes on its side).
+    if (
+      batch.some((e) => {
+        const type = (e as { type?: string }).type;
+        return type === "tool_result" || type === "run_end" || type === "workspace_info";
+      })
+    ) {
+      setFsTick((n) => n + 1);
+    }
   }, []);
 
   useEffect(() => {
@@ -988,6 +1001,7 @@ export function App() {
                     workspace={view.workspace}
                     onPickFolder={viewingLive ? pickWorkspace : undefined}
                     canPickFolder={canPickWorkspace}
+                    fsRefreshSignal={viewingLive ? fsTick : undefined}
                   />
                 </>
               )}
