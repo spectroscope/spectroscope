@@ -19,7 +19,7 @@ final class LocalReaperProofChild {
     }
 
     public static void main(String[] args) throws Exception {
-        LocalRuntime runtime = new LocalRuntime((model, port) -> {
+        LocalRuntime runtime = new LocalRuntime((model, port, key) -> {
             HttpServer health = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             health.createContext("/v1/models", ex -> {
                 byte[] body = "{\"data\":[]}".getBytes(StandardCharsets.UTF_8);

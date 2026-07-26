@@ -569,7 +569,11 @@ public record SpectroConfig(
         return switch (provider) {
             case "ollama" -> "qwen3";
             case "lmstudio", "openai" -> "local-model";
-            case "spectro-local" -> "vibethinker-3b"; // the bundled model this build ships
+            // Ask the catalogue rather than repeat it. This used to be a constant,
+            // and it drifted: the catalogue moved its default to a model that
+            // shows its thinking AND drives tools, while a live picker switch
+            // kept starting the tool-free one with the research-only licence.
+            case "spectro-local" -> dev.spectroscope.core.local.LocalCatalog.bundled().defaultId();
             case "anthropic" -> DEFAULTS.model(); // claude-opus-4-8, a real anthropic model
             default -> null; // gemini, openrouter: no baked default — the caller decides
         };

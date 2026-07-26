@@ -27,11 +27,14 @@ public final class LocalRuntime {
      *  is closed on shutdown. Production execs the bundled binary; tests bind a
      *  stub HTTP server. */
     public interface Launcher {
-        AutoCloseable start(Path model, int port) throws Exception;
+        AutoCloseable start(Path model, int port, String apiKey) throws Exception;
     }
 
-    /** A running local endpoint: the OpenAI-compatible base url and the model id. */
-    public record LocalEndpoint(String baseUrl, String model) {}
+    /** A running local endpoint: the base url, the model id, and the key that
+     *  this launch requires. The key is minted per launch and never persisted —
+     *  it exists only to make a loopback port that anything on the machine can
+     *  reach into one that only this process can use. */
+    public record LocalEndpoint(String baseUrl, String model, String apiKey) {}
 
     private static final Duration DEFAULT_HEALTH_BUDGET = Duration.ofSeconds(60);
 
@@ -72,15 +75,20 @@ public final class LocalRuntime {
             try (ServerSocket probe = new ServerSocket(0)) {
                 port = probe.getLocalPort();
             }
-            process = launcher.start(modelFile, port);
+            // A fresh secret per launch. llama.cpp answers every origin with
+            // `Access-Control-Allow-Origin: *`, so without this any page the
+            // operator has open can sweep loopback, call the model and read the
+            // reply. Never written to disk, never logged, dies with the process.
+            String key = mintKey();
+            process = launcher.start(modelFile, port, key);
             reaper = new Thread(this::shutdown, "spectro-local-reaper");
             Runtime.getRuntime().addShutdownHook(reaper);
             String base = "http://127.0.0.1:" + port;
-            if (!healthy(base)) {
+            if (!healthy(base, key)) {
                 shutdown();
                 return Optional.empty();
             }
-            endpoint = new LocalEndpoint(base, model);
+            endpoint = new LocalEndpoint(base, model, key);
             return Optional.of(endpoint);
         } catch (Exception failed) {
             shutdown();
@@ -89,13 +97,20 @@ public final class LocalRuntime {
     }
 
     /** Poll {@code /v1/models} until 200 or the health budget elapses. */
-    private boolean healthy(String base) {
+    private static String mintKey() {
+        byte[] raw = new byte[24];
+        new java.security.SecureRandom().nextBytes(raw);
+        return java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(raw);
+    }
+
+    private boolean healthy(String base, String apiKey) {
         HttpClient client = HttpClient.newHttpClient();
         long deadline = System.nanoTime() + healthBudget.toNanos();
         while (System.nanoTime() < deadline) {
             try {
                 HttpResponse<Void> resp = client.send(
                         HttpRequest.newBuilder(URI.create(base + "/v1/models"))
+                                .header("Authorization", "Bearer " + apiKey)
                                 .timeout(Duration.ofMillis(500)).GET().build(),
                         HttpResponse.BodyHandlers.discarding());
                 if (resp.statusCode() == 200) {

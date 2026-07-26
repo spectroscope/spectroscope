@@ -33,6 +33,6 @@ public final class LocalProviderFactory {
     public static Optional<LlmProvider> build(LocalRuntime runtime, Path modelFile) {
         return runtime.ensureRunning(modelFile).map(endpoint ->
                 new OpenAiCompatProvider(new OpenAiCompatProvider.Options(
-                        endpoint.baseUrl(), endpoint.model(), null)));   // local: no key
+                        endpoint.baseUrl(), endpoint.model(), endpoint.apiKey())));
     }
 }

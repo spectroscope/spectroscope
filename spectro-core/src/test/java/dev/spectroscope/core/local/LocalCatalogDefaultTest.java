@@ -3,6 +3,7 @@ package dev.spectroscope.core.local;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -33,5 +34,17 @@ class LocalCatalogDefaultTest {
                 .mapToLong(LocalCatalog.Model::sizeBytes).max().orElseThrow();
         assertTrue(catalogue.defaultModel().sizeBytes() < heaviest,
                 "the default should not be the largest download in the catalogue");
+    }
+
+    @Test
+    void theConfigDefaultAgreesWithTheCatalogue() {
+        // SessionConnection resolves a blank model on a picker switch through
+        // SpectroConfig.defaultModelFor. If that constant and the catalogue drift
+        // apart, switching the header picker to "built-in" quietly starts a
+        // DIFFERENT model than the chooser advertises — and the one it used to
+        // start was the tool-free, research-licensed row.
+        assertEquals(LocalCatalog.bundled().defaultId(),
+                dev.spectroscope.core.config.SpectroConfig.defaultModelFor("spectro-local"),
+                "the live switch must start the model the catalogue calls default");
     }
 }

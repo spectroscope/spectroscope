@@ -22,7 +22,7 @@ class ServerLocalRuntimeCommandTest {
     @Test
     void theCommandCarriesTheModelsOwnContextWindow() {
         List<String> cmd = ServerLocalRuntime.buildCommand(
-                "llama-server", Path.of("/tmp/m.gguf"), 8123, 8192);
+                "llama-server", Path.of("/tmp/m.gguf"), 8123, 8192, "k");
         int c = cmd.indexOf("-c");
         assertTrue(c >= 0, "the context flag must be present");
         assertEquals("8192", cmd.get(c + 1),
@@ -91,5 +91,15 @@ class ServerLocalRuntimeCommandTest {
                 "switched model — the old llama-server still serves the old weights");
         assertFalse(ServerLocalRuntime.needsRestart(null, "qwen3-4b"),
                 "nothing running yet is not a restart, it is a start");
+    }
+
+    @Test
+    void theCommandCarriesAnApiKeySoTheEndpointIsNotOpenToTheMachine() {
+        List<String> cmd = ServerLocalRuntime.buildCommand(
+                "llama-server", Path.of("/m/qwen.gguf"), 8123, 8192, "s3cret-per-launch");
+
+        int flag = cmd.indexOf("--api-key");
+        assertTrue(flag >= 0, "llama-server must be started with a key: " + cmd);
+        assertEquals("s3cret-per-launch", cmd.get(flag + 1));
     }
 }

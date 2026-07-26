@@ -24,7 +24,7 @@ class LocalRuntimeTest {
 
     /** A stub "llama-server": binds the given port, answers /v1/models 200. */
     private LocalRuntime.Launcher stub() {
-        return (model, port) -> {
+        return (model, port, __key) -> {
             HttpServer s = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             s.createContext("/v1/models", ex -> {
                 byte[] b = "{\"data\":[{\"id\":\"vibethinker-3b\"}]}".getBytes(StandardCharsets.UTF_8);
@@ -81,7 +81,7 @@ class LocalRuntimeTest {
         // a launcher that starts nothing on the port — health-check never goes green.
         // A short budget (the seam constructor) keeps this test fast.
         LocalRuntime rt = new LocalRuntime(
-                (m, port) -> (AutoCloseable) () -> {}, "vibethinker-3b", Duration.ofMillis(600));
+                (m, port, key) -> (AutoCloseable) () -> {}, "vibethinker-3b", Duration.ofMillis(600));
         assertFalse(rt.ensureRunning(model).isPresent(), "no server on the port -> empty, never a hang");
         assertNull(rt.reaper, "the never-healthy path reaps and deregisters too");
         rt.shutdown();

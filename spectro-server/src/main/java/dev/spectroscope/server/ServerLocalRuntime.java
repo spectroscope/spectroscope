@@ -58,7 +58,7 @@ public final class ServerLocalRuntime {
         if (runtime == null) {
             int contextTokens = entry.contextTokens();
             runtime = new LocalRuntime(
-                    (file, port) -> launch(file, port, contextTokens), entry.id());
+                    (file, port, key) -> launch(file, port, contextTokens, key), entry.id());
             runningModelId = entry.id();
         }
         return LocalProviderFactory.build(runtime, model.path());
@@ -84,20 +84,26 @@ public final class ServerLocalRuntime {
      * @param contextTokens the catalogue model's context window
      * @return the full command line
      */
-    static List<String> buildCommand(String binary, Path model, int port, int contextTokens) {
+    static List<String> buildCommand(String binary, Path model, int port, int contextTokens,
+                                     String apiKey) {
         return List.of(binary,
                 "-m", model.toString(),
                 "--host", "127.0.0.1",
                 "--port", String.valueOf(port),
                 "-c", String.valueOf(contextTokens),
+                // Loopback alone is not a fence: llama.cpp sets CORS to '*', so a
+                // page in the operator's browser can find this port and read from
+                // it. The key is minted per launch by LocalRuntime.
+                "--api-key", apiKey,
                 "--jinja");
     }
 
     /** Exec {@code llama-server} on the model + port; the runtime's JVM
      *  shutdown-hook reaper closes the handle, so the child dies with the JVM. */
-    private static AutoCloseable launch(Path model, int port, int contextTokens) throws Exception {
+    private static AutoCloseable launch(Path model, int port, int contextTokens, String apiKey)
+            throws Exception {
         ProcessBuilder pb = new ProcessBuilder(
-                buildCommand(binary(), model, port, contextTokens));
+                buildCommand(binary(), model, port, contextTokens, apiKey));
         pb.redirectErrorStream(true);
         pb.redirectOutput(ProcessBuilder.Redirect.DISCARD);
         Process process = pb.start();

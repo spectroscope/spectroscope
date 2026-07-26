@@ -23,7 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class LocalProviderFactoryTest {
 
     private LocalRuntime.Launcher stub() {
-        return (model, port) -> {
+        return (model, port, __key) -> {
             HttpServer s = HttpServer.create(new InetSocketAddress("127.0.0.1", port), 0);
             s.createContext("/v1/models", ex -> {
                 byte[] b = "{\"data\":[{\"id\":\"vibethinker-3b\"}]}".getBytes(StandardCharsets.UTF_8);
@@ -51,7 +51,7 @@ class LocalProviderFactoryTest {
     void anUnhealthyRuntimeYieldsNoProvider(@TempDir Path dir) throws Exception {
         Path model = Files.writeString(dir.resolve("m.gguf"), "gguf");
         LocalRuntime dead = new LocalRuntime(
-                (m, port) -> (AutoCloseable) () -> {}, "vibethinker-3b", Duration.ofMillis(600));
+                (m, port, key) -> (AutoCloseable) () -> {}, "vibethinker-3b", Duration.ofMillis(600));
         assertFalse(LocalProviderFactory.build(dead, model).isPresent(),
                 "no runtime -> no provider, a readable-error path for the caller");
     }
