@@ -71,12 +71,25 @@ jlink --module-path "$JDK/jmods" --add-modules ALL-MODULE-PATH \
       --strip-debug --no-header-files --no-man-pages --output "$D/jre"
 echo -n "    bundled runtime: "; "$D/jre/bin/java" -version 2>&1 | head -1
 
-# 2b) SIGNED path: sign every Mach-O in the runtime inside-out, BEFORE
-#     electron-builder seals the app over it (a single unsigned dylib in the JRE
-#     fails notarization). Ad-hoc path skips this — its --deep --sign - covers all.
+# 2b) llama.cpp's llama-server + its dylib closure. This is what makes the
+#     built-in model a real one-click affair: without it the server falls back to
+#     a `llama-server` on the PATH, which only a Homebrew user has. Pinned by
+#     build tag and sha256, and the script refuses to stage a set with any load
+#     path pointing outside the bundle. ~22 MB.
+echo "==> [2b/7] bundled llama-server"
+./scripts/fetch-llama-server.sh
+
+# 2c) SIGNED path: sign every Mach-O in the runtime and the binaries inside-out,
+#     BEFORE electron-builder seals the app over it (a single unsigned dylib in
+#     the JRE fails notarization). Dylibs first, then executables, so nothing is
+#     sealed over an unsigned dependency. Ad-hoc path skips this — its
+#     --deep --sign - covers all.
 if [ -n "$ID" ]; then
-  echo "==> [2b/7] codesign bundled JRE (hardened runtime)"
-  find "$D/jre" -type f \( -name '*.dylib' -o -perm +111 \) -print0 \
+  echo "==> [2c/7] codesign bundled JRE + llama-server (hardened runtime)"
+  find "$D/jre" "$D/bin" -type f -name '*.dylib' -print0 \
+    | xargs -0 -I{} codesign --force --timestamp --options runtime \
+        --entitlements "$ENT" --sign "$ID" "{}"
+  find "$D/jre" "$D/bin" -type f ! -name '*.dylib' -perm +111 -print0 \
     | xargs -0 -I{} codesign --force --timestamp --options runtime \
         --entitlements "$ENT" --sign "$ID" "{}"
 fi
