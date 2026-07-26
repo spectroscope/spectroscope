@@ -27,10 +27,18 @@ PORT=8160
 cleanup() { pkill -f "user.home=$HOME_DIR" 2>/dev/null || true; }
 trap cleanup EXIT
 
+# The workspace the plates show ships next to this script, so the frames do not
+# depend on a folder that happened to exist on one machine. It is a small real
+# package: the Files panel has something purposeful in it, and run_checks.py
+# produces output worth photographing.
 build_workspace() {
-  [ -f "$WS/run_checks.py" ] && return
-  echo "the demo workspace is missing — see the session that created it, or rebuild $WS" >&2
-  exit 1
+  rm -rf "$WS"
+  mkdir -p "$WS"
+  cp -R "$HERE/demo-workspace/." "$WS/"
+  # Prove it before a capture depends on it: a red ERROR in a tool card is the
+  # failure mode this whole arrangement exists to avoid.
+  ( cd "$WS" && python3 run_checks.py >/dev/null ) \
+    || { echo "the demo workspace does not pass its own checks" >&2; exit 1; }
 }
 
 start_server() {
