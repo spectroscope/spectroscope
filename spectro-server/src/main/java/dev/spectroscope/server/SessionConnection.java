@@ -258,7 +258,7 @@ public final class SessionConnection {
             // Resume appends to an existing file, so the ladder counts from its end —
             // a receipt that names an event must name the right one.
             tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(),
-                    (int) Math.min(Integer.MAX_VALUE, SessionStore.eventCount(resumeId))));
+                    SessionStore.eventCount(resumeId)));
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.

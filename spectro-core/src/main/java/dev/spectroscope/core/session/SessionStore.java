@@ -257,21 +257,21 @@ public final class SessionStore {
     /**
      * How many event lines a stored session already holds.
      *
-     * <p>Counts lines instead of parsing them: the caller wants a position to
-     * continue from, not the events themselves. A missing or unreadable file
-     * answers 0, because "start at the beginning" is the safe wrong answer.</p>
+     * <p>Counted through {@link #readSessionEvents} on purpose, even though the
+     * caller only wants a position: that reader skips blanks and discards a line
+     * torn by a crash, and any other counting rule would disagree with it by one
+     * on exactly those files. The client addresses events by their index in that
+     * same list, so the two must agree or a receipt points at the wrong line.
+     * A missing or unreadable file answers 0, because "start at the beginning"
+     * is the safe wrong answer.</p>
      *
      * @param id the session id
      * @return the number of lines in that session's file, 0 when there is none
      */
-    public static long eventCount(String id) {
-        Path file = SESSIONS_DIR.resolve(id + ".jsonl");
-        if (!Files.isRegularFile(file)) {
-            return 0;
-        }
-        try (java.util.stream.Stream<String> lines = Files.lines(file)) {
-            return lines.filter(line -> !line.isBlank()).count();
-        } catch (IOException | UncheckedIOException unreadable) {
+    public static int eventCount(String id) {
+        try {
+            return readSessionEvents(id).size();
+        } catch (IOException | RuntimeException unreadable) {
             return 0;
         }
     }

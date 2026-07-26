@@ -109,6 +109,22 @@ class LevelingControllerTest {
     }
 
     @Test
+    void aResetReachesTheDiskEvenWhileTrackingIsOff(@TempDir Path dir) {
+        // Off suppresses tracking writes, and reset is not tracking: it is an operator
+        // asking to start over. Wiping only memory would answer 200 to a reset the
+        // next restart quietly undoes.
+        Path file = dir.resolve("leveling.json");
+        LevelingController controller = controller(dir);
+        controller.tick(new LevelingController.TickBody("provider-ready"), local());
+        controller.mode(new LevelingController.ModeBody("off"), local());
+        controller.reset(local());
+
+        LevelingState onDisk = new LevelingStore(file).read().orElseThrow();
+        assertTrue(onDisk.marks().isEmpty(), "the wipe reached the file, not just the field");
+        assertEquals(LevelingState.Mode.OFF, onDisk.mode(), "and it left the mode alone");
+    }
+
+    @Test
     void anUnknownModeIsRefusedRatherThanGuessed(@TempDir Path dir) {
         LevelingController controller = controller(dir);
         assertEquals(400, controller.mode(new LevelingController.ModeBody("sideways"), local())
