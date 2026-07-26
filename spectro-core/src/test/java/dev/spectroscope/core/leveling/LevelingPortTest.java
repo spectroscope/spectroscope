@@ -115,6 +115,19 @@ class LevelingPortTest {
     }
 
     @Test
+    void aResumedSessionCountsFromWhereTheFileLeftOff(@TempDir Path dir) {
+        // Resume appends to an existing JSONL. A port that restarts its counter at 0
+        // writes a receipt pointing at the wrong line, and card 81 turns that receipt
+        // into a deep link — a wrong number is worse than no number.
+        LevelingRecorder recorder = new LevelingRecorder(
+                Ladder.bundled(), new LevelingStore(dir.resolve("leveling.json")),
+                LevelingState.Mode.LADDER);
+        LevelingPort resumed = new LevelingPort("s1", recorder, 40);
+        resumed.onEvent(end("end_turn", 1L));
+        assertEquals(40, recorder.state().marks().get("first-run-complete").eventIndex().intValue());
+    }
+
+    @Test
     void theFreshHomeDecisionIsWrittenImmediately(@TempDir Path dir) {
         // The mode is decided from what the home looks like at first boot, and the
         // home changes seconds later (the server seeds settings.json). If the

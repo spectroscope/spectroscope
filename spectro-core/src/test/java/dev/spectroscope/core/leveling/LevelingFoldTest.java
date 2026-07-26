@@ -129,6 +129,26 @@ class LevelingFoldTest {
     }
 
     @Test
+    void aBeaconThatArrivesBeforeTheProofIsRedeemedLater() {
+        // Watching a run live is the normal case: the trace tab is open before the
+        // agent calls its first tool. If the beacon were dropped for arriving early,
+        // the most attentive user would be the one the ladder never credits.
+        LevelingState watching = LevelingFold.visit(LADDER, fresh(), "trace", S1, 1L);
+        assertNull(watching.marks().get("trace-opened"), "nothing to see yet");
+
+        LevelingState acted = LevelingFold.observe(LADDER, watching, S1, 3, toolCall("main"));
+        assertNotNull(acted.marks().get("trace-opened"), "the tool call redeems the earlier look");
+        assertEquals(S1, acted.marks().get("trace-opened").sessionId());
+    }
+
+    @Test
+    void anEarlyBeaconOnlyRedeemsForItsOwnSession() {
+        LevelingState watching = LevelingFold.visit(LADDER, fresh(), "trace", S1, 1L);
+        LevelingState elsewhere = LevelingFold.observe(LADDER, watching, S2, 3, toolCall("main"));
+        assertNull(elsewhere.marks().get("trace-opened"), "S2's tool call is not S1's evidence");
+    }
+
+    @Test
     void theJoinIsPerSessionNotGlobal() {
         LevelingState withTool = LevelingFold.observe(LADDER, fresh(), S1, 2, toolCall("main"));
         LevelingState other = LevelingFold.visit(LADDER, withTool, "trace", S2, 5L);

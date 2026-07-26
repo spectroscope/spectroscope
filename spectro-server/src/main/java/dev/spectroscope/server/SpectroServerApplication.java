@@ -23,7 +23,15 @@ public class SpectroServerApplication {
         // first boot whenever SPECTRO_* vars are set, and a home with a settings
         // file reads as experienced. Deciding afterwards would hand `checklist`
         // to exactly the newcomers the ladder exists for — verified live, it did.
-        ServerLeveling.recorder();
+        try {
+            ServerLeveling.recorder();
+        } catch (Throwable levelingIsNotWorthABoot) {
+            // Catching Throwable on purpose: a damaged levels.json surfaces as an
+            // ExceptionInInitializerError from the ladder's static holder, and a
+            // nicety must never be the reason a server refuses to start.
+            System.err.println("leveling: unavailable at boot, continuing without it ("
+                    + levelingIsNotWorthABoot + ")");
+        }
         // First boot: materialize the env base into ~/.spectro/settings.json once,
         // before anything reads the config hierarchy — see SpectroConfig.ensureSeeded.
         dev.spectroscope.core.config.SpectroConfig.ensureSeeded(System.getenv());

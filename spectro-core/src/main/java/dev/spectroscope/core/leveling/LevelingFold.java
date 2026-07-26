@@ -73,7 +73,8 @@ public final class LevelingFold {
         if (state.mode() == LevelingState.Mode.OFF) {
             return state;
         }
-        LevelingState next = rememberFacts(ladder, state, sessionId, event);
+        LevelingState next = redeemLooks(ladder, rememberFacts(ladder, state, sessionId, event),
+                sessionId, event.ts());
         if (event instanceof RunEvent.RunEnd end && COMPLETED_RUN.contains(end.stopReason())) {
             // A run that came back is also the strongest report a provider can give
             // that it is ready, so it settles the rung below at the same time. The
@@ -109,18 +110,25 @@ public final class LevelingFold {
             return state;
         }
         LevelingState next = state;
+        boolean pendingLook = false;
         for (Ladder.Criterion criterion : ladder.criteria()) {
             if (!surface.equals(criterion.surface())) {
                 continue;
             }
             if (criterion.source() == Ladder.Source.JOINED && !streamAgrees(next, sessionId, criterion)) {
+                // Watching a live run is the normal case: the tab is open before the
+                // agent does the thing. Remember the look so the stream can redeem it.
+                pendingLook = true;
                 continue;
             }
             next = mark(ladder, next, criterion.id(),
                     new LevelingState.Mark(criterion.id(), sessionId, null, ts,
                             LevelingState.Origin.OBSERVED));
         }
-        return next == state ? state : forgetSettledFacts(ladder, next);
+        if (pendingLook && sessionId != null && joinsStillOpen(ladder, next)) {
+            next = rememberLook(next, sessionId, surface);
+        }
+        return next == state ? next : forgetSettledFacts(ladder, next);
     }
 
     /**
@@ -211,7 +219,7 @@ public final class LevelingFold {
             return state;
         }
         LevelingState.SessionFacts before = state.facts()
-                .getOrDefault(sessionId, new LevelingState.SessionFacts(false, Set.of()));
+                .getOrDefault(sessionId, LevelingState.SessionFacts.of(false, Set.of()));
         Set<String> agents = new LinkedHashSet<>(before.agents());
         if (introduced != null) {
             agents.add(introduced);
@@ -219,8 +227,8 @@ public final class LevelingFold {
         if (parent != null) {
             agents.add(parent);
         }
-        LevelingState.SessionFacts after =
-                new LevelingState.SessionFacts(before.toolCall() || tool, agents);
+        LevelingState.SessionFacts after = new LevelingState.SessionFacts(
+                before.toolCall() || tool, agents, before.seenSurfaces());
         if (after.equals(before)) {
             return state;
         }
@@ -233,6 +241,47 @@ public final class LevelingFold {
             oldest.remove();
         }
         return new LevelingState(state.mode(), state.marks(), state.history(), facts);
+    }
+
+    /** Notes that a face showed a surface for a session whose stream has not caught up yet. */
+    private static LevelingState rememberLook(LevelingState state, String sessionId, String surface) {
+        LevelingState.SessionFacts before = state.facts()
+                .getOrDefault(sessionId, LevelingState.SessionFacts.of(false, Set.of()));
+        if (before.seenSurfaces().contains(surface)) {
+            return state;
+        }
+        Set<String> looks = new LinkedHashSet<>(before.seenSurfaces());
+        looks.add(surface);
+        Map<String, LevelingState.SessionFacts> facts = new LinkedHashMap<>(state.facts());
+        facts.remove(sessionId);
+        facts.put(sessionId, new LevelingState.SessionFacts(before.toolCall(), before.agents(), looks));
+        while (facts.size() > MAX_TRACKED_SESSIONS) {
+            Iterator<String> oldest = facts.keySet().iterator();
+            oldest.next();
+            oldest.remove();
+        }
+        return new LevelingState(state.mode(), state.marks(), state.history(), facts);
+    }
+
+    /** Cashes in earlier looks once this session's stream finally proves them. */
+    private static LevelingState redeemLooks(Ladder ladder, LevelingState state,
+                                             String sessionId, long ts) {
+        LevelingState.SessionFacts facts = sessionId == null ? null : state.facts().get(sessionId);
+        if (facts == null || facts.seenSurfaces().isEmpty()) {
+            return state;
+        }
+        LevelingState next = state;
+        for (Ladder.Criterion criterion : ladder.criteria()) {
+            if (criterion.source() != Ladder.Source.JOINED
+                    || !facts.seenSurfaces().contains(criterion.surface())
+                    || !streamAgrees(next, sessionId, criterion)) {
+                continue;
+            }
+            next = mark(ladder, next, criterion.id(),
+                    new LevelingState.Mark(criterion.id(), sessionId, null, ts,
+                            LevelingState.Origin.OBSERVED));
+        }
+        return next == state ? state : forgetSettledFacts(ladder, next);
     }
 
     /** The events that put an agent on the record; anything else merely mentions one. */

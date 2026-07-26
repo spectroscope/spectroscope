@@ -35,7 +35,7 @@ class LevelingStoreTest {
                         new LevelingState.Mark("lens-used", null, null, 2000L,
                                 LevelingState.Origin.MANUAL)),
                 List.of(new LevelingState.LevelUp(1, 1000L)),
-                Map.of("20260726-aaa", new LevelingState.SessionFacts(true, Set.of("main", "worker"))));
+                Map.of("20260726-aaa", LevelingState.SessionFacts.of(true, Set.of("main", "worker"))));
     }
 
     @Test

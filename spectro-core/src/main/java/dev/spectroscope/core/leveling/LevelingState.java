@@ -120,11 +120,21 @@ public record LevelingState(Mode mode,
      * @param agents the distinct agent ids seen in it
      */
     @JsonIgnoreProperties(ignoreUnknown = true)
-    public record SessionFacts(boolean toolCall, Set<String> agents) {
+    public record SessionFacts(boolean toolCall, Set<String> agents, Set<String> seenSurfaces) {
         /** @param toolCall whether a tool call was seen
-         *  @param agents the agent ids, copied defensively */
+         *  @param agents the agent ids, copied defensively
+         *  @param seenSurfaces surfaces a face reported for this session before the stream
+         *         had caught up, so an early look can still be redeemed */
         public SessionFacts {
             agents = Set.copyOf(Objects.requireNonNullElse(agents, Set.of()));
+            seenSurfaces = Set.copyOf(Objects.requireNonNullElse(seenSurfaces, Set.of()));
+        }
+
+        /** @param toolCall whether a tool call was seen
+         *  @param agents the agent ids
+         *  @return facts with no pending looks */
+        public static SessionFacts of(boolean toolCall, Set<String> agents) {
+            return new SessionFacts(toolCall, agents, Set.of());
         }
 
         /** @return true when this session showed a fan-out, which is two or more agents */

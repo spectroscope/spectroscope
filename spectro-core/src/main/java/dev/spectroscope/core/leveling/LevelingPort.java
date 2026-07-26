@@ -33,8 +33,19 @@ public final class LevelingPort implements TracingPort {
      * @param recorder where observations go
      */
     public LevelingPort(String sessionId, LevelingRecorder recorder) {
+        this(sessionId, recorder, 0);
+    }
+
+    /**
+     * @param sessionId the session this port watches, from the session store
+     * @param recorder where observations go
+     * @param startIndex how many events the session's file already holds — a resumed
+     *        session appends, so counting from zero would put a receipt on the wrong line
+     */
+    public LevelingPort(String sessionId, LevelingRecorder recorder, int startIndex) {
         this.sessionId = Objects.requireNonNull(sessionId, "sessionId");
         this.recorder = Objects.requireNonNull(recorder, "recorder");
+        this.index = Math.max(0, startIndex);
     }
 
     @Override

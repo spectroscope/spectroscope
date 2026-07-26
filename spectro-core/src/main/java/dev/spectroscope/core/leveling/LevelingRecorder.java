@@ -100,9 +100,20 @@ public final class LevelingRecorder {
         apply(LevelingFold.establish(ladder, state, criterionId, ts));
     }
 
-    /** Restarts the ladder from the dark frame, keeping the operator's chosen mode. */
+    /**
+     * Restarts the ladder from the dark frame, keeping the operator's chosen mode.
+     *
+     * <p>Persisted even in {@code off}: a wipe the disk never heard about would
+     * come back at the next start, and an operator who asked to start over would
+     * find their old marks waiting.</p>
+     */
     public synchronized void reset() {
-        apply(LevelingFold.reset(state));
+        LevelingState wiped = LevelingFold.reset(state);
+        if (wiped.equals(state)) {
+            return;
+        }
+        state = wiped;
+        persist();
     }
 
     /**

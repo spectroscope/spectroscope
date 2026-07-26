@@ -125,7 +125,7 @@ public class LevelingController {
      * @param request the servlet request, for the local-origin fence
      * @return the fresh state, or a blank 404 when fenced out
      */
-    @PostMapping("/api/leveling/reset")
+    @PostMapping(value = "/api/leveling/reset", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> reset(HttpServletRequest request) {
         if (refused(request)) {
             return ResponseEntity.notFound().build();
