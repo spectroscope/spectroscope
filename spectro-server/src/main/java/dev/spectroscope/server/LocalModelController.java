@@ -1,25 +1,35 @@
 package dev.spectroscope.server;
 
+import dev.spectroscope.core.local.LocalCatalog;
 import dev.spectroscope.core.local.LocalModel;
+import dev.spectroscope.core.local.LocalPreflight;
 import jakarta.servlet.http.HttpServletRequest;
 
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The built-in model's download endpoints, behind the picker's download modal:
- * {@code GET /api/local-model/status} (polled for progress) and {@code POST
- * /api/local-model/download} (starts the fetch). The model, URL and sha256 are
- * pinned here; the write is loopback-and-Host fenced like every other write.
+ * The built-in provider's model endpoints, behind the picker's chooser dialog:
+ * {@code GET /api/local-model/catalog} (every offered model, its download state
+ * and whether this machine can hold it), {@code GET /api/local-model/status}
+ * (polled for progress) and {@code POST /api/local-model/download} (starts the
+ * fetch). Which models exist, their urls and their sha256 pins all come from
+ * {@link LocalCatalog} — nothing is pinned here any more. Writes are
+ * loopback-and-Host fenced like every other write.
  *
  * <p>No {@code @CrossOrigin} — same-origin only, matching the settings/probe
  * controllers.</p>
@@ -27,51 +37,129 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 public class LocalModelController {
 
-    /** The pinned source: mradermacher's Q4_K_M GGUF, sha256 verified after the
-     *  stream. Saved under {@link LocalModel#FILE}. ~1.93 GB. */
-    private static final String URL =
-            "https://huggingface.co/mradermacher/VibeThinker-3B-GGUF/resolve/main/VibeThinker-3B.Q4_K_M.gguf";
-    private static final String SHA256 =
-            "6b2d4e6983180dd2d02396686fb0bbeaecad2a47193ec78e011254ee6f7207cc";
-    private static final long SIZE = 1_929_903_232L;
+    private final Map<String, LocalModelDownload> downloads;
 
-    private final LocalModelDownload download;
-
-    /** Spring wiring — the real user models dir + an HTTP fetcher (follows the HF redirect). */
+    /** Spring wiring — the real user models dir + an HTTP fetcher per model. */
     public LocalModelController() {
-        this(new LocalModelDownload(LocalModel.userModelsDir(), LocalModel.FILE, SHA256, SIZE,
-                LocalModelController::httpFetch, URL));
+        this(LocalModel.userModelsDir(), LocalModelController::httpFetch);
     }
 
-    /** Seam constructor for tests. */
-    LocalModelController(LocalModelDownload download) {
-        this.download = download;
-    }
-
-    /** Current download/presence state — polled by the modal for its progress bar. */
-    @GetMapping("/api/local-model/status")
-    public Map<String, Object> status() {
-        return download.status();
+    /** Seam constructor for tests: same wiring, injectable dir and fetcher. */
+    LocalModelController(Path modelsDir, LocalModelDownload.Fetcher fetcher) {
+        Map<String, LocalModelDownload> perModel = new LinkedHashMap<>();
+        for (LocalCatalog.Model m : LocalCatalog.bundled().models()) {
+            perModel.put(m.id(), new LocalModelDownload(
+                    modelsDir, m.file(), m.sha256(), m.sizeBytes(), fetcher, m.url()));
+        }
+        this.downloads = perModel;
     }
 
     /**
-     * Start the download (idempotent). Fenced like every write: 404 for a
-     * non-local caller, a rebound Host or a cross-site Origin.
+     * The chooser's one fetch: machine numbers once, then every model with its
+     * catalogue facts, download state and preflight verdict.
      *
+     * @return the catalogue as the dialog renders it
+     */
+    @GetMapping("/api/local-model/catalog")
+    public Map<String, Object> catalog() {
+        LocalCatalog catalogue = LocalCatalog.bundled();
+        long ram = LocalPreflight.totalMemoryBytes();
+        long disk = LocalPreflight.usableSpaceBytes(LocalModel.userModelsDir());
+
+        Map<String, Object> machine = new LinkedHashMap<>();
+        machine.put("ramTotalBytes", ram);
+        machine.put("diskFreeBytes", disk);
+
+        List<Map<String, Object>> models = new ArrayList<>();
+        for (LocalCatalog.Model m : catalogue.models()) {
+            LocalPreflight.Verdict verdict = LocalPreflight.check(m, ram, disk);
+            Map<String, Object> row = new LinkedHashMap<>();
+            row.put("id", m.id());
+            row.put("label", m.label());
+            row.put("sizeBytes", m.sizeBytes());
+            row.put("minRamBytes", m.minRamBytes());
+            row.put("contextTokens", m.contextTokens());
+            row.put("nativeTools", m.nativeTools());
+            row.put("reasoning", m.reasoning());
+            row.put("licence", m.licence());
+            row.put("licenceUrl", m.licenceUrl());
+            row.put("sourceUrl", m.sourceUrl());
+            if (m.licenceCaveatKey() != null) {
+                row.put("licenceCaveat", true);
+            }
+            Map<String, Object> status = downloads.get(m.id()).status();
+            row.put("state", status.get("state"));
+            row.put("bytes", status.get("bytes"));
+            Map<String, Object> preflight = new LinkedHashMap<>();
+            preflight.put("ok", verdict.ok());
+            preflight.put("tight", verdict.tight());
+            preflight.put("known", verdict.known());
+            preflight.put("ramOk", verdict.ramOk());
+            preflight.put("diskOk", verdict.diskOk());
+            row.put("preflight", preflight);
+            models.add(row);
+        }
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("defaultId", catalogue.defaultId());
+        out.put("machine", machine);
+        out.put("models", models);
+        return out;
+    }
+
+    /**
+     * Current download/presence state of one model — polled by the dialog for
+     * its progress bar.
+     *
+     * @param model the catalogue id; absent means the default model, so the
+     *              pre-catalogue client keeps working
+     * @return 200 with the state, or 404 for an id this build does not offer —
+     *         never a silent default that would report the wrong file
+     */
+    @GetMapping("/api/local-model/status")
+    public ResponseEntity<Map<String, Object>> status(
+            @RequestParam(name = "model", required = false) String model) {
+        LocalModelDownload download = downloadFor(model);
+        if (download == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(download.status());
+    }
+
+    /**
+     * Start one model's download (idempotent per model; two different models
+     * may download concurrently). Fenced like every write: 404 for a non-local
+     * caller, a rebound Host or a cross-site Origin.
+     *
+     * @param model   the catalogue id; absent means the default model
      * @param request the servlet request, for the local-origin write fence
-     * @return 200 with the current status, or 404 when the fence refuses
+     * @return 200 with the current status, or 404 when the fence or the id refuses
      */
     @PostMapping("/api/local-model/download")
-    public ResponseEntity<Map<String, Object>> startDownload(HttpServletRequest request) {
+    public ResponseEntity<Map<String, Object>> startDownload(
+            @RequestParam(name = "model", required = false) String model,
+            HttpServletRequest request) {
         if (!FleetController.isLocalOrigin(request)
                 || !FleetController.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        LocalModelDownload download = downloadFor(model);
+        if (download == null) {
             return ResponseEntity.notFound().build();
         }
         download.start();
         return ResponseEntity.ok(download.status());
     }
 
-    /** The real HTTP leg: GET the pinned URL, following HuggingFace's CDN redirect. */
+    /** @return the download for the id, the default's for null/blank, or null for unknown */
+    private LocalModelDownload downloadFor(String model) {
+        if (model == null || model.isBlank()) {
+            return downloads.get(LocalCatalog.bundled().defaultId());
+        }
+        return downloads.get(model);
+    }
+
+    /** The real HTTP leg: GET the catalogue url, following HuggingFace's CDN redirect. */
     private static java.io.InputStream httpFetch(String url) throws Exception {
         HttpClient client = HttpClient.newBuilder()
                 .followRedirects(HttpClient.Redirect.NORMAL)

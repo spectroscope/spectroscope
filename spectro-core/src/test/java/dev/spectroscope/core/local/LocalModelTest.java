@@ -32,4 +32,14 @@ class LocalModelTest {
         Files.writeString(bundle.resolve(LocalModel.FILE), "gguf");
         assertTrue(LocalModel.presentIn(bundle, userDir), "the with-model DMG bundles it");
     }
+
+    @Test
+    void anyPresentSeesEveryCatalogueModel(@TempDir Path userDir) throws Exception {
+        assertFalse(LocalModel.anyPresentIn(null, userDir), "an empty home has no model");
+        // Not the legacy FILE — any catalogue entry counts, because the provider
+        // is usable as soon as one model is on disk, whichever one that is.
+        Files.writeString(userDir.resolve(
+                LocalCatalog.bundled().defaultModel().file()), "gguf");
+        assertTrue(LocalModel.anyPresentIn(null, userDir));
+    }
 }
