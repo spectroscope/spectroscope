@@ -1,0 +1,224 @@
+{
+  "schemaVersion": 1,
+  "levels": [
+    {
+      "index": 0,
+      "id": "dark-frame",
+      "nameKey": "leveling.level.darkFrame.name",
+      "blurbKey": "leveling.level.darkFrame.blurb",
+      "opens": ["chat", "settings", "scenarios-chat"],
+      "advanceWhen": ["provider-ready"]
+    },
+    {
+      "index": 1,
+      "id": "first-light",
+      "nameKey": "leveling.level.firstLight.name",
+      "blurbKey": "leveling.level.firstLight.blurb",
+      "opens": ["composer", "sessions", "files", "image-input", "gallery"],
+      "advanceWhen": ["first-run-complete", "session-reopened"]
+    },
+    {
+      "index": 2,
+      "id": "the-trace",
+      "nameKey": "leveling.level.theTrace.name",
+      "blurbKey": "leveling.level.theTrace.blurb",
+      "opens": ["trace", "text", "replay", "import"],
+      "advanceWhen": ["trace-opened", "replay-scrubbed", "disclosure-expanded"]
+    },
+    {
+      "index": 3,
+      "id": "the-gate",
+      "nameKey": "leveling.level.theGate.name",
+      "blurbKey": "leveling.level.theGate.blurb",
+      "opens": ["permission-mode", "workspace"],
+      "advanceWhen": ["mode-set", "gate-answered"]
+    },
+    {
+      "index": 4,
+      "id": "the-prism",
+      "nameKey": "leveling.level.thePrism.name",
+      "blurbKey": "leveling.level.thePrism.blurb",
+      "opens": ["spectrum", "lab", "lenses", "graph"],
+      "advanceWhen": ["fanout-watched", "lens-used", "lab-stepped"]
+    },
+    {
+      "index": 5,
+      "id": "the-fleet",
+      "nameKey": "leveling.level.theFleet.name",
+      "blurbKey": "leveling.level.theFleet.blurb",
+      "opens": ["fleets", "fleet-canvas", "machine-room", "scenarios-fleet"],
+      "advanceWhen": ["fleet-entered", "machine-room-opened"]
+    },
+    {
+      "index": 6,
+      "id": "deep-field",
+      "nameKey": "leveling.level.deepField.name",
+      "blurbKey": "leveling.level.deepField.blurb",
+      "opens": ["explain", "observability", "scaffolder", "mcp"],
+      "advanceWhen": []
+    }
+  ],
+  "criteria": [
+    {
+      "id": "provider-ready",
+      "level": 0,
+      "source": "state",
+      "mastery": false,
+      "labelKey": "leveling.criterion.providerReady.label",
+      "countsKey": "leveling.criterion.providerReady.counts"
+    },
+    {
+      "id": "first-run-complete",
+      "level": 1,
+      "source": "event",
+      "mastery": false,
+      "labelKey": "leveling.criterion.firstRunComplete.label",
+      "countsKey": "leveling.criterion.firstRunComplete.counts"
+    },
+    {
+      "id": "session-reopened",
+      "level": 1,
+      "source": "beacon",
+      "surface": "session",
+      "mastery": false,
+      "labelKey": "leveling.criterion.sessionReopened.label",
+      "countsKey": "leveling.criterion.sessionReopened.counts"
+    },
+    {
+      "id": "trace-opened",
+      "level": 2,
+      "source": "joined",
+      "surface": "trace",
+      "requires": "tool-call",
+      "mastery": false,
+      "labelKey": "leveling.criterion.traceOpened.label",
+      "countsKey": "leveling.criterion.traceOpened.counts"
+    },
+    {
+      "id": "replay-scrubbed",
+      "level": 2,
+      "source": "beacon",
+      "surface": "replay",
+      "mastery": false,
+      "labelKey": "leveling.criterion.replayScrubbed.label",
+      "countsKey": "leveling.criterion.replayScrubbed.counts"
+    },
+    {
+      "id": "disclosure-expanded",
+      "level": 2,
+      "source": "beacon",
+      "surface": "disclosure",
+      "mastery": false,
+      "labelKey": "leveling.criterion.disclosureExpanded.label",
+      "countsKey": "leveling.criterion.disclosureExpanded.counts"
+    },
+    {
+      "id": "mode-set",
+      "level": 3,
+      "source": "beacon",
+      "surface": "permission-mode",
+      "mastery": false,
+      "labelKey": "leveling.criterion.modeSet.label",
+      "countsKey": "leveling.criterion.modeSet.counts"
+    },
+    {
+      "id": "gate-answered",
+      "level": 3,
+      "source": "beacon",
+      "surface": "gate",
+      "mastery": false,
+      "labelKey": "leveling.criterion.gateAnswered.label",
+      "countsKey": "leveling.criterion.gateAnswered.counts"
+    },
+    {
+      "id": "fanout-watched",
+      "level": 4,
+      "source": "joined",
+      "surface": "spectrum",
+      "requires": "two-agents",
+      "mastery": false,
+      "labelKey": "leveling.criterion.fanoutWatched.label",
+      "countsKey": "leveling.criterion.fanoutWatched.counts"
+    },
+    {
+      "id": "lens-used",
+      "level": 4,
+      "source": "beacon",
+      "surface": "lens",
+      "mastery": false,
+      "labelKey": "leveling.criterion.lensUsed.label",
+      "countsKey": "leveling.criterion.lensUsed.counts"
+    },
+    {
+      "id": "lab-stepped",
+      "level": 4,
+      "source": "beacon",
+      "surface": "lab",
+      "mastery": false,
+      "labelKey": "leveling.criterion.labStepped.label",
+      "countsKey": "leveling.criterion.labStepped.counts"
+    },
+    {
+      "id": "fleet-entered",
+      "level": 5,
+      "source": "beacon",
+      "surface": "fleet",
+      "mastery": false,
+      "labelKey": "leveling.criterion.fleetEntered.label",
+      "countsKey": "leveling.criterion.fleetEntered.counts"
+    },
+    {
+      "id": "machine-room-opened",
+      "level": 5,
+      "source": "beacon",
+      "surface": "machine-room",
+      "mastery": false,
+      "labelKey": "leveling.criterion.machineRoomOpened.label",
+      "countsKey": "leveling.criterion.machineRoomOpened.counts"
+    },
+    {
+      "id": "explain-run",
+      "level": 6,
+      "source": "beacon",
+      "surface": "explain",
+      "mastery": true,
+      "labelKey": "leveling.criterion.explainRun.label",
+      "countsKey": "leveling.criterion.explainRun.counts"
+    },
+    {
+      "id": "otlp-probe-green",
+      "level": 6,
+      "source": "state",
+      "mastery": true,
+      "labelKey": "leveling.criterion.otlpProbeGreen.label",
+      "countsKey": "leveling.criterion.otlpProbeGreen.counts"
+    },
+    {
+      "id": "session-imported",
+      "level": 6,
+      "source": "beacon",
+      "surface": "import",
+      "mastery": true,
+      "labelKey": "leveling.criterion.sessionImported.label",
+      "countsKey": "leveling.criterion.sessionImported.counts"
+    },
+    {
+      "id": "starter-scaffolded",
+      "level": 6,
+      "source": "beacon",
+      "surface": "scaffolder",
+      "mastery": true,
+      "labelKey": "leveling.criterion.starterScaffolded.label",
+      "countsKey": "leveling.criterion.starterScaffolded.counts"
+    },
+    {
+      "id": "fleet-acted",
+      "level": 6,
+      "source": "beacon",
+      "surface": "fleet-act",
+      "mastery": true,
+      "labelKey": "leveling.criterion.fleetActed.label",
+      "countsKey": "leveling.criterion.fleetActed.counts"
+    }
+  ]
+}
