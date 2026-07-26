@@ -137,6 +137,8 @@ export function App() {
   // callback fresh here is the same stale-closure guard providerModelField uses.
   const refreshLeveling = useRef(leveling.refresh);
   refreshLeveling.current = leveling.refresh;
+  const beaconRef = useRef(leveling.visit);
+  beaconRef.current = leveling.visit;
   const [levelPanelOpen, setLevelPanelOpen] = useState(false);
   const [levelUp, setLevelUp] = useState<{ level: number; opened: string[] } | null>(null);
   const lastLevel = useRef<number | null>(null);
@@ -209,6 +211,7 @@ export function App() {
         setKeymapOpen(true);
       } else if (e.key === "Escape") {
         setKeymapOpen(false);
+        setLevelPanelOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -339,6 +342,13 @@ export function App() {
     const sent = connRef.current?.send(msg) === true;
     if (sent) {
       setLive((s) => recordOutgoing(s, msg));
+      // Leveling beacons ride here rather than in each component: this is the one
+      // place every client message passes, so a gate answered from the bar, the
+      // lab or a fleet all report the same way, and a future sender gets it free.
+      // Both acts are things the event stream cannot tell apart on its own — the
+      // core emits the same permission events for an allowlist auto-approval.
+      if (msg.type === "permission_response") beaconRef.current("gate");
+      if (msg.type === "set_permission_mode") beaconRef.current("permission-mode");
     }
     return sent;
   }, []);
@@ -571,6 +581,7 @@ export function App() {
       const events = (await res.json()) as RunEvent[];
       setReplay({ id, state: foldArchive(events), events });
       setEnteredFleet(null);
+      beaconRef.current("session", id);
     } catch {
       // Server unreachable or session gone — stay on the current view.
     }
@@ -588,6 +599,7 @@ export function App() {
     setEnteredFleet(contextId);
     setTraceAgent(null);
     setTab("spectrum");
+    beaconRef.current("fleet", contextId);
   };
 
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
@@ -701,6 +713,17 @@ export function App() {
   const canDelete = canResume && replay !== null && replay.id !== resumeId;
 
   const viewingLive = replay === null;
+
+  // Showing a tab IS the observation for the view-only criteria. The session id
+  // travels with it because two of them are joins: the ladder only counts a
+  // trace you opened on a session that actually ran a tool, and a spectrum you
+  // opened on a session that actually fanned out.
+  const shownSessionId = viewingLive ? (live.workspace?.sessionId ?? null) : (replay?.id ?? null);
+  const shownRef = useRef(shownSessionId);
+  shownRef.current = shownSessionId;
+  useEffect(() => {
+    if (tab !== "chat") beaconRef.current(tab, shownRef.current);
+  }, [tab]);
   const view = replay === null ? live : replay.state;
 
   // The tabs' flat event source, third-source duality: an entered fleet's events
@@ -826,6 +849,7 @@ export function App() {
       <ParticleField design={designPrefs.design} enabled={designPrefs.particles} />
       {sidebarOpen && (
         <Sidebar
+          fleetsLocked={leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false}
           activeId={replay === null ? null : replay.id}
           refreshToken={refreshToken}
           onSelectLive={returnToLive}
@@ -1234,6 +1258,7 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         providerStatus={providerStatus ?? undefined}
         onKeySaved={() => setConfigNonce((n) => n + 1)}
+        leveling={leveling}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
       {localNoticeOpen && (

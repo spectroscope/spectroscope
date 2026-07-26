@@ -755,9 +755,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.criterion.fleetActed.counts": { de: "Einen echten Node starten, stoppen oder sein Tor beantworten.", en: "Spawn, stop or gate a real node." },
 
   // leveling: the UI around it
-  "leveling.pill.title": { de: "Stand: {name}. Klicken für die Leiter.", en: "At {name}. Click for the ladder." },
+  "leveling.pill.title": { de: "Stand: {name} — klicken für die Leiter", en: "At {name} — click for the ladder" },
   "leveling.panel.title": { de: "Die Leiter", en: "The ladder" },
-  "leveling.panel.at": { de: "Du stehst auf {name}.", en: "You are at {name}." },
+  "leveling.panel.at": { de: "Dein Stand: {name}", en: "You are at {name}" },
   "leveling.panel.toward": { de: "{met} von {total} zum nächsten Schritt", en: "{met} of {total} toward the next rung" },
   "leveling.panel.reached": { de: "erreicht", en: "reached" },
   "leveling.panel.mastery": { de: "Kür — schaltet nichts frei", en: "mastery — unlocks nothing" },

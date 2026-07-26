@@ -13,6 +13,10 @@ import { SCENARIOS } from "../scenario/registry";
 import { loc, type Dsl } from "../scenario/dsl";
 
 export function Sidebar(props: {
+  /** True while the fleets segment is still ahead on the ladder. The segment
+   *  stays visible and dimmed rather than vanishing: a feature nobody can see
+   *  is a feature nobody adopts. */
+  fleetsLocked?: boolean;
   /** null = the live socket session is shown. */
   activeId: string | null;
   /** Bump to refetch the list (e.g. after a run finished). */
@@ -139,7 +143,8 @@ export function Sidebar(props: {
             role="tab"
             aria-selected={nav === "fleets"}
             className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
-            onClick={() => setNav("fleets")}
+            onClick={() => !props.fleetsLocked && setNav("fleets")}
+            aria-disabled={props.fleetsLocked ? true : undefined}
           >
             {t(lang, "nav.fleets")}
             {fleets.length > 0 && <span className="sidebar-seg-badge tabular">{fleets.length}</span>}
