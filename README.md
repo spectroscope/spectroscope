@@ -11,7 +11,8 @@
 <p align="center">
   <a href="https://central.sonatype.com/artifact/dev.spectroscope/spectro-core"><img src="https://img.shields.io/maven-central/v/dev.spectroscope/spectro-core?label=maven%20central&color=CE9440" alt="maven central"></a>
   <a href="https://github.com/spectroscope/spectroscope/releases"><img src="https://img.shields.io/github/v/release/spectroscope/spectroscope?label=release&color=2DD4A7" alt="github release"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2CB1C4" alt="license MIT"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-2CB1C4" alt="code license MIT"></a>
+  <a href="LICENSE-ASSETS.md"><img src="https://img.shields.io/badge/images-CC%20BY%204.0-8B7CF0" alt="images CC BY 4.0"></a>
   <a href="https://github.com/spectroscope/spectroscope/releases/latest"><img src="https://img.shields.io/badge/macOS%20app-signed%20%2B%20notarized-C05A4C" alt="macOS app signed and notarized"></a>
   <img src="https://img.shields.io/badge/java-21%2B-5C5142" alt="java 21+">
 </p>
@@ -120,6 +121,22 @@ implementation("dev.spectroscope:spectro-orchestrator:0.3.0")   // fleets
       <br><sub><b>explain</b> · an LLM reading of the whole run, honestly labeled as a reading</sub>
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/33-leveling-intro.png">
+        <img src="docs/guide-assets/shots-light/33-leveling-intro.png" alt="the leveling intro on a fresh home: grow into it, or open everything now">
+      </picture>
+      <br><sub><b>grow into it</b> · a fresh home starts small and asks; an existing home is never asked and never locked</sub>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/34-leveling-panel.png">
+        <img src="docs/guide-assets/shots-light/34-leveling-panel.png" alt="the leveling progress panel: criteria with ticks and receipts, the spectrum strip filling per level">
+      </picture>
+      <br><sub><b>the ladder</b> · levels tick from observed usage, every tick with a receipt into the session it happened in</sub>
+    </td>
+  </tr>
 </table>
 
 More in the [gallery](https://gallery.spectroscope.ai) and the
@@ -182,7 +199,7 @@ with an empty batch and tells you whether it answers. Details in
 | `spectro-mcp-notes` | bundled example MCP server (notes search/add over stdio) |
 | `spectro-orchestrator` | the fleet: lanes as full agents on a shared bus, one merged stream |
 
-Runs on Spring and almost nothing else. Sixteen hand-built architecture
+Runs on Spring and almost nothing else. Seventeen hand-built architecture
 diagrams live in [docs/diagrams/](docs/diagrams/), each in both themes;
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [docs/WEB-UI.md](docs/WEB-UI.md) go deep.
@@ -231,9 +248,19 @@ fast.
 
 ## license and credit
 
-MIT, copyright Christopher Ezell. Use it, fork it, ship it, sell with it; the
-one thing the license asks is that the copyright notice travels with copies of
-the code.
+Two licenses, one rule: the name stays attached.
+
+**Code: [MIT](LICENSE)**, copyright Christopher Ezell. Use it, fork it, ship
+it, sell with it; the one thing the license asks is that the copyright notice
+travels with copies of the code. Stripping it ends the license.
+
+**Images: [CC BY 4.0](LICENSE-ASSETS.md)** for the screenshots, the
+architecture diagrams and the banner. Reuse them in posts, talks, papers or
+products, commercially too, as long as visible attribution stays with them:
+*"spectroscope — Christopher Ezell, github.com/spectroscope/spectroscope,
+CC BY 4.0"*. The spectroscope logo and wordmark are the exception: fine for
+referring to the project, not for branding something else —
+[LICENSE-ASSETS.md](LICENSE-ASSETS.md) has the exact terms.
 
 If spectroscope shows up in your product or your research, a mention with a
 link back is very welcome. GitHub reads [CITATION.cff](CITATION.cff),
