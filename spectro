@@ -60,7 +60,12 @@ web_row() {
 # printed next to a server that is plainly answering.
 web_state() {
     if [ -x ./spectro-serve ]; then
-        ./spectro-serve status 2>/dev/null | tail -n +2
+        # `|| true` because this whole script runs under `set -e` + `pipefail`, and
+        # this pipeline is not in a condition context. cmd_status happens to end on
+        # a printf in both its branches today, so it returns 0 by accident; the day
+        # it does not, the overview would die here and never print a verb. A live
+        # block is a courtesy — it does not get to veto the help text.
+        ./spectro-serve status 2>/dev/null | tail -n +2 || true
     fi
 }
 
@@ -85,7 +90,9 @@ task="$1"; shift
 
 # Does this invocation only want to be told something? Those paths must stay
 # side-effect free: no JDK probe, no .env export, no Gradle. A bare `web` and
-# `web -h` join help here, so asking the group what it can do forks nothing.
+# `web -h` join help here, so asking the group what it can do starts no server
+# and no JVM. It is not fork-free: the live block runs ./spectro-serve status,
+# which curls the health endpoint (and reaches for lsof) to answer.
 wants_help=false
 case "$task" in
     -h|--help|help) wants_help=true ;;
