@@ -65,6 +65,7 @@ const LADDER: LevelingSnapshot["ladder"] = {
 function snap(level: number, mode: LevelingSnapshot["mode"] = "ladder"): LevelingSnapshot {
   return {
     mode,
+    introSeen: true,
     level,
     levelId: LADDER.levels[level].id,
     ladder: LADDER,

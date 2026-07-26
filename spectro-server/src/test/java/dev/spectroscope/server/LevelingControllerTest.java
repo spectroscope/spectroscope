@@ -208,6 +208,21 @@ class LevelingControllerTest {
     }
 
     @Test
+    void aFreshHomeIsAskedOnceAndAResetDoesNotAskAgain(@TempDir Path dir) {
+        LevelingController controller = controller(dir);
+        assertEquals(false, body(controller.state(local())).get("introSeen"),
+                "a pristine home has not answered yet");
+
+        // Choosing a mode IS the answer, whichever way it goes.
+        controller.mode(new LevelingController.ModeBody("ladder"), local());
+        assertEquals(true, body(controller.state(local())).get("introSeen"));
+
+        controller.reset(local());
+        assertEquals(true, body(controller.state(local())).get("introSeen"),
+                "restarting the ladder is not re-onboarding");
+    }
+
+    @Test
     void theServerNeverEnforcesALevel(@TempDir Path dir) {
         // The whole API surface answers the same at level 0 as at level 6. This test pins the
         // architectural promise from card 79: locks are client rendering, never server policy.

@@ -39,8 +39,15 @@ final class ServerLeveling {
             synchronized (ServerLeveling.class) {
                 local = recorder;
                 if (local == null) {
-                    local = new LevelingRecorder(Ladder.bundled(), LevelingStore.userStore(),
-                            freshMode(SessionStore.SESSIONS_DIR, SpectroConfig.USER_SETTINGS_PATH));
+                    LevelingState.Mode mode =
+                            freshMode(SessionStore.SESSIONS_DIR, SpectroConfig.USER_SETTINGS_PATH);
+                    local = new LevelingRecorder(Ladder.bundled(), LevelingStore.userStore(), mode);
+                    if (mode == LevelingState.Mode.CHECKLIST) {
+                        // A home with work in it is never asked to choose: it already has
+                        // every surface, and an intro would be the product introducing
+                        // itself to someone who has been using it for weeks.
+                        local.introAnswered();
+                    }
                     recorder = local;
                 }
             }

@@ -26,6 +26,7 @@ import { GateBar } from "./components/GateBar";
 import { LevelPill } from "./components/LevelPill";
 import { LevelingPanel } from "./components/LevelingPanel";
 import { LockedSurface } from "./components/LockedSurface";
+import { LevelingIntro } from "./components/LevelingIntro";
 import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { setBeaconSink } from "./state/levelingBeacon";
@@ -541,8 +542,13 @@ export function App() {
   // saving a key auto-dismisses it. Readiness-gated because the localStorage flag
   // alone is fragile (per-origin, blocked in the desktop shell).
   useEffect(() => {
-    setOnboardingOpen(shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus));
-  }, [onboardingDismissed, serverCfg, providerStatus]);
+    // The ladder's intro asks first. Two welcome dialogs stacked on a first run
+    // is the wall this wave exists to remove, so the backend sheet waits its turn.
+    const introPending = leveling.snapshot ? !leveling.snapshot.introSeen : false;
+    setOnboardingOpen(
+      !introPending && shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus),
+    );
+  }, [onboardingDismissed, serverCfg, providerStatus, leveling.snapshot]);
 
   // Settings hydration: the thinking toggle and the image-backend picker seed
   // from a hardcoded fallback (see the useState calls above) until the
@@ -1225,6 +1231,12 @@ export function App() {
             focusEvent={focusEvent}
             onFocusHandled={() => setFocusEvent(null)}
           />
+        )}
+        {leveling.snapshot && !leveling.snapshot.introSeen && (
+          /* Asked once per home, and only for a home that has never been used —
+             an existing operator is grandfathered into checklist by the server
+             and never meets this screen. */
+          <LevelingIntro onChoose={(mode) => void leveling.setMode(mode)} />
         )}
         {levelPanelOpen && leveling.snapshot && (
           <div className="lvl-drawer-scrim" onClick={() => setLevelPanelOpen(false)}>

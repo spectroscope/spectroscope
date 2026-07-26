@@ -182,6 +182,7 @@ public class LevelingController {
 
         Map<String, Object> answer = new LinkedHashMap<>();
         answer.put("mode", state.mode().wire());
+        answer.put("introSeen", state.introSeen());
         answer.put("level", level);
         answer.put("levelId", ladder.levels().get(level).id());
         answer.put("ladder", ladderShape(ladder));

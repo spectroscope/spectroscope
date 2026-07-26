@@ -125,9 +125,24 @@ public final class LevelingRecorder {
     public synchronized void mode(LevelingState.Mode mode) {
         Objects.requireNonNull(mode, "mode");
         if (state.mode() == mode) {
+            // Picking the mode you are already in is still an answer, and the most
+            // likely one: the intro offers the ladder, and a fresh home starts in
+            // it. Returning early here would throw that answer away and ask again
+            // on the next boot.
+            introAnswered();
             return;
         }
-        state = new LevelingState(mode, state.marks(), state.history(), state.facts());
+        // Choosing a mode IS the answer to the intro question, whichever way it goes.
+        state = new LevelingState(mode, state.marks(), state.history(), state.facts(), true);
+        persist();
+    }
+
+    /** Records that the once-per-home intro no longer needs asking. */
+    public synchronized void introAnswered() {
+        if (state.introSeen()) {
+            return;
+        }
+        state = state.withIntroSeen();
         persist();
     }
 

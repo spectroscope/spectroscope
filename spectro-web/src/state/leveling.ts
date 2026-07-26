@@ -50,6 +50,8 @@ export interface LevelingMark {
 /** The whole answer of GET /api/leveling, and of the leveling_state frame. */
 export interface LevelingSnapshot {
   mode: LevelingMode;
+  /** Whether this home has answered the once-per-home intro question. */
+  introSeen: boolean;
   level: number;
   levelId: string;
   ladder: {

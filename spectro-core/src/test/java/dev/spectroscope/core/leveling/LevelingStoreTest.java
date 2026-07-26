@@ -35,7 +35,8 @@ class LevelingStoreTest {
                         new LevelingState.Mark("lens-used", null, null, 2000L,
                                 LevelingState.Origin.MANUAL)),
                 List.of(new LevelingState.LevelUp(1, 1000L)),
-                Map.of("20260726-aaa", LevelingState.SessionFacts.of(true, Set.of("main", "worker"))));
+                Map.of("20260726-aaa", LevelingState.SessionFacts.of(true, Set.of("main", "worker"))),
+                false);
     }
 
     @Test
@@ -54,6 +55,21 @@ class LevelingStoreTest {
                 "a hand tick stays a hand tick across a restart");
         assertEquals(1, back.history().size());
         assertTrue(back.facts().get("20260726-aaa").fannedOut());
+    }
+
+    @Test
+    void theIntroDecisionSurvivesAndIsNotUndoneByAReset(@TempDir Path dir) throws IOException {
+        // The intro asks once per home: grow into it, or open everything. A reset
+        // restarts the LADDER, not the onboarding — being asked the same question
+        // again because you wanted to start over would be the app forgetting you.
+        Path file = dir.resolve("leveling.json");
+        LevelingStore store = new LevelingStore(file);
+        store.write(LevelingState.fresh(LevelingState.Mode.LADDER).withIntroSeen());
+
+        LevelingState back = store.read().orElseThrow();
+        assertTrue(back.introSeen(), "the answer to a once-per-home question is durable");
+        assertFalse(LevelingState.fresh(LevelingState.Mode.LADDER).introSeen(),
+                "a home that has not been asked yet says so");
     }
 
     @Test

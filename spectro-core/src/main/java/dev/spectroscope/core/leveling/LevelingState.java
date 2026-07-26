@@ -23,7 +23,19 @@ import java.util.Set;
 public record LevelingState(Mode mode,
                             Map<String, Mark> marks,
                             List<LevelUp> history,
-                            Map<String, SessionFacts> facts) {
+                            Map<String, SessionFacts> facts,
+                            boolean introSeen) {
+
+    /** Back-compat shape for callers and files written before the intro existed. */
+    @JsonCreator
+    public static LevelingState of(
+            @com.fasterxml.jackson.annotation.JsonProperty("mode") Mode mode,
+            @com.fasterxml.jackson.annotation.JsonProperty("marks") Map<String, Mark> marks,
+            @com.fasterxml.jackson.annotation.JsonProperty("history") List<LevelUp> history,
+            @com.fasterxml.jackson.annotation.JsonProperty("facts") Map<String, SessionFacts> facts,
+            @com.fasterxml.jackson.annotation.JsonProperty("introSeen") Boolean introSeen) {
+        return new LevelingState(mode, marks, history, facts, Boolean.TRUE.equals(introSeen));
+    }
 
     /** How much of the ladder is doing work in this home. */
     public enum Mode {
@@ -162,7 +174,16 @@ public record LevelingState(Mode mode,
      * @return the empty state
      */
     public static LevelingState fresh(Mode mode) {
-        return new LevelingState(mode, Map.of(), List.of(), Map.of());
+        return new LevelingState(mode, Map.of(), List.of(), Map.of(), false);
+    }
+
+    /**
+     * The same state, with the once-per-home intro marked as answered.
+     *
+     * @return a copy that will not ask again
+     */
+    public LevelingState withIntroSeen() {
+        return introSeen ? this : new LevelingState(mode, marks, history, facts, true);
     }
 
     /**

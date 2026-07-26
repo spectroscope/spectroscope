@@ -180,7 +180,12 @@ public final class LevelingFold {
      * @return an empty state in the same mode
      */
     public static LevelingState reset(LevelingState state) {
-        return LevelingState.fresh(Objects.requireNonNull(state, "state").mode());
+        Objects.requireNonNull(state, "state");
+        // The intro answer survives: restarting the ladder is not re-onboarding,
+        // and asking the same question again because someone wanted to start over
+        // would be the app forgetting them.
+        LevelingState wiped = LevelingState.fresh(state.mode());
+        return state.introSeen() ? wiped.withIntroSeen() : wiped;
     }
 
     // ── internals ──────────────────────────────────────────────────────────
@@ -203,7 +208,7 @@ public final class LevelingFold {
             }
             history = grown;
         }
-        return new LevelingState(state.mode(), marks, history, state.facts());
+        return new LevelingState(state.mode(), marks, history, state.facts(), state.introSeen());
     }
 
     /** Bookkeeping for the joins: did this session run a tool, and how many agents did it carry. */
@@ -240,7 +245,7 @@ public final class LevelingFold {
             oldest.next();
             oldest.remove();
         }
-        return new LevelingState(state.mode(), state.marks(), state.history(), facts);
+        return new LevelingState(state.mode(), state.marks(), state.history(), facts, state.introSeen());
     }
 
     /** Notes that a face showed a surface for a session whose stream has not caught up yet. */
@@ -260,7 +265,7 @@ public final class LevelingFold {
             oldest.next();
             oldest.remove();
         }
-        return new LevelingState(state.mode(), state.marks(), state.history(), facts);
+        return new LevelingState(state.mode(), state.marks(), state.history(), facts, state.introSeen());
     }
 
     /** Cashes in earlier looks once this session's stream finally proves them. */
@@ -319,7 +324,7 @@ public final class LevelingFold {
         if (joinsStillOpen(ladder, state) || state.facts().isEmpty()) {
             return state;
         }
-        return new LevelingState(state.mode(), state.marks(), state.history(), Map.of());
+        return new LevelingState(state.mode(), state.marks(), state.history(), Map.of(), state.introSeen());
     }
 
     /**
