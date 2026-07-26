@@ -63,8 +63,11 @@ chk_java()    { java -version 2>&1 | grep -Eq 'version .(2[1-9]|[3-9][0-9])'; }
 chk_jar()     { [ -f "$(server_jar)" ] || command -v ./gradlew >/dev/null 2>&1; }
 chk_backend() { [ -n "${SPECTRO_PROVIDER:-}" ] || [ -f .env ] || [ -f "$HOME/.spectro/settings.json" ]; }
 
-# KEY=value loader — same contract as ./spectro: skip #/blank, require =, strip
-# one layer of surrounding quotes, drop an inline comment on an unquoted value.
+# KEY=value loader — same contract as ./spectro, rule for rule: skip #/blank,
+# require =, strip one layer of surrounding quotes, and on an unquoted value drop
+# an inline comment. The two rules below are the ones that used to differ, and a
+# .env is read by both scripts, so a divergence here corrupts values depending on
+# which door you came through.
 load_env_file() {
   local f="$1"; [ -f "$f" ] || return 0
   local line key val
@@ -76,9 +79,14 @@ load_env_file() {
     case "$val" in
       \"*\") val="${val%\"}"; val="${val#\"}";;
       \'*\') val="${val%\'}"; val="${val#\'}";;
-      *) val="${val%%#*}"; val="$(printf '%s' "$val" | sed 's/[[:space:]]*$//')";;
+      # Unquoted: a hash opens a comment only when whitespace precedes it. The
+      # old ${val%%#*} cut at the FIRST hash anywhere, so an api key carrying one
+      # arrived silently truncated and the server failed to authenticate.
+      *) val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//')";;
     esac
-    [ -n "$key" ] && export "$key=$val"
+    # An empty value leaves an already-exported var intact: `KEY=` in the file is
+    # not an instruction to blank what the caller handed down.
+    if [ -n "$key" ] && [ -n "$val" ]; then export "$key=$val"; fi
   done < "$f"
   say "${C_DIM}  loaded env from $f${C_0}"
 }
