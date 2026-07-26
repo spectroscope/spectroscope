@@ -13,10 +13,10 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 > (0.1.0 → 0.1.1 → …), never a re-publish of an existing version.
 >
 > **Version counter — bump this line with every cut.** Published so far:
-> **0.1.0, 0.2.0, 0.3.0** (2026-07-24). Those numbers are burned forever; the
-> next release MUST be **0.3.1 or higher**. This applies to every artifact in
-> the table below, not just the Maven libs: apps and the desktop kit move to
-> the same number in step 2.
+> **0.1.0, 0.2.0, 0.3.0, 0.4.0** (2026-07-27). Those numbers are burned
+> forever; the next release MUST be **0.4.1 or higher**. This applies to every
+> artifact in the table below, not just the Maven libs: apps and the desktop
+> kit move to the same number in step 2.
 
 ---
 
@@ -79,8 +79,11 @@ single test (UP-TO-DATE — and even `cleanTest test` comes back FROM-CACHE). A
 release check that trusts that green has checked nothing; count the tests in
 the output.
 
-Baseline at v0.3.0: **JUnit 747**, **vitest 501** (the live-Opus contract check
+Baseline at v0.4.0: **JUnit 929**, **vitest 593** (the live-Opus contract check
 self-skips without a key). A new release should never gate below the last one.
+The javadoc leg is not decoration: at the 0.4.0 cut it caught three doc
+comments orphaned from their methods by a mid-wave insertion — the only gate
+that runs javadoc is this one.
 
 ### 4. Dry-run the publish (no portal)
 ```bash
