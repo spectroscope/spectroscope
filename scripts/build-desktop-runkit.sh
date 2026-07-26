@@ -135,12 +135,20 @@ fi
 codesign --verify --deep --strict "$APP" || { echo "!! signature did not verify"; exit 1; }
 echo "    $(codesign -dv "$APP" 2>&1 | grep -i 'Signature\|Authority' | head -1)"
 
-# 6) package the signed app into a .dmg (hdiutil preserves the signature exactly)
+# 6) package the signed app into a .dmg (hdiutil preserves the signature exactly),
+#    then sign the .dmg ITSELF: notarization accepts an unsigned dmg and stapler
+#    staples it, but `spctl -a -t open --context context:primary-signature` (the
+#    documented verify line) rejects it with "no usable signature". One codesign
+#    makes the container's provenance checkable, not just the app inside.
 echo "==> [6/7] package .dmg"
 STAGE="$(mktemp -d)"; ditto "$APP" "$STAGE/spectroscope.app"; ln -s /Applications "$STAGE/Applications"
 DMG="$D/release/spectroscope-${VERSION}-${ARCH}.dmg"; rm -f "$DMG"
 hdiutil create -volname "spectroscope" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
+if [ -n "$ID" ]; then
+  codesign --force --timestamp --sign "$ID" "$DMG"
+  codesign --verify "$DMG" || { echo "!! dmg signature did not verify"; exit 1; }
+fi
 
 # 7) SIGNED path: notarize + staple if a notarytool profile is available.
 #    Submitting uploads the build to Apple — set NOTARY_PROFILE (default

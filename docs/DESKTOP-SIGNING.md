@@ -1,8 +1,11 @@
 # Signing & notarizing the desktop app (Apple Developer ID)
 
-The release `.dmg` from `scripts/build-desktop-runkit.sh` is **ad-hoc signed**:
-it opens, but on first download macOS says *"unidentified developer"* and the
-user has to right-click → Open once. That is free and needs no Apple account.
+Without a Developer ID in the keychain, the `.dmg` from
+`scripts/build-desktop-runkit.sh` is **ad-hoc signed**: it opens, but on first
+download macOS says *"unidentified developer"* and the user has to
+right-click → Open once. That is free and needs no Apple account. With a
+Developer ID (and a notary profile) the same script signs, notarizes and
+staples on its own; step 8 describes the auto-selection.
 
 For a **double-click, zero-warning** app you need a paid **Apple Developer
 Program** membership, a **Developer ID Application** certificate, and
@@ -91,12 +94,15 @@ both. Create `spectro-desktop/build/entitlements.mac.plist`:
 - `disable-library-validation` — lets the app process load the JRE's dylibs
   (they're signed by *you*, not Apple, once you re-sign them below).
 
-## 5. Sign — the app **and** the JRE
+## 5. Sign — the app **and** every bundled binary set
 
 electron-builder signs the app bundle + Electron framework, but **not** the
-`extraResources` JRE. Every Mach-O must be signed with your Developer ID +
-hardened runtime, or notarization rejects the build. Sign the JRE inside-out
-first, then let electron-builder seal the app.
+`extraResources` — and the run kit carries two binary sets there: the jlink'd
+JRE (`spectro-desktop/jre`) and llama.cpp's `llama-server` with its dylib
+closure (`spectro-desktop/bin`, see step 5b). Every Mach-O in both must be
+signed with your Developer ID + hardened runtime, or notarization rejects the
+build. Sign them inside-out first — dylibs, then executables — then let
+electron-builder seal the app.
 
 `package.json` → `build.mac`:
 ```json
@@ -109,13 +115,16 @@ first, then let electron-builder seal the app.
 }
 ```
 
-Sign the JRE before packaging (an electron-builder `afterPack` hook, or inline
-in the build script right after `jlink`):
+Sign the bundled binaries before packaging (an electron-builder `afterPack`
+hook, or inline in the build script right after `jlink` and the llama fetch):
 ```bash
 ID="Developer ID Application: Your Name (TEAMID)"
 ENT="spectro-desktop/build/entitlements.mac.plist"
-# sign every Mach-O in the runtime, deepest first
-find spectro-desktop/jre -type f \( -name '*.dylib' -o -perm +111 \) -print0 \
+# dylibs first, then executables, so nothing is sealed over an unsigned dependency
+find spectro-desktop/jre spectro-desktop/bin -type f -name '*.dylib' -print0 \
+  | xargs -0 -I{} codesign --force --timestamp --options runtime \
+      --entitlements "$ENT" --sign "$ID" "{}"
+find spectro-desktop/jre spectro-desktop/bin -type f ! -name '*.dylib' -perm +111 -print0 \
   | xargs -0 -I{} codesign --force --timestamp --options runtime \
       --entitlements "$ENT" --sign "$ID" "{}"
 ```
@@ -128,6 +137,37 @@ codesign --force --deep --options runtime --timestamp \
 codesign --verify --deep --strict spectro-desktop/release/mac-*/spectroscope.app
 ```
 
+## 5b. The bundled `llama-server` (the second binary set)
+
+The run kit ships llama.cpp's `llama-server` so the built-in model works on a
+machine with nothing else installed. `scripts/fetch-llama-server.sh` stages it
+into `spectro-desktop/bin`; the run-kit script calls it as step 2b and signs
+the result together with the JRE. What matters for signing:
+
+- **It is the official llama.cpp release build, not Homebrew's.** brew's
+  binary wires `libggml`, `libggml-base` and OpenSSL to absolute
+  `/opt/homebrew` paths, which exist on no user's machine — bundling it would
+  mean rewriting every load path with `install_name_tool`. The official macOS
+  build references each library as `@rpath/...` with an `LC_RPATH` of
+  `@loader_path`, links no OpenSSL at all, and compiles the Metal shaders into
+  `libggml-metal`. Nothing to rewrite: copy and sign.
+- **Pinned twice.** Build tag and tarball sha256. An unpinned fetch would put
+  unreviewed code into an artifact notarized under our Developer ID.
+- **The dylib closure must close.** The fetch script walks `llama-server`'s
+  transitive `@rpath` graph (11 Mach-O files, ~22 MB — not the ~30 extra tools
+  the release also ships) and **fails the build** if any load path points
+  outside the bundle. A single absolute reference means the app runs on the
+  build machine and dies everywhere else.
+- **Self-containment was measured.** Under `DYLD_PRINT_LIBRARIES` a real
+  inference run loads all 11 Mach-O files from the bundle and zero from
+  `/opt/homebrew`, which also covers the dlopen'd ggml backends that
+  `otool -L` cannot see.
+- **No extra entitlement.** The worry was that the hardened runtime would
+  block the ggml Metal backend. Measured on a real run: the signed binary
+  still serves inference at 66 tok/s, so Metal survives with the JRE's
+  entitlement set from step 4. Do not add entitlements preemptively; if a
+  future backend needs one, name it here with the reason.
+
 ## 6. Package, notarize, staple
 
 ```bash
@@ -138,6 +178,11 @@ DMG=spectro-desktop/release/spectroscope-${V}-${ARCH}.dmg
 # dmg from the signed app (as build-desktop-runkit.sh already does)
 STAGE=$(mktemp -d); ditto "$APP" "$STAGE/spectroscope.app"; ln -s /Applications "$STAGE/Applications"
 hdiutil create -volname spectroscope -srcfolder "$STAGE" -ov -format UDZO "$DMG"; rm -rf "$STAGE"
+
+# sign the dmg ITSELF — notarization accepts an unsigned dmg, but the spctl
+# verify line in step 7 rejects it with "no usable signature" (0.2.0 and 0.3.0
+# shipped that way; the app inside was still fully notarized)
+codesign --force --timestamp --sign "$ID" "$DMG"
 
 # notarize the dmg, then staple the ticket into it
 xcrun notarytool submit "$DMG" --keychain-profile "spectro-notary" --wait
@@ -165,12 +210,15 @@ A stapled, notarized dmg opens on **double-click** with no warning, even offline
   ID Application" cert from the keychain (and **refuses the Valtech one**). No
   cert → it falls back to the ad-hoc `--sign -` path unchanged, so the script
   still works on machines without a Developer ID.
-- **JRE** — with an identity it signs every Mach-O in the bundled runtime
-  inside-out (step 2b) with the hardened runtime + `build/entitlements.mac.plist`
-  **before** electron-builder seals the app, then reseals + hard-verifies.
-- **Notarize** — if a notarytool profile exists (`NOTARY_PROFILE`, default
-  `spectro-notary`) it submits, waits, staples, and validates the `.dmg`. No
-  profile → it signs but skips notarization and says so.
+- **JRE + llama-server** — with an identity it signs every Mach-O in
+  `spectro-desktop/jre` *and* `spectro-desktop/bin` inside-out (step 2c:
+  dylibs first, then executables) with the hardened runtime +
+  `build/entitlements.mac.plist` **before** electron-builder seals the app,
+  then reseals + hard-verifies.
+- **Notarize** — it signs the `.dmg` itself, then — if a notarytool profile
+  exists (`NOTARY_PROFILE`, default `spectro-notary`) — submits, waits,
+  staples, and validates it. No profile → it signs but skips notarization and
+  says so.
 
 `package.json` → `build.mac` carries `hardenedRuntime` + the entitlements, so
 electron-builder signs the Electron framework and helper apps correctly.
@@ -188,9 +236,10 @@ Keep the credentials in the keychain / env, **never** in the repo.
 
 ## Gotchas
 
-- **The JRE is the whole difficulty.** A single unsigned `.dylib` or launcher
-  inside `spectro-desktop/jre` fails notarization. Sign the runtime inside-out
-  (step 5) before sealing the app.
+- **The bundled binaries are the whole difficulty.** A single unsigned
+  `.dylib` or launcher inside `spectro-desktop/jre` or `spectro-desktop/bin`
+  fails notarization. Sign both sets inside-out (step 5) before sealing the
+  app.
 - **Never commit certificates, private keys, or the app-specific password.**
 - **Universal / Intel:** this signs the host arch. For an Intel or universal
   build, build and sign on/for that arch too, then notarize each dmg.
