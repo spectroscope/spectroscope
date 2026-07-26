@@ -13,6 +13,7 @@ import { TOOL_VIEW_MODES, setToolView, useToolView } from "../state/toolView";
 import { ToolViewBody } from "./ToolViewBody";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { beacon } from "../state/levelingBeacon";
 
 /** Live duration count-up tick while a tool runs. */
 const RUNNING_TICK_MS = 250;
@@ -85,7 +86,16 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
 
   return (
     <div className="tool-card" style={{ "--line-color": lineColor } as CSSProperties}>
-      <button type="button" className="tool-card-head" aria-expanded={open} onClick={() => setManual(!open)}>
+      <button
+        type="button"
+        className="tool-card-head"
+        aria-expanded={open}
+        onClick={() => {
+          setManual(!open);
+          // Expanding is the act the ladder watches; collapsing again is not.
+          if (!open) beacon("disclosure");
+        }}
+      >
         <span className={`dot ${dotTone}`} aria-hidden="true" />
         <span className="tool-name">{card.name}</span>
         {subagent && (

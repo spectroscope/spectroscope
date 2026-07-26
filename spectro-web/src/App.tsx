@@ -28,6 +28,7 @@ import { LevelingPanel } from "./components/LevelingPanel";
 import { LockedSurface } from "./components/LockedSurface";
 import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
+import { setBeaconSink } from "./state/levelingBeacon";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
@@ -139,6 +140,12 @@ export function App() {
   refreshLeveling.current = leveling.refresh;
   const beaconRef = useRef(leveling.visit);
   beaconRef.current = leveling.visit;
+  // Components too deep for a prop report through the module beacon; the app is
+  // the only thing that knows where those reports should go.
+  useEffect(() => {
+    setBeaconSink((surface, sessionId) => beaconRef.current(surface, sessionId ?? null));
+    return () => setBeaconSink(null);
+  }, []);
   const [levelPanelOpen, setLevelPanelOpen] = useState(false);
   const [levelUp, setLevelUp] = useState<{ level: number; opened: string[] } | null>(null);
   const lastLevel = useRef<number | null>(null);
