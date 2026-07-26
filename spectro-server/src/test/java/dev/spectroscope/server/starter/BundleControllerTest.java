@@ -146,7 +146,7 @@ class BundleControllerTest {
         assertTrue(Files.exists(dir.resolve("settings.gradle.kts")));
         assertTrue(Files.exists(dir.resolve("build.gradle.kts")));
         assertTrue(Files.exists(dir.resolve("src/main/java/demo/FiveLines.java")));
-        assertTrue(Files.readString(dir.resolve("build.gradle.kts")).contains("spectro-core:0.3.0"));
+        assertTrue(Files.readString(dir.resolve("build.gradle.kts")).contains("spectro-core:0.4.0"));
     }
 
     @Test

@@ -78,17 +78,17 @@ public final class OpenAiCompatProvider implements LlmProvider {
         this.baseUrl = options.baseUrl();
     }
 
+    @Override
+    public String modelName() {
+        return model;
+    }
+
     /**
      * Opens one SSE chat-completions stream per iteration — lazy like the other providers.
      *
      * @param request the provider-neutral turn input to translate onto the OpenAI wire
      * @return a lazy iterable; each {@code iterator()} call posts a fresh completion
      */
-    @Override
-    public String modelName() {
-        return model;
-    }
-
     @Override
     public Iterable<ProviderEvent> stream(ProviderRequest request) {
         return () -> new SseIterator(request);

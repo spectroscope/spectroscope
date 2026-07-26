@@ -80,17 +80,17 @@ public final class OllamaProvider implements LlmProvider {
         }
     }
 
+    @Override
+    public String modelName() {
+        return model;
+    }
+
     /**
      * Opens one NDJSON chat stream per iteration — lazy like the Anthropic twin.
      *
      * @param request the provider-neutral turn input to translate onto Ollama's wire
      * @return a lazy iterable; each {@code iterator()} call posts a fresh /api/chat
      */
-    @Override
-    public String modelName() {
-        return model;
-    }
-
     @Override
     public Iterable<ProviderEvent> stream(ProviderRequest request) {
         return () -> new NdjsonIterator(request);

@@ -84,6 +84,11 @@ public final class AnthropicProvider implements LlmProvider {
         this(model, promptCaching, null);
     }
 
+    @Override
+    public String modelName() {
+        return model;
+    }
+
     /**
      * Opens one streaming SDK call per iteration — the returned iterable is lazy,
      * events are translated while the HTTP stream is still running.
@@ -91,11 +96,6 @@ public final class AnthropicProvider implements LlmProvider {
      * @param request the provider-neutral turn input (system, history, tools, budget)
      * @return a lazy iterable; each {@code iterator()} call starts a fresh HTTP stream
      */
-    @Override
-    public String modelName() {
-        return model;
-    }
-
     @Override
     public Iterable<ProviderEvent> stream(ProviderRequest request) {
         return () -> new TranslatingIterator(request);
