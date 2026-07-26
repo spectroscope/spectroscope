@@ -36,6 +36,7 @@ import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
 import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
 import { LocalModelNotice } from "./components/LocalModelNotice";
+import { LocalModelDialog } from "./components/LocalModelDialog";
 import { LOCAL_NOTICE_KEY, shouldShowLocalNotice } from "./components/localNoticeFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { StarterDialog } from "./components/StarterDialog";
@@ -195,6 +196,7 @@ export function App() {
   // Built-in model first-use notice (card 91): opens once when spectro-local
   // becomes the ACTIVE backend (wire truth); "got it" persists the dismissal.
   const [localNoticeOpen, setLocalNoticeOpen] = useState(false);
+  const [localChooserOpen, setLocalChooserOpen] = useState(false); // the built-in model chooser, opened from onboarding
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
     try {
       return !shouldOnboard(localStorage.getItem(ONBOARDED_KEY));
@@ -1313,6 +1315,7 @@ export function App() {
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
       {localNoticeOpen && (
         <LocalModelNotice
+          model={live.providerInfo?.model}
           onGotIt={() => dismissLocalNotice(true)}
           onClose={() => dismissLocalNotice(false)}
         />
@@ -1328,7 +1331,28 @@ export function App() {
             /* storage may be blocked — readiness gating still hides it once configured */
           }
         }}
+        onStartLocal={() => {
+          // The zero-install path: the sheet's job is done (count it as seen),
+          // and the chooser takes over.
+          setOnboardingOpen(false);
+          setOnboardingDismissed(true);
+          try {
+            localStorage.setItem(ONBOARDED_KEY, "1");
+          } catch {
+            /* ignore */
+          }
+          setLocalChooserOpen(true);
+        }}
       />
+      {localChooserOpen && (
+        <LocalModelDialog
+          onUse={(modelId) => {
+            setLocalChooserOpen(false);
+            changeProvider("spectro-local", modelId);
+          }}
+          onClose={() => setLocalChooserOpen(false)}
+        />
+      )}
       {spawnDialogOpen && (
         <div
           className="fleet-spawn-modal-backdrop"

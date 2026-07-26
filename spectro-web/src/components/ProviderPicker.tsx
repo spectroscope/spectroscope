@@ -15,8 +15,6 @@ import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { LocalModelDialog } from "./LocalModelDialog";
 
-const LOCAL_MODEL_ID = "vibethinker-3b";
-
 export function ProviderPicker({
   provider,
   model: activeModel,
@@ -45,7 +43,6 @@ export function ProviderPicker({
   const ref = useRef<HTMLDivElement>(null);
 
   const isLocal = sel === "spectro-local";
-  const localNeedsDownload = providerStatus?.["spectro-local"] === "needs-download";
 
   // Opening seeds the form from the active provider and the real current model.
   useEffect(() => {
@@ -82,15 +79,11 @@ export function ProviderPicker({
   const dot = status === "open" ? "ok" : status === "connecting" ? "warn" : "error";
 
   const apply = (): void => {
-    // The built-in model: if it isn't downloaded yet, open the modal instead of
-    // switching; otherwise switch to it with its fixed model id.
-    if (isLocal && localNeedsDownload) {
-      setShowDownload(true);
-      return;
-    }
+    // The built-in provider always routes through the chooser: WHICH model runs
+    // is a real decision now (five entries, different tools/size trade-offs),
+    // and the dialog is also where an absent model gets downloaded.
     if (isLocal) {
-      onApply("spectro-local", LOCAL_MODEL_ID);
-      setOpen(false);
+      setShowDownload(true);
       return;
     }
     onApply(sel, model.trim());
@@ -142,11 +135,7 @@ export function ProviderPicker({
             </select>
           </label>
           {isLocal ? (
-            <p className="provider-local-note">
-              {localNeedsDownload
-                ? "The built-in model is not downloaded yet — switching opens the download."
-                : "The built-in model runs locally — no key, no external server."}
-            </p>
+            <p className="provider-local-note">{t(lang, "pp.localNote")}</p>
           ) : (
             <label className="provider-field">
               <span className="provider-field-label">{t(lang, "pp.model")}</span>
@@ -168,7 +157,7 @@ export function ProviderPicker({
           )}
           <div className="provider-pop-foot">
             <button type="button" className="primary" onClick={apply}>
-              {isLocal && localNeedsDownload ? "Get the model" : t(lang, "pp.switch")}
+              {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}
             </button>
           </div>
         </div>
@@ -176,9 +165,9 @@ export function ProviderPicker({
 
       {showDownload && (
         <LocalModelDialog
-          onReady={() => {
+          onUse={(modelId) => {
             setShowDownload(false);
-            onApply("spectro-local", LOCAL_MODEL_ID);
+            onApply("spectro-local", modelId);
             setOpen(false);
           }}
           onClose={() => setShowDownload(false)}
