@@ -8,7 +8,6 @@
 // store): the scene fold is pure and deterministic over any events prefix, so
 // a cursor + two memos give scrubbing, play, and live-follow for free — for a
 // live fleet and a loaded scenario alike.
-
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
@@ -34,10 +33,9 @@ import { nodeTypes } from "./flowmap/nodes";
 import { edgeTypes } from "./flowmap/PacketEdge";
 import "@xyflow/react/dist/style.css";
 import "./flowmap/flowmap.css";
-
+import { beacon } from "../state/levelingBeacon";
 /** Same stored preference as the single-run Lab — ONE card-view choice. */
 const VIEW_STORAGE_KEY = "spectroscope.lab.view";
-
 function storedExpanded(): boolean {
   try {
     return localStorage.getItem(VIEW_STORAGE_KEY) === "expanded";
@@ -45,7 +43,6 @@ function storedExpanded(): boolean {
     return false;
   }
 }
-
 const MINIMAP_COLOR: Record<string, string> = {
   subagent: "var(--agent-worker)",
   llm: "var(--sand)",
@@ -53,10 +50,8 @@ const MINIMAP_COLOR: Record<string, string> = {
   os: "var(--border-strong)",
   ext: "var(--border-strong)",
 };
-
 /** The tempo slider snaps in steps of this many milliseconds. */
 const TEMPO_SLIDER_STEP_MS = 20;
-
 /** True while the user is typing, so transport keys never eat keystrokes. */
 function isTyping(target: EventTarget | null): boolean {
   const el = target as HTMLElement | null;
@@ -64,13 +59,13 @@ function isTyping(target: EventTarget | null): boolean {
   const tag = el.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable;
 }
-
 export function FleetLab(props: { model: FleetModel; running: boolean }) {
+  // Seeing the machine room IS the criterion; it has no other observable act.
+  useEffect(() => beacon("machine-room"), []);
   const { model, running } = props;
   const lang = useLang();
   const de = lang === "de";
   const total = model.events.length;
-
   // cursor === null → follow the live edge (every new event applies at once).
   const [cursor, setCursor] = useState<number | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -89,7 +84,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
   };
   const at = cursor ?? total;
   const clamped = Math.max(0, Math.min(at, total));
-
   // Auto-play: advance one event per tick until the end, then resume following.
   useEffect(() => {
     if (!playing) return;
@@ -105,7 +99,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
     }, intervalMs);
     return () => clearInterval(id);
   }, [playing, total, intervalMs]);
-
   // Keyboard: ←/→ scrub one event, space toggles play. Tab-gated by this mount.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -126,7 +119,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [total]);
-
   const visible = useMemo(() => model.events.slice(0, clamped), [model.events, clamped]);
   const scene = useMemo(
     () => buildFleetLabScene({ roster: model.roster, events: visible, epochBySender: model.epochBySender }),
@@ -134,11 +126,9 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
   );
   const detail = useMemo(() => deriveDetail(visible), [visible]);
   const flow = useMemo(() => fleetToFlow(scene, detail, { lang, expanded }), [scene, detail, lang, expanded]);
-
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const cardCountRef = useRef(scene.nodes.length);
-
   // Sync fold → flow, keeping drag positions unless the card grid changed
   // (a joined/left node recomputes the whole frame) — the FlowMap pattern.
   useEffect(() => {
@@ -153,7 +143,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
     });
     setEdges(flow.edges);
   }, [flow, scene.nodes.length, setNodes, setEdges]);
-
   // The "now" line: the active node and what it is doing right now.
   const active = scene.activeNode !== null ? scene.nodes.find((n) => n.id === scene.activeNode) : undefined;
   const nowText =
@@ -163,7 +152,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
         ? "bereit"
         : "ready";
   const following = cursor === null;
-
   return (
     <section className="lab-center" aria-label={t(lang, "fleetlab.aria")}>
       <div className="lab-now" aria-live="polite">
@@ -197,7 +185,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
           </button>
         </div>
       </div>
-
       <div className="lab-flowmap" onContextMenu={(e) => e.preventDefault()}>
         <ExpandAllContext.Provider value={expanded}>
           <ReactFlow
@@ -246,7 +233,6 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
           </ReactFlow>
         </ExpandAllContext.Provider>
       </div>
-
       <div className="lab-transport">
         <div className="lab-ctrl-btns">
           <button

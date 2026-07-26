@@ -322,6 +322,17 @@ public final class DoctorCommand implements Callable<Integer> {
             report(false, "sessions dir not writable: " + failure.getMessage());
         }
 
+        // Leveling — an info line, never a hard check: the ladder is a nicety and
+        // an unreadable leveling file is not a broken environment.
+        try {
+            info(LevelCommand.doctorLine(dev.spectroscope.core.leveling.Ladder.bundled(),
+                    dev.spectroscope.core.leveling.LevelingStore.userStore().read()
+                            .orElseGet(() -> dev.spectroscope.core.leveling.LevelingState
+                                    .fresh(dev.spectroscope.core.leveling.LevelingState.Mode.CHECKLIST))));
+        } catch (RuntimeException unreadable) {
+            info("leveling: unavailable (" + unreadable.getClass().getSimpleName() + ")");
+        }
+
         // Jobs file
         try {
             int jobs = CronScheduler.loadJobs(new ObjectMapper()).size();

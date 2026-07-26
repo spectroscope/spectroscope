@@ -24,14 +24,28 @@ class ServerProvidersTest {
 
     @Test
     void spectroLocalUsesTheLocalProvider() {
-        LlmProvider built = ServerProviders.build(withProvider("spectro-local"), () -> Optional.of(STUB));
+        LlmProvider built = ServerProviders.build(withProvider("spectro-local"), model -> Optional.of(STUB));
         assertSame(STUB, built, "spectro-local is built by the local runtime, not ProviderFactory");
+    }
+
+    @Test
+    void spectroLocalHandsTheConfiguredModelToTheRuntime() {
+        // The chooser's whole point: the model the operator picked is the model
+        // the runtime starts. The config's model must reach the local seam.
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "spectro-local", "qwen3-4b", null, null, null, null));
+        StringBuilder seen = new StringBuilder();
+        ServerProviders.build(config, model -> {
+            seen.append(model);
+            return Optional.of(STUB);
+        });
+        assertEquals("qwen3-4b", seen.toString());
     }
 
     @Test
     void spectroLocalWithoutAReadyModelFailsReadably() {
         IllegalStateException e = assertThrows(IllegalStateException.class,
-                () -> ServerProviders.build(withProvider("spectro-local"), Optional::empty));
+                () -> ServerProviders.build(withProvider("spectro-local"), model -> Optional.empty()));
         assertTrue(e.getMessage().toLowerCase().contains("download"),
                 "points the user at the download: " + e.getMessage());
     }
@@ -40,7 +54,7 @@ class ServerProvidersTest {
     void ollamaGoesThroughProviderFactory() {
         // ollama needs no key and builds without a running backend — a non-null
         // provider proves the delegation path (not the local runtime).
-        LlmProvider built = ServerProviders.build(withProvider("ollama"), Optional::empty);
+        LlmProvider built = ServerProviders.build(withProvider("ollama"), model -> Optional.empty());
         assertEquals(false, built == null);
     }
 }

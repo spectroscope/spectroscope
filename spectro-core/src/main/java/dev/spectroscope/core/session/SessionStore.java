@@ -254,6 +254,28 @@ public final class SessionStore {
      * @param id the session id whose file is read
      * @return all parseable events in file order
      */
+    /**
+     * How many event lines a stored session already holds.
+     *
+     * <p>Counted through {@link #readSessionEvents} on purpose, even though the
+     * caller only wants a position: that reader skips blanks and discards a line
+     * torn by a crash, and any other counting rule would disagree with it by one
+     * on exactly those files. The client addresses events by their index in that
+     * same list, so the two must agree or a receipt points at the wrong line.
+     * A missing or unreadable file answers 0, because "start at the beginning"
+     * is the safe wrong answer.</p>
+     *
+     * @param id the session id
+     * @return the number of lines in that session's file, 0 when there is none
+     */
+    public static int eventCount(String id) {
+        try {
+            return readSessionEvents(id).size();
+        } catch (IOException | RuntimeException unreadable) {
+            return 0;
+        }
+    }
+
     public static List<RunEvent> readSessionEvents(String id) throws IOException {
         Path path = SESSIONS_DIR.resolve(id + ".jsonl");
         List<RunEvent> events = new ArrayList<>();

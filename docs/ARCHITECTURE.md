@@ -186,7 +186,7 @@ flowchart TB
     setjh --> dotenv["load ./.env (KEY=value, skip<br/>comments/blank/empty, strip quotes)"]
     dotenv --> disp{"task"}
     disp --> repl["repl / run / cron / sessions /<br/>resume / doctor / tour / mcp-notes"]
-    disp --> web["web → :spectro-server:bootRun"]
+    disp --> web["web (group) → start/stop via ./spectro-serve<br/>dev → :spectro-server:bootRun"]
     disp --> desk["desktop → build jar + Electron"]
 ```
 

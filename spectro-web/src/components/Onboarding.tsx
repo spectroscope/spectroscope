@@ -25,7 +25,13 @@ function Option(props: { badge: string; free: boolean; title: string; body: Reac
   );
 }
 
-export function Onboarding(props: { open: boolean; onClose: () => void }) {
+export function Onboarding(props: {
+  open: boolean;
+  onClose: () => void;
+  /** "start with the built-in model": closes the sheet and opens the local
+   *  chooser — the zero-install path a newcomer should meet first. */
+  onStartLocal?: () => void;
+}) {
   const de = useLang() === "de";
   if (!props.open) return null;
   return (
@@ -58,6 +64,36 @@ export function Onboarding(props: { open: boolean; onClose: () => void }) {
         </p>
 
         <ul className="ob-opts">
+          <Option
+            badge="built-in"
+            free
+            title={de ? "nichts installieren" : "install nothing"}
+            body={
+              de ? (
+                <>
+                  spectroscope bringt einen eigenen Weg mit: ein Modell aussuchen, herunterladen, fertig — es
+                  läuft komplett auf dieser Maschine, ohne Key und ohne Konto. Die Desktop-App bringt alles
+                  mit; beim Server-Jar sagt dir die Auswahl, falls noch <code>llama.cpp</code> fehlt.{" "}
+                  {props.onStartLocal && (
+                    <button type="button" className="ob-opt-cta" onClick={props.onStartLocal}>
+                      Modell wählen …
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  spectroscope carries its own path: pick a model, download it, done — it runs entirely on
+                  this machine, with no key and no account. The desktop app brings everything it needs; with
+                  the server jar the chooser tells you if <code>llama.cpp</code> is still missing.{" "}
+                  {props.onStartLocal && (
+                    <button type="button" className="ob-opt-cta" onClick={props.onStartLocal}>
+                      Choose a model …
+                    </button>
+                  )}
+                </>
+              )
+            }
+          />
           <Option
             badge="ollama"
             free

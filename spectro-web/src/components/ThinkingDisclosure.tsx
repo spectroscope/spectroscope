@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { defaultOpen, useDisclosure } from "../state/disclosure";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { beacon } from "../state/levelingBeacon";
 
 /** This close to the body's bottom edge counts as "following the stream". */
 const FOLLOW_PIN_THRESHOLD_PX = 32;
@@ -57,7 +58,16 @@ export function ThinkingDisclosure(props: { text: string; active: boolean }) {
 
   return (
     <div className={`thinking${props.active ? " thinking--active" : ""}`}>
-      <button type="button" className="thinking-head" aria-expanded={open} onClick={() => setManual(!open)}>
+      <button
+        type="button"
+        className="thinking-head"
+        aria-expanded={open}
+        onClick={() => {
+          setManual(!open);
+          // Expanding is the act the ladder watches; collapsing again is not.
+          if (!open) beacon("disclosure");
+        }}
+      >
         <svg
           className="thinking-glyph"
           viewBox="0 0 16 16"

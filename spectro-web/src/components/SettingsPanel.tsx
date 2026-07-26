@@ -26,6 +26,7 @@ import { PROVIDERS } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
+import type { Leveling } from "../state/useLeveling";
 import { fetchSettings, putSettings, originLabel, type SettingsView } from "../state/serverSettings";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
 
@@ -120,9 +121,14 @@ export function SettingsPanel({
   onClose,
   providerStatus,
   onKeySaved,
+  leveling,
 }: {
   open: boolean;
   onClose: () => void;
+  /** The app's one leveling state. Passed in rather than re-hooked here: a second
+   *  instance would have its own snapshot, and a mode switched in this panel would
+   *  leave the tabs behind it still locked until a reload. */
+  leveling?: Leveling;
   /** Per-provider onboarding status from /api/config: ready | needs-key | local.
    *  Drives the model chooser's honest needs-key affordance (same as the picker). */
   providerStatus?: Record<string, string>;
@@ -497,6 +503,42 @@ export function SettingsPanel({
                   />
                 </label>
               </div>
+
+              {/* ---- Leveling: how much of the ladder is doing work here ---- */}
+              {leveling?.snapshot && (
+                <>
+                  <div className="settings-label">{t(lang, "leveling.settings.title")}</div>
+                  <div className="settings-grid">
+                    <label className="settings-field">
+                      <span>{t(lang, "leveling.settings.mode")}</span>
+                      <select
+                        value={leveling.snapshot.mode}
+                        onChange={(e) =>
+                          void leveling.setMode(e.target.value as "ladder" | "checklist" | "off")
+                        }
+                      >
+                        <option value="ladder">{t(lang, "leveling.settings.mode.ladder")}</option>
+                        <option value="checklist">{t(lang, "leveling.settings.mode.checklist")}</option>
+                        <option value="off">{t(lang, "leveling.settings.mode.off")}</option>
+                      </select>
+                    </label>
+                    <label className="settings-field">
+                      <span>{t(lang, "leveling.settings.reset")}</span>
+                      <button
+                        type="button"
+                        className="lvl-open-all"
+                        onClick={() => {
+                          if (window.confirm(t(lang, "leveling.settings.reset.confirm"))) {
+                            void leveling.reset();
+                          }
+                        }}
+                      >
+                        {t(lang, "leveling.settings.reset")}
+                      </button>
+                    </label>
+                  </div>
+                </>
+              )}
 
               {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
               <div className="settings-label">{t(lang, "set.secObservability")}</div>

@@ -1,18 +1,43 @@
 // The built-in model's first-use notice (card 91): an honest, one-time sheet
-// the moment spectro-local becomes the active backend. VibeThinker-3B is a
-// small bundled REASONING model — great for trying the mechanics, not meant
-// for real work; the copy says exactly that. Reuses the onboarding sheet's
-// km-/ob- vocabulary. Escape and the backdrop dismiss WITHOUT setting the
-// flag (only "got it" does — an accidental Escape must not eat the one-time
-// tutorial moment).
+// the moment spectro-local becomes the active backend. Since the catalogue the
+// claims are PER MODEL — a tool-capable Qwen must not be introduced with the
+// old "no tools" line, and the reasoning specialist must not promise tools.
+// Reuses the onboarding sheet's km-/ob- vocabulary. Escape and the backdrop
+// dismiss WITHOUT setting the flag (only "got it" does — an accidental Escape
+// must not eat the one-time tutorial moment).
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { fetchLocalCatalog, type CatalogModel } from "../state/localModel";
 
-export function LocalModelNotice(props: { onGotIt: () => void; onClose: () => void }) {
+export function LocalModelNotice(props: {
+  /** The active model id from provider_info — decides which claims are true. */
+  model?: string;
+  onGotIt: () => void;
+  onClose: () => void;
+}) {
   const lang = useLang();
   const { onClose } = props;
+  const [entry, setEntry] = useState<CatalogModel | null>(null);
+
+  // One catalogue fetch names the model and its capabilities. Until it lands
+  // (or if it fails) the sheet stays generic rather than guessing wrong.
+  useEffect(() => {
+    let alive = true;
+    void fetchLocalCatalog().then(
+      (c) => {
+        if (!alive) return;
+        setEntry(c.models.find((m) => m.id === props.model) ?? null);
+      },
+      () => {
+        /* generic copy is the honest fallback */
+      },
+    );
+    return () => {
+      alive = false;
+    };
+  }, [props.model]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -21,6 +46,16 @@ export function LocalModelNotice(props: { onGotIt: () => void; onClose: () => vo
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
+
+  const label = entry?.label ?? props.model ?? "";
+  // Without a catalogue entry we do not know whether this model calls tools, and
+  // the no-tools line would be a false claim about four of the five. Fall back to
+  // what is true of every local model in these sizes.
+  const limitsKey = !entry
+    ? "lmn.limits.generic"
+    : entry.nativeTools
+      ? "lmn.limits.local"
+      : "lmn.limits.noTools";
 
   return (
     <div className="km-backdrop" onClick={props.onClose} role="presentation">
@@ -43,22 +78,24 @@ export function LocalModelNotice(props: { onGotIt: () => void; onClose: () => vo
           </button>
         </div>
 
-        <p className="ob-intro">{t(lang, "lmn.lede")}</p>
+        <p className="ob-intro">{t(lang, "lmn.lede", { model: label })}</p>
 
         <ul className="ob-opts">
           <li className="ob-opt">
             <div className="ob-opt-head">
-              <span className="ob-opt-badge mono">demo</span>
+              <span className="ob-opt-badge mono">local</span>
               <span className="ob-opt-title">{t(lang, "lmn.goodTitle")}</span>
             </div>
-            <p className="ob-opt-body">{t(lang, "lmn.good")}</p>
+            <p className="ob-opt-body">
+              {entry ? t(lang, `local.model.${entry.id}.goodFor`) : t(lang, "lm.intro")}
+            </p>
           </li>
           <li className="ob-opt">
             <div className="ob-opt-head">
               <span className="ob-opt-badge mono">limits</span>
               <span className="ob-opt-title">{t(lang, "lmn.limitsTitle")}</span>
             </div>
-            <p className="ob-opt-body">{t(lang, "lmn.limits")}</p>
+            <p className="ob-opt-body">{t(lang, limitsKey)}</p>
           </li>
         </ul>
 

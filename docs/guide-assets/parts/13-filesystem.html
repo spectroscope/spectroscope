@@ -18,6 +18,8 @@
 plain files you can read, version, back up and delete — most of it line-oriented JSON
 that <code>jq</code> understands directly.</p>
 
+<!--SVG:19-store|The whole store on one page: what a used home holds, and the seven layers that decide which file wins when more than one sets the same key.-->
+
 <h2 id="ch-fs-home">The user home: <code>~/.spectro</code></h2>
 
 <pre class="tree"><span class="d">~/.spectro/</span>
@@ -32,22 +34,34 @@ that <code>jq</code> understands directly.</p>
 │           └── <span class="f">ca96adb5…f90157</span>          <span class="c">attachment bytes, file name = sha256</span>
 ├── <span class="d">images/</span>                  <span class="c">generated images, shared across sessions</span>
 │   └── <span class="f">3f7a99c2…81d4.png</span>       <span class="c">content-addressed: &lt;sha256&gt;.&lt;png|jpg|webp&gt;</span>
+├── <span class="f">.env</span>                     <span class="c">API KEYS ONLY, mode 0600 — written here when you save a</span>
+│                            <span class="c">key in the UI (chapter 33). Never a settings file's job.</span>
+├── <span class="f">leveling.json</span>            <span class="c">the ladder: marks, their receipts, the level-up history</span>
+│                            <span class="c">and the mode (chapter 6c)</span>
 ├── <span class="d">skills/</span>                  <span class="c">user-scope skills (chapter 15)</span>
+│   ├── <span class="f">.seeded</span>              <span class="c">ledger of what the first boot planted, so your edits</span>
+│   │                        <span class="c">survive and your deletions stay deleted</span>
 │   └── <span class="d">my-skill/</span><span class="f">SKILL.md</span>
-├── <span class="d">models/</span>                  <span class="c">local speech models (voice setup scripts)</span>
+├── <span class="d">models/</span>                  <span class="c">local model files — everything that runs without a key</span>
+│   ├── <span class="f">qwen2.5-coder-7b-instruct-q4_k_m.gguf</span>  <span class="c">a built-in chat model — whichever</span>
+│   │                        <span class="c">entries you downloaded in the chooser land here (chapter 16b)</span>
 │   ├── <span class="f">ggml-small.bin</span>          <span class="c">whisper.cpp STT model (~460 MB, SHA-pinned)</span>
 │   ├── <span class="d">piper/</span><span class="f">piper</span>            <span class="c">TTS binary</span>
 │   └── <span class="f">en_US-lessac-medium.onnx</span> <span class="c">TTS voice</span>
+├── <span class="d">logs/</span><span class="f">spectroscope.log</span>   <span class="c">operator diagnostics, one [agentId] prefix per line;</span>
+│                            <span class="c">the level is a settings key, not a code change</span>
 ├── <span class="d">notes/</span>                   <span class="c">the example MCP server's note store (one .txt per note)</span>
 ├── <span class="f">jobs.json</span>                <span class="c">cron jobs — an array, hand-edited (chapter 19)</span>
 └── <span class="f">jobs-state.json</span>          <span class="c">last outcome per job id — written by the scheduler</span></pre>
 
 <p class="small">Directories appear on demand — a fresh install has none of them until
-the first session, the first generated image, the first setup script. On this machine,
-today: <code>sessions/</code> (11 files, 228&thinsp;kB) and <code>models/</code> (465&thinsp;MB —
-the whisper model dominates).</p>
+the first session, the first generated image, the first setup script. A home that has
+done nothing but boot and answer one prompt holds five things:
+<code>settings.json</code>, <code>leveling.json</code>, <code>sessions/</code> with a
+single <code>.jsonl</code>, the seeded <code>skills/</code>, and
+<code>logs/</code>.</p>
 
-<h2 id="ch-fs-project">The launch-dir layer: <code>&lt;launch dir&gt;/.spectroscope</code></h2>
+<h2 id="ch-fs-project">The launch-dir layer: <code>&lt;launch dir&gt;/.spectro</code></h2>
 
 <pre class="tree"><span class="d">&lt;launch dir&gt;/.spectro/</span>
 ├── <span class="f">settings.json</span>            <span class="c">the launch-dir settings layer — the directory spectroscope was</span>
@@ -68,6 +82,14 @@ the launcher, never committed; deprecated <code>SPECTRO_*</code> lines still wor
 base, but <code>.env.example</code> now documents just the keys) and an optional
 <code>SPECTRO.md</code>, whose content is appended to the system prompt as project context —
 the agent reads it before your first message.</p>
+
+<p class="small">Two <code>.env</code> files, one job between them. The launch-dir
+<code>./.env</code> is the one you write by hand and the launcher loads;
+<code>~/.spectro/.env</code> is the one the UI writes for you when you save a key in
+the settings, at mode 0600. Both hold secrets and nothing else, both are read the
+same way when a provider is built, and neither is ever a place for
+<code>provider</code> or <code>model</code> — those belong in a settings file, where
+they can be seen and diffed.</p>
 
 <h2 id="ch-fs-session">Inside a session file</h2>
 

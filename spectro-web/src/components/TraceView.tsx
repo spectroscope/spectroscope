@@ -24,6 +24,7 @@ import { DETAIL_MODES, detailLines, detailText } from "./traceDetail";
 import type { DetailMode } from "./traceDetail";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
+import { beacon } from "../state/levelingBeacon";
 import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
@@ -781,7 +782,10 @@ export function TraceView(props: {
           className={`trace-lens mono${lensOn ? " trace-lens--on" : ""}`}
           aria-pressed={lensOn}
           title={t(lang, "trace.lensTitle")}
-          onClick={() => applyAndSaveDesign({ reasoningLens: !lensOn })}
+          onClick={() => {
+            applyAndSaveDesign({ reasoningLens: !lensOn });
+            if (!lensOn) beacon("lens");
+          }}
         >
           {t(lang, "trace.lens")}
         </button>
@@ -791,7 +795,10 @@ export function TraceView(props: {
           className={`trace-lens mono${tlOn ? " trace-lens--on" : ""}`}
           aria-pressed={tlOn}
           title={t(lang, "trace.timelineTitle")}
-          onClick={() => applyAndSaveDesign({ timelineLens: !tlOn })}
+          onClick={() => {
+            applyAndSaveDesign({ timelineLens: !tlOn });
+            if (!tlOn) beacon("lens");
+          }}
         >
           {t(lang, "trace.timeline")}
         </button>
@@ -837,7 +844,10 @@ export function TraceView(props: {
             aria-label={t(lang, "trace.scrubAria")}
             onChange={(e) => {
               const v = Number(e.target.value);
-              setCapSeq(v >= allEntries[allEntries.length - 1].seq ? null : v);
+              const parked = v >= allEntries[allEntries.length - 1].seq ? null : v;
+              setCapSeq(parked);
+              // Stepping back in time is the act; sliding to the live edge is not.
+              if (parked !== null) beacon("replay");
             }}
           />
           <span className="trace-scrub-pos mono tabular">

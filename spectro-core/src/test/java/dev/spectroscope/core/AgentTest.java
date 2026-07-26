@@ -43,10 +43,17 @@ class AgentTest {
     private static final class FakeProvider implements LlmProvider {
         private final Deque<List<ProviderEvent>> scriptedTurns = new ArrayDeque<>();
         final List<ProviderRequest> requests = new ArrayList<>();
+        private String modelName = "fake-model-1";
 
         @Override
         public String modelName() {
-            return "fake-model-1";
+            return modelName;
+        }
+
+        /** Name the model, for the capability lookup the loop does per model. */
+        FakeProvider named(String value) {
+            this.modelName = value;
+            return this;
         }
 
         @SafeVarargs
@@ -149,16 +156,31 @@ class AgentTest {
     }
 
     @Test
-    void spectroLocalIsAdvertisedNoTools() {
+    void spectroLocalReasonerIsAdvertisedNoTools() {
         FakeProvider provider = FakeProvider.scripted(List.of(
                 new LlmProvider.PTextDelta("hi"),
-                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)))
+                .named("vibethinker-3b");
         try (EventStream stream = agentNamed("spectro-local", provider)
                 .run("do it", new RunOptions(new CancelSignal(), null))) {
             stream.forEach(e -> { });
         }
         assertTrue(provider.requests.get(0).tools().isEmpty(),
-                "the built-in reasoner is handed no tools");
+                "the small reasoner emits tool calls as text, so it is handed none");
+    }
+
+    @Test
+    void spectroLocalToolCapableModelStillGetsTools() {
+        FakeProvider provider = FakeProvider.scripted(List.of(
+                new LlmProvider.PTextDelta("hi"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)))
+                .named("qwen3-4b");
+        try (EventStream stream = agentNamed("spectro-local", provider)
+                .run("do it", new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(e -> { });
+        }
+        assertFalse(provider.requests.get(0).tools().isEmpty(),
+                "a catalogue model that speaks tool_calls must be offered the registry");
     }
 
     @Test

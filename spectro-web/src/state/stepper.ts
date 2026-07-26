@@ -14,6 +14,7 @@ import { fire, initialMarking, isDelta } from "../lab/petriModel";
 import type { Firing, Marking } from "../lab/petriModel";
 import { advanceScene, initialScene } from "../lab/labScene";
 import type { Scene } from "../lab/labScene";
+import { beacon } from "./levelingBeacon";
 
 export type StepSource = "live" | { replayId: string };
 export type StepMode = "step" | "flow";
@@ -157,6 +158,9 @@ export function pushLive(batch: RunEvent[]): void {
 export function step(): void {
   if (state.queue.length === 0) return;
   state = applyN(state, state.grain === "fine" ? 1 : blockCount(state.queue));
+  // Stepping is the act the ladder watches, and it is distinct from opening the
+  // lab: walking a run one event at a time is the thing worth crediting.
+  beacon("lab-step");
   emit();
 }
 
@@ -165,6 +169,7 @@ export function step(): void {
  *  step that applied 3 events is undone as 3). */
 export function stepBack(): void {
   if (state.applied.length === 0) return;
+  beacon("lab-step");
   const marks = state.marks;
   const target = marks.length >= 2 ? marks[marks.length - 2] : 0;
   const movedBack = state.applied.slice(target);

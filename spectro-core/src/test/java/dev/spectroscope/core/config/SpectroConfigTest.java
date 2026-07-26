@@ -958,7 +958,13 @@ class SpectroConfigTest {
     void spectroLocalIsAKeylessKnownProvider() {
         assertTrue(SpectroConfig.isKnownProvider("spectro-local"));
         assertNull(SpectroConfig.keyEnvFor("spectro-local"), "local, no key");
-        assertEquals("vibethinker-3b", SpectroConfig.defaultModelFor("spectro-local"));
+        // Not a literal any more. This line used to read "vibethinker-3b" and that
+        // is exactly how the two defaults drifted apart: the catalogue moved its
+        // default to Qwen3 4B and this constant stayed put, so a picker switch
+        // silently started the tool-free row. The catalogue is the single source;
+        // LocalCatalogDefaultTest pins what that default must be able to do.
+        assertEquals(dev.spectroscope.core.local.LocalCatalog.bundled().defaultId(),
+                SpectroConfig.defaultModelFor("spectro-local"));
     }
 
     @Test

@@ -5,17 +5,19 @@ describe("the built-in provider", () => {
   it("is its own selectable entry", () => {
     expect(PROVIDERS).toContain("spectro-local");
   });
-  it("shows the built-in model name in the picker", () => {
-    expect(providerDisplayName("spectro-local")).toBe("built-in · VibeThinker-3B");
+  it("reads plainly 'built-in' — the model is the chooser's business, not the row's", () => {
+    // The old hardcoded "built-in · VibeThinker-3B" died with the catalogue: a
+    // provider row naming ONE model would lie whenever another one is selected.
+    expect(providerDisplayName("spectro-local")).toBe("built-in");
   });
   it("leaves every other provider's label as-is", () => {
     expect(providerDisplayName("anthropic")).toBe("anthropic");
     expect(providerDisplayName("lmstudio")).toBe("lmstudio");
   });
-  it("renders a needs-download field mode when the model is not there", () => {
+  it("renders a needs-download field mode when no model is there", () => {
     expect(modelFieldMode("spectro-local", { "spectro-local": "needs-download" }, [])).toBe("needs-download");
   });
-  it("is a plain freetext (fixed model) once ready", () => {
+  it("is a plain freetext (chooser-managed model) once ready", () => {
     expect(modelFieldMode("spectro-local", { "spectro-local": "ready" }, [])).toBe("freetext");
   });
 });

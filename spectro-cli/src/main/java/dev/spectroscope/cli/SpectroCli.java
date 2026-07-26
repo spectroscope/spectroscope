@@ -63,7 +63,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Run with: {@code ./gradlew :spectro-cli:run -q --console=plain}</p>
  */
 @Command(name = "spectroscope", mixinStandardHelpOptions = true,
-        subcommands = {RunCommand.class, NodeCommand.class, CronCommand.class, DoctorCommand.class},
+        subcommands = {RunCommand.class, NodeCommand.class, CronCommand.class, DoctorCommand.class,
+                LevelCommand.class},
         description = "spectroscope — an agent harness.")
 public final class SpectroCli implements Runnable {
 

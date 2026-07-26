@@ -67,11 +67,28 @@ function resolveJavaBin(): string {
   return path.join(process.resourcesPath, "jre", "bin", "java");
 }
 
+// (b'') Resolve the bundled binaries dir: the packaged app carries llama.cpp's `llama-server`
+// plus its dylib closure (extraResources `bin`), which is what lets the built-in model run with
+// nothing else installed. Handed to the JVM as `spectro.bundle.bin`, the property the server's
+// ServerLocalRuntime already reads. In dev there is no bundle and it falls back to the PATH.
+function resolveBundledBinDir(): string | null {
+  if (!app.isPackaged) return null;
+  const dir = path.join(process.resourcesPath, "bin");
+  return fs.existsSync(path.join(dir, "llama-server")) ? dir : null;
+}
+
 // (b) Spawn the JVM. A missing java binary surfaces as ENOENT on the spawn — that must become
 // a sentence, not a stack trace. Every startup failure kills the child before it can linger.
 function spawnServer(port: number): ChildProcess {
   const jarPath = resolveJarPath();
-  const jvm = spawn(resolveJavaBin(), ["-jar", jarPath, "--server.port=" + port]);
+  const binDir = resolveBundledBinDir();
+  const args = [
+    ...(binDir ? ["-Dspectro.bundle.bin=" + binDir] : []),
+    "-jar",
+    jarPath,
+    "--server.port=" + port,
+  ];
+  const jvm = spawn(resolveJavaBin(), args);
 
   jvm.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") {

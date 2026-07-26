@@ -13,11 +13,12 @@ export const PROVIDERS = [
   "spectro-local",
 ] as const;
 
-/** The picker label for a provider. spectro-local shows the built-in model name
- *  ("built-in · VibeThinker-3B") — a visible choice of its own; the "built-in ·"
- *  prefix keeps the model swappable later. Every other provider keeps its id. */
+/** The picker label for a provider. spectro-local reads "built-in" — which model
+ *  it runs is the chooser dialog's business now that there is a catalogue, so
+ *  the provider row no longer hardcodes a model name. Every other provider
+ *  keeps its id. */
 export function providerDisplayName(provider: string): string {
-  return provider === "spectro-local" ? "built-in · VibeThinker-3B" : provider;
+  return provider === "spectro-local" ? "built-in" : provider;
 }
 
 /** What the model field should render for the selected provider. */

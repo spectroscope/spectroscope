@@ -49,4 +49,28 @@ public final class LocalModel {
         return ModelResolution.locate(bundleDir, userModelsDir, FILE).source()
                 != ModelResolution.Source.ABSENT;
     }
+
+    /** Whether ANY catalogue model resolves in the real locations — the
+     *  provider-status question since the chooser: the built-in provider is
+     *  usable as soon as one model is on disk, whichever one that is. */
+    public static boolean anyPresent() {
+        return anyPresentIn(bundleDir(), userModelsDir());
+    }
+
+    /**
+     * The same question under given roots — the seam the tests use.
+     *
+     * @param bundleDir     the app bundle model dir, or {@code null}
+     * @param userModelsDir the user models dir
+     * @return true when at least one catalogue model's GGUF resolves
+     */
+    public static boolean anyPresentIn(Path bundleDir, Path userModelsDir) {
+        for (LocalCatalog.Model m : LocalCatalog.bundled().models()) {
+            if (ModelResolution.locate(bundleDir, userModelsDir, m.file()).source()
+                    != ModelResolution.Source.ABSENT) {
+                return true;
+            }
+        }
+        return false;
+    }
 }

@@ -23,6 +23,7 @@ import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.SwitchableProvider;
+import dev.spectroscope.core.leveling.LevelingPort;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
 import dev.spectroscope.core.trace.OtlpSink;
@@ -254,6 +255,10 @@ public final class SessionConnection {
             tracing = new TracingPorts().require(new JsonlSink(store));
             OtlpSink.fromConfig(activeConfig.get(), store.id())
                     .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
+            // Resume appends to an existing file, so the ladder counts from its end —
+            // a receipt that names an event must name the right one.
+            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(),
+                    SessionStore.eventCount(resumeId)));
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
@@ -583,6 +588,9 @@ public final class SessionConnection {
             tracing = new TracingPorts().require(new JsonlSink(store));
             OtlpSink.fromConfig(activeConfig.get(), store.id())
                     .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
+            // Registered, never required: the ladder watches the same stream the UI
+            // renders, and a leveling defect must never cost a run its life.
+            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder()));
         }
     }
 

@@ -63,8 +63,11 @@ chk_java()    { java -version 2>&1 | grep -Eq 'version .(2[1-9]|[3-9][0-9])'; }
 chk_jar()     { [ -f "$(server_jar)" ] || command -v ./gradlew >/dev/null 2>&1; }
 chk_backend() { [ -n "${SPECTRO_PROVIDER:-}" ] || [ -f .env ] || [ -f "$HOME/.spectro/settings.json" ]; }
 
-# KEY=value loader — same contract as ./spectro: skip #/blank, require =, strip
-# one layer of surrounding quotes, drop an inline comment on an unquoted value.
+# KEY=value loader — same contract as ./spectro, rule for rule: skip #/blank,
+# require =, strip one layer of surrounding quotes, and on an unquoted value drop
+# an inline comment. The two rules below are the ones that used to differ, and a
+# .env is read by both scripts, so a divergence here corrupts values depending on
+# which door you came through.
 load_env_file() {
   local f="$1"; [ -f "$f" ] || return 0
   local line key val
@@ -76,9 +79,14 @@ load_env_file() {
     case "$val" in
       \"*\") val="${val%\"}"; val="${val#\"}";;
       \'*\') val="${val%\'}"; val="${val#\'}";;
-      *) val="${val%%#*}"; val="$(printf '%s' "$val" | sed 's/[[:space:]]*$//')";;
+      # Unquoted: a hash opens a comment only when whitespace precedes it. The
+      # old ${val%%#*} cut at the FIRST hash anywhere, so an api key carrying one
+      # arrived silently truncated and the server failed to authenticate.
+      *) val="$(printf '%s' "$val" | sed -E 's/[[:space:]]+#.*$//; s/[[:space:]]+$//')";;
     esac
-    [ -n "$key" ] && export "$key=$val"
+    # An empty value leaves an already-exported var intact: `KEY=` in the file is
+    # not an instruction to blank what the caller handed down.
+    if [ -n "$key" ] && [ -n "$val" ]; then export "$key=$val"; fi
   done < "$f"
   say "${C_DIM}  loaded env from $f${C_0}"
 }
@@ -214,11 +222,12 @@ cmd_help() {
   resolve_port; url_box
 }
 
-overview() { cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs doctor open  |  '$0 help' for details${C_0}"; }
+overview() { cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs doctor open  |  '$0 help' for details${C_0}";
+  say "${C_DIM}  './spectro web' is the front door for these; this script stays the engine.${C_0}"; }
 
 ARGS=(); while [ $# -gt 0 ]; do case "$1" in
-  --port) FLAG_PORT="$2"; shift 2;;
-  --env-file) FLAG_ENV_FILE="$2"; shift 2;;
+  --port) [ $# -ge 2 ] && [ -n "${2:-}" ] || die "usage: --port <n>"; FLAG_PORT="$2"; shift 2;;
+  --env-file) [ $# -ge 2 ] && [ -n "${2:-}" ] || die "usage: --env-file <path>"; FLAG_ENV_FILE="$2"; shift 2;;
   --no-open) FLAG_NO_OPEN=1; shift;;
   *) ARGS+=("$1"); shift;;
 esac; done
@@ -227,7 +236,10 @@ set -- "${ARGS[@]:-}"
 case "${1:-overview}" in
   start) cmd_start;;
   stop) cmd_stop;;
-  restart) cmd_stop; cmd_start;;
+  restart)
+    # Carry the port across the stop: cmd_stop deletes PORT_FILE, so a plain
+    # stop-then-start would silently move a server off its custom port.
+    resolve_port; _keep="$PORT"; cmd_stop; FLAG_PORT="${FLAG_PORT:-$_keep}"; cmd_start;;
   status) cmd_status;;
   logs) shift; cmd_logs "${1:-}";;
   doctor) cmd_doctor;;

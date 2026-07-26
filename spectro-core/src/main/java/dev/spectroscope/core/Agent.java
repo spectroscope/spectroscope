@@ -219,12 +219,14 @@ public final class Agent {
                 List<PToolCall> toolCalls = new ArrayList<>();
 
                 // Advertise tools only to a model that speaks the tool_calls
-                // protocol. The built-in reasoner (spectro-local) does not — handing
-                // it tools only invites the <fulfilment>-as-text / runaway failure
-                // mode. A null/unknown providerName defaults to advertising (the
+                // protocol. Under spectro-local that is now a per-model fact: the
+                // small reasoner emits the call as text and can run away in the
+                // think channel, while the bigger catalogue entries handle tools
+                // natively. A null/unknown provider defaults to advertising (the
                 // existing behavior); only a nativeTools:false model is stripped.
                 List<ToolSpec> advertisedTools =
-                        ModelProfile.forProvider(options.providerName()).nativeTools()
+                        ModelProfile.forModel(options.providerName(), options.provider().modelName())
+                                .nativeTools()
                                 ? options.registry().specs()
                                 : List.of();
                 ProviderRequest request = new ProviderRequest(options.systemPrompt(),
