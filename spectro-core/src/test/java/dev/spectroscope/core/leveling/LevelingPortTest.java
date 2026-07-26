@@ -67,15 +67,18 @@ class LevelingPortTest {
         // user, including root. A permission-based fixture would silently pass as root.
         Path blocked = dir.resolve("not-a-directory");
         Files.writeString(blocked, "in the way", StandardCharsets.UTF_8);
-        LevelingRecorder recorder = new LevelingRecorder(
-                Ladder.bundled(), new LevelingStore(blocked.resolve("leveling.json")),
-                LevelingState.Mode.LADDER);
-        LevelingPort port = new LevelingPort("s1", recorder);
 
         PrintStream realErr = System.err;
         ByteArrayOutputStream captured = new ByteArrayOutputStream();
         System.setErr(new PrintStream(captured, true, StandardCharsets.UTF_8));
         try {
+            // The recorder is built inside the capture too: it writes the fresh-home
+            // decision on construction, so that write is the first thing that fails
+            // and must be part of the one-warning budget.
+            LevelingRecorder recorder = new LevelingRecorder(
+                    Ladder.bundled(), new LevelingStore(blocked.resolve("leveling.json")),
+                    LevelingState.Mode.LADDER);
+            LevelingPort port = new LevelingPort("s1", recorder);
             assertDoesNotThrow(() -> {
                 port.onEvent(end("end_turn", 1L));
                 port.onEvent(end("end_turn", 2L));
@@ -109,6 +112,28 @@ class LevelingPortTest {
         new LevelingPort("s1", recorder).onEvent(end("end_turn", 1L));
         assertTrue(Files.notExists(file), "off means off, including the file");
         assertNull(recorder.state().marks().get("first-run-complete"));
+    }
+
+    @Test
+    void theFreshHomeDecisionIsWrittenImmediately(@TempDir Path dir) {
+        // The mode is decided from what the home looks like at first boot, and the
+        // home changes seconds later (the server seeds settings.json). If the
+        // decision only lived in memory, the next restart would re-decide against a
+        // home that now looks experienced, and quietly demote the ladder.
+        Path file = dir.resolve("leveling.json");
+        new LevelingRecorder(Ladder.bundled(), new LevelingStore(file), LevelingState.Mode.LADDER);
+        assertTrue(Files.exists(file), "a decision nobody wrote down is a decision that gets re-made");
+        assertEquals(LevelingState.Mode.LADDER,
+                new LevelingStore(file).read().orElseThrow().mode());
+    }
+
+    @Test
+    void anExistingStoreIsNeverOverwrittenByAFreshDecision(@TempDir Path dir) throws IOException {
+        Path file = dir.resolve("leveling.json");
+        new LevelingStore(file).write(LevelingState.fresh(LevelingState.Mode.OFF));
+        new LevelingRecorder(Ladder.bundled(), new LevelingStore(file), LevelingState.Mode.LADDER);
+        assertEquals(LevelingState.Mode.OFF, new LevelingStore(file).read().orElseThrow().mode(),
+                "the home already answered this question");
     }
 
     @Test

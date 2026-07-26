@@ -49,6 +49,24 @@ class LevelingFoldTest {
     }
 
     @Test
+    void aFinishedRunAlsoProvesTheProviderWasReady() {
+        // provider-ready is the rung below, and a run that came back is the strongest
+        // possible report that a provider answered. Without this, a home that went
+        // straight to work would sit in the dark frame forever with a completed run
+        // on the record, which is the ladder calling its own operator a liar.
+        LevelingState after = LevelingFold.observe(LADDER, fresh(), S1, 3, end("end_turn"));
+        assertNotNull(after.marks().get("provider-ready"));
+        assertEquals(LevelingState.Origin.OBSERVED, after.marks().get("provider-ready").origin());
+        assertEquals(1, after.level(LADDER), "the run carried the home out of the dark frame");
+    }
+
+    @Test
+    void aFailedRunProvesNothingAboutTheProvider() {
+        LevelingState after = LevelingFold.observe(LADDER, fresh(), S1, 3, end("error"));
+        assertNull(after.marks().get("provider-ready"));
+    }
+
+    @Test
     void anAbortedOrFailedRunMarksNothing() {
         for (String reason : new String[] {"aborted", "error"}) {
             LevelingState after = LevelingFold.observe(LADDER, fresh(), S1, 3, end(reason));

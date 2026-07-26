@@ -18,6 +18,12 @@ public class SpectroServerApplication {
      * @param args standard Spring Boot arguments (e.g. {@code --server.port})
      */
     public static void main(String[] args) {
+        // Leveling decides what kind of home this is FIRST, and the order is
+        // load-bearing: ensureSeeded below writes ~/.spectro/settings.json on a
+        // first boot whenever SPECTRO_* vars are set, and a home with a settings
+        // file reads as experienced. Deciding afterwards would hand `checklist`
+        // to exactly the newcomers the ladder exists for — verified live, it did.
+        ServerLeveling.recorder();
         // First boot: materialize the env base into ~/.spectro/settings.json once,
         // before anything reads the config hierarchy — see SpectroConfig.ensureSeeded.
         dev.spectroscope.core.config.SpectroConfig.ensureSeeded(System.getenv());

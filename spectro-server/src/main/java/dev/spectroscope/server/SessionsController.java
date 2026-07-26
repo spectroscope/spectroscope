@@ -186,6 +186,13 @@ public class SessionsController {
         providerStatus.put("spectro-local",
                 SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.present()));
         out.put("providerStatus", providerStatus);
+        // Leveling's one server-established criterion: a configured provider that
+        // reports ready settles provider-ready. "local" is deliberately NOT enough —
+        // it says a backend is configured, not that it answers; the client reports
+        // reachability, and a completed run settles it either way.
+        if (providerStatus.containsValue("ready")) {
+            ServerLeveling.recorder().establish("provider-ready", System.currentTimeMillis());
+        }
         return out;
     }
 

@@ -75,6 +75,14 @@ public final class LevelingFold {
         }
         LevelingState next = rememberFacts(ladder, state, sessionId, event);
         if (event instanceof RunEvent.RunEnd end && COMPLETED_RUN.contains(end.stopReason())) {
+            // A run that came back is also the strongest report a provider can give
+            // that it is ready, so it settles the rung below at the same time. The
+            // alternative is a home sitting in the dark frame with a finished run on
+            // the record, which would make the ladder look broken to the one person
+            // it is meant to help.
+            next = mark(ladder, next, "provider-ready",
+                    new LevelingState.Mark("provider-ready", sessionId, eventIndex,
+                            end.ts(), LevelingState.Origin.OBSERVED));
             next = mark(ladder, next, "first-run-complete",
                     new LevelingState.Mark("first-run-complete", sessionId, eventIndex,
                             end.ts(), LevelingState.Origin.OBSERVED));

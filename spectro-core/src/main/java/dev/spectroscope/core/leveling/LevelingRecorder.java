@@ -4,6 +4,7 @@ import dev.spectroscope.core.events.RunEvent;
 
 import java.io.IOException;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -34,8 +35,17 @@ public final class LevelingRecorder {
     public LevelingRecorder(Ladder ladder, LevelingStore store, LevelingState.Mode freshMode) {
         this.ladder = Objects.requireNonNull(ladder, "ladder");
         this.store = Objects.requireNonNull(store, "store");
-        this.state = store.read().orElseGet(() -> LevelingState.fresh(
+        Optional<LevelingState> stored = store.read();
+        this.state = stored.orElseGet(() -> LevelingState.fresh(
                 Objects.requireNonNull(freshMode, "freshMode")));
+        if (stored.isEmpty() && state.mode() != LevelingState.Mode.OFF) {
+            // Write the fresh-home decision down at once. It is derived from what the
+            // home looks like right now, and the home changes within seconds of this
+            // line (the server seeds its settings file). An unrecorded decision would
+            // be re-made on the next start against a home that no longer looks new.
+            // Off is the exception: a home that tracks nothing needs no file to say so.
+            persist();
+        }
     }
 
     /** @return the ladder this recorder measures against */
