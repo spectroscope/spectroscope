@@ -38,6 +38,8 @@ class LocalModelCatalogEndpointTest {
         assertNotNull(machine, "the dialog shows the machine's numbers once, not per row");
         assertTrue(machine.containsKey("ramTotalBytes"));
         assertTrue(machine.containsKey("diskFreeBytes"));
+        assertNotNull(machine.get("binaryPresent"),
+                "a downloaded model is useless without a llama-server, so say up front whether one exists");
 
         List<Map<String, Object>> models = (List<Map<String, Object>>) out.get("models");
         assertEquals(LocalCatalog.bundled().models().size(), models.size());

@@ -69,6 +69,11 @@ public class LocalModelController {
         Map<String, Object> machine = new LinkedHashMap<>();
         machine.put("ramTotalBytes", ram);
         machine.put("diskFreeBytes", disk);
+        // Whether a llama-server exists for this install at all. The desktop kit
+        // bundles one; the bare jar and the CLI do not. The dialog says so up
+        // front rather than letting a missing binary surface as a failed spawn
+        // after a multi-gigabyte download.
+        machine.put("binaryPresent", ServerLocalRuntime.binaryAvailable());
 
         List<Map<String, Object>> models = new ArrayList<>();
         for (LocalCatalog.Model m : catalogue.models()) {

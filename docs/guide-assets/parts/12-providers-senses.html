@@ -151,8 +151,8 @@ real decision now. Five models ship in the catalogue, smallest first:</p>
 <table>
 <tr><th>model</th><th>download</th><th>tools</th><th>thinking</th><th>good for</th></tr>
 <tr><td>Qwen3 1.7B</td><td>1.8&thinsp;GB</td><td>yes</td><td>yes</td><td>quick answers on light machines</td></tr>
-<tr><td>Qwen3 4B</td><td>2.5&thinsp;GB</td><td>yes</td><td>yes</td><td>everyday chat and small agent tasks</td></tr>
-<tr><td>Qwen2.5 Coder 7B <i>(default)</i></td><td>4.7&thinsp;GB</td><td>yes</td><td>no</td><td>coding and tool-driven agent work</td></tr>
+<tr><td>Qwen3 4B <i>(default)</i></td><td>2.5&thinsp;GB</td><td>yes</td><td>yes</td><td>everyday chat and small agent tasks</td></tr>
+<tr><td>Qwen2.5 Coder 7B</td><td>4.7&thinsp;GB</td><td>yes</td><td>no</td><td>coding and tool-driven agent work</td></tr>
 <tr><td>Qwen3 8B</td><td>5.0&thinsp;GB</td><td>yes</td><td>yes</td><td>the deepest answers, on 16&thinsp;GB machines</td></tr>
 <tr><td>VibeThinker 3B</td><td>1.9&thinsp;GB</td><td>no</td><td>yes</td><td>watching a model think, without tools</td></tr>
 </table>
@@ -161,10 +161,17 @@ real decision now. Five models ship in the catalogue, smallest first:</p>
 <em>can this machine hold it?</em> The server reads total memory and the free
 space on the models volume, and the row says <b>fits this machine</b>,
 <b>fits, but it will be tight</b>, or names what is missing. A model that
-cannot fit cannot be downloaded — the button disables rather than letting a
-five-gigabyte download start toward a full disk. On a machine whose numbers
-the JVM cannot read, the check says so and steps aside instead of inventing a
-refusal.</p>
+cannot fit cannot be chosen — the dialog disables the button rather than
+letting a five-gigabyte download start toward a full disk. (The REST endpoint
+underneath does not enforce it; the check is advice to the operator, not a
+lock on the API.) On a machine whose numbers the JVM cannot read, the check
+says so and steps aside instead of inventing a refusal.</p>
+
+<p>One more thing the dialog checks: whether a <code>llama-server</code> exists
+for this install at all. The desktop run kit bundles one, so there is nothing
+to install; the bare server jar and the CLI do not, and there the chooser says
+plainly that <code>brew install llama.cpp</code> is still needed — better than
+a spawn that fails after five gigabytes have already been fetched.</p>
 
 <h2 id="ch-local-where">Where a model comes from</h2>
 
@@ -173,12 +180,15 @@ refusal.</p>
 and then <code>~/.spectro/models/</code>. Missing means the chooser offers the
 download; nothing fails.</p>
 
-<p>Every download is pinned: one URL straight to the model's publisher, one
-sha256, one expected size. The hash is checked <em>before</em> the file is
-moved into place, so a download that was cut short or came back as something
-else is discarded instead of becoming the model your next boot loads. Each
-row links the licence and the source it downloads from, and downloads of two
-different models can run at the same time without disturbing each other.</p>
+<p>Every download is pinned: one URL, one sha256, one expected size. The hash
+is checked <em>before</em> the file is moved into place, so a download that was
+cut short or came back as something else is discarded instead of becoming the
+model your next boot loads. Four of the five come from Qwen's own repository;
+VibeThinker's GGUF is a community requantization of WeiboAI's model rather than
+WeiboAI's own file, which is why its row carries a licence note. Each row links
+both the licence and the source it downloads from. On the server side two
+different models can download at the same time without disturbing each other;
+the dialog itself runs one at a time.</p>
 
 <h2 id="ch-local-runtime">The runtime underneath</h2>
 
@@ -201,9 +211,11 @@ ordinary OpenAI-compatible provider does the talking — the same class that
 serves LM Studio and OpenRouter, aimed at localhost with no key.</p>
 
 <p>The desktop app carries its own signed <code>llama-server</code> inside the
-bundle, so the built-in path needs nothing installed at all. Running the bare
-server jar instead, you bring your own — <code>brew install llama.cpp</code>
-puts one on the PATH.</p>
+bundle (llama.cpp's official macOS build, eleven Mach-O files that reference
+each other only through <code>@loader_path</code>, so nothing resolves out of a
+Homebrew prefix that a user's machine may not have). Running the bare server
+jar instead, you bring your own — <code>brew install llama.cpp</code> puts one
+on the PATH.</p>
 
 <h2 id="ch-local-profile">Honest capability flags, per model</h2>
 
@@ -225,8 +237,9 @@ resolves it, so what runs and what is advertised never disagree.</p>
 
 <div class="callout"><div class="co-title">what to expect, honestly</div>
 <p>A local model in these sizes stays below the cloud models: simpler answers,
-a smaller context. But the default Coder 7B genuinely drives the file tools,
-and the first-use sheet tells you the limits of whichever model you picked.
+a smaller context. But the default Qwen3 4B genuinely drives the file tools
+while showing its thinking, and the first-use sheet tells you the limits of
+whichever model you picked.
 When the work gets real, the picker is one click away — and the chapter before
 this one is about everything else in it.</p></div>
 

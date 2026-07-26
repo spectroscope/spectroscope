@@ -34,27 +34,42 @@ export function LocalModelDialog({
   const [downloading, setDownloading] = useState<string | null>(null);
   const [progress, setProgress] = useState<{ bytes: number; total: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [attempt, setAttempt] = useState(0);
   const timer = useRef<number | null>(null);
 
-  // One fetch fills the whole dialog; the default model starts selected.
+  // One fetch fills the whole dialog; the default model starts selected. A
+  // failure has to be visible and retryable — an endless "loading …" is the
+  // one state from which a newcomer cannot get anywhere.
   useEffect(() => {
     let alive = true;
     void fetchLocalCatalog().then(
       (c) => {
         if (!alive) return;
+        setLoadFailed(false);
         setCatalog(c);
         setSel((s) => s || c.defaultId);
         const running = c.models.find((m) => m.state === "downloading");
         if (running) setDownloading(running.id);
       },
       () => {
-        /* the dialog shows its loading row until a retry succeeds */
+        if (alive) setLoadFailed(true);
       },
     );
     return () => {
       alive = false;
     };
-  }, []);
+  }, [attempt]);
+
+  // Escape closes, like every other dialog in the app. Without it Escape fell
+  // through to the provider popover behind and closed THAT instead.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
 
   // Poll the running download; on ready/failed refresh the catalogue rows.
   useEffect(() => {
@@ -86,7 +101,10 @@ export function LocalModelDialog({
     try {
       await startLocalModelDownload(id);
     } catch {
+      // A refused start (the write fence answers 404) or a dead connection must
+      // say so — silently reverting the button reads as "nothing happened".
       setDownloading(null);
+      setError(t(lang, "lm.startRefused"));
     }
   };
 
@@ -107,7 +125,20 @@ export function LocalModelDialog({
         <h2 id="lm-title">{t(lang, "lm.title")}</h2>
         <p className="import-hint">{t(lang, "lm.intro")}</p>
 
-        {!catalog && <p className="import-hint">{t(lang, "lm.loading")}</p>}
+        {!catalog && !loadFailed && <p className="import-hint">{t(lang, "lm.loading")}</p>}
+        {loadFailed && (
+          <p className="lm-error" role="alert">
+            {t(lang, "lm.loadFailed")}{" "}
+            <button type="button" className="ob-opt-cta" onClick={() => setAttempt((a) => a + 1)}>
+              {t(lang, "lm.retry")}
+            </button>
+          </p>
+        )}
+        {catalog?.machine.binaryPresent === false && (
+          <p className="lm-caveat" role="note">
+            {t(lang, "lm.noBinary")}
+          </p>
+        )}
 
         {catalog && (
           <ul className="lm-list" role="radiogroup" aria-label={t(lang, "lm.title")}>

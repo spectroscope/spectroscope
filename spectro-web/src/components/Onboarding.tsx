@@ -72,7 +72,8 @@ export function Onboarding(props: {
               de ? (
                 <>
                   spectroscope bringt einen eigenen Weg mit: ein Modell aussuchen, herunterladen, fertig — es
-                  läuft komplett auf dieser Maschine, ohne Key und ohne weitere Software.{" "}
+                  läuft komplett auf dieser Maschine, ohne Key und ohne Konto. Die Desktop-App bringt alles
+                  mit; beim Server-Jar sagt dir die Auswahl, falls noch <code>llama.cpp</code> fehlt.{" "}
                   {props.onStartLocal && (
                     <button type="button" className="ob-opt-cta" onClick={props.onStartLocal}>
                       Modell wählen …
@@ -82,7 +83,8 @@ export function Onboarding(props: {
               ) : (
                 <>
                   spectroscope carries its own path: pick a model, download it, done — it runs entirely on
-                  this machine, with no key and no other software.{" "}
+                  this machine, with no key and no account. The desktop app brings everything it needs; with
+                  the server jar the chooser tells you if <code>llama.cpp</code> is still missing.{" "}
                   {props.onStartLocal && (
                     <button type="button" className="ob-opt-cta" onClick={props.onStartLocal}>
                       Choose a model …

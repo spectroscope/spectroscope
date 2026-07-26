@@ -106,13 +106,50 @@ public final class ServerLocalRuntime {
 
     /** The llama-server binary: bundled next to the app if packaged, else PATH. */
     private static String binary() {
-        String bundled = System.getProperty("spectro.bundle.bin");
-        if (bundled != null && !bundled.isBlank()) {
-            Path b = Path.of(bundled, "llama-server");
-            if (Files.isExecutable(b)) {
-                return b.toString();
+        Path bundled = bundledBinary();
+        return bundled != null ? bundled.toString() : "llama-server"; // dev / brew: on PATH
+    }
+
+    /** @return the bundled binary when the packaged app set and shipped one, else null */
+    private static Path bundledBinary() {
+        String dir = System.getProperty("spectro.bundle.bin");
+        if (dir == null || dir.isBlank()) {
+            return null;
+        }
+        Path b = Path.of(dir, "llama-server");
+        return Files.isExecutable(b) ? b : null;
+    }
+
+    /**
+     * Whether a {@code llama-server} exists for this install at all. The desktop
+     * run kit bundles one, so the built-in path needs nothing installed; the bare
+     * server jar and the CLI do not, and there the operator supplies it
+     * ({@code brew install llama.cpp}). The chooser asks this before promising a
+     * model will run, because a missing binary otherwise surfaces as a spawn that
+     * fails after a multi-gigabyte download.
+     *
+     * @return true when a bundled or PATH llama-server is executable
+     */
+    public static boolean binaryAvailable() {
+        if (bundledBinary() != null) {
+            return true;
+        }
+        String path = System.getenv("PATH");
+        if (path == null || path.isBlank()) {
+            return false;
+        }
+        for (String entry : path.split(java.io.File.pathSeparator)) {
+            if (entry.isBlank()) {
+                continue;
+            }
+            try {
+                if (Files.isExecutable(Path.of(entry, "llama-server"))) {
+                    return true;
+                }
+            } catch (RuntimeException malformedEntry) {
+                // a junk PATH entry is not an answer either way — keep looking
             }
         }
-        return "llama-server"; // dev / brew: on PATH
+        return false;
     }
 }

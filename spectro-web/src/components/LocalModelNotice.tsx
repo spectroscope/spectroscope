@@ -48,7 +48,14 @@ export function LocalModelNotice(props: {
   }, [onClose]);
 
   const label = entry?.label ?? props.model ?? "";
-  const limitsKey = entry && entry.nativeTools ? "lmn.limits.local" : "lmn.limits.noTools";
+  // Without a catalogue entry we do not know whether this model calls tools, and
+  // the no-tools line would be a false claim about four of the five. Fall back to
+  // what is true of every local model in these sizes.
+  const limitsKey = !entry
+    ? "lmn.limits.generic"
+    : entry.nativeTools
+      ? "lmn.limits.local"
+      : "lmn.limits.noTools";
 
   return (
     <div className="km-backdrop" onClick={props.onClose} role="presentation">

@@ -60,11 +60,11 @@ def build():
 
     chunk, h2 = step(
         left_x, y + h1 + 16, col_w, "2", "when one is absent",
-        ["Per model one pinned URL straight to its publisher, one",
-         "pinned sha256, one pinned size. The bytes are verified",
-         "BEFORE the file is moved into place, so a truncated or",
-         "swapped download never becomes the model the next boot",
-         "loads. Two different models may download concurrently."],
+        ["Per model one pinned URL, one pinned sha256, one pinned",
+         "size. The bytes are verified BEFORE the file is moved",
+         "into place, so a truncated or swapped download never",
+         "becomes the model the next boot loads. Each row links its",
+         "licence and the repository it actually fetches from."],
         C.ZONE_EXT,
         ["1.8 – 5.0 GB", "sha256-pinned", "atomic move"])
 
@@ -100,8 +100,8 @@ def build():
     for para in (
         ["The honest limit: a local model in these sizes stays below the cloud "
          "models — simpler answers, smaller context. But the",
-         "default Coder 7B genuinely drives the file tools, and the catalogue "
-         "exists so a fresh install can produce a real run —",
+         "default Qwen3 4B thinks visibly AND drives the file tools, and the "
+         "catalogue exists so a fresh install can produce a real run —",
          "its own events, its own trace, its own session file — before anyone "
          "has decided whether to pay for a key."],
         ["Nothing about the rest of the product knows it is local. The events, the "

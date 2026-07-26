@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "defaultId": "qwen2-5-coder-7b",
+  "defaultId": "qwen3-4b",
   "models": [
     {
       "id": "qwen3-1-7b",

@@ -32,7 +32,7 @@ export interface CatalogModel {
 
 export interface Catalog {
   defaultId: string;
-  machine: { ramTotalBytes: number; diskFreeBytes: number };
+  machine: { ramTotalBytes: number; diskFreeBytes: number; binaryPresent?: boolean };
   models: CatalogModel[];
 }
 
@@ -66,15 +66,21 @@ export function builtInLabel(model: string | undefined, labels: Record<string, s
   return label ? `built-in · ${label}` : "built-in";
 }
 
-/** Fetch the whole catalogue — the chooser's one initial request. */
+/** Fetch the whole catalogue — the chooser's one initial request. A non-200 is
+ *  thrown rather than parsed: the write fence answers 404 with no JSON body, and
+ *  parsing that would take the whole App render down with it. */
 export async function fetchLocalCatalog(): Promise<Catalog> {
   const res = await fetch("/api/local-model/catalog");
-  return (await res.json()) as Catalog;
+  if (!res.ok) throw new Error(`local-model catalog ${res.status}`);
+  const catalog = (await res.json()) as Catalog;
+  if (!Array.isArray(catalog?.models)) throw new Error("local-model catalog: unexpected shape");
+  return catalog;
 }
 
 /** Poll one model's download/presence state. */
 export async function fetchLocalModelStatus(model: string): Promise<LocalModelStatus> {
   const res = await fetch(`/api/local-model/status?model=${encodeURIComponent(model)}`);
+  if (!res.ok) throw new Error(`local-model status ${res.status}`);
   return (await res.json()) as LocalModelStatus;
 }
 
@@ -83,5 +89,6 @@ export async function startLocalModelDownload(model: string): Promise<LocalModel
   const res = await fetch(`/api/local-model/download?model=${encodeURIComponent(model)}`, {
     method: "POST",
   });
+  if (!res.ok) throw new Error(`local-model download ${res.status}`);
   return (await res.json()) as LocalModelStatus;
 }

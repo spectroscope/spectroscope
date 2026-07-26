@@ -1,7 +1,9 @@
 package dev.spectroscope.server;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
@@ -28,6 +30,57 @@ class ServerLocalRuntimeCommandTest {
         assertEquals("/tmp/m.gguf", cmd.get(cmd.indexOf("-m") + 1));
         assertEquals("127.0.0.1", cmd.get(cmd.indexOf("--host") + 1),
                 "loopback binding is not negotiable");
+    }
+
+    @Test
+    void aBundledBinaryCountsAsAvailableWithoutAnythingInstalled(@TempDir Path bundle)
+            throws Exception {
+        // The desktop kit's whole promise: nothing installed, still available.
+        Path binary = Files.createFile(bundle.resolve("llama-server"));
+        binary.toFile().setExecutable(true);
+        String previous = System.getProperty("spectro.bundle.bin");
+        try {
+            System.setProperty("spectro.bundle.bin", bundle.toString());
+            assertTrue(ServerLocalRuntime.binaryAvailable(),
+                    "a bundled, executable llama-server is the whole point of card 100");
+        } finally {
+            if (previous == null) {
+                System.clearProperty("spectro.bundle.bin");
+            } else {
+                System.setProperty("spectro.bundle.bin", previous);
+            }
+        }
+    }
+
+    @Test
+    void aBundleWithoutTheBinaryDoesNotCount(@TempDir Path bundle) {
+        String previous = System.getProperty("spectro.bundle.bin");
+        try {
+            System.setProperty("spectro.bundle.bin", bundle.toString());
+            // Empty bundle: the answer must come from the PATH probe, never from
+            // the mere presence of the property — that is what made the old
+            // binary() fall through to a "llama-server" that may not exist.
+            assertEquals(pathHasLlamaServer(), ServerLocalRuntime.binaryAvailable());
+        } finally {
+            if (previous == null) {
+                System.clearProperty("spectro.bundle.bin");
+            } else {
+                System.setProperty("spectro.bundle.bin", previous);
+            }
+        }
+    }
+
+    private static boolean pathHasLlamaServer() {
+        String path = System.getenv("PATH");
+        if (path == null) {
+            return false;
+        }
+        for (String entry : path.split(java.io.File.pathSeparator)) {
+            if (!entry.isBlank() && Files.isExecutable(Path.of(entry, "llama-server"))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Test

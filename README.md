@@ -221,7 +221,7 @@ history intact:
 
 | provider | runs | needs |
 |---|---|---|
-| `built-in` | local, via a bundled llama-server | nothing — pick a model in the app, it downloads once |
+| `built-in` | local, via llama-server | nothing with the desktop app, which bundles one; with the server jar, `brew install llama.cpp` |
 | `anthropic` | cloud | `ANTHROPIC_API_KEY` |
 | `ollama` | local | a running Ollama |
 | `openai` | api.openai.com or any compatible server | `OPENAI_API_KEY` (optional for local servers) |
@@ -232,10 +232,12 @@ history intact:
 The built-in provider is the no-setup path: the app offers a small catalogue
 of open models (Qwen3 1.7B/4B/8B, Qwen2.5 Coder 7B, VibeThinker 3B), says
 which of them can drive the agent's tools and whether your machine has the
-memory and disk for each, then downloads your pick straight from its
-publisher, sha256-verified. The desktop app carries its own `llama-server`,
-so nothing else needs installing; with the server jar you bring your own
-(`brew install llama.cpp`). No key, no account, and nothing you type leaves
+memory and disk for each, then downloads your pick sha256-pinned — four of
+them from Qwen's own repository, VibeThinker from a community requantization
+of WeiboAI's model. Each row links its licence and its source. The desktop
+app carries its own `llama-server`, so nothing else needs installing; with the
+server jar you bring your own (`brew install llama.cpp`) and the chooser says
+so when it is missing. No key and no account, and the model itself runs on
 your machine.
 
 Keys are set once, in the UI (masked, written to `~/.spectro/.env` with mode
