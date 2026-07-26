@@ -12,6 +12,7 @@
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { criteriaFor, levelName, translated, type LevelingSnapshot } from "../state/leveling";
+import { formatSessionRoute } from "../state/route";
 
 export function LevelingPanel(props: {
   snapshot: LevelingSnapshot;
@@ -122,16 +123,26 @@ function Criterion(props: {
       {mark?.origin === "manual" && (
         <span className="lvl-crit__receipt">{t(lang, "leveling.panel.byHand")}</span>
       )}
-      {mark?.origin === "observed" && mark.sessionId && onOpenEvidence && (
-        <button
-          type="button"
+      {mark?.origin === "observed" && mark.sessionId && (
+        /* An anchor, not a button: a receipt is an address, and an address can be
+           copied, middle-clicked and pasted into a bug report. */
+        <a
           className="lvl-crit__receipt"
-          onClick={() => onOpenEvidence(mark.sessionId as string, mark.eventIndex)}
+          href={formatSessionRoute(mark.sessionId, mark.eventIndex)}
           title={t(lang, "leveling.panel.evidence")}
+          onClick={() => onOpenEvidence?.(mark.sessionId as string, mark.eventIndex)}
         >
           {mark.sessionId.slice(0, 15)}
           {mark.eventIndex !== null ? `@${mark.eventIndex}` : ""}
-        </button>
+        </a>
+      )}
+      {mark?.origin === "observed" && !mark.sessionId && (
+        /* Marked without a session — a provider that reported ready, a mode set
+           in the composer. It says where it was seen rather than offering a link
+           that would go nowhere. */
+        <span className="lvl-crit__receipt lvl-crit__receipt--plain">
+          {t(lang, "leveling.panel.observedHere")}
+        </span>
       )}
       {!mark && (
         <button

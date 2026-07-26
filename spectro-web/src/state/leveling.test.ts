@@ -150,6 +150,17 @@ describe("what a lock may cover", () => {
   });
 });
 
+describe("what may be reported as seen", () => {
+  it("a locked surface is not a shown surface", () => {
+    // The beacon rule reads from the same function the renderer does. If a click
+    // on a locked tab could report the surface, the tab would unlock itself and
+    // the ladder would be a formality.
+    const at1 = snap(1);
+    expect(isSurfaceOpen(at1, "trace")).toBe(false);
+    expect(isSurfaceOpen(at1, "sessions")).toBe(true);
+  });
+});
+
 describe("the level-up moment", () => {
   it("names what a climb just opened", () => {
     expect(newlyOpened(LADDER, 1, 2)).toEqual(["trace", "text"]);

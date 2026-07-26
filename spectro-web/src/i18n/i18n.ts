@@ -762,6 +762,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.panel.reached": { de: "erreicht", en: "reached" },
   "leveling.panel.mastery": { de: "Kür — schaltet nichts frei", en: "mastery — unlocks nothing" },
   "leveling.panel.byHand": { de: "von Hand markiert", en: "marked by hand" },
+  "leveling.panel.observedHere": { de: "beobachtet, ohne Session", en: "observed, no session" },
   "leveling.panel.evidence": { de: "Beleg ansehen", en: "see the evidence" },
   "leveling.panel.tickByHand": { de: "Von Hand abhaken", en: "Tick by hand" },
   "leveling.openAll": { de: "Alles öffnen", en: "Open everything" },

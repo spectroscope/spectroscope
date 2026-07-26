@@ -207,6 +207,18 @@
   cursor: pointer;
 }
 
+.lvl-crit__receipt {
+  text-decoration: none;
+}
+
+/* A witness without an address does not pretend to be clickable. */
+.lvl-crit__receipt--plain,
+.lvl-crit__receipt--plain:hover {
+  cursor: default;
+  color: var(--text-faint);
+  text-decoration: none;
+}
+
 .lvl-crit__receipt:hover {
   color: var(--accent);
   text-decoration: underline;

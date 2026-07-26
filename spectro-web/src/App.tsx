@@ -29,6 +29,7 @@ import { LockedSurface } from "./components/LockedSurface";
 import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { setBeaconSink } from "./state/levelingBeacon";
+import { parseRoute } from "./state/route";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
@@ -581,7 +582,7 @@ export function App() {
   }, [imageKeys, imageProvider, conn.status]);
 
   // Replay: fetch the stored events and push them through the SAME reducer.
-  const openSession = async (id: string): Promise<void> => {
+  const openSession = async (id: string, atEvent?: number | null): Promise<void> => {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
       if (!res.ok) throw new Error(String(res.status));
@@ -589,6 +590,17 @@ export function App() {
       setReplay({ id, state: foldArchive(events), events });
       setEnteredFleet(null);
       beaconRef.current("session", id);
+      // A deep link resolves its index against the events as STORED, then hands
+      // the event itself to the existing focus seam. An index past the end (a
+      // stale link, a rewritten file) simply opens the session unseeked: landing
+      // on the wrong frame would be worse than landing on none.
+      if (atEvent !== null && atEvent !== undefined) {
+        const target = events[atEvent];
+        if (target) {
+          setTab("trace");
+          setFocusEvent(target);
+        }
+      }
     } catch {
       // Server unreachable or session gone — stay on the current view.
     }
@@ -719,6 +731,20 @@ export function App() {
   };
   const canDelete = canResume && replay !== null && replay.id !== resumeId;
 
+  // Deep links: #/session/{id}@{n}. Built for the ladder's receipts, useful on
+  // its own — the hash is a shareable address for one frame of one run.
+  const openSessionRef = useRef(openSession);
+  openSessionRef.current = openSession;
+  useEffect(() => {
+    const follow = (): void => {
+      const route = parseRoute(window.location.hash);
+      if (route) void openSessionRef.current(route.sessionId, route.eventIndex);
+    };
+    follow();
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, []);
+
   const viewingLive = replay === null;
 
   // Showing a tab IS the observation for the view-only criteria. The session id
@@ -728,8 +754,13 @@ export function App() {
   const shownSessionId = viewingLive ? (live.workspace?.sessionId ?? null) : (replay?.id ?? null);
   const shownRef = useRef(shownSessionId);
   shownRef.current = shownSessionId;
+  const openRef = useRef(true);
+  openRef.current = leveling.snapshot ? isSurfaceOpen(leveling.snapshot, tab) : true;
   useEffect(() => {
-    if (tab !== "chat") beaconRef.current(tab, shownRef.current);
+    // Only a surface that actually RENDERED counts. Clicking a locked tab shows
+    // its teaser, and a teaser is not the trace — reporting it would let a tab
+    // unlock itself by being clicked, which is the whole ladder walked around.
+    if (tab !== "chat" && openRef.current) beaconRef.current(tab, shownRef.current);
   }, [tab]);
   const view = replay === null ? live : replay.state;
 
