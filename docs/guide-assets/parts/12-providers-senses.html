@@ -125,6 +125,73 @@ CLI, the server, headless runs and the scheduler behave identically. The one
 OpenAiCompatProvider serves all three OpenAI-compatible ids — only its endpoint and key
 differ.</p>
 
+<!-- ============================== CH 16b ============================== -->
+<h1 data-ch="16b" id="ch-local-model"><span class="ch-num">Chapter 16b</span>The built-in model</h1>
+
+<p class="lead">Every backend in the previous chapter is something you install
+or pay for. <code>spectro-local</code> is the one that is already here: a
+quantized 3B model on disk, driven by a <code>llama-server</code> this process
+starts and supervises. It exists so a fresh install can produce a real run
+before anyone has decided whether to pay for a key.</p>
+
+<!--SVG:18-local-model|The keyless path end to end: where the file is found, how it arrives when it is missing, the runtime the JVM supervises, and the one capability fact the loop is told.-->
+
+<h2 id="ch-local-where">Where the model comes from</h2>
+
+<p>The picker entry reads <b>built-in · VibeThinker-3B</b> and needs no key at
+all. The file behind it is a Q4_K_M GGUF of about 1.93&thinsp;GB, and it is
+looked for in two places, in order: the app bundle (a desktop build that ships
+the model sets <code>spectro.bundle.models</code>) and then
+<code>~/.spectro/models/</code>. If neither has it, the picker opens a download
+dialog rather than failing.</p>
+
+<p>The download itself is pinned: one URL, one sha256, one expected size. The
+hash is checked <em>before</em> the file is moved into place, so a download that
+was cut short or came back as something else is discarded instead of becoming
+the model your next boot loads. The dialog says which of the two happened.</p>
+
+<h2 id="ch-local-runtime">The runtime underneath</h2>
+
+<p>Nothing runs until the built-in provider is actually used. On first use the
+server picks a free loopback port, execs <code>llama-server</code> against the
+GGUF with a 4096-token context, and then polls <code>/v1/models</code> until it
+answers. The budget is a generous sixty seconds, because a cold multi-gigabyte
+load genuinely takes that long on a laptop.</p>
+
+<pre>llama-server -m ~/.spectro/models/vibethinker-3b-Q4_K_M.gguf \
+             --host 127.0.0.1 --port &lt;free&gt; -c 4096 --jinja</pre>
+
+<p>One runtime serves every session in the process, and the handle hangs off a
+JVM shutdown hook, so quitting spectroscope takes the child with it. From there
+the ordinary OpenAI-compatible provider does the talking — the same class that
+serves LM Studio and OpenRouter, aimed at localhost with no key.</p>
+
+<h2 id="ch-local-profile">One honest capability flag</h2>
+
+<p>This is the part worth knowing before you judge the model. VibeThinker is
+reasoning-tuned but does <strong>not</strong> speak the OpenAI
+<code>tool_calls</code> protocol. That came out of testing it rather than
+reading its card: asked to use a tool, it writes the call out as prose, and it
+can keep going in the think channel for a while afterwards.</p>
+
+<p>So the loop is told the truth about it. A per-model profile marks it
+<code>reasoning</code> yes, <code>nativeTools</code> no, and tools are simply not
+advertised to it. The alternative — offering tools that come back as text — would
+have produced a stream of confusing half-failures and blamed them on the user's
+prompt.</p>
+
+<div class="callout"><div class="co-title">what it is for, and what it is not</div>
+<p>It is a demo reasoner for small text tasks: ask it a question, watch a real
+run happen, read the trace, open the session file. It is not a coding agent and
+it will not drive the file tools. When the work gets real, the picker is one
+click away — and the chapter before this one is about everything else in
+it.</p></div>
+
+<p>Everything downstream is unchanged by the choice. The events, the permission
+gate, the trace, the spectrum and the JSONL on disk are the same ones a cloud
+provider produces. That is exactly why the ladder in chapter 6c can be climbed
+from the dark frame to deep field without a paid key.</p>
+
 <!-- ============================== CH 17 ============================== -->
 <h1 data-ch="17" id="ch-senses"><span class="ch-num">Chapter 17</span>Seeing, hearing, speaking, painting</h1>
 
