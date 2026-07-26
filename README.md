@@ -134,7 +134,8 @@ mcp-notes zip. Or run from source with the `./spectro`
 launcher, which resolves a JDK 21+ for you and loads the gitignored `./.env`:
 
 ```bash
-./spectro web         # web UI → http://127.0.0.1:8080
+./spectro web start   # web UI → http://127.0.0.1:8080, in the background
+./spectro web         # what the web group can do, and whether it is running
 ./spectro repl        # terminal REPL
 ./spectro run -p "…"  # headless run
 ./spectro desktop     # Electron desktop app
@@ -142,7 +143,7 @@ launcher, which resolves a JDK 21+ for you and loads the gitignored `./.env`:
 ./spectro tour        # guided feature tour
 ```
 
-It also knows `cron`, `sessions`, `resume <id>`, and `mcp-notes`. Raw Gradle
+It also knows `cron`, `sessions`, `resume <id>`, `level` and `mcp-notes`. Raw Gradle
 works too (JDK 21+ as `JAVA_HOME`):
 
 ```bash

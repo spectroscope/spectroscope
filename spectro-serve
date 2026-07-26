@@ -214,11 +214,12 @@ cmd_help() {
   resolve_port; url_box
 }
 
-overview() { cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs doctor open  |  '$0 help' for details${C_0}"; }
+overview() { cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs doctor open  |  '$0 help' for details${C_0}";
+  say "${C_DIM}  './spectro web' is the front door for these; this script stays the engine.${C_0}"; }
 
 ARGS=(); while [ $# -gt 0 ]; do case "$1" in
-  --port) FLAG_PORT="$2"; shift 2;;
-  --env-file) FLAG_ENV_FILE="$2"; shift 2;;
+  --port) [ $# -ge 2 ] && [ -n "${2:-}" ] || die "usage: --port <n>"; FLAG_PORT="$2"; shift 2;;
+  --env-file) [ $# -ge 2 ] && [ -n "${2:-}" ] || die "usage: --env-file <path>"; FLAG_ENV_FILE="$2"; shift 2;;
   --no-open) FLAG_NO_OPEN=1; shift;;
   *) ARGS+=("$1"); shift;;
 esac; done
@@ -227,7 +228,10 @@ set -- "${ARGS[@]:-}"
 case "${1:-overview}" in
   start) cmd_start;;
   stop) cmd_stop;;
-  restart) cmd_stop; cmd_start;;
+  restart)
+    # Carry the port across the stop: cmd_stop deletes PORT_FILE, so a plain
+    # stop-then-start would silently move a server off its custom port.
+    resolve_port; _keep="$PORT"; cmd_stop; FLAG_PORT="${FLAG_PORT:-$_keep}"; cmd_start;;
   status) cmd_status;;
   logs) shift; cmd_logs "${1:-}";;
   doctor) cmd_doctor;;
