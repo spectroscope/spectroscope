@@ -23,6 +23,11 @@ import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
 import { ImportDialog } from "./components/ImportDialog";
 import { GateBar } from "./components/GateBar";
+import { LevelPill } from "./components/LevelPill";
+import { LevelingPanel } from "./components/LevelingPanel";
+import { LockedSurface } from "./components/LockedSurface";
+import { useLeveling } from "./state/useLeveling";
+import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
 import { Onboarding } from "./components/Onboarding";
@@ -123,7 +128,33 @@ export function App() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
-  const [tab, setTab] = useState<"chat" | "spectrum" | "graph" | "trace" | "text" | "lab">("chat"); // spectrum = fleet lanes; trace = wire view; text = readable feed + raw JSONL; lab = step-through Flow map
+  const [tab, setTab] = useState<"chat" | "spectrum" | "graph" | "trace" | "text" | "lab">("chat");
+  // The ladder (card 80). Server state only: every lock is derived from the
+  // snapshot on render, never cached, so a mode flipped elsewhere cannot leave
+  // a stale lock behind.
+  const leveling = useLeveling();
+  // Held in a ref because onEvents is memoised with no dependencies; reading the
+  // callback fresh here is the same stale-closure guard providerModelField uses.
+  const refreshLeveling = useRef(leveling.refresh);
+  refreshLeveling.current = leveling.refresh;
+  const [levelPanelOpen, setLevelPanelOpen] = useState(false);
+  const [levelUp, setLevelUp] = useState<{ level: number; opened: string[] } | null>(null);
+  const lastLevel = useRef<number | null>(null);
+  const levelSnapshot = leveling.snapshot;
+  useEffect(() => {
+    if (!levelSnapshot) return;
+    const before = lastLevel.current;
+    lastLevel.current = levelSnapshot.level;
+    // First read of the session is not a climb, and a reset walking back down
+    // is not one either.
+    if (before === null || levelSnapshot.level <= before) return;
+    setLevelUp({
+      level: levelSnapshot.level,
+      opened: newlyOpened(levelSnapshot.ladder, before, levelSnapshot.level),
+    });
+    const clear = setTimeout(() => setLevelUp(null), 7000);
+    return () => clearTimeout(clear);
+  }, [levelSnapshot]); // spectrum = fleet lanes; trace = wire view; text = readable feed + raw JSONL; lab = step-through Flow map
   // Spectrum -> Trace hand-off: clicking a lane pins its agent as the trace's
   // agent filter (null = all agents). The chip row in the trace clears it.
   const [traceAgent, setTraceAgent] = useState<string | null>(null);
@@ -242,6 +273,13 @@ export function App() {
       })
     ) {
       setFsTick((n) => n + 1);
+    }
+    // The ladder's server-side marks (a finished run settles first light) arrive
+    // without the client asking, so a run end is the moment to re-read it. Same
+    // shape as the Files nudge above, and cheaper than a socket frame nobody
+    // else needs.
+    if (batch.some((e) => (e as { type?: string }).type === "run_end")) {
+      refreshLeveling.current();
     }
   }, []);
 
@@ -924,9 +962,29 @@ export function App() {
           >
             lab
           </button>
+          {leveling.snapshot && leveling.snapshot.mode !== "off" && (
+            <span className="tab-nav__level">
+              <LevelPill
+                snapshot={leveling.snapshot}
+                flareSlot={levelUp ? levelUp.level - 1 : -1}
+                onOpen={() => setLevelPanelOpen(true)}
+              />
+            </span>
+          )}
         </nav>
 
-        {tab === "chat" ? (
+        {tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
+          /* A locked surface shows a teaser, never its content. The tab itself
+             stays visible and clickable: a feature nobody can see is a feature
+             nobody adopts. Chat is excluded by name because it opens at level 0,
+             and the gate bar below sits OUTSIDE this chain by construction, so
+             no lock can ever cover a permission request. */
+          <LockedSurface
+            snapshot={leveling.snapshot}
+            surface={tab}
+            onOpenEverything={() => void leveling.setMode("checklist")}
+          />
+        ) : tab === "chat" ? (
           enteredFleet !== null ? (
             /* A fleet has no chat — show its home (getting-started + spawn), not
                the stale session chat, so entering a fleet switches the pane. */
@@ -1105,6 +1163,44 @@ export function App() {
             focusEvent={focusEvent}
             onFocusHandled={() => setFocusEvent(null)}
           />
+        )}
+        {levelPanelOpen && leveling.snapshot && (
+          <div className="lvl-drawer-scrim" onClick={() => setLevelPanelOpen(false)}>
+            <div
+              className="lvl-drawer"
+              role="dialog"
+              aria-label={t(lang, "leveling.panel.title")}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="lvl-drawer__head">
+                <span>{t(lang, "leveling.panel.title")}</span>
+                <button type="button" className="lvl-drawer__close" onClick={() => setLevelPanelOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <LevelingPanel
+                snapshot={leveling.snapshot}
+                onTick={(criterion) => void leveling.tick(criterion)}
+                onOpenEverything={() => void leveling.setMode("checklist")}
+              />
+            </div>
+          </div>
+        )}
+        {levelUp && leveling.snapshot && (
+          <div className="lvl-toast" role="status">
+            {t(lang, "leveling.levelUp.title", {
+              name: translated(
+                (k) => t(lang, k),
+                leveling.snapshot.ladder.levels[levelUp.level]?.nameKey ?? "",
+                levelName(leveling.snapshot.levelId),
+              ),
+            })}
+            {levelUp.opened.length > 0 && (
+              <div className="lvl-toast__opened">
+                {t(lang, "leveling.levelUp.opened", { surfaces: levelUp.opened.join(" · ") })}
+              </div>
+            )}
+          </div>
         )}
         {/* The gate surface: pending permissions as a first-class bar, on
             every lens — the violet line means "the run waits on you". */}

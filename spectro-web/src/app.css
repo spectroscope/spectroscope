@@ -20,3 +20,4 @@
 @import "./styles/lab.css"; /* Lab: controls, flow map box, petri net, JSONL strip, system map */
 @import "./styles/keymap.css"; /* Keymap overlay: the ? shortcut sheet (edu port) */
 @import "./styles/workspace-gear.css"; /* Composer gear: permission mode + always-allow rules (Task 16) */
+@import "./styles/leveling.css";
