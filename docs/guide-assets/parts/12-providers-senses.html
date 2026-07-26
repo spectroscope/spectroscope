@@ -42,8 +42,11 @@ your settings file mirrors exactly what you already had and nothing changes behi
 back. With nothing set at all you land on the Anthropic default, and a run without a key
 stops with a readable “no key” message instead of a mystery failure.</p>
 
-<p>No Anthropic key on hand? Two of the backends are keyless and local:</p>
+<p>No Anthropic key on hand? Three of the backends are keyless and local — and the
+first one needs no install either:</p>
 <ul>
+  <li><strong>built-in</strong> — pick a model in the app, it downloads once, done.
+      The first-run sheet leads here, and chapter 16b is all about it.</li>
   <li><strong>ollama</strong> — install it, pull a model, and it serves
       <code>localhost:11434</code>. Set <code>provider=ollama</code>; no key.</li>
   <li><strong>lmstudio</strong> — run LM Studio in server mode with a model loaded, and it
@@ -126,66 +129,106 @@ OpenAiCompatProvider serves all three OpenAI-compatible ids — only its endpoin
 differ.</p>
 
 <!-- ============================== CH 16b ============================== -->
-<h1 data-ch="16b" id="ch-local-model"><span class="ch-num">Chapter 16b</span>The built-in model</h1>
+<h1 data-ch="16b" id="ch-local-model"><span class="ch-num">Chapter 16b</span>The built-in models</h1>
 
 <p class="lead">Every backend in the previous chapter is something you install
-or pay for. <code>spectro-local</code> is the one that is already here: a
-quantized 3B model on disk, driven by a <code>llama-server</code> this process
-starts and supervises. It exists so a fresh install can produce a real run
-before anyone has decided whether to pay for a key.</p>
+or pay for. <code>spectro-local</code> is the one that is already here: a small
+catalogue of open models, driven by a <code>llama-server</code> this process
+starts and supervises. It exists so a fresh install can produce a real run —
+including real tool calls — before anyone has decided whether to pay for a
+key.</p>
 
-<!--SVG:18-local-model|The keyless path end to end: where the file is found, how it arrives when it is missing, the runtime the JVM supervises, and the one capability fact the loop is told.-->
+<!--SVG:18-local-model|The keyless path end to end: where the file is found, how it arrives when it is missing, the runtime the JVM supervises, and the capability fact the loop is told.-->
 
-<h2 id="ch-local-where">Where the model comes from</h2>
+<h2 id="ch-local-choose">Choosing a model</h2>
 
-<p>The picker entry reads <b>built-in · VibeThinker-3B</b> and needs no key at
-all. The file behind it is a Q4_K_M GGUF of about 1.93&thinsp;GB, and it is
-looked for in two places, in order: the app bundle (a desktop build that ships
-the model sets <code>spectro.bundle.models</code>) and then
-<code>~/.spectro/models/</code>. If neither has it, the picker opens a download
-dialog rather than failing.</p>
+<p>The picker entry reads <b>built-in</b> and needs no key at all. Applying it
+opens a chooser rather than switching blindly, because which model runs is a
+real decision now. Five models ship in the catalogue, smallest first:</p>
 
-<p>The download itself is pinned: one URL, one sha256, one expected size. The
-hash is checked <em>before</em> the file is moved into place, so a download that
-was cut short or came back as something else is discarded instead of becoming
-the model your next boot loads. The dialog says which of the two happened.</p>
+<!--SHOT:42-local-chooser|The chooser: what each model is good for, whether it can drive tools, how big the download is — and whether this machine can hold it.-->
+
+<table>
+<tr><th>model</th><th>download</th><th>tools</th><th>thinking</th><th>good for</th></tr>
+<tr><td>Qwen3 1.7B</td><td>1.8&thinsp;GB</td><td>yes</td><td>yes</td><td>quick answers on light machines</td></tr>
+<tr><td>Qwen3 4B</td><td>2.5&thinsp;GB</td><td>yes</td><td>yes</td><td>everyday chat and small agent tasks</td></tr>
+<tr><td>Qwen2.5 Coder 7B <i>(default)</i></td><td>4.7&thinsp;GB</td><td>yes</td><td>no</td><td>coding and tool-driven agent work</td></tr>
+<tr><td>Qwen3 8B</td><td>5.0&thinsp;GB</td><td>yes</td><td>yes</td><td>the deepest answers, on 16&thinsp;GB machines</td></tr>
+<tr><td>VibeThinker 3B</td><td>1.9&thinsp;GB</td><td>no</td><td>yes</td><td>watching a model think, without tools</td></tr>
+</table>
+
+<p>Under each row the dialog answers the question a spec sheet never does:
+<em>can this machine hold it?</em> The server reads total memory and the free
+space on the models volume, and the row says <b>fits this machine</b>,
+<b>fits, but it will be tight</b>, or names what is missing. A model that
+cannot fit cannot be downloaded — the button disables rather than letting a
+five-gigabyte download start toward a full disk. On a machine whose numbers
+the JVM cannot read, the check says so and steps aside instead of inventing a
+refusal.</p>
+
+<h2 id="ch-local-where">Where a model comes from</h2>
+
+<p>Each catalogue entry is looked for in two places, in order: the app bundle
+(a desktop build that ships a model sets <code>spectro.bundle.models</code>)
+and then <code>~/.spectro/models/</code>. Missing means the chooser offers the
+download; nothing fails.</p>
+
+<p>Every download is pinned: one URL straight to the model's publisher, one
+sha256, one expected size. The hash is checked <em>before</em> the file is
+moved into place, so a download that was cut short or came back as something
+else is discarded instead of becoming the model your next boot loads. Each
+row links the licence and the source it downloads from, and downloads of two
+different models can run at the same time without disturbing each other.</p>
 
 <h2 id="ch-local-runtime">The runtime underneath</h2>
 
 <p>Nothing runs until the built-in provider is actually used. On first use the
 server picks a free loopback port, execs <code>llama-server</code> against the
-GGUF with a 4096-token context, and then polls <code>/v1/models</code> until it
-answers. The budget is a generous sixty seconds, because a cold multi-gigabyte
-load genuinely takes that long on a laptop.</p>
+chosen GGUF with that model's own context budget, and then polls
+<code>/v1/models</code> until it answers. The budget is a generous sixty
+seconds, because a cold multi-gigabyte load genuinely takes that long on a
+laptop.</p>
 
-<pre>llama-server -m ~/.spectro/models/vibethinker-3b-Q4_K_M.gguf \
-             --host 127.0.0.1 --port &lt;free&gt; -c 4096 --jinja</pre>
+<pre>llama-server -m ~/.spectro/models/Qwen3-1.7B-Q8_0.gguf \
+             --host 127.0.0.1 --port &lt;free&gt; -c 8192 --jinja</pre>
 
 <p>One runtime serves every session in the process, and the handle hangs off a
-JVM shutdown hook, so quitting spectroscope takes the child with it. From there
-the ordinary OpenAI-compatible provider does the talking — the same class that
+JVM shutdown hook, so quitting spectroscope takes the child with it. Switching
+to a <em>different</em> catalogue model shuts the old subprocess down and
+starts a fresh one — a llama-server keeps serving the weights it was started
+with, so a live runtime is only ever reused for the same model. From there the
+ordinary OpenAI-compatible provider does the talking — the same class that
 serves LM Studio and OpenRouter, aimed at localhost with no key.</p>
 
-<h2 id="ch-local-profile">One honest capability flag</h2>
+<p>The desktop app carries its own signed <code>llama-server</code> inside the
+bundle, so the built-in path needs nothing installed at all. Running the bare
+server jar instead, you bring your own — <code>brew install llama.cpp</code>
+puts one on the PATH.</p>
 
-<p>This is the part worth knowing before you judge the model. VibeThinker is
-reasoning-tuned but does <strong>not</strong> speak the OpenAI
-<code>tool_calls</code> protocol. That came out of testing it rather than
-reading its card: asked to use a tool, it writes the call out as prose, and it
-can keep going in the think channel for a while afterwards.</p>
+<h2 id="ch-local-profile">Honest capability flags, per model</h2>
 
-<p>So the loop is told the truth about it. A per-model profile marks it
-<code>reasoning</code> yes, <code>nativeTools</code> no, and tools are simply not
-advertised to it. The alternative — offering tools that come back as text — would
-have produced a stream of confusing half-failures and blamed them on the user's
-prompt.</p>
+<p>This is the part worth knowing before you judge an answer. Whether a model
+speaks the OpenAI <code>tool_calls</code> protocol is a fact about the model,
+not about the provider, and the catalogue records it per entry. The four Qwen
+models speak it natively — the agent's file tools, shell and subagents all
+work. VibeThinker does not: that came out of testing it rather than reading
+its card — asked to use a tool, it writes the call out as prose, and it can
+keep going in the think channel for a while afterwards.</p>
 
-<div class="callout"><div class="co-title">what it is for, and what it is not</div>
-<p>It is a demo reasoner for small text tasks: ask it a question, watch a real
-run happen, read the trace, open the session file. It is not a coding agent and
-it will not drive the file tools. When the work gets real, the picker is one
-click away — and the chapter before this one is about everything else in
-it.</p></div>
+<p>So the loop is told the truth per model. A tool-capable entry is offered
+the full registry; VibeThinker is marked <code>reasoning</code> yes,
+<code>nativeTools</code> no, and tools are simply not advertised to it. The
+alternative — offering tools that come back as text — would have produced a
+stream of confusing half-failures and blamed them on the user's prompt. A
+stale selection resolves to the catalogue default the same way the runtime
+resolves it, so what runs and what is advertised never disagree.</p>
+
+<div class="callout"><div class="co-title">what to expect, honestly</div>
+<p>A local model in these sizes stays below the cloud models: simpler answers,
+a smaller context. But the default Coder 7B genuinely drives the file tools,
+and the first-use sheet tells you the limits of whichever model you picked.
+When the work gets real, the picker is one click away — and the chapter before
+this one is about everything else in it.</p></div>
 
 <p>Everything downstream is unchanged by the choice. The events, the permission
 gate, the trace, the spectrum and the JSONL on disk are the same ones a cloud

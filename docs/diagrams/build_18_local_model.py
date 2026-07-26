@@ -39,32 +39,34 @@ def step(x, y, w, n, title, lines, accent, chips=None):
 
 def build():
     head, y = C.header(
-        W, "the built-in model", "spectro-local",
-        "a GGUF on disk, a supervised llama-server, and no key anywhere")
+        W, "the built-in models", "spectro-local",
+        "a catalogue of GGUFs, a supervised llama-server, and no key anywhere")
     body = [head]
     y += 22
 
     col_w = (W - 2 * PAD - 24) / 2
     left_x, right_x = PAD, PAD + col_w + 24
 
-    # ---- column 1: getting the file there ----
+    # ---- column 1: getting a file there ----
     chunk, h1 = step(
-        left_x, y, col_w, "1", "where the model is looked for",
-        ["The app bundle first, the user home second, absent third.",
-         "A \"with model\" build sets spectro.bundle.models; a lean",
-         "one does not, and then the download modal is the path."],
+        left_x, y, col_w, "1", "choosing, and where a model is looked for",
+        ["local/models.json names five models; the chooser shows",
+         "what each is good for, whether it can drive tools, and",
+         "whether THIS machine holds it (memory + disk measured).",
+         "Each file: the app bundle first, the user home second."],
         C.ZONE_DISK,
-        ["spectro.bundle.models", "~/.spectro/models"])
+        ["local/models.json", "spectro.bundle.models", "~/.spectro/models"])
     body.append(chunk)
 
     chunk, h2 = step(
-        left_x, y + h1 + 16, col_w, "2", "when it is absent",
-        ["One pinned URL, one pinned sha256, one pinned size.",
-         "The bytes are verified BEFORE the file is moved into",
-         "place, so a truncated or swapped download never becomes",
-         "the model the next boot loads."],
+        left_x, y + h1 + 16, col_w, "2", "when one is absent",
+        ["Per model one pinned URL straight to its publisher, one",
+         "pinned sha256, one pinned size. The bytes are verified",
+         "BEFORE the file is moved into place, so a truncated or",
+         "swapped download never becomes the model the next boot",
+         "loads. Two different models may download concurrently."],
         C.ZONE_EXT,
-        ["1.93 GB", "sha256 6b2d4e69…07cc", "atomic move"])
+        ["1.8 – 5.0 GB", "sha256-pinned", "atomic move"])
 
     body.append(chunk)
 
@@ -72,21 +74,22 @@ def build():
     chunk, h3 = step(
         right_x, y, col_w, "3", "the runtime the JVM supervises",
         ["llama-server, spawned lazily on first use and shared by",
-         "every session in the process. A free loopback port, a",
-         "4096-token window, and /v1/models polled until it answers",
-         "or a 60-second budget for a cold multi-GB load runs out."],
+         "every session in the process. A free loopback port, the",
+         "chosen model's own context budget, /v1/models polled for",
+         "up to 60 s. Switching models restarts it — a llama-server",
+         "keeps serving the weights it was started with."],
         C.ZONE_CORE,
-        ["127.0.0.1:<free>", "-c 4096", "--jinja", "reaped on JVM exit"])
+        ["127.0.0.1:<free>", "-c <per model>", "--jinja", "reaped on JVM exit"])
     body.append(chunk)
 
     chunk, h4 = step(
         right_x, y + h3 + 16, col_w, "4", "what the loop is told about it",
         ["The provider is the ordinary OpenAI-compatible one, aimed",
-         "at localhost with no key. What differs is one measured",
-         "fact: this model reasons but does not speak tool_calls, so",
-         "the loop does not offer it tools it would answer in prose."],
+         "at localhost with no key. The capability is a per-model",
+         "fact: the Qwen entries speak tool_calls and get the full",
+         "registry; VibeThinker does not, and is offered none."],
         C.LILAC,
-        ["reasoning ✓", "native tools ✗"])
+        ["Qwen: tools ✓", "VibeThinker: tools ✗"])
     body.append(chunk)
 
     y += max(h1 + h2, h3 + h4) + 16 + 34
@@ -95,10 +98,11 @@ def build():
     # face badly enough at 13px that wrap() leaves a 250-character paragraph on
     # one line and it runs off the canvas.
     for para in (
-        ["The honest limit: VibeThinker-3B is a reasoner for small text tasks, not a "
-         "tool-caller and not a coding agent. It exists",
-         "so that a fresh install can produce a real run — its own events, its own "
-         "trace, its own session file — before anyone",
+        ["The honest limit: a local model in these sizes stays below the cloud "
+         "models — simpler answers, smaller context. But the",
+         "default Coder 7B genuinely drives the file tools, and the catalogue "
+         "exists so a fresh install can produce a real run —",
+         "its own events, its own trace, its own session file — before anyone "
          "has decided whether to pay for a key."],
         ["Nothing about the rest of the product knows it is local. The events, the "
          "gate, the trace and the JSONL are the same",

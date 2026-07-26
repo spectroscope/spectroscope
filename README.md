@@ -137,6 +137,16 @@ implementation("dev.spectroscope:spectro-orchestrator:0.3.0")   // fleets
       <br><sub><b>the ladder</b> · levels tick from observed usage, every tick with a receipt into the session it happened in</sub>
     </td>
   </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/42-local-chooser.png">
+        <img src="docs/guide-assets/shots-light/42-local-chooser.png" alt="the built-in model chooser: five local models with tool badges, sizes and a machine-fit line per row">
+      </picture>
+      <br><sub><b>no key, no cloud</b> · pick a local model, see whether your machine holds it, download once — tools included</sub>
+    </td>
+    <td width="50%"></td>
+  </tr>
 </table>
 
 More in the [gallery](https://gallery.spectroscope.ai) and the
@@ -146,8 +156,8 @@ More in the [gallery](https://gallery.spectroscope.ai) and the
 
 Grab a [release](https://github.com/spectroscope/spectroscope/releases): the
 desktop run kit for macOS (arm64, Developer ID signed and notarized, bundles
-its own JRE, no system Java needed), the CLI zip, the server jar, or the
-mcp-notes zip. Or run from source with the `./spectro`
+its own JRE — and, from v0.4.0, its own `llama-server`, so the built-in model
+needs nothing installed), the CLI zip, the server jar, or the mcp-notes zip. Or run from source with the `./spectro`
 launcher, which resolves a JDK 21+ for you and loads the gitignored `./.env`:
 
 ```bash
@@ -206,17 +216,27 @@ diagrams live in [docs/diagrams/](docs/diagrams/), each in both themes;
 
 ## providers
 
-Six chat providers, switchable mid-session from the header picker with history
-intact:
+Seven chat providers, switchable mid-session from the header picker with
+history intact:
 
 | provider | runs | needs |
 |---|---|---|
+| `built-in` | local, via a bundled llama-server | nothing — pick a model in the app, it downloads once |
 | `anthropic` | cloud | `ANTHROPIC_API_KEY` |
 | `ollama` | local | a running Ollama |
 | `openai` | api.openai.com or any compatible server | `OPENAI_API_KEY` (optional for local servers) |
 | `lmstudio` | local | LM Studio's server |
 | `openrouter` | cloud | `OPENROUTER_API_KEY` |
 | `gemini` | cloud | `GEMINI_API_KEY` |
+
+The built-in provider is the no-setup path: the app offers a small catalogue
+of open models (Qwen3 1.7B/4B/8B, Qwen2.5 Coder 7B, VibeThinker 3B), says
+which of them can drive the agent's tools and whether your machine has the
+memory and disk for each, then downloads your pick straight from its
+publisher, sha256-verified. The desktop app carries its own `llama-server`,
+so nothing else needs installing; with the server jar you bring your own
+(`brew install llama.cpp`). No key, no account, and nothing you type leaves
+your machine.
 
 Keys are set once, in the UI (masked, written to `~/.spectro/.env` with mode
 0600) or via CLI `set-key`; one Gemini or OpenAI key serves chat and the
