@@ -104,6 +104,29 @@ public final class LevelingFold {
      */
     public static LevelingState visit(Ladder ladder, LevelingState state,
                                       String surface, String sessionId, long ts) {
+        return visit(ladder, state, surface, sessionId, ts, 0);
+    }
+
+    /**
+     * Records a visit that carries what the face itself could count.
+     *
+     * <p>Some joins cannot be settled from the server's own stream. A scenario
+     * runs entirely in the browser and never reaches a tracing port, so no
+     * session facts exist for it — yet watching a scripted fan-out is exactly
+     * the act the criterion describes, and the concept says scenarios count.
+     * The face reports what it rendered; that is still an observation, just
+     * witnessed one layer out.</p>
+     *
+     * @param ladder the ladder in force
+     * @param state the state before
+     * @param surface the surface id the face reports
+     * @param sessionId the session on screen, may be null
+     * @param ts when it happened
+     * @param agentsShown how many distinct agents the face had on screen, 0 when unknown
+     * @return the state after
+     */
+    public static LevelingState visit(Ladder ladder, LevelingState state, String surface,
+                                      String sessionId, long ts, int agentsShown) {
         Objects.requireNonNull(ladder, "ladder");
         Objects.requireNonNull(state, "state");
         if (state.mode() == LevelingState.Mode.OFF || surface == null) {
@@ -115,7 +138,9 @@ public final class LevelingFold {
             if (!surface.equals(criterion.surface())) {
                 continue;
             }
-            if (criterion.source() == Ladder.Source.JOINED && !streamAgrees(next, sessionId, criterion)) {
+            boolean faceVouches = agentsShown >= 2 && "two-agents".equals(criterion.requires());
+            if (criterion.source() == Ladder.Source.JOINED
+                    && !faceVouches && !streamAgrees(next, sessionId, criterion)) {
                 // Watching a live run is the normal case: the tab is open before the
                 // agent does the thing. Remember the look so the stream can redeem it.
                 pendingLook = true;

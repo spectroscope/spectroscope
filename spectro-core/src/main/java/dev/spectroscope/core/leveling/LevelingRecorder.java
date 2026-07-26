@@ -77,7 +77,19 @@ public final class LevelingRecorder {
      * @param ts when it happened
      */
     public synchronized void visit(String surface, String sessionId, long ts) {
-        apply(LevelingFold.visit(ladder, state, surface, sessionId, ts));
+        visit(surface, sessionId, ts, 0);
+    }
+
+    /**
+     * Records a visit with what the face counted on screen.
+     *
+     * @param surface the surface id
+     * @param sessionId the session on screen, may be null
+     * @param ts when it happened
+     * @param agentsShown distinct agents the face rendered, 0 when unknown
+     */
+    public synchronized void visit(String surface, String sessionId, long ts, int agentsShown) {
+        apply(LevelingFold.visit(ladder, state, surface, sessionId, ts, agentsShown));
     }
 
     /**

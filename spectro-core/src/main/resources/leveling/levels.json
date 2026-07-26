@@ -6,55 +6,107 @@
       "id": "dark-frame",
       "nameKey": "leveling.level.darkFrame.name",
       "blurbKey": "leveling.level.darkFrame.blurb",
-      "opens": ["chat", "settings", "scenarios-chat"],
-      "advanceWhen": ["provider-ready"]
+      "opens": [
+        "chat",
+        "settings",
+        "scenarios-chat"
+      ],
+      "advanceWhen": [
+        "provider-ready"
+      ]
     },
     {
       "index": 1,
       "id": "first-light",
       "nameKey": "leveling.level.firstLight.name",
       "blurbKey": "leveling.level.firstLight.blurb",
-      "opens": ["composer", "sessions", "files", "image-input", "gallery"],
-      "advanceWhen": ["first-run-complete", "session-reopened"]
+      "opens": [
+        "composer",
+        "sessions",
+        "files",
+        "image-input",
+        "gallery"
+      ],
+      "advanceWhen": [
+        "first-run-complete",
+        "session-reopened"
+      ]
     },
     {
       "index": 2,
       "id": "the-trace",
       "nameKey": "leveling.level.theTrace.name",
       "blurbKey": "leveling.level.theTrace.blurb",
-      "opens": ["trace", "text", "replay", "import"],
-      "advanceWhen": ["trace-opened", "replay-scrubbed", "disclosure-expanded"]
+      "opens": [
+        "trace",
+        "text",
+        "replay",
+        "import"
+      ],
+      "advanceWhen": [
+        "trace-opened",
+        "replay-scrubbed",
+        "disclosure-expanded"
+      ]
     },
     {
       "index": 3,
       "id": "the-gate",
       "nameKey": "leveling.level.theGate.name",
       "blurbKey": "leveling.level.theGate.blurb",
-      "opens": ["permission-mode", "workspace"],
-      "advanceWhen": ["mode-set", "gate-answered"]
+      "opens": [
+        "permission-mode",
+        "workspace"
+      ],
+      "advanceWhen": [
+        "mode-set",
+        "gate-answered"
+      ]
     },
     {
       "index": 4,
       "id": "the-prism",
       "nameKey": "leveling.level.thePrism.name",
       "blurbKey": "leveling.level.thePrism.blurb",
-      "opens": ["spectrum", "lab", "lenses", "graph"],
-      "advanceWhen": ["fanout-watched", "lens-used", "lab-stepped"]
+      "opens": [
+        "spectrum",
+        "lab",
+        "lenses",
+        "graph"
+      ],
+      "advanceWhen": [
+        "fanout-watched",
+        "lens-used",
+        "lab-stepped"
+      ]
     },
     {
       "index": 5,
       "id": "the-fleet",
       "nameKey": "leveling.level.theFleet.name",
       "blurbKey": "leveling.level.theFleet.blurb",
-      "opens": ["fleets", "fleet-canvas", "machine-room", "scenarios-fleet"],
-      "advanceWhen": ["fleet-entered", "machine-room-opened"]
+      "opens": [
+        "fleets",
+        "fleet-canvas",
+        "machine-room",
+        "scenarios-fleet"
+      ],
+      "advanceWhen": [
+        "fleet-entered",
+        "machine-room-opened"
+      ]
     },
     {
       "index": 6,
       "id": "deep-field",
       "nameKey": "leveling.level.deepField.name",
       "blurbKey": "leveling.level.deepField.blurb",
-      "opens": ["explain", "observability", "scaffolder", "mcp"],
+      "opens": [
+        "explain",
+        "observability",
+        "scaffolder",
+        "mcp"
+      ],
       "advanceWhen": []
     }
   ],
@@ -153,7 +205,7 @@
       "id": "lab-stepped",
       "level": 4,
       "source": "beacon",
-      "surface": "lab",
+      "surface": "lab-step",
       "mastery": false,
       "labelKey": "leveling.criterion.labStepped.label",
       "countsKey": "leveling.criterion.labStepped.counts"

@@ -55,7 +55,7 @@ public class LevelingController {
     }
 
     /** A surface a face just showed. @param surface the surface id @param sessionId the session on screen, optional */
-    public record VisitBody(String surface, String sessionId) {}
+    public record VisitBody(String surface, String sessionId, Integer agentsShown) {}
 
     /** A mode switch. @param mode ladder, checklist or off */
     public record ModeBody(String mode) {}
@@ -92,7 +92,8 @@ public class LevelingController {
             return ResponseEntity.notFound().build();
         }
         if (body != null && body.surface() != null) {
-            recorder.visit(body.surface(), blankToNull(body.sessionId()), System.currentTimeMillis());
+            recorder.visit(body.surface(), blankToNull(body.sessionId()), System.currentTimeMillis(),
+                    body.agentsShown() == null ? 0 : body.agentsShown());
         }
         return ResponseEntity.ok(describe());
     }

@@ -69,7 +69,7 @@ class LevelingControllerTest {
     void aBeaconMarksAndTheStateShowsIt(@TempDir Path dir) {
         LevelingController controller = controller(dir);
         ResponseEntity<Map<String, Object>> posted =
-                controller.visit(new LevelingController.VisitBody("replay", null), local());
+                controller.visit(new LevelingController.VisitBody("replay", null, null), local());
         assertEquals(200, posted.getStatusCode().value());
         Map<String, Object> marks = (Map<String, Object>) body(controller.state(local())).get("marks");
         assertTrue(marks.containsKey("replay-scrubbed"));
@@ -135,7 +135,7 @@ class LevelingControllerTest {
     @Test
     void everyWriteBouncesAForeignOriginWithoutATrace(@TempDir Path dir) {
         LevelingController controller = controller(dir);
-        assertEquals(404, controller.visit(new LevelingController.VisitBody("replay", null), foreign())
+        assertEquals(404, controller.visit(new LevelingController.VisitBody("replay", null, null), foreign())
                 .getStatusCode().value());
         assertEquals(404, controller.tick(new LevelingController.TickBody("lens-used"), foreign())
                 .getStatusCode().value());
@@ -157,7 +157,7 @@ class LevelingControllerTest {
     @Test
     void aRebindingHostIsRefused(@TempDir Path dir) {
         LevelingController controller = controller(dir);
-        assertEquals(404, controller.visit(new LevelingController.VisitBody("replay", null), rebound())
+        assertEquals(404, controller.visit(new LevelingController.VisitBody("replay", null, null), rebound())
                 .getStatusCode().value());
         assertEquals(404, controller.state(rebound()).getStatusCode().value());
     }
@@ -166,7 +166,7 @@ class LevelingControllerTest {
     void anUnknownSurfaceIsAcceptedButChangesNothing(@TempDir Path dir) {
         LevelingController controller = controller(dir);
         ResponseEntity<Map<String, Object>> answer =
-                controller.visit(new LevelingController.VisitBody("teapot", null), local());
+                controller.visit(new LevelingController.VisitBody("teapot", null, null), local());
         assertEquals(200, answer.getStatusCode().value(), "a face from a newer build is not an attack");
         assertTrue(((Map<?, ?>) body(controller.state(local())).get("marks")).isEmpty());
     }
@@ -175,7 +175,7 @@ class LevelingControllerTest {
     void offStopsTrackingWithoutHidingTheLadder(@TempDir Path dir) {
         LevelingController controller = controller(dir);
         controller.mode(new LevelingController.ModeBody("off"), local());
-        controller.visit(new LevelingController.VisitBody("replay", null), local());
+        controller.visit(new LevelingController.VisitBody("replay", null, null), local());
 
         Map<String, Object> answer = body(controller.state(local()));
         assertEquals("off", answer.get("mode"));

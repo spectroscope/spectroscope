@@ -20,7 +20,7 @@ export interface Leveling {
   /** Re-read the state; call it when the server may have marked something. */
   refresh: () => void;
   /** Report that a surface was shown. */
-  visit: (surface: string, sessionId?: string | null) => void;
+  visit: (surface: string, sessionId?: string | null, agentsShown?: number) => void;
   /** Switch mode; resolves once the server has answered. */
   setMode: (mode: LevelingSnapshot["mode"]) => Promise<void>;
   /** Mark a criterion by hand. */
@@ -81,8 +81,15 @@ export function useLeveling(): Leveling {
   }, []);
 
   const visit = useCallback(
-    (surface: string, sessionId?: string | null) => {
-      void post("/api/leveling/visit", { surface, sessionId: sessionId ?? null }).then(apply);
+    (surface: string, sessionId?: string | null, agentsShown?: number) => {
+      void post("/api/leveling/visit", {
+        surface,
+        sessionId: sessionId ?? null,
+        // What the face itself counted. Some criteria cannot be settled from the
+        // server's stream at all — a scenario never reaches it — and the face is
+        // the honest witness for what it actually rendered.
+        agentsShown: agentsShown ?? null,
+      }).then(apply);
     },
     [apply],
   );

@@ -11,7 +11,7 @@
 // holds state, and a beacon before the app is ready, or into a broken sink, is
 // silently nothing — leveling is a nicety and must never cost a lens toggle.
 
-type Sink = (surface: string, sessionId?: string | null) => void;
+type Sink = (surface: string, sessionId?: string | null, agentsShown?: number) => void;
 
 let sink: Sink | null = null;
 
@@ -30,9 +30,9 @@ export function setBeaconSink(next: Sink | null): void {
  * @param surface the surface id, as the ladder names it
  * @param sessionId the session on screen, when the criterion joins with the stream
  */
-export function beacon(surface: string, sessionId?: string | null): void {
+export function beacon(surface: string, sessionId?: string | null, agentsShown?: number): void {
   try {
-    sink?.(surface, sessionId);
+    sink?.(surface, sessionId, agentsShown);
   } catch {
     /* a nicety never costs the caller its click */
   }

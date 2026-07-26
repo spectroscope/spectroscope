@@ -14,6 +14,8 @@ import { ThinkingDisclosure } from "../components/ThinkingDisclosure";
 import { buildSpectrum } from "./spectrumModel";
 import type { Lane, TickKind } from "./spectrumModel";
 import { SpectrumBand, TICK_COLOR } from "./SpectrumBand";
+import { useEffect } from "react";
+import { beacon } from "../state/levelingBeacon";
 
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
 const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
@@ -84,6 +86,12 @@ export function SpectrumView(props: {
   // stream it is handed — one lane per agent, live and replay through one path.
   const running = props.running;
   const model = useMemo(() => buildSpectrum(props.events), [props.events]);
+  // What this view actually put on screen. The fan-out criterion cannot be settled
+  // from the server's stream for a scenario, which never reaches it, so the face
+  // reports its own lane count as the witness for what it rendered.
+  useEffect(() => {
+    if (model.lanes.length >= 2) beacon("spectrum", null, model.lanes.length);
+  }, [model.lanes.length]);
   const dropped = model.lanes.reduce((n, l) => n + l.dropped, 0);
   const span = model.t1 - model.t0;
 

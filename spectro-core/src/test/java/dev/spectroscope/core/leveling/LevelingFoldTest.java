@@ -171,6 +171,21 @@ class LevelingFoldTest {
     // ── hand ticks stay honest ─────────────────────────────────────────────
 
     @Test
+    void aFaceThatCountedTwoAgentsSettlesTheFanoutItself() {
+        // A scenario runs wholly in the browser and never reaches a tracing port,
+        // so the server has no facts for it — but watching a scripted fan-out is
+        // exactly the act the criterion names, and the concept says it counts.
+        LevelingState watched = LevelingFold.visit(LADDER, fresh(), "spectrum", "scenario:fanout", 5L, 3);
+        assertNotNull(watched.marks().get("fanout-watched"));
+    }
+
+    @Test
+    void oneAgentOnScreenIsStillNotAFanout() {
+        LevelingState single = LevelingFold.visit(LADDER, fresh(), "spectrum", "scenario:solo", 5L, 1);
+        assertNull(single.marks().get("fanout-watched"));
+    }
+
+    @Test
     void aHandTickIsMarkedAsManual() {
         LevelingState after = LevelingFold.tick(LADDER, fresh(), "lens-used", 42L);
         LevelingState.Mark mark = after.marks().get("lens-used");

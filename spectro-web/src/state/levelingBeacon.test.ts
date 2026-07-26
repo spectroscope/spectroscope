@@ -38,6 +38,6 @@ describe("the leveling beacon", () => {
     setBeaconSink(second);
     beacon("lab");
     expect(first).not.toHaveBeenCalled();
-    expect(second).toHaveBeenCalledWith("lab", undefined);
+    expect(second).toHaveBeenCalledWith("lab", undefined, undefined);
   });
 });
