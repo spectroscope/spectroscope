@@ -705,6 +705,37 @@ export function useTranslatedEvents(viewKey: string, events: readonly RunEvent[]
   return useMemo(() => translatedEvents(events, state), [events, state]);
 }
 
+/**
+ * The wire view's rows with the translated event under each one.
+ *
+ * The trace is not a fold over the stream alone: a live session's rows also
+ * carry the frames THIS app sent, which are client messages, have no event
+ * index and no translation. Re-folding the stream would drop them. So the rows
+ * stay exactly as they are — order, sequence numbers, direction — and only the
+ * payload of a row that carried a translated event is swapped, matched by
+ * object identity against the array the translation came from.
+ *
+ * @param rows       the view's trace rows
+ * @param original   the recorded stream those rows were built from
+ * @param translated the same stream after {@link withTranslation}
+ * @return the rows; an untouched row is the same object
+ */
+export function swapTracePayloads<Row extends { payload: unknown }>(
+  rows: readonly Row[],
+  original: readonly RunEvent[],
+  translated: readonly RunEvent[],
+): Row[] {
+  const swap = new Map<unknown, RunEvent>();
+  for (let index = 0; index < original.length; index++) {
+    const after = translated[index];
+    if (after !== undefined && after !== original[index]) swap.set(original[index], after);
+  }
+  return rows.map((row) => {
+    const after = swap.get(row.payload);
+    return after === undefined ? row : { ...row, payload: after };
+  });
+}
+
 /** Opens or closes a markdown code fence (``` or ~~~, up to three spaces in). */
 const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 

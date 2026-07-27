@@ -84,6 +84,8 @@ import {
   fleetPending,
   removeFleet,
 } from "./state/fleetStore";
+import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
+import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -782,7 +784,7 @@ export function App() {
     // unlock itself by being clicked, which is the whole ladder walked around.
     if (tab !== "chat" && openRef.current) beaconRef.current(tab, shownRef.current);
   }, [tab]);
-  const view = replay === null ? live : replay.state;
+  const recordedView = replay === null ? live : replay.state;
 
   // The tabs' flat event source, third-source duality: an entered fleet's events
   // win over the own live/replay session. The fold-tabs (spectrum/graph/text)
@@ -795,6 +797,56 @@ export function App() {
       enteredFleet !== null ? enteredFleetModel.events : viewingLive ? liveEvents : (replay?.events ?? []),
     [enteredFleet, enteredFleetModel.events, viewingLive, liveEvents, replay],
   );
+  // The translation is applied HERE, to the one array the tabs fold, because
+  // every tab is a fold over it: translating the stream translates the chat,
+  // the trace, the text feed, the graph, the spectrum and the lab at once.
+  // `shownEvents` is `tabEvents` BY IDENTITY whenever nothing has been
+  // translated or the reader asked for the original, so the untranslated app
+  // recomputes exactly nothing. The recorded array itself is never touched —
+  // it stays the thing the translate sheet plans and exports from.
+  const viewKey = enteredFleet ?? replay?.id ?? "live";
+  // The selector is readonly by contract — it hands back the recorded array
+  // itself when there is nothing to show. The tab props are not, and widening
+  // once here beats five casts at the call sites; nothing downstream writes.
+  const shownEvents = useTranslatedEvents(viewKey, tabEvents) as RunEvent[];
+  const showingTranslation = shownEvents !== tabEvents;
+  // The chat reads a FOLDED state, so a translated stream has to be folded
+  // again — the same reducer, the same events, different text. Two things are
+  // deliberately not taken from that second fold: the trace keeps its recorded
+  // rows (with only the payloads swapped) so the frames this app SENT survive,
+  // and everything App itself steers by — running, pending gates, the live
+  // socket's provider — keeps reading `live`. A fleet is excluded because its
+  // events are not this view's session at all.
+  const view = useMemo(() => {
+    if (!showingTranslation || enteredFleet !== null) return recordedView;
+    const folded = reduceAll(initialState, shownEvents);
+    return {
+      ...(replay === null ? folded : normalizeReplay(folded)),
+      trace: swapTracePayloads(recordedView.trace, tabEvents, shownEvents),
+    };
+  }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents, tabEvents]);
+  // The lab is the one tab that does not fold on render: it STEPS a stream out
+  // of a dam this app seeded. So it is handed the translated stream as the
+  // stream it steps, which restarts its scrub. An archive re-seeds itself off
+  // this new object; the live dam has no such prop and gets the effect below.
+  const labReplay = useMemo(
+    () => (replay === null ? null : { id: replay.id, events: shownEvents }),
+    [replay, shownEvents],
+  );
+  const translation = useTranslation(viewKey);
+  const labSeed = `${showingTranslation}:${translation.status}`;
+  const seededRef = useRef(labSeed);
+  const labStreamRef = useRef(shownEvents);
+  labStreamRef.current = shownEvents;
+  useEffect(() => {
+    // Deliberately NOT keyed on the stream itself: that changes with every
+    // streamed batch, and re-seeding per batch would throw the reader back to
+    // event 0 while they step. A finished run and a flipped toggle are the two
+    // moments the lab is actually looking at different text.
+    if (!viewingLive || enteredFleet !== null || seededRef.current === labSeed) return;
+    seededRef.current = labSeed;
+    labBackToLive(labStreamRef.current);
+  }, [labSeed, viewingLive, enteredFleet]);
   // The entered fleet's parked permission gates (block 4): the same GateBar,
   // but answered over REST to the node (POST /api/fleet/{node}/gate) instead of
   // the session socket. Best-effort like stop — if the node left, its own close
@@ -837,8 +889,8 @@ export function App() {
   // The trace tab is a fold-tab too: an entered fleet's frames become inbound
   // trace entries (drill-in shows the MEMBER's wire, not the own session).
   const traceEntries = useMemo(
-    () => (enteredFleet !== null ? traceFromEvents(tabEvents) : view.trace),
-    [enteredFleet, tabEvents, view.trace],
+    () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
+    [enteredFleet, shownEvents, view.trace],
   );
 
   // The effective LLM backend for the header + the Lab map: the server's
@@ -1044,6 +1096,17 @@ export function App() {
           >
             lab
           </button>
+          {/* The way back to the record, on EVERY lens. The chat header has the
+              same toggle next to the translate trigger, but a reader who is
+              looking at the trace or the text feed must not have to leave the
+              tab they are on to see what was actually recorded. Rendered only
+              once something IS translated — an always-present span would eat
+              the auto margin the level pill sits on. */}
+          {translation.byId.size > 0 && (
+            <span className="tab-nav__translate">
+              <TranslateToggle viewKey={viewKey} />
+            </span>
+          )}
           {leveling.snapshot && leveling.snapshot.mode !== "off" && (
             <span className="tab-nav__level">
               <LevelPill
@@ -1091,7 +1154,8 @@ export function App() {
               <Chat
                 state={view}
                 events={tabEvents}
-                viewKey={replay?.id ?? "live"}
+                sessionLabel={shownSessionId}
+                viewKey={viewKey}
                 liveView={viewingLive}
                 onSend={send}
                 onReturnToLive={returnToLive}
@@ -1154,7 +1218,7 @@ export function App() {
           )
         ) : tab === "spectrum" ? (
           <SpectrumView
-            events={tabEvents}
+            events={shownEvents}
             running={
               enteredFleet !== null
                 ? enteredFleetModel.roster.some((node) => node.connected)
@@ -1183,7 +1247,7 @@ export function App() {
           enteredFleet !== null ? (
             <FleetCanvas
               model={enteredFleetModel}
-              events={tabEvents}
+              events={shownEvents}
               onFocusEvent={(agentId, event) => {
                 // Same hand-off as the Spectrum band: scope the trace to the
                 // event's own agent so the focused row survives the filter.
@@ -1206,11 +1270,12 @@ export function App() {
               }}
             />
           ) : (
-            <GraphView events={tabEvents} isReplay={!viewingLive} />
+            <GraphView events={shownEvents} isReplay={!viewingLive} />
           )
         ) : tab === "text" ? (
           <TextView
-            events={tabEvents}
+            events={shownEvents}
+            label={shownSessionId}
             // Explain spends the server's BASE-config provider (that is what the
             // endpoint builds, not a live-switched session provider) — offer it
             // unless that provider explicitly reports needs-key; unknown maps
@@ -1228,8 +1293,8 @@ export function App() {
             />
           ) : (
             <LabView
-              replay={replay}
-              liveEvents={liveEvents}
+              replay={labReplay}
+              liveEvents={viewingLive ? shownEvents : liveEvents}
               running={live.running}
               provider={viewingLive ? curProvider : (view.provider ?? undefined)}
               model={viewingLive ? curModel : undefined}

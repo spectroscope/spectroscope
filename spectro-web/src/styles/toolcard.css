@@ -310,3 +310,39 @@
 
 .tv-note { margin: 0 0 var(--sp-1); font-size: var(--fs-11); color: var(--text-faint); }
 .tv-denied { margin: 0; font-size: var(--fs-12); color: var(--warn); }
+
+/* An mcp call is TWO names; the server recedes so the tool reads as the verb. */
+.tv-server { color: var(--text-dim); }
+
+/* A secondary path under a headline (the blob a generated image landed in). */
+.tv-src { font-size: var(--fs-11); color: var(--text-faint); overflow-wrap: anywhere; }
+
+/* The picture at its own size, capped so a tall render cannot own the thread. */
+.tv-img {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  width: auto;
+  border-radius: var(--radius-chip);
+  background: var(--shade);
+}
+.tv-imggone {
+  margin: 0;
+  padding: var(--sp-3);
+  background: var(--shade);
+  border-radius: var(--radius-chip);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-align: center;
+}
+
+/* A fan-out: one block per child, its type as the eyebrow over its task. */
+.tv-agents { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.tv-agent { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tv-agent-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.tv-agent-type { font-size: var(--fs-12); color: var(--accent); }
+
+/* The plan as a checklist — the dot and badge come from the agent-card set. */
+.tv-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tv-step { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
+.tv-step-text { flex: 1; min-width: 0; font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }

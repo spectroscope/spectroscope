@@ -24,7 +24,8 @@ import { composerButtons } from "./composerButtons";
 import type { QueuedMessage } from "../state/sendQueue";
 import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
-// import { TranslatePanel } from "./TranslatePanel"; // TEMP: agent in flight
+import { TranslatePanel } from "./TranslatePanel";
+import { ExportMenu } from "./ExportMenu";
 import { useChatWidth } from "../state/chatWidth";
 import { WorkspaceChooser } from "./WorkspaceChooser";
 import { reportCount, useSearch } from "../state/search";
@@ -45,8 +46,14 @@ export function Chat(props: {
    *  can never be reconciled onto a DIFFERENT session's same-index turn when
    *  the app swaps views without remounting (review find F5). */
   viewKey?: string;
-  /** The flat event stream this view renders — the translate sheet reads it. */
+  /** The RECORDED flat stream of this view, never a translated copy: the
+   *  translate sheet plans and re-runs from it, and translating a translation
+   *  is how a record turns into a rumour. What is RENDERED comes from `state`,
+   *  which App folds from the translated stream while the toggle shows it. */
   events?: readonly RunEvent[];
+  /** Names an export file. The live session id or the replay id — exportId is
+   *  not it, since that is only set for resumable archives. */
+  sessionLabel?: string | null;
   /** true when this is the live socket view, false for a replayed archive. */
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
@@ -351,8 +358,13 @@ export function Chat(props: {
   return (
     <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>
       {/* Card 78 #4: the disclosure-level menu, top-right corner of the chat
-          (its twin sits in the composer row). Floats over the scroll area. */}
+          (its twin sits in the composer row). Floats over the scroll area.
+          The translation trigger sits next to it and brings its own toggle
+          back to the record — one row, because they are the same kind of
+          control: how this session is READ, not what it does. */}
       <div className="chat-disc">
+        <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} />
+        <TranslatePanel events={props.events ?? []} viewKey={vk} />
         <DisclosureMenu placement="down" />
       </div>
       {/* Jump rail, the trace's affordance: an imported session runs to hundreds

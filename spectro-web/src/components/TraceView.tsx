@@ -8,9 +8,14 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { RunEvent } from "../events";
 import type { TraceEntry } from "../state/reducer";
-import { agentAccent, compactJson, formatTokens } from "../format";
+import { agentAccent, compactJson, formatTokens, prettyJson } from "../format";
 import { CopyButton } from "./CopyButton";
 import { JsonTree } from "./JsonTree";
+import { Markdown } from "./Markdown";
+import { highlight } from "./Highlighted";
+import { ToolViewBody } from "./ToolViewBody";
+import { describeEvent, toolCallsById } from "./eventDetail";
+import type { DetailSection, ToolCallRef } from "./eventDetail";
 import {
   LLM_DIR_GLYPH,
   SummaryLine,
@@ -21,7 +26,6 @@ import {
 } from "./eventSummary";
 import type { LlmDir } from "./eventSummary";
 import { DETAIL_MODES, detailLines, detailText } from "./traceDetail";
-import type { DetailMode } from "./traceDetail";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
 import { beacon } from "../state/levelingBeacon";
@@ -204,6 +208,9 @@ const TraceRow = memo(function TraceRow(props: {
   blockText?: string;
   /** The open row's causal chain (undefined while closed — keeps memo calm). */
   chain?: TraceEntry[];
+  /** The open row's call index, same reason: a fresh Map on every append would
+   *  re-render every closed row during a delta flood. */
+  calls?: ReadonlyMap<string, ToolCallRef>;
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -303,6 +310,7 @@ const TraceRow = memo(function TraceRow(props: {
           entry={entry}
           lang={lang}
           chain={props.chain ?? [entry]}
+          calls={props.calls}
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
@@ -332,16 +340,149 @@ function chainLabel(e: TraceEntry): string {
   }
 }
 
-/** The expanded frame, in one of three honest views: Insight (the collapsible
- *  tree), Compact (highlighted, ONE row per wire line, x-scroll instead of
- *  artificial wrapping) and Raw (plain text, newlines only between real
- *  lines). session_resume expands to the whole re-uploaded history: one JSONL
- *  line per event, exactly what rides back to the LLM. Above the views: the
- *  causal chain (spectro-explain feature 2), walked back to the prompt. */
+/** One region label: the payload field the region renders, under its wire name
+ *  — the trace is the wire view, so the field IS the honest heading. Printed
+ *  verbatim, never upper-cased: `systemPrompt` is the field, `SYSTEMPROMPT` is
+ *  not a field of anything. */
+function SectionLabel({ field }: { field: string }) {
+  return field === "" ? null : <span className="ed-label mono">{field}</span>;
+}
+
+/** A generated image, shown as the image. When the blob is gone the picture
+ *  drops out and the path stays — a placeholder here would be a claim. */
+function ImageSection({ section }: { section: Extract<DetailSection, { kind: "image" }> }) {
+  const [broken, setBroken] = useState(false);
+  return (
+    <div className="ed-sec">
+      <SectionLabel field={section.field} />
+      {!broken && (
+        <img className="ed-img" src={section.src} alt={section.alt} onError={() => setBroken(true)} />
+      )}
+      <div className="ed-path mono">{section.path}</div>
+    </div>
+  );
+}
+
+/** One section of the structured face; the shapes come from eventDetail.ts. */
+function DetailSectionView({ section, lang }: { section: DetailSection; lang: Lang }) {
+  switch (section.kind) {
+    case "tool":
+      // The very body the chat's tool card renders — one structured tool view
+      // in the app, reached from two places.
+      return (
+        <ToolViewBody
+          mode="structured"
+          name={section.name}
+          input={section.input}
+          output={section.output}
+          isError={section.isError}
+          denied={false}
+        />
+      );
+
+    case "prose":
+      return (
+        <div className="ed-sec">
+          <SectionLabel field={section.field} />
+          {section.markdown ? (
+            <div className="ed-md">
+              <Markdown text={section.text} />
+            </div>
+          ) : (
+            <pre className="tv-well mono">{section.text}</pre>
+          )}
+        </div>
+      );
+
+    case "rows":
+      return (
+        <div className="ed-sec">
+          <SectionLabel field={section.field} />
+          <dl className="ed-rows">
+            {section.rows.map((row) => (
+              <div key={row.key}>
+                <dt className="mono">{row.key}</dt>
+                <dd className="mono">{row.value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      );
+
+    case "list":
+      return (
+        <div className="ed-sec">
+          <SectionLabel field={section.field} />
+          <ul className="tv-entries mono">
+            {section.items.map((item, i) => (
+              <li key={i} className="tv-entry">
+                {item.text}
+                {item.note !== undefined && <span className="ed-note">{item.note}</span>}
+              </li>
+            ))}
+          </ul>
+          {section.more > 0 && <p className="ed-more">{t(lang, "ed.more", { n: section.more })}</p>}
+        </div>
+      );
+
+    case "image":
+      return <ImageSection section={section} />;
+
+    case "json":
+      return (
+        <div className="ed-sec">
+          <SectionLabel field={section.field} />
+          <pre className="tv-well mono">{highlight(prettyJson(section.value), "json")}</pre>
+        </div>
+      );
+  }
+}
+
+/** The structured face of one frame (owner: "wie in einem chrome network view
+ *  wo man die html rendern kann"): the event rendered as what it IS — a call as
+ *  its tool card, an answer as its markdown, counts as their numbers, a
+ *  generated image as the image. The raw frame stays one click away, and every
+ *  field the payload carries is somewhere on screen (eventDetail.ts). */
+export function EventStructured(props: {
+  type: string;
+  payload: unknown;
+  /** The stream's calls by callId, so a tool_result can render as its call.
+   *  Absent means the pairing is simply not offered — nothing is invented. */
+  calls?: ReadonlyMap<string, ToolCallRef>;
+}) {
+  const lang = useLang();
+  const sections = useMemo(
+    () => describeEvent(props.type, props.payload, props.calls),
+    [props.type, props.payload, props.calls],
+  );
+  if (sections.length === 0) return <p className="ed-empty">{t(lang, "ed.nothing")}</p>;
+  return (
+    <div className="ed">
+      {sections.map((section, i) => (
+        <DetailSectionView key={`${section.kind}.${section.field}.${i}`} section={section} lang={lang} />
+      ))}
+    </div>
+  );
+}
+
+/** The faces a frame can be read in. Structured leads (the tool card's default,
+ *  and the network view's Preview): the raw JSON is never more than one click
+ *  away, and it stays the evidence. */
+const DETAIL_FACES = ["structured", ...DETAIL_MODES] as const;
+type DetailFace = (typeof DETAIL_FACES)[number];
+
+/** The expanded frame, in one of four honest views: Structured (the frame as
+ *  the thing it is), Insight (the collapsible tree), Compact (highlighted, ONE
+ *  row per wire line, x-scroll instead of artificial wrapping) and Raw (plain
+ *  text, newlines only between real lines). session_resume expands to the whole
+ *  re-uploaded history: one JSONL line per event, exactly what rides back to
+ *  the LLM. Above the views: the causal chain (spectro-explain feature 2),
+ *  walked back to the prompt. */
 function TraceDetail({
   entry,
   lang,
   chain,
+  calls,
   onJump,
 }: {
   entry: TraceEntry;
@@ -349,9 +490,11 @@ function TraceDetail({
   /** Precomputed in the parent (only the ONE open row carries a chain, so
    *  the memoized closed rows never see a changing prop). */
   chain: TraceEntry[];
+  /** Same rule as the chain: only the open row gets the call index. */
+  calls?: ReadonlyMap<string, ToolCallRef>;
   onJump: (seq: number) => void;
 }) {
-  const [mode, setMode] = useState<DetailMode>("insight");
+  const [mode, setMode] = useState<DetailFace>("structured");
   const lines = detailLines(entry.type, entry.payload);
   return (
     <div className="trace-detail">
@@ -377,14 +520,20 @@ function TraceDetail({
         </div>
       )}
       <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
-        {DETAIL_MODES.map((m) => (
+        {DETAIL_FACES.map((m) => (
           <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
             {t(lang, `trace.mode.${m}`)}
           </button>
         ))}
       </div>
-      <CopyButton text={() => detailText(mode, entry.type, entry.payload)} />
-      {mode === "insight" ? (
+      {/* Structured has no text of its own: what it renders IS the payload, so
+          the copy button hands over the payload, pretty-printed. */}
+      <CopyButton
+        text={() => detailText(mode === "structured" ? "insight" : mode, entry.type, entry.payload)}
+      />
+      {mode === "structured" ? (
+        <EventStructured type={entry.type} payload={entry.payload} calls={calls} />
+      ) : mode === "insight" ? (
         // Expand every level of the event from the start — no clicking open the
         // nested {…} (e.g. a plan's steps, a context_info's parts). Real events
         // never nest anywhere near this deep, so 99 reads as "all".
@@ -557,6 +706,14 @@ export function TraceView(props: {
     if (openSeq === null) return undefined;
     const target = bySeq.get(openSeq);
     return target === undefined ? undefined : causalChain(allEntries, target);
+  }, [openSeq, bySeq, allEntries]);
+
+  // A tool_result names only its callId, so the structured face needs the call
+  // it answers. Built only while such a row is open — a closed trace, and every
+  // other frame, pays nothing for it.
+  const openCalls = useMemo(() => {
+    if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
+    return toolCallsById(allEntries.map((e) => e.payload));
   }, [openSeq, bySeq, allEntries]);
 
   // Jump: open the frame and bring its row into view (it may sit outside the
@@ -1044,6 +1201,7 @@ export function TraceView(props: {
                     }
                     blockText={lensOn ? blockTexts.get(e.seq) : undefined}
                     chain={openSeq === e.seq ? openChain : undefined}
+                    calls={openSeq === e.seq ? openCalls : undefined}
                     onJump={jumpTo}
                     onToggle={onToggle}
                   />

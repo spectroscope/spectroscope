@@ -556,6 +556,34 @@
 .trace-detail:hover .copy,
 .trace-detail .copy:focus-visible { opacity: 1; }
 
+/* ---------- Structured face of one frame (trace detail + Lab JSONL row) ----------
+   The frame rendered as the thing it is. Tool calls come through the chat's own
+   tool view (.tv-*), so only the frame-level regions live here. Labels are the
+   payload's field names: the wire view names the wire. */
+.ed { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ed-sec { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ed-label { display: block; font-size: var(--fs-11); color: var(--text-faint); }
+.ed-rows { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.ed-rows > div { display: flex; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-12); }
+.ed-rows dt { flex-shrink: 0; min-width: 116px; color: var(--text-faint); }
+.ed-rows dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.ed-note { color: var(--text-faint); margin-left: var(--sp-2); }
+.ed-more { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
+.ed-empty { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* Rendered markdown reads as prose, one step below the chat's own size. */
+.ed-md { font-size: var(--fs-12); color: var(--text); overflow-wrap: anywhere; }
+.ed-md .md h1 { font-size: var(--fs-14); }
+.ed-md .md h2 { font-size: var(--fs-13); }
+.ed-md .md h3, .ed-md .md h4 { font-size: var(--fs-12); }
+.ed-md .md > :first-child { margin-top: 0; }
+.ed-md .md > :last-child { margin-bottom: 0; }
+.ed-img { display: block; max-width: min(100%, 320px); max-height: 240px; border-radius: var(--radius-chip); border: 1px solid var(--border); }
+.ed-path { font-size: var(--fs-11); color: var(--text-faint); overflow-wrap: anywhere; }
+/* The Lab's JSONL strip is half as wide as the trace: same regions, less room. */
+.lab-line-body .ed { gap: var(--sp-2); }
+.lab-line-body .ed-rows dt { min-width: 0; }
+.lab-line-body .ed-img { max-width: 100%; }
+
 /* New frames arrived while the reader was scrolled up. */
 .trace-pill { position: absolute; bottom: var(--sp-4); left: 50%; transform: translateX(-50%); z-index: var(--z-sticky); display: inline-flex; align-items: center; gap: var(--sp-1); background: var(--surface-2); border: 1px solid var(--accent); border-radius: 999px; box-shadow: var(--shadow-raised); color: var(--accent); cursor: pointer; font: inherit; font-size: var(--fs-12); padding: 4px var(--sp-3); transition: background var(--t-fast); animation: rise-in 200ms var(--ease) backwards; }
 .trace-pill:hover { background: var(--accent-soft); }
@@ -774,3 +802,18 @@
 .tf-hit { background: var(--accent-soft); color: inherit; border-radius: 2px; }
 .tf-hit--current { background: var(--accent); color: var(--text-on-accent); }
 .tf-search-scope { font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
+
+/* ---------- Export menu (chat + text tab) ---------- */
+/* Borrows the composer gear's popover surface. Compound selectors throughout:
+   workspace-gear.css loads AFTER this file (app.css), so a bare .export-pop
+   would lose the cascade to .wsg-pop — the same trap .disc-pop documents. */
+.export-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The text bar is a flex row and spaces its own children; the chat corner is a
+   plain block, where the two inline anchors would otherwise touch. */
+.chat-disc .export-anchor { margin-right: var(--sp-1); vertical-align: middle; }
+/* Opens DOWNWARD: both mounts sit at the TOP of their surface (the chat corner,
+   the text tab's bar), where wsg-pop's upward default would open off-screen. */
+.wsg-pop.export-pop { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; width: 268px; }
+/* The rows are buttons here, not divs — undo what the UA paints on a button. */
+.export-pop .wsg-mode-row { width: 100%; background: none; border: 0; font: inherit; text-align: left; }
+.export-pop .wsg-mode-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

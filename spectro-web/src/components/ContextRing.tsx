@@ -87,8 +87,7 @@ export function ContextRing(props: {
           <span className="eyebrow">Context</span>
           <p className="context-line tabular">
             {formatTokens(lastInputTokens)} of {formatTokens(threshold)}{" "}
-            {denominator.of === "compaction" ? "before compaction" : "of the model window"} (
-            {shownPct}%)
+            {denominator.of === "compaction" ? "before compaction" : "of the model window"} ({shownPct}%)
           </p>
           {modelWindow !== null && denominator.of === "compaction" && (
             <p className="context-window tabular">model window · {formatWindow(modelWindow)}</p>

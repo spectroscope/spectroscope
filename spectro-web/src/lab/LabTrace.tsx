@@ -1,12 +1,16 @@
 // The JSONL strip of the Lab: applied lines above, the just-fired line
 // highlighted, then the dam divider and the queued lines dimmed below. Every
-// row expands to the full event via the existing JsonTree. Windowed rendering
-// keeps long sessions cheap.
+// row expands to the full event, read either as the tree it is on disk
+// (insight) or as the thing it describes (structured — the trace's face, same
+// renderer). Windowed rendering keeps long sessions cheap.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { RunEvent } from "../events";
 import { JsonTree } from "../components/JsonTree";
 import { SummaryLine, TEXT_FIELD_EVENTS } from "../components/eventSummary";
+import { EventStructured } from "../components/TraceView";
+import { toolCallsById } from "../components/eventDetail";
+import type { ToolCallRef } from "../components/eventDetail";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -54,18 +58,29 @@ function summarize(event: RunEvent): string {
   }
 }
 
+/** The two readings of an opened line: the tree (what the file says) and the
+ *  structured face (what the line means). Insight stays the default — the Lab
+ *  teaches the JSONL first. */
+const ROW_FACES = ["insight", "structured"] as const;
+type RowFace = (typeof ROW_FACES)[number];
+
 function Row({
   event,
   seq,
   variant,
+  calls,
   refCallback,
 }: {
   event: RunEvent;
   seq: number;
   variant: "applied" | "current" | "queued";
+  /** The run's calls by callId, so an opened tool_result finds its call. */
+  calls: ReadonlyMap<string, ToolCallRef>;
   refCallback?: (el: HTMLDivElement | null) => void;
 }) {
+  const lang = useLang();
   const [open, setOpen] = useState(false);
+  const [face, setFace] = useState<RowFace>("insight");
   return (
     <div ref={refCallback} className={`lab-line lab-line--${variant}`}>
       <button type="button" className="lab-line-head" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
@@ -80,7 +95,18 @@ function Row({
       </button>
       {open && (
         <div className="lab-line-body">
-          <JsonTree value={event} defaultDepth={1} rootLabel={event.type} />
+          <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
+            {ROW_FACES.map((f) => (
+              <button key={f} type="button" aria-pressed={face === f} onClick={() => setFace(f)}>
+                {t(lang, `trace.mode.${f}`)}
+              </button>
+            ))}
+          </div>
+          {face === "insight" ? (
+            <JsonTree value={event} defaultDepth={1} rootLabel={event.type} />
+          ) : (
+            <EventStructured type={event.type} payload={event} calls={calls} />
+          )}
         </div>
       )}
     </div>
@@ -106,6 +132,11 @@ export function LabTrace({
   useEffect(() => {
     currentRef.current?.scrollIntoView({ block: "nearest" });
   }, [fireSeq]);
+
+  // Both sides of the dam: a queued tool_result already knows its call, and a
+  // scrubbed-back one still does — the index is over the whole run, not over
+  // what has been stepped.
+  const calls = useMemo(() => toolCallsById([...applied, ...queue]), [applied, queue]);
 
   const appliedStart = showAll ? 0 : Math.max(0, applied.length - APPLIED_WINDOW);
   const shownApplied = applied.slice(appliedStart);
@@ -141,6 +172,7 @@ export function LabTrace({
               event={event}
               seq={seq}
               variant={isCurrent ? "current" : "applied"}
+              calls={calls}
               refCallback={isCurrent ? (el) => (currentRef.current = el) : undefined}
             />
           );
@@ -156,6 +188,7 @@ export function LabTrace({
             event={event}
             seq={applied.length + i + 1}
             variant="queued"
+            calls={calls}
           />
         ))}
         {queue.length > shownQueue.length && (

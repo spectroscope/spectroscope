@@ -39,10 +39,13 @@ import {
   useTranslation,
   withTranslation,
 } from "../state/translate";
-import type { Engine, EngineReport, Engines, TranslationState } from "../state/translate";
+import type { Engine, EngineReport, Engines, Plan, TranslationState } from "../state/translate";
 import type { Lang } from "../i18n/i18n";
 
 export type { Engine };
+
+/** What a closed sheet costs to know. */
+const EMPTY_PLAN: Plan = { units: [], passages: [] };
 
 /** The engine the sheet starts on: local when it can run (nothing leaves the
  *  machine), otherwise the configured provider, otherwise none. */
@@ -78,24 +81,28 @@ export function canRun(engines: Engines | null, engine: Engine | null, passages:
 
 /**
  * The one-click way back to the record. Rendered wherever a translated stream
- * is shown — the chat header next to the trigger, and the trace / text / lab
- * headers via the same component.
+ * is shown — next to the trigger in the chat header, and in the tab row, so
+ * the record is one click away on the trace, the text feed and the lab too.
+ *
+ * A lens, not a swap button: it carries the same fixed label as the reasoning
+ * lens next door and says with its pressed state which text is on screen. A
+ * label that changed with the state would have to be read before it could be
+ * trusted, and this is the control that gets used under pressure.
  */
 export function TranslateToggle(props: { viewKey?: string }) {
   const viewKey = props.viewKey ?? "live";
   const lang = useLang();
   const state = useTranslation(viewKey);
   if (state.byId.size === 0) return null;
-  const showing = state.show === "translation";
+  const original = state.show === "original";
   return (
     <button
       type="button"
-      className={showing ? "trace-lens mono trace-lens--on" : "trace-lens mono"}
-      aria-pressed={showing}
-      title={t(lang, "tr.showTitle")}
+      className={original ? "trace-lens mono trace-lens--on" : "trace-lens mono"}
+      aria-pressed={original}
       onClick={() => toggleShow(viewKey)}
     >
-      {t(lang, showing ? "tr.showOriginal" : "tr.showTranslation")}
+      {t(lang, "tr.original")}
     </button>
   );
 }
@@ -108,7 +115,10 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
   const [engines, setEngines] = useState<Engines | null>(null);
   const [enginesError, setEnginesError] = useState<string | null>(null);
 
-  const plan = useMemo(() => planFor(props.events), [props.events]);
+  // Only while the sheet is open. This trigger lives in the chat header of a
+  // LIVE session, where the stream grows every animation frame, and planning
+  // walks and splits every unit of it — a cost nobody is looking at.
+  const plan = useMemo(() => (open ? planFor(props.events) : EMPTY_PLAN), [open, props.events]);
 
   // The probe runs on every open: a model can finish downloading, or a key can
   // be set in Settings, while this panel sits closed.
@@ -149,6 +159,13 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
 
   const running = state.status === "running";
   const armed = canRun(engines, state.engine, plan.passages.length) && !running;
+
+  // No stream, nothing translated: no control. The chat also renders INSIDE the
+  // lab, where it is handed a stepper's projection and no stream of its own —
+  // a trigger there could only ever plan zero passages, and would address the
+  // live session while the reader is looking at an archive. An empty session
+  // gets the same answer for the same reason: there is nothing to translate.
+  if (props.events.length === 0 && state.byId.size === 0) return null;
 
   return (
     <>

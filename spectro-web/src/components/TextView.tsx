@@ -21,6 +21,7 @@ import { buildTextFeed, eventsToJsonl, feedToPlainText } from "../state/textFeed
 import type { LineHits } from "./textSearch";
 import { NO_LINES, feedHits, markLine } from "./textSearch";
 import { CopyButton } from "./CopyButton";
+import { ExportMenu } from "./ExportMenu";
 
 type TextMode = "text" | "jsonl";
 
@@ -68,10 +69,14 @@ const EXPLAIN_IDLE: ExplainState = { status: "idle", text: "", meta: null, error
 export function TextView({
   events,
   explainReady = true,
+  label,
 }: {
   events: readonly RunEvent[];
   /** False when the current provider needs a key — the button says why. */
   explainReady?: boolean;
+  /** Names the export files (the session id). Absent for a stream that has no
+   *  id yet, and then the file names honestly carry only kind and date. */
+  label?: string | null;
 }) {
   const lang = useLang();
   const [mode, setMode] = useState<TextMode>(storedMode);
@@ -249,6 +254,9 @@ export function TextView({
           {t(lang, "tf.explain")}
         </button>
         <CopyButton text={() => (mode === "jsonl" ? jsonl.join("\n") : feedToPlainText(feed))} />
+        {/* The feed as a file. `extended` travels with it, so the document is
+            the view the reader had on screen and not a second reading of it. */}
+        <ExportMenu kind="text" events={events} label={label} extended={extended} />
       </div>
 
       {explain.status !== "idle" && (

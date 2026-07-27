@@ -11,6 +11,7 @@
 // boxes, one quiet label per region, the mono well only where content is
 // genuinely code.
 
+import { useState } from "react";
 import type { ToolView } from "./toolViews";
 import { describeTool } from "./toolViews";
 import { JsonTree } from "./JsonTree";
@@ -18,6 +19,8 @@ import { prettyJson } from "../format";
 import { t } from "../i18n/i18n";
 import { highlight } from "./Highlighted";
 import { hlLangForPath } from "../workspace/highlight";
+import { imageUrl } from "../lab/flowmap/imageUrl";
+import { statusLabel } from "./PlanTab";
 import { useLang } from "../state/lang";
 import type { Lang } from "../i18n/i18n";
 
@@ -38,6 +41,18 @@ function Region(props: { label: string; meta?: string; children: React.ReactNode
       {props.children}
     </div>
   );
+}
+
+/** The picture itself. A store blob can be gone (a scripted session, a cleaned
+ *  store, a build with no backend behind it), so onError falls back to a frame
+ *  that SAYS the image is unavailable — never a broken-image glyph, and never a
+ *  decorative stand-in that could pass for the picture. */
+function ImageBlob({ src, alt, lang }: { src: string; alt: string; lang: Lang }) {
+  const [broken, setBroken] = useState(false);
+  if (broken) {
+    return <p className="tv-imggone">{t(lang, "tv.imageGone")}</p>;
+  }
+  return <img className="tv-img" src={src} alt={alt} onError={() => setBroken(true)} />;
 }
 
 /** The structured face — one branch per tool shape. */
@@ -145,9 +160,114 @@ function Structured({ view, lang }: { view: ToolView; lang: Lang }) {
 
     case "image":
       return (
-        <Region label={t(lang, "tv.image")} meta={view.result}>
-          <div className="tv-path mono">{view.path}</div>
+        <>
+          <Region label={t(lang, "tv.image")} meta={view.result === "" ? undefined : view.result}>
+            {view.prompt !== null && <div className="tv-path">{view.prompt}</div>}
+            {view.source !== null && <div className="tv-src mono">{view.source}</div>}
+          </Region>
+          {view.preview !== null && (
+            <ImageBlob src={imageUrl(view.preview)} alt={view.prompt ?? t(lang, "tv.image")} lang={lang} />
+          )}
+          {/* Honest about WHY there is no picture: the store serves its own
+              content-addressed files, so a workspace image has no URL at all. */}
+          {view.source !== null && view.preview === null && (
+            <p className="tv-note">{t(lang, "tv.noPreview")}</p>
+          )}
+        </>
+      );
+
+    case "mcp":
+      return (
+        <>
+          <Region label={t(lang, "tv.mcp")}>
+            <div className="tv-path mono">
+              <span className="tv-server">{view.server}</span>
+              <span className="tv-in"> · </span>
+              <span className="tv-pattern">{view.tool}</span>
+            </div>
+          </Region>
+          {/* Each server owns its tools' schemas, so the payload is shown as it
+              came — the name is the only part we can honestly interpret. */}
+          <Region label={t(lang, "tv.input")}>
+            <pre className="tv-well mono">{cut(prettyJson(view.input))}</pre>
+          </Region>
+          {view.output !== "" && (
+            <Region label={t(lang, "tv.output")}>
+              <pre className="tv-well mono">{cut(view.output)}</pre>
+            </Region>
+          )}
+        </>
+      );
+
+    case "agents":
+      return (
+        <>
+          <Region label={t(lang, "tv.agents")} meta={t(lang, "tv.agentsN", { n: view.children.length })}>
+            <ul className="tv-agents">
+              {view.children.map((child, i) => (
+                <li key={i} className="tv-agent">
+                  <div className="tv-agent-head">
+                    <span className="tv-agent-type mono">{child.type}</span>
+                    {child.label !== null && <span className="tv-in">{child.label}</span>}
+                  </div>
+                  <pre className="tv-well">{cut(child.task)}</pre>
+                </li>
+              ))}
+            </ul>
+          </Region>
+          {view.result !== "" && (
+            <Region label={t(lang, "tv.output")}>
+              <pre className="tv-well">{cut(view.result)}</pre>
+            </Region>
+          )}
+        </>
+      );
+
+    case "plan":
+      return (
+        <Region label={t(lang, "tv.plan")} meta={t(lang, "tv.steps", { n: view.steps.length })}>
+          {/* The agent-card dot/badge vocabulary, same as the Plan tab, so a step
+              reads identically wherever it shows up and reskins with the design. */}
+          <ul className="tv-plan">
+            {view.steps.map((step, i) => (
+              <li key={i} className="tv-step">
+                {step.status !== null && (
+                  <span className={`agent-dot agent-dot--${step.status}`} aria-hidden="true" />
+                )}
+                <span className="tv-step-text">{step.text}</span>
+                {step.status !== null && (
+                  <span className={`agent-badge agent-badge--${step.status}`}>
+                    {statusLabel(step.status, lang)}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
         </Region>
+      );
+
+    case "web":
+      return (
+        <>
+          {view.url !== null && (
+            <Region label={t(lang, "tv.fetch")}>
+              <div className="tv-path mono">{view.url}</div>
+            </Region>
+          )}
+          {view.query !== null && (
+            <Region label={t(lang, "tv.search")}>
+              <div className="tv-path">
+                <span className="tv-pattern">{view.query}</span>
+              </div>
+            </Region>
+          )}
+          {view.body !== "" && (
+            <Region label={t(lang, "tv.output")}>
+              {/* A fetched page and a result list are prose, not code. */}
+              <pre className="tv-well">{cut(view.body)}</pre>
+            </Region>
+          )}
+        </>
       );
 
     case "skill":

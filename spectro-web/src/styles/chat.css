@@ -19,9 +19,18 @@
   top: var(--sp-2);
   right: var(--sp-4);
   z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
 }
 .chat-disc .attach-button { color: var(--text-faint); }
 .chat-disc .attach-button:hover { color: var(--text); }
+/* The translation's way back to the record, in the tab row (App.tsx) so it is
+   reachable from the trace and the text feed too. It takes the auto margin the
+   level pill would otherwise take; the pill then simply follows it. Lives in
+   this file because it is the chat's translate control wearing another hat. */
+.tab-nav__translate { margin-left: auto; display: inline-flex; align-items: center; }
+.tab-nav__translate + .tab-nav__level { margin-left: var(--sp-2); }
 /* The menu popover: compact. The composer twin sits at the FAR LEFT of its
    row, so it left-aligns (the wsg-pop default right:0 would push it off the
    window edge); the chat-corner instance opens DOWNWARD and right-aligned.
