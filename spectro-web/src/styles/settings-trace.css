@@ -206,12 +206,23 @@
   gap: var(--sp-5);
 }
 
+/* Section heading. The owner missed the LEVELING section entirely at the old
+   weight, and the reason was measurable: faint ink at 11px, sitting the same
+   distance from the section above it as from the fields it names. Law of
+   proximity — a heading belongs to what follows it, so the gap above is now
+   three times the gap below, and the ink carries enough contrast to be read
+   rather than skimmed past. */
 .settings-label {
-  font-size: var(--fs-11);
+  font-size: var(--fs-13);
   letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: var(--sp-2);
+  color: var(--text-dim);
+  margin-top: var(--sp-5);
+  margin-bottom: var(--sp-1);
+}
+/* The first heading in a panel has no section above it to separate from. */
+.settings-label:first-child {
+  margin-top: 0;
 }
 
 /* ---- design picker ---- */
