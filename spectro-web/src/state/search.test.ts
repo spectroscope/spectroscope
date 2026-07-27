@@ -3,10 +3,12 @@ import {
   closeSearch,
   findRanges,
   getSearch,
+  isValidRegex,
   openSearch,
   reportCount,
   resetSearch,
   setQuery,
+  setRegex,
   step,
 } from "./search";
 
@@ -95,6 +97,41 @@ describe("the store", () => {
     setQuery("x");
     reportCount(0);
     step(1);
+    expect(getSearch().index).toBe(0);
+    expect(getSearch().count).toBe(0);
+  });
+});
+
+describe("regex mode", () => {
+  it("reads the query as a pattern when asked", () => {
+    expect(findRanges("a1b22c", "\\d+", true)).toEqual([
+      [1, 2],
+      [3, 5],
+    ]);
+  });
+
+  it("stays literal when not asked", () => {
+    expect(findRanges("a.b axb", ".", false)).toEqual([[1, 2]]);
+  });
+
+  it("matches nothing for a half-typed pattern instead of throwing", () => {
+    expect(() => findRanges("anything", "(\\d+", true)).not.toThrow();
+    expect(findRanges("anything", "(\\d+", true)).toEqual([]);
+    expect(isValidRegex("(\\d+")).toBe(false);
+    expect(isValidRegex("\\d+")).toBe(true);
+  });
+
+  it("cannot spin on a zero-length match", () => {
+    expect(findRanges("abc", "x*", true)).toEqual([]);
+  });
+
+  it("resets the position when the mode flips, since the hits change", () => {
+    openSearch();
+    setQuery("a");
+    reportCount(9);
+    step(4);
+    setRegex(true);
+    expect(getSearch().regex).toBe(true);
     expect(getSearch().index).toBe(0);
     expect(getSearch().count).toBe(0);
   });

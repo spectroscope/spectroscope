@@ -115,8 +115,27 @@ export function Chat(props: {
   const search = useSearch();
   const searching = search.open && search.query.trim() !== "";
   const hits = useMemo(
-    () => (searching ? chatHits(state.turns, search.query) : []),
-    [searching, search.query, state.turns],
+    () =>
+      searching
+        ? chatHits(
+            state.turns,
+            search.query,
+            (turn) => {
+              // The card store lives here, so flattening belongs here: the search
+              // module stays free of the card's shape.
+              if (turn.kind !== "tool") return undefined;
+              const card = state.cards[turn.callId];
+              if (card === undefined) return undefined;
+              return {
+                name: card.name,
+                input: typeof card.input === "string" ? card.input : JSON.stringify(card.input ?? ""),
+                output: card.output ?? "",
+              };
+            },
+            search.regex,
+          )
+        : [],
+    [searching, search.query, search.regex, state.turns, state.cards],
   );
   const hitSet = useMemo(() => new Set(hits), [hits]);
   // The store clamps its index to the count it was told, but it is told one
@@ -127,7 +146,12 @@ export function Chat(props: {
   useEffect(() => {
     if (!search.open) return; // a closed search costs nothing; close() zeroed the count
     reportCount(hits.length);
-  }, [search.open, hits.length]);
+    // The query and the mode belong here even though the body does not read
+    // them: the store zeroes its count on every change to either, so an effect
+    // keyed only on the number stays silent whenever two different queries
+    // happen to find the same number of hits — and the readout keeps saying
+    // "no matches" over a view full of them.
+  }, [search.open, search.query, search.regex, hits.length]);
 
   // Leaving the screen (tab switch, view swap) means this view has no hits to
   // report any more. Mount-only, so a changing count never round-trips through
@@ -255,7 +279,7 @@ export function Chat(props: {
                 still all thinking shows no empty box. */}
             {(turn.text !== "" || (liveView && state.running && i === lastIndex)) && (
               <div className="assistant-answer">
-                <Markdown text={turn.text} />
+                <Markdown text={turn.text} mark={searching ? search.query : undefined} />
                 {liveView && state.running && i === lastIndex && (
                   <span className="caret pulse" aria-hidden="true" />
                 )}
@@ -344,7 +368,17 @@ export function Chat(props: {
             pinnedRef.current = false;
           }}
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <path d="M4 3.5h8" />
             <path d="M4 11.5 8 7.5l4 4" />
           </svg>
@@ -360,7 +394,17 @@ export function Chat(props: {
             pinnedRef.current = true;
           }}
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <path d="M4 12.5h8" />
             <path d="M4 4.5 8 8.5l4-4" />
           </svg>

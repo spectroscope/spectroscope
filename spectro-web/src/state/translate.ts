@@ -530,7 +530,10 @@ export function toggleShow(viewKey: string): void {
 
 /** Forget a view's translation and go back to the record. */
 export function resetTranslation(viewKey: string): void {
-  stopTranslation(viewKey);
+  // Drop the handle as well as aborting it: the run's own teardown would
+  // otherwise land on this view afterwards and report a stop nobody asked for.
+  running.get(viewKey)?.abort();
+  running.delete(viewKey);
   const current = translationOf(viewKey);
   patch(viewKey, { ...emptyTranslation(currentLang()), target: current.target, engine: current.engine });
 }
@@ -581,9 +584,15 @@ export async function startTranslation(viewKey: string, events: readonly RunEven
     error: null,
   });
 
-  /** Publish what has landed. Only a settled passage can change the result. */
+  /**
+   * Publish what has landed. Only a settled passage can change the result, so a
+   * chunk of deltas publishes nothing: every state object this writes is a
+   * re-render of every view that reads the translation.
+   */
   const publish = (settled: boolean): void => {
     if (!owned()) return;
+    const current = translationOf(viewKey);
+    if (!settled && current.meta === fold.meta && current.finished === fold.finished) return;
     patch(viewKey, {
       meta: fold.meta,
       finished: fold.finished,
@@ -671,11 +680,22 @@ export function useTranslation(viewKey: string): TranslationState {
  *         nothing to show or the reader asked for the original — identity
  *         matters, it is what keeps the downstream folds from recomputing
  */
-export function translatedEvents(
-  events: readonly RunEvent[],
-  state: TranslationState,
-): readonly RunEvent[] {
-  if (state.show === "original" || state.byId.size === 0) return events;
+export function translatedEvents(events: readonly RunEvent[], state: TranslationState): readonly RunEvent[] {
+  if (state.show === "original") return events;
+  return withTranslation(events, state);
+}
+
+/**
+ * The translated stream regardless of what the toggle currently shows — what
+ * the export writes, so a reader looking at the original still saves the file
+ * the button promises.
+ *
+ * @param events the recorded stream
+ * @param state  that view's translation state
+ * @return the stream with every landed unit in it
+ */
+export function withTranslation(events: readonly RunEvent[], state: TranslationState): readonly RunEvent[] {
+  if (state.byId.size === 0) return events;
   return applyUnits(events, state.byId);
 }
 

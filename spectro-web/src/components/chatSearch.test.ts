@@ -23,8 +23,8 @@ describe("turnSearchText", () => {
     expect(turnSearchText(assistant("run `docker compose up` first"))).toBe("run `docker compose up` first");
   });
 
-  it("ignores the thinking block — it is collapsed, so a hit there is invisible", () => {
-    expect(turnSearchText(assistant("", "the user wants docker"))).toBe("");
+  it("includes the thinking block — it is on screen when the disclosure opens it", () => {
+    expect(turnSearchText(assistant("", "the user wants docker"))).toBe("the user wants docker");
   });
 
   it("ignores tool, info and error turns", () => {
@@ -63,8 +63,8 @@ describe("chatHits", () => {
     expect(chatHits(turns, "   ")).toEqual([]);
   });
 
-  it("does not match the thinking block of a turn whose answer is clean", () => {
-    expect(chatHits([assistant("all done", "secret docker plan")], "docker")).toEqual([]);
+  it("matches a turn whose only hit is in its thinking block", () => {
+    expect(chatHits([assistant("all done", "secret docker plan")], "docker")).toEqual([0]);
   });
 });
 

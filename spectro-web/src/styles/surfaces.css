@@ -349,14 +349,18 @@
 .skset-input--wide { flex: 1; min-width: 0; }
 
 /* ---------- Find box (in-view search, Cmd+F) ----------
-   Floats over the top right corner of the view being read. Placed absolutely,
-   so whatever mounts it must be the positioned wrapper of that view
-   (.main-col already is). No scrim and no backdrop on purpose: the page stays
-   readable, scrollable and clickable while the box is open — it searches what
-   you are reading, it does not take it away. */
+   Floats over the top right of the CONTENT being read, not over the chrome.
+   It is positioned against .main-col, which starts at the app header, so the
+   offset clears the header and the tab row deliberately: parked at the top it
+   sat over the model picker, and a find box covering the control you use to
+   change models is a find box in the wrong room.
+   No scrim and no backdrop on purpose — the page stays readable, scrollable
+   and clickable while the box is open. It searches what you are reading; it
+   does not take it away. */
 .search-box {
   position: absolute;
-  top: var(--sp-3);
+  /* app header (52) + tab row (45) + a little air. */
+  top: 105px;
   right: var(--sp-4);
   z-index: var(--z-dropdown);
   display: flex;

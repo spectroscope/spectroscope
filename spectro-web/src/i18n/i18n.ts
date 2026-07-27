@@ -580,6 +580,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.colsAria": { de: "Optionale Trace-Spalten", en: "Optional trace columns" },
   "trace.colsHostTitle": { de: "Host-Spalte ein- oder ausblenden — die Gegenstelle im Netz je Frame.", en: "Show or hide the host column — the network counterpart of each frame." },
   "trace.colsModelTitle": { de: "Modell-Spalte ein- oder ausblenden — das Modell, das den jeweiligen Run bedient.", en: "Show or hide the model column — the model serving each run." },
+  "search.regexTitle": { de: "Als regulären Ausdruck lesen", en: "Read as a regular expression" },
   "search.title": { de: "In der Ansicht suchen", en: "Find in view" },
   "search.placeholder": { de: "Suchen …", en: "Find …" },
   "search.noMatches": { de: "keine Treffer", en: "no matches" },

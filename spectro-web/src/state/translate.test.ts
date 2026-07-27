@@ -22,9 +22,13 @@ import {
   translatedEvents,
   translationOf,
 } from "./translate";
-import type { Passage, TranslationUnit } from "./translate";
+import type { Passage, TranslateMessage, TranslationUnit } from "./translate";
 
-const unit = (id: string, text: string, kind = "answer"): TranslationUnit => ({ id, kind, text });
+const unit = (id: string, text: string, kind: TranslationUnit["kind"] = "answer"): TranslationUnit => ({
+  id,
+  kind,
+  text,
+});
 
 describe("splitUnit — what leaves the browser and what never does", () => {
   it("keeps plain prose as one piece", () => {
@@ -188,7 +192,13 @@ describe("foldMessage — the stream reducer", () => {
   const keys = ["u0#0", "u1#0", "u2#0"];
 
   it("keeps the meta line", () => {
-    const meta = { engine: "local", provider: "spectro-local", model: "qwen3-4b", target: "German", units: 3 };
+    const meta = {
+      engine: "local",
+      provider: "spectro-local",
+      model: "qwen3-4b",
+      target: "German",
+      units: 3,
+    };
     expect(foldMessage(EMPTY_FOLD, { meta }, keys).meta).toEqual(meta);
   });
 
@@ -234,14 +244,22 @@ describe("foldMessage — the stream reducer", () => {
 describe("settledUnits — a unit lands only when all of it has come back", () => {
   const plan = planTranslation([unit("u1", `Lies:\n\n\`\`\`\nls -la\n\`\`\`\n\n${"z".repeat(2500)}`)]);
 
-  const fold = (msgs: { unit: number; delta?: string; end?: boolean; error?: string }[]) => {
+  const fold = (msgs: readonly TranslateMessage[]) => {
     const keys = plan.passages.map((p) => passageKey(p.unitId, p.pieceIndex));
     return msgs.reduce((acc, msg) => foldMessage(acc, msg, keys), EMPTY_FOLD);
   };
 
   it("holds a unit back while one of its passages is still out", () => {
     expect(plan.passages.length).toBeGreaterThan(2);
-    expect(settledUnits(plan, fold([{ unit: 0, delta: "Read:" }, { unit: 0, end: true }])).size).toBe(0);
+    expect(
+      settledUnits(
+        plan,
+        fold([
+          { unit: 0, delta: "Read:" },
+          { unit: 0, end: true },
+        ]),
+      ).size,
+    ).toBe(0);
   });
 
   it("hands over the whole unit once every passage settled", () => {
@@ -255,10 +273,13 @@ describe("settledUnits — a unit lands only when all of it has come back", () =
   });
 
   it("keeps a unit ORIGINAL when one of its passages failed — never half-translated", () => {
-    const messages = plan.passages.flatMap((_, i) =>
+    const messages = plan.passages.flatMap((_, i): TranslateMessage[] =>
       i === 1
         ? [{ unit: i, error: "rate limited" }]
-        : [{ unit: i, delta: `T${i}` }, { unit: i, end: true }],
+        : [
+            { unit: i, delta: `T${i}` },
+            { unit: i, end: true },
+          ],
     );
     expect(settledUnits(plan, fold(messages)).has("u1")).toBe(false);
     expect(failedUnits(plan, fold(messages)).get("u1")).toBe("rate limited");

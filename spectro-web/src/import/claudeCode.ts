@@ -273,9 +273,7 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
           agentId: "main",
           inputTokens: u.input_tokens ?? 0,
           outputTokens: u.output_tokens ?? 0,
-          ...(u.cache_read_input_tokens !== undefined
-            ? { cacheReadTokens: u.cache_read_input_tokens }
-            : {}),
+          ...(u.cache_read_input_tokens !== undefined ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
           ...(u.cache_creation_input_tokens !== undefined
             ? { cacheCreationTokens: u.cache_creation_input_tokens }
             : {}),

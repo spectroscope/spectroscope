@@ -441,7 +441,7 @@ export function TraceView(props: {
   const cols = useTraceColumns();
   // In-view search (the shared store). In a table the HIT IS THE ROW: matching
   // rows are marked, the current one more strongly, and stepping walks them.
-  const { open: searchOpen, query: searchQuery, index: searchIndex } = useSearch();
+  const { open: searchOpen, query: searchQuery, regex: searchRegex, index: searchIndex } = useSearch();
   // A closed or empty search costs nothing — no text is built, no row walked.
   const searching = searchOpen && searchQuery.trim() !== "";
   // Replay scrubber: cap the visible stream at one frame (null = the live
@@ -690,7 +690,9 @@ export function TraceView(props: {
   // from an effect, never during render.
   useEffect(() => {
     if (searching) reportCount(hitCount);
-  }, [searching, hitCount]);
+    // See Chat.tsx: query and mode zero the store's count, so an effect keyed
+    // only on the number goes silent when two queries share a hit count.
+  }, [searching, searchQuery, searchRegex, hitCount]);
 
   // Leaving the trace takes its hits with it. Without this the next tab would
   // inherit a count nobody can step through — and React runs this cleanup

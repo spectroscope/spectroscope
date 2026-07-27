@@ -13,6 +13,10 @@
 import { useSyncExternalStore } from "react";
 
 export interface SearchState {
+  /** Read the query as a regular expression instead of literal text. Off by
+   *  default: most searches are for a word, and a reader who types "a.b" means
+   *  those three characters until they say otherwise. */
+  regex: boolean;
   /** Whether the box is showing. Escape closes; the query survives so
    *  reopening resumes where you were. */
   open: boolean;
@@ -23,7 +27,7 @@ export interface SearchState {
   index: number;
 }
 
-const EMPTY: SearchState = { open: false, query: "", count: 0, index: 0 };
+const EMPTY: SearchState = { open: false, query: "", regex: false, count: 0, index: 0 };
 
 let state: SearchState = EMPTY;
 const listeners = new Set<() => void>();
@@ -57,6 +61,13 @@ export function openSearch(): void {
 export function closeSearch(): void {
   if (!state.open) return;
   emit({ ...state, open: false, count: 0, index: 0 });
+}
+
+/** Switching the mode reinterprets the same characters, so the hits change and
+ *  the position with them. */
+export function setRegex(on: boolean): void {
+  if (on === state.regex) return;
+  emit({ ...state, regex: on, count: 0, index: 0 });
 }
 
 /** A new query invalidates the position — the hits are different hits. */
@@ -104,7 +115,8 @@ export function resetSearch(): void {
  * @param query the needle, matched literally rather than as a pattern
  * @return the ranges, in document order
  */
-export function findRanges(text: string, query: string): Array<[number, number]> {
+export function findRanges(text: string, query: string, regex = false): Array<[number, number]> {
+  if (regex) return findByRegex(text, query);
   const needle = query.trim().toLowerCase();
   if (needle === "") return [];
   const hay = text.toLowerCase();
@@ -115,5 +127,50 @@ export function findRanges(text: string, query: string): Array<[number, number]>
     if (at < 0) return out;
     out.push([at, at + needle.length]);
     from = at + needle.length;
+  }
+}
+
+/**
+ * Occurrences of `pattern` read as a regular expression, case-insensitive.
+ *
+ * An invalid pattern matches NOTHING rather than throwing: the reader is
+ * typing, and half of "(\\d+" is not an error to shout about — it is a
+ * pattern in progress. A zero-length match advances by one so a pattern like
+ * `a*` cannot spin.
+ *
+ * @param text    the haystack
+ * @param pattern the expression source, without delimiters or flags
+ * @return the ranges, in document order
+ */
+function findByRegex(text: string, pattern: string): Array<[number, number]> {
+  if (pattern.trim() === "") return [];
+  let re: RegExp;
+  try {
+    re = new RegExp(pattern, "giu");
+  } catch {
+    return [];
+  }
+  const out: Array<[number, number]> = [];
+  for (;;) {
+    const m = re.exec(text);
+    if (m === null) return out;
+    if (m[0].length === 0) {
+      re.lastIndex += 1;
+      continue;
+    }
+    out.push([m.index, m.index + m[0].length]);
+    // A pathological pattern on a long transcript must not hang the tab.
+    if (out.length > 10_000) return out;
+  }
+}
+
+/** Whether a pattern would compile — the box uses it to mark the input. */
+export function isValidRegex(pattern: string): boolean {
+  if (pattern.trim() === "") return true;
+  try {
+    new RegExp(pattern, "giu");
+    return true;
+  } catch {
+    return false;
   }
 }

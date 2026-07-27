@@ -167,7 +167,7 @@ export function TextView({
   // screen: the JSONL lines in jsonl mode, otherwise the feed as `extended`
   // currently builds it. Nothing on this surface is collapsed or clipped, so
   // every hit counted here is one the reader can actually see.
-  const { open: searchOpen, query, index: hitIndex } = useSearch();
+  const { open: searchOpen, query, regex, index: hitIndex } = useSearch();
   const searching = searchOpen && query.trim() !== "";
   const searchLines = useMemo(
     () => (!searching ? NO_LINES : mode === "jsonl" ? jsonl : feed.map((s) => s.text)),
@@ -181,7 +181,10 @@ export function TextView({
   // The store learns the count from the view — in an effect, never mid-render.
   useEffect(() => {
     if (searching) reportCount(hits.total);
-  }, [searching, hits.total]);
+    // See Chat.tsx: the store zeroes the count when the query or the mode
+    // changes, so both must be dependencies or an unchanged hit COUNT leaves
+    // the store believing there are none.
+  }, [searching, query, regex, hits.total]);
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
   // Follow the reader's own step. Deliberately NOT keyed on the hit count: a

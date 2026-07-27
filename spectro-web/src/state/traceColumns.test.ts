@@ -2,7 +2,15 @@
 // be switched off, both start ON, and a stored choice wins over that default.
 
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEFAULT_TRACE_COLUMNS, TRACE_COLUMNS, currentTraceColumns, effectiveTraceColumns, parseTraceColumns, setTraceColumn, traceColumnData } from "./traceColumns";
+import {
+  DEFAULT_TRACE_COLUMNS,
+  TRACE_COLUMNS,
+  currentTraceColumns,
+  effectiveTraceColumns,
+  parseTraceColumns,
+  setTraceColumn,
+  traceColumnData,
+} from "./traceColumns";
 
 describe("traceColumns", () => {
   beforeEach(() => {

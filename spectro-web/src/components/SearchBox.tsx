@@ -16,7 +16,16 @@
 
 import { useEffect, useRef } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
-import { closeSearch, getSearch, openSearch, setQuery, step, useSearch } from "../state/search";
+import {
+  closeSearch,
+  getSearch,
+  isValidRegex,
+  openSearch,
+  setQuery,
+  setRegex,
+  step,
+  useSearch,
+} from "../state/search";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -164,7 +173,8 @@ export function installSearchHotkey(target?: HotkeyTarget | null, opts?: { apple
 
 export function SearchBox() {
   const lang = useLang();
-  const { open, query, count, index } = useSearch();
+  const { open, query, regex, count, index } = useSearch();
+  const valid = !regex || isValidRegex(query);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -238,6 +248,23 @@ export function SearchBox() {
         spellCheck={false}
         onChange={(e) => setQuery(e.target.value)}
       />
+
+      {/* Regex is a mode, not a syntax: a reader who types "a.b" means those
+          three characters until they say otherwise. An invalid pattern marks
+          the toggle rather than the input — half a pattern is work in
+          progress, not a mistake. */}
+      <label
+        className={`search-box__re${valid ? "" : " search-box__re--bad"}`}
+        title={t(lang, "search.regexTitle")}
+      >
+        <input
+          type="checkbox"
+          checked={regex}
+          onChange={(e) => setRegex(e.target.checked)}
+          aria-label={t(lang, "search.regexTitle")}
+        />
+        <span aria-hidden="true">.*</span>
+      </label>
 
       <span
         className={`search-box__readout${readout.kind === "none" ? " search-box__readout--none" : ""}`}
