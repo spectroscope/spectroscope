@@ -479,3 +479,14 @@
 .chat-rail-btn { display: grid; place-items: center; width: 26px; height: 26px; border: 0; background: none; color: var(--text-dim); cursor: pointer; border-radius: 50%; }
 .chat-rail-btn:hover { color: var(--text); background: var(--surface-3); }
 .chat-rail-btn:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 1px; }
+
+
+/* Translation sheet: the reasoning choice with its price under it. Stacked, and
+   tight, so the checkbox and the two numbers it moves read as one thing — the
+   price is only useful while the control that changes it is still in view. */
+.tr-cost { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-4); }
+.tr-check { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text); font-size: var(--fs-13); cursor: pointer; }
+.tr-check input { accent-color: var(--accent); }
+/* Disabled mid-run. Dimmed as well as inert: an unexplained click that does
+   nothing reads as a broken control rather than a locked one. */
+.tr-check:has(input:disabled) { color: var(--text-faint); cursor: not-allowed; }

@@ -48,12 +48,34 @@ public interface LlmProvider {
      * @param messages  the conversation history, oldest first
      * @param tools     the tools advertised to the model (may be empty)
      * @param maxTokens the completion budget for this call
-     * @param thinking  true to request the model's reasoning stream as well
+     * @param reasoning what this call site says about the model's own reasoning
      * @param signal    cooperative cancel — firing it aborts the open stream
      */
     record ProviderRequest(String system, List<ProviderMessage> messages,
-                           List<ToolSpec> tools, int maxTokens, boolean thinking,
+                           List<ToolSpec> tools, int maxTokens, Reasoning reasoning,
                            CancelSignal signal) {
+
+        /** A missing answer is the same as no answer: leave it to the model. */
+        public ProviderRequest {
+            reasoning = reasoning == null ? Reasoning.DEFAULT : reasoning;
+        }
+
+        /**
+         * The thinking toggle as the agent loop states it: on, or nothing said.
+         *
+         * @param system    the system prompt sent with every request
+         * @param messages  the conversation history, oldest first
+         * @param tools     the tools advertised to the model (may be empty)
+         * @param maxTokens the completion budget for this call
+         * @param thinking  true to request the model's reasoning stream as well
+         * @param signal    cooperative cancel — firing it aborts the open stream
+         */
+        public ProviderRequest(String system, List<ProviderMessage> messages,
+                               List<ToolSpec> tools, int maxTokens, boolean thinking,
+                               CancelSignal signal) {
+            this(system, messages, tools, maxTokens,
+                    thinking ? Reasoning.ON : Reasoning.DEFAULT, signal);
+        }
 
         /**
          * Backwards-compatible constructor: thinking off (pre-thinking call sites).
@@ -66,8 +88,26 @@ public interface LlmProvider {
          */
         public ProviderRequest(String system, List<ProviderMessage> messages,
                                List<ToolSpec> tools, int maxTokens, CancelSignal signal) {
-            this(system, messages, tools, maxTokens, false, signal);
+            this(system, messages, tools, maxTokens, Reasoning.DEFAULT, signal);
         }
+
+        /**
+         * @return true only when this call asked the model to reason
+         */
+        public boolean thinking() {
+            return reasoning == Reasoning.ON;
+        }
+
+        /**
+         * What a call site says about the model's own reasoning. {@code DEFAULT}
+         * and {@code OFF} are NOT the same request: DEFAULT says nothing and
+         * leaves the choice with the model, which is the only honest default for
+         * one that reasons unconditionally (gpt-oss); OFF spends the provider's
+         * explicit off switch, which a mechanical transformation needs because
+         * its completion budget caps reasoning and answer TOGETHER — a model
+         * that reasons its way through the whole budget returns nothing at all.
+         */
+        public enum Reasoning { DEFAULT, ON, OFF }
     }
 
     /**

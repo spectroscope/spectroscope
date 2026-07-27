@@ -146,7 +146,7 @@ describe("extractUnits — the delta stream is one unit, not ten", () => {
     ]);
   });
 
-  it("keeps two interleaved agents apart instead of splicing them", () => {
+  it("keeps two interleaved agents apart, one unit per turn each", () => {
     const events: RunEvent[] = [
       delta("main", "I fan "),
       delta("worker-1", "Checking "),
@@ -154,9 +154,14 @@ describe("extractUnits — the delta stream is one unit, not ten", () => {
       delta("worker-1", "auth."),
     ];
 
+    // Four turns in the chat, so four units: each delta reopens the turn its
+    // predecessor lost. Nothing is spliced across agents, which is what a
+    // merged fleet stream would otherwise do to both sentences.
     expect(extractUnits(events)).toEqual([
-      { id: "0:text", kind: "answer", text: "I fan out." },
-      { id: "1:text", kind: "answer", text: "Checking auth." },
+      { id: "0:text", kind: "answer", text: "I fan " },
+      { id: "1:text", kind: "answer", text: "Checking " },
+      { id: "2:text", kind: "answer", text: "out." },
+      { id: "3:text", kind: "answer", text: "auth." },
     ]);
   });
 
@@ -167,6 +172,22 @@ describe("extractUnits — the delta stream is one unit, not ten", () => {
       { id: "0:text", kind: "answer", text: "one" },
       { id: "1:text", kind: "thinking", text: "hm" },
       { id: "2:text", kind: "answer", text: "two" },
+    ]);
+  });
+
+  it("ends a run where the reducer ends the turn: another agent spoke in between", () => {
+    // reducer.ts:504 extends the last turn only while it is still this agent's,
+    // so sub-a's delta puts the two main runs in two different turns.
+    const events: RunEvent[] = [
+      think("main", "I need a reviewer."),
+      delta("sub-a", "The auth module looks fine."),
+      think("main", "Good, I can answer."),
+    ];
+
+    expect(extractUnits(events, { thinking: true })).toEqual([
+      { id: "0:text", kind: "thinking", text: "I need a reviewer." },
+      { id: "1:text", kind: "answer", text: "The auth module looks fine." },
+      { id: "2:text", kind: "thinking", text: "Good, I can answer." },
     ]);
   });
 
@@ -309,14 +330,30 @@ describe("applyUnits — putting a stream back together", () => {
     ];
     const out = applyUnits(events, new Map([["0:text", "Ich fächere auf."]]));
 
+    // Index 2 is a turn of its own and keeps its text: blanking it would put
+    // main's whole answer in the first turn and leave the second one empty.
     expect(out.map((e) => (e as { text: string }).text)).toEqual([
       "Ich fächere auf.",
       "Checking ",
-      "",
+      "out.",
       "auth.",
     ]);
-    expect(out[1]).toBe(events[1]);
-    expect(out[3]).toBe(events[3]);
+    [1, 2, 3].forEach((i) => expect(out[i]).toBe(events[i]));
+  });
+
+  it("leaves an interrupted agent's later reasoning in its own turn", () => {
+    const events: RunEvent[] = [
+      think("main", "I need a reviewer."),
+      delta("sub-a", "The auth module looks fine."),
+      think("main", "Good, I can answer."),
+    ];
+    const out = applyUnits(events, new Map([["0:text", "Ich brauche einen Reviewer."]]));
+
+    expect(out.map((e) => (e as { text: string }).text)).toEqual([
+      "Ich brauche einen Reviewer.",
+      "The auth module looks fine.",
+      "Good, I can answer.",
+    ]);
   });
 
   it("keeps the event's identity when the translation says the same thing", () => {

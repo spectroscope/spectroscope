@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -377,6 +378,24 @@ class OllamaProviderTest {
         JsonNode plain = JSON.readTree(lastChatBody.get());
         assertTrue(plain.get("think") == null || plain.get("think").isNull(),
                 "think must be omitted when thinking is off");
+    }
+
+    @Test
+    void refusingReasoningSendsThinkFalseInsteadOfSayingNothing() throws IOException {
+        // The third wire state, and the reason it exists: num_predict caps
+        // reasoning and answer together, so a caller that needs the whole budget
+        // for the answer (translation) has to switch reasoning OFF. Omitting the
+        // field leaves it to the model, which for a reasoning model means the
+        // budget can be spent before the answer starts.
+        scriptedNdjson = """
+                {"message":{"content":"ok"},"done":true}
+                """;
+        collect(new ProviderRequest("You are a test.", oneUser("Translate this."), List.of(), 500,
+                ProviderRequest.Reasoning.OFF, new CancelSignal()));
+
+        JsonNode sent = JSON.readTree(lastChatBody.get());
+        assertNotNull(sent.get("think"), "think:false must be on the wire, not absent: " + sent);
+        assertFalse(sent.get("think").asBoolean(), "reasoning is refused, not requested");
     }
 
     @Test

@@ -199,11 +199,23 @@ export function planTranslation(
  * What translating THIS stream would cost — the panel shows it before the run
  * and the run itself uses it. The one place the two agree.
  *
- * @param events the stream to translate
+ * THE REASONING IS IN BY DEFAULT (owner 2026-07-27, looking at a translated
+ * session: "die thinking deltas wollen wir dann auch noch übersetzen. weil
+ * aktuell sieht es so aus als ob nur chat übersetzt wird"). extractUnits leaves
+ * it out unless asked because it is expensive — measured on a real transcript,
+ * 205 565 characters of reasoning against 137 276 of answers, so carrying it
+ * more than doubles the payload and the wall clock. That cost is real, but a
+ * session whose answers read in the target language while its reasoning is
+ * still in the source language reads as a half-broken record, and this app's
+ * whole point is that the reasoning is on screen. So the caller that knows what
+ * a reader is looking at decides, and its default covers the session.
+ *
+ * @param events   the stream to translate
+ * @param thinking false to leave the reasoning stream in its own language
  * @return the plan for it
  */
-export function planFor(events: readonly RunEvent[]): Plan {
-  return planTranslation(extractUnits(events));
+export function planFor(events: readonly RunEvent[], thinking: boolean = true): Plan {
+  return planTranslation(extractUnits(events, { thinking }));
 }
 
 /**
@@ -464,6 +476,13 @@ export type TranslateStatus = "idle" | "running" | "done" | "stopped" | "error";
 export interface TranslationState {
   target: string;
   engine: Engine | null;
+  /**
+   * Whether the run covers the reasoning stream as well. It lives here rather
+   * than in the panel because the panel's cost preview and the run must plan
+   * with the SAME value: a sheet that counted the answers alone and a run that
+   * posts the reasoning too is a promise the run breaks.
+   */
+  thinking: boolean;
   /** Which text the app renders. The original is never more than a click away. */
   show: ShowMode;
   status: TranslateStatus;
@@ -485,6 +504,7 @@ export function emptyTranslation(lang: Lang): TranslationState {
   return {
     target: defaultTarget(lang),
     engine: null,
+    thinking: true,
     show: "translation",
     status: "idle",
     meta: null,
@@ -526,6 +546,11 @@ export function setEngine(viewKey: string, engine: Engine): void {
   patch(viewKey, { engine });
 }
 
+/** Take the reasoning stream in or out of the next run. */
+export function setThinking(viewKey: string, thinking: boolean): void {
+  patch(viewKey, { thinking });
+}
+
 export function setShow(viewKey: string, show: ShowMode): void {
   patch(viewKey, { show });
 }
@@ -541,7 +566,14 @@ export function resetTranslation(viewKey: string): void {
   running.get(viewKey)?.abort();
   running.delete(viewKey);
   const current = translationOf(viewKey);
-  patch(viewKey, { ...emptyTranslation(currentLang()), target: current.target, engine: current.engine });
+  // The three CHOICES survive the discard — they are what the reader set up,
+  // not what the run produced.
+  patch(viewKey, {
+    ...emptyTranslation(currentLang()),
+    target: current.target,
+    engine: current.engine,
+    thinking: current.thinking,
+  });
 }
 
 /** Stop the run in flight. What already came back stays — it is not wrong. */
@@ -565,7 +597,9 @@ export async function startTranslation(viewKey: string, events: readonly RunEven
   const engine = start.engine;
   const target = start.target;
 
-  const plan = planFor(events);
+  // The view's own choice, not this module's default: the panel counted its
+  // passages with it and the reader clicked a button carrying that number.
+  const plan = planFor(events, start.thinking);
   const batches = batchPassages(plan.passages, {
     maxPassages: MAX_PASSAGES_PER_REQUEST,
     maxChars: MAX_CHARS_PER_REQUEST,

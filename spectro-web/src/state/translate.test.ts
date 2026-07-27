@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { RunEvent } from "../events";
 import {
   EMPTY_FOLD,
@@ -11,13 +11,17 @@ import {
   joinUnit,
   parseTranslateChunk,
   passageKey,
+  planFor,
   planTranslation,
   requestBody,
+  resetTranslation,
   setEngine,
   setShow,
   setTarget,
+  setThinking,
   settledUnits,
   splitUnit,
+  startTranslation,
   toggleShow,
   translatedEvents,
   translationOf,
@@ -139,6 +143,31 @@ describe("planTranslation — the calls one run will make", () => {
   it("keeps every unit's pieces so the answer can be put back together", () => {
     const plan = planTranslation([unit("u1", "a\n\n```\nb\n```")]);
     expect(plan.units[0].pieces.map((p) => p.kind)).toEqual(["text", "code"]);
+  });
+});
+
+describe("planFor — the whole session, reasoning included", () => {
+  // The owner, looking at a translated session (2026-07-27): "die thinking
+  // deltas wollen wir dann auch noch übersetzen. weil aktuell sieht es so aus
+  // als ob nur chat übersetzt wird."
+  const events: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "warum ist der Himmel blau?", ts: 1 },
+    { type: "thinking_delta", agentId: "main", text: "Rayleigh-Streuung, kurze Wellen zuerst.", ts: 2 },
+    { type: "text_delta", agentId: "main", text: "Blaues Licht streut am stärksten.", ts: 3 },
+    { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 4 },
+  ];
+
+  it("carries the reasoning when nobody said otherwise", () => {
+    const kinds = planFor(events).passages.map((p) => p.kind);
+    expect(kinds).toContain("thinking");
+    expect(kinds).toContain("answer");
+    expect(kinds).toContain("prompt");
+  });
+
+  it("leaves the reasoning out when the reader switched it off", () => {
+    const plan = planFor(events, false);
+    expect(plan.passages.map((p) => p.kind)).not.toContain("thinking");
+    expect(plan.passages.some((p) => p.text.includes("Rayleigh"))).toBe(false);
   });
 });
 
@@ -322,6 +351,115 @@ describe("the per-view store", () => {
     expect(translationOf("view-e").show).toBe("original");
     toggleShow("view-e");
     expect(translationOf("view-e").show).toBe("translation");
+  });
+
+  it("starts with the reasoning in and remembers switching it off", () => {
+    expect(translationOf("view-f").thinking).toBe(true);
+    setThinking("view-f", false);
+    expect(translationOf("view-f").thinking).toBe(false);
+  });
+
+  it("keeps the reasoning choice across a discard, like the engine and the target", () => {
+    setThinking("view-g", false);
+    setEngine("view-g", "cloud");
+    resetTranslation("view-g");
+    expect(translationOf("view-g").thinking).toBe(false);
+    expect(translationOf("view-g").engine).toBe("cloud");
+  });
+});
+
+describe("startTranslation — the run sends what the panel counted", () => {
+  // The seam this test exists for: the panel's cost preview and the run both
+  // call planFor, so they must call it with the SAME choice. A sheet promising
+  // 40 passages while the run posts 90 is the failure mode.
+  const events: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "was ist passiert?", ts: 1 },
+    { type: "thinking_delta", agentId: "main", text: "Erst das Protokoll lesen.", ts: 2 },
+    { type: "text_delta", agentId: "main", text: "Der Worker ist zweimal gestorben.", ts: 3 },
+    { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 4 },
+    { type: "run_start", runId: "r2", agentId: "main", prompt: "und danach?", ts: 5 },
+    { type: "thinking_delta", agentId: "main", text: "Die Zeitstempel vergleichen.", ts: 6 },
+    { type: "text_delta", agentId: "main", text: "Die Queue lief wieder leer.", ts: 7 },
+    { type: "run_end", runId: "r2", stopReason: "end_turn", ts: 8 },
+  ];
+
+  /** What one POST carried, as the server would read it. */
+  interface Sent {
+    engine: string;
+    target: string;
+    units: { kind: string; text: string }[];
+  }
+
+  /** A server that answers every passage, so the run reaches "done". */
+  function fakeServer(): Sent[] {
+    const sent: Sent[] = [];
+    vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Sent;
+      sent.push(body);
+      const lines = [
+        JSON.stringify({
+          meta: {
+            engine: body.engine,
+            provider: "p",
+            model: "m",
+            target: body.target,
+            units: body.units.length,
+          },
+        }),
+        ...body.units.flatMap((unit, index) => [
+          JSON.stringify({ unit: index, delta: `EN(${unit.text})` }),
+          JSON.stringify({ unit: index, end: true }),
+        ]),
+        JSON.stringify({ done: true }),
+      ];
+      const chunk = new TextEncoder().encode(lines.join("\n") + "\n");
+      let served = false;
+      return {
+        ok: true,
+        body: {
+          getReader: () => ({
+            read: async () => {
+              if (served) return { done: true, value: undefined };
+              served = true;
+              return { done: false, value: chunk };
+            },
+          }),
+        },
+      };
+    });
+    return sent;
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("posts the reasoning passages the default plan counted", async () => {
+    const sent = fakeServer();
+    setEngine("run-on", "local");
+    await startTranslation("run-on", events);
+
+    const posted = sent.flatMap((body) => body.units);
+    const planned = planFor(events, translationOf("run-on").thinking);
+    expect(posted).toHaveLength(planned.passages.length);
+    expect(posted.filter((unit) => unit.kind === "thinking")).toHaveLength(2);
+    expect(translationOf("run-on").passages).toBe(planned.passages.length);
+    expect(translationOf("run-on").status).toBe("done");
+  });
+
+  it("posts exactly the smaller plan once the reader switched the reasoning off", async () => {
+    const sent = fakeServer();
+    setEngine("run-off", "local");
+    setThinking("run-off", false);
+    await startTranslation("run-off", events);
+
+    const posted = sent.flatMap((body) => body.units);
+    expect(posted).toHaveLength(planFor(events, false).passages.length);
+    expect(posted.filter((unit) => unit.kind === "thinking")).toEqual([]);
+    expect(posted.some((unit) => unit.text.includes("Protokoll"))).toBe(false);
+    // The run's own progress counter is the number the panel showed.
+    expect(translationOf("run-off").passages).toBe(posted.length);
+    expect(translationOf("run-off").passages).toBeLessThan(planFor(events, true).passages.length);
   });
 });
 

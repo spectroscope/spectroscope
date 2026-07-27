@@ -404,6 +404,79 @@ class TranslateControllerTest {
         assertTrue(lines.get(lines.size() - 1).get("done").asBoolean());
     }
 
+    // ---- the honesty guard -------------------------------------------------
+
+    @Test
+    void aPassageThatCameBackEmptyIsAFailedUnitNotAFinishedOne() throws Exception {
+        // MEASURED 2026-07-27 against a reasoning model: the same passage came
+        // back 0, 0, 16, 0, 242 characters. The zero runs streamed {end:true}
+        // and {done:true} — we reported a finished unit and a finished run
+        // having produced NOTHING, which is how a verification report called a
+        // run "success" while a third of the work was lost.
+        AtomicInteger calls = new AtomicInteger();
+        LlmProvider silentThenSpeaking = request -> calls.getAndIncrement() == 0
+                ? List.of(new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN))
+                : List.of(new LlmProvider.PTextDelta("zweiter"),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN));
+        TranslateController controller = controller(silentThenSpeaking, localReady(silentThenSpeaking));
+        List<JsonNode> lines = drain(controller.translate(
+                body("cloud", "de", List.of("привіт, це інцидент", "two")),
+                new MockHttpServletRequest()).getBody());
+
+        JsonNode first = settlementOf(lines, 0);
+        assertNotNull(first, "the empty passage settles");
+        assertTrue(first.has("error"), "an empty result is that unit's error: " + first);
+        assertFalse(first.has("end"), "and never its end line");
+        assertFalse(first.get("error").asText().isBlank(), "with a reason the panel can show");
+        assertFalse(first.toString().contains("привіт"), "the source is not echoed into the error");
+
+        JsonNode second = settlementOf(lines, 1);
+        assertNotNull(second);
+        assertTrue(second.get("end").asBoolean(), "one lost passage does not cost the others");
+        assertTrue(lines.get(lines.size() - 1).get("done").asBoolean(), "the run still closes");
+    }
+
+    @Test
+    void aPassageWhoseWholeAnswerIsWhitespaceCameBackEmptyToo() throws Exception {
+        // Zero characters of translation, spelled with spaces.
+        List<LlmProvider.ProviderEvent> script = List.of(
+                new LlmProvider.PTextDelta("  "),
+                new LlmProvider.PTextDelta("\n"),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN));
+        TranslateController controller = controller(scripted(script), localReady(scripted(script)));
+        List<JsonNode> lines = drain(controller.translate(body("cloud", "de", List.of("привіт")),
+                new MockHttpServletRequest()).getBody());
+        JsonNode settled = settlementOf(lines, 0);
+        assertNotNull(settled);
+        assertTrue(settled.has("error"), "whitespace is not a translation: " + settled);
+    }
+
+    @Test
+    void aSourcePassageWithNothingToTranslateIsNotADefect() {
+        // The boundary. A passage that HAD no prose cannot have lost any: an
+        // empty answer to an empty source is correct, and reporting it as a
+        // failure would put a red row on a unit nobody asked to translate.
+        assertFalse(TranslateController.lostTheTranslation("   ", ""));
+        assertFalse(TranslateController.lostTheTranslation("\n\t", "  "));
+        assertFalse(TranslateController.lostTheTranslation("", ""));
+        assertFalse(TranslateController.lostTheTranslation(null, ""));
+        // Non-empty source, nothing back: that is the defect.
+        assertTrue(TranslateController.lostTheTranslation("привіт", ""));
+        assertTrue(TranslateController.lostTheTranslation("привіт", "   \n"));
+        assertTrue(TranslateController.lostTheTranslation("привіт", null));
+        // And a real translation is a real translation.
+        assertFalse(TranslateController.lostTheTranslation("привіт", "Hallo"));
+    }
+
+    /** The line that closed a unit: its end, or its error. */
+    private static JsonNode settlementOf(List<JsonNode> lines, int unit) {
+        for (JsonNode line : lines) {
+            if (!line.has("unit") || line.get("unit").asInt() != unit) continue;
+            if (line.has("end") || line.has("error")) return line;
+        }
+        return null;
+    }
+
     @Test
     void theSessionTextIsNeverAdvertisedAsAnInstruction() {
         // The passage is a third party's text. The prompt has to say so, or a

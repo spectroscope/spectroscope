@@ -33,13 +33,14 @@ import {
   resetTranslation,
   setEngine,
   setTarget,
+  setThinking,
   startTranslation,
   stopTranslation,
   toggleShow,
   useTranslation,
   withTranslation,
 } from "../state/translate";
-import type { Engine, EngineReport, Engines, Plan, TranslationState } from "../state/translate";
+import type { Engine, EngineReport, Engines, Passage, Plan, TranslationState } from "../state/translate";
 import type { Lang } from "../i18n/i18n";
 
 export type { Engine };
@@ -71,6 +72,70 @@ export function reasonKey(report: EngineReport): string | null {
     default:
       return "tr.out.generic";
   }
+}
+
+/** What a run will send. Passages are calls, so `calls` is also its length. */
+export interface TextCost {
+  calls: number;
+  /**
+   * Whitespace-separated tokens, COUNTED rather than divided out of the
+   * character count. A words-per-character constant would be a number this app
+   * does not have, and the sheet would be stating it as if it did.
+   */
+  words: number;
+  chars: number;
+}
+
+/**
+ * What translating a plan costs, in the terms the sheet states it.
+ *
+ * @param passages the plan's calls
+ * @return the calls, and how much prose is in them
+ */
+export function costOf(passages: readonly Passage[]): TextCost {
+  let words = 0;
+  let chars = 0;
+  for (const passage of passages) {
+    words += passage.text.match(/\S+/g)?.length ?? 0;
+    chars += passage.text.length;
+  }
+  return { calls: passages.length, words, chars };
+}
+
+/**
+ * The reasoning's share of a plan — the number the checkbox is about.
+ *
+ * Read off the SAME plan the run will use rather than by planning the stream a
+ * second time: a passage carries what kind of text it is, so the share is exact
+ * and free. A plan built without the reasoning reports zero, because such a plan
+ * genuinely does not know how large the reasoning is; the sheet says that in
+ * words instead of showing a figure it does not have.
+ *
+ * @param plan the plan the sheet is previewing
+ * @return the reasoning part of its cost
+ */
+export function reasoningCost(plan: Plan): TextCost {
+  return costOf(plan.passages.filter((passage) => passage.kind === "thinking"));
+}
+
+/**
+ * A size a reader can hold in their head. Small counts stay exact — rounding
+ * seven words away would read as nothing at all — and larger ones keep their
+ * leading digits, because past a few thousand the magnitude is the whole point.
+ *
+ * @param words a counted number of words
+ * @return the same number, rounded to its magnitude
+ */
+export function roughly(words: number): number {
+  const step = stepFor(words);
+  return Math.round(words / step) * step;
+}
+
+function stepFor(words: number): number {
+  if (words < 100) return 1;
+  if (words < 1000) return 10;
+  if (words < 10000) return 100;
+  return 1000;
 }
 
 /** Whether the run button may be armed at all. */
@@ -118,7 +183,17 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
   // Only while the sheet is open. This trigger lives in the chat header of a
   // LIVE session, where the stream grows every animation frame, and planning
   // walks and splits every unit of it — a cost nobody is looking at.
-  const plan = useMemo(() => (open ? planFor(props.events) : EMPTY_PLAN), [open, props.events]);
+  //
+  // The reasoning choice is a dependency, not a filter applied afterwards: it
+  // changes which units are extracted, so the preview has to be re-planned for
+  // it. startTranslation reads the same choice out of the same state, which is
+  // what keeps this preview and the run it starts describing the same work.
+  const plan = useMemo(
+    () => (open ? planFor(props.events, state.thinking) : EMPTY_PLAN),
+    [open, props.events, state.thinking],
+  );
+  const cost = useMemo(() => costOf(plan.passages), [plan]);
+  const reasoning = useMemo(() => reasoningCost(plan), [plan]);
 
   // The probe runs on every open: a model can finish downloading, or a key can
   // be set in Settings, while this panel sits closed.
@@ -250,6 +325,55 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
                 <p className="ob-opt-body">{t(lang, "tr.enginesFailed", { msg: enginesError })}</p>
               )}
 
+              {/* The reasoning is a choice with the price next to it, and it sits
+                  ABOVE the run button so the price is read on the way to it. It
+                  is opt-in in translate/units.ts for a measured reason: on a
+                  real transcript the reasoning is the larger half of the text,
+                  so including it roughly doubles both the wire and the wall
+                  clock. It defaults ON all the same, because a session whose
+                  answers are translated and whose reasoning is not reads as
+                  half broken, and a slower run beats a confusing one.
+
+                  Locked while a run is in flight: the plan above is what the
+                  run in flight is working through, and letting the choice move
+                  under it would leave the sheet describing work nobody started. */}
+              <div className="tr-cost">
+                <label className="tr-check">
+                  <input
+                    type="checkbox"
+                    checked={state.thinking}
+                    disabled={running}
+                    onChange={(e) => setThinking(viewKey, e.target.checked)}
+                  />
+                  {t(lang, "tr.thinking")}
+                </label>
+                {plan.passages.length === 0 ? (
+                  <p className="ob-foot-note">{t(lang, "tr.nothing")}</p>
+                ) : (
+                  <>
+                    {/* Passages and roughly how much text. The exact character
+                        count rides along as the title for anyone who wants it,
+                        because a byte count is an answer to a different question
+                        than "how long will this take". */}
+                    <p
+                      className="ob-foot-note"
+                      title={t(lang, "tr.costExact", { c: cost.chars.toLocaleString(lang) })}
+                    >
+                      {t(lang, "tr.plan", { u: plan.units.length, n: plan.passages.length })}{" "}
+                      {t(lang, "tr.cost", { w: roughly(cost.words).toLocaleString(lang) })}
+                    </p>
+                    <p className="ob-foot-note">
+                      {state.thinking
+                        ? t(lang, "tr.thinkingIn", {
+                            n: reasoning.calls,
+                            w: roughly(reasoning.words).toLocaleString(lang),
+                          })
+                        : t(lang, "tr.thinkingOut")}
+                    </p>
+                  </>
+                )}
+              </div>
+
               <div className="ob-foot">
                 <span className="ob-foot-note">
                   {t(lang, "tr.target")}{" "}
@@ -283,14 +407,6 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
                   </button>
                 )}
               </div>
-
-              {plan.passages.length === 0 ? (
-                <p className="ob-foot-note">{t(lang, "tr.nothing")}</p>
-              ) : (
-                <p className="ob-foot-note">
-                  {t(lang, "tr.plan", { u: plan.units.length, n: plan.passages.length })}
-                </p>
-              )}
 
               {state.status !== "idle" && <RunReport lang={lang} state={state} />}
 

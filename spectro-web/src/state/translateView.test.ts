@@ -25,7 +25,7 @@ import {
   settledUnits,
   swapTracePayloads,
 } from "./translate";
-import type { RunFold } from "./translate";
+import type { Plan, RunFold } from "./translate";
 
 // TranslateController's own bounds, restated: the wire the client has to fit.
 const SERVER_MAX_UNIT_CHARS = 4_000;
@@ -54,6 +54,16 @@ function deltas(text: string, count: number): RunEvent[] {
   const out: RunEvent[] = [];
   for (let i = 0; i < text.length; i += size) {
     out.push({ type: "text_delta", agentId: "main", text: text.slice(i, i + size), ts: 100 + i });
+  }
+  return out;
+}
+
+/** The reasoning as it really arrives: the same fragmentation, other channel. */
+function thinkingDeltas(text: string, count: number): RunEvent[] {
+  const size = Math.ceil(text.length / count);
+  const out: RunEvent[] = [];
+  for (let i = 0; i < text.length; i += size) {
+    out.push({ type: "thinking_delta", agentId: "main", text: text.slice(i, i + size), ts: 50 + i });
   }
   return out;
 }
@@ -156,6 +166,67 @@ describe("the size problem — a unit far past the server's per-passage bound", 
         .map((e) => e.text)
         .join(""),
     ).toBe(answers.join(""));
+  });
+});
+
+describe("the reasoning stream, which the default plan now carries", () => {
+  // Why it was opt-in: measured on a real transcript, 205 565 characters of
+  // reasoning against 137 276 of answers, so carrying it more than doubles the
+  // run. Why it is in by default anyway (owner, looking at a translated
+  // session): answers in English above reasoning still in German reads as a
+  // broken record, and a slower run beats a confusing one. This fixture keeps
+  // the measured ratio so the arithmetic below is the real arithmetic.
+  const answer = incidentReport(13_700);
+  const reasoning = incidentReport(20_500);
+  const events: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "що сталося вчора?", ts: 0 },
+    ...thinkingDeltas(reasoning, 90),
+    ...deltas(answer, 90),
+    { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 9_000 },
+  ];
+
+  const chars = (plan: Plan): number => plan.passages.reduce((n, p) => n + p.text.length, 0);
+
+  it("adds the thinking unit and raises the passage count by exactly its passages", () => {
+    const whole = planFor(events);
+    const answersOnly = planFor(events, false);
+
+    expect(whole.units).toHaveLength(answersOnly.units.length + 1);
+    expect(whole.units.filter((u) => u.kind === "thinking")).toHaveLength(1);
+    expect(answersOnly.units.filter((u) => u.kind === "thinking")).toHaveLength(0);
+
+    const reasoningPassages = whole.passages.filter((p) => p.kind === "thinking");
+    expect(reasoningPassages.length).toBeGreaterThan(1);
+    expect(whole.passages.length - answersOnly.passages.length).toBe(reasoningPassages.length);
+    // The cost, stated rather than implied: this is what the switch buys back.
+    expect(chars(whole)).toBeGreaterThan(chars(answersOnly));
+  });
+
+  it("puts the translated reasoning back into the stream every view folds over", () => {
+    const plan = planFor(events);
+    const keys = plan.passages.map((passage) => passageKey(passage.unitId, passage.pieceIndex));
+    let fold: RunFold = EMPTY_FOLD;
+    plan.passages.forEach((passage, index) => {
+      fold = foldMessage(fold, { unit: index, delta: wrap(passage.text) }, keys);
+      fold = foldMessage(fold, { unit: index, end: true }, keys);
+    });
+
+    const applied = applyUnits(events, settledUnits(plan, fold));
+    const channel = (stream: readonly RunEvent[], type: "thinking_delta" | "text_delta"): string =>
+      stream
+        .filter((e): e is Extract<RunEvent, { type: "thinking_delta" | "text_delta" }> => e.type === type)
+        .map((e) => e.text)
+        .join("");
+
+    // Both channels came back translated — the owner's complaint was that only
+    // one of them did.
+    expect(channel(applied, "thinking_delta")).toContain("⟦");
+    expect(channel(applied, "text_delta")).toContain("⟦");
+    // The code block never left, and the reasoning rejoins character for character.
+    expect(channel(applied, "thinking_delta")).toContain(CODE);
+    expect(channel(applied, "thinking_delta").replace(MARKERS, "")).toBe(reasoning);
+    // The record itself is untouched.
+    expect(channel(events, "thinking_delta")).toBe(reasoning);
   });
 });
 

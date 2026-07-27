@@ -59,7 +59,10 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  * {@code {unit,delta}} lines and a closing {@code {unit,end:true}} (or
  * {@code {unit,error}} for one that failed), terminally {@code {done:true}}.
  * A passage at a time keeps a 1.7B local model in scope: it never has to emit
- * structured output we would then have to re-parse.</p>
+ * structured output we would then have to re-parse.
+ * <b>A passage that streamed no text at all is a failure, not an end</b> — an
+ * {@code end} line claims something came back, and see
+ * {@link #lostTheTranslation} for what that claim cost.</p>
  *
  * <p>Security: this endpoint spends the operator's API key and carries a third
  * party's text, so it wears the same fence as {@link ExplainController} —
@@ -243,7 +246,10 @@ public class TranslateController {
                 .body(stream);
     }
 
-    /** One passage: its deltas, then its own end — or its own error line. */
+    /**
+     * One passage: its deltas, then its own end — or its own error line, which
+     * an empty result also earns (see {@link #lostTheTranslation}).
+     */
     private void translateOne(OutputStream out, LlmProvider provider, String system,
                               String unit, int index) throws IOException {
         ProviderRequest request = new ProviderRequest(
@@ -251,17 +257,27 @@ public class TranslateController {
                 List.of(new ProviderMessage(ProviderMessage.Role.USER, List.of(new TextContent(unit)))),
                 List.of(),          // a translation, not an agent turn — no tools, no gate
                 budgetFor(unit.length()),
-                false,
+                // Reasoning is refused, not merely left unasked. A translation is a
+                // mechanical transformation, and the budget above caps reasoning and
+                // answer together: a model that thinks its way through it returns an
+                // empty passage (MEASURED on glm-5.2 — see lostTheTranslation).
+                ProviderRequest.Reasoning.OFF,
                 new CancelSignal());
+        StringBuilder translated = new StringBuilder();
         try {
             for (LlmProvider.ProviderEvent event : provider.stream(request)) {
                 if (event instanceof PTextDelta delta) {
+                    translated.append(delta.text());
                     writeLine(out, Map.of("unit", index, "delta", delta.text()));
                 } else if (event instanceof PStop) {
                     break;
                 }
                 // PThinkingDelta: a local model reasoning about the passage is
                 // not the translation of it. PToolCall/PUsage have no place here.
+            }
+            if (lostTheTranslation(unit, translated.toString())) {
+                writeLine(out, Map.of("unit", index, "error", NO_TRANSLATION));
+                return;
             }
             writeLine(out, Map.of("unit", index, "end", true));
         } catch (IOException clientGone) {
@@ -270,6 +286,44 @@ public class TranslateController {
             // One passage failing must not cost the other thirty-nine.
             writeLine(out, Map.of("unit", index, "error", String.valueOf(providerDied.getMessage())));
         }
+    }
+
+    /**
+     * The reason an empty result gives. It is a fixed sentence: the passage is a
+     * third party's text, so nothing about it may ride back out in an error
+     * line, and the panel shows this verbatim next to the untranslated unit.
+     */
+    static final String NO_TRANSLATION = "the model returned no translation for this passage";
+
+    /**
+     * Whether a passage's result is the silent loss — a real passage in, nothing
+     * out. MEASURED 2026-07-27 on a reasoning model: the same 200-character
+     * passage came back 0, 0, 16, 0 and 242 characters, and the zero runs closed
+     * with {@code {end:true}} followed by {@code {done:true}}. A finished unit
+     * that produced nothing is the worst kind of wrong, because it reads as
+     * success: the reader sees a completed run with a third of the session
+     * silently still in its original language. So it takes the error line the
+     * wire already has for a passage that failed, and the client's own failure
+     * path names it.
+     *
+     * <p><b>The boundary.</b> A source with nothing in it cannot have lost
+     * anything — an empty answer to an empty passage is correct, and flagging it
+     * would put a failure on a unit nobody asked to translate. Whitespace counts
+     * as nothing on both sides: a passage answered with two spaces carries zero
+     * characters of translation. Today no blank source reaches this — the
+     * request validation above answers 400 for one — but the floor is stated
+     * here rather than left to that gate, because the caller is a browser we do
+     * not control.</p>
+     *
+     * @param source     the passage as it was sent, may be null
+     * @param translated everything the provider streamed for it, may be null
+     * @return true when a non-empty passage produced no translation at all
+     */
+    static boolean lostTheTranslation(String source, String translated) {
+        if (source == null || source.isBlank()) {
+            return false;
+        }
+        return translated == null || translated.isBlank();
     }
 
     /** The engine actually chosen for a run: its provider plus what to call it. */

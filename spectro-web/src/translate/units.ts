@@ -187,6 +187,17 @@ interface Span {
  * never disagree about an id: apply re-derives the same spans from the same
  * array. Extract then filters (blanks, opt-in reasoning); apply does not,
  * because refusing to place a translation that already came back would lose it.
+ *
+ * A span must never outlive the chat turn its first delta sits in. The reducer
+ * appends to the LAST turn and only while that turn is still this agent's
+ * (`reducer.ts:504` for the reasoning channel, `:525` for the answer), so
+ * anything that appends a turn — another agent's delta, a tool call, a spawn
+ * line, a compaction, an error — ends every open run and not merely its own
+ * actor's. A span drawn across such a boundary would hand its whole
+ * translation to applyUnits' first index and blank the rest, which moves the
+ * text into the earlier turn and leaves the later one rendering empty. Cutting
+ * where the reducer cuts costs nothing: two units of one turn are concatenated
+ * by every view exactly as one was.
  */
 function scan(events: readonly RunEvent[]): Span[] {
   const spans: Span[] = [];
@@ -198,10 +209,14 @@ function scan(events: readonly RunEvent[]): Span[] {
       case "text_delta":
       case "thinking_delta": {
         const kind: UnitKind = event.type === "text_delta" ? "answer" : "thinking";
+        // This delta is itself the boundary for everyone else: the reducer
+        // opens a fresh turn for it, and the runs it interrupts can no longer
+        // be extended even when their agent speaks again later.
+        for (const agentId of open.keys()) if (agentId !== event.agentId) open.delete(agentId);
         const current = open.get(event.agentId);
-        // Same agent, same channel, nothing of that agent's in between: one
-        // sentence arriving in fragments. Ten fragments translated on their
-        // own produce ten pieces of nonsense.
+        // Same agent, same channel, nothing in between: one sentence arriving
+        // in fragments. Ten fragments translated on their own produce ten
+        // pieces of nonsense.
         if (current !== undefined && current.kind === kind) {
           current.indices.push(index);
           current.text += event.text;
@@ -219,7 +234,11 @@ function scan(events: readonly RunEvent[]): Span[] {
         return;
       }
       case "run_start":
-        open.delete(event.agentId);
+        // The root prompt is a user turn; a child's run_start is none
+        // (`reducer.ts:462`), so it must not cut the parent's sentence in two
+        // while the parent is still streaming into the same turn.
+        if (event.parentId == null) open.clear();
+        else open.delete(event.agentId);
         spans.push({
           id: `${index}:prompt`,
           kind: "prompt",
@@ -229,6 +248,8 @@ function scan(events: readonly RunEvent[]): Span[] {
         });
         return;
       case "agent_message":
+        // Roster only, no turn of its own (`reducer.ts:276`) — it ends the
+        // sender's run because the sender stopped streaming, nobody else's.
         open.delete(event.from);
         spans.push({
           id: `${index}:text`,
@@ -242,17 +263,21 @@ function scan(events: readonly RunEvent[]): Span[] {
         // The end of the run ends every stream in it, including a child's.
         open.clear();
         return;
+      case "tool_call":
+      case "agent_spawn":
+      case "compaction":
       case "error":
-        open.delete(event.agentId ?? "main");
+        // Each of these is a turn of its own in the chat, whoever caused it.
+        open.clear();
         return;
       case "permission_decision":
         // Carries no agent, and the tool_call it answers already closed the run.
         return;
       default: {
-        // Anything else this agent did ends its stream: a turn boundary, a tool
-        // call, its own usage line. An agent that keeps streaming through
-        // ANOTHER agent's event keeps its run — a merged fleet stream
-        // interleaves, and splitting on that would cut mid-sentence.
+        // Anything else this agent did ends its stream: its usage line, a
+        // turn marker, an event type this build has never heard of. These add
+        // no turn, so another agent's run survives them — a merged fleet
+        // stream interleaves, and cutting there would cut mid-sentence.
         const agentId = (event as { agentId?: string }).agentId;
         if (typeof agentId === "string") open.delete(agentId);
         return;

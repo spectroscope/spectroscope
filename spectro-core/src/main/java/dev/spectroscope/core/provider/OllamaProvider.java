@@ -464,10 +464,20 @@ public final class OllamaProvider implements LlmProvider {
                 .map(spec -> new WireTool("function",
                         new WireFunctionSpec(spec.name(), spec.description(), spec.inputSchema())))
                 .toList();
-        // think:true is sent only when thinking is enabled — it encourages models that
-        // gate reasoning behind the flag (qwen3). Left null (omitted) otherwise, so
-        // models that reason unconditionally (gpt-oss) are unaffected.
-        Boolean think = request.thinking() ? Boolean.TRUE : null;
+        // Three wire states, none of them interchangeable. think:true encourages
+        // models that gate reasoning behind the flag (qwen3). OMITTING the field
+        // leaves the choice with the model, so one that reasons unconditionally
+        // (gpt-oss) is unaffected. think:false is the explicit off switch, and it
+        // is not a nicety: num_predict caps reasoning and answer TOGETHER.
+        // MEASURED 2026-07-27, glm-5.2 via ollama, one 181-character passage at
+        // num_predict 512 — with the field omitted the reasoning phase spent the
+        // entire budget (eval_count 512, done_reason "length") and the answer
+        // never started; with think:false, zero reasoning and the answer in 0.9 s.
+        Boolean think = switch (request.reasoning()) {
+            case ON -> Boolean.TRUE;
+            case OFF -> Boolean.FALSE;
+            case DEFAULT -> null;
+        };
         return new ChatRequest(model, true, toWireMessages(request), tools,
                 new WireOptions(request.maxTokens()), think);
     }
