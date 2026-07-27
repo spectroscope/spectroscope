@@ -67,3 +67,17 @@ describe("traceHits", () => {
     expect(traceHits(ROWS, " read_file ")).toEqual({ seqs: [1], hidden: 0 });
   });
 });
+
+describe("regex mode reaches the table too", () => {
+  const row = (seq: number, text: string) => ({ seq, text, shown: true });
+
+  it("reads the query as a pattern when asked", () => {
+    const rows = [row(1, "run_command ls -la"), row(2, "read_file a.ts"), row(3, "nothing here")];
+    expect(traceHits(rows, "run_|read_", true).seqs).toEqual([1, 2]);
+  });
+
+  it("stays literal when not asked", () => {
+    const rows = [row(1, "run_command"), row(2, "read_file")];
+    expect(traceHits(rows, "run_|read_", false).seqs).toEqual([]);
+  });
+});

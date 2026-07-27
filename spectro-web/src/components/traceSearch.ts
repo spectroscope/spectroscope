@@ -20,6 +20,7 @@
 // rows currently on screen become hits. The ones a filter is hiding are counted
 // separately so the readout can say so out loud instead of reporting a quiet 0.
 
+import { findRanges } from "../state/search";
 import type { TraceColumns } from "../state/traceColumns";
 
 /** The text cells of one trace row, as the row prints them. */
@@ -77,13 +78,16 @@ export interface TraceHits {
  * @param query the needle, trimmed before use
  * @return the visible hits plus how many the filters swallowed
  */
-export function traceHits(rows: readonly TraceHitRow[], query: string): TraceHits {
+export function traceHits(rows: readonly TraceHitRow[], query: string, regex = false): TraceHits {
   const needle = query.trim().toLowerCase();
   if (needle === "") return { seqs: [], hidden: 0 };
   const seqs: number[] = [];
   let hidden = 0;
   for (const row of rows) {
-    if (!row.text.toLowerCase().includes(needle)) continue;
+    // A row is a hit when the query occurs anywhere in it. findRanges carries
+    // both readings of the query, so the regex checkbox means the same thing
+    // in a table as it does in prose.
+    if (findRanges(row.text, query, regex).length === 0) continue;
     if (row.shown) seqs.push(row.seq);
     else hidden += 1;
   }

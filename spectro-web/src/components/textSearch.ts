@@ -50,12 +50,12 @@ export const NO_LINES: readonly string[] = [];
  * @param query what the reader typed; empty or whitespace matches nothing
  * @return the hits keyed by line, and their total
  */
-export function feedHits(lines: readonly string[], query: string): FeedHits {
+export function feedHits(lines: readonly string[], query: string, regex = false): FeedHits {
   if (query.trim() === "") return NO_HITS;
   const byLine = new Map<number, LineHits>();
   let total = 0;
   for (let i = 0; i < lines.length; i++) {
-    const ranges = findRanges(lines[i], query);
+    const ranges = findRanges(lines[i], query, regex);
     if (ranges.length === 0) continue;
     byLine.set(i, { ranges, first: total });
     total += ranges.length;

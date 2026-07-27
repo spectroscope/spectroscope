@@ -33,7 +33,12 @@ import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
-import { setTraceColumn, useTraceColumns } from "../state/traceColumns";
+import {
+  effectiveTraceColumns,
+  setTraceColumn,
+  traceColumnData,
+  useTraceColumns,
+} from "../state/traceColumns";
 import type { TraceColumns } from "../state/traceColumns";
 import { reportCount, useSearch } from "../state/search";
 import { traceHits, traceRowText } from "./traceSearch";
@@ -587,7 +592,7 @@ export function TraceView(props: {
   const otelOn = prefs.otelRows;
   // Optional columns (owner 2026-07-27): host and model, both on out of the
   // box. A hidden column takes nothing but itself — no row changes meaning.
-  const cols = useTraceColumns();
+  const chosenCols = useTraceColumns();
   // In-view search (the shared store). In a table the HIT IS THE ROW: matching
   // rows are marked, the current one more strongly, and stepping walks them.
   const { open: searchOpen, query: searchQuery, regex: searchRegex, index: searchIndex } = useSearch();
@@ -804,6 +809,21 @@ export function TraceView(props: {
     return bySeq;
   }, [allEntries]);
 
+  // A column this session cannot fill is taken away: a VS Code export records
+  // neither host nor model, and a pre-0.4.0 archive no model, so holding those
+  // columns open spends the reader's width on a colonnade of dashes. The
+  // reader's own OFF still wins — this can only ever remove a column.
+  const cols = useMemo(
+    () =>
+      effectiveTraceColumns(
+        chosenCols,
+        traceColumnData(
+          allEntries.map((e) => ({ host: metaBySeq.get(e.seq)?.host ?? null, model: e.model })),
+        ),
+      ),
+    [chosenCols, allEntries, metaBySeq],
+  );
+
   // The searchable text per row, built once per stream / column / language
   // change — never per keystroke, so typing only re-walks strings that exist.
   const searchTexts = useMemo<string[]>(() => {
@@ -835,7 +855,10 @@ export function TraceView(props: {
     }));
   }, [searching, allEntries, searchTexts, visible]);
 
-  const hits = useMemo(() => traceHits(searchRows, searchQuery), [searchRows, searchQuery]);
+  const hits = useMemo(
+    () => traceHits(searchRows, searchQuery, searchRegex),
+    [searchRows, searchQuery, searchRegex],
+  );
   const hitSeqs = useMemo(() => new Set(hits.seqs), [hits.seqs]);
   const hitCount = hits.seqs.length;
   // Clamp: a filter can shrink the hit list one render before the store hears

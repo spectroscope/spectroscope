@@ -181,7 +181,7 @@ export function TextView({
   // Typing only moves `query`; the lines change when the session or a switch
   // does. So a keystroke re-walks the feed once, and a new event does not
   // re-walk it per character.
-  const hits = useMemo(() => feedHits(searchLines, query), [searchLines, query]);
+  const hits = useMemo(() => feedHits(searchLines, query, regex), [searchLines, query, regex]);
 
   // The store learns the count from the view — in an effect, never mid-render.
   useEffect(() => {

@@ -82,3 +82,14 @@ describe("markLine", () => {
     expect(markLine("a a", hits).map((run) => run.ordinal)).toEqual([5, -1, 6]);
   });
 });
+
+describe("regex mode reaches the feed too", () => {
+  it("reads the query as a pattern when asked", () => {
+    const hits = feedHits(["a1b", "cc", "d22"], "\\d+", true);
+    expect(hits.total).toBe(2);
+  });
+
+  it("stays literal when not asked", () => {
+    expect(feedHits(["a.b", "axb"], ".", false).total).toBe(1);
+  });
+});
