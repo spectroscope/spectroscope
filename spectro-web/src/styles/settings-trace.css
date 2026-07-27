@@ -217,8 +217,13 @@
   letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
   color: var(--text-dim);
-  margin-top: var(--sp-5);
-  margin-bottom: var(--sp-1);
+  /* .settings-body is a flex column with a 24px gap, so that gap — not these
+     margins — is the baseline between a heading and its fields. A positive
+     margin adds to it; binding the heading DOWNWARD needs a negative one that
+     eats most of it. 36px above, 8px below: the heading reads as belonging to
+     the fields under it rather than standing on its own. */
+  margin-top: var(--sp-3);
+  margin-bottom: calc(var(--sp-2) - var(--sp-5));
 }
 /* The first heading in a panel has no section above it to separate from. */
 .settings-label:first-child {
