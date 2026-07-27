@@ -20,6 +20,15 @@ html,
 body,
 #root {
   height: 100%;
+  /* The app fills the viewport and owns its own scrollers. Without this the
+     document itself becomes scrollable the moment any child overflows, and a
+     wheel event over a NON-scrolling strip (the archive bar, a toolbar) chains
+     up and drags the whole layout off the screen — which looks like the app
+     breaking, because from the reader's side it has.
+     overscroll-behavior stops a scroller that has hit its end from handing the
+     rest of the gesture to the document. */
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
