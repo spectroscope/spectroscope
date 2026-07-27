@@ -66,8 +66,8 @@ agents on a shared bus and hands you one merged event stream. Both artifacts
 are on Maven Central:
 
 ```kotlin
-implementation("dev.spectroscope:spectro-core:0.4.0")
-implementation("dev.spectroscope:spectro-orchestrator:0.4.0")   // fleets
+implementation("dev.spectroscope:spectro-core:0.4.1")
+implementation("dev.spectroscope:spectro-orchestrator:0.4.1")   // fleets
 ```
 
 ## the tour
@@ -252,7 +252,7 @@ permission gate.
 
 ## tested
 
-The v0.4.0 gate: 929 JUnit tests and 593 vitest tests, all green before the
+The v0.4.1 gate: 959 JUnit tests and 1003 vitest tests, all green before the
 release cut. The suites run without any API key; provider wire mappings
 are tested against scripted local servers, and the one live contract check
 skips itself unless a key is set. Concurrency suites (bus, hub, fleet) pass
