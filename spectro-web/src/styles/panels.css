@@ -144,12 +144,16 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-/* Syntax highlighting for the file preview — brand spectral palette, both themes
-   (the --sp-* tokens carry their own light-design values). Read-only, no glow. */
-.ws-code .hl-keyword { color: var(--sp-violet); }
-.ws-code .hl-string  { color: var(--sp-teal); }
-.ws-code .hl-number  { color: var(--sp-ocean); }
-.ws-code .hl-comment { color: var(--text-faint); font-style: italic; }
+/* Syntax highlighting wherever the tokenizer runs — the file preview and the
+   fenced code blocks in an answer. Brand spectral palette, both themes (the
+   --sp-* tokens carry their own light-design values). Read-only, no glow.
+   Unscoped on purpose: the class comes only from tokenize(), so anything
+   wearing it IS a token, and scoping the colour to one surface is what left
+   markdown blocks rendering grey spans that had already been classified. */
+.hl-keyword { color: var(--sp-violet); }
+.hl-string  { color: var(--sp-teal); }
+.hl-number  { color: var(--sp-ocean); }
+.hl-comment { color: var(--text-faint); font-style: italic; }
 
 .ws-md { flex: 1; overflow-y: auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); }
 .ws-note { margin: var(--sp-2); font-size: var(--fs-12); color: var(--text-dim); }
@@ -454,6 +458,8 @@
 .trace-seg button + button { border-left: 1px solid var(--border); }
 .trace-seg button:hover { color: var(--text); }
 .trace-seg button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); }
+/* Optional columns: the same segmented control, but with a leading name so the two toggles read as columns rather than as another filter. */
+.trace-seg-label { display: flex; align-items: center; background: var(--surface); border-right: 1px solid var(--border); color: var(--text-faint); font-size: var(--fs-11); letter-spacing: var(--track-eyebrow); padding: 3px var(--sp-2); text-transform: uppercase; }
 
 /* Type chips: toggles, all on by default. */
 .trace-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
@@ -473,6 +479,10 @@
 /* Shared column grid for header and rows: # | time | dt | dir | agent | type | summary. */
 .trace-head,
 .trace-row { display: grid; grid-template-columns: 48px 92px 60px 20px 64px 140px 110px 96px 150px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center; padding: 2px var(--sp-4); }
+/* host and model are optional (owner 2026-07-27): when one is switched off in the toolbar its track leaves with its cells, so header and rows stay in step. */
+.trace-table--no-host .trace-head, .trace-table--no-host .trace-row { grid-template-columns: 48px 92px 60px 20px 64px 110px 96px 150px minmax(0, 1fr); }
+.trace-table--no-model .trace-head, .trace-table--no-model .trace-row { grid-template-columns: 48px 92px 60px 20px 64px 140px 96px 150px minmax(0, 1fr); }
+.trace-table--no-host.trace-table--no-model .trace-head, .trace-table--no-host.trace-table--no-model .trace-row { grid-template-columns: 48px 92px 60px 20px 64px 96px 150px minmax(0, 1fr); }
 .trace-head { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); padding-top: var(--sp-2); padding-bottom: var(--sp-1); font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
 
 .trace-row { width: 100%; background: none; border: 0; color: var(--text); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-12); text-align: left; transition: background var(--t-fast); }
