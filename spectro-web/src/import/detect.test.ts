@@ -39,4 +39,49 @@ describe("detectAndLoad", () => {
     expect(() => detectAndLoad("not json\n{oops")).toThrow();
     expect(() => detectAndLoad("   \n  ")).toThrow();
   });
+
+  // "unrecognized format" is a dead end: it names neither what arrived nor what
+  // was expected. A third format DOES exist in the wild (the owner hit a
+  // VS Code/Copilot agent export whose types are dotted and whose payload sits
+  // under `data`), so the message has to hand the reader their next move.
+  it("names the types it actually saw when nothing matches", () => {
+    const vscodeExport = [
+      { type: "assistant.turn_start", data: {}, id: "1", timestamp: "2026-07-24T14:43:45.448Z" },
+      { type: "tool.execution_start", data: { toolName: "run_in_terminal" }, id: "2" },
+      { type: "user.message", data: { content: "hi" }, id: "3" },
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n");
+
+    expect(() => detectAndLoad(vscodeExport)).toThrow(/assistant\.turn_start/);
+    expect(() => detectAndLoad(vscodeExport)).toThrow(/tool\.execution_start/);
+    // and it must say what it DOES accept, or the reader still has no move
+    expect(() => detectAndLoad(vscodeExport)).toThrow(/spectroscope|Claude Code/i);
+  });
+
+  it("caps the reported type list so a hostile file cannot flood the dialog", () => {
+    const many = Array.from({ length: 60 }, (_, i) => JSON.stringify({ type: `weird.type.${i}` })).join("\n");
+    let message = "";
+    try {
+      detectAndLoad(many);
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message).not.toBe("");
+    expect(message.length).toBeLessThan(400);
+  });
+
+  // The types are lifted verbatim from an untrusted file and rendered into the
+  // dialog. Newlines would let a crafted file forge extra lines of UI text.
+  it("strips control characters out of the reported type names", () => {
+    const nasty = JSON.stringify({ type: "evil\nfake: everything is fine" });
+    let message = "";
+    try {
+      detectAndLoad(nasty);
+    } catch (e) {
+      message = e instanceof Error ? e.message : String(e);
+    }
+    expect(message).not.toContain("\n");
+    expect(message).not.toContain("");
+  });
 });

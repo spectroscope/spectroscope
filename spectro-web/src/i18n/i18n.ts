@@ -57,6 +57,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.placeholder": { de: ".jsonl-Inhalt hier einfügen …", en: "Paste .jsonl content here …" },
   "imp.store": { de: "Direkt aus ~/.claude/projects (im Finder unsichtbar) — ein Klick lädt:", en: "Straight from ~/.claude/projects (invisible in Finder) — one click loads:" },
   "imp.pick": { de: "Datei wählen …", en: "Pick a file …" },
+  "imp.err.read": { de: "„{name}“ konnte nicht gelesen werden. Liegt die Datei noch da, und darf der Browser sie sehen?", en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?" },
+  "imp.err.fetch": { de: "Der Server gab {status} zurück, als er die Datei holen sollte.", en: "The server answered {status} when asked for that file." },
   "imp.load": { de: "Laden", en: "Load" },
 
   // common

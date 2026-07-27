@@ -61,7 +61,11 @@ export function ImportDialog(props: {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  // Every entry point clears the previous error before it starts. Without this
+  // a failed pick left its red line standing while the next attempt succeeded,
+  // and only the textarea's onChange ever cleared it.
   const load = (raw: string, label: string): void => {
+    setError(null);
     try {
       const { events, kind } = detectAndLoad(raw);
       props.onLoad(events, label, kind);
@@ -73,7 +77,9 @@ export function ImportDialog(props: {
   const loadFromStore = (tr: TranscriptInfo): void => {
     setError(null);
     fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(tr.path)}`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((r) =>
+        r.ok ? r.text() : Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status }))),
+      )
       .then((raw) => load(raw, tr.file))
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
@@ -81,7 +87,13 @@ export function ImportDialog(props: {
   const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     if (!file) return;
-    void file.text().then((raw) => load(raw, file.name));
+    setError(null);
+    // A rejected read (ejected volume, permission, NotReadableError) used to
+    // show the user nothing at all — the dialog simply sat there.
+    void file
+      .text()
+      .then((raw) => load(raw, file.name))
+      .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
   };
 
   return (

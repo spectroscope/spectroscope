@@ -27,6 +27,24 @@ const SPECTRO_TYPES = new Set([
   "plan",
 ]);
 
+/** How many distinct type names the failure message may name, and how long each
+ *  may be. A file we do not understand is a file we do not trust: without these
+ *  caps a hostile or merely enormous export could flood the dialog. */
+const MAX_REPORTED_TYPES = 5;
+const MAX_TYPE_CHARS = 32;
+
+/** The type names come from an unrecognised file and are rendered into the
+ *  dialog, so they are data, not markup: collapse every control character
+ *  (newlines above all — they would forge extra lines of interface text) and
+ *  cap the length. */
+function safeTypeName(raw: string): string {
+  // C0, DEL, C1 and the two Unicode line separators — everything a renderer
+  // could read as "start a new line".
+  // eslint-disable-next-line no-control-regex
+  const flat = raw.replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, " ").trim();
+  return flat.length > MAX_TYPE_CHARS ? `${flat.slice(0, MAX_TYPE_CHARS)}…` : flat;
+}
+
 export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectroscope" | "claude-code" } {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) throw new Error("empty file");
@@ -51,5 +69,19 @@ export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectr
       return { events: claudeCodeToRunEvents(records), kind: "claude-code" };
     }
   }
-  throw new Error("unrecognized format");
+  // Nothing matched. Say what arrived and what is accepted — "unrecognized
+  // format" sends the reader back to the file with no idea what to look at.
+  const seen: string[] = [];
+  for (const rec of records) {
+    const t = (rec as { type?: unknown } | null)?.type;
+    if (typeof t !== "string" || !t.trim()) continue;
+    const name = safeTypeName(t);
+    if (name && !seen.includes(name)) seen.push(name);
+    if (seen.length >= MAX_REPORTED_TYPES) break;
+  }
+  const found = seen.length > 0 ? `Found ${seen.join(", ")}.` : "No record carried a type field.";
+  throw new Error(
+    `This is neither a spectroscope session nor a Claude Code transcript. ${found} ` +
+      `spectroscope sessions live in ~/.spectro/sessions; Claude Code transcripts in ~/.claude/projects.`,
+  );
 }
