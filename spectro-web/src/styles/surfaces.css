@@ -347,3 +347,36 @@
   padding: 4px var(--sp-2);
 }
 .skset-input--wide { flex: 1; min-width: 0; }
+
+/* ---------- Find box (in-view search, Cmd+F) ----------
+   Floats over the top right corner of the view being read. Placed absolutely,
+   so whatever mounts it must be the positioned wrapper of that view
+   (.main-col already is). No scrim and no backdrop on purpose: the page stays
+   readable, scrollable and clickable while the box is open — it searches what
+   you are reading, it does not take it away. */
+.search-box {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-4);
+  z-index: var(--z-dropdown);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: calc(100% - var(--sp-5));
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+}
+.search-box__glyph { flex: none; color: var(--text-faint); }
+.search-box__input { flex: 1; width: 11rem; min-width: 6rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text); font: inherit; font-size: var(--fs-13); padding: 3px var(--sp-2); }
+.search-box__input::placeholder { color: var(--text-faint); }
+.search-box__input:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 1px; }
+/* The readout carries the "nothing found" message, and it stays quiet ink
+   while it does: the field keeps its normal border, because a half-typed word
+   is not an error to flag. */
+.search-box__readout { flex: none; min-width: 3.2rem; text-align: right; font-size: var(--fs-12); font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
+.search-box__readout--none { color: var(--text-faint); }
+.search-box__nav { flex: none; width: 26px; height: 26px; }
+.search-box__nav:disabled { color: var(--text-faint); cursor: default; }
+.search-box__nav:disabled:hover { background: none; color: var(--text-faint); }

@@ -661,6 +661,15 @@
 .trace-row--dim { opacity: 0.38; }
 .trace-row--anchor { opacity: 0.9; }
 
+/* In-view search. The hit is the whole ROW (the trace is a table), amber so it
+   never reads as the lens' violet; the current one carries the left mark, the
+   others only a tint. Doubled class + placed after the hover/expanded/lens
+   rules so the mark survives hovering, an open frame and a dimmed lens row —
+   a hit the reader cannot find is worse than no hit. */
+.trace-row.trace-row--hit { background: color-mix(in srgb, var(--accent) 9%, transparent); opacity: 1; }
+.trace-row.trace-row--hit-cur { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 2px 0 0 var(--accent); opacity: 1; }
+.trace-search-note { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--accent); white-space: nowrap; }
+
 /* Said-vs-did pairing line under a block-ending thinking row. */
 .trace-pair {
   display: block;
@@ -758,3 +767,10 @@
   border-radius: 1px;
   flex-shrink: 0;
 }
+
+/* ---------- In-view search: the text tab's hits (state/search.ts) ---------- */
+/* Every hit keeps its line's own colour — the feed's kinds ARE meaning (think,
+   output, error), and a search must not repaint them. The mark is the ground. */
+.tf-hit { background: var(--accent-soft); color: inherit; border-radius: 2px; }
+.tf-hit--current { background: var(--accent); color: var(--text-on-accent); }
+.tf-search-scope { font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }

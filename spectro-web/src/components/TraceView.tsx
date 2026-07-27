@@ -29,6 +29,11 @@ import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
+import { setTraceColumn, useTraceColumns } from "../state/traceColumns";
+import type { TraceColumns } from "../state/traceColumns";
+import { reportCount, useSearch } from "../state/search";
+import { traceHits, traceRowText } from "./traceSearch";
+import type { TraceHitRow } from "./traceSearch";
 
 /** agent_message summaries clip their text to this width (CLI parity). */
 const AGENT_MESSAGE_PREVIEW_CHARS = 60;
@@ -104,6 +109,13 @@ function categoryColor(c: Category): string {
   }
 }
 
+/** The table's class for a given column choice. Each modifier drops exactly one
+ *  track from the grid that header and rows share (panels.css), which is why
+ *  the switch has to live in ONE place: cells and header always go together. */
+export function traceTableClass(cols: TraceColumns): string {
+  return `trace-table${cols.host ? "" : " trace-table--no-host"}${cols.model ? "" : " trace-table--no-model"}`;
+}
+
 /** Reasoning lens (card 13): the row's role while the lens is active. */
 function lensRole(type: string): "hi" | "anchor" | "dim" {
   if (type === "thinking_delta") return "hi";
@@ -170,6 +182,14 @@ const TraceRow = memo(function TraceRow(props: {
   proto: string;
   /** The network counterpart (api.anthropic.com, localhost:11434, …, or —). */
   host: string;
+  /** Whether the optional host / model columns are on (toolbar choice). A
+   *  hidden column is left out of the row entirely — the cells that stay say
+   *  exactly what they said before. */
+  showHost: boolean;
+  showModel: boolean;
+  /** Search: "" when this row is no hit, else its role — "hit-cur" is the one
+   *  the reader is standing on right now. */
+  hit: "" | "hit" | "hit-cur";
   open: boolean;
   lang: Lang;
   /** Reasoning lens: "" while the lens is off, else the row's role class. */
@@ -187,7 +207,7 @@ const TraceRow = memo(function TraceRow(props: {
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
-  const { entry, dt, proto, host, open, lang, lens, tl, pair, blockText } = props;
+  const { entry, dt, proto, host, showHost, showModel, hit, open, lang, lens, tl, pair, blockText } = props;
   // The DIR flag now reads as the LLM direction (derived from the type); the
   // socket direction moves into the tooltip.
   const ld = llmDirection(entry.type);
@@ -207,9 +227,10 @@ const TraceRow = memo(function TraceRow(props: {
     <>
       <button
         type="button"
-        className={`trace-row${entry.type === "system_context" || entry.type === "session_resume" ? " trace-row--sys" : ""}${lens === "" ? "" : ` trace-row--${lens}`}${tl !== null && tl > 0 ? " trace-row--tl" : ""}`}
+        className={`trace-row${entry.type === "system_context" || entry.type === "session_resume" ? " trace-row--sys" : ""}${lens === "" ? "" : ` trace-row--${lens}`}${tl !== null && tl > 0 ? " trace-row--tl" : ""}${hit === "" ? "" : ` trace-row--${hit}`}`}
         style={tl !== null && tl > 0 ? ({ "--tl": tl } as CSSProperties) : undefined}
         aria-expanded={open}
+        aria-current={hit === "hit-cur" ? true : undefined}
         data-seq={entry.seq}
         onClick={() => props.onToggle(entry.seq)}
       >
@@ -222,13 +243,17 @@ const TraceRow = memo(function TraceRow(props: {
         <span className="trace-col trace-col--proto" title={t(lang, "trace.protoTitle")}>
           {proto}
         </span>
-        <span className="trace-col trace-col--host" title={t(lang, "trace.hostTitle")}>
-          {host}
-        </span>
+        {showHost && (
+          <span className="trace-col trace-col--host" title={t(lang, "trace.hostTitle")}>
+            {host}
+          </span>
+        )}
         {/* Card 87: the model serving this row's run — blank outside runs. */}
-        <span className="trace-col trace-col--model" title={entry.model ?? ""}>
-          {entry.model ?? ""}
-        </span>
+        {showModel && (
+          <span className="trace-col trace-col--model" title={entry.model ?? ""}>
+            {entry.model ?? ""}
+          </span>
+        )}
         <span className="trace-col trace-col--agent">
           {entry.agentId !== undefined && (
             <span
@@ -411,6 +436,14 @@ export function TraceView(props: {
   // OTel mirror rows (card 86): default off — the exports sit in the ring
   // either way, the chip only reveals them.
   const otelOn = prefs.otelRows;
+  // Optional columns (owner 2026-07-27): host and model, both on out of the
+  // box. A hidden column takes nothing but itself — no row changes meaning.
+  const cols = useTraceColumns();
+  // In-view search (the shared store). In a table the HIT IS THE ROW: matching
+  // rows are marked, the current one more strongly, and stepping walks them.
+  const { open: searchOpen, query: searchQuery, index: searchIndex } = useSearch();
+  // A closed or empty search costs nothing — no text is built, no row walked.
+  const searching = searchOpen && searchQuery.trim() !== "";
   // Replay scrubber: cap the visible stream at one frame (null = the live
   // end). Scrubbing back reads the run exactly as far as it had happened.
   const [capSeq, setCapSeq] = useState<number | null>(null);
@@ -614,6 +647,66 @@ export function TraceView(props: {
     return bySeq;
   }, [allEntries]);
 
+  // The searchable text per row, built once per stream / column / language
+  // change — never per keystroke, so typing only re-walks strings that exist.
+  const searchTexts = useMemo<string[]>(() => {
+    if (!searching) return [];
+    return allEntries.map((e) =>
+      traceRowText(
+        {
+          proto: metaBySeq.get(e.seq)?.proto ?? "—",
+          host: metaBySeq.get(e.seq)?.host ?? "—",
+          model: e.model,
+          agentId: e.agentId,
+          type: e.type,
+          summary: summarize(e, lang),
+        },
+        cols,
+      ),
+    );
+  }, [searching, allEntries, metaBySeq, cols, lang]);
+
+  // Only rows the filters let through can become hits — a mark on a row that is
+  // not on screen would be a lie. The rest are counted and confessed instead.
+  const searchRows = useMemo<TraceHitRow[]>(() => {
+    if (!searching) return [];
+    const shown = new Set(visible.map((e) => e.seq));
+    return allEntries.map((e, i) => ({
+      seq: e.seq,
+      text: searchTexts[i] ?? "",
+      shown: shown.has(e.seq),
+    }));
+  }, [searching, allEntries, searchTexts, visible]);
+
+  const hits = useMemo(() => traceHits(searchRows, searchQuery), [searchRows, searchQuery]);
+  const hitSeqs = useMemo(() => new Set(hits.seqs), [hits.seqs]);
+  const hitCount = hits.seqs.length;
+  // Clamp: a filter can shrink the hit list one render before the store hears
+  // about it, and index is the store's, not ours.
+  const currentHit = hitCount === 0 ? 0 : Math.min(searchIndex, hitCount - 1);
+  const currentSeq = hitCount === 0 ? null : hits.seqs[currentHit];
+
+  // The store keeps the position, the view keeps the hits: report the count
+  // from an effect, never during render.
+  useEffect(() => {
+    if (searching) reportCount(hitCount);
+  }, [searching, hitCount]);
+
+  // Leaving the trace takes its hits with it. Without this the next tab would
+  // inherit a count nobody can step through — and React runs this cleanup
+  // before the incoming view's effects, so it never eats a fresh report.
+  useEffect(() => () => reportCount(0), []);
+
+  // Walk to the current hit. No focus() — the reader is typing in the search
+  // box, and taking the caret away would end the search mid-word. The scroll
+  // handler sees this move like any other and releases the auto-follow pin.
+  useEffect(() => {
+    if (currentSeq === null) return;
+    scrollRef.current
+      ?.querySelector<HTMLElement>(`[data-seq="${currentSeq}"]`)
+      ?.scrollIntoView({ block: "center" });
+  }, [currentSeq, searchQuery]);
+
   // Auto-follow: stick to the bottom while pinned (same pattern as the chat);
   // count what arrives while the reader is scrolled up studying a frame.
   const total = entries.length;
@@ -813,6 +906,27 @@ export function TraceView(props: {
         >
           {t(lang, "trace.otel")}
         </button>
+        {/* Optional columns: the two widest ones are a reading choice, so they
+            sit with the lenses rather than in a window of their own. */}
+        <div className="trace-seg" role="group" aria-label={t(lang, "trace.colsAria")}>
+          <span className="trace-seg-label mono">{t(lang, "trace.cols")}</span>
+          <button
+            type="button"
+            aria-pressed={cols.host}
+            title={t(lang, "trace.colsHostTitle")}
+            onClick={() => setTraceColumn("host", !cols.host)}
+          >
+            host
+          </button>
+          <button
+            type="button"
+            aria-pressed={cols.model}
+            title={t(lang, "trace.colsModelTitle")}
+            onClick={() => setTraceColumn("model", !cols.model)}
+          >
+            {t(lang, "trace.modelCol")}
+          </button>
+        </div>
         <button
           type="button"
           className={`trace-lens mono${explainOpen ? " trace-lens--on" : ""}`}
@@ -825,6 +939,17 @@ export function TraceView(props: {
         <span className="trace-count tabular">
           {t(lang, "trace.count", { v: visible.length, t: allEntries.length })}
         </span>
+        {/* The search readout. It names the hidden matches out loud: search
+            walks the rows on screen, so without this line a filtered-away hit
+            would read as "not there". */}
+        {searching && (
+          <span className="trace-search-note tabular" title={t(lang, "trace.searchScope")} aria-live="polite">
+            {hitCount === 0
+              ? t(lang, "trace.searchNone")
+              : t(lang, "trace.searchAt", { i: currentHit + 1, n: hitCount })}
+            {hits.hidden > 0 && ` ${t(lang, "trace.searchHidden", { n: hits.hidden })}`}
+          </span>
+        )}
       </div>
 
       {lensOn && (
@@ -877,15 +1002,15 @@ export function TraceView(props: {
           {entries.length === 0 ? (
             <p className="trace-empty">{t(lang, "trace.empty")}</p>
           ) : (
-            <div className="trace-table">
+            <div className={traceTableClass(cols)}>
               <div className="trace-head" aria-hidden="true">
                 <span>#</span>
                 <span>time</span>
                 <span className="trace-col--dt">Δt ms</span>
                 <span title={t(lang, "trace.llmColTitle")}>llm</span>
                 <span title={t(lang, "trace.protoTitle")}>proto</span>
-                <span title={t(lang, "trace.hostTitle")}>host</span>
-                <span>{t(lang, "trace.modelCol")}</span>
+                {cols.host && <span title={t(lang, "trace.hostTitle")}>host</span>}
+                {cols.model && <span>{t(lang, "trace.modelCol")}</span>}
                 <span>agent</span>
                 <span>type</span>
                 <span>summary</span>
@@ -901,6 +1026,9 @@ export function TraceView(props: {
                     tl={tlFractions === null ? null : tlFractions[i]}
                     proto={metaBySeq.get(e.seq)?.proto ?? "—"}
                     host={metaBySeq.get(e.seq)?.host ?? "—"}
+                    showHost={cols.host}
+                    showModel={cols.model}
+                    hit={hitSeqs.has(e.seq) ? (e.seq === currentSeq ? "hit-cur" : "hit") : ""}
                     open={openSeq === e.seq}
                     lang={lang}
                     lens={lensOn ? lensRole(e.type) : ""}

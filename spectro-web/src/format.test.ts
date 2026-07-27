@@ -2,7 +2,7 @@
 // answer footer with real wall-clock spans) must not read "1210 m 12 s".
 
 import { describe, expect, it } from "vitest";
-import { formatDuration, formatRelMs } from "./format";
+import { cacheSplit, formatDuration, formatRelMs } from "./format";
 
 const SECOND = 1000;
 const MINUTE = 60 * SECOND;
@@ -44,6 +44,37 @@ describe("formatDuration", () => {
       if (hourTier) expect(Number(hourTier[2])).toBeLessThan(60);
       expect(out).toMatch(/^(\d+(\.\d)? s|\d+ m \d+ s|\d+ h \d+ m)$/);
     }
+  });
+});
+
+describe("cacheSplit", () => {
+  it("is empty for a provider that reported no cache at all", () => {
+    expect(cacheSplit({})).toEqual([]);
+  });
+
+  it("is empty for reported zeros — a zero is the provider saying 'none'", () => {
+    expect(cacheSplit({ cacheReadTokens: 0, cacheCreationTokens: 0 })).toEqual([]);
+  });
+
+  it("reads a cache hit", () => {
+    expect(cacheSplit({ cacheReadTokens: 3758 })).toEqual([{ kind: "read", tokens: 3758 }]);
+  });
+
+  it("reads a cache write on its own (the first turn of a session)", () => {
+    expect(cacheSplit({ cacheCreationTokens: 3758 })).toEqual([{ kind: "write", tokens: 3758 }]);
+  });
+
+  it("reads both, hit first — the incremental case: read the prefix, write the increment", () => {
+    expect(cacheSplit({ cacheReadTokens: 3410, cacheCreationTokens: 314 })).toEqual([
+      { kind: "read", tokens: 3410 },
+      { kind: "write", tokens: 314 },
+    ]);
+  });
+
+  it("drops only the zero half when the other half is real", () => {
+    expect(cacheSplit({ cacheReadTokens: 0, cacheCreationTokens: 314 })).toEqual([
+      { kind: "write", tokens: 314 },
+    ]);
   });
 });
 

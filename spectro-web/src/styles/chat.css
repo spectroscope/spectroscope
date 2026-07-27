@@ -438,6 +438,17 @@
 .error-text { font-size: var(--fs-13); }
 .error-card .link { font-size: var(--fs-13); }
 
+/* In-view search (state/search.ts). One hit is one TURN: the answer is markdown
+   rendered to React elements, so there is no rendered string left to slice —
+   chatSearch.ts carries the reasoning. Outline, not border: it draws outside the
+   box model, so marking a turn never reflows the column under the reader. */
+.chat-hit { outline: 1px solid var(--border-strong); outline-offset: 3px; border-radius: var(--radius-card); }
+.chat-hit--current { outline: 2px solid var(--accent); }
+/* Inside a user turn the text IS a plain string, so its occurrences mark too —
+   a refinement of the outline, never a second thing to step through. */
+.chat-mark { background: var(--accent-soft); border-radius: 2px; color: inherit; padding: 0 1px; }
+.chat-hit--current .chat-mark { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+
 /* Agent identity: pastel is decoration — border/badge tint, never text color. */
 .agent-badge {
   background: color-mix(in srgb, var(--agent-color, transparent) 10%, transparent);
@@ -451,3 +462,11 @@
   white-space: nowrap;
 }
 
+
+/* Jump rail — the trace's affordance, same shape, because an imported session
+   is hundreds of turns long and scrolling it by hand is not navigation. */
+.chat-rail { position: absolute; right: 10px; bottom: 96px; z-index: 3; display: flex; flex-direction: column; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; opacity: .55; transition: opacity var(--t-fast); }
+.chat-rail:hover { opacity: 1; }
+.chat-rail-btn { display: grid; place-items: center; width: 26px; height: 26px; border: 0; background: none; color: var(--text-dim); cursor: pointer; border-radius: 50%; }
+.chat-rail-btn:hover { color: var(--text); background: var(--surface-3); }
+.chat-rail-btn:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 1px; }

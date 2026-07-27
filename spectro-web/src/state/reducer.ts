@@ -30,8 +30,15 @@ export type Turn =
       thinking: string;
       /** Set from this turn's `usage` event: the tokens the answer cost, and how
        *  long the turn took (its first event → the usage). Undefined until it
-       *  arrives (a torn/streaming turn simply has no footer yet). */
-      usage?: { inputTokens: number; outputTokens: number };
+       *  arrives (a torn/streaming turn simply has no footer yet). The two cache
+       *  counts are additive on the wire and stay optional here: absent means the
+       *  provider reported no cache, which is not the same as a cache of zero. */
+      usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens?: number;
+        cacheCreationTokens?: number;
+      };
       durationMs?: number;
       /** The usage event's ts — the answer's END wall-clock; start derives as
        *  endTs - durationMs (card 87). */
@@ -315,7 +322,12 @@ function stampAssistantUsage(
   turns: Turn[],
   agentId: string,
   patch: {
-    usage: { inputTokens: number; outputTokens: number };
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+    };
     durationMs?: number;
     endTs?: number;
     model?: string;
@@ -390,14 +402,16 @@ export function reduce(state: UiState, event: RunEvent): UiState {
   // active backend; the chip/map/host column follow wire truth, latest wins.
   if (raw.type === "provider_info") {
     const p = event as unknown as ProviderInfo;
+    const model = String(p.model ?? "");
     return {
       ...traced,
       provider: typeof p.provider === "string" ? p.provider : traced.provider,
-      providerInfo: {
-        provider: String(p.provider ?? ""),
-        model: String(p.model ?? ""),
-        host: String(p.host ?? ""),
-      },
+      providerInfo: { provider: String(p.provider ?? ""), model, host: String(p.host ?? "") },
+      // For a session that names its model per message (an imported transcript)
+      // run_start only ever carried the first one — every switch arrives here.
+      // Answers are stamped at their own usage event, so an announcement moves
+      // the model for what follows and never reaches back to what is stamped.
+      runModel: model !== "" ? model : traced.runModel,
     };
   }
   // Same boundary rule for permission_mode_info: connect + every switch
@@ -594,8 +608,18 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       return {
         ...state,
         // The per-message footer: this turn's token cost + how long it took.
+        // The cache counts are spread in only when the provider sent them —
+        // a synthesised zero would read as "nothing was cached", which is a
+        // claim about a provider that said nothing at all.
         turns: stampAssistantUsage(state.turns, event.agentId, {
-          usage: { inputTokens: event.inputTokens, outputTokens: event.outputTokens },
+          usage: {
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            ...(event.cacheReadTokens !== undefined ? { cacheReadTokens: event.cacheReadTokens } : {}),
+            ...(event.cacheCreationTokens !== undefined
+              ? { cacheCreationTokens: event.cacheCreationTokens }
+              : {}),
+          },
           durationMs: start !== undefined ? Math.max(0, event.ts - start) : undefined,
           endTs: event.ts,
           ...(state.runModel !== null ? { model: state.runModel } : {}),

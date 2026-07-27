@@ -8,10 +8,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { ClientMessage } from "../events";
+import type { ClientMessage, RunEvent } from "../events";
 import type { Turn, UiState } from "../state/reducer";
 import { groupTurns } from "../state/threads";
-import { agentAccent, clockTime, formatDuration } from "../format";
+import { agentAccent, cacheSplit, clockTime, formatDuration } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
 import { AttachmentPreview } from "./AttachmentPreview";
@@ -24,8 +24,11 @@ import { composerButtons } from "./composerButtons";
 import type { QueuedMessage } from "../state/sendQueue";
 import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
+// import { TranslatePanel } from "./TranslatePanel"; // TEMP: agent in flight
 import { useChatWidth } from "../state/chatWidth";
 import { WorkspaceChooser } from "./WorkspaceChooser";
+import { reportCount, useSearch } from "../state/search";
+import { chatHits, markSegments } from "./chatSearch";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -42,6 +45,8 @@ export function Chat(props: {
    *  can never be reconciled onto a DIFFERENT session's same-index turn when
    *  the app swaps views without remounting (review find F5). */
   viewKey?: string;
+  /** The flat event stream this view renders — the translate sheet reads it. */
+  events?: readonly RunEvent[];
   /** true when this is the live socket view, false for a replayed archive. */
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
@@ -76,7 +81,9 @@ export function Chat(props: {
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const pinnedRef = useRef(true);
+  // A live view follows the edge; an archive does not. An import is a record
+  // you read from the beginning, so it must not open at its own end.
+  const pinnedRef = useRef(props.liveView);
   const prevTurnCount = useRef(0);
   // attachment intake (drag-and-drop, file picker, pending chips).
   // The drop zone is the chat ROOT — the hook only hands out the handlers.
@@ -101,6 +108,46 @@ export function Chat(props: {
     // Smooth for new turns, instant while a turn streams (no scroll jitter).
     el.scrollTo({ top: el.scrollHeight, behavior: newTurn ? "smooth" : "auto" });
   });
+
+  // In-view search (state/search.ts): this view walks its own turns. One hit is
+  // one matching TURN — the reasoning for that and for leaving thinking blocks
+  // and tool bodies out of the haystack is in chatSearch.ts.
+  const search = useSearch();
+  const searching = search.open && search.query.trim() !== "";
+  const hits = useMemo(
+    () => (searching ? chatHits(state.turns, search.query) : []),
+    [searching, search.query, state.turns],
+  );
+  const hitSet = useMemo(() => new Set(hits), [hits]);
+  // The store clamps its index to the count it was told, but it is told one
+  // render late — clamp again here so a shrinking history never indexes past
+  // the end.
+  const currentHit = hits.length > 0 ? (hits[Math.min(search.index, hits.length - 1)] ?? -1) : -1;
+
+  useEffect(() => {
+    if (!search.open) return; // a closed search costs nothing; close() zeroed the count
+    reportCount(hits.length);
+  }, [search.open, hits.length]);
+
+  // Leaving the screen (tab switch, view swap) means this view has no hits to
+  // report any more. Mount-only, so a changing count never round-trips through
+  // zero — that would reset the reader's position on every keystroke.
+  useEffect(() => () => reportCount(0), []);
+
+  useEffect(() => {
+    if (currentHit < 0) return;
+    const el = scrollRef.current?.querySelector(".chat-hit--current");
+    if (el == null) return;
+    // Someone stepping through hits is READING, not following the stream:
+    // release the live-edge pin (card 78 #5) before the jump, or the next
+    // streamed token drags them straight back down to the bottom.
+    pinnedRef.current = false;
+    el.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [currentHit]);
+
+  /** The hit classes for a turn at flat index `i` — "" when not searching. */
+  const hitClass = (i: number): string =>
+    hitSet.has(i) ? (i === currentHit ? " chat-hit chat-hit--current" : " chat-hit") : "";
 
   const autosize = (): void => {
     const el = textareaRef.current;
@@ -153,7 +200,7 @@ export function Chat(props: {
     switch (turn.kind) {
       case "user":
         return (
-          <div key={`${vk}:${i}`} className="user-turn">
+          <div key={`${vk}:${i}`} className={`user-turn${hitClass(i)}`}>
             <div className="eyebrow">{t(lang, "chat.you")}</div>
             {turn.attachments !== undefined && turn.attachments.length > 0 && (
               <div className="user-attachments">
@@ -168,12 +215,28 @@ export function Chat(props: {
                 ))}
               </div>
             )}
-            <div className="user-text">{turn.text}</div>
+            {/* The user's own words are a plain string here, so the literal
+                occurrences get marked inside the outline. The assistant answer
+                below cannot: it is markdown rendered to React elements, and
+                there is no rendered string left to slice. */}
+            <div className="user-text">
+              {searching
+                ? markSegments(turn.text, search.query).map((seg, j) =>
+                    seg.mark ? (
+                      <mark key={j} className="chat-mark">
+                        {seg.text}
+                      </mark>
+                    ) : (
+                      seg.text
+                    ),
+                  )
+                : turn.text}
+            </div>
           </div>
         );
       case "assistant":
         return (
-          <div key={`${vk}:${i}`} className="assistant-turn">
+          <div key={`${vk}:${i}`} className={`assistant-turn${hitClass(i)}`}>
             {turn.agentId !== "main" && !inThread && (
               <span
                 className="agent-badge"
@@ -199,10 +262,24 @@ export function Chat(props: {
               </div>
             )}
             {/* Per-message footer: this answer's token cost + how long it took
-                (from its usage event; the trace JSON carries the same numbers). */}
+                (from its usage event; the trace JSON carries the same numbers).
+                No usage event means nothing was measured for this answer — the
+                duration, the window and the model are all stamped by it — so an
+                unmetered answer gets no line rather than an empty one. */}
             {turn.usage !== undefined && (
               <div className="assistant-meta tabular" title={t(lang, "chat.usageTitle")}>
-                {turn.usage.inputTokens} in · {turn.usage.outputTokens} out
+                {turn.usage.inputTokens} in
+                {/* The input side splits when the provider cached: the read is
+                    the hit (context that rode in from the cache), the write is
+                    what this request stored. The raw "in" above is only the
+                    uncached remainder. Nothing reported, nothing rendered. */}
+                {cacheSplit(turn.usage)
+                  .map(
+                    (c) =>
+                      ` · ${c.tokens} ${t(lang, c.kind === "read" ? "chat.cacheRead" : "chat.cacheWrite")}`,
+                  )
+                  .join("")}
+                {` · ${turn.usage.outputTokens} out`}
                 {turn.durationMs !== undefined && ` · ${formatDuration(turn.durationMs)}`}
                 {/* Card 87: the answer's wall-clock window + the model that made it. */}
                 {turn.endTs !== undefined &&
@@ -253,6 +330,41 @@ export function Chat(props: {
           (its twin sits in the composer row). Floats over the scroll area. */}
       <div className="chat-disc">
         <DisclosureMenu placement="down" />
+      </div>
+      {/* Jump rail, the trace's affordance: an imported session runs to hundreds
+          of turns and scrolling it by hand is not navigation. */}
+      <div className="chat-rail">
+        <button
+          type="button"
+          className="chat-rail-btn"
+          title={t(lang, "trace.toStart")}
+          aria-label={t(lang, "trace.toStart")}
+          onClick={() => {
+            scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+            pinnedRef.current = false;
+          }}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 3.5h8" />
+            <path d="M4 11.5 8 7.5l4 4" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="chat-rail-btn"
+          title={t(lang, "trace.toEnd")}
+          aria-label={t(lang, "trace.toEnd")}
+          onClick={() => {
+            const el = scrollRef.current;
+            if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+            pinnedRef.current = true;
+          }}
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M4 12.5h8" />
+            <path d="M4 4.5 8 8.5l4-4" />
+          </svg>
+        </button>
       </div>
       <div
         className="chat-scroll"

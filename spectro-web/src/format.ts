@@ -16,6 +16,34 @@ export function clockTime(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+/** One half of an answer's input-side cache traffic: what rode in from the
+ *  cache ("read" — the hit) and what was written into it ("write"). */
+export type CacheSegment = { kind: "read" | "write"; tokens: number };
+
+/**
+ * The cache split of one answer, in reading order (the hit first, because it
+ * is the question anyone asks). Empty when the provider reported no cache —
+ * and a reported zero counts as "none": it is the provider saying nothing was
+ * cached, not a number worth a segment.
+ *
+ * Deliberately no verdict on the cache TTL. The wire records neither the TTL
+ * nor whether an entry expired, and a write following an earlier write is the
+ * NORMAL incremental case (read the cached prefix, write the new increment) —
+ * real sessions do it seconds apart. Anything phrased as expiry would be a
+ * diagnosis the data cannot support.
+ */
+export function cacheSplit(usage: {
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
+}): CacheSegment[] {
+  const segments: CacheSegment[] = [];
+  const read = usage.cacheReadTokens ?? 0;
+  const write = usage.cacheCreationTokens ?? 0;
+  if (read > 0) segments.push({ kind: "read", tokens: read });
+  if (write > 0) segments.push({ kind: "write", tokens: write });
+  return segments;
+}
+
 const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** 412 -> "0.4 s", 12300 -> "12 s", 96000 -> "1 m 36 s", 72612000 -> "20 h 10 m". */

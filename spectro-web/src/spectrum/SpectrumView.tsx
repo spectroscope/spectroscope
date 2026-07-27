@@ -20,6 +20,20 @@ import { beacon } from "../state/levelingBeacon";
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
 const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
 
+/** How a lane names itself. The id is the addressable truth (Trace filters by
+ *  it), but an imported Claude Code session hands us a 26-char toolu_* id next
+ *  to a readable agent type in the label — so the label leads when there is one
+ *  and the id steps back into the chip. No label, no chip: the id keeps the
+ *  title and nothing is invented to fill the slot. */
+export function laneNames(lane: { id: string; label: string | null }): {
+  title: string;
+  chip: string | null;
+} {
+  const label = lane.label === null ? "" : lane.label.trim();
+  if (label === "" || label === lane.id) return { title: lane.id, chip: null };
+  return { title: label, chip: lane.id };
+}
+
 function LaneRow({
   lane,
   running,
@@ -41,6 +55,7 @@ function LaneRow({
 }) {
   const lang = useLang();
   const live = running && lane.state === "working";
+  const names = laneNames(lane);
   return (
     <div className="spectrum-lane">
       <button
@@ -54,8 +69,12 @@ function LaneRow({
             className={`dot ${lane.state === "failed" ? "error" : lane.state === "working" ? "accent" : lane.state === "completed" ? "ok" : "faint"}${live ? " pulse" : ""}`}
             aria-hidden="true"
           />
-          <span className="spectrum-id mono">{lane.id}</span>
-          {lane.label !== null && <span className="spectrum-label mono">{lane.label}</span>}
+          <span className="spectrum-id mono">{names.title}</span>
+          {names.chip !== null && (
+            <span className="spectrum-label mono" title={names.chip}>
+              {names.chip}
+            </span>
+          )}
           {lane.pendingGate && <span className="spectrum-gate mono pulse">{t(lang, "sp.gateOpen")}</span>}
         </span>
         <span className="spectrum-task" title={lane.task}>

@@ -958,3 +958,122 @@ describe("card 87 — the model rides run_start into footer and trace", () => {
     expect(s.trace[0].model).toBeUndefined();
   });
 });
+
+describe("the answer footer — the cache split rides along with the tokens", () => {
+  const run = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "hi",
+    ts: 1,
+  } as unknown as RunEvent;
+
+  const answerUsage = (s: ReturnType<typeof reduceAll>) => {
+    const turn = s.turns[s.turns.length - 1];
+    return turn.kind === "assistant" ? turn.usage : undefined;
+  };
+
+  it("carries the additive cache counts onto the answer they belong to", () => {
+    const s = reduceAll(initialState, [
+      run,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 2 },
+      {
+        type: "usage",
+        agentId: "main",
+        inputTokens: 98,
+        outputTokens: 192,
+        cacheReadTokens: 3410,
+        cacheCreationTokens: 314,
+        ts: 3,
+      },
+    ]);
+    expect(answerUsage(s)).toEqual({
+      inputTokens: 98,
+      outputTokens: 192,
+      cacheReadTokens: 3410,
+      cacheCreationTokens: 314,
+    });
+  });
+
+  it("leaves the cache fields absent when the provider reported none", () => {
+    const s = reduceAll(initialState, [
+      run,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 2 },
+      { type: "usage", agentId: "main", inputTokens: 98, outputTokens: 192, ts: 3 },
+    ]);
+    const usage = answerUsage(s);
+    expect(usage).toEqual({ inputTokens: 98, outputTokens: 192 });
+    expect(usage !== undefined && "cacheReadTokens" in usage).toBe(false);
+    expect(usage !== undefined && "cacheCreationTokens" in usage).toBe(false);
+  });
+});
+
+describe("the answer footer — the model of a session that announces through provider_info", () => {
+  const announce = (model: string, ts: number) =>
+    ({
+      type: "provider_info",
+      provider: "anthropic",
+      model,
+      host: "api.anthropic.com",
+      ts,
+    }) as unknown as RunEvent;
+
+  it("stamps an answer whose run_start never carried a model", () => {
+    const s = reduceAll(initialState, [
+      announce("claude-opus-4-1", 1),
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 2 } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+    ]);
+    const last = s.turns[s.turns.length - 1];
+    expect(last.kind === "assistant" && last.model).toBe("claude-opus-4-1");
+  });
+
+  it("gives each answer the model announced for IT, not the last one in the file", () => {
+    // The shape a Claude Code import has: one long run, the switch announced
+    // mid-stream at the message where the transcript changed model.
+    const s = reduceAll(initialState, [
+      announce("claude-sonnet-4-5", 1),
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 2 } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "first answer", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+      { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: {}, ts: 5 },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "ok",
+        isError: false,
+        durationMs: 1,
+        ts: 6,
+      },
+      announce("claude-opus-4-1", 7),
+      { type: "text_delta", agentId: "main", text: "second answer", ts: 8 },
+      { type: "usage", agentId: "main", inputTokens: 9, outputTokens: 3, ts: 9 },
+    ]);
+    const answers = s.turns.filter((turn) => turn.kind === "assistant");
+    expect(answers).toHaveLength(2);
+    expect(answers.map((a) => (a.kind === "assistant" ? a.model : null))).toEqual([
+      "claude-sonnet-4-5",
+      "claude-opus-4-1",
+    ]);
+  });
+
+  it("lets an explicit run_start model win over a stale announcement", () => {
+    const s = reduceAll(initialState, [
+      announce("claude-sonnet-4-5", 1),
+      {
+        type: "run_start",
+        runId: "r1",
+        agentId: "main",
+        prompt: "hi",
+        model: "vibethinker-3b",
+        ts: 2,
+      } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+    ]);
+    const last = s.turns[s.turns.length - 1];
+    expect(last.kind === "assistant" && last.model).toBe("vibethinker-3b");
+  });
+});

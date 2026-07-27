@@ -33,6 +33,7 @@ import { setBeaconSink } from "./state/levelingBeacon";
 import { parseRoute } from "./state/route";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
+import { SearchBox } from "./components/SearchBox";
 import { Onboarding } from "./components/Onboarding";
 import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
 import { LocalModelNotice } from "./components/LocalModelNotice";
@@ -1054,6 +1055,9 @@ export function App() {
           )}
         </nav>
 
+        {/* Find-in-view. One mount for every tab: the box positions itself
+            against this wrapper, and each view reports its own hits. */}
+        <SearchBox />
         {tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
           /* A locked surface shows a teaser, never its content. The tab itself
              stays visible and clickable: a feature nobody can see is a feature
@@ -1086,6 +1090,7 @@ export function App() {
             >
               <Chat
                 state={view}
+                events={tabEvents}
                 viewKey={replay?.id ?? "live"}
                 liveView={viewingLive}
                 onSend={send}
