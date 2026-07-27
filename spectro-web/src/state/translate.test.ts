@@ -364,3 +364,28 @@ describe("parseTranslateChunk", () => {
     expect(parseTranslateChunk("", 'not json\n{"done":true}\n').messages).toEqual([{ done: true }]);
   });
 });
+
+describe("a stream that stops without saying it is over", () => {
+  // The server sends a terminal {done:true}. Without it, the stream ended for
+  // a reason the client did not choose — the container cutting an async
+  // request at 30 s was the real case, and it left the run reporting success
+  // over passages that never arrived.
+  it("records that the terminal marker arrived", () => {
+    const keys = ["a", "b"];
+    let fold = EMPTY_FOLD;
+    expect(fold.closed).toBe(false);
+    fold = foldMessage(fold, { unit: 0, delta: "x" }, keys);
+    fold = foldMessage(fold, { unit: 0, end: true }, keys);
+    expect(fold.closed).toBe(false);
+    fold = foldMessage(fold, { done: true }, keys);
+    expect(fold.closed).toBe(true);
+  });
+
+  it("stays open when the stream simply stops", () => {
+    const keys = ["a", "b"];
+    const fold = foldMessage(EMPTY_FOLD, { unit: 0, end: true }, keys);
+    // no {done:true} — the connection went away
+    expect(fold.closed).toBe(false);
+    expect(fold.finished).toBe(1);
+  });
+});

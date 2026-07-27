@@ -25,6 +25,7 @@
 import { useMemo, useSyncExternalStore } from "react";
 import type { RunEvent } from "../events";
 import type { Lang } from "../i18n/i18n";
+import { t } from "../i18n/i18n";
 import { currentLang } from "./lang";
 import { applyUnits, extractUnits } from "../translate/units";
 import type { Unit } from "../translate/units";
@@ -280,6 +281,10 @@ export interface RunFold {
   finished: number;
   /** A terminal failure of the whole request. */
   fatal: string | null;
+  /** Whether the server's terminal marker arrived. A stream that ends without
+   *  it was CUT — the container's async timeout was the real case — and the
+   *  passages that never came back are missing, not finished. */
+  closed: boolean;
 }
 
 export const EMPTY_FOLD: RunFold = {
@@ -289,6 +294,7 @@ export const EMPTY_FOLD: RunFold = {
   failed: new Map(),
   finished: 0,
   fatal: null,
+  closed: false,
 };
 
 /**
@@ -302,7 +308,7 @@ export const EMPTY_FOLD: RunFold = {
  */
 export function foldMessage(fold: RunFold, msg: TranslateMessage, keys: readonly string[]): RunFold {
   if (msg.meta) return { ...fold, meta: msg.meta };
-  if (msg.done) return fold;
+  if (msg.done) return { ...fold, closed: true };
   if (msg.unit === undefined) {
     // A terminal error line carries no unit — the request is over.
     return msg.error !== undefined ? { ...fold, fatal: msg.error } : fold;
@@ -635,7 +641,21 @@ export async function startTranslation(viewKey: string, events: readonly RunEven
       }
     }
     publish(true);
-    if (owned()) patch(viewKey, { status: "done" });
+    // A stream that ended without the server's terminal marker was cut, not
+    // finished. Calling that "done" would present a half-translated session as
+    // a whole one — the passages that never arrived are still in their
+    // original language, and nothing on screen would say so.
+    if (owned()) {
+      patch(
+        viewKey,
+        fold.closed
+          ? { status: "done" }
+          : {
+              status: "error",
+              error: t(currentLang(), "tr.cutShort", { n: plan.passages.length - fold.finished }),
+            },
+      );
+    }
   } catch (failed) {
     publish(true);
     if (!owned()) return;

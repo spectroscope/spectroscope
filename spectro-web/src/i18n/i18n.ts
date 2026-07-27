@@ -586,6 +586,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tr.running": { de: "Läuft im Hintergrund weiter. Dieses Fenster zu schließen stoppt nichts.", en: "Running in the background. Closing this sheet leaves it running." },
   "tr.done": { de: "Fertig. Alle Ansichten zeigen jetzt die Übersetzung; „Original“ schaltet zurück.", en: "Done. Every view now shows the translation; \"original\" switches back." },
   "tr.failedUnits": { de: "{n} Textstellen sind in der Originalsprache geblieben.", en: "{n} passages stayed in the original language." },
+  "tr.cutShort": { de: "Der Übersetzungslauf wurde vorzeitig beendet. {n} Textstellen sind in der Originalsprache geblieben.", en: "The translation run ended early. {n} passages stayed in the original language." },
   "tr.export": { de: "als .jsonl sichern", en: "save as .jsonl" },
   "tr.exportTitle": { de: "Die übersetzte Sitzung als Datei — beim nächsten Mal laden statt neu übersetzen", en: "The translated session as a file — load it next time instead of translating again" },
   "tr.reset": { de: "Übersetzung verwerfen", en: "discard the translation" },
