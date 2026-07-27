@@ -241,6 +241,77 @@ const SH_KW = new Set([
   "source",
   "set",
   "unset",
+  // The commands themselves. A shell transcript is read for WHAT IT DID, so the
+  // verb at the head of a line carries more meaning than the control keyword —
+  // and a session that greps a compromised host is all verbs and no `if`.
+  "cat",
+  "cd",
+  "chmod",
+  "chown",
+  "cp",
+  "curl",
+  "cut",
+  "df",
+  "diff",
+  "du",
+  "echo",
+  "find",
+  "grep",
+  "head",
+  "kill",
+  "ln",
+  "ls",
+  "mkdir",
+  "mv",
+  "printf",
+  "ps",
+  "pwd",
+  "rm",
+  "rmdir",
+  "scp",
+  "sed",
+  "sort",
+  "ssh",
+  "stat",
+  "sudo",
+  "tail",
+  "tar",
+  "tee",
+  "touch",
+  "tr",
+  "uniq",
+  "wc",
+  "wget",
+  "which",
+  "xargs",
+  "zip",
+  "unzip",
+  "awk",
+  "git",
+  "npm",
+  "node",
+  "python",
+  "python3",
+  "pip",
+  "java",
+  "docker",
+  "systemctl",
+  "service",
+  "mysql",
+  "psql",
+  "sqlite3",
+  "openssl",
+  "rsync",
+  "nohup",
+  "exec",
+  "eval",
+  "test",
+  "sleep",
+  "date",
+  "env",
+  "expect",
+  "spawn",
+  "send",
 ]);
 
 const JSON_KW = new Set(["true", "false", "null"]);
@@ -294,6 +365,13 @@ export function hlLangForPath(path: string): HlLang | null {
   const dot = name.lastIndexOf(".");
   if (dot < 0) return null;
   return EXT_LANG[name.slice(dot + 1).toLowerCase()] ?? null;
+}
+
+/** Characters that bind a word into a larger name — a dotted host, a path, a
+ *  flag, an identifier. A word touching one of these is a fragment, not a
+ *  keyword. */
+function isGlue(c: string | undefined): boolean {
+  return c === "." || c === "/" || c === "-" || c === "_" || c === "@" || c === ":";
 }
 
 const isSpace = (c: string): boolean =>
@@ -398,7 +476,12 @@ export function tokenize(src: string, lang: HlLang): Token[] {
       while (j < n && isIdent(src[j])) j++;
       const word = src.slice(i, j);
       const lookup = spec.foldCase === true ? word.toLowerCase() : word;
-      push(j, spec.keywords.has(lookup) ? "keyword" : "plain");
+      // A keyword only counts when it stands alone. Without this, `in` lights
+      // up inside the hostname uft.in.ua, `test` inside a path, `set` inside
+      // an option — the scanner splits on punctuation, so every dotted or
+      // slashed name is a bag of would-be keywords.
+      const glued = isGlue(src[i - 1]) || isGlue(src[j]);
+      push(j, !glued && spec.keywords.has(lookup) ? "keyword" : "plain");
       continue;
     }
 

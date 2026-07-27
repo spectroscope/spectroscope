@@ -9,7 +9,8 @@ import type { ReactNode } from "react";
 import { parseMarkdown } from "../markdown/parse";
 import type { Block, Inline } from "../markdown/parse";
 import { CopyButton } from "./CopyButton";
-import { hlLangForFence, tokenize } from "../workspace/highlight";
+import { hlLangForFence } from "../workspace/highlight";
+import { highlight } from "./Highlighted";
 
 function renderInline(nodes: Inline[], key: string): ReactNode[] {
   return nodes.map((n, i) => {
@@ -59,23 +60,6 @@ function renderList(list: Extract<Block, { kind: "list" }>, key: string): ReactN
   );
 }
 
-/** Colour a fenced block when the tokenizer knows its language, and leave it
- *  untouched when it does not — a wrong colouring reads as a wrong claim about
- *  the code, so an unknown fence stays plain text. */
-function highlighted(text: string, lang: string | null | undefined): ReactNode {
-  const hl = lang != null ? hlLangForFence(lang) : null;
-  if (hl === null) return text;
-  return tokenize(text, hl).map((tok, i) =>
-    tok.cls === "plain" ? (
-      tok.text
-    ) : (
-      <span key={i} className={`hl hl-${tok.cls}`}>
-        {tok.text}
-      </span>
-    ),
-  );
-}
-
 function renderBlock(block: Block, key: string): ReactNode {
   switch (block.kind) {
     case "heading": {
@@ -92,7 +76,7 @@ function renderBlock(block: Block, key: string): ReactNode {
             <CopyButton text={() => block.text} />
           </div>
           <pre>
-            <code>{highlighted(block.text, block.lang)}</code>
+            <code>{highlight(block.text, block.lang != null ? hlLangForFence(block.lang) : null)}</code>
           </pre>
         </div>
       );

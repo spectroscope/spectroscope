@@ -16,6 +16,8 @@ import { describeTool } from "./toolViews";
 import { JsonTree } from "./JsonTree";
 import { prettyJson } from "../format";
 import { t } from "../i18n/i18n";
+import { highlight } from "./Highlighted";
+import { hlLangForPath } from "../workspace/highlight";
 import { useLang } from "../state/lang";
 import type { Lang } from "../i18n/i18n";
 
@@ -52,7 +54,7 @@ function Structured({ view, lang }: { view: ToolView; lang: Lang }) {
           </Region>
           {view.body !== "" && (
             <Region label={t(lang, "tv.content")}>
-              <pre className="tv-well mono">{cut(view.body)}</pre>
+              <pre className="tv-well mono">{highlight(cut(view.body), hlLangForPath(view.path))}</pre>
             </Region>
           )}
         </>
@@ -65,7 +67,7 @@ function Structured({ view, lang }: { view: ToolView; lang: Lang }) {
             <div className="tv-path mono">{view.path}</div>
           </Region>
           <Region label={t(lang, "tv.content")}>
-            <pre className="tv-well mono">{cut(view.content)}</pre>
+            <pre className="tv-well mono">{highlight(cut(view.content), hlLangForPath(view.path))}</pre>
           </Region>
         </>
       );
@@ -128,7 +130,7 @@ function Structured({ view, lang }: { view: ToolView; lang: Lang }) {
               <span className="tv-prompt" aria-hidden="true">
                 $
               </span>
-              {view.command}
+              {highlight(view.command, "shell")}
             </div>
           </Region>
           {view.output !== "" && (

@@ -107,3 +107,35 @@ describe("sql", () => {
     expect(toks.map((t) => t.text).join("")).toBe(src);
   });
 });
+
+describe("shell heuristics", () => {
+  it("colours the command verbs a transcript is actually made of", () => {
+    const toks = tokenize("ssh host\ncd /var/www\nfind . -name '*.php'\nrm -rf x", "shell");
+    const kw = toks.filter((t) => t.cls === "keyword").map((t) => t.text);
+    expect(kw).toEqual(expect.arrayContaining(["ssh", "cd", "find", "rm"]));
+  });
+
+  it("does not light up a keyword glued inside a name", () => {
+    // `in` is a shell keyword and uft.in.ua is a hostname; the scanner splits
+    // on the dot, so without a glue rule the middle label reads as syntax.
+    const toks = tokenize("cd uft.in.ua/www", "shell");
+    const kw = toks.filter((t) => t.cls === "keyword").map((t) => t.text);
+    expect(kw).toContain("cd");
+    expect(kw).not.toContain("in");
+  });
+
+  it("leaves a flag and a path fragment alone", () => {
+    const toks = tokenize("ls --test /usr/local/set/do", "shell");
+    const kw = toks.filter((t) => t.cls === "keyword").map((t) => t.text);
+    expect(kw).toEqual(["ls"]);
+  });
+
+  it("still rejoins losslessly", () => {
+    const src = 'grep -r "nulled" . 2>/dev/null # note\nfor f in a b; do echo $f; done';
+    expect(
+      tokenize(src, "shell")
+        .map((t) => t.text)
+        .join(""),
+    ).toBe(src);
+  });
+});

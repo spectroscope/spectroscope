@@ -73,7 +73,7 @@ export const DEFAULT_PREFS: DesignPrefs = {
   reasoningLens: false,
   // Card 69 (owner): timing bars are on out of the box — subtle enough to
   // read well idle, and the trace-toolbar chip switches them off persistently.
-  timelineLens: true,
+  timelineLens: false,
   otelRows: false,
 };
 

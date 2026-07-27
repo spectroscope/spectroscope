@@ -47,7 +47,7 @@ describe("designPrefs store", () => {
       scroll: true,
       particles: false,
       reasoningLens: false,
-      timelineLens: true,
+      timelineLens: false,
       otelRows: false,
     });
     expect(isDirty()).toBe(true);
@@ -72,7 +72,7 @@ describe("designPrefs store", () => {
       scroll: true,
       particles: true,
       reasoningLens: false,
-      timelineLens: true,
+      timelineLens: false,
       otelRows: false,
     });
   });
@@ -96,12 +96,15 @@ describe("designPrefs store", () => {
     expect(parsePrefs(JSON.stringify({ design: "paper" })).reasoningLens).toBe(false);
   });
 
-  it("timeline lens defaults ON and an explicit off sticks (card 69)", () => {
+  it("timeline lens defaults OFF and an explicit choice sticks either way", () => {
     // Owner call 2026-07-23: the timing bars are on out of the box — a browser
     // that never touched the toggle sees them, one that switched them off keeps
     // them off. The trace-toolbar chip stays the one switch.
-    expect(DEFAULT_PREFS.timelineLens).toBe(true);
-    expect(parsePrefs(JSON.stringify({ design: "paper" })).timelineLens).toBe(true);
+    // Card 69 made it default ON; the owner reversed that on 2026-07-27 after
+    // living with it. An explicit stored value still wins in both directions.
+    expect(DEFAULT_PREFS.timelineLens).toBe(false);
+    expect(parsePrefs(JSON.stringify({ design: "paper" })).timelineLens).toBe(false);
+    expect(parsePrefs(JSON.stringify({ timelineLens: true })).timelineLens).toBe(true);
     expect(parsePrefs(JSON.stringify({ timelineLens: false })).timelineLens).toBe(false);
     applyAndSaveDesign({ timelineLens: false });
     expect(JSON.parse(store.get(KEY) ?? "{}").timelineLens).toBe(false);

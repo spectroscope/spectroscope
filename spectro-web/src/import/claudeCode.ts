@@ -19,7 +19,14 @@ interface CCRecord {
     /** Assistant records name the model that produced them; it can change
      *  mid-file (a /model switch, or a subagent on another model). */
     model?: string;
-    usage?: { input_tokens?: number; output_tokens?: number };
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      /** Anthropic prompt caching. Additive on our wire too: absent means the
+       *  provider reported none, which is not the same as zero. */
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+    };
   };
   uuid?: string;
   parentUuid?: string;
@@ -266,6 +273,12 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
           agentId: "main",
           inputTokens: u.input_tokens ?? 0,
           outputTokens: u.output_tokens ?? 0,
+          ...(u.cache_read_input_tokens !== undefined
+            ? { cacheReadTokens: u.cache_read_input_tokens }
+            : {}),
+          ...(u.cache_creation_input_tokens !== undefined
+            ? { cacheCreationTokens: u.cache_creation_input_tokens }
+            : {}),
           ts,
         });
     }
