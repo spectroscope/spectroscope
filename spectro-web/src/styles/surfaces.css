@@ -257,6 +257,15 @@
 .log-level--info { color: var(--text-dim); }
 .log-level--warn { color: var(--warn); }
 .log-level--error { color: var(--error); }
+/* Browser-origin rows (state/browserLog) share the column format with the
+   server file but must never be mistaken for it: an accent wash behind the
+   row, the origin word on the accent. Background only — the severity tint on
+   .log-line--warn/--error keeps owning the text color. */
+.log-line--browser { background: var(--accent-soft); }
+.log-origin { color: var(--accent); font-weight: 600; }
+.log-source { color: var(--text-faint); }
+.log-count { color: var(--text-faint); }
+.log-detail { color: var(--text-faint); }
 .log-expand { flex: none; }
 /* Fullscreen (raw-modal pattern): the pane grows to the modal body — full
    height even when the log is still short. */

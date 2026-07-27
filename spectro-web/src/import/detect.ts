@@ -1,10 +1,12 @@
 // Format auto-detection for the session importer. Raw spectroscope JSONL (one RunEvent
 // per line — the canonical wire format) replays verbatim; a Claude Code
-// transcript (message records with content blocks) runs through the adapter.
+// transcript (message records with content blocks) and a VS Code agent-mode
+// export (dotted types, payload under `data`) run through their adapters.
 // Ported from the LLM_Simulator; keep the two in sync.
 
 import type { RunEvent } from "../events";
 import { claudeCodeToRunEvents } from "./claudeCode";
+import { vscodeAgentToRunEvents } from "./vscodeAgent";
 
 const SPECTRO_TYPES = new Set([
   "run_start",
@@ -27,6 +29,23 @@ const SPECTRO_TYPES = new Set([
   "plan",
 ]);
 
+/** The complete type vocabulary of a VS Code / GitHub Copilot agent-mode
+ *  export. Matching a name from this list AND a `data` object keeps the
+ *  recognizer off the other two formats and off any tool that merely happens to
+ *  log dotted type names: spectroscope types are never dotted, and a Claude Code
+ *  record carries `message`, not `data`. */
+const VSCODE_AGENT_TYPES = new Set([
+  "assistant.turn_start",
+  "assistant.turn_end",
+  "assistant.message",
+  "tool.execution_start",
+  "tool.execution_complete",
+  "user.message",
+]);
+
+const hasDataObject = (r: { data?: unknown }): boolean =>
+  !!r.data && typeof r.data === "object" && !Array.isArray(r.data);
+
 /** How many distinct type names the failure message may name, and how long each
  *  may be. A file we do not understand is a file we do not trust: without these
  *  caps a hostile or merely enormous export could flood the dialog. */
@@ -45,7 +64,10 @@ function safeTypeName(raw: string): string {
   return flat.length > MAX_TYPE_CHARS ? `${flat.slice(0, MAX_TYPE_CHARS)}…` : flat;
 }
 
-export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectroscope" | "claude-code" } {
+export function detectAndLoad(text: string): {
+  events: RunEvent[];
+  kind: "spectroscope" | "claude-code" | "vscode-agent";
+} {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) throw new Error("empty file");
 
@@ -60,10 +82,13 @@ export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectr
   // attachment, ai-title, …) before the first message — scan for the first
   // line that identifies a format instead of trusting line one.
   for (const rec of records) {
-    const r = rec as { type?: unknown; message?: unknown } | null;
+    const r = rec as { type?: unknown; message?: unknown; data?: unknown } | null;
     if (!r || typeof r.type !== "string") continue;
     if (SPECTRO_TYPES.has(r.type)) {
       return { events: records as RunEvent[], kind: "spectroscope" };
+    }
+    if (VSCODE_AGENT_TYPES.has(r.type) && hasDataObject(r)) {
+      return { events: vscodeAgentToRunEvents(records), kind: "vscode-agent" };
     }
     if (r.message !== undefined) {
       return { events: claudeCodeToRunEvents(records), kind: "claude-code" };
@@ -81,7 +106,7 @@ export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectr
   }
   const found = seen.length > 0 ? `Found ${seen.join(", ")}.` : "No record carried a type field.";
   throw new Error(
-    `This is neither a spectroscope session nor a Claude Code transcript. ${found} ` +
+    `This is not a spectroscope session, a Claude Code transcript or a VS Code agent export. ${found} ` +
       `spectroscope sessions live in ~/.spectro/sessions; Claude Code transcripts in ~/.claude/projects.`,
   );
 }

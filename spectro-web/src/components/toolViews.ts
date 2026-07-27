@@ -19,6 +19,17 @@ export type ToolView =
   | { kind: "skill"; name: string; body: string }
   | { kind: "generic"; input: unknown; output: string };
 
+/** The first of several string fields that is present — the same value travels
+ *  under different names depending on which agent wrote the session
+ *  (spectroscope says `path`, a VS Code export says `filePath`). */
+function firstStr(input: unknown, ...keys: string[]): string | null {
+  for (const key of keys) {
+    const value = str(input, key);
+    if (value !== null) return value;
+  }
+  return null;
+}
+
 /** A string field of the input object, or null when absent/not a string. */
 function str(input: unknown, key: string): string | null {
   if (typeof input !== "object" || input === null) return null;
@@ -59,7 +70,7 @@ export function describeTool(
   switch (name) {
     case "read_file":
     case "view_file": {
-      const path = str(input, "path");
+      const path = firstStr(input, "path", "filePath");
       if (path === null) return generic;
       const offset = num(input, "offset");
       const limit = num(input, "limit");
@@ -72,15 +83,17 @@ export function describeTool(
       return { kind: "file", path, range, body: out, lineCount: out === "" ? 0 : out.split("\n").length };
     }
 
+    case "create_file":
     case "write_file": {
-      const path = str(input, "path");
+      const path = firstStr(input, "path", "filePath");
       const content = str(input, "content");
       if (path === null || content === null) return generic;
       return { kind: "write", path, content, result: out };
     }
 
+    case "replace_string_in_file":
     case "edit_file": {
-      const path = str(input, "path");
+      const path = firstStr(input, "path", "filePath");
       // The tool's wire names; both snake and camel are tolerated because the
       // model has been seen to send either.
       const before = str(input, "old_string") ?? str(input, "oldString");
@@ -102,6 +115,7 @@ export function describeTool(
       return { kind: "matches", pattern, path: str(input, "path"), lines: lines(out) };
     }
 
+    case "run_in_terminal":
     case "run_command": {
       const command = str(input, "command");
       if (command === null) return generic;

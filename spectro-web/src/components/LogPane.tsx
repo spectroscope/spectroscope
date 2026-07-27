@@ -1,15 +1,26 @@
-// The doctor page's live server log (card 85): the rolling logback file,
-// tailed through GET /api/logs — an initial tail, then cheap offset-delta
-// polls while the "tail" toggle is on. Each line's leading timestamp +
-// severity token render as their own tinted spans (WARN amber, ERROR red —
-// the owner wants the level findable at a glance), and a fullscreen button
-// opens the same pane as a raw-modal, the System-Kontext pattern. The pane
-// follows the bottom edge with the same position-derived pinning as the
-// chat scroll (scroll up to study, back to the bottom to re-engage).
+// The doctor page's live log (card 85): the rolling logback file, tailed
+// through GET /api/logs — an initial tail, then cheap offset-delta polls while
+// the "tail" toggle is on. Each line's leading timestamp + severity token
+// render as their own tinted spans (WARN amber, ERROR red — the owner wants
+// the level findable at a glance), and a fullscreen button opens the same pane
+// as a raw-modal, the System-Kontext pattern. The pane follows the bottom edge
+// with the same position-derived pinning as the chat scroll (scroll up to
+// study, back to the bottom to re-engage).
+//
+// The pane shows BOTH halves of the product. The server file knows nothing
+// about what happens in the tab — session import is pure client work and never
+// calls the server — so the browser ring (state/browserLog) merges in by time,
+// marked as its own origin. Its entries survive the server being down, which
+// is the case they exist for; that is why the unreachable notice is now a row
+// above the log instead of replacing it.
+//
+// Both timestamps are local wall clock of the same machine (the server runs on
+// loopback), so ordering across the two is meaningful.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { useBrowserLog, type BrowserLogEntry } from "../state/browserLog";
 
 const POLL_MS = 1200;
 /** Client-side buffer cap — the file itself rolls at 5 MB, the pane needs less. */
@@ -19,6 +30,91 @@ const FOLLOW_PIN_THRESHOLD_PX = 32;
 
 /** The logback line head: "2026-07-25 17:18:24.528 LEVEL " — split for tinting. */
 const LINE_HEAD = /^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}) (TRACE|DEBUG|INFO|WARN|ERROR)(\s)/;
+
+// The merge below is pure and pinned from state/browserLog.test.ts — the
+// suite has no DOM, so the ordering rules are tested as data, not as pixels.
+
+/** One stamped server line together with its continuation lines. */
+export interface ServerBlock {
+  at: number;
+  lines: string[];
+}
+
+export type Row =
+  | { kind: "server"; key: string; at: number; block: ServerBlock }
+  | { kind: "browser"; key: string; at: number; entry: BrowserLogEntry };
+
+const pad = (n: number, width = 2): string => String(n).padStart(width, "0");
+
+/** Renders epoch ms in the logback column format, so the two origins align. */
+function formatStamp(ms: number): string {
+  const d = new Date(ms);
+  const date = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}`;
+  return `${date} ${time}`;
+}
+
+/** logback stamps carry no offset — they are the local clock, and so is ours. */
+function parseStamp(text: string): number {
+  return Date.parse(text.replace(" ", "T"));
+}
+
+/**
+ * Groups the tailed file into blocks so the merge can never slip a browser
+ * entry between a stack trace and the line it belongs to.
+ */
+export function serverBlocks(content: string): ServerBlock[] {
+  if (content === "") return [];
+  const blocks: ServerBlock[] = [];
+  for (const line of content.split("\n")) {
+    const head = LINE_HEAD.exec(line);
+    const previous = blocks[blocks.length - 1];
+    if (head === null && previous !== undefined) {
+      previous.lines.push(line);
+      continue;
+    }
+    const at = head === null ? Number.NEGATIVE_INFINITY : parseStamp(head[1]);
+    // A tail can start mid-file: whatever precedes the first stamp keeps the
+    // file's own order at the top rather than being given an invented time.
+    blocks.push({ at: Number.isNaN(at) ? (previous?.at ?? Number.NEGATIVE_INFINITY) : at, lines: [line] });
+  }
+  return blocks;
+}
+
+/** Stable merge of two already-ordered streams; a tie keeps the file contiguous. */
+export function mergeRows(blocks: ServerBlock[], entries: readonly BrowserLogEntry[]): Row[] {
+  const rows: Row[] = [];
+  let s = 0;
+  let b = 0;
+  while (s < blocks.length || b < entries.length) {
+    const takeServer = b >= entries.length || (s < blocks.length && blocks[s].at <= entries[b].at);
+    if (takeServer) {
+      rows.push({ kind: "server", key: `s${s}`, at: blocks[s].at, block: blocks[s] });
+      s += 1;
+    } else {
+      rows.push({ kind: "browser", key: `b${entries[b].seq}`, at: entries[b].at, entry: entries[b] });
+      b += 1;
+    }
+  }
+  return rows;
+}
+
+/** Stack frames sit under their entry, indented like a logback continuation. */
+const indentDetail = (detail: string): string =>
+  detail
+    .split("\n")
+    .map((l) => `    ${l}`)
+    .join("\n");
+
+const browserHead = (e: BrowserLogEntry): string =>
+  `${formatStamp(e.at)} ${e.level.toUpperCase()} browser [${e.source}] ${e.message}${e.count > 1 ? ` ×${e.count}` : ""}`;
+
+/** What the copy button hands over: the merged view exactly as it reads. */
+export function rowText(row: Row): string {
+  if (row.kind === "server") return row.block.lines.join("\n");
+  const head = browserHead(row.entry);
+  return row.entry.detail === undefined ? head : `${head}\n${indentDetail(row.entry.detail)}`;
+}
 
 function LogLine({ line }: { line: string }) {
   const head = LINE_HEAD.exec(line);
@@ -44,8 +140,29 @@ function LogLine({ line }: { line: string }) {
   );
 }
 
+function BrowserLine({ entry }: { entry: BrowserLogEntry }) {
+  const tone = entry.level === "error" ? "error" : entry.level === "warn" ? "warn" : "info";
+  return (
+    <span className={`log-line log-line--browser log-line--${tone}`}>
+      <span className="log-ts">{formatStamp(entry.at)} </span>
+      <span className={`log-level log-level--${tone}`}>{entry.level.toUpperCase()}</span>{" "}
+      <span className="log-origin">browser</span> <span className="log-source">[{entry.source}]</span>{" "}
+      {entry.message}
+      {entry.count > 1 && <span className="log-count"> ×{entry.count}</span>}
+      {"\n"}
+      {entry.detail !== undefined && (
+        <span className="log-detail">
+          {indentDetail(entry.detail)}
+          {"\n"}
+        </span>
+      )}
+    </span>
+  );
+}
+
 export function LogPane() {
   const lang = useLang();
+  const entries = useBrowserLog();
   const [content, setContent] = useState("");
   const [tail, setTail] = useState(true);
   const [full, setFull] = useState(false);
@@ -109,16 +226,17 @@ export function LogPane() {
     const el = paneRef.current;
     if (el === null || !tail || !pinnedRef.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [content, tail, full]);
+  }, [content, entries, tail, full]);
+
+  const rows = mergeRows(serverBlocks(content), entries);
 
   const copyAll = (): void => {
-    void navigator.clipboard.writeText(content).then(() => {
+    void navigator.clipboard.writeText(rows.map(rowText).join("\n")).then(() => {
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1400);
     });
   };
 
-  const lines = content === "" ? [] : content.split("\n");
   const pane = (
     <div
       className={`log-pane mono${full ? " log-pane--full" : ""}`}
@@ -126,12 +244,28 @@ export function LogPane() {
       onScroll={handleScroll}
       aria-live="off"
     >
-      {failed ? (
-        <span className="log-line log-line--warn">{t(lang, "doc.unreachable")}</span>
-      ) : lines.length === 0 ? (
+      {/* The file is unreachable, the ring is not — the notice sits above the
+          browser entries instead of hiding them, which is the moment they are
+          worth the most. */}
+      {failed && (
+        <span className="log-line log-line--warn">
+          {t(lang, "doc.unreachable")}
+          {"\n"}
+        </span>
+      )}
+      {rows.length === 0 && !failed && (
         <span className="log-line log-line--faint">{t(lang, "doc.logEmpty")}</span>
-      ) : (
-        lines.map((line, i) => <LogLine key={i} line={line} />)
+      )}
+      {rows.map((row) =>
+        row.kind === "browser" ? (
+          <BrowserLine key={row.key} entry={row.entry} />
+        ) : (
+          <Fragment key={row.key}>
+            {row.block.lines.map((line, i) => (
+              <LogLine key={i} line={line} />
+            ))}
+          </Fragment>
+        ),
       )}
     </div>
   );
@@ -154,7 +288,7 @@ export function LogPane() {
   return (
     <div className="log-pane-section">
       <div className="log-pane-head">
-        <span className="doctor-label">{t(lang, "doc.log")}</span>
+        <span className="doctor-label">{t(lang, "doc.logBoth")}</span>
         {tailToggle}
         <button
           type="button"
@@ -177,7 +311,7 @@ export function LogPane() {
             <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" />
           </svg>
         </button>
-        {content !== "" && (
+        {rows.length > 0 && (
           <button type="button" className="copy log-copy" onClick={copyAll}>
             {copied ? t(lang, "common.copied") : t(lang, "common.copy")}
           </button>
@@ -188,12 +322,12 @@ export function LogPane() {
           className="raw-modal-backdrop"
           role="dialog"
           aria-modal="true"
-          aria-label={t(lang, "doc.log")}
+          aria-label={t(lang, "doc.logBoth")}
           onClick={() => setFull(false)}
         >
           <div className="raw-modal log-modal" onClick={(e) => e.stopPropagation()}>
             <div className="raw-modal-head">
-              <span className="raw-modal-title">{t(lang, "doc.log")}</span>
+              <span className="raw-modal-title">{t(lang, "doc.logBoth")}</span>
               {tailToggle}
               <button type="button" className="raw-modal-copy" onClick={copyAll}>
                 {copied ? t(lang, "common.copied") : t(lang, "common.copy")}

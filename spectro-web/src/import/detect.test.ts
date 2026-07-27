@@ -1,9 +1,11 @@
-// Format auto-detection: a pasted/picked file is either raw spectroscope RunEvent
-// JSONL (the wire format, replayed verbatim) or a Claude Code transcript
-// (adapted). Anything else fails loudly with a friendly error.
+// Format auto-detection: a pasted/picked file is raw spectroscope RunEvent JSONL
+// (the wire format, replayed verbatim), a Claude Code transcript, or a VS Code
+// agent-mode export (both adapted). Anything else fails loudly with a friendly
+// error.
 import { describe, expect, it } from "vitest";
 import ccLinear from "./fixtures/cc-linear.jsonl?raw";
 import ccModern from "./fixtures/cc-modern.jsonl?raw";
+import vscodeAgent from "./fixtures/vscode-agent.jsonl?raw";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 
@@ -35,28 +37,73 @@ describe("detectAndLoad", () => {
     expect(events).toEqual(raw);
   });
 
+  it("detects a VS Code agent-mode export", () => {
+    const { kind, events } = detectAndLoad(vscodeAgent);
+    expect(kind).toBe("vscode-agent");
+    expect(events[0].type).toBe("run_start");
+    // The caller shows a note about the missing tool output off this kind, so a
+    // VS Code export must never come back labelled as one of the other two.
+    expect(kind).not.toBe("claude-code");
+  });
+
+  it("detects a VS Code export that opens on a tool record", () => {
+    // The real 893-record export begins mid-session, on tool.execution_start —
+    // detection cannot assume the first line is the conversation's first line.
+    const clipped = [
+      {
+        type: "tool.execution_start",
+        data: { toolCallId: "c1", toolName: "run_in_terminal", arguments: {} },
+        id: "1",
+        timestamp: "2026-07-24T14:43:45.448Z",
+        parentId: null,
+      },
+      {
+        type: "tool.execution_complete",
+        data: { toolCallId: "c1", success: true },
+        id: "2",
+        timestamp: "2026-07-24T14:43:46.448Z",
+        parentId: "1",
+      },
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n");
+    expect(detectAndLoad(clipped).kind).toBe("vscode-agent");
+  });
+
   it("throws a friendly error on garbage", () => {
     expect(() => detectAndLoad("not json\n{oops")).toThrow();
     expect(() => detectAndLoad("   \n  ")).toThrow();
   });
 
+  // A dotted type alone is not enough: other tools log dotted namespaces too.
+  // The VS Code recognizer wants a known type AND the `data` object the whole
+  // format hangs its payload on.
+  it("does not take a lookalike dotted type for a VS Code export", () => {
+    const lookalike = [
+      { type: "tool.execution_start", toolName: "run_in_terminal" }, // no data object
+      { type: "assistant.message", data: "just a string" },
+    ]
+      .map((r) => JSON.stringify(r))
+      .join("\n");
+    expect(() => detectAndLoad(lookalike)).toThrow();
+  });
+
   // "unrecognized format" is a dead end: it names neither what arrived nor what
-  // was expected. A third format DOES exist in the wild (the owner hit a
-  // VS Code/Copilot agent export whose types are dotted and whose payload sits
-  // under `data`), so the message has to hand the reader their next move.
+  // was expected, so the message has to hand the reader their next move.
   it("names the types it actually saw when nothing matches", () => {
-    const vscodeExport = [
-      { type: "assistant.turn_start", data: {}, id: "1", timestamp: "2026-07-24T14:43:45.448Z" },
-      { type: "tool.execution_start", data: { toolName: "run_in_terminal" }, id: "2" },
-      { type: "user.message", data: { content: "hi" }, id: "3" },
+    const foreign = [
+      { type: "langsmith.run.create", payload: {}, id: "1" },
+      { type: "langsmith.run.patch", payload: {}, id: "2" },
+      { type: "langsmith.feedback", payload: {}, id: "3" },
     ]
       .map((r) => JSON.stringify(r))
       .join("\n");
 
-    expect(() => detectAndLoad(vscodeExport)).toThrow(/assistant\.turn_start/);
-    expect(() => detectAndLoad(vscodeExport)).toThrow(/tool\.execution_start/);
+    expect(() => detectAndLoad(foreign)).toThrow(/langsmith\.run\.create/);
+    expect(() => detectAndLoad(foreign)).toThrow(/langsmith\.feedback/);
     // and it must say what it DOES accept, or the reader still has no move
-    expect(() => detectAndLoad(vscodeExport)).toThrow(/spectroscope|Claude Code/i);
+    expect(() => detectAndLoad(foreign)).toThrow(/spectroscope|Claude Code/i);
+    expect(() => detectAndLoad(foreign)).toThrow(/VS Code/i);
   });
 
   it("caps the reported type list so a hostile file cannot flood the dialog", () => {

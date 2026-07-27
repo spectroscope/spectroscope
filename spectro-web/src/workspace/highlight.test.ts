@@ -88,3 +88,22 @@ describe("tokenize", () => {
     expect(toks.find((t) => t.text === '"oops')?.cls).toBe("string");
   });
 });
+
+describe("sql", () => {
+  it("colours shouted keywords and single-quoted strings", () => {
+    const toks = tokenize("DELETE FROM r9wbh_menu WHERE link LIKE '%com_sppagebuilder%';", "sql");
+    const kw = toks.filter((t) => t.cls === "keyword").map((t) => t.text);
+    expect(kw).toContain("DELETE");
+    expect(kw).toContain("FROM");
+    expect(kw).toContain("WHERE");
+    expect(kw).toContain("LIKE");
+    expect(toks.some((t) => t.cls === "string" && t.text.includes("com_sppagebuilder"))).toBe(true);
+  });
+
+  it("treats -- as a line comment and rejoins losslessly", () => {
+    const src = "SELECT 1 -- a note\nFROM t";
+    const toks = tokenize(src, "sql");
+    expect(toks.some((t) => t.cls === "comment" && t.text.includes("a note"))).toBe(true);
+    expect(toks.map((t) => t.text).join("")).toBe(src);
+  });
+});

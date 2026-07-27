@@ -69,6 +69,11 @@
 }
 .import-paste:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .import-error { color: var(--error); font-size: var(--fs-12); margin-top: var(--sp-2); }
+/* A fact about the loaded file, not a failure — dim, not red. */
+.import-note { color: var(--text-dim); font-size: var(--fs-12); margin-top: var(--sp-2); }
+/* Belongs to the loaded session, not the dialog that is already gone. */
+.import-note-bar { position: fixed; bottom: var(--sp-4); left: 50%; transform: translateX(-50%); z-index: var(--z-modal); display: flex; align-items: center; gap: var(--sp-3); max-width: min(680px, 92vw); padding: var(--sp-3) var(--sp-4); background: var(--surface); border: 1px solid var(--border-strong); border-radius: var(--radius-control); box-shadow: var(--shadow-modal); color: var(--text-dim); font-size: var(--fs-13); }
+.import-note-bar button { flex: none; }
 .import-spacer { flex: 1; }
 
 /* One-click transcripts from the (Finder-invisible) ~/.claude/projects store. */

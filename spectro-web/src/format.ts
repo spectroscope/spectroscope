@@ -9,7 +9,6 @@ export function formatTokens(n: number): string {
   return `${k >= 100 ? String(Math.round(k)) : k.toFixed(1)}k`;
 }
 
-/** 412 -> "0.4 s", 12300 -> "12 s", 96000 -> "1 m 36 s". */
 /** Local wall clock HH:MM:SS — the answer footer's start/end stamps (card 87). */
 export function clockTime(ts: number): string {
   const d = new Date(ts);
@@ -17,22 +16,39 @@ export function clockTime(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
+const pad2 = (n: number) => String(n).padStart(2, "0");
+
+/** 412 -> "0.4 s", 12300 -> "12 s", 96000 -> "1 m 36 s", 72612000 -> "20 h 10 m". */
 export function formatDuration(ms: number): string {
   const clamped = Math.max(0, ms);
   if (clamped < 10000) return `${(clamped / 1000).toFixed(1)} s`;
-  if (clamped < 60000) return `${Math.round(clamped / 1000)} s`;
-  const minutes = Math.floor(clamped / 60000);
-  const seconds = Math.round((clamped % 60000) / 1000);
-  return `${minutes} m ${seconds} s`;
+  // Round into the smallest unit a tier displays FIRST, then pick the tier from
+  // the rounded value and split it. Rounding after the split is what produces
+  // impossible readings like "59 m 60 s": the seconds overflow their base with
+  // no way to carry. Here the carry happens before anything is rendered, so
+  // every sub-unit is structurally below 60.
+  const totalSeconds = Math.round(clamped / 1000);
+  if (totalSeconds < 60) return `${totalSeconds} s`;
+  if (totalSeconds < 3600) return `${Math.floor(totalSeconds / 60)} m ${totalSeconds % 60} s`;
+  const totalMinutes = Math.round(clamped / 60000);
+  return `${Math.floor(totalMinutes / 60)} h ${totalMinutes % 60} m`;
 }
 
-/** Offset from run start: 0 -> "t+0.00s", 2310 -> "t+2.31s", 96000 -> "t+1m36s". */
+/**
+ * Offset from run start: 0 -> "t+0.00s", 2310 -> "t+2.31s", 96000 -> "t+1m36s",
+ * 72612000 -> "t+20h10m12s". Truncated, never rounded: this labels the moment an
+ * event happened, and an event at t+1m36.9s did happen after t+1m36s. Seconds
+ * survive into the hour tier because the graph labels every node with this —
+ * dropping them would make everything in a long run read alike.
+ */
 export function formatRelMs(ms: number): string {
   const clamped = Math.max(0, ms);
   if (clamped < 60000) return `t+${(clamped / 1000).toFixed(2)}s`;
-  const minutes = Math.floor(clamped / 60000);
-  const seconds = Math.floor((clamped % 60000) / 1000);
-  return `t+${minutes}m${String(seconds).padStart(2, "0")}s`;
+  const totalSeconds = Math.floor(clamped / 1000);
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const seconds = pad2(totalSeconds % 60);
+  if (totalMinutes < 60) return `t+${totalMinutes}m${seconds}s`;
+  return `t+${Math.floor(totalMinutes / 60)}h${pad2(totalMinutes % 60)}m${seconds}s`;
 }
 
 /** "just now", "5 min ago", "2 h ago", "3 d ago". */

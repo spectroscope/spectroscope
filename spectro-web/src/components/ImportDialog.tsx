@@ -1,5 +1,6 @@
 // Session import: paste or pick a .jsonl — raw spectroscope RunEvents replay
-// verbatim, real Claude Code transcripts run through the adapter. The loaded
+// verbatim; Claude Code transcripts and VS Code agent-mode exports run through
+// their adapters. The loaded
 // stream feeds the SAME replay path as a stored session, so every tab (chat,
 // graph, flow, lab, trace) renders it with zero extra plumbing.
 //
@@ -11,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "../import/detect";
+import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
@@ -29,11 +31,12 @@ function formatKb(bytes: number): string {
 }
 
 export function ImportDialog(props: {
-  onLoad: (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code") => void;
+  onLoad: (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code" | "vscode-agent") => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptInfo[]>([]);
   const lang = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -68,9 +71,17 @@ export function ImportDialog(props: {
     setError(null);
     try {
       const { events, kind } = detectAndLoad(raw);
+      // The VS Code export records that a tool ran and whether it succeeded,
+      // never what it returned. Say that once, here, rather than leaving the
+      // reader to infer it from a screen of empty tool bodies.
+      setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
       props.onLoad(events, label, kind);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      // This is the blind spot the ring exists for: the whole import path runs
+      // in the browser and reaches no server, so nothing else records it.
+      reportBrowserError("import", e);
     }
   };
 
@@ -142,6 +153,7 @@ export function ImportDialog(props: {
           rows={6}
         />
         {error !== null && <p className="import-error">{error}</p>}
+        {note !== null && <p className="import-note">{note}</p>}
         <div className="modal-actions">
           <input ref={fileRef} type="file" accept=".jsonl,.json,.txt" hidden onChange={onFile} />
           <button type="button" className="ghost" onClick={() => fileRef.current?.click()}>

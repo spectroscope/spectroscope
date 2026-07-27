@@ -632,7 +632,13 @@ export function App() {
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
   const [importOpen, setImportOpen] = useState(false);
-  const openImport = (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code"): void => {
+  const [importNote, setImportNote] = useState<string | null>(null);
+
+  const openImport = (
+    events: RunEvent[],
+    label: string,
+    kind: "spectroscope" | "claude-code" | "vscode-agent",
+  ): void => {
     setReplay({
       id: `import:${kind}:${label}`,
       state: foldArchive(events),
@@ -640,6 +646,11 @@ export function App() {
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setImportOpen(false);
+    // The dialog is gone by the time this note matters, so it belongs to the
+    // session, not to the dialog. A VS Code export records that each tool ran
+    // and whether it succeeded, never what it returned; without this line the
+    // empty tool bodies read as a broken import.
+    setImportNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
   };
 
   // Scenario playback: compile the bilingual DSL in the current chrome
@@ -1313,6 +1324,14 @@ export function App() {
         leveling={leveling}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
+      {importNote !== null && (
+        <div className="import-note-bar" role="status">
+          <span>{importNote}</span>
+          <button type="button" className="ghost" onClick={() => setImportNote(null)}>
+            {t(lang, "common.close")}
+          </button>
+        </div>
+      )}
       {localNoticeOpen && (
         <LocalModelNotice
           model={live.providerInfo?.model}

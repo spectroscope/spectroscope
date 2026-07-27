@@ -13,7 +13,14 @@ import type { RunEvent } from "../events";
 
 interface CCRecord {
   type?: string;
-  message?: { role?: string; content?: unknown; usage?: { input_tokens?: number; output_tokens?: number } };
+  message?: {
+    role?: string;
+    content?: unknown;
+    /** Assistant records name the model that produced them; it can change
+     *  mid-file (a /model switch, or a subagent on another model). */
+    model?: string;
+    usage?: { input_tokens?: number; output_tokens?: number };
+  };
   uuid?: string;
   parentUuid?: string;
   isSidechain?: boolean;
@@ -32,11 +39,45 @@ interface CCBlock {
   is_error?: boolean;
 }
 
-/** Records without timestamps get synthetic ones this far apart — the
- *  closing run_end derives from the same step, keeping ts monotonic. */
+/** Records without a timestamp get synthetic ones this far apart. */
 const SYNTHETIC_TS_STEP_MS = 1000;
-const tsOf = (r: CCRecord, i: number, base: number) =>
-  r.timestamp ? Date.parse(r.timestamp) : base + i * SYNTHETIC_TS_STEP_MS;
+
+/**
+ * One stamp per record, in file order and never decreasing.
+ *
+ * Timestamps are per record, not per file: a transcript can date some records
+ * and leave others bare. Every date the file DOES carry is the truth about
+ * when the session ran — the synthetic ladder is a relative filler that hangs
+ * off the nearest one, so the stream keeps the file's own span instead of a
+ * calendar of its own. A file with no date at all rides the ladder from `base`.
+ */
+function stampRecords(recs: CCRecord[], base: number): number[] {
+  const dated = recs.map((r) => {
+    const t = r.timestamp !== undefined ? Date.parse(r.timestamp) : Number.NaN;
+    return Number.isFinite(t) ? t : null;
+  });
+  const first = dated.findIndex((t) => t !== null);
+  if (first < 0) return recs.map((_, i) => base + i * SYNTHETIC_TS_STEP_MS);
+
+  const stamps: number[] = [];
+  // Records ahead of the first dated one have nothing to continue from: hang
+  // them one rung apart IN FRONT of it, which keeps their order without
+  // claiming a wall-clock time the file never recorded.
+  const origin = dated[first] as number;
+  for (let i = 0; i < first; i++) stamps.push(origin - (first - i) * SYNTHETIC_TS_STEP_MS);
+  let latest = origin;
+  for (let i = first; i < recs.length; i++) {
+    const t = dated[i];
+    if (t !== null) {
+      stamps.push(t);
+      latest = Math.max(latest, t); // a stray early date must not pull the ladder back
+    } else {
+      latest += SYNTHETIC_TS_STEP_MS;
+      stamps.push(latest);
+    }
+  }
+  return stamps;
+}
 
 // "Task" is the classic subagent tool; newer Claude Code versions call it "Agent".
 const isSpawnTool = (name: unknown): boolean => name === "Task" || name === "Agent";
@@ -79,9 +120,104 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
     return null;
   };
   const childStarted = new Set<string>();
+  // Who spawned a Task, and what for — a Task nested inside a sidechain belongs
+  // under its spawner, not under main.
+  const spawnedBy = new Map<string, string>();
+  const taskOf = new Map<string, string>();
+
+  // Turns are per agent: the main run and every subagent count their own.
+  const turns = new Map<string, number>();
+  const nextTurn = (agentId: string): number => {
+    const n = (turns.get(agentId) ?? 0) + 1;
+    turns.set(agentId, n);
+    return n;
+  };
+
+  const stamps = stampRecords(recs, base);
+  const modelOf = (r: CCRecord): string | undefined =>
+    typeof r.message?.model === "string" && r.message.model !== "" ? r.message.model : undefined;
+  const firstModel = recs.map(modelOf).find((m) => m !== undefined);
+
+  // provider_info is the socket-only announcement of the active backend, and
+  // the reducer takes the latest one. A transcript names its model per message,
+  // so the file itself says when it changed: announce it once up front and
+  // again at each switch. Two fields stay OUT: the API host, which a transcript
+  // never records, and the provider — a Claude model id says which model spoke,
+  // not whether it came from the Anthropic API, Bedrock or Vertex, and the
+  // trace turns a claimed "anthropic" into a claimed endpoint. Absent reads as
+  // unknown; a guess would read as fact.
+  let announced: string | undefined;
+  const announce = (model: string | undefined, ts: number): void => {
+    if (model === undefined || model === announced) return;
+    announced = model;
+    out.push({ type: "provider_info", model, ts } as unknown as RunEvent);
+  };
+
+  /** One content block under `agentId`, whoever owns it. */
+  const emitBlock = (agentId: string, b: CCBlock, ts: number): void => {
+    // Signature-only thinking / empty text blocks would render as empty
+    // activities and empty stream slices — skip them.
+    if (b?.type === "thinking" && (b.thinking ?? "") !== "") {
+      out.push({ type: "thinking_delta", agentId, text: b.thinking ?? "", ts });
+    } else if (b?.type === "text" && (b.text ?? "") !== "") {
+      out.push({ type: "text_delta", agentId, text: b.text ?? "", ts });
+    } else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
+      if (isSpawnTool(b.name)) {
+        const task = typeof b.input?.description === "string" ? b.input.description : "subtask";
+        // The agent type ("Explore", "code-reviewer") is the only readable name
+        // a subagent has — its id is the raw tool-use id. It travels on the task
+        // message, which is what the roster and the spectrum lane read.
+        const label = typeof b.input?.subagent_type === "string" ? b.input.subagent_type : "task";
+        spawnedBy.set(b.id, agentId);
+        taskOf.set(b.id, task);
+        out.push({ type: "agent_spawn", agentId: b.id, parentId: agentId, task, ts });
+        out.push({
+          type: "agent_message",
+          from: agentId,
+          to: b.id,
+          role: "task",
+          state: "submitted",
+          text: task,
+          label,
+          ts,
+        });
+      } else {
+        out.push({ type: "tool_call", agentId, callId: b.id, name: b.name, input: b.input, ts });
+      }
+    } else if (b?.type === "tool_result" && typeof b.tool_use_id === "string") {
+      if (taskIds.has(b.tool_use_id)) {
+        // A Task's result: close the child before the parent resumes.
+        if (childStarted.has(b.tool_use_id)) {
+          out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: "end_turn", ts });
+        }
+        out.push({
+          type: "agent_message",
+          from: b.tool_use_id,
+          to: agentId,
+          role: "result",
+          state: b.is_error ? "failed" : "completed",
+          text: asText(b.content),
+          ts,
+        });
+      }
+      out.push({
+        type: "tool_result",
+        agentId,
+        callId: b.tool_use_id,
+        output: asText(b.content),
+        isError: !!b.is_error,
+        durationMs: 0,
+        ts,
+      });
+    }
+  };
+
+  announce(firstModel, stamps[0] ?? base);
 
   recs.forEach((r, i) => {
-    const ts = tsOf(r, i, base);
+    const ts = stamps[i];
+    const content = r.message?.content;
+    const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
     if (r.isSidechain) {
       const owner = ownerOf(r);
       if (!owner) return; // orphaned sidechain: skip, never crash
@@ -90,111 +226,39 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
           type: "run_start",
           runId: `cc-${owner}`,
           agentId: owner,
-          parentId: "main",
-          prompt: "subtask",
+          parentId: spawnedBy.get(owner) ?? "main",
+          prompt: taskOf.get(owner) ?? "subtask",
           ts,
         });
-        out.push({ type: "turn_start", agentId: owner, turn: 1, ts });
         childStarted.add(owner);
       }
-      const content = r.message?.content;
-      if (Array.isArray(content)) {
-        for (const b of content as CCBlock[]) {
-          // Signature-only thinking / empty text blocks would render as empty
-          // activities and empty stream slices — skip them.
-          if (b?.type === "thinking" && (b.thinking ?? "") !== "")
-            out.push({ type: "thinking_delta", agentId: owner, text: b.thinking ?? "", ts });
-          else if (b?.type === "text" && (b.text ?? "") !== "")
-            out.push({ type: "text_delta", agentId: owner, text: b.text ?? "", ts });
-          else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
-            out.push({ type: "tool_call", agentId: owner, callId: b.id, name: b.name, input: b.input, ts });
-          } else if (b?.type === "tool_result" && typeof b.tool_use_id === "string") {
-            out.push({
-              type: "tool_result",
-              agentId: owner,
-              callId: b.tool_use_id,
-              output: asText(b.content),
-              isError: !!b.is_error,
-              durationMs: 0,
-              ts,
-            });
-          }
-        }
+      if (r.type === "assistant") {
+        announce(modelOf(r), ts);
+        out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
+      for (const b of blocks) emitBlock(owner, b, ts);
       return;
     }
     if (r.type === "user") {
-      const content = r.message?.content;
       if (!started) {
-        out.push({ type: "run_start", runId, agentId: "main", prompt: asText(content), ts });
-        out.push({ type: "turn_start", agentId: "main", turn: 1, ts });
+        out.push({
+          type: "run_start",
+          runId,
+          agentId: "main",
+          prompt: asText(content),
+          ...(firstModel !== undefined ? { model: firstModel } : {}),
+          ts,
+        });
         started = true;
-      } else if (Array.isArray(content)) {
-        for (const b of content as CCBlock[]) {
-          if (b?.type === "tool_result" && typeof b.tool_use_id === "string") {
-            if (taskIds.has(b.tool_use_id)) {
-              // A Task's result: close the child before the parent resumes.
-              if (childStarted.has(b.tool_use_id)) {
-                out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: "end_turn", ts });
-              }
-              out.push({
-                type: "agent_message",
-                from: b.tool_use_id,
-                to: "main",
-                role: "result",
-                state: b.is_error ? "failed" : "completed",
-                text: asText(b.content),
-                ts,
-              });
-            }
-            out.push({
-              type: "tool_result",
-              agentId: "main",
-              callId: b.tool_use_id,
-              output: asText(b.content),
-              isError: !!b.is_error,
-              durationMs: 0,
-              ts,
-            });
-          }
-        }
+      } else {
+        for (const b of blocks) emitBlock("main", b, ts);
       }
     } else if (r.type === "assistant") {
-      const content = r.message?.content;
-      if (Array.isArray(content)) {
-        for (const b of content as CCBlock[]) {
-          if (b?.type === "thinking" && (b.thinking ?? "") !== "")
-            out.push({ type: "thinking_delta", agentId: "main", text: b.thinking ?? "", ts });
-          else if (b?.type === "text" && (b.text ?? "") !== "")
-            out.push({ type: "text_delta", agentId: "main", text: b.text ?? "", ts });
-          else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
-            if (isSpawnTool(b.name)) {
-              const task = typeof b.input?.description === "string" ? b.input.description : "subtask";
-              const label = typeof b.input?.subagent_type === "string" ? b.input.subagent_type : "task";
-              out.push({ type: "agent_spawn", agentId: b.id, parentId: "main", task, ts });
-              out.push({
-                type: "agent_message",
-                from: "main",
-                to: b.id,
-                role: "task",
-                state: "submitted",
-                text: task,
-                label,
-                ts,
-              });
-            } else {
-              out.push({
-                type: "tool_call",
-                agentId: "main",
-                callId: b.id,
-                name: b.name,
-                input: b.input,
-                ts,
-              });
-            }
-          }
-        }
-      }
+      // One assistant message is one turn. A long session is hundreds of them,
+      // and the graph draws a node per turn_start.
+      announce(modelOf(r), ts);
+      out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
+      for (const b of blocks) emitBlock("main", b, ts);
       const u = r.message?.usage;
       if (u)
         out.push({
@@ -207,13 +271,13 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
     }
   });
 
-  if (started)
-    out.push({
-      type: "run_end",
-      runId,
-      stopReason: "end_turn",
-      ts: base + recs.length * SYNTHETIC_TS_STEP_MS,
-    });
+  if (started) {
+    // The closing stamp is the last moment the file recorded, so the run_end
+    // can never predate the events it closes and the session's span stays the
+    // session's own.
+    const last = stamps.reduce((m, t) => (t > m ? t : m), stamps[0] ?? base);
+    out.push({ type: "run_end", runId, stopReason: "end_turn", ts: last });
+  }
   return out;
 }
 

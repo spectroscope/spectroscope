@@ -108,3 +108,51 @@ describe("describeTool — the honest fallbacks", () => {
     expect(v.body).toBe("");
   });
 });
+
+describe("VS Code agent-mode tool names", () => {
+  // An imported VS Code export speaks its own vocabulary and its own field
+  // names. Without these the cards fall back to pretty-printed JSON, which is
+  // how a shell command ends up rendered as escaped quotes.
+  it("reads run_in_terminal as a command", () => {
+    const v = describeTool(
+      "run_in_terminal",
+      { command: "ls -la", explanation: "look", goal: "check", mode: "sync", timeout: 15000 },
+      "",
+      false,
+    );
+    expect(v.kind).toBe("command");
+    if (v.kind === "command") expect(v.command).toBe("ls -la");
+  });
+
+  it("reads create_file as a write, taking the path from filePath", () => {
+    const v = describeTool("create_file", { filePath: "/tmp/x.sh", content: "#!/bin/sh\n" }, "", false);
+    expect(v.kind).toBe("write");
+    if (v.kind === "write") {
+      expect(v.path).toBe("/tmp/x.sh");
+      expect(v.content).toBe("#!/bin/sh\n");
+    }
+  });
+
+  it("reads replace_string_in_file as an edit", () => {
+    const v = describeTool(
+      "replace_string_in_file",
+      { filePath: "a.txt", oldString: "one", newString: "two" },
+      "",
+      false,
+    );
+    expect(v.kind).toBe("edit");
+  });
+
+  it("reads read_file with filePath", () => {
+    const v = describeTool("read_file", { filePath: "a.txt" }, "body", false);
+    expect(v.kind).toBe("file");
+    if (v.kind === "file") expect(v.path).toBe("a.txt");
+  });
+
+  it("still falls back to generic when the required field is missing", () => {
+    expect(describeTool("run_in_terminal", { explanation: "no command here" }, "", false).kind).toBe(
+      "generic",
+    );
+    expect(describeTool("create_file", { filePath: "x" }, "", false).kind).toBe("generic");
+  });
+});

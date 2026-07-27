@@ -16,7 +16,7 @@ export interface Token {
   cls: TokenClass;
 }
 
-export type HlLang = "java" | "python" | "shell" | "json";
+export type HlLang = "java" | "python" | "shell" | "json" | "sql";
 
 interface LangSpec {
   /** Line-comment prefixes (rest of the line is a comment). */
@@ -28,6 +28,8 @@ interface LangSpec {
   /** Single-char string delimiters. */
   quotes: string[];
   keywords: ReadonlySet<string>;
+  /** Look keywords up lower-cased — SQL is conventionally shouted. */
+  foldCase?: boolean;
 }
 
 const JAVA_KW = new Set([
@@ -132,6 +134,87 @@ const PY_KW = new Set([
   "self",
 ]);
 
+const SQL_KW: ReadonlySet<string> = new Set([
+  "select",
+  "from",
+  "where",
+  "insert",
+  "into",
+  "values",
+  "update",
+  "set",
+  "delete",
+  "create",
+  "alter",
+  "drop",
+  "table",
+  "index",
+  "view",
+  "database",
+  "schema",
+  "join",
+  "inner",
+  "left",
+  "right",
+  "outer",
+  "full",
+  "cross",
+  "on",
+  "using",
+  "group",
+  "order",
+  "by",
+  "having",
+  "limit",
+  "offset",
+  "union",
+  "all",
+  "distinct",
+  "as",
+  "and",
+  "or",
+  "not",
+  "null",
+  "is",
+  "in",
+  "like",
+  "between",
+  "exists",
+  "case",
+  "when",
+  "then",
+  "else",
+  "end",
+  "count",
+  "sum",
+  "avg",
+  "min",
+  "max",
+  "primary",
+  "foreign",
+  "key",
+  "references",
+  "constraint",
+  "unique",
+  "default",
+  "begin",
+  "commit",
+  "rollback",
+  "transaction",
+  "grant",
+  "revoke",
+  "with",
+  "asc",
+  "desc",
+  "true",
+  "false",
+  "if",
+  "add",
+  "column",
+  "rename",
+  "truncate",
+]);
+
 const SH_KW = new Set([
   "if",
   "then",
@@ -167,6 +250,8 @@ const SPECS: Record<HlLang, LangSpec> = {
   python: { line: ["#"], triple: ['"""', "'''"], quotes: ['"', "'"], keywords: PY_KW },
   shell: { line: ["#"], quotes: ['"', "'"], keywords: SH_KW },
   json: { line: [], quotes: ['"'], keywords: JSON_KW },
+  // SQL keywords are conventionally written upper-case, so the lookup folds case.
+  sql: { line: ["--"], block: ["/*", "*/"], quotes: ["'", '"'], keywords: SQL_KW, foldCase: true },
 };
 
 const EXT_LANG: Record<string, HlLang> = {
@@ -177,7 +262,32 @@ const EXT_LANG: Record<string, HlLang> = {
   bash: "shell",
   zsh: "shell",
   json: "json",
+  sql: "sql",
 };
+
+/** The language name written on a markdown fence (```sql, ```bash, ```py …).
+ *  Unknown fences return null so the block renders plain rather than wrong. */
+export function hlLangForFence(fence: string): HlLang | null {
+  const name = fence.trim().toLowerCase();
+  if (name === "") return null;
+  const direct: Record<string, HlLang> = {
+    java: "java",
+    python: "python",
+    py: "python",
+    sh: "shell",
+    bash: "shell",
+    zsh: "shell",
+    shell: "shell",
+    console: "shell",
+    json: "json",
+    sql: "sql",
+    mysql: "sql",
+    postgres: "sql",
+    postgresql: "sql",
+    sqlite: "sql",
+  };
+  return direct[name] ?? null;
+}
 
 export function hlLangForPath(path: string): HlLang | null {
   const name = path.split("/").pop() ?? "";
@@ -287,7 +397,8 @@ export function tokenize(src: string, lang: HlLang): Token[] {
       let j = i + 1;
       while (j < n && isIdent(src[j])) j++;
       const word = src.slice(i, j);
-      push(j, spec.keywords.has(word) ? "keyword" : "plain");
+      const lookup = spec.foldCase === true ? word.toLowerCase() : word;
+      push(j, spec.keywords.has(lookup) ? "keyword" : "plain");
       continue;
     }
 
