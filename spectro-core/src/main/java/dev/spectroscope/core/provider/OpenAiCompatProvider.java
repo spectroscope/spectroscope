@@ -45,8 +45,26 @@ public final class OpenAiCompatProvider implements LlmProvider {
      * @param baseUrl the server root, e.g. http://localhost:1234 (a trailing slash is tolerated)
      * @param model   the model name requests are sent to
      * @param apiKey  optional — LM Studio and friends accept requests without one
+     * @param dialect the provider label this endpoint answers to ("openai",
+     *                "lmstudio", "openrouter", "gemini", "spectro-local"), or
+     *                null to infer from the base URL — the reasoning fields
+     *                differ per dialect, nothing else does
      */
-    public record Options(String baseUrl, String model, String apiKey) {}
+    public record Options(String baseUrl, String model, String apiKey, String dialect) {
+
+        /**
+         * Dialect-free options — pre-card-88 call sites; the dialect is
+         * inferred from the base URL (cloud = openai, else a generic
+         * llama.cpp-style local server).
+         *
+         * @param baseUrl the server root
+         * @param model   the model name requests are sent to
+         * @param apiKey  optional bearer key
+         */
+        public Options(String baseUrl, String model, String apiKey) {
+            this(baseUrl, model, apiKey, null);
+        }
+    }
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -55,6 +73,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
 
     /** Kept for the wire decision: the cloud takes the modern completion cap. */
     private final String baseUrl;
+
+    /** The provider label this endpoint answers to — decides the reasoning fields. */
+    private final String dialect;
 
     /**
      * Builds the provider; the Bearer header is attached only when a key is configured.
@@ -76,6 +97,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
         this.http = builder.build();
         this.model = options.model();
         this.baseUrl = options.baseUrl();
+        this.dialect = options.dialect();
     }
 
     @Override
@@ -120,6 +142,13 @@ public final class OpenAiCompatProvider implements LlmProvider {
                        @JsonProperty("max_tokens") Integer maxTokens,
                        @JsonProperty("max_completion_tokens") Integer maxCompletionTokens,
                        @JsonProperty("reasoning_effort") String reasoningEffort,
+                       // openrouter's unified reasoning object — its gateway does
+                       // NOT read the flat reasoning_effort field.
+                       Map<String, Object> reasoning,
+                       // llama.cpp jinja template variables. The bundled engine's
+                       // qwen3 templates gate reasoning on enable_thinking; a
+                       // template without the variable ignores it.
+                       @JsonProperty("chat_template_kwargs") Map<String, Object> chatTemplateKwargs,
                        @JsonProperty("stream_options") StreamOptions streamOptions) {}
 
     /**
@@ -691,27 +720,112 @@ public final class OpenAiCompatProvider implements LlmProvider {
 
         int cap = Math.min(request.maxTokens(), MAX_TOKENS_CAP);
         boolean cloud = isOpenAiCloud(baseUrl);
+        ReasoningWire reasoning = reasoningWireFor(dialect, baseUrl, model, !tools.isEmpty(),
+                request.reasoning(), request.effort());
         return new ChatRequest(model, true, messages, tools.isEmpty() ? null : tools,
                 cloud ? null : cap, cloud ? cap : null,
-                reasoningEffortFor(baseUrl, model, !tools.isEmpty()), new StreamOptions(true));
+                reasoning.reasoningEffort(), reasoning.reasoning(), reasoning.chatTemplateKwargs(),
+                new StreamOptions(true));
     }
 
     /**
-     * The {@code reasoning_effort} the wire needs, or null to omit the field.
-     * gpt-5.x are reasoning models and chat/completions REFUSES function tools
-     * unless the effort is explicitly "none" ("use /v1/responses or set
-     * reasoning_effort to 'none'"). The agent always advertises tools, so the
-     * cloud gets the "none" — reasoning WITH tools needs the Responses API, a
-     * deliberate future migration, not a silent default. Local servers and
-     * non-reasoning models never see the field.
+     * The reasoning fields one request puts on this wire — at most one of the
+     * three is set, all-null means the request says nothing.
      *
-     * @param baseUrl  the provider's endpoint root
+     * @param reasoningEffort    the flat OpenAI/gemini/llama.cpp field, or null
+     * @param reasoning          openrouter's unified object, or null
+     * @param chatTemplateKwargs llama.cpp template variables, or null
+     */
+    record ReasoningWire(String reasoningEffort, Map<String, Object> reasoning,
+                         Map<String, Object> chatTemplateKwargs) {
+        static final ReasoningWire NOTHING = new ReasoningWire(null, null, null);
+    }
+
+    /**
+     * Maps (mode, effort) onto THIS endpoint's reasoning dialect, gated by the
+     * static {@link ReasoningCapability} so the request never pretends:
+     *
+     * <ul>
+     * <li><b>openai cloud</b> — gpt-5.x chat/completions REFUSES function tools
+     *     unless the effort is explicitly "none" ("use /v1/responses or set
+     *     reasoning_effort to 'none'"); that rule outranks any requested effort.
+     *     Otherwise a listed effort passes through, and OFF spends "none" only
+     *     where the model's row lists it (gpt-5/o-series reject it).</li>
+     * <li><b>gemini</b> (/v1beta/openai) — same flat field; "none" is legal
+     *     only on 2.5-flash/-lite, so OFF elsewhere sends nothing.</li>
+     * <li><b>openrouter</b> — the nested {@code reasoning} object; effort values
+     *     ride verbatim (the gateway snaps unsupported ones), OFF is
+     *     {@code enabled:false}.</li>
+     * <li><b>lmstudio</b> — per-request control does not exist on
+     *     chat/completions (upstream bugs #988/#1250): nothing, ever.</li>
+     * <li><b>spectro-local</b> — the bundled llama-server. MEASURED 2026-07-28
+     *     (build b10107, Qwen3-1.7B): {@code reasoning_effort:"none"} is
+     *     silently ignored, {@code chat_template_kwargs.enable_thinking=false}
+     *     suppresses reasoning completely (300 reasoning tokens vs 0). OFF
+     *     spends the kwarg on the catalogue models whose row has an off
+     *     switch.</li>
+     * <li><b>generic local base</b> (no dialect) — best-effort: OFF sends BOTH
+     *     accepted llama.cpp forms, an effort passes through; a server that
+     *     understands neither ignores unknown fields.</li>
+     * </ul>
+     *
+     * @param dialect  the provider label, or null to infer from the base URL
+     * @param baseUrl  the endpoint root
      * @param model    the model id to run
      * @param hasTools whether the request advertises function tools
-     * @return "none" for cloud gpt-5.x with tools, else null
+     * @param mode     the call site's reasoning mode
+     * @param effort   the requested effort level, or null
+     * @return the fields to put on the wire; {@link ReasoningWire#NOTHING} when
+     *         the endpoint has no honest field for the request
      */
-    static String reasoningEffortFor(String baseUrl, String model, boolean hasTools) {
-        return isOpenAiCloud(baseUrl) && model.startsWith("gpt-5") && hasTools ? "none" : null;
+    static ReasoningWire reasoningWireFor(String dialect, String baseUrl, String model,
+                                          boolean hasTools, ProviderRequest.Reasoning mode,
+                                          String effort) {
+        String d = dialect != null ? dialect
+                : isOpenAiCloud(baseUrl) ? "openai" : "llamacpp";
+        if ("openai".equals(d) && !isOpenAiCloud(baseUrl)) {
+            d = "llamacpp"; // the label says cloud, the endpoint is a local server
+        }
+        boolean off = mode == ProviderRequest.Reasoning.OFF;
+        ReasoningCapability cap = ReasoningCapabilities.resolve(d, model);
+        return switch (d) {
+            case "openai" -> {
+                if (model.startsWith("gpt-5") && hasTools) {
+                    yield new ReasoningWire("none", null, null);
+                }
+                if (!off && effort != null && cap.efforts().contains(effort)) {
+                    yield new ReasoningWire(effort, null, null);
+                }
+                yield off && cap.offSwitch()
+                        ? new ReasoningWire("none", null, null) : ReasoningWire.NOTHING;
+            }
+            case "gemini" -> {
+                if (!off && effort != null && cap.efforts().contains(effort)) {
+                    yield new ReasoningWire(effort, null, null);
+                }
+                yield off && cap.offSwitch()
+                        ? new ReasoningWire("none", null, null) : ReasoningWire.NOTHING;
+            }
+            case "openrouter" -> {
+                if (off) {
+                    yield new ReasoningWire(null, Map.of("enabled", false), null);
+                }
+                yield effort != null
+                        ? new ReasoningWire(null, Map.of("effort", effort), null)
+                        : ReasoningWire.NOTHING;
+            }
+            case "spectro-local" -> off && cap.offSwitch()
+                    ? new ReasoningWire(null, null, Map.of("enable_thinking", false))
+                    : ReasoningWire.NOTHING;
+            case "lmstudio" -> ReasoningWire.NOTHING;
+            default -> {
+                if (off) {
+                    yield new ReasoningWire("none", null, Map.of("enable_thinking", false));
+                }
+                yield effort != null
+                        ? new ReasoningWire(effort, null, null) : ReasoningWire.NOTHING;
+            }
+        };
     }
 
     /**

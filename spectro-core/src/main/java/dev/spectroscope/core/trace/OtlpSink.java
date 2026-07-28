@@ -343,9 +343,19 @@ public final class OtlpSink implements TracingPort {
                     if (r.isError()) {
                         attrs.put("langfuse.observation.level", "ERROR");
                     }
+                    // Card 111: with an execution-only durationMs on the wire the
+                    // tool span covers the EXECUTION (result ts − durationMs), and
+                    // the wait stays with the gate span — a parked operator no
+                    // longer inflates the tool's span in Langfuse. Old archives
+                    // carry no gateWaitMs and keep their historic call..result shape.
+                    long start = (long) open[2];
+                    if (r.gateWaitMs() != null) {
+                        start = Math.max(start, ts - r.durationMs());
+                        attrs.put("spectroscope.gate.wait_ms", String.valueOf(r.gateWaitMs()));
+                    }
                     span(spans, traceId, id("tool:" + sessionId + ":" + r.callId(), 8),
                             agentSpan.getOrDefault(open[0], rootSpan), (String) open[1],
-                            (long) open[2], ts, attrs, r.isError(),
+                            start, ts, attrs, r.isError(),
                             r.isError() ? cut(r.output(), 300) : null);
                 }
             } else if (e instanceof RunEvent.PermissionRequest p) {

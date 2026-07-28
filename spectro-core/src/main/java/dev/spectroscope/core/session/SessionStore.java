@@ -302,9 +302,21 @@ public final class SessionStore {
      * @param provider    the recorded provider label, "-" when absent
      * @param agentCount  distinct agents that ran (main + every subagent)
      * @param turnCount   top-level, main-agent turns — the steppable conversation
+     * @param model       the model id the session opened with; null when the file
+     *                    predates card 87 or the provider never named one
+     * @param stopReason  how the LAST main run stopped, verbatim as the run_end
+     *                    recorded it ("end_turn", "error", "aborted", "max_turns",
+     *                    "max_tokens"); null when no run_end closed it. Deliberately
+     *                    not folded into a verdict here — the wire carries the fact,
+     *                    the reader decides what it means
+     * @param gateCount   how often a tool call stopped at the permission gate
+     * @param denyCount   how many of those stops ended in a refusal
+     * @param endedAt     the last event's timestamp — with startedAt this is the
+     *                    span the session covers, not the time it spent computing
      */
     public record SessionInfo(String id, long startedAt, String firstPrompt, int tokens,
-            String provider, int agentCount, int turnCount) {}
+            String provider, int agentCount, int turnCount,
+            String model, String stopReason, int gateCount, int denyCount, long endedAt) {}
 
     /**
      * Overview over all sessions — a fold over the event files.
@@ -353,7 +365,63 @@ public final class SessionStore {
                         sumTokens(events),
                         Optional.ofNullable(start.provider()).orElse("-"),
                         countAgents(events),
-                        countMainTurns(events)));
+                        countMainTurns(events),
+                        start.model(),
+                        lastMainStopReason(events),
+                        countGateStops(events),
+                        countDenials(events),
+                        events.isEmpty() ? start.ts() : events.getLast().ts()));
+    }
+
+    /**
+     * How the session ended: the stop reason of the LAST run the main agent
+     * started.
+     *
+     * <p>Two rules earn their keep here. It reads the LAST main run because one
+     * file holds one run_start per user prompt, and a session that failed on its
+     * fourth question did not end cleanly just because its first one did. And it
+     * matches run_ends by runId rather than taking the file's final one, because
+     * a subagent's run_end also lands in this file — a failing worker inside a
+     * finished fan-out is not the session failing.</p>
+     *
+     * @param events the session's full event list
+     * @return the recorded stop reason, or null when no run_end closed that run
+     *         (the process died mid-run, or the run is still going)
+     */
+    private static String lastMainStopReason(List<RunEvent> events) {
+        String mainRunId = events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .filter(start -> start.parentId() == null)
+                .reduce((first, second) -> second)
+                .map(RunEvent.RunStart::runId)
+                .orElse(null);
+        if (mainRunId == null) {
+            return null;
+        }
+        return events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(RunEvent.RunEnd.class::cast)
+                .filter(end -> mainRunId.equals(end.runId()))
+                .reduce((first, second) -> second)
+                .map(RunEvent.RunEnd::stopReason)
+                .orElse(null);
+    }
+
+    /** Tool calls that stopped at the permission gate — asked, not necessarily refused. */
+    private static int countGateStops(List<RunEvent> events) {
+        return (int) events.stream()
+                .filter(RunEvent.PermissionRequest.class::isInstance)
+                .count();
+    }
+
+    /** Of the gate stops, the ones the operator refused. */
+    private static int countDenials(List<RunEvent> events) {
+        return (int) events.stream()
+                .filter(RunEvent.PermissionDecision.class::isInstance)
+                .map(RunEvent.PermissionDecision.class::cast)
+                .filter(decision -> !decision.allowed())
+                .count();
     }
 
     /**

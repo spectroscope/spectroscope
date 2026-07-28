@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -258,6 +259,116 @@ class AgentTest {
                 .findFirst().orElseThrow();
         assertTrue(result.isError());
         assertTrue(result.output().contains("denied"));
+    }
+
+    /** A guarded tool that sleeps a fixed time — the execution half of the card-111 clock. */
+    private static final class SlowTool implements Tool {
+        final List<JsonNode> inputs = new ArrayList<>();
+        private final long sleepMs;
+
+        SlowTool(long sleepMs) {
+            this.sleepMs = sleepMs;
+        }
+
+        public String name() { return "slow"; }
+        public String description() { return "sleeps, then answers"; }
+        public JsonNode inputSchema() { return JSON.createObjectNode(); }
+        public boolean needsPermission() { return true; }
+
+        public String execute(JsonNode input, ToolContext context) {
+            inputs.add(input);
+            try {
+                Thread.sleep(sleepMs);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return "slept " + sleepMs;
+        }
+    }
+
+    /** Scripts one turn calling the given tool once, then a clean end_turn. */
+    private static FakeProvider oneToolCallThenEnd(String toolName) {
+        JsonNode input = JSON.createObjectNode().put("value", "x");
+        return FakeProvider.scripted(
+                List.of(new LlmProvider.PToolCall("c1", toolName, input),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)),
+                List.of(new LlmProvider.PTextDelta("done"),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+    }
+
+    private static RunEvent.ToolResult firstToolResult(List<RunEvent> events) {
+        return events.stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .findFirst().orElseThrow();
+    }
+
+    // ------------------------------------------ card 111: gate wait vs execution
+
+    @Test
+    void aGatedToolBillsExecutionOnlyNotTheOperatorWait() {
+        // The gate parks the call for ~2 s; the tool itself runs ~100 ms. The
+        // reported durationMs must be the execution, never request-to-finish.
+        SlowTool tool = new SlowTool(100);
+        PermissionBroker parkedBroker = request -> {
+            try {
+                Thread.sleep(2000);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return true;
+        };
+
+        List<RunEvent> events = collect(agentWith(oneToolCallThenEnd("slow"), tool, parkedBroker));
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.durationMs() >= 100,
+                "execution slept 100 ms, durationMs was " + result.durationMs());
+        assertTrue(result.durationMs() < 1000,
+                "durationMs must exclude the ~2 s gate wait, was " + result.durationMs());
+        // The wait is not discarded — it is named, additively.
+        assertNotNull(result.gateWaitMs(), "a gated call must carry the parked time");
+        assertTrue(result.gateWaitMs() >= 2000,
+                "the broker parked ~2 s, gateWaitMs was " + result.gateWaitMs());
+        assertTrue(result.gateWaitMs() < 3000,
+                "gateWaitMs is the wait alone, was " + result.gateWaitMs());
+    }
+
+    @Test
+    void anUngatedToolCarriesNoGateWait() {
+        // No gate ever parked the call — the field must be ABSENT (null), so an
+        // ungated session serializes byte-identical to a pre-card-111 one.
+        EchoTool tool = new EchoTool(false);
+
+        List<RunEvent> events = collect(agentWith(oneToolCallThenEnd("echo"), tool, null));
+
+        assertEquals(null, firstToolResult(events).gateWaitMs(),
+                "no gate -> no gateWaitMs, never zero");
+    }
+
+    @Test
+    void aDeniedGateReportsZeroExecutionAndStillNamesTheWait() {
+        // Card 111's worst case: a call reported 321.6 s and was DENIED — it
+        // never executed at all. Denial must bill 0 execution, wait named.
+        EchoTool guardedTool = new EchoTool(true);
+        PermissionBroker slowDeny = request -> {
+            try {
+                Thread.sleep(200);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        };
+
+        List<RunEvent> events = collect(agentWith(oneToolCallThenEnd("echo"), guardedTool, slowDeny));
+
+        assertTrue(guardedTool.inputs.isEmpty(), "a denied tool must never execute");
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.isError());
+        assertEquals(0, result.durationMs(), "a tool that never ran executed for 0 ms");
+        assertNotNull(result.gateWaitMs(), "the denied call still names its wait");
+        assertTrue(result.gateWaitMs() >= 200,
+                "the broker parked ~200 ms, gateWaitMs was " + result.gateWaitMs());
     }
 
     @Test

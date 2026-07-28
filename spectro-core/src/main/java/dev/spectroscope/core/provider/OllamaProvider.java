@@ -108,12 +108,13 @@ public final class OllamaProvider implements LlmProvider {
      * @param messages the full conversation including the system message
      * @param tools    the advertised tools as function specs
      * @param options  generation options (the completion cap)
-     * @param think    true to request reasoning; null omits the field so unconditional
-     *                 reasoners stay unaffected
+     * @param think    Boolean on/off, or a level string ("low".."max") for the
+     *                 families that take one (qwen3, gpt-oss); null omits the
+     *                 field so unconditional reasoners stay unaffected
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ChatRequest(String model, boolean stream, List<WireMessage> messages,
-                       List<WireTool> tools, WireOptions options, Boolean think) {}
+                       List<WireTool> tools, WireOptions options, Object think) {}
 
     /**
      * One chat message on Ollama's wire.
@@ -464,22 +465,41 @@ public final class OllamaProvider implements LlmProvider {
                 .map(spec -> new WireTool("function",
                         new WireFunctionSpec(spec.name(), spec.description(), spec.inputSchema())))
                 .toList();
-        // Three wire states, none of them interchangeable. think:true encourages
-        // models that gate reasoning behind the flag (qwen3). OMITTING the field
-        // leaves the choice with the model, so one that reasons unconditionally
-        // (gpt-oss) is unaffected. think:false is the explicit off switch, and it
-        // is not a nicety: num_predict caps reasoning and answer TOGETHER.
-        // MEASURED 2026-07-27, glm-5.2 via ollama, one 181-character passage at
-        // num_predict 512 — with the field omitted the reasoning phase spent the
-        // entire budget (eval_count 512, done_reason "length") and the answer
-        // never started; with think:false, zero reasoning and the answer in 0.9 s.
-        Boolean think = switch (request.reasoning()) {
+        return new ChatRequest(model, true, toWireMessages(request), tools,
+                new WireOptions(request.maxTokens()), thinkWireValue(model, request));
+    }
+
+    /**
+     * The {@code think} value for one request, capability-gated: a level string
+     * where the family takes one (qwen3, gpt-oss), the boolean toggle
+     * otherwise, and NOTHING where the family has no off state — gpt-oss
+     * ignores true/false and a fabricated off would pretend.
+     *
+     * <p>The three toggle states are not interchangeable. think:true encourages
+     * models that gate reasoning behind the flag (qwen3); OMITTING the field
+     * leaves the choice with the model, so an unconditional reasoner is
+     * unaffected; think:false is the explicit off switch, and it is not a
+     * nicety: num_predict caps reasoning and answer TOGETHER. MEASURED
+     * 2026-07-27, glm-5.2 via ollama, one 181-character passage at num_predict
+     * 512 — with the field omitted the reasoning phase spent the entire budget
+     * (eval_count 512, done_reason "length") and the answer never started;
+     * with think:false, zero reasoning and the answer in 0.9 s.</p>
+     *
+     * @param model   the model the request runs
+     * @param request the neutral request carrying reasoning mode and effort
+     * @return Boolean, level String, or null to omit the field
+     */
+    static Object thinkWireValue(String model, ProviderRequest request) {
+        ReasoningCapability cap = ReasoningCapabilities.resolve("ollama", model);
+        if (request.effort() != null && cap.efforts().contains(request.effort())
+                && request.reasoning() != ProviderRequest.Reasoning.OFF) {
+            return request.effort();
+        }
+        return switch (request.reasoning()) {
             case ON -> Boolean.TRUE;
-            case OFF -> Boolean.FALSE;
+            case OFF -> cap.offSwitch() ? Boolean.FALSE : null;
             case DEFAULT -> null;
         };
-        return new ChatRequest(model, true, toWireMessages(request), tools,
-                new WireOptions(request.maxTokens()), think);
     }
 
     /**

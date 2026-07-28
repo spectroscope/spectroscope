@@ -478,6 +478,25 @@
   font-size: var(--fs-13);
 }
 
+/* Card 88: the reasoning seg — the house .trace-seg shape, condensed so the
+   full ladder (off + five efforts) sits inside the 260px picker popover; a
+   record with longer tokens wraps instead of clipping. Same block serves the
+   Settings host. */
+.reasoning-seg {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.reasoning-seg button {
+  padding: 3px 6px;
+}
+.reasoning-seg button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.reasoning-seg button[disabled]:hover {
+  color: var(--text-faint);
+}
+
 
 /* ============ Text tab (the readable feed + the raw JSONL view) ============ */
 .textview { display: flex; flex-direction: column; min-height: 0; flex: 1; }

@@ -72,6 +72,27 @@ class RunEventJsonTest {
         assertEquals(cached, JSON.readValue(JSON.writeValueAsString(cached), RunEvent.class));
     }
 
+    @Test
+    void toolResultGateWaitIsAdditiveAndOmittedWhenAbsent() throws Exception {
+        // Card 111, the cacheReadTokens precedent: the legacy shape (no gate
+        // wait) serializes EXACTLY as before — old sessions, the TypeScript
+        // and the Python edition stay byte-identical.
+        String legacy = JSON.writeValueAsString(
+                new RunEvent.ToolResult("main", "c1", "ok", false, 12L, 7L));
+        assertEquals("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\","
+                + "\"output\":\"ok\",\"isError\":false,\"durationMs\":12,\"ts\":7}", legacy);
+
+        // The gated shape round-trips losslessly: execution and wait apart.
+        RunEvent.ToolResult gated =
+                new RunEvent.ToolResult("main", "c1", "ok", false, 100L, 2000L, 7L);
+        assertEquals(gated, JSON.readValue(JSON.writeValueAsString(gated), RunEvent.class));
+
+        // The old-reader promise: a pre-card-111 line has no gateWaitMs at all —
+        // it parses, and the absence stays absent (null), never zero.
+        RunEvent.ToolResult old = (RunEvent.ToolResult) JSON.readValue(legacy, RunEvent.class);
+        assertEquals(null, old.gateWaitMs(), "absent field must deserialize to null, never 0");
+    }
+
     private record Trip(RunEvent original, RunEvent reborn) {}
 
     private Trip roundTrip(RunEvent event) {

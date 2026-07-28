@@ -79,6 +79,13 @@ echo -n "    bundled runtime: "; "$D/jre/bin/java" -version 2>&1 | head -1
 echo "==> [2b/7] bundled llama-server"
 ./scripts/fetch-llama-server.sh
 
+# 2b2) the PTY helper for the Files-tab shell (card 93). AFTER the llama-server
+#      step on purpose: fetch-llama-server.sh clears $D/bin before staging, so a
+#      helper built earlier would be deleted. ~52 KB, no dependencies beyond libc,
+#      and 2c below signs it along with everything else in $D/bin.
+echo "==> [2b2/7] bundled spectro-pty"
+./scripts/build-spectro-pty.sh --force
+
 # 2c) SIGNED path: sign every Mach-O in the runtime and the binaries inside-out,
 #     BEFORE electron-builder seals the app over it (a single unsigned dylib in
 #     the JRE fails notarization). Dylibs first, then executables, so nothing is

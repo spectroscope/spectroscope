@@ -160,6 +160,13 @@ public final class SessionConnection {
      */
     private final AtomicBoolean thinking = new AtomicBoolean();
 
+    /** The picker's reasoning control (card 88): mode "on"|"off"|"default" or
+     *  null (untouched), plus the effort level or null. Kept next to the
+     *  thinking seed because the agent may not exist yet when the frame
+     *  arrives — {@link #buildAgentOnce} replays them onto the fresh agent. */
+    private final AtomicReference<String> reasoningMode = new AtomicReference<>();
+    private final AtomicReference<String> reasoningEffort = new AtomicReference<>();
+
     /**
      * The header provider picker swaps this mid-session. The agent is built once
      * with a {@link SwitchableProvider} whose delegate this config feeds; a switch
@@ -423,6 +430,8 @@ public final class SessionConnection {
     public void onSetThinking(boolean enabled) {
         thinking.set(enabled);
         thinkingTouched = true; // a live toggle must survive the session-moment reseed
+        reasoningMode.set(null);   // the plain toggle supersedes a picker choice
+        reasoningEffort.set(null);
         // The agent may already exist (built on the first prompt) — its options
         // are immutable, so the live override is the only way the toggle can
         // still act. Models that reason unconditionally (Ollama's gpt-oss) are
@@ -431,6 +440,52 @@ public final class SessionConnection {
         if (current != null) {
             current.setThinking(enabled);
         }
+    }
+
+    /**
+     * The picker's full reasoning control (card 88): mode plus optional effort
+     * level. "off" reaches the provider WIRE in its own dialect (ollama
+     * think:false, the bundled engine's chat-template switch, anthropic
+     * thinking:disabled) — providers gate on their capability record, so an
+     * endpoint without an off switch honestly sends nothing. The effort value
+     * itself is validated by the provider against the same record; here only
+     * the shape is checked.
+     *
+     * @param mode   "on" | "off" | "default"
+     * @param effort a lowercase level token ("low".."max"), or blank for the
+     *               model's default
+     */
+    public void onSetReasoning(String mode, String effort) {
+        if (!Set.of("on", "off", "default").contains(mode)) {
+            sendError("Unknown reasoning mode: \"" + mode + "\" (allowed: on, off, default).");
+            return;
+        }
+        String level = effort == null || effort.isBlank() ? null : effort;
+        if (level != null && !level.matches("[a-z]{1,16}")) {
+            sendError("Unknown reasoning effort: \"" + effort + "\".");
+            return;
+        }
+        reasoningMode.set(mode);
+        reasoningEffort.set(level);
+        thinking.set(!"off".equals(mode)); // keep the visibility seed coherent
+        thinkingTouched = true;
+        Agent current = this.agent;
+        if (current != null) {
+            applyReasoning(current);
+        }
+    }
+
+    /** Replays the picker's reasoning choice onto an agent (live or fresh-built). */
+    private void applyReasoning(Agent target) {
+        String mode = reasoningMode.get();
+        if (mode == null) {
+            return;
+        }
+        target.setReasoning(switch (mode) {
+            case "on" -> LlmProvider.ProviderRequest.Reasoning.ON;
+            case "off" -> LlmProvider.ProviderRequest.Reasoning.OFF;
+            default -> LlmProvider.ProviderRequest.Reasoning.DEFAULT;
+        }, reasoningEffort.get());
     }
 
     /**
@@ -763,6 +818,10 @@ public final class SessionConnection {
                 .thinking(thinking.get()) // reasoning visibility; the header toggle applies on the next run
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
                 .build());
+        // A picker reasoning choice made before the first prompt must survive
+        // the build — the boolean seed above cannot carry mode "off" or an
+        // effort level.
+        applyReasoning(agent);
     }
 
     /**

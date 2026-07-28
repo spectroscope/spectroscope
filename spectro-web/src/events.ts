@@ -98,6 +98,7 @@ export type ClientMessage =
   | { type: "abort" }
   | { type: "set_image_provider"; provider: string } // image generation backend
   | { type: "set_thinking"; enabled: boolean } // reasoning visibility toggle
+  | { type: "set_reasoning"; mode: "on" | "off" | "default"; effort?: string } // picker reasoning control (card 88)
   | { type: "set_provider"; provider: string; model?: string } // switch the LLM backend mid-session
   | { type: "set_workspace"; mode?: "random" | "default" | "set"; path?: string } // pin THIS session's workspace by mode (before the first run)
   | { type: "set_permission_mode"; mode: string }; // switch ask/auto/readonly mid-session (composer gear)
@@ -112,4 +113,19 @@ export interface SessionMeta {
   agentCount?: number;
   /** top-level (main-agent) turns — the steppable conversation. */
   turnCount?: number;
+  /** The LLM backend label the store recorded; "-" is its own "none recorded". */
+  provider?: string;
+  /** The model the session opened with; absent on files recorded before card 87. */
+  model?: string;
+  /** How the LAST main run stopped, verbatim from its run_end ("end_turn",
+   *  "error", "aborted", "max_turns", "max_tokens"). Absent or null means no
+   *  run_end closed it. Every field below is additive: a server from before
+   *  this card simply omits them, and the row degrades to what it showed then. */
+  stopReason?: string | null;
+  /** Tool calls that stopped at the permission gate. */
+  gateCount?: number;
+  /** How many of those the operator refused. */
+  denyCount?: number;
+  /** The last event's timestamp — the span the session covers. */
+  endedAt?: number;
 }

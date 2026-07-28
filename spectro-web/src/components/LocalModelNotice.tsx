@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { fetchLocalCatalog, type CatalogModel } from "../state/localModel";
+import { fetchLocalCatalog, localModelLede, type CatalogModel } from "../state/localModel";
 
 export function LocalModelNotice(props: {
   /** The active model id from provider_info — decides which claims are true. */
@@ -78,7 +78,10 @@ export function LocalModelNotice(props: {
           </button>
         </div>
 
-        <p className="ob-intro">{t(lang, "lmn.lede", { model: label })}</p>
+        {/* Not the i18n `lmn.lede` — that copy overclaims ("nothing you type
+            leaves your computer"); the honest pair lives in localModelLede
+            until card 64 folds it back into i18n.ts. */}
+        <p className="ob-intro">{localModelLede(lang, label)}</p>
 
         <ul className="ob-opts">
           <li className="ob-opt">

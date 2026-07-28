@@ -53,8 +53,9 @@ import java.util.function.Consumer;
         description = "Run one prompt as a fleet node (events ride the bus to a hub).")
 public final class NodeCommand implements Callable<Integer> {
 
-    /** Unacked frames the node's outbox holds before its publisher blocks. */
-    private static final int OUTBOX = 1024;
+    /** Unacked frames the node's outbox holds before its publisher blocks —
+     *  shared with {@link TriggeredNode}, whose bus life is exactly this one's. */
+    static final int OUTBOX = 1024;
 
     @Option(names = {"-p", "--prompt"}, required = true, description = "The task text.")
     String prompt;
@@ -89,6 +90,22 @@ public final class NodeCommand implements Callable<Integer> {
     @Option(names = "--linger",
             description = "Stay a controllable fleet node after the run, until ctl{stop} or SIGTERM.")
     boolean linger;
+
+    @Option(names = "--watch", paramLabel = "<dir>",
+            description = "Trigger: run the prompt on changes in this directory "
+                    + "(non-recursive; changes are debounced into one run).")
+    String watch;
+
+    @Option(names = "--listen", paramLabel = "<port>",
+            description = "Trigger: run the prompt on POST /trigger at this LOOPBACK port "
+                    + "(bare port only — the bind is always 127.0.0.1; requires the "
+                    + "bearer token printed at start).")
+    String listen;
+
+    @Option(names = "--every", paramLabel = "<duration>",
+            description = "Trigger: run the prompt every <n>ms|s|m|h (at least 1s; "
+                    + "no run at start).")
+    String every;
 
     @ParentCommand
     private SpectroCli parent;
@@ -323,6 +340,17 @@ public final class NodeCommand implements Callable<Integer> {
             System.err.println("--max-turns must be an integer >= 1.");
             return 1;
         }
+        // Trigger fences fire BEFORE config, network or provider are touched:
+        // a refused --listen host or missing --watch dir must cost nothing.
+        TriggerSpec triggers = null;
+        if (watch != null || listen != null || every != null) {
+            try {
+                triggers = TriggerSpec.parse(watch, listen, every);
+            } catch (IllegalArgumentException invalidTrigger) {
+                System.err.println(invalidTrigger.getMessage());
+                return 1;
+            }
+        }
         String hubAddress = resolveHub(hub, System.getenv());
         if (hubAddress == null) {
             System.err.println("No hub: pass --hub host:port or set SPECTRO_HUB.");
@@ -363,12 +391,20 @@ public final class NodeCommand implements Callable<Integer> {
                     ? new TracingProvider(ProviderFactory.providerFromConfig(config),
                             config.provider() + " · " + config.model())
                     : null;
-            return execute(mapper, config, providerOverride,
-                    new NodeSpec(address.host(), address.port(), nodeId, epoch, context,
-                            role, prompt, workspace, "auto".equals(permissions), maxTurns),
+            NodeSpec spec = new NodeSpec(address.host(), address.port(), nodeId, epoch, context,
+                    role, prompt, workspace, "auto".equals(permissions), maxTurns);
+            if (triggers != null) {
+                // Any trigger flag routes to the standing loop; --linger is
+                // implied (accepted redundantly). The frozen single-shot path
+                // below stays byte-identical for every non-triggered node.
+                return TriggeredNode.execute(mapper, config, providerOverride, spec, triggers,
+                        TriggeredNode.sources(triggers, System.err::println), store,
+                        System.err::println, "ask".equals(permissions));
+            }
+            return execute(mapper, config, providerOverride, spec,
                     store, System.err::println, linger, "ask".equals(permissions));
-        } catch (IllegalStateException missingKey) {
-            System.err.println(missingKey.getMessage());
+        } catch (IllegalStateException missingKeyOrTrigger) {
+            System.err.println(missingKeyOrTrigger.getMessage());
             return 1;
         }
     }

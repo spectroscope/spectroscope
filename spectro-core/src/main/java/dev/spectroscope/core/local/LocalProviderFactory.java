@@ -31,8 +31,11 @@ public final class LocalProviderFactory {
      *         readable "local model unavailable" message)
      */
     public static Optional<LlmProvider> build(LocalRuntime runtime, Path modelFile) {
+        // The dialect stamp makes reasoning-off spend the bundled engine's
+        // MEASURED off switch (chat_template_kwargs.enable_thinking) instead of
+        // the reasoning_effort field the pinned build ignores.
         return runtime.ensureRunning(modelFile).map(endpoint ->
                 new OpenAiCompatProvider(new OpenAiCompatProvider.Options(
-                        endpoint.baseUrl(), endpoint.model(), endpoint.apiKey())));
+                        endpoint.baseUrl(), endpoint.model(), endpoint.apiKey(), "spectro-local")));
     }
 }

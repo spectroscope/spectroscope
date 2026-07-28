@@ -29,7 +29,11 @@ import org.springframework.web.bind.annotation.RestController;
  * (polled for progress) and {@code POST /api/local-model/download} (starts the
  * fetch). Which models exist, their urls and their sha256 pins all come from
  * {@link LocalCatalog} — nothing is pinned here any more. Writes are
- * loopback-and-Host fenced like every other write.
+ * loopback-and-Host fenced like every other write; the READS wear the Host
+ * fence too (card 107): the catalogue reports this machine's RAM, free disk
+ * and which multi-GB models are on disk — a hardware fingerprint a
+ * DNS-rebinding page (attacker Host resolved to 127.0.0.1) must not read,
+ * for the same reason the fleet roster refuses it.
  *
  * <p>No {@code @CrossOrigin} — same-origin only, matching the settings/probe
  * controllers.</p>
@@ -58,10 +62,16 @@ public class LocalModelController {
      * The chooser's one fetch: machine numbers once, then every model with its
      * catalogue facts, download state and preflight verdict.
      *
-     * @return the catalogue as the dialog renders it
+     * @param request the servlet request — must be a local origin (the machine
+     *                numbers are a fingerprint, see the class comment)
+     * @return the catalogue as the dialog renders it, or 404 for a non-local
+     *         caller or a rebound Host
      */
     @GetMapping("/api/local-model/catalog")
-    public Map<String, Object> catalog() {
+    public ResponseEntity<Map<String, Object>> catalog(HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build();
+        }
         LocalCatalog catalogue = LocalCatalog.bundled();
         long ram = LocalPreflight.totalMemoryBytes();
         long disk = LocalPreflight.usableSpaceBytes(LocalModel.userModelsDir());
@@ -109,21 +119,29 @@ public class LocalModelController {
         out.put("defaultId", catalogue.defaultId());
         out.put("machine", machine);
         out.put("models", models);
-        return out;
+        return ResponseEntity.ok(out);
     }
 
     /**
      * Current download/presence state of one model — polled by the dialog for
      * its progress bar.
      *
-     * @param model the catalogue id; absent means the default model, so the
-     *              pre-catalogue client keeps working
-     * @return 200 with the state, or 404 for an id this build does not offer —
-     *         never a silent default that would report the wrong file
+     * @param model   the catalogue id; absent means the default model, so the
+     *                pre-catalogue client keeps working
+     * @param request the servlet request — must be a local origin, like the
+     *                catalogue (which model sits on disk is part of the same
+     *                fingerprint)
+     * @return 200 with the state, or 404 for a non-local caller, a rebound
+     *         Host or an id this build does not offer — never a silent default
+     *         that would report the wrong file
      */
     @GetMapping("/api/local-model/status")
     public ResponseEntity<Map<String, Object>> status(
-            @RequestParam(name = "model", required = false) String model) {
+            @RequestParam(name = "model", required = false) String model,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build();
+        }
         LocalModelDownload download = downloadFor(model);
         if (download == null) {
             return ResponseEntity.notFound().build();

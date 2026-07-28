@@ -13,7 +13,14 @@
 # nothing from /opt/homebrew. Nothing to rewrite; copy and sign.
 #
 # Pinned by build tag AND sha256: an unpinned fetch would put unreviewed code
-# into a signed, notarized artifact under our Developer ID.
+# into a signed, notarized artifact under our Developer ID. The pin covers the
+# STAGED TREE too (card 107): a manifest of the staged bytes is written at
+# stage time and verified on every later run — a stamp alone skipped the sha
+# check forever after the first build, so a tampered dylib in bin/ would have
+# ridden into the next signed dmg unexamined. Because the runkit build signs
+# bin/ in place afterwards (and adds the PTY helper), its next run always
+# restages from the verified tarball — deliberate: every build starts from
+# bytes that match the pin. Offline builds therefore need the tarball cache.
 #
 # Output:  spectro-desktop/bin/{llama-server, *.dylib, LICENSE-llama.cpp}
 # Usage:   scripts/fetch-llama-server.sh [--force]
@@ -26,7 +33,22 @@ HARNESS="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$HARNESS"
 OUT="spectro-desktop/bin"
 STAMP="$OUT/.llama-build"
+MANIFEST="$OUT/.llama-manifest"
 CACHE="${TMPDIR:-/tmp}/spectro-llama-cache"
+
+# sha256 of every staged file + the target of every staged symlink, sorted —
+# what the skip path verifies. The stamp alone said only "a run finished once";
+# it never looked at the bytes again, so anything that changed a staged dylib
+# between builds rode silently into the next signed, notarized artifact.
+stage_manifest() {
+  (cd "$OUT" && {
+    find . -type f ! -name '.llama-build' ! -name '.llama-manifest' \
+      -exec shasum -a 256 {} \;
+    find . -type l | while read -r l; do
+      printf 'link %s -> %s\n' "$l" "$(readlink "$l")"
+    done
+  } | LC_ALL=C sort)
+}
 
 ARCH="$(uname -m)"
 case "$ARCH" in
@@ -37,8 +59,13 @@ case "$ARCH" in
 esac
 
 if [ "${1:-}" != "--force" ] && [ -f "$STAMP" ] && [ "$(cat "$STAMP")" = "$LLAMA_BUILD" ]; then
-  echo "==> llama-server ${LLAMA_BUILD} already staged in $OUT (--force to redo)"
-  exit 0
+  # The stamp says a stage finished; the manifest says the bytes are still the
+  # ones that were verified. Only both together skip the restage.
+  if [ -f "$MANIFEST" ] && stage_manifest | cmp -s - "$MANIFEST"; then
+    echo "==> llama-server ${LLAMA_BUILD} already staged and verified in $OUT (--force to redo)"
+    exit 0
+  fi
+  echo "==> staged tree in $OUT does not match its manifest — restaging from the pinned tarball"
 fi
 
 echo "==> [1/4] fetch llama.cpp ${LLAMA_BUILD} (${ARCH})"
@@ -107,5 +134,6 @@ if [ -n "$LEAKS" ]; then
   exit 1
 fi
 
+stage_manifest > "$MANIFEST"
 echo "$LLAMA_BUILD" > "$STAMP"
 echo "    staged $(grep -c . "$SEEN") Mach-O files, $(du -sh "$OUT" | awk '{print $1}') in $OUT"

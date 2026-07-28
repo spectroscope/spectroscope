@@ -54,25 +54,59 @@ public final class Agent {
     // Multi-turn history lives in the agent, across runs on the same instance.
     private final List<ProviderMessage> messages = new ArrayList<>();
 
-    /** Live reasoning-visibility override — null defers to the build-time option. */
-    private volatile Boolean thinkingOverride;
+    /** Live reasoning override — null defers to the build-time option. ON is
+     *  the only visible state; OFF additionally spends the provider's wire-level
+     *  off switch (DEFAULT says nothing and merely hides the deltas). */
+    private volatile ProviderRequest.Reasoning reasoningOverride;
+
+    /** Live effort-level override — null leaves the model's default. Providers
+     *  spend it only where their capability record lists the value. */
+    private volatile String effortOverride;
 
     /**
      * Flips reasoning visibility mid-session — the web header toggle. Takes
      * effect immediately (even mid-run: the emission filter reads it per
      * delta); the next provider request also stops/starts asking for
-     * reasoning where the wire supports that.
+     * reasoning where the wire supports that. Off maps to DEFAULT, not OFF:
+     * the toggle promises visibility, not a wire-level refusal — that is
+     * {@link #setReasoning}'s job.
      *
      * @param enabled true to surface thinking deltas, false to silence them
      */
     public void setThinking(boolean enabled) {
-        this.thinkingOverride = enabled;
+        this.reasoningOverride = enabled
+                ? ProviderRequest.Reasoning.ON : ProviderRequest.Reasoning.DEFAULT;
     }
 
-    /** The effective reasoning visibility: the live override, else the option. */
+    /**
+     * The picker's full reasoning control (card 88): mode plus effort level.
+     * OFF reaches the provider's wire in its own dialect (ollama think:false,
+     * the bundled engine's chat-template switch, anthropic thinking:disabled)
+     * — where an endpoint has no such field the provider sends nothing, per
+     * its {@link dev.spectroscope.core.provider.ReasoningCapability}.
+     *
+     * @param mode   the reasoning mode for subsequent requests; null keeps the
+     *               build-time option
+     * @param effort the effort level, or null/blank for the model's default
+     */
+    public void setReasoning(ProviderRequest.Reasoning mode, String effort) {
+        this.reasoningOverride = mode;
+        this.effortOverride = effort == null || effort.isBlank() ? null : effort;
+    }
+
+    /** The reasoning mode requests carry: the live override, else the option. */
+    private ProviderRequest.Reasoning effectiveReasoning() {
+        ProviderRequest.Reasoning override = reasoningOverride;
+        if (override != null) {
+            return override;
+        }
+        return Boolean.TRUE.equals(options.thinking())
+                ? ProviderRequest.Reasoning.ON : ProviderRequest.Reasoning.DEFAULT;
+    }
+
+    /** The effective reasoning visibility — ON is the only state that shows deltas. */
     private boolean thinkingEnabled() {
-        Boolean override = thinkingOverride;
-        return override != null ? override : Boolean.TRUE.equals(options.thinking());
+        return effectiveReasoning() == ProviderRequest.Reasoning.ON;
     }
 
     /**
@@ -224,14 +258,18 @@ public final class Agent {
                 // think channel, while the bigger catalogue entries handle tools
                 // natively. A null/unknown provider defaults to advertising (the
                 // existing behavior); only a nativeTools:false model is stripped.
+                // The LIVE label, not the build-time one: a session that had run on
+                // a cloud provider and then switched to the built-in reasoner was
+                // still profiled as the cloud provider, so the loop advertised a
+                // tool belt that model cannot call. Same reasoning as run_start.
                 List<ToolSpec> advertisedTools =
-                        ModelProfile.forModel(options.providerName(), options.provider().modelName())
+                        ModelProfile.forModel(providerLabel, options.provider().modelName())
                                 .nativeTools()
                                 ? options.registry().specs()
                                 : List.of();
                 ProviderRequest request = new ProviderRequest(options.systemPrompt(),
                         List.copyOf(messages), advertisedTools, maxTokens,
-                        thinkingEnabled(), signal);
+                        effectiveReasoning(), effortOverride, signal);
 
                 // Blocking for-each over the provider stream — text deltas are passed
                 // through one by one; tool calls and usage arrive at the end of the turn.
@@ -301,8 +339,7 @@ public final class Agent {
                 // content (after the results; the mappers keep the API order).
                 List<ProviderContent> attachedContent = new ArrayList<>();
                 for (PToolCall call : toolCalls) {
-                    long started = now();
-                    String output = executeToolCall(call, agentId, signal, emit,
+                    GuardedResult outcome = executeToolCall(call, agentId, signal, emit,
                             attachment -> attachedContent.add(switch (attachment) {
                                 case Tool.AttachedImage image -> new ImageContent(
                                         image.mediaType(), image.dataBase64());
@@ -310,11 +347,11 @@ public final class Agent {
                                         document.mediaType(), document.dataBase64(),
                                         document.name());
                             }));
-                    boolean isError = output.startsWith("ERROR: ");
-                    emit.accept(new ToolResult(agentId, call.callId(), output, isError,
-                            now() - started, now()));
+                    boolean isError = outcome.output().startsWith("ERROR: ");
+                    emit.accept(new ToolResult(agentId, call.callId(), outcome.output(), isError,
+                            outcome.durationMs(), outcome.gateWaitMs(), now()));
                     // Denial/error goes back to the model as a tool_result for self-correction.
-                    results.add(new ToolResultContent(call.callId(), output, isError));
+                    results.add(new ToolResultContent(call.callId(), outcome.output(), isError));
                 }
                 results.addAll(attachedContent);
                 messages.add(new ProviderMessage(ProviderMessage.Role.USER, results));
@@ -331,6 +368,16 @@ public final class Agent {
     }
 
     /**
+     * One guarded call's outcome, timed honestly (card 111): the output plus the
+     * two clocks the wire keeps apart.
+     *
+     * @param output     the tool output, or an {@code ERROR: } string
+     * @param durationMs execution time only — 0 when the tool never ran
+     * @param gateWaitMs time parked at the permission gate; null when no gate was involved
+     */
+    private record GuardedResult(String output, long durationMs, Long gateWaitMs) {}
+
+    /**
      * Looks the tool up and runs it behind the permission handshake. Unknown tools and
      * denials come back as {@code ERROR: } strings — input for the model, never exceptions.
      *
@@ -338,57 +385,66 @@ public final class Agent {
      * @param agentId the agent the call runs under, stamped on the emitted events
      * @param signal  cooperative cancellation, passed through to hooks and the tool
      * @param emit    sink for permission events and tool-emitted domain events
-     * @return the tool output, or an {@code ERROR: } string the model can self-correct on
+     * @return the timed outcome; an unknown tool "ran" for 0 ms and saw no gate
      */
-    private String executeToolCall(PToolCall call, String agentId, CancelSignal signal,
-                                   Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
+    private GuardedResult executeToolCall(PToolCall call, String agentId, CancelSignal signal,
+                                          Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
         return options.registry().get(call.name())
                 .map(tool -> runGuarded(tool, call, agentId, signal, emit, attach))
-                .orElse("ERROR: unknown tool: " + call.name());
+                .orElse(new GuardedResult("ERROR: unknown tool: " + call.name(), 0, null));
     }
 
     /**
      * The permission handshake: emit the request, block on the broker, emit the decision.
+     * Card 111 splits the clocks here: {@code durationMs} starts when the tool actually
+     * runs — the broker wait is measured separately and travels as {@code gateWaitMs},
+     * so a slow operator never paints the tool as slow.
      *
      * @param tool    the resolved tool implementation
      * @param call    the invocation carrying the call id and the model-supplied input
      * @param agentId the agent the call runs under
      * @param signal  cooperative cancellation, handed to hooks and the tool
      * @param emit    sink for the permission events and tool-emitted domain events
-     * @return the tool output, or an {@code ERROR: } string when a hook or the user blocked it
+     * @return the timed outcome — output, execution time, and the gate wait when one parked the call
      */
-    private String runGuarded(Tool tool, PToolCall call, String agentId, CancelSignal signal,
-                              Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
+    private GuardedResult runGuarded(Tool tool, PToolCall call, String agentId, CancelSignal signal,
+                                     Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
         // pre_tool_use runs BEFORE the permission gate. A block short-circuits: no
         // permission events, no execute — it surfaces only as this tool_result ERROR.
         if (options.hooks() != null) {
             var pre = options.hooks().preToolUse(call.name(), call.input(), options.cwd(), signal);
             if (pre.blocked()) {
-                return "ERROR: blocked by pre_tool_use hook"
-                        + (pre.reason() == null ? "" : ": " + pre.reason());
+                return new GuardedResult("ERROR: blocked by pre_tool_use hook"
+                        + (pre.reason() == null ? "" : ": " + pre.reason()), 0, null);
             }
         }
+        Long gateWaitMs = null;
         if (tool.needsPermission()) {
             PermissionRequest request = new PermissionRequest(
                     agentId, call.callId(), call.name(), call.input(), now());
             emit.accept(request);
             // Blocking on purpose: this virtual thread pauses until the human decided.
+            long parkedAt = now();
             boolean allowed = options.onPermission().decide(request);
+            gateWaitMs = now() - parkedAt;
             emit.accept(new PermissionDecision(call.callId(), allowed, now()));
             if (!allowed) {
-                return "ERROR: the user denied the execution.";
+                // Denied means the tool never executed — 0 ms, only the wait is real.
+                return new GuardedResult("ERROR: the user denied the execution.", 0, gateWaitMs);
             }
         }
         // the context carries the loop's own event sink plus the call ids, so
         // artifact-producing tools (generate_image) can publish additive domain events;
         // view_image hands images to SHOW the model through the attach sink.
+        long startedAt = now();
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(), emit, attach));
+        long durationMs = now() - startedAt;
         // post_tool_use runs AFTER execute — advisory only, never rewrites the result.
         if (options.hooks() != null) {
             options.hooks().postToolUse(call.name(), call.input(), output, options.cwd(), signal);
         }
-        return output;
+        return new GuardedResult(output, durationMs, gateWaitMs);
     }
 
     /**

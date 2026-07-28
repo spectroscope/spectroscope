@@ -660,7 +660,9 @@ public record SpectroConfig(
         LlmProvider real = switch (provider) {
             case "ollama" -> new OllamaProvider(new OllamaOptions(baseUrl, model));
             case "openai", "lmstudio", "openrouter", "gemini" -> new OpenAiCompatProvider(
-                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey()));
+                    // The label rides along as the wire dialect — the reasoning
+                    // fields differ per provider (card 88), nothing else does.
+                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey(), provider));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
             case "spectro-local" -> throw new IllegalStateException(
                     "spectro-local runs through the bundled local runtime "

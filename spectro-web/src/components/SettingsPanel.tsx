@@ -24,6 +24,7 @@ import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
+import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import type { Leveling } from "../state/useLeveling";
@@ -440,6 +441,21 @@ export function SettingsPanel({
                     />
                   )}
                 </label>
+                {/* Card 88: the same capability-driven seg as the header
+                    picker — one shared component, one truth. Not a server
+                    settings field (the choice is per model, browser-kept),
+                    hence no OriginRow. */}
+                {settingsModel !== "" && (
+                  <div className="settings-field">
+                    <span>{t(lang, "rc.settingsLabel")}</span>
+                    <ReasoningControl
+                      provider={String(view.effective.provider ?? "")}
+                      model={settingsModel}
+                      showNone
+                    />
+                    <span className="provider-field-note">{t(lang, "rc.settingsNote")}</span>
+                  </div>
+                )}
                 <label className="settings-field">
                   <span>{t(lang, "set.thinking")}</span>
                   <select

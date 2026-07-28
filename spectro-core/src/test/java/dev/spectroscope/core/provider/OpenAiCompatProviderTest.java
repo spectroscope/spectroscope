@@ -456,17 +456,25 @@ class OpenAiCompatProviderTest {
         // The live error: "Function tools with reasoning_effort are not
         // supported for gpt-5.6-luna in /v1/chat/completions. … set
         // reasoning_effort to 'none'." — cloud + gpt-5.x + tools gets the
-        // explicit "none"; everyone else never sees the field.
-        assertEquals("none",
-                OpenAiCompatProvider.reasoningEffortFor("https://api.openai.com", "gpt-5.6-luna", true));
-        assertEquals("none",
-                OpenAiCompatProvider.reasoningEffortFor("https://api.openai.com", "gpt-5.4-nano", true));
-        assertEquals(null,
-                OpenAiCompatProvider.reasoningEffortFor("https://api.openai.com", "gpt-5.6-luna", false));
-        assertEquals(null,
-                OpenAiCompatProvider.reasoningEffortFor("https://api.openai.com", "gpt-4o-mini", true));
-        assertEquals(null,
-                OpenAiCompatProvider.reasoningEffortFor("http://localhost:1234", "gpt-5.6-luna", true));
+        // explicit "none"; everyone else never sees the field. (Seam widened
+        // by card 88: the same rule now lives in reasoningWireFor and
+        // outranks any requested effort.)
+        var defaultMode = LlmProvider.ProviderRequest.Reasoning.DEFAULT;
+        assertEquals("none", OpenAiCompatProvider.reasoningWireFor(
+                "openai", "https://api.openai.com", "gpt-5.6-luna", true, defaultMode, null)
+                .reasoningEffort());
+        assertEquals("none", OpenAiCompatProvider.reasoningWireFor(
+                "openai", "https://api.openai.com", "gpt-5.4-nano", true, defaultMode, null)
+                .reasoningEffort());
+        assertEquals(null, OpenAiCompatProvider.reasoningWireFor(
+                "openai", "https://api.openai.com", "gpt-5.6-luna", false, defaultMode, null)
+                .reasoningEffort());
+        assertEquals(null, OpenAiCompatProvider.reasoningWireFor(
+                "openai", "https://api.openai.com", "gpt-4o-mini", true, defaultMode, null)
+                .reasoningEffort());
+        assertEquals(null, OpenAiCompatProvider.reasoningWireFor(
+                "openai", "http://localhost:1234", "gpt-5.6-luna", true, defaultMode, null)
+                .reasoningEffort());
     }
 
     @Test

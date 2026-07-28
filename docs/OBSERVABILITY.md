@@ -40,14 +40,17 @@ spend a run finding out. The auth value is never echoed back.
 
 ## Endpoint variants
 
-All three are OTLP/HTTP `POST …/v1/traces` with a JSON body — the same wire the
-exporter speaks. Only the path and the auth differ.
+The exporter speaks OTLP/HTTP with a **JSON** body: `POST …/v1/traces`.
+Langfuse and Jaeger accept that directly; Phoenix's HTTP ingest is
+protobuf-only, so it takes a standard OTel Collector in front (verified —
+a direct post answers HTTP 415, the exporter warns once, the run is
+unaffected).
 
 | Backend | Endpoint | Auth |
 |---|---|---|
 | **Langfuse** (local) | `http://localhost:3000/api/public/otel/v1/traces` | Basic `pk:sk` |
 | **Jaeger** (all-in-one) | `http://localhost:4318/v1/traces` | none |
-| **Phoenix** (arize) | `http://localhost:6006/v1/traces` | none |
+| **Phoenix** (arize) | via an OTel Collector (JSON in, protobuf out) — see `samples/07-phoenix/` | none |
 
 Langfuse has no Java SDK; its documented JVM path *is* this OTLP endpoint, so
 the exporter is the first-class way to see spectro runs in Langfuse — no bridge

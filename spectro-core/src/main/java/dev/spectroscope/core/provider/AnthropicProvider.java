@@ -14,8 +14,10 @@ import com.anthropic.models.messages.Message;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.MessageParam;
 import com.anthropic.models.messages.RawMessageStreamEvent;
+import com.anthropic.models.messages.OutputConfig;
 import com.anthropic.models.messages.TextBlockParam;
 import com.anthropic.models.messages.ThinkingConfigAdaptive;
+import com.anthropic.models.messages.ThinkingConfigDisabled;
 import com.anthropic.models.messages.ThinkingConfigEnabled;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolResultBlockParam;
@@ -65,9 +67,27 @@ public final class AnthropicProvider implements LlmProvider {
      * @param apiKey        the resolved key, or null/blank to read ANTHROPIC_API_KEY from the env
      */
     public AnthropicProvider(String model, boolean promptCaching, String apiKey) {
+        this(model, promptCaching, apiKey, null);
+    }
+
+    /**
+     * Visible for the wire test: a base URL override points the SDK at a
+     * scripted loopback server so the POSTED body can be asserted — the only
+     * place the mapping between the neutral request and the Anthropic wire is
+     * actually observable.
+     *
+     * @param model         the model id every request is sent to
+     * @param promptCaching true to place cache_control breakpoints
+     * @param apiKey        the resolved key, or null/blank for the SDK's fromEnv()
+     * @param baseUrl       the API root override, or null for the real API
+     */
+    AnthropicProvider(String model, boolean promptCaching, String apiKey, String baseUrl) {
         this.model = model;
         this.promptCaching = promptCaching;
         AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder().maxRetries(0);
+        if (baseUrl != null) {
+            builder.baseUrl(baseUrl);
+        }
         this.client = (apiKey != null && !apiKey.isBlank())
                 ? builder.apiKey(apiKey).build()
                 : builder.fromEnv().build();
@@ -307,17 +327,41 @@ public final class AnthropicProvider implements LlmProvider {
         // would stream EMPTY thinking blocks and silently blank the thinking
         // panel. Temperature stays unset (thinking rejects sampling
         // parameters); the streamed deltas become PThinkingDelta above.
-        if (request.thinking()) {
-            if (usesLegacyThinkingBudget(model)) {
-                int budget = thinkingBudget(request.maxTokens());
-                if (budget > 0) {
-                    builder.thinking(ThinkingConfigEnabled.builder()
-                            .budgetTokens(budget)
+        ReasoningCapability cap = ReasoningCapabilities.resolve("anthropic", model);
+        if (request.reasoning() == ProviderRequest.Reasoning.OFF) {
+            // An explicit off. Families whose default already IS off (opt-in
+            // adaptive 4.6-4.8, the budget legacy) honestly send nothing;
+            // default-on families spend {type:"disabled"} where the API takes
+            // it (sonnet-5 at any effort, opus-5 below xhigh — the record's
+            // offMaxEffort). Fable/Mythos reject "disabled" outright: no off
+            // switch exists, the capability record says so, nothing is sent.
+            // Effort never composes with OFF — output_config stays away.
+            if (cap.offSwitch() && cap.defaultOn() && !usesLegacyThinkingBudget(model)) {
+                builder.thinking(ThinkingConfigDisabled.builder().build());
+            }
+        } else {
+            if (request.thinking()) {
+                if (usesLegacyThinkingBudget(model)) {
+                    int budget = thinkingBudget(request.maxTokens());
+                    if (budget > 0) {
+                        builder.thinking(ThinkingConfigEnabled.builder()
+                                .budgetTokens(budget)
+                                .build());
+                    }
+                } else {
+                    builder.thinking(ThinkingConfigAdaptive.builder()
+                            .display(ThinkingConfigAdaptive.Display.SUMMARIZED)
                             .build());
                 }
-            } else {
-                builder.thinking(ThinkingConfigAdaptive.builder()
-                        .display(ThinkingConfigAdaptive.Display.SUMMARIZED)
+            }
+            // The effort dial rides output_config independently of the thinking
+            // param (5-series defaults to adaptive with thinking omitted), but
+            // only values the model's capability row lists — budget-legacy and
+            // pre-thinking families never see the field.
+            if (request.effort() != null && "effort".equals(cap.control())
+                    && cap.efforts().contains(request.effort())) {
+                builder.outputConfig(OutputConfig.builder()
+                        .effort(OutputConfig.Effort.of(request.effort()))
                         .build());
             }
         }

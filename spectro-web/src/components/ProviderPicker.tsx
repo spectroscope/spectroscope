@@ -14,6 +14,7 @@ import { useLang } from "../state/lang";
 import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { LocalModelDialog } from "./LocalModelDialog";
+import { ReasoningControl } from "./ReasoningControl";
 
 export function ProviderPicker({
   provider,
@@ -155,6 +156,13 @@ export function ProviderPicker({
               />
             </label>
           )}
+          {/* Card 88: the thinking control lives with the model it belongs to.
+              Driven purely by the capability record — a model without a
+              reasoning channel shows nothing here. The choice persists per
+              (provider, model); App watches the store and wires the ACTIVE
+              pair, so a flip on the current model applies immediately and a
+              flip on a pending switch rides along once the switch confirms. */}
+          {model.trim() !== "" && <ReasoningControl provider={sel} model={model.trim()} />}
           <div className="provider-pop-foot">
             <button type="button" className="primary" onClick={apply}>
               {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}

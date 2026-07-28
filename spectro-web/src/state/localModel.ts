@@ -58,6 +58,22 @@ export function fitKey(m: CatalogModel): string {
   return "lm.fit.ok";
 }
 
+/** The first-use sheet's lede. Inline bilingual pair instead of an i18n key
+ *  (card 64 folds these ternaries back into i18n.ts): the old `lmn.lede`
+ *  claimed "Nothing you type leaves your computer", which the tool belt
+ *  refutes — an allowed run_command can reach the network with whatever the
+ *  operator typed. The honest claim is about the MODEL: prompts never leave
+ *  for a cloud API; tools are a separate, gated story (card 107, V11). */
+export function localModelLede(lang: "de" | "en", model: string): string {
+  return lang === "de"
+    ? `${model} läuft komplett auf diesem Rechner: kein Key, kein Konto, keine Cloud. ` +
+        `Deine Prompts verlassen den Rechner nicht für eine Modell-API — aber Tools wie ` +
+        `run_command können weiter ins Netz, wenn du einen Lauf erlaubst.`
+    : `${model} runs entirely on this machine: no key, no account, no cloud. ` +
+        `Your prompts never leave for a model API — though tools like run_command ` +
+        `can still reach the network when you allow a run.`;
+}
+
 /** The picker/header label for the built-in provider under a given model —
  *  'built-in · Qwen3 4B' when the catalogue knows the id, 'built-in' alone
  *  otherwise (never a wrong hardcoded name). */

@@ -262,7 +262,8 @@ three consecutive runs before a release.
 
 - [user guide](https://spectroscope.ai/guide/), 120+ pages, HTML and PDF, light and dark editions, real captured screens
 - [dev portal](https://spectroscope.dev) with a generated, searchable reference extracted from this source tree
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WEB-UI.md](docs/WEB-UI.md), [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)
+- [samples/](samples/) — standalone, runnable examples against the published Maven artifacts: the five lines, fleets, session recording, OTel export, a LangChain4j bridge
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WEB-UI.md](docs/WEB-UI.md), [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md), [docs/INTEROP.md](docs/INTEROP.md)
 - [release-notes/](release-notes/) for what each version brought
 
 Found a bug or a rough edge? Open an issue; the project is young and moves

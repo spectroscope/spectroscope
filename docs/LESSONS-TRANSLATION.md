@@ -111,13 +111,23 @@ engine is `OpenAiCompatProvider` against a bundled `llama-server`
 (`LocalProviderFactory`), and in
 `spectro-core/src/main/resources/local/models.json` four of the five catalogue
 models carry `reasoning: true`, including the `defaultId` (`qwen3-4b`). So for
-the local engine, `OFF` and `DEFAULT` are the same request today, and the only
+the local engine, `OFF` and `DEFAULT` were the same request, and the only
 thing standing between a reasoning local model and a silently empty translation
-is the check in the next section. Closing it means giving
-`OpenAiCompatProvider` a mapping for `OFF`, and whatever wire form
-`llama-server` accepts for that has not been measured here. Measure it the way
-`TranslateWireTest` measures the ollama side: assert on the bytes, then run the
-built-in model through the passage sweep below.
+was the check in the next section.
+
+**Closed (card 115 / card 88, 2026-07-28), and the measurement earned its
+keep.** The documented llama.cpp off switch, `reasoning_effort:"none"`, is
+silently ignored by the very build we bundle (b10107, measured with
+Qwen3-1.7B: 300 completion tokens, all but two of them reasoning). What works
+is `chat_template_kwargs:{"enable_thinking":false}` — same model, same build,
+zero reasoning tokens and the answer in three. `OpenAiCompatProvider` now
+carries a per-dialect mapping for `OFF` and the effort levels, gated by
+`ReasoningCapabilities` (the one static table in
+`spectro-core/src/main/resources/reasoning/capabilities.json`), and
+`ReasoningWireTest` pins the posted bytes for all three providers — including
+the cases where the honest wire form is nothing at all (LM Studio,
+VibeThinker, gpt-oss, fable). A live translation through the bundled binary
+returned its passage in 1.3 s.
 
 ## Never report an empty unit as finished
 

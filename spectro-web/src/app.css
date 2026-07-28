@@ -21,3 +21,4 @@
 @import "./styles/keymap.css"; /* Keymap overlay: the ? shortcut sheet (edu port) */
 @import "./styles/workspace-gear.css"; /* Composer gear: permission mode + always-allow rules (Task 16) */
 @import "./styles/leveling.css";
+@import "./styles/terminal.css"; /* Files tab: the PTY terminal pane + its tab strip (card 93) */

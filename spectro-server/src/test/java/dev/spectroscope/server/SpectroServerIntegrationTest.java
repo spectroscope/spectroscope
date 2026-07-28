@@ -39,6 +39,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -886,5 +887,54 @@ class SpectroServerIntegrationTest {
         assertTrue(response.getBody() != null && response.getBody().contains("unknown settings key"),
                 "the error JSON's message field must carry the readable reason, got: "
                         + response.getBody());
+    }
+
+    @Test
+    void theReasoningControlReachesTheProviderWire() throws Exception {
+        // Card 88/115: the picker's reasoning control must leave the machine
+        // in the provider's dialect. The boot model is qwen3 — its capability
+        // row takes both an off switch (think:false) and levels (think:"low").
+        // Two sessions, because the reasoning override lives per connection.
+        runWithReasoning("""
+                {"type":"set_reasoning","mode":"off"}""", "Reasoning off probe.");
+        runWithReasoning("""
+                {"type":"set_reasoning","mode":"on","effort":"low"}""", "Reasoning effort probe.");
+
+        JsonNode offBody = bodyContaining("Reasoning off probe.");
+        assertNotNull(offBody, "the off-probe request body must have been recorded");
+        assertTrue(offBody.path("think").isBoolean() && !offBody.path("think").asBoolean(),
+                "set_reasoning off must post think:false, got: " + offBody.path("think"));
+
+        JsonNode effortBody = bodyContaining("Reasoning effort probe.");
+        assertNotNull(effortBody, "the effort-probe request body must have been recorded");
+        assertEquals("low", effortBody.path("think").asText(),
+                "the effort level must ride the think field, got: " + effortBody.path("think"));
+    }
+
+    /** One WS session: the reasoning frame first, then a probe prompt, then run_end. */
+    private void runWithReasoning(String reasoningFrame, String probeText) throws Exception {
+        List<JsonNode> events = new ArrayList<>();
+        CountDownLatch runEnded = new CountDownLatch(1);
+        try (HttpClient client = HttpClient.newHttpClient()) {
+            WebSocket socket = client.newWebSocketBuilder()
+                    .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
+                            collectInto(events, "run_end", runEnded))
+                    .join();
+            socket.sendText(reasoningFrame, true);
+            socket.sendText("""
+                    {"type":"user_message","text":"%s"}""".formatted(probeText), true);
+            assertTrue(runEnded.await(20, TimeUnit.SECONDS), "run_end must arrive");
+            socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
+        }
+    }
+
+    /** The first recorded /api/chat body whose messages carry the marker text. */
+    private static JsonNode bodyContaining(String marker) throws IOException {
+        for (String body : requestedBodies) {
+            if (body.contains(marker)) {
+                return JSON.readTree(body);
+            }
+        }
+        return null;
     }
 }

@@ -31,8 +31,6 @@ export function AppHeader(props: {
   showPanelToggle: boolean;
   panelOpen: boolean;
   onTogglePanel: () => void;
-  thinking: boolean;
-  onToggleThinking: () => void;
   settingsOpen: boolean;
   onToggleSettings: () => void;
   doctorOpen: boolean;
@@ -145,20 +143,9 @@ export function AppHeader(props: {
         </button>
       )}
 
-      {/* Reasoning visibility toggle — Coral when on. */}
-      <button
-        type="button"
-        className={`thinking-toggle${props.thinking ? " thinking-toggle--on" : ""}`}
-        role="switch"
-        aria-checked={props.thinking}
-        aria-label={t(lang, "hdr.thinkingAria")}
-        onClick={props.onToggleThinking}
-      >
-        <span className="thinking-toggle-label">Thinking</span>
-        <span className="thinking-toggle-track" aria-hidden="true">
-          <span className="thinking-toggle-knob" />
-        </span>
-      </button>
+      {/* The thinking toggle moved into the provider picker (card 88): it is
+          a per-model control now, driven by the capability record — a header
+          switch could offer what the active model cannot do. */}
 
       {/* UI language toggle — chrome only; chats keep their own language. */}
       <button

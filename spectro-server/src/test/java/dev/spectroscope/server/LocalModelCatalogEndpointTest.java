@@ -31,7 +31,8 @@ class LocalModelCatalogEndpointTest {
     @Test
     @SuppressWarnings("unchecked")
     void theCatalogListsEveryModelWithStateAndPreflight(@TempDir Path modelsDir) {
-        Map<String, Object> out = controller(modelsDir).catalog();
+        Map<String, Object> out =
+                controller(modelsDir).catalog(new MockHttpServletRequest()).getBody();
         assertEquals(LocalCatalog.bundled().defaultId(), out.get("defaultId"));
 
         Map<String, Object> machine = (Map<String, Object>) out.get("machine");
@@ -67,7 +68,7 @@ class LocalModelCatalogEndpointTest {
         LocalCatalog.Model first = LocalCatalog.bundled().models().get(0);
         Files.writeString(modelsDir.resolve(first.file()), "gguf");
         List<Map<String, Object>> models =
-                (List<Map<String, Object>>) controller(modelsDir).catalog().get("models");
+                (List<Map<String, Object>>) controller(modelsDir).catalog(new MockHttpServletRequest()).getBody().get("models");
         Map<String, Object> row = models.stream()
                 .filter(m -> first.id().equals(m.get("id"))).findFirst().orElseThrow();
         assertEquals("ready", row.get("state"));
@@ -76,10 +77,10 @@ class LocalModelCatalogEndpointTest {
     @Test
     void statusTakesAModelAndRefusesAnUnknownOne(@TempDir Path modelsDir) {
         LocalModelController c = controller(modelsDir);
-        assertEquals("absent", c.status(LocalCatalog.bundled().defaultId()).getBody().get("state"));
-        assertEquals("absent", c.status(null).getBody().get("state"),
+        assertEquals("absent", c.status(LocalCatalog.bundled().defaultId(), new MockHttpServletRequest()).getBody().get("state"));
+        assertEquals("absent", c.status(null, new MockHttpServletRequest()).getBody().get("state"),
                 "no param means the default model, so the old client keeps working");
-        assertEquals(404, c.status("no-such-model").getStatusCode().value(),
+        assertEquals(404, c.status("no-such-model", new MockHttpServletRequest()).getStatusCode().value(),
                 "an unknown id is a 404, never a silent default that reports the wrong file");
     }
 
@@ -99,16 +100,16 @@ class LocalModelCatalogEndpointTest {
         c.startDownload(models.get(0).id(), new MockHttpServletRequest());
         c.startDownload(models.get(1).id(), new MockHttpServletRequest());
         for (int i = 0; i < 200; i++) {
-            String a = (String) c.status(models.get(0).id()).getBody().get("state");
-            String b = (String) c.status(models.get(1).id()).getBody().get("state");
+            String a = (String) c.status(models.get(0).id(), new MockHttpServletRequest()).getBody().get("state");
+            String b = (String) c.status(models.get(1).id(), new MockHttpServletRequest()).getBody().get("state");
             if (!"downloading".equals(a) && !"downloading".equals(b)) {
                 break;
             }
             Thread.sleep(20);
         }
-        assertEquals("failed", c.status(models.get(0).id()).getBody().get("state"));
-        assertEquals("failed", c.status(models.get(1).id()).getBody().get("state"));
-        assertNull(c.status(models.get(2).id()).getBody().get("error"),
+        assertEquals("failed", c.status(models.get(0).id(), new MockHttpServletRequest()).getBody().get("state"));
+        assertEquals("failed", c.status(models.get(1).id(), new MockHttpServletRequest()).getBody().get("state"));
+        assertNull(c.status(models.get(2).id(), new MockHttpServletRequest()).getBody().get("error"),
                 "a model nobody touched carries no error");
     }
 }

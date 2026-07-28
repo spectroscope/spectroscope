@@ -49,15 +49,35 @@ public interface LlmProvider {
      * @param tools     the tools advertised to the model (may be empty)
      * @param maxTokens the completion budget for this call
      * @param reasoning what this call site says about the model's own reasoning
+     * @param effort    the requested reasoning effort level, or null for the
+     *                  model's default — providers spend it only where their
+     *                  {@link ReasoningCapability} lists the value
      * @param signal    cooperative cancel — firing it aborts the open stream
      */
     record ProviderRequest(String system, List<ProviderMessage> messages,
                            List<ToolSpec> tools, int maxTokens, Reasoning reasoning,
-                           CancelSignal signal) {
+                           String effort, CancelSignal signal) {
 
         /** A missing answer is the same as no answer: leave it to the model. */
         public ProviderRequest {
             reasoning = reasoning == null ? Reasoning.DEFAULT : reasoning;
+            effort = effort == null || effort.isBlank() ? null : effort;
+        }
+
+        /**
+         * Effort-free request — every call site that predates the effort dial.
+         *
+         * @param system    the system prompt sent with every request
+         * @param messages  the conversation history, oldest first
+         * @param tools     the tools advertised to the model (may be empty)
+         * @param maxTokens the completion budget for this call
+         * @param reasoning what this call site says about the model's own reasoning
+         * @param signal    cooperative cancel — firing it aborts the open stream
+         */
+        public ProviderRequest(String system, List<ProviderMessage> messages,
+                               List<ToolSpec> tools, int maxTokens, Reasoning reasoning,
+                               CancelSignal signal) {
+            this(system, messages, tools, maxTokens, reasoning, null, signal);
         }
 
         /**

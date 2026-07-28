@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { progressPct, formatGB, fitKey, builtInLabel, type CatalogModel } from "./localModel";
+import { progressPct, formatGB, fitKey, builtInLabel, localModelLede, type CatalogModel } from "./localModel";
 
 describe("progressPct", () => {
   it("is 0 before anything and 100 at the end", () => {
@@ -55,6 +55,27 @@ describe("fitKey", () => {
   });
   it("a roomy machine gets the plain ok", () => {
     expect(fitKey(row({}))).toBe("lm.fit.ok");
+  });
+});
+
+describe("localModelLede", () => {
+  // Card 107 (V11): the old sheet claimed "Nothing you type leaves your
+  // computer" — false the moment a run uses the tool belt (run_command and
+  // friends reach the network when a run is allowed to). The MODEL being local
+  // is the honest claim; total network silence is not.
+  it("claims the model is local, never total network silence", () => {
+    for (const lang of ["en", "de"] as const) {
+      const lede = localModelLede(lang, "Qwen3 4B");
+      expect(lede).toContain("Qwen3 4B");
+      expect(lede.toLowerCase()).not.toContain("nothing you type leaves");
+      expect(lede.toLowerCase()).not.toContain("nichts, was du tippst");
+    }
+  });
+  it("says prompts stay local AND that tools can still reach the network", () => {
+    expect(localModelLede("en", "X")).toMatch(/prompts .*never leave/i);
+    expect(localModelLede("en", "X")).toMatch(/tools .*can still reach the network/i);
+    expect(localModelLede("de", "X")).toMatch(/Prompts .*verlassen .*nicht/i);
+    expect(localModelLede("de", "X")).toMatch(/Tools .*können .*ins Netz/i);
   });
 });
 
