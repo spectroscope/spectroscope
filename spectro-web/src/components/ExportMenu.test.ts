@@ -90,3 +90,43 @@ describe("exportPlan — the empty view", () => {
     expect(p.jsonlName).toBe("spectroscope-session-20260727-1203.jsonl");
   });
 });
+
+describe("exportPlan — the jsonl target names the file", () => {
+  // Three exports of one session land in one folder, and the extension is the
+  // same for all three. Without a segment saying which shape is inside, the
+  // only way to tell a Claude Code transcript from a spectroscope stream is to
+  // open it.
+  it("leaves the app's own format unmarked", () => {
+    expect(exportPlan({ kind: "chat", count: 2, now: NOW, format: "spectroscope" }).jsonlName).toBe(
+      "spectroscope-session-20260727-1203.jsonl",
+    );
+  });
+
+  it("marks a Claude Code transcript", () => {
+    expect(exportPlan({ kind: "chat", count: 2, now: NOW, format: "claude-code" }).jsonlName).toContain(
+      ".claude-code.jsonl",
+    );
+  });
+
+  it("marks a VS Code export", () => {
+    expect(exportPlan({ kind: "chat", count: 2, now: NOW, format: "vscode" }).jsonlName).toContain(
+      ".vscode.jsonl",
+    );
+  });
+
+  it("keeps the language tag last, so a translated foreign export says both", () => {
+    const name = exportPlan({
+      kind: "chat",
+      count: 2,
+      now: NOW,
+      format: "vscode",
+      translatedTo: "de",
+    }).jsonlName;
+    expect(name).toContain(".vscode");
+    expect(name.endsWith(".translated-de.jsonl")).toBe(true);
+  });
+
+  it("defaults to the app's own format when none was chosen", () => {
+    expect(exportPlan({ kind: "chat", count: 2, now: NOW }).jsonlName).not.toContain(".vscode");
+  });
+});

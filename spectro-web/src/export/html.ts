@@ -24,15 +24,22 @@ import type { RunEvent } from "../events";
 import type { Lang } from "../i18n/i18n";
 import type { Block, Inline } from "../markdown/parse";
 import { parseMarkdown } from "../markdown/parse";
-import type { HlLang } from "../workspace/highlight";
-import { hlLangForFence, tokenize } from "../workspace/highlight";
-import { buildTextFeed } from "../state/textFeed";
+import { hlLangForFence } from "../workspace/highlight";
+import { buildTextFeed, eventsToJsonl } from "../state/textFeed";
 import type { ToolCard, Turn, UiState } from "../state/reducer";
 import { initialState, reduceAll } from "../state/reducer";
 import { groupTurns } from "../state/threads";
-import { splitInput } from "../components/toolViews";
+import { describeTool } from "../components/toolViews";
 import { toolTeaser } from "../components/toolTeaser";
-import { agentAccent, formatDuration, prettyJson } from "../format";
+import { agentAccent, formatDuration } from "../format";
+import type { DesignId } from "../state/designPrefs";
+import { themeById, themeCss } from "./themes";
+import { codeHtml, escapeHtml, label } from "./markup";
+import { TOOL_CSS, toolViewHtml } from "./toolBody";
+
+// The escaping rule is the export's, wherever it is spelled: re-exported so
+// every renderer and every test still reaches it through the document module.
+export { escapeHtml };
 
 export interface ExportOptions {
   /** Shown in the header and the browser tab — a session id, a first prompt. */
@@ -45,82 +52,19 @@ export interface ExportOptions {
   note?: string;
   /** Text feed only: the extended feed, exactly as the tab's toggle builds it. */
   extended?: boolean;
+  /** Which palette the file carries. Defaults to the app's own default rather
+   *  than to whatever the app happens to be showing: an export is a document,
+   *  and its theme is now a choice someone made, not a side effect. */
+  theme?: DesignId;
+  /** Whether reasoning arrives unfolded. Default folded, as in the app. */
+  reasoningOpen?: boolean;
+  /** Whether tool cards arrive unfolded. Default open: a collapsed command in a
+   *  file attached to a ticket is a command nobody reads. */
+  toolsOpen?: boolean;
 }
 
-// ---- escaping ---------------------------------------------------------------
-
-const ESCAPES: Record<string, string> = {
-  "&": "&amp;",
-  "<": "&lt;",
-  ">": "&gt;",
-  '"': "&quot;",
-  "'": "&#39;",
-};
-
-/**
- * Every character that could open markup or close an attribute. One pass, so
- * an ampersand is escaped exactly once, and the same function serves text and
- * attributes — one rule is one rule fewer to get wrong at a call site.
- */
-export function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (c) => ESCAPES[c]);
-}
-
-// ---- chrome strings ---------------------------------------------------------
-
-// Deliberately local, not i18n keys: the export is a file that outlives the
-// app it came from, and a missing key would print as a key in a document
-// someone mails to a colleague.
-const LABELS: Record<Lang, Record<string, string>> = {
-  en: {
-    chat: "chat",
-    text: "text feed",
-    you: "you",
-    reasoning: "reasoning",
-    chars: "{n} characters",
-    input: "input",
-    output: "output",
-    events: "{n} events",
-    exported: "exported {when}",
-    error: "error",
-    noResult: "no result",
-    allowed: "allowed",
-    denied: "denied",
-    pending: "pending",
-    totals: "{in} in · {out} out",
-    ended: "ended: {reason}",
-    empty: "This session carries no events.",
-    theme: "dark",
-    lines: "{n} lines",
-  },
-  de: {
-    chat: "Chat",
-    text: "Text-Feed",
-    you: "du",
-    reasoning: "Denken",
-    chars: "{n} Zeichen",
-    input: "Eingabe",
-    output: "Ausgabe",
-    events: "{n} events",
-    exported: "exportiert {when}",
-    error: "Fehler",
-    noResult: "kein Ergebnis",
-    allowed: "erlaubt",
-    denied: "verweigert",
-    pending: "offen",
-    totals: "{in} rein · {out} raus",
-    ended: "beendet: {reason}",
-    empty: "Diese Session trägt keine Events.",
-    theme: "dunkel",
-    lines: "{n} Zeilen",
-  },
-};
-
-function label(lang: Lang, key: string, vars?: Record<string, string | number>): string {
-  let s = LABELS[lang][key] ?? key;
-  if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
-  return s;
-}
+/** `<details open>` or `<details>`, from one of the two disclosure choices. */
+const openAttr = (open: boolean): string => (open ? " open" : "");
 
 // ---- time -------------------------------------------------------------------
 
@@ -143,24 +87,13 @@ function utcClock(ms: number): string {
 
 // ---- the document shell -----------------------------------------------------
 
-// The handful of brand tokens the export actually uses, copied from tokens.css.
-// DARK ONLY (the espresso ground): one theme keeps the file small and the
-// reading predictable, and dark is the app's default — the header says so.
+// The rules, without the palette. The palette is a THEME now (themes.ts), which
+// the drift test holds to tokens.css and designs.css — the four hand-copied
+// values that used to sit here had already drifted from the app.
+//
 // No @font-face and no url(): the font stack names local families and falls
 // back to the system, because a web font would be a network fetch.
-const CSS = `
-:root{
-  --bg: #17120d; --surface: #201913; --surface-2: #292019; --surface-3: #2e251c;
-  --border: #33291f; --border-strong: #5c5142; --shade: rgba(0,0,0,.18);
-  --text: #ede7dc; --text-dim: #a2988a; --text-faint: #5c5142;
-  --accent: #ce9440; --sand: #8b7cf0;
-  --sp-red: #c05a4c; --sp-amber: #ce9440; --sp-teal: #2dd4a7; --sp-ocean: #2cb1c4; --sp-violet: #8b7cf0;
-  --ok: #2dd4a7; --warn: #ce9440; --error: #c05a4c;
-  --agent-root: #2dd4a7; --agent-explore: #2cb1c4; --agent-worker: #8b7cf0; --agent-extra: #ce9440;
-  --font-ui: "Inter Variable", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  color-scheme: dark;
-}
+const RULES = `
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size:14px;line-height:1.55;
   -webkit-font-smoothing:antialiased}
@@ -258,10 +191,74 @@ code{font-family:var(--font-mono)}
 .x-tf--output{color:var(--text-dim)}
 .x-tf--error{color:var(--error)}
 
+.x-json{font-size:11px;line-height:1.5}
+
+/* Tab strip and language switch. The radios are the state — no script — and
+   they are moved out of the flow rather than display:none'd, so a keyboard can
+   still reach them and a screen reader still announces the group. */
+.x-tab-in{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);
+  white-space:nowrap;border:0}
+.x-tabs,.x-langs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
+.x-langs{margin-top:-8px}
+.x-tabs label,.x-langs label{cursor:pointer;border:1px solid var(--border);border-radius:7px;
+  padding:3px 10px;color:var(--text-dim);font-family:var(--font-mono);font-size:11px;letter-spacing:.08em;
+  text-transform:uppercase}
+.x-tab-in:focus-visible+.x-tab-in+.x-tabs label,.x-tabs label:hover,.x-langs label:hover{
+  border-color:var(--border-strong);color:var(--text)}
+.x-view-note{margin:0 0 12px;color:var(--text-faint);font-size:12px}
+
 .x-foot{margin-top:32px;padding-top:12px;border-top:1px solid var(--border);color:var(--text-faint);
   font-family:var(--font-mono);font-size:11px}
-@media print{body{background:#fff;color:#000}details{break-inside:avoid}}
 `;
+
+// Print, which is how this file becomes a PDF. The old one-liner whitened the
+// body and left every token-coloured surface dark, so a printed dark export
+// came out as pale text on black cards. Re-pointing the TOKENS fixes the whole
+// document at once, because everything below reads var().
+//
+// The disclosure rules are best effort, and MEASURED as such. A closed
+// <details> does not print. In Chrome 150 its contents are hidden through
+// ::details-content, so `details:not([open])>*{display:revert}` changes
+// nothing — measured: a collapsed card stayed 32.6px, exactly its summary,
+// under print emulation. `::details-content{content-visibility:visible}` does
+// work there (32.6px -> 66.3px), but it is a young selector and older engines
+// need the child rule instead, so both are here and neither is trusted.
+//
+// The guarantee is structural, not stylistic: the print path in the dialog
+// presets "everything expanded" so the markup itself carries `open`. This block
+// is the second line of defence for a file printed later, by someone else.
+const PRINT = `
+@media print{
+  :root{
+    --bg:#fff; --surface:#fff; --surface-2:#fafafa; --surface-3:#f2f2f2;
+    --border:#c9c9c9; --border-strong:#8a8a8a; --shade:rgba(0,0,0,.04);
+    --text:#111; --text-dim:#3f3f3f; --text-faint:#6b6b6b;
+    color-scheme:light;
+  }
+  body{background:#fff;color:#111}
+  .x-wrap{max-width:none;padding:0}
+  details{break-inside:avoid;background:#fff}
+  details>summary{color:#3f3f3f}
+  details::details-content{content-visibility:visible}
+  details:not([open])>*{display:revert}
+  pre{white-space:pre-wrap;overflow-x:visible}
+  a{color:#111;border-bottom:1px solid #999}
+  /* The controls are useless on paper; what was selected on screen is what
+     prints, rather than every view at once saying the same thing three ways. */
+  .x-tabs,.x-langs{display:none}
+}
+`;
+
+/**
+ * The whole style block for an exported document: the chosen palette, then the
+ * rules, then print.
+ *
+ * @param theme the design id the reader picked; unknown ids fall back
+ * @return CSS text for a single inline <style>
+ */
+export function documentCss(theme?: DesignId, extra = ""): string {
+  return `\n${themeCss(themeById(theme ?? "spectroscope"))}\n${RULES}${TOOL_CSS}${extra}${PRINT}`;
+}
 
 /** The M1 line bundle — the brand mark as geometry, so it needs no image. */
 const MARK =
@@ -284,63 +281,92 @@ interface ShellInput {
   foot: string;
 }
 
-function wrapDocument({ kind, events, opts, body, foot }: ShellInput): string {
-  const lang: Lang = opts.lang ?? "en";
-  const now = opts.now ?? Date.now();
-  const kindName = label(lang, kind);
-  const title = opts.label !== undefined && opts.label !== "" ? opts.label : `spectroscope ${kindName}`;
-  const meta = [
-    kindName,
-    label(lang, "events", { n: events.length }),
-    label(lang, "exported", { when: utcStamp(now) }),
-    label(lang, "theme"),
+/**
+ * The header's meta line: what this file is, how much of it there is, when it
+ * was written and in which palette. The theme is READ from the table rather
+ * than asserted, so a paper export stops calling itself dark.
+ */
+export function metaLine(input: {
+  kindName: string;
+  count: number;
+  now: number;
+  lang: Lang;
+  theme?: DesignId;
+}): string {
+  return [
+    input.kindName,
+    label(input.lang, "events", { n: input.count }),
+    label(input.lang, "exported", { when: utcStamp(input.now) }),
+    themeById(input.theme ?? "spectroscope").name[input.lang],
   ].join(" · ");
+}
+
+/** The document shell every export shares. Body and head chrome are already
+ *  markup; `foot` is plain text and is escaped here so no caller can forget. */
+export function shell(input: {
+  lang: Lang;
+  title: string;
+  theme?: DesignId;
+  meta: string;
+  note?: string;
+  /** Markup between the header and <main> — the tab strip and its radios. */
+  controls?: string;
+  /** Rules for whatever `controls` introduced, folded into the one style block. */
+  extraCss?: string;
+  body: string;
+  foot: string;
+}): string {
   const note =
-    opts.note !== undefined && opts.note !== "" ? `<p class="x-note">${escapeHtml(opts.note)}</p>` : "";
+    input.note !== undefined && input.note !== "" ? `<p class="x-note">${escapeHtml(input.note)}</p>` : "";
   return `<!doctype html>
-<html lang="${lang}">
+<html lang="${input.lang}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${escapeHtml(title)} · spectroscope</title>
-<style>${CSS}</style>
+<title>${escapeHtml(input.title)} · spectroscope</title>
+<style>${documentCss(input.theme, input.extraCss ?? "")}</style>
 </head>
 <body>
 <div class="x-wrap">
 <header class="x-head">
 <div class="x-brand">${MARK}<span>spectroscope</span></div>
-<h1 class="x-title">${escapeHtml(title)}</h1>
-<p class="x-meta">${escapeHtml(meta)}</p>
+<h1 class="x-title">${escapeHtml(input.title)}</h1>
+<p class="x-meta">${escapeHtml(input.meta)}</p>
 ${note}
 </header>
+${input.controls ?? ""}
 <main>
-${body}
+${input.body}
 </main>
-<footer class="x-foot">${escapeHtml(foot)}</footer>
+<footer class="x-foot">${escapeHtml(input.foot)}</footer>
 </div>
 </body>
 </html>
 `;
 }
 
-// ---- markdown -> html -------------------------------------------------------
-
-/**
- * Code as coloured spans, or escaped text when the language is unknown —
- * the same rule the app's Highlighted follows: colouring is a claim about what
- * the characters mean, and a wrong claim about a shell command is worse than
- * no colour at all. The token class comes from a closed union, never from data.
- */
-function codeHtml(text: string, lang: HlLang | null): string {
-  if (lang === null || text === "") return escapeHtml(text);
-  return tokenize(text, lang)
-    .map((tok) =>
-      tok.cls === "plain"
-        ? escapeHtml(tok.text)
-        : `<span class="hl hl-${tok.cls}">${escapeHtml(tok.text)}</span>`,
-    )
-    .join("");
+function wrapDocument({ kind, events, opts, body, foot }: ShellInput): string {
+  const lang: Lang = opts.lang ?? "en";
+  const now = opts.now ?? Date.now();
+  const kindName = label(lang, kind);
+  return shell({
+    lang,
+    title: opts.label !== undefined && opts.label !== "" ? opts.label : `spectroscope ${kindName}`,
+    theme: opts.theme,
+    meta: metaLine({ kindName, count: events.length, now, lang, theme: opts.theme }),
+    note: opts.note,
+    body,
+    foot,
+  });
 }
+
+/** The kind word in the document's own language — the tab strip labels itself
+ *  with the same words the meta line uses. */
+export function kindLabel(lang: Lang, key: string): string {
+  return label(lang, key);
+}
+
+// ---- markdown -> html -------------------------------------------------------
 
 function inlineHtml(nodes: readonly Inline[]): string {
   return nodes
@@ -427,7 +453,7 @@ function badge(agentId: string): string {
   );
 }
 
-function toolHtml(card: ToolCard, lang: Lang): string {
+function toolHtml(card: ToolCard, lang: Lang, open: boolean): string {
   const denied = card.permission === "denied";
   const status = denied
     ? label(lang, "denied")
@@ -448,43 +474,29 @@ function toolHtml(card: ToolCard, lang: Lang): string {
   }
   const line = card.status === "error" ? "var(--error)" : denied ? "var(--warn)" : "var(--border)";
   const teaser = toolTeaser(card.name, card.input, (n) => label(lang, "lines", { n }));
-  // The input as the app's structured face reads it: the keys and scalars as
-  // JSON, each multi-line field lifted into a block of its own. Stringified
-  // whole, a field carrying code turns the payload into one line of visible \n,
-  // and this file is the copy that gets mailed and outlives the session.
-  const split = splitInput(card.name, card.input);
-  // Open by default: a collapsed command in a file attached to a ticket is a
-  // command nobody reads. The reader can fold it away; the record is complete.
-  const parts = [
-    `<details class="x-tool" open style="--line-color:${line}">`,
+  // The call as the app reads it — ONE classification for both renderers, so a
+  // read is a file here too and not the JSON that describes one. describeTool is
+  // pure and DOM-free; the markup around its verdict is this folder's own
+  // (toolBody.ts), because a file has no clip to expand and no image to fetch.
+  //
+  // A denied call produced no output, so it is not handed one: a shape drawn
+  // around an empty result would read as a call that ran and said nothing.
+  const view = describeTool(card.name, card.input, denied ? undefined : card.output, card.status === "error");
+  // Open by default, and the dialog can say otherwise: a collapsed command in a
+  // file attached to a ticket is a command nobody reads, but a hundred-call
+  // session is unreadable fully unfolded. Either way the record is complete —
+  // the fold is presentation, and print forces it back open.
+  return [
+    `<details class="x-tool"${openAttr(open)} style="--line-color:${line}">`,
     `<summary><span class="x-tool-name">${escapeHtml(card.name)}</span>`,
     card.agentId !== "main" ? badge(card.agentId) : "",
     `<span class="x-tool-preview">${escapeHtml(teaser)}</span>`,
     chips.join(""),
     "</summary>",
     `<div class="x-body">`,
-    `<div class="x-io">${escapeHtml(label(lang, "input"))}</div>`,
-    `<pre><code>${codeHtml(prettyJson(split.shape), "json")}</code></pre>`,
-  ];
-  for (const block of split.blocks) {
-    // The label is the payload's own word, not chrome — and it is the only
-    // untrusted string that reaches an eyebrow, so it is escaped like any other.
-    // Colouring stays inline: the four token classes are in the document's own
-    // style block, and an unnamed language renders byte for byte.
-    parts.push(
-      `<div class="x-io">${escapeHtml(block.key)}</div>`,
-      `<pre><code>${codeHtml(block.text, block.lang)}</code></pre>`,
-    );
-  }
-  // A denied call produced no output — printing an empty block would suggest it ran.
-  if (card.output !== undefined && !denied) {
-    parts.push(
-      `<div class="x-io">${escapeHtml(label(lang, "output"))}</div>`,
-      `<pre>${escapeHtml(card.output)}</pre>`,
-    );
-  }
-  parts.push("</div></details>");
-  return parts.join("");
+    toolViewHtml(view, { name: card.name, lang }),
+    "</div></details>",
+  ].join("");
 }
 
 function assistantMeta(turn: Extract<Turn, { kind: "assistant" }>): string {
@@ -505,7 +517,12 @@ function assistantMeta(turn: Extract<Turn, { kind: "assistant" }>): string {
   return `<div class="x-assistant-meta">${escapeHtml(bits.join(" · "))}</div>`;
 }
 
-function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean): string {
+interface Folds {
+  reasoning: boolean;
+  tools: boolean;
+}
+
+function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean, folds: Folds): string {
   switch (turn.kind) {
     case "user": {
       const thumbs = (turn.attachments ?? [])
@@ -526,10 +543,11 @@ function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean): st
       const parts = ['<article class="x-assistant">'];
       if (turn.agentId !== "main" && !inThread) parts.push(badge(turn.agentId));
       if (turn.thinking !== "") {
-        // Collapsed like the app's default disclosure; the summary says how much
-        // is folded away, so nothing is hidden by surprise.
+        // Collapsed like the app's default disclosure unless the dialog said
+        // otherwise; the summary says how much is folded away either way, so
+        // nothing is hidden by surprise.
         parts.push(
-          `<details class="x-think"><summary>${escapeHtml(label(lang, "reasoning"))} · ` +
+          `<details class="x-think"${openAttr(folds.reasoning)}><summary>${escapeHtml(label(lang, "reasoning"))} · ` +
             `${escapeHtml(label(lang, "chars", { n: turn.thinking.length }))}</summary>` +
             `<div class="x-think-body">${escapeHtml(turn.thinking)}</div></details>`,
         );
@@ -540,7 +558,7 @@ function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean): st
     }
     case "tool": {
       const card = state.cards[turn.callId];
-      return card !== undefined ? toolHtml(card, lang) : "";
+      return card !== undefined ? toolHtml(card, lang, folds.tools) : "";
     }
     case "info":
       return `<div class="x-info x-info--${turn.tone}">${escapeHtml(turn.text)}</div>`;
@@ -553,12 +571,19 @@ function turnHtml(turn: Turn, state: UiState, lang: Lang, inThread: boolean): st
 }
 
 /**
- * The chat tab as one file: prompts, answers, reasoning, and every tool call
- * with its command and its result. Folded through the app's own reducer and
- * thread grouping, so the export is the view rather than a second reading of it.
+ * The chat view as markup, WITHOUT the document around it — so one file can
+ * carry it beside the text feed, and beside the same run in another language.
+ *
+ * @param events the stream to fold
+ * @param opts   language and the two disclosure choices
+ * @return the body markup and the footer text the shell will escape
  */
-export function chatToHtml(events: readonly RunEvent[], opts: ExportOptions = {}): string {
+export function chatBody(
+  events: readonly RunEvent[],
+  opts: ExportOptions = {},
+): { body: string; foot: string } {
   const lang: Lang = opts.lang ?? "en";
+  const folds: Folds = { reasoning: opts.reasoningOpen === true, tools: opts.toolsOpen !== false };
   const state = reduceAll(initialState, [...events]);
   const blocks = groupTurns(state.turns, state.cards, state.agents);
   const body =
@@ -566,13 +591,13 @@ export function chatToHtml(events: readonly RunEvent[], opts: ExportOptions = {}
       ? `<p class="x-empty">${escapeHtml(label(lang, "empty"))}</p>`
       : blocks
           .map((b) => {
-            if (b.kind === "turn") return turnHtml(b.turn, state, lang, false);
+            if (b.kind === "turn") return turnHtml(b.turn, state, lang, false, folds);
             const head = [
               badge(b.agentId),
               b.label !== null ? `<span class="x-thread-task">${escapeHtml(b.label)}</span>` : "",
               b.task !== "" ? `<span class="x-thread-task">${escapeHtml(b.task)}</span>` : "",
             ].join("");
-            const items = b.items.map((it) => turnHtml(it.turn, state, lang, true)).join("");
+            const items = b.items.map((it) => turnHtml(it.turn, state, lang, true, folds)).join("");
             return (
               `<section class="x-thread" style="--agent-color:${agentAccent(b.agentId)}">` +
               `<div class="x-thread-head">${head}</div>${items}</section>`
@@ -590,6 +615,16 @@ export function chatToHtml(events: readonly RunEvent[], opts: ExportOptions = {}
   ]
     .filter((s) => s !== "")
     .join(" · ");
+  return { body, foot };
+}
+
+/**
+ * The chat tab as one file: prompts, answers, reasoning, and every tool call
+ * with its command and its result. Folded through the app's own reducer and
+ * thread grouping, so the export is the view rather than a second reading of it.
+ */
+export function chatToHtml(events: readonly RunEvent[], opts: ExportOptions = {}): string {
+  const { body, foot } = chatBody(events, opts);
   return wrapDocument({ kind: "chat", events, opts, body, foot });
 }
 
@@ -599,28 +634,48 @@ export function chatToHtml(events: readonly RunEvent[], opts: ExportOptions = {}
  * The text tab as one file: the same fold the tab renders (buildTextFeed), with
  * the protocol markers visible as text. `extended` mirrors the tab's toggle.
  */
-export function textFeedToHtml(events: readonly RunEvent[], opts: ExportOptions = {}): string {
+export function textFeedBody(events: readonly RunEvent[], opts: ExportOptions = {}): string {
   const lang: Lang = opts.lang ?? "en";
   const feed = buildTextFeed(events, opts.extended === true);
-  const body =
-    feed.length === 0
-      ? `<p class="x-empty">${escapeHtml(label(lang, "empty"))}</p>`
-      : `<div class="x-feed">` +
-        feed
-          .map((s) => {
-            const agent =
-              s.agentId !== "main" && s.agentId !== ""
-                ? `<span class="x-tf-agent">[${escapeHtml(s.agentId)}]</span>`
-                : "";
-            return `<div class="x-tf x-tf--${s.kind}">${agent}${escapeHtml(s.text)}</div>`;
-          })
-          .join("") +
-        `</div>`;
+  if (feed.length === 0) return `<p class="x-empty">${escapeHtml(label(lang, "empty"))}</p>`;
+  return (
+    `<div class="x-feed">` +
+    feed
+      .map((s) => {
+        const agent =
+          s.agentId !== "main" && s.agentId !== ""
+            ? `<span class="x-tf-agent">[${escapeHtml(s.agentId)}]</span>`
+            : "";
+        return `<div class="x-tf x-tf--${s.kind}">${agent}${escapeHtml(s.text)}</div>`;
+      })
+      .join("") +
+    `</div>`
+  );
+}
+
+/**
+ * The text tab's JSON view: the stream as the tab prints it, one compact line
+ * per event.
+ *
+ * NOT the .jsonl download. That one writes every event verbatim; this one is a
+ * fold that drops socket-only frames, exactly as the tab does. Two artifacts
+ * called "json" that differ by a filter is a trap for anyone comparing them, so
+ * the section that carries this is labelled with the difference.
+ */
+export function jsonBody(events: readonly RunEvent[], opts: ExportOptions = {}): string {
+  const lang: Lang = opts.lang ?? "en";
+  const lines = eventsToJsonl(events);
+  if (lines.length === 0) return `<p class="x-empty">${escapeHtml(label(lang, "empty"))}</p>`;
+  return `<pre class="x-json"><code>${escapeHtml(lines.join("\n"))}</code></pre>`;
+}
+
+export function textFeedToHtml(events: readonly RunEvent[], opts: ExportOptions = {}): string {
+  const lang: Lang = opts.lang ?? "en";
   return wrapDocument({
     kind: "text",
     events,
     opts,
-    body,
+    body: textFeedBody(events, opts),
     foot: label(lang, "events", { n: events.length }),
   });
 }

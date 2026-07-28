@@ -1,36 +1,40 @@
 // "Take this tab with you" (owner 2026-07-27: "mache in jeden tab eine export
 // funktion. im text die text view (as is) als html und im chat den chat as is
-// als html", and from the translate sheet: "auch gerne anbieten das neue jsonl
-// zu exportieren, dann kann man beim nächsten mal gleich das neue nehmen").
+// als html"), and since 2026-07-28 a MODAL sheet rather than a two-item menu:
+// "beim export kann man kein design auswählen, gerne hier ein modales export
+// view fenster mit vorschau … und dann design auswahl, optionen".
 //
-// ONE control, two tabs, two files. The HTML is what you are reading — the chat
-// or the text feed, rendered by src/export/html.ts into a self-contained
-// document. The JSONL is the event stream behind it, written by
-// src/export/jsonl.ts in the exact wire shape the import reads back. Which
-// tab you are in only decides WHICH html renderer runs; the stream is the same
-// stream, because every view here is a fold over the same RunEvent[].
+// This file is now the seam, not the sheet. It owns three things the dialog
+// must not guess: which streams exist, what the files are called, and whether a
+// translation is in play at all.
 //
-// NOT the same thing as the archive link in Chat's archive bar. That one is
-// GET /api/sessions/{id}/export: the server hands back a STORED file verbatim,
-// and it only exists for a session the store actually holds. This control
-// exports the stream THIS TAB is rendering — a live run, an import, a scenario,
-// a fleet, a translation — none of which the server has a copy of. For a stored
-// session the bytes agree (the round-trip is pinned in jsonl.test.ts); the file
-// names differ on purpose, so a folder still says where each file came from.
+// WHICH STREAM IS "AS IS". The chat tab renders a FOLDED state built from the
+// translated stream, but its `events` prop is the recorded one (App.tsx hands
+// Chat `tabEvents` and TextView `shownEvents`). So the old menu's promise —
+// "exactly as you are reading it" — was false in the chat tab whenever a
+// translation was showing: it wrote the original. With a viewKey this module
+// can see the translation state itself, hold both sides, and default to the one
+// on screen. Without a viewKey it degrades honestly: one stream, no switcher,
+// no provenance claim.
 //
 // The menu renders no session data itself: it only names files and hands the
-// stream to the renderers. Escaping lives where the markup is built.
+// streams to the renderers. Escaping lives where the markup is built.
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { RunEvent } from "../events";
 import type { Lang } from "../i18n/i18n";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { chatToHtml, exportFilename, saveHtml, textFeedToHtml } from "../export/html";
-import { downloadJsonl, jsonlFilename } from "../export/jsonl";
+import { useTranslation, withTranslation } from "../state/translate";
+import { exportFilename, saveHtml } from "../export/html";
+import { downloadJsonl, jsonlFilename, toJsonl } from "../export/jsonl";
+import { toClaudeCodeJsonl } from "../export/claudeCode";
+import { toVscodeAgentJsonl } from "../export/vscodeAgent";
+import type { ExportRequest, JsonlFormat } from "../export/options";
+import type { ExportKind } from "../export/kinds";
+import { ExportDialog } from "./ExportDialog";
 
-/** The kind of view an export was taken from — it names the html file. */
-export type ExportKind = "chat" | "text";
+export type { ExportKind };
 
 export interface ExportPlan {
   /** False when the stream is empty: there is no document to write. */
@@ -42,6 +46,14 @@ export interface ExportPlan {
 /** The jsonl file's own kind word. Its counterpart for html is the tab name,
  *  which is a real distinction there and none here — one stream, one shape. */
 const SESSION = "spectroscope-session";
+
+/** What a foreign target adds to the file name. A folder holding three exports
+ *  of one session has to say which is which, and the extension cannot. */
+const FORMAT_SUFFIX: Record<JsonlFormat, string> = {
+  spectroscope: "",
+  "claude-code": ".claude-code",
+  vscode: ".vscode",
+};
 
 /** The provenance line printed INSIDE the exported document. Deliberately not
  *  an i18n key: html.ts keeps its own chrome local because a file outlives the
@@ -89,6 +101,7 @@ function stampUtc(now: number): string {
  * @param input.count       events in the stream; zero disables the control
  * @param input.label       the session id, or an imported file's name; untrusted
  * @param input.translatedTo the language tag when this stream is a translation
+ * @param input.format      the jsonl target, which names the file
  * @return both file names, and whether there is anything to write
  */
 export function exportPlan(input: {
@@ -96,129 +109,161 @@ export function exportPlan(input: {
   count: number;
   label?: string | null;
   translatedTo?: string | null;
+  format?: JsonlFormat;
   now: number;
 }): ExportPlan {
   const named = typeof input.label === "string" ? slugLabel(input.label) : "";
   const stamp = stampUtc(input.now);
+  const base = named === "" ? `${SESSION}-${stamp}` : `${SESSION}-${named}-${stamp}`;
   return {
     enabled: input.count > 0,
     htmlName: exportFilename(input.kind, named === "" ? undefined : named, input.now),
     jsonlName: jsonlFilename({
-      base: named === "" ? `${SESSION}-${stamp}` : `${SESSION}-${named}-${stamp}`,
+      base,
+      // Handed over separately so the cap cannot eat it: a label long enough to
+      // fill the budget used to truncate ".claude-code" to ".clau" and, one
+      // character further, to nothing at all — at which point all three formats
+      // shared a name. The label stays budgeted for the stamp alone, so the html
+      // and jsonl of one export keep the identical session segment.
+      marker: FORMAT_SUFFIX[input.format ?? "spectroscope"],
       lang: input.translatedTo,
     }),
   };
 }
 
+/** The writer for a target. Kept beside the plan so the name and the bytes are
+ *  chosen in one place and cannot disagree about which format was written. */
+const WRITERS: Record<JsonlFormat, (events: readonly RunEvent[]) => string> = {
+  spectroscope: toJsonl,
+  "claude-code": toClaudeCodeJsonl,
+  vscode: toVscodeAgentJsonl,
+};
+
 export function ExportMenu(props: {
   kind: ExportKind;
-  /** The stream this tab renders — exactly what both files are written from. */
+  /** The stream this tab renders — what the files are written from. */
   events: readonly RunEvent[];
   /** Names the files: the session id, or an imported file's name. */
   label?: string | null;
   /** Text tab only: mirrors its extended toggle, so the file is the view. */
   extended?: boolean;
-  /** Set by the translate path: tags the jsonl name and prints a provenance
-   *  line under the html header, so a translation never passes for the record. */
+  /** Which session view this is, so the sheet can read that view's translation
+   *  state. Absent means no switcher and no provenance claim — never a claim
+   *  about a translation this control cannot see. */
+  viewKey?: string;
+  /** Set by a caller that already knows the target language. Optional now: with
+   *  a viewKey the tag is read from the translation state, which is how the
+   *  text tab finally gets its provenance line (card 114). */
   translatedTo?: string | null;
 }) {
   const lang = useLang();
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  // Outside click and Escape close it — same mechanics as DisclosureMenu.
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  // Reading a fixed key when none was given keeps the hook order stable; the
+  // result is only USED when a viewKey really came in.
+  const translation = useTranslation(props.viewKey ?? "live");
+  const known = props.viewKey !== undefined;
+  const landed = known ? translation.byId.size : 0;
 
   const enabled = props.events.length > 0;
 
-  const save = (what: "html" | "jsonl"): void => {
-    // Stamped at the CLICK: a plan computed while rendering would date the file
-    // to the moment the tab opened.
+  // The chat tab is handed the RECORDED stream, so both sides are available
+  // here. The text tab is handed the already-translated one, and no function
+  // turns that back into the original — it gets the note and no switcher.
+  const isRecorded = props.kind === "chat";
+  const original = landed > 0 && isRecorded ? props.events : null;
+  const translated =
+    landed === 0 ? null : isRecorded ? withTranslation(props.events, translation) : props.events;
+  const tag =
+    props.translatedTo !== undefined && props.translatedTo !== null && props.translatedTo !== ""
+      ? props.translatedTo
+      : landed > 0
+        ? translation.target
+        : null;
+
+  const saveTheJsonl = (request: ExportRequest): void => {
     const plan = exportPlan({
       kind: props.kind,
       count: props.events.length,
       label: props.label,
-      translatedTo: props.translatedTo,
+      translatedTo: tag,
+      format: request.format,
       now: Date.now(),
     });
     if (!plan.enabled) return;
-    if (what === "jsonl") {
-      downloadJsonl(props.events, plan.jsonlName);
+    // Whatever the sheet previews, the bytes are the stream on screen.
+    const events = translated ?? props.events;
+    if (request.format === "spectroscope") {
+      // The app's own shape keeps its own saver: downloadJsonl is what the
+      // byte-compatibility tests drive, and routing it through a second writer
+      // here would leave that contract pinned to code the app stopped calling.
+      downloadJsonl(events, plan.jsonlName);
     } else {
-      const opts = {
-        label: props.label ?? undefined,
-        lang,
-        extended: props.extended,
-        // Only ever the tag we were handed; no note at all when nothing was
-        // translated, rather than a sentence that claims provenance we lack.
-        note:
-          typeof props.translatedTo === "string" && props.translatedTo !== ""
-            ? TRANSLATED_NOTE[lang](props.translatedTo)
-            : undefined,
-      };
-      saveHtml(
-        plan.htmlName,
-        props.kind === "chat" ? chatToHtml(props.events, opts) : textFeedToHtml(props.events, opts),
-      );
+      saveText(WRITERS[request.format](events), plan.jsonlName);
     }
     setOpen(false);
   };
 
+  const saveTheHtml = (_request: ExportRequest, html: string): void => {
+    const plan = exportPlan({
+      kind: props.kind,
+      count: props.events.length,
+      label: props.label,
+      translatedTo: tag,
+      now: Date.now(),
+    });
+    if (!plan.enabled) return;
+    saveHtml(plan.htmlName, html);
+  };
+
   return (
-    <div className="wsg-anchor export-anchor" ref={ref}>
+    <>
       <button
         type="button"
         className="trace-lens mono export-btn"
-        aria-haspopup="menu"
+        aria-haspopup="dialog"
         aria-expanded={open}
         disabled={!enabled}
         title={t(lang, enabled ? "exp.title" : "exp.emptyTitle")}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(true)}
       >
         {t(lang, "exp.button")}
       </button>
 
       {open && enabled && (
-        <div className="wsg-pop export-pop" role="menu" aria-label={t(lang, "exp.title")}>
-          <div className="wsg-section">
-            <div className="wsg-section-head">
-              <span>{t(lang, "exp.title")}</span>
-            </div>
-            <div className="wsg-modes">
-              <button type="button" role="menuitem" className="wsg-mode-row" onClick={() => save("html")}>
-                <span className="wsg-mode-body">
-                  <span className="wsg-mode-name mono">
-                    {t(lang, props.kind === "chat" ? "exp.htmlChat" : "exp.htmlText")}
-                  </span>
-                  <span className="wsg-mode-hint">{t(lang, "exp.htmlHint")}</span>
-                </span>
-              </button>
-              <button type="button" role="menuitem" className="wsg-mode-row" onClick={() => save("jsonl")}>
-                <span className="wsg-mode-body">
-                  <span className="wsg-mode-name mono">{t(lang, "exp.jsonl")}</span>
-                  <span className="wsg-mode-hint">
-                    {t(lang, "exp.jsonlHint", { n: props.events.length })}
-                  </span>
-                </span>
-              </button>
-            </div>
-          </div>
-        </div>
+        <ExportDialog
+          kind={props.kind}
+          events={props.events}
+          original={original}
+          translated={translated}
+          translatedTo={tag}
+          failedUnits={known ? translation.failed.size : 0}
+          label={props.label}
+          extended={props.extended}
+          onSaveHtml={saveTheHtml}
+          onSaveJsonl={saveTheJsonl}
+          onClose={() => setOpen(false)}
+        />
       )}
-    </div>
+    </>
   );
+}
+
+/** The provenance sentence, exported for the callers that build their own
+ *  documents. Unused inside this file since the composer prints its own. */
+export function translatedNote(lang: Lang, tag: string): string {
+  return TRANSLATED_NOTE[lang](tag);
+}
+
+/** One saver for the three jsonl shapes; the spectroscope path keeps using
+ *  downloadJsonl so its event-count contract stays pinned by its own tests. */
+function saveText(text: string, filename: string): void {
+  const url = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.rel = "noopener";
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

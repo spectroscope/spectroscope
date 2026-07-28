@@ -48,6 +48,8 @@ import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
+import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
+import { useReasoningCapability } from "./components/ReasoningControl";
 import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
 import {
   openRightPanel,
@@ -59,6 +61,7 @@ import {
   useLayout,
 } from "./state/layout";
 import { TextView } from "./components/TextView";
+import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
@@ -185,10 +188,12 @@ export function App() {
   // connection's agent straight from them. The useState seeds below are only
   // the harness's hardcoded BOOTSTRAP fallback until the settings-hydration
   // effect (below, near the /api/config fetch) pulls the real values once the
-  // socket is open. A local flip still writes the user scope
-  // (changeImageProvider/toggleThinking below), which shapes the default for
-  // the NEXT session — and also latches controlsTouched so a later reconnect
-  // never overwrites what the user just chose.
+  // socket is open. An image-backend flip still writes the user scope
+  // (changeImageProvider below), which shapes the default for the NEXT
+  // session — and also latches controlsTouched so a later reconnect never
+  // overwrites what the user just chose. thinking only DISPLAYS here (the
+  // right panel's context line); its control moved into the model picker
+  // (card 88), which mirrors the server's visibility coupling on send.
   const [imageProvider, setImageProvider] = useState("gemini");
   const [imagesOpen, setImagesOpen] = useState(false); // gallery panel
   const [thinking, setThinking] = useState(true); // reasoning visibility (on by default)
@@ -468,16 +473,42 @@ export function App() {
     // 404 against openai's endpoint (the settings panel resets it the same way).
     putSettings("user", { imageProvider: provider, imageModel: null }).catch(() => {});
   };
-  // Reasoning visibility: flips local state and tells the server (traced too).
-  // Applies to the next run — the server keeps one agent per connection. The
-  // user-settings write is fire-and-forget for the same reason as above.
-  const toggleThinking = (): void => {
-    controlsTouched.current = true; // ditto
-    const next = !thinking;
-    setThinking(next);
-    sendClient({ type: "set_thinking", enabled: next });
-    putSettings("user", { thinking: next }).catch(() => {});
-  };
+  // Card 88: the picker's reasoning choice rides the run. The store keeps one
+  // choice per (provider, model) — both ReasoningControl hosts only WRITE the
+  // store; this effect is the one wire site. It fires when the socket opens
+  // (reconnect included), when the active pair changes (a confirmed provider
+  // switch applies the new pair's choice — or clears the old one) and when the
+  // choice itself flips. A connection that never saw a non-default choice gets
+  // NO frame: an unprompted "default" would stomp the server's own thinking
+  // default (set_reasoning re-seeds visibility server-side).
+  // The record rules the wire as well as the seg: a stored choice is clamped
+  // against the ACTIVE pair's capability record before it is spent, so a
+  // choice that outlived its record (an overlay that narrowed the ladder, a
+  // table change between releases) can never send a field the seg no longer
+  // offers. An unknown record spends nothing, exactly as it renders nothing.
+  const liveProvider = live.providerInfo?.provider ?? serverCfg?.provider ?? "";
+  const liveModel = live.providerInfo?.model ?? serverCfg?.model ?? "";
+  const liveCap = useReasoningCapability(liveProvider, liveModel);
+  const storedChoice = useReasoningChoice(liveProvider, liveModel);
+  // Memoized: the effect below compares by reference, and wireChoice may mint
+  // a clamped object.
+  const liveChoice = useMemo(() => wireChoice(liveCap, storedChoice), [liveCap, storedChoice]);
+  const reasoningSent = useRef(false);
+  useEffect(() => {
+    if (conn.status !== "open") {
+      reasoningSent.current = false; // a fresh connection starts clean server-side
+      return;
+    }
+    if (liveProvider === "" || liveModel === "") return;
+    if (liveChoice.mode === "default" && !reasoningSent.current) return;
+    if (sendClient(reasoningFrame(liveChoice))) {
+      reasoningSent.current = liveChoice.mode !== "default";
+      if (liveChoice.mode !== "default") controlsTouched.current = true;
+      // Mirror onSetReasoning exactly: "off" hides the stream, everything
+      // else re-enables visibility — the panel's Thinking line stays honest.
+      setThinking(liveChoice.mode !== "off");
+    }
+  }, [conn.status, liveProvider, liveModel, liveChoice, sendClient]);
   // Switch the LLM backend mid-session. Deliberately NOT optimistic: the chip
   // only flips when the server answers with a provider_info frame — a refused
   // switch (e.g. anthropic without a key) must never leave a lying chip. Only
@@ -1010,8 +1041,6 @@ export function App() {
           showPanelToggle={tab === "chat"}
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
-          thinking={thinking}
-          onToggleThinking={toggleThinking}
           settingsOpen={settingsOpen}
           onToggleSettings={() => setSettingsOpen((o) => !o)}
           doctorOpen={doctorOpen}
@@ -1281,6 +1310,11 @@ export function App() {
           <TextView
             events={shownEvents}
             label={shownSessionId}
+            // The tab is handed the SHOWN stream and holds no second copy, so
+            // its export sheet may read this view's translation — the
+            // provenance line, the language tag on the jsonl — only while that
+            // stream IS the translation. See textExportClaim.ts.
+            viewKey={textExportViewKey({ viewKey, showingTranslation })}
             // Explain spends the server's BASE-config provider (that is what the
             // endpoint builds, not a live-switched session provider) — offer it
             // unless that provider explicitly reports needs-key; unknown maps

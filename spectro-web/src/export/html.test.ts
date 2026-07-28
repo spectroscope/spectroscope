@@ -313,12 +313,20 @@ describe("chatToHtml — a tool input is text, not one escaped line", () => {
     expect(html).not.toContain("\\n");
   });
 
+  // A Workflow now arrives as a workflow (toolBody.ts), so the shape-plus-blocks
+  // split is what a tool NOBODY named a shape for gets — which is where it was
+  // always the right answer. Same two guarantees, asserted where they still hold.
+  const unshaped = chatToHtml(
+    [{ type: "tool_call", agentId: "main", callId: "c1", name: "odd_tool", input: { script }, ts }],
+    { now: NOW },
+  );
+
   it("labels the lifted field with the payload's own word", () => {
-    expect(html).toContain(`<div class="x-io">script</div>`);
+    expect(unshaped).toContain(`<div class="x-io">script</div>`);
   });
 
   it("leaves the reference behind in the shape, so nothing reads as dropped", () => {
-    expect(html).toContain("(7 lines below)");
+    expect(unshaped).toContain("(7 lines below)");
   });
 
   it("colours the script with the tokenizer the app uses", () => {

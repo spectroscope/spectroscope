@@ -363,7 +363,10 @@ export function Chat(props: {
           back to the record — one row, because they are the same kind of
           control: how this session is READ, not what it does. */}
       <div className="chat-disc">
-        <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} />
+        {/* The same viewKey the translate sheet uses. Without it the export
+            cannot see that a translation is showing, and would keep writing the
+            recorded stream under a label promising the view on screen. */}
+        <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} viewKey={vk} />
         <TranslatePanel events={props.events ?? []} viewKey={vk} />
         <DisclosureMenu placement="down" />
       </div>

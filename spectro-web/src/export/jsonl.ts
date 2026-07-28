@@ -57,16 +57,29 @@ export function toJsonl(events: readonly RunEvent[]): string {
 
 /**
  * The name the file arrives under. It says what it is (a .jsonl session), which
- * session it came from, and which language it was translated into — so a folder
- * of exports is still readable a month later.
+ * session it came from, which shape it was written in, and which language it was
+ * translated into — so a folder of exports is still readable a month later.
  *
- * @param opts.base the session id, or an imported file's name; untrusted
- * @param opts.lang the target language tag; omit entirely when nothing was translated
- * @param opts.at   the clock for the fallback stamp (defaults to now)
- * @return `<base>.translated-<lang>.jsonl`, degrading honestly on each missing part
+ * `marker` is appended AFTER the base is capped, which is the whole point of it
+ * being a separate argument: a caller that folds the marker into `base` loses it
+ * to the cap, and two formats of one session then arrive under one name and
+ * overwrite each other. The cap keeps the base sane; it is not a filesystem
+ * limit, so the marker is allowed to sit outside it.
+ *
+ * @param opts.base   the session id, or an imported file's name; untrusted
+ * @param opts.marker the format's own segment, already safe; "" for the app's shape
+ * @param opts.lang   the target language tag; omit entirely when nothing was translated
+ * @param opts.at     the clock for the fallback stamp (defaults to now)
+ * @return `<base><marker>.translated-<lang>.jsonl`, degrading honestly on each missing part
  */
-export function jsonlFilename(opts: { base?: string | null; lang?: string | null; at?: Date }): string {
-  const base = safeBase(opts.base) ?? stamp(opts.at ?? new Date());
+export function jsonlFilename(opts: {
+  base?: string | null;
+  marker?: string | null;
+  lang?: string | null;
+  at?: Date;
+}): string {
+  const capped = safeBase(opts.base) ?? stamp(opts.at ?? new Date());
+  const base = `${capped}${typeof opts.marker === "string" ? opts.marker : ""}`;
   if (opts.lang === undefined || opts.lang === null) return `${base}.jsonl`;
   const lang = safeLang(opts.lang);
   // A blank target still means "this is a translation" — it just cannot say

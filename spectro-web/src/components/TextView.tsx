@@ -70,6 +70,7 @@ export function TextView({
   events,
   explainReady = true,
   label,
+  viewKey,
 }: {
   events: readonly RunEvent[];
   /** False when the current provider needs a key — the button says why. */
@@ -77,6 +78,11 @@ export function TextView({
   /** Names the export files (the session id). Absent for a stream that has no
    *  id yet, and then the file names honestly carry only kind and date. */
   label?: string | null;
+  /** Which session view's translation the export sheet may read. Present only
+   *  while the stream below IS that translation — App decides that through
+   *  textExportViewKey, because this tab holds one array and cannot tell which
+   *  one it was given. Absent means the sheet claims nothing. */
+  viewKey?: string;
 }) {
   const lang = useLang();
   const [mode, setMode] = useState<TextMode>(storedMode);
@@ -255,8 +261,10 @@ export function TextView({
         </button>
         <CopyButton text={() => (mode === "jsonl" ? jsonl.join("\n") : feedToPlainText(feed))} />
         {/* The feed as a file. `extended` travels with it, so the document is
-            the view the reader had on screen and not a second reading of it. */}
-        <ExportMenu kind="text" events={events} label={label} extended={extended} />
+            the view the reader had on screen and not a second reading of it —
+            and `events` is that same array, which is why the exported text pane
+            comes out of buildTextFeed exactly as the feed below does. */}
+        <ExportMenu kind="text" events={events} label={label} extended={extended} viewKey={viewKey} />
       </div>
 
       {explain.status !== "idle" && (
