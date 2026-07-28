@@ -501,6 +501,41 @@ export const dict: Record<string, { de: string; en: string }> = {
   "agents.empty": { de: "Noch kein Lauf. Sobald du etwas schickst, erscheint hier der Haupt-Agent — und jeder Subagent, den er spawnt, bleibt für die Session sichtbar.", en: "No run yet. As soon as you send something, the main agent appears here — and every subagent it spawns stays visible for the session." },
   "agents.main": { de: "Haupt", en: "Main" },
 
+  // work panel + chat v2 (branch chat-v2, prototype)
+  "rp.work": { de: "Arbeit", en: "Work" },
+  "work.title": { de: "Nebenher laufende Arbeit", en: "Work running alongside" },
+  "work.empty": { de: "Keine nebenläufige Arbeit in dieser Session. Jeder Turn lief auf dem Haupt-Agenten — die Spalte links ist die ganze Geschichte.", en: "No concurrent work in this session. Every turn ran on the main agent, so the column on the left is the whole story." },
+  "work.emptyLive": { de: "Noch nichts. Subagenten, getriggerte Node-Läufe und gestartete Hintergrund-Tasks erscheinen hier, sobald es welche gibt.", en: "Nothing yet. Subagents, triggered node runs and launched background tasks appear here once there are any." },
+  "work.kind.spawn": { de: "Fan-out", en: "fan-out" },
+  "work.kind.trigger": { de: "Getriggert", en: "triggered" },
+  "work.kind.launched": { de: "Hintergrund", en: "background" },
+  "work.done": { de: "{k} von {n} fertig", en: "{k} of {n} done" },
+  "work.agentsN": { de: "{n} Agenten", en: "{n} agents" },
+  "work.calls": { de: "{n} Tool-Calls", en: "{n} tool calls" },
+  "work.gates": { de: "{n} am Gate", en: "{n} at the gate" },
+  "work.denied": { de: "{n} verweigert", en: "{n} denied" },
+  "work.gatePending": { de: "wartet am Gate", en: "waiting at the gate" },
+  "work.noSpan": { de: "keine Zeitspanne aufgezeichnet", en: "no span recorded" },
+  "work.opaque": { de: "meldet {n} Agenten · keiner davon in diesem Stream", en: "reports {n} agents · none of them in this stream" },
+  "work.opaqueCalls": { de: "meldet {n} Tool-Calls · keiner davon als Frame", en: "reports {n} tool calls · none of them as a frame" },
+  "work.missing": { de: "nicht in diesem Stream: {what}", en: "not in this stream: {what}" },
+  "work.miss.agentRows": { de: "die Zeilen je Agent", en: "the per-agent rows" },
+  "work.miss.tokens": { de: "Tokens", en: "tokens" },
+  "work.miss.calls": { de: "Tool-Calls", en: "tool calls" },
+  "work.miss.span": { de: "die Zeitspanne", en: "the span" },
+  "work.miss.noWork": { de: "nichts von dieser Bahn — die Datei nennt sie und zeichnet sie nicht auf", en: "nothing of this lane — the file names it and records none of it" },
+  "work.toTrace": { de: "im Trace öffnen", en: "open in the trace" },
+  "work.noTrace": { de: "kein Frame dahinter", en: "no frame behind this" },
+  "work.chip": { de: "{n} nebenher", en: "{n} alongside" },
+  "work.chipOpen": { de: "im Arbeits-Panel zeigen", en: "show in the work panel" },
+  "work.triggerNone": { de: "Getriggerte Node-Läufe (Karte 72) trägt der Draht bereits; keine aufgezeichnete Session hier hat einen. Sobald eine kommt, steht sie hier.", en: "Triggered node runs (card 72) are already on the wire; no recorded session here has one. The first one that arrives shows up here." },
+  "work.v1": { de: "v1 · wie aufgezeichnet", en: "v1 · as recorded" },
+  "work.v1.hint": { de: "Subagenten-Turns stehen im Verlauf, in Stream-Reihenfolge", en: "subagent turns sit in the scroll, in stream order" },
+  "work.v2": { de: "v2 · Arbeits-Panel", en: "v2 · work panel" },
+  "work.v2.hint": { de: "links der Haupt-Agent, rechts was nebenher läuft", en: "the main agent on the left, what runs alongside on the right" },
+  "work.mode": { de: "Lesart des Verlaufs", en: "How the transcript reads" },
+  "work.proto": { de: "Prototyp", en: "prototype" },
+
   // design drawer
   "set.particleTag": { de: "Partikel", en: "Particles" },
   "set.scrollFx": { de: "Scroll-Effekte", en: "Scroll effects" },
@@ -654,6 +689,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.agentsN": { de: "{n} Agenten", en: "{n} agents" },
   "tv.plan": { de: "Plan", en: "Plan" },
   "tv.steps": { de: "{n} Schritte", en: "{n} steps" },
+  // The heading is the verb, because the row under it is the same row for all
+  // three: a number, a state, a subject, each drawn only when the call had it.
+  "tv.taskCreated": { de: "Aufgabe angelegt", en: "Task created" },
+  "tv.taskUpdated": { de: "Aufgabe geändert", en: "Task updated" },
+  "tv.tasks": { de: "Aufgaben", en: "Tasks" },
+  "tv.tasksN": { de: "{n} Aufgaben", en: "{n} tasks" },
+  "tv.taskBlockedBy": { de: "wartet auf {ids}", en: "waiting on {ids}" },
+  // Not "unchanged": the call did ask for a state, and what the result reports
+  // is that the list did not move for it.
+  "tv.taskUnchanged": { de: "das Ergebnis nennt kein Feld: nichts hat sich bewegt", en: "the result named no field: nothing moved" },
   "tv.question": { de: "Frage", en: "Question" },
   "tv.questionsN": { de: "{n} Fragen", en: "{n} questions" },
   "tv.optionsN": { de: "{n} Optionen", en: "{n} options" },
@@ -781,12 +826,45 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.phasesN": { de: "{n} Phasen", en: "{n} phases" },
   "tv.script": { de: "Skript", en: "Script" },
   "tv.args": { de: "Argumente", en: "Arguments" },
+  // A workflow's run half. The launch is a receipt; the outcome arrives later as
+  // its own message, and a card that cannot tell the two apart reads every
+  // abandoned run as a finished one.
+  "tv.outcome": { de: "Ergebnis", en: "Outcome" },
+  "tv.returned": { de: "Zurückgegeben", en: "Returned" },
+  "tv.wfOpen": { de: "gestartet · kein Ergebnis vermerkt", en: "launched · no outcome recorded" },
+  "tv.wfFailed": {
+    de: "der Start ist fehlgeschlagen, es lief kein Durchgang",
+    en: "the launch failed, so no run was started",
+  },
+  // Both phrases are count-neutral by construction. A German "{n} kamen nicht
+  // zurück" reads wrong at one, and one is the commonest number here — the
+  // adjectival form is right for every count in both languages.
+  "tv.wfUnnamed": {
+    de: "im Ergebnis: {n} gescheitert, keiner davon benannt",
+    en: "in the outcome: {n} failed, none of them named",
+  },
+  "tv.wfDead": { de: "· {n} gescheitert", en: "· {n} failed" },
+  "tv.failures": { de: "Fehlschläge", en: "Failures" },
+  "tv.failuresN": { de: "{n} ohne Rückmeldung", en: "{n} did not return" },
+  // Interpolated from RunStat["key"] — every one of these is reachable only as
+  // `tv.run.${key}`, so the i18n suite pins the family by name.
+  "tv.run.agents": { de: "Agenten", en: "agents" },
+  "tv.run.failed": { de: "gescheitert", en: "failed" },
+  "tv.run.skipped": { de: "übersprungen", en: "skipped" },
+  "tv.run.empty": { de: "ohne Ergebnis", en: "returned nothing" },
+  "tv.run.tokens": { de: "Tokens", en: "tokens" },
+  "tv.run.tools": { de: "Tool-Aufrufe", en: "tool calls" },
+  "tv.run.elapsed": { de: "Dauer", en: "elapsed" },
   "tv.bodyAria": { de: "Darstellung des Datei-Inhalts", en: "File body view" },
   "tv.bodyText": { de: "text", en: "text" },
   "tv.bodyMd": { de: "markdown", en: "markdown" },
-  // Says why text is the face a reader gets without asking. A tool result is
-  // evidence, and the rendered face is the one that spends bytes to read better.
+  // Says what the two faces cost each other. A markdown file opens rendered; the
+  // text chip is what a reader takes when the bytes are the point.
   "tv.bodyHint": { de: "Text zeigt, was zurückkam, Zeichen für Zeichen. Die Markdown-Ansicht verbraucht die Zeichen, die es zu Markdown machen — Rauten, Pipes, Backticks — liest sich also besser und belegt weniger.", en: "Text shows what came back, character for character. The markdown face consumes the characters that make it markdown — the hashes, the pipes, the backticks — so it reads better and proves less." },
+  // Both stand above the body in either face: they are facts about this body, so
+  // they still warn a reader who renders it anyway.
+  "tv.mdIndent": { de: "Die Markdown-Ansicht behält die Einrückung dieser Zeilen nicht, deshalb öffnet der Inhalt als Text.", en: "The rendered face drops the indentation these lines carry, so this body opens as text." },
+  "tv.mdWord": { de: "Eine Hervorhebung wird hier mitten im Wort gepaart: die Markdown-Ansicht würde etwas hervorheben, das die Datei nicht hervorhebt. Deshalb öffnet der Inhalt als Text.", en: "Emphasis pairs into the middle of a word here, so the rendered face would mark a span the file does not. This body opens as text." },
   "tv.pending": { de: "(noch kein Ergebnis)", en: "(no result yet)" },
   "tv.notJson": { de: "Die Ausgabe ist Text, kein JSON — hier im Original:", en: "This output is text, not JSON — shown verbatim:" },
 
@@ -1077,6 +1155,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.settings.mode.off": { de: "Aus — kein Pill, kein Panel, keine Aufzeichnung", en: "Off — no pill, no panel, no tracking" },
   "leveling.settings.reset": { de: "Zurück zum Dunkelbild", en: "Back to the dark frame" },
   "leveling.settings.reset.confirm": { de: "Alle Markierungen und der Verlauf werden gelöscht. Der Modus bleibt.", en: "Every mark and the history go. The mode stays." },
+
+  // about — a licence notice, so these read as terms rather than as copy. The
+  // English is the repository's own wording (LICENSE-ASSETS.md); the German
+  // states the same conditions and grants nothing the English does not.
+  "about.open": { de: "Über", en: "About" },
+  "about.title": { de: "Über spectroscope", en: "About spectroscope" },
+  "about.tagline": { de: "Agent-Orchestrator", en: "agent orchestrator" },
+  "about.licences": { de: "Lizenzen", en: "Licenses" },
+  "about.codeLabel": { de: "Code", en: "Code" },
+  "about.code": { de: "Der Code steht unter der MIT-Lizenz. Der Copyright-Vermerk reist mit jeder Kopie.", en: "The code is MIT licensed. The copyright notice travels with copies." },
+  "about.imagesLabel": { de: "Bilder", en: "Images" },
+  "about.images": { de: "Screenshots, Diagramme und das Banner stehen unter CC BY 4.0. Du darfst sie teilen und bearbeiten, auch kommerziell, unter einer Bedingung: Namensnennung.", en: "Screenshots, diagrams and the banner are licensed CC BY 4.0. You may share and adapt them, including commercially, under one condition: attribution." },
+  "about.attributionLabel": { de: "Diese Zeile genügt als Namensnennung:", en: "A line like this is enough:" },
+  "about.attributionCondition": { de: "Wer die Namensnennung entfernt, verliert damit die Lizenz an dem Material.", en: "Removing the attribution removes your license to use the material." },
+  "about.marksLabel": { de: "Logo und Wortmarke", en: "Logo and wordmark" },
+  "about.fontsLabel": { de: "Schriften", en: "Fonts" },
+  "about.marks": { de: "Logo, Icon und Wortmarke von spectroscope fallen nicht unter die CC-BY-Lizenz; alle Rechte vorbehalten. Sie bezeichnen dieses Projekt. Du darfst sie zeigen, wenn du dich auf spectroscope beziehst; du darfst mit ihnen kein abgeleitetes oder fremdes Produkt kennzeichnen und sie nicht so verwenden, dass sie eine Befürwortung oder eine Verbindung nahelegen.", en: "The spectroscope logo, icon and wordmark are not covered by the CC BY grant; all rights reserved. They identify this project. You may show them when referring to spectroscope; you may not use them to brand a derived or unrelated product, and you may not present them in a way that implies endorsement or affiliation." },
+  "about.repo": { de: "Repository", en: "Repository" },
+  "about.openTitle": { de: "Version, Lizenzen und Copyright", en: "Version, licenses and copyright" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.
