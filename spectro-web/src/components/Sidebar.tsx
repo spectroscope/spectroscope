@@ -2,11 +2,19 @@
 // Live row returns to the current socket session; every stored session below
 // it opens as a replay through the same reducer as the live stream.
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { SessionMeta } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
+import {
+  SessionSigil,
+  countLabel,
+  groupSessions,
+  sessionModelLabel,
+  sessionSignal,
+  sessionTitleLines,
+} from "./sessionRows";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
@@ -45,6 +53,9 @@ export function Sidebar(props: {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [nav, setNav] = useState<"sessions" | "fleets">("sessions");
+  /** Piles the reader has unfolded, by group key. Piles start folded: the
+   *  reason a pile exists is that its rows do not repay the space. */
+  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const lang = useLang();
   const fleets = useFleets();
   // Attention-first: a fleet with a pending gate floats to the top, then by
@@ -75,6 +86,48 @@ export function Sidebar(props: {
     };
   }, [props.refreshToken]);
 
+  // Folded once per fetch, not once per render: the list is refetched whenever
+  // a run finishes and can hold hundreds of rows, and every unrelated re-render
+  // of this sidebar (a fleet frame, a language flip) would otherwise redo it.
+  const groups = useMemo(() => groupSessions(sessions ?? []), [sessions]);
+
+  const toggleGroup = (key: string): void =>
+    setUnfolded((open) => {
+      const next = new Set(open);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+
+  /** One stored session. Rows inside an unfolded pile are indented, nothing else. */
+  const sessionRow = (s: SessionMeta, inPile: boolean) => (
+    <button
+      type="button"
+      key={s.id}
+      className={`session-row${inPile ? " piled-row" : ""}${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
+      title={sessionTitleLines(s, lang)}
+      onClick={() => props.onSelectSession(s.id)}
+    >
+      <span className="session-title session-title-line">
+        <SessionSigil signal={sessionSignal(s)} />
+        <span className="session-name">
+          {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
+        </span>
+      </span>
+      <span className="session-meta session-meta-line tabular">
+        <span className="session-facts">
+          {relativeTime(s.startedAt, Date.now(), lang)}
+          {(s.turnCount ?? 0) > 0 && (
+            <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
+          )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+        </span>
+        {/* The model only earns a place once the rail is wide enough to spell
+            it out — see the container query. Truncated to "claude-s…" it answers
+            nothing, and it would be answering it with the token count's space. */}
+        {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
+      </span>
+    </button>
+  );
+
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -90,42 +143,47 @@ export function Sidebar(props: {
         spectroscope
       </div>
 
-      <button type="button" className="soft-primary new-chat" onClick={props.onNewChat}>
-        {t(lang, "nav.newChat")}
-      </button>
+      {/* One wrapper so the three actions carry their OWN gap; the sidebar's column
+          gap still sets the distance to the wordmark above and the segmented
+          control below, which stay where they were. */}
+      <div className="sidebar-actions">
+        <button type="button" className="soft-primary new-chat" onClick={props.onNewChat}>
+          {t(lang, "nav.newChat")}
+        </button>
 
-      {/* Owner (2026-07-22) reversed the earlier "own area" call: scenarios are now
-          ALSO listed inline in the session list below. This button + its modal are
-          kept for now (a redundant second path — owner may retire them). */}
-      <button
-        type="button"
-        className="ghost sidebar-scenarios"
-        onClick={props.onScenarios}
-        title={t(lang, "nav.scenariosTitle")}
-      >
-        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-          <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
-        </svg>
-        {t(lang, "nav.scenarios")}
-      </button>
+        {/* Owner (2026-07-22) reversed the earlier "own area" call: scenarios are now
+            ALSO listed inline in the session list below. This button + its modal are
+            kept for now (a redundant second path — owner may retire them). */}
+        <button
+          type="button"
+          className="ghost sidebar-scenarios"
+          onClick={props.onScenarios}
+          title={t(lang, "nav.scenariosTitle")}
+        >
+          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+            <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
+          </svg>
+          {t(lang, "nav.scenarios")}
+        </button>
 
-      <button
-        type="button"
-        className="ghost sidebar-scenarios"
-        onClick={props.onStarters}
-        title={t(lang, "nav.startersTitle")}
-      >
-        <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-          <path
-            d="M8 2v12M2 8h12"
-            stroke="currentColor"
-            strokeWidth="1.6"
-            strokeLinecap="round"
-            fill="none"
-          />
-        </svg>
-        {t(lang, "nav.starters")}
-      </button>
+        <button
+          type="button"
+          className="ghost sidebar-scenarios"
+          onClick={props.onStarters}
+          title={t(lang, "nav.startersTitle")}
+        >
+          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+            <path
+              d="M8 2v12M2 8h12"
+              stroke="currentColor"
+              strokeWidth="1.6"
+              strokeLinecap="round"
+              fill="none"
+            />
+          </svg>
+          {t(lang, "nav.starters")}
+        </button>
+      </div>
 
       <div className="sidebar-eyebrow-row">
         <div className="sidebar-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
@@ -188,35 +246,61 @@ export function Sidebar(props: {
               <span className="session-meta">{t(lang, "nav.liveSub")}</span>
             </button>
 
-            {sessions?.map((s) => (
-              <button
-                type="button"
-                key={s.id}
-                className={`session-row${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
-                title={`${s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}\n${new Date(s.startedAt).toLocaleString(lang === "de" ? "de-DE" : "en-US")}`}
-                onClick={() => props.onSelectSession(s.id)}
-              >
-                <span className="session-title">
-                  {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
-                </span>
-                <span className="session-meta tabular">
-                  {relativeTime(s.startedAt, Date.now(), lang)}
-                  {(s.agentCount ?? 0) > 1 && (
-                    <>
-                      {" "}
-                      &middot; {s.agentCount} {lang === "de" ? "Agenten" : "agents"}
-                    </>
-                  )}
-                  {(s.turnCount ?? 0) > 0 && (
-                    <>
-                      {" "}
-                      &middot; {s.turnCount} {lang === "de" ? "Turns" : "turns"}
-                    </>
-                  )}{" "}
-                  &middot; {formatTokens(s.tokens)} tokens
-                </span>
-              </button>
-            ))}
+            {groups.map((group) => {
+              if (group.sessions.length === 1) return sessionRow(group.sessions[0], false);
+              // A pile the reader is standing in stays open whatever the fold
+              // says: collapsing the row you just opened loses your place.
+              const holdsActive =
+                props.activeFleet === null && group.sessions.some((s) => s.id === props.activeId);
+              const open = unfolded.has(group.key) || holdsActive;
+              const head = group.sessions[0];
+              const total = group.sessions.reduce((sum, s) => sum + s.tokens, 0);
+              return (
+                <div className="session-pile" key={group.key}>
+                  <button
+                    type="button"
+                    className={`session-row pile-row${open ? " open" : ""}`}
+                    aria-expanded={open}
+                    title={t(lang, "sess.pileTitle", { n: group.sessions.length })}
+                    onClick={() => toggleGroup(group.key)}
+                  >
+                    <span className="session-title session-title-line">
+                      <SessionSigil signal={sessionSignal(head)} />
+                      <span className="session-name">
+                        {head.firstPrompt !== "" ? head.firstPrompt : t(lang, "nav.emptySession")}
+                      </span>
+                      <span className="pile-count tabular">{group.sessions.length}&times;</span>
+                      <svg
+                        className="pile-chevron"
+                        viewBox="0 0 16 16"
+                        width="9"
+                        height="9"
+                        aria-hidden="true"
+                      >
+                        <path
+                          d="M4 6l4 4 4-4"
+                          stroke="currentColor"
+                          strokeWidth="1.8"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          fill="none"
+                        />
+                      </svg>
+                    </span>
+                    <span className="session-meta session-meta-line tabular">
+                      <span className="session-facts">
+                        {relativeTime(head.startedAt, Date.now(), lang)} &middot;{" "}
+                        {countLabel(lang, "token", total, formatTokens(total))}
+                      </span>
+                      {sessionModelLabel(head) !== "" && (
+                        <span className="session-model mono">{sessionModelLabel(head)}</span>
+                      )}
+                    </span>
+                  </button>
+                  {open && group.sessions.map((s) => sessionRow(s, true))}
+                </div>
+              );
+            })}
           </nav>
 
           {sessions !== null && sessions.length === 0 && !failed && (

@@ -33,6 +33,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "starter.pickFailed": { de: "Der Ordner-Dialog ist fehlgeschlagen.", en: "The folder dialog failed." },
   "nav.scenariosTitle": { de: "Skriptgesteuerte Demo-Läufe abspielen — deterministisch, ohne LLM und ohne API-Key", en: "Play scripted demo runs — deterministic, no LLM, no API key" },
 
+  // session rows: the glyph's channels in words (hover), and the folded piles
+  "sess.agent": { de: "{n} Agent", en: "{n} agent" },
+  "sess.agents": { de: "{n} Agenten", en: "{n} agents" },
+  "sess.turn": { de: "{n} Turn", en: "{n} turn" },
+  "sess.turns": { de: "{n} Turns", en: "{n} turns" },
+  "sess.token": { de: "{n} Token", en: "{n} token" },
+  "sess.tokens": { de: "{n} Tokens", en: "{n} tokens" },
+  "sess.ranFor": { de: "Dauer {d}", en: "ran for {d}" },
+  "sess.out.clean": { de: "sauber beendet", en: "finished cleanly" },
+  // The raw stop reason rides along: the wire has words this edition does not
+  // interpret, and inventing a reading for them would be the wrong kind of tidy.
+  "sess.out.cut": { de: "vorzeitig gestoppt ({r})", en: "stopped short ({r})" },
+  "sess.out.failed": { de: "mit einem Fehler beendet", en: "ended in an error" },
+  "sess.out.open": { de: "kein run_end aufgezeichnet", en: "no run_end recorded" },
+  "sess.gateAsked": { de: "Gate: {n}× gefragt, alle erlaubt", en: "gate: asked {n}×, all allowed" },
+  "sess.gateDenied": { de: "Gate: {n}× gefragt, {d}× verweigert", en: "gate: asked {n}×, refused {d}×" },
+  "sess.pile": { de: "{n} gleiche Läufe", en: "{n} identical runs" },
+  "sess.pileTitle": { de: "{n} Läufe mit demselben Prompt und derselben Form. Klicken zum Aufklappen — was sich unterscheidet, steht ohnehin als eigene Zeile da.", en: "{n} runs with the same prompt and the same shape. Click to unfold — anything that differs already stands as its own row." },
+
   // header
   "hdr.archive": { de: "Archiv", en: "Archive" },
   "hdr.scenario": { de: "Szenario", en: "Scenario" },
@@ -234,6 +253,29 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.keySaved": { de: "gespeichert ✓ — ein neuer chat nutzt den key", en: "saved ✓ — a new chat will use it" },
   "pp.keyErr": { de: "speichern fehlgeschlagen", en: "could not save the key" },
 
+  // reasoning control (card 88) — the seg in the picker and in Settings.
+  // Effort tokens (low/medium/…) are wire vocabulary and render untranslated.
+  "rc.label": { de: "denken", en: "thinking" },
+  "rc.aria": { de: "Reasoning des Modells steuern", en: "Control the model's reasoning" },
+  "rc.on": { de: "an", en: "on" },
+  "rc.off": { de: "aus", en: "off" },
+  "rc.onTitle": { de: "Reasoning explizit anfordern", en: "request reasoning explicitly" },
+  "rc.offTitle": { de: "Reasoning abschalten — echt, am Draht", en: "turn reasoning off — for real, on the wire" },
+  "rc.clearTitle": { de: "nochmal klicken: zurück zum Modell-Standard", en: "click again: back to the model default" },
+  "rc.effortTitle": { de: "Effort {level} anfordern", en: "request {level} effort" },
+  "rc.offCap": { de: "aus gibt es bei diesem Modell nur bis {level}", en: "this model allows off only up to {level}" },
+  "rc.noOff": { de: "dieses Modell hat keinen echten Aus-Schalter", en: "this model has no real off switch" },
+  "rc.noneThinks": {
+    de: "kein Schalter — dieses Modell zeigt sein Denken immer",
+    en: "no switch here — this model always shows its thinking",
+  },
+  "rc.noneQuiet": {
+    de: "kein Schalter — dieses Modell hat kein Denken zu zeigen",
+    en: "no switch here — this model has no thinking to show",
+  },
+  "rc.settingsLabel": { de: "Reasoning (pro Modell)", en: "Reasoning (per model)" },
+  "rc.settingsNote": { de: "Gilt pro Modell, gemerkt in diesem Browser. Angeboten wird nur, was das Modell laut Capability-Record kann.", en: "Per model, remembered in this browser. Only what the model's capability record supports is offered." },
+
   // right panel
   "rp.agents": { de: "Agenten", en: "Agents" },
   "rp.context": { de: "System-Kontext", en: "System context" },
@@ -292,6 +334,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lab.stepTitle": { de: "Nächste(s) Event(s) anwenden", en: "Apply the next event(s)" },
   "lab.waiting": { de: "{n} wartend", en: "{n} waiting" },
   "lab.waitingServer": { de: "wartet auf den Server …", en: "waiting for server …" },
+  // Reading aid under the map. It names red only, because that is the one fill
+  // the packet keeps across designs (--error); the normal fill is --accent and
+  // changes with the theme. A local model is drawn inside the machine frame,
+  // so the left/right split is machine vs. network, not agent vs. model.
+  "lab.hint": { de: "Ein Schritt wendet die nächsten Events an; danach steht das Paket auf der Station, die der Lauf erreicht hat. Links dein Rechner mit dem Agenten, dem Betriebssystem und einem lokalen Modell, rechts ein entferntes Modell, das Netz und der MCP-Server. Schlägt eine Strecke fehl, wird das Paket rot.", en: "Each step applies the next events and leaves the packet on the station the run has reached. Your machine is on the left with the agent, the operating system and a local model; a remote model, the network and the MCP server sit on the right. A failed leg turns the packet red." },
 
   // the system map / flow map (shared wording)
   "map.gate.none": { de: "bereit", en: "ready" },
@@ -787,6 +834,92 @@ export const dict: Record<string, { de: string; en: string }> = {
   "wsg.local.fieldAria": { de: "Feld für den Override", en: "Override field" },
   "wsg.local.valuePh": { de: "Wert …", en: "Value …" },
   "wsg.local.add": { de: "+ Hinzufügen", en: "+ Add" },
+
+  // The provenance line under the field picker: what the key is set to right
+  // now, and which layer of the fold said so. {origin} is rendered by
+  // originLabel() in state/serverSettings, which already speaks both languages.
+  "wsg.local.now": { de: "Aktuell: {value}", en: "Now: {value}" },
+  "wsg.local.nowOrigin": { de: "Aktuell: {value} · {origin}", en: "Now: {value} · {origin}" },
+  "wsg.local.unset": { de: "nicht gesetzt", en: "not set" },
+  "wsg.local.beats": {
+    de: "Ein lokaler Override sticht diesen Wert — nur auf diesem Rechner.",
+    en: "A local override beats that value — on this machine only.",
+  },
+  "wsg.local.setHere": {
+    de: "Dieser Wert kommt bereits aus deinen lokalen Overrides.",
+    en: "That value already comes from your local overrides.",
+  },
+  "wsg.local.valueAria": { de: "Wert für {field}", en: "Value for {field}" },
+  "wsg.local.pick": { de: "— wählen —", en: "— pick one —" },
+  "wsg.local.allowed": { de: "Erlaubt: {values}", en: "Allowed: {values}" },
+  "wsg.local.known": { de: "Bekannte Werte: {values}", en: "Known values: {values}" },
+  "wsg.local.numRule": { de: "Ganze Zahl, {min} oder größer", en: "Whole number, {min} or greater" },
+  "wsg.local.numRuleFree": { de: "Ganze Zahl", en: "Whole number" },
+  "wsg.local.freeText": { de: "Freier Text — keine feste Liste", en: "Free text — no fixed list" },
+
+  // Refusals. Each names what is wrong with the value instead of just
+  // rejecting it; parseLocalOverrideValue picks the key and fills the params.
+  "wsg.local.err.blank": { de: "{field} braucht einen Wert.", en: "{field} needs a value." },
+  "wsg.local.err.int": { de: "„{value}“ ist keine ganze Zahl.", en: "“{value}” is not a whole number." },
+  "wsg.local.err.min": {
+    de: "„{value}“ ist zu klein — erlaubt ist {min} oder größer.",
+    en: "“{value}” is too small — {min} or greater is allowed.",
+  },
+  "wsg.local.err.max": {
+    de: "„{value}“ ist zu groß — erlaubt ist {max} oder kleiner.",
+    en: "“{value}” is too large — {max} or smaller is allowed.",
+  },
+  "wsg.local.err.bool": {
+    de: "„{value}“ ist weder true noch false.",
+    en: "“{value}” is neither true nor false.",
+  },
+  "wsg.local.err.enum": {
+    de: "„{value}“ steht nicht zur Wahl. Erlaubt: {allowed}.",
+    en: "“{value}” is not on the list. Allowed: {allowed}.",
+  },
+
+  // One line per overridable key: what it does, in the words of someone who
+  // has to decide whether to touch it.
+  "wsg.local.desc.provider": {
+    de: "Welches LLM-Backend die Läufe fährt.",
+    en: "Which LLM backend runs the session.",
+  },
+  "wsg.local.desc.model": {
+    de: "Die Modell-ID beim gewählten Provider. Jeder Provider hat seine eigenen Namen.",
+    en: "The model id at the chosen provider. Every provider names its own.",
+  },
+  "wsg.local.desc.baseUrl": {
+    de: "Die Adresse für ollama und openai-kompatible Provider. Anthropic ignoriert sie.",
+    en: "The address for ollama and OpenAI-compatible providers. Anthropic ignores it.",
+  },
+  "wsg.local.desc.thinking": {
+    de: "Den Denk-Kanal des Modells mitschreiben und anzeigen.",
+    en: "Stream and show the model's reasoning channel.",
+  },
+  "wsg.local.desc.imageProvider": {
+    de: "Welches Backend generate_image benutzt.",
+    en: "Which backend generate_image calls.",
+  },
+  "wsg.local.desc.imageModel": {
+    de: "Bild-Modell statt des Backend-Defaults. Leer lassen heißt: Default nehmen.",
+    en: "An image model instead of the backend's default. Unset means: take the default.",
+  },
+  "wsg.local.desc.maxRetries": {
+    de: "Wie oft ein Provider-Aufruf nach einem Wackler wiederholt wird. 0 schaltet das ab.",
+    en: "How often a provider call is retried after a hiccup. 0 turns retrying off.",
+  },
+  "wsg.local.desc.promptCaching": {
+    de: "Anthropics Prompt-Caching. Bei ollama und openai passiert nichts.",
+    en: "Anthropic prompt caching. Does nothing on ollama and openai.",
+  },
+  "wsg.local.desc.compactionThreshold": {
+    de: "Ab wie vielen Input-Tokens der Kontext zusammengefasst wird.",
+    en: "The input-token count at which the context gets summarized.",
+  },
+  "wsg.local.desc.sttModel": {
+    de: "Pfad zur whisper.cpp-Modelldatei fürs Diktieren.",
+    en: "Path to the whisper.cpp model file used for dictation.",
+  },
   "wsg.json.mcpTitle": { de: "MCP-Server", en: "MCP servers" },
   "wsg.json.hooksTitle": { de: "Hooks", en: "Hooks" },
   "wsg.json.scope": { de: "[projekt · JSON]", en: "[project · JSON]" },
@@ -830,7 +963,6 @@ export const dict: Record<string, { de: string; en: string }> = {
   // header extras
   "hdr.imagesShow": { de: "Bilder anzeigen", en: "Show images" },
   "hdr.imagesHide": { de: "Bilder ausblenden", en: "Hide images" },
-  "hdr.thinkingAria": { de: "Reasoning des Modells anzeigen", en: "Show model reasoning" },
   "hdr.settings": { de: "Einstellungen", en: "Settings" },
 
   // relative time (sidebar meta)

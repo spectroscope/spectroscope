@@ -33,6 +33,26 @@ describe("i18n dict", () => {
       expect(dict[`trace.mode.${f}`], `trace.mode.${f}`).toBeDefined();
       expect(dict[`trace.faceTitle.${f}`], `trace.faceTitle.${f}`).toBeDefined();
     }
+    // The reasoning seg (card 88): every string the shared control renders.
+    // A missing key ships as its bare name — it happened twice this week.
+    for (const k of [
+      "rc.label",
+      "rc.aria",
+      "rc.on",
+      "rc.off",
+      "rc.onTitle",
+      "rc.offTitle",
+      "rc.clearTitle",
+      "rc.effortTitle",
+      "rc.offCap",
+      "rc.noOff",
+      "rc.noneThinks",
+      "rc.noneQuiet",
+      "rc.settingsLabel",
+      "rc.settingsNote",
+    ]) {
+      expect(dict[k], k).toBeDefined();
+    }
   });
 });
 
