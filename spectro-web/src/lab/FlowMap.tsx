@@ -78,7 +78,11 @@ export function FlowMap(props: {
 
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const layoutRef = useRef(local);
+  // Which seating the rendered nodes came from. Compact and expanded are two
+  // different seatings, so switching the card view is as much a re-layout as
+  // flipping local/remote — without this the cards keep the seats of the view
+  // they were rendered in and the map reads as a mix of both.
+  const layoutRef = useRef(`${local}:${expandAll}`);
   const rfRef = useRef<ReactFlowInstance<Node, Edge> | null>(null);
   // Nodes the user has dragged. Once pinned, a node keeps its position across
   // every step (even a subagent, which otherwise re-centres) — so dragging a card
@@ -112,21 +116,26 @@ export function FlowMap(props: {
   // keeps its position by default; a subagent keeps its freshly computed one so a
   // new worker re-centres the group instead of stranding earlier cards (the clump
   // bug from the prototype) — UNLESS the user dragged it, in which case it is
-  // pinned and stays. A local/remote flip re-lays-out everything and drops pins.
+  // pinned and stays. A local/remote flip or a compact/expanded flip re-lays-out
+  // everything and drops pins.
   useEffect(() => {
-    const relayout = layoutRef.current !== local;
-    layoutRef.current = local;
+    const seating = `${local}:${expandAll}`;
+    const relayout = layoutRef.current !== seating;
+    layoutRef.current = seating;
     if (relayout) pinned.current.clear();
     setNodes((prev) => mergeNodePositions(prev, flow.nodes, pinned.current, relayout));
     setEdges(flow.edges);
-  }, [flow, local, setNodes, setEdges]);
+  }, [flow, local, expandAll, setNodes, setEdges]);
 
   return (
     // Right mouse button pans (context menu suppressed), left only clicks and
     // drags nodes — owner request, same rule as the Graph tab.
     <div className="lab-flowmap" onContextMenu={(e) => e.preventDefault()}>
       <ReactFlow
-        key={local ? "local" : "remote"}
+        // A disclosure seeds its open/closed state when the card mounts, so a
+        // view flip has to remount the canvas — otherwise the cards carry the
+        // other view's open panels into seats that never reserved for them.
+        key={`${local ? "local" : "remote"}:${expandAll ? "expanded" : "compact"}`}
         className="pf-flow"
         onInit={(inst) => {
           rfRef.current = inst;

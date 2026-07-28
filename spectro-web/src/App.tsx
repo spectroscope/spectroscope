@@ -14,6 +14,7 @@ import {
   recordResumeMarker,
   reduceAll,
   traceFromEvents,
+  windowTrace,
 } from "./state/reducer";
 import type { UiState } from "./state/reducer";
 import { summarizeHistory } from "./state/resume";
@@ -276,8 +277,10 @@ export function App() {
 
   // One setState per animation-frame batch: n events, one React render.
   // The same batch is kept raw — the graph tab is just another reducer.
+  // This state is the one the socket grows without an end in sight, so it is
+  // also the one whose trace is a window; every other fold here is finite.
   const onEvents = useCallback((batch: RunEvent[]) => {
-    setLive((s) => reduceAll(s, batch));
+    setLive((s) => windowTrace(reduceAll(s, batch)));
     setLiveEvents((prev) => [...prev, ...batch]);
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
@@ -355,7 +358,9 @@ export function App() {
   const sendClient = useCallback((msg: ClientMessage): boolean => {
     const sent = connRef.current?.send(msg) === true;
     if (sent) {
-      setLive((s) => recordOutgoing(s, msg));
+      // Outbound rows land in the same growing array as inbound ones, so they
+      // are windowed by the same rule — a chatty sender cannot outgrow it.
+      setLive((s) => windowTrace(recordOutgoing(s, msg)));
       // Leveling beacons ride here rather than in each component: this is the one
       // place every client message passes, so a gate answered from the bar, the
       // lab or a fleet all report the same way, and a future sender gets it free.

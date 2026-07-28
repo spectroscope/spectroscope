@@ -292,6 +292,107 @@ describe("chatToHtml — the conversation", () => {
   });
 });
 
+describe("chatToHtml — a tool input is text, not one escaped line", () => {
+  const script =
+    "export const meta = {\n  name: 'gate',\n};\n\nexport default async function run() {\n  return 1;\n}\n";
+  const events: RunEvent[] = [
+    {
+      type: "tool_call",
+      agentId: "main",
+      callId: "c1",
+      name: "Workflow",
+      input: { name: "gate", script },
+      ts,
+    },
+    { type: "tool_result", agentId: "main", callId: "c1", output: "ok", isError: false, durationMs: 3, ts },
+  ];
+  const html = chatToHtml(events, { now: NOW });
+
+  it("prints the body with real breaks, never as the escape that stood for one", () => {
+    expect(html).toContain("meta = {\n  name: ");
+    expect(html).not.toContain("\\n");
+  });
+
+  it("labels the lifted field with the payload's own word", () => {
+    expect(html).toContain(`<div class="x-io">script</div>`);
+  });
+
+  it("leaves the reference behind in the shape, so nothing reads as dropped", () => {
+    expect(html).toContain("(7 lines below)");
+  });
+
+  it("colours the script with the tokenizer the app uses", () => {
+    expect(html).toContain('<span class="hl hl-keyword">export</span>');
+  });
+
+  it("summarises the call in the fold line, without the body", () => {
+    const summary = html.slice(html.indexOf("<summary>"), html.indexOf("</summary>"));
+    expect(summary).toContain("name: gate");
+    expect(summary).toContain("script: 7 lines");
+    expect(summary).not.toContain("export const meta");
+  });
+
+  it("resolves every highlight class inside the file itself", () => {
+    const css = html.slice(html.indexOf("<style>"), html.indexOf("</style>"));
+    const used = new Set([...html.matchAll(/class="hl hl-([a-z]+)"/g)].map((m) => m[1]));
+    expect(used.size).toBeGreaterThan(0);
+    for (const cls of used) expect(css).toContain(`.hl-${cls}{`);
+  });
+
+  it("escapes a hostile field name before it becomes a label", () => {
+    const hostileKey = chatToHtml(
+      [
+        {
+          type: "tool_call",
+          agentId: "main",
+          callId: "c1",
+          name: "X",
+          input: { "</pre><script>alert(4)</script>": "a\nb" },
+          ts,
+        },
+      ],
+      { now: NOW },
+    );
+    expect(hostileKey).not.toContain("<script");
+    expect(hostileKey).toContain("&lt;/pre&gt;&lt;script&gt;");
+  });
+
+  it("still colours a shell command it was handed under a plain key", () => {
+    const shell = chatToHtml(
+      [
+        {
+          type: "tool_call",
+          agentId: "main",
+          callId: "c1",
+          name: "run_command",
+          input: { command: "grep -r x .\ngrep -r y ." },
+          ts,
+        },
+      ],
+      { now: NOW },
+    );
+    expect(shell).toContain('<span class="hl hl-keyword">grep</span>');
+  });
+
+  it("renders a body whose language nothing names byte for byte, uncoloured", () => {
+    const plain = chatToHtml(
+      [
+        {
+          type: "tool_call",
+          agentId: "main",
+          callId: "c1",
+          name: "Write",
+          input: { path: "notes.txt", content: "# Title\n\n1999 was a year.\n" },
+          ts,
+        },
+      ],
+      { now: NOW },
+    );
+    expect(plain).toContain("# Title\n\n1999 was a year.");
+    expect(plain).not.toContain('class="hl hl-number">1999');
+  });
+});
+
 describe("textFeedToHtml — the feed", () => {
   it("shows the protocol markers as readable text", () => {
     const events: RunEvent[] = [

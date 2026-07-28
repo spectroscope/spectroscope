@@ -19,6 +19,7 @@ import { isLocalProvider } from "../labScene";
 import type { FleetLabNode, FleetLabScene } from "../fleetLabScene";
 import {
   activity,
+  EXPANDED_CARD,
   lifecycleLabel,
   STATE_COLOR,
   type AgentStream,
@@ -38,6 +39,7 @@ const OS_H = 236; // the OS band's height (matches the single-run map)
 const OS_W = 792; // the OS band's width (disk/shell/mcp/net row)
 const LLM_W = 440; // .pf-llm width
 const MAC_PAD = 24;
+const USER_X = 40; // the user station's own column, left of the card grid
 
 /** Column count: one for small fleets, then wrap to keep the column readable. */
 function columnsFor(count: number): number {
@@ -69,21 +71,32 @@ export function fleetToFlow(
   const edges: Edge[] = [];
 
   const cards = scene.nodes;
-  // Expanded cards open task & history inline and grow tall — widen the pitch
-  // so open cards never overlap (owner: the map must spread with the view).
-  const stepY = opts.expanded === true ? 330 : FLEET_CARD_STEP_Y;
+  // Expanded cards open task & history inline and grow tall/wide, so every
+  // reserve below switches to what EXPANDED_CARD says they occupy: the pitch
+  // (so open cards never overlap), the card height the frame reserves under the
+  // last row, the LLM height the frame has to contain, and the grid's own start
+  // — the wide user card holds a whole column of its own.
+  const expanded = opts.expanded === true;
+  const stepY = expanded ? 330 : FLEET_CARD_STEP_Y;
+  const cardH = expanded ? EXPANDED_CARD["fleet-card"].h : CARD_H;
+  const gridX = expanded ? USER_X + EXPANDED_CARD.user.w + 60 : GRID_X;
   const cols = columnsFor(cards.length);
   const rows = Math.max(1, Math.ceil(cards.length / cols));
 
   // ---- computed frame ------------------------------------------------------
-  const gridBottom = GRID_Y + (rows - 1) * stepY + CARD_H;
+  const gridBottom = GRID_Y + (rows - 1) * stepY + cardH;
   const osTop = Math.max(668, gridBottom + OS_GAP);
-  const gridRight = GRID_X + (cols - 1) * CARD_STEP_X + CARD_W;
+  const gridRight = gridX + (cols - 1) * CARD_STEP_X + CARD_W;
   // The mac zone must hold the card grid, the OS band, and (when a local
-  // backend is in play) the local LLM station right of the OS band.
+  // backend is in play) the local LLM station right of the OS band. An expanded
+  // local station is a card with its reasoning open — three times the compact
+  // height, and the band's own 236px never covers it.
   const localLlmX = MAC_PAD + OS_W + 64;
   const macW = Math.max(1000, gridRight + 120, scene.hasLocal ? localLlmX + LLM_W + MAC_PAD : 0);
-  const macH = osTop + OS_H + 36;
+  const macH = Math.max(
+    osTop + OS_H + 36,
+    expanded && scene.hasLocal ? osTop + 8 + EXPANDED_CARD.llm.h + MAC_PAD : 0,
+  );
   const boundaryX = macW + 16;
   const outsideX = macW + 52;
   const llmX = outsideX + 40;
@@ -137,7 +150,7 @@ export function fleetToFlow(
     nodes.push({
       id: "user",
       type: "user",
-      position: { x: 40, y: GRID_Y + 40 },
+      position: { x: USER_X, y: GRID_Y + 40 },
       data: { active: false, prompt: detail.prompt },
       zIndex: 10,
     });
@@ -160,7 +173,7 @@ export function fleetToFlow(
     nodes.push({
       id,
       type: "subagent",
-      position: { x: GRID_X + col * CARD_STEP_X, y: GRID_Y + row * stepY },
+      position: { x: gridX + col * CARD_STEP_X, y: GRID_Y + row * stepY },
       data: {
         id: card.id,
         label: card.role === "root" ? null : card.role,

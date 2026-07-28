@@ -604,6 +604,7 @@
 .json-line { white-space: pre-wrap; word-break: break-word; }
 .json-key { color: var(--text-dim); }
 .json-string { color: var(--agent-explore); }
+.json-string-block { display: block; } /* a value whose own line breaks are data starts at the node's indent */
 .json-number { color: var(--agent-root); }
 .json-bool { color: var(--agent-worker); }
 .json-punct { color: var(--text-faint); }

@@ -81,6 +81,15 @@
   max-height: 50vh;
   overflow-y: auto;
 }
+/* The payload is the one part that gives way. A column bounded by the viewport
+   keeps Deny and Allow on screen no matter how many lines arrive, and a person
+   never has to scroll the page to find the two buttons they came for. */
+.modal--gate { display: flex; flex-direction: column; max-height: calc(100vh - var(--sp-6)); }
+.modal--gate .modal-input { flex: 1 1 auto; min-height: 0; }
+.modal--gate .modal-remember { margin-top: var(--sp-3); }
+/* One scroller, not two: a well that scrolls inside a scrolling box hides its
+   tail behind a second scrollbar nobody goes looking for. */
+.modal-input .tv-well { max-height: none; overflow: visible; }
 
 .modal-actions {
   display: flex;

@@ -7,10 +7,11 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ToolCard as ToolCardModel } from "../state/reducer";
-import { agentAccent, compactJson, formatDuration } from "../format";
+import { agentAccent, formatDuration } from "../format";
 import { defaultOpen, useDisclosure } from "../state/disclosure";
 import { TOOL_VIEW_MODES, setToolView, useToolView } from "../state/toolView";
 import { ToolViewBody } from "./ToolViewBody";
+import { toolTeaser } from "./toolTeaser";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { beacon } from "../state/levelingBeacon";
@@ -106,7 +107,11 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
             {card.agentId}
           </span>
         )}
-        <span className="tool-preview">{compactJson(card.input)}</span>
+        {/* One line, and the row's only clue while the card is folded: the
+            fields that identify the call, with any body named by its size. */}
+        <span className="tool-preview">
+          {toolTeaser(card.name, card.input, (n) => t(lang, "tv.lines", { n }))}
+        </span>
         {/* The gate outcome, made visible: an allowed call is didactically
             different from a permission-free one — it went through the gate. */}
         {card.permission !== undefined && (

@@ -342,7 +342,84 @@
 .tv-agent-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .tv-agent-type { font-size: var(--fs-12); color: var(--accent); }
 
+/* A workflow says what it is in its own words; the name above stays the mono
+   handle, so the sentence under it is set in the reading face. */
+.tv-desc { font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }
+
 /* The plan as a checklist — the dot and badge come from the agent-card set. */
 .tv-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .tv-step { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .tv-step-text { flex: 1; min-width: 0; font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }
+
+/* A question put to a person: the header as a chip, the question as its text,
+   the options as rows under it. Several questions are several blocks, so each
+   one keeps a hairline of its own to sit against. */
+.tv-asks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
+.tv-ask { display: flex; flex-direction: column; gap: var(--sp-1); min-width: 0; }
+.tv-ask + .tv-ask { padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.tv-ask-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
+.tv-ask-tag {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 var(--sp-2);
+  white-space: nowrap;
+}
+.tv-ask-q { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; }
+.tv-ask-meta { font-size: var(--fs-11); }
+
+/* An option row. The pick is marked three ways that do not need colour: the
+   glyph in the gutter, the word beside the label, and the label at full strength
+   while the others recede. The accent is the fourth, decorative signal — a
+   reader who cannot separate it from the text still reads the choice. */
+.tv-opts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tv-opt { display: flex; gap: var(--sp-2); min-width: 0; }
+.tv-opt-mark {
+  flex: none;
+  width: 1em;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  color: var(--text-faint);
+  text-align: center;
+}
+.tv-opt-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.tv-opt-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
+.tv-opt-label { font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }
+.tv-opt--chosen .tv-opt-mark { color: var(--accent); }
+.tv-opt--chosen .tv-opt-label { color: var(--text); font-weight: 500; }
+.tv-chosen {
+  font-size: var(--fs-11);
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  border-radius: 999px;
+  padding: 0 var(--sp-2);
+  white-space: nowrap;
+}
+/* Someone's own sentence, so it is set in the reading face — a `pre` alone lands
+   on the browser's generic monospace, which is neither the brand mono nor prose.
+   It stays a `pre` because a typed answer may carry its own line breaks. */
+.tv-ask-answer { display: flex; flex-direction: column; gap: 2px; margin-top: var(--sp-1); }
+.tv-ask-answer .tv-well { font-family: var(--font-ui); }
+
+/* The face chips of a region that has two, pushed to the far end of its head. */
+.tv-faces { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+
+/* A rendered markdown body sits in the same well as the bytes it stands for, and
+   the document sizes step down: inside a card, an h1 is a line, not a banner. */
+.tv-md {
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--shade);
+  border-radius: var(--radius-chip);
+  font-size: var(--fs-12);
+  max-height: 260px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.tv-md .md h1 { font-size: var(--fs-16); }
+.tv-md .md h2 { font-size: var(--fs-14); }
+.tv-md .md h3, .tv-md .md h4, .tv-md .md h5, .tv-md .md h6 { font-size: var(--fs-13); }
+.tv-md .md p, .tv-md .md ul, .tv-md .md ol, .tv-md .md .md-pre { margin-bottom: var(--sp-2); }

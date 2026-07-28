@@ -174,7 +174,8 @@ export interface UiState {
   lastStopReason: string | null;
   /** Generated images in arrival order — the gallery panel. */
   images: GeneratedImage[];
-  /** Wire view (trace tab): every frame in arrival order, capped at 5000. */
+  /** Wire view (trace tab): every frame in arrival order. The fold keeps all of
+   *  them; only a live stream is bounded, by {@link windowTrace} at its seam. */
   trace: TraceEntry[];
   /** Latest context_info snapshot — latest wins, null until the first one. */
   context: ContextSnapshot | null;
@@ -306,14 +307,33 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 
-/** The trace is a window, not the archive — the JSONL file keeps everything. */
-const TRACE_CAP = 5000;
-
+// An append copies the trace, so a fold costs O(rows²): measured 6000 rows in
+// 16 ms / +5 MB, 50 000 in 2.7 s / +116 MB. A session's worth is cheap; anything
+// larger wants a batched append before it wants a bigger array.
 function appendTrace(s: UiState, entry: Omit<TraceEntry, "seq">): UiState {
   const last = s.trace[s.trace.length - 1];
-  const appended = [...s.trace, { seq: (last?.seq ?? 0) + 1, ...entry }];
-  const trace = appended.length > TRACE_CAP ? appended.slice(appended.length - TRACE_CAP) : appended;
-  return { ...s, trace };
+  return { ...s, trace: [...s.trace, { seq: (last?.seq ?? 0) + 1, ...entry }] };
+}
+
+/** How many frames a LIVE trace keeps. Measured, not picked: because an append
+ *  copies the window, every live frame pays it — a 50 000-frame stream folds in
+ *  164 ms at 5000 and 1.9 s at 20 000. Raising this needs the batched append. */
+const LIVE_TRACE_WINDOW = 5000;
+
+/**
+ * Bound the trace of a state that is still growing — the live socket's, and only
+ * that one. A stream has no end, so the array it folds into needs one; the JSONL
+ * file keeps every frame either way. A finite fold (an import, an archive, a
+ * replay) is whole before it starts, and windowing it would drop the oldest rows
+ * of a record that fits, which for an imported transcript is where it began.
+ *
+ * Idempotent, and the newest row survives untouched, so `seq` keeps counting
+ * from there and no two rows inside a window can share a number.
+ */
+export function windowTrace(state: UiState): UiState {
+  const { trace } = state;
+  if (trace.length <= LIVE_TRACE_WINDOW) return state;
+  return { ...state, trace: trace.slice(trace.length - LIVE_TRACE_WINDOW) };
 }
 
 /** Stamp usage + duration onto the LAST assistant turn of an agent (the answer
@@ -700,7 +720,9 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
   }
 }
 
-/** Replay and frame batches: whole event lists through the same reducer. */
+/** Replay and frame batches: whole event lists through the same reducer. The
+ *  fold is complete for both — a caller whose stream has no end windows the
+ *  result, so forgetting costs memory rather than the start of a record. */
 export const reduceAll = (s: UiState, events: RunEvent[]): UiState => events.reduce(reduce, s);
 
 /** Normalize a replayed archive: nothing runs and no question is open — even

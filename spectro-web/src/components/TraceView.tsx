@@ -25,7 +25,7 @@ import {
   wireProtocol,
 } from "./eventSummary";
 import type { LlmDir } from "./eventSummary";
-import { DETAIL_MODES, detailLines, detailText } from "./traceDetail";
+import { detailLines, detailText } from "./traceDetail";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
 import { beacon } from "../state/levelingBeacon";
@@ -40,6 +40,8 @@ import {
   useTraceColumns,
 } from "../state/traceColumns";
 import type { TraceColumns } from "../state/traceColumns";
+import { TRACE_FACES, rowFace, setTraceFace, useTraceFace } from "../state/traceFace";
+import type { RowFace } from "../state/traceFace";
 import { reportCount, useSearch } from "../state/search";
 import { traceHits, traceRowText } from "./traceSearch";
 import type { TraceHitRow } from "./traceSearch";
@@ -470,19 +472,15 @@ export function EventStructured(props: {
   );
 }
 
-/** The faces a frame can be read in. Structured leads (the tool card's default,
- *  and the network view's Preview): the raw JSON is never more than one click
- *  away, and it stays the evidence. */
-const DETAIL_FACES = ["structured", ...DETAIL_MODES] as const;
-type DetailFace = (typeof DETAIL_FACES)[number];
-
 /** The expanded frame, in one of four honest views: Structured (the frame as
  *  the thing it is), Insight (the collapsible tree), Compact (highlighted, ONE
  *  row per wire line, x-scroll instead of artificial wrapping) and Raw (plain
  *  text, newlines only between real lines). session_resume expands to the whole
  *  re-uploaded history: one JSONL line per event, exactly what rides back to
  *  the LLM. Above the views: the causal chain (spectro-explain feature 2),
- *  walked back to the prompt. */
+ *  walked back to the prompt. The face a frame lands on comes from the
+ *  toolbar's master switch; the row of modes below the chain is the exception
+ *  on top of it, and it holds until the master moves (state/traceFace.ts). */
 function TraceDetail({
   entry,
   lang,
@@ -499,7 +497,12 @@ function TraceDetail({
   calls?: ReadonlyMap<string, ToolCallRef>;
   onJump: (seq: number) => void;
 }) {
-  const [mode, setMode] = useState<DetailFace>("structured");
+  // The row subscribes to the master itself: only the OPEN row renders a
+  // detail, so a master change re-renders exactly this one panel and leaves
+  // every closed row closed — the switch picks a face, it does not expand.
+  const master = useTraceFace();
+  const [override, setOverride] = useState<RowFace | null>(null);
+  const mode = rowFace(master, override);
   const lines = detailLines(entry.type, entry.payload);
   return (
     <div className="trace-detail">
@@ -525,8 +528,13 @@ function TraceDetail({
         </div>
       )}
       <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
-        {DETAIL_FACES.map((m) => (
-          <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
+        {TRACE_FACES.map((m) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={mode === m}
+            onClick={() => setOverride({ face: m, epoch: master.epoch })}
+          >
             {t(lang, `trace.mode.${m}`)}
           </button>
         ))}
@@ -593,6 +601,9 @@ export function TraceView(props: {
   // Optional columns (owner 2026-07-27): host and model, both on out of the
   // box. A hidden column takes nothing but itself — no row changes meaning.
   const chosenCols = useTraceColumns();
+  // The master face: which view a frame opens in. Only the toolbar's own
+  // buttons need it here — the open frame reads the store itself.
+  const { face } = useTraceFace();
   // In-view search (the shared store). In a table the HIT IS THE ROW: matching
   // rows are marked, the current one more strongly, and stepping walks them.
   const { open: searchOpen, query: searchQuery, regex: searchRegex, index: searchIndex } = useSearch();
@@ -988,6 +999,25 @@ export function TraceView(props: {
               onClick={() => setLlmDir(d)}
             >
               {label}
+            </button>
+          ))}
+        </div>
+        {/* The master face (owner 2026-07-27: "einen hauptschalter oben was man
+            als standard haben will"). It carries a label because it sits next to
+            the unlabelled direction filter and reads the same otherwise. */}
+        <div className="trace-seg" role="group" aria-label={t(lang, "trace.faceAria")}>
+          <span className="trace-seg-label mono" title={t(lang, "trace.faceHint")}>
+            {t(lang, "trace.face")}
+          </span>
+          {TRACE_FACES.map((f) => (
+            <button
+              key={f}
+              type="button"
+              aria-pressed={face === f}
+              title={t(lang, `trace.faceTitle.${f}`)}
+              onClick={() => setTraceFace(f)}
+            >
+              {t(lang, `trace.mode.${f}`)}
             </button>
           ))}
         </div>

@@ -30,7 +30,9 @@ import { buildTextFeed } from "../state/textFeed";
 import type { ToolCard, Turn, UiState } from "../state/reducer";
 import { initialState, reduceAll } from "../state/reducer";
 import { groupTurns } from "../state/threads";
-import { agentAccent, compactJson, formatDuration, prettyJson } from "../format";
+import { splitInput } from "../components/toolViews";
+import { toolTeaser } from "../components/toolTeaser";
+import { agentAccent, formatDuration, prettyJson } from "../format";
 
 export interface ExportOptions {
   /** Shown in the header and the browser tab — a session id, a first prompt. */
@@ -89,6 +91,7 @@ const LABELS: Record<Lang, Record<string, string>> = {
     ended: "ended: {reason}",
     empty: "This session carries no events.",
     theme: "dark",
+    lines: "{n} lines",
   },
   de: {
     chat: "Chat",
@@ -109,6 +112,7 @@ const LABELS: Record<Lang, Record<string, string>> = {
     ended: "beendet: {reason}",
     empty: "Diese Session trägt keine Events.",
     theme: "dunkel",
+    lines: "{n} Zeilen",
   },
 };
 
@@ -443,19 +447,35 @@ function toolHtml(card: ToolCard, lang: Lang): string {
     chips.push(`<span class="x-chip">${escapeHtml(formatDuration(card.durationMs))}</span>`);
   }
   const line = card.status === "error" ? "var(--error)" : denied ? "var(--warn)" : "var(--border)";
+  const teaser = toolTeaser(card.name, card.input, (n) => label(lang, "lines", { n }));
+  // The input as the app's structured face reads it: the keys and scalars as
+  // JSON, each multi-line field lifted into a block of its own. Stringified
+  // whole, a field carrying code turns the payload into one line of visible \n,
+  // and this file is the copy that gets mailed and outlives the session.
+  const split = splitInput(card.name, card.input);
   // Open by default: a collapsed command in a file attached to a ticket is a
   // command nobody reads. The reader can fold it away; the record is complete.
   const parts = [
     `<details class="x-tool" open style="--line-color:${line}">`,
     `<summary><span class="x-tool-name">${escapeHtml(card.name)}</span>`,
     card.agentId !== "main" ? badge(card.agentId) : "",
-    `<span class="x-tool-preview">${escapeHtml(compactJson(card.input))}</span>`,
+    `<span class="x-tool-preview">${escapeHtml(teaser)}</span>`,
     chips.join(""),
     "</summary>",
     `<div class="x-body">`,
     `<div class="x-io">${escapeHtml(label(lang, "input"))}</div>`,
-    `<pre><code>${codeHtml(prettyJson(card.input), "json")}</code></pre>`,
+    `<pre><code>${codeHtml(prettyJson(split.shape), "json")}</code></pre>`,
   ];
+  for (const block of split.blocks) {
+    // The label is the payload's own word, not chrome — and it is the only
+    // untrusted string that reaches an eyebrow, so it is escaped like any other.
+    // Colouring stays inline: the four token classes are in the document's own
+    // style block, and an unnamed language renders byte for byte.
+    parts.push(
+      `<div class="x-io">${escapeHtml(block.key)}</div>`,
+      `<pre><code>${codeHtml(block.text, block.lang)}</code></pre>`,
+    );
+  }
   // A denied call produced no output — printing an empty block would suggest it ran.
   if (card.output !== undefined && !denied) {
     parts.push(

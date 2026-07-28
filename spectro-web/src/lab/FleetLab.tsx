@@ -128,12 +128,15 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
   const flow = useMemo(() => fleetToFlow(scene, detail, { lang, expanded }), [scene, detail, lang, expanded]);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
-  const cardCountRef = useRef(scene.nodes.length);
+  // The card count AND the card view: both decide the seats, so both have to
+  // drop stale positions (compact and expanded are two different frames).
+  const seatingRef = useRef(`${scene.nodes.length}:${expanded}`);
   // Sync fold → flow, keeping drag positions unless the card grid changed
   // (a joined/left node recomputes the whole frame) — the FlowMap pattern.
   useEffect(() => {
-    const relayout = cardCountRef.current !== scene.nodes.length;
-    cardCountRef.current = scene.nodes.length;
+    const seating = `${scene.nodes.length}:${expanded}`;
+    const relayout = seatingRef.current !== seating;
+    seatingRef.current = seating;
     setNodes((prev) => {
       const byId = new Map(prev.map((p) => [p.id, p]));
       return flow.nodes.map((node) => {
@@ -142,7 +145,7 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
       });
     });
     setEdges(flow.edges);
-  }, [flow, scene.nodes.length, setNodes, setEdges]);
+  }, [flow, scene.nodes.length, expanded, setNodes, setEdges]);
   // The "now" line: the active node and what it is doing right now.
   const active = scene.activeNode !== null ? scene.nodes.find((n) => n.id === scene.activeNode) : undefined;
   const nowText =
@@ -188,6 +191,9 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
       <div className="lab-flowmap" onContextMenu={(e) => e.preventDefault()}>
         <ExpandAllContext.Provider value={expanded}>
           <ReactFlow
+            // A card's disclosures seed their state at mount, so the flip has to
+            // remount the canvas — the FlowMap rule, same reason.
+            key={expanded ? "expanded" : "compact"}
             className="pf-flow"
             nodes={nodes}
             edges={edges}

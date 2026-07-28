@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { ClientMessage, RunEvent } from "../events";
-import { initialState, normalizeReplay, recordOutgoing, reduce, reduceAll, traceFromEvents } from "./reducer";
+import type { UiState } from "./reducer";
+import {
+  initialState,
+  normalizeReplay,
+  recordOutgoing,
+  reduce,
+  reduceAll,
+  traceFromEvents,
+  windowTrace,
+} from "./reducer";
 
 // A realistic root run: prompt -> streamed answer -> usage -> end.
 const happyPath: RunEvent[] = [
@@ -555,15 +564,15 @@ describe("reduce — wire trace (trace tab)", () => {
     expect(state.trace[0]?.agentId).toBeUndefined();
   });
 
-  it("caps the trace at 5000 entries, dropping the oldest", () => {
-    const flood: RunEvent[] = Array.from(
-      { length: 5010 },
+  it("a finite fold keeps every row, however long the session", () => {
+    const long: RunEvent[] = Array.from(
+      { length: 6000 },
       (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: i }) as RunEvent,
     );
-    const state = reduceAll(initialState, flood);
-    expect(state.trace).toHaveLength(5000);
-    expect(state.trace[0]?.seq).toBe(11); // the first ten fell off the window
-    expect(state.trace[4999]?.seq).toBe(5010);
+    const state = reduceAll(initialState, long);
+    expect(state.trace).toHaveLength(6000);
+    expect(state.trace[0]?.seq).toBe(1); // an import begins at its beginning
+    expect(state.trace[5999]?.seq).toBe(6000);
   });
 
   it("recordOutgoing appends a dir 'out' entry and continues the seq counter", () => {
@@ -611,6 +620,61 @@ describe("reduce — wire trace (trace tab)", () => {
       remember: true,
       persist: true,
     });
+  });
+});
+
+describe("the live trace window (windowTrace)", () => {
+  const flood = (n: number, from = 0): RunEvent[] =>
+    Array.from(
+      { length: n },
+      (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: from + i }) as RunEvent,
+    );
+
+  /** What the socket seam does: fold the batch, then window what it grew. */
+  const live = (s: UiState, batch: RunEvent[]): UiState => windowTrace(reduceAll(s, batch));
+
+  it("keeps the last 5000 rows of a stream past the window, dropping the oldest", () => {
+    const state = live(initialState, flood(5010));
+    expect(state.trace).toHaveLength(5000);
+    expect(state.trace[0]?.seq).toBe(11); // the first ten fell off the window
+    expect(state.trace[4999]?.seq).toBe(5010);
+  });
+
+  it("bounds a stream that arrives in many batches, not just one", () => {
+    let state = initialState;
+    for (let batch = 0; batch < 60; batch++) state = live(state, flood(100, batch * 100));
+    expect(state.trace).toHaveLength(5000);
+    expect(state.trace[4999]?.seq).toBe(6000);
+  });
+
+  it("hands back a trace that fits unchanged, array identity included", () => {
+    const state = reduceAll(initialState, happyPath);
+    const windowed = windowTrace(state);
+    expect(windowed).toBe(state);
+    expect(windowed.trace).toBe(state.trace);
+  });
+
+  it("leaves the newest row in place, so seq keeps counting after a window", () => {
+    const windowed = live(initialState, flood(5000));
+    const next = live(windowed, flood(1, 5000));
+    expect(next.trace).toHaveLength(5000);
+    expect(next.trace[4999]?.seq).toBe(5001);
+    // No two rows share a seq — the counter never restarts inside the window.
+    expect(new Set(next.trace.map((t) => t.seq)).size).toBe(5000);
+  });
+
+  it("windows an outgoing frame's append too — both directions grow the same array", () => {
+    const full = live(initialState, flood(5000));
+    const sent = windowTrace(recordOutgoing(full, { type: "abort" }));
+    expect(sent.trace).toHaveLength(5000);
+    const last = sent.trace[4999];
+    expect(last).toMatchObject({ seq: 5001, dir: "out", type: "abort" });
+  });
+
+  it("changes nothing but the trace", () => {
+    const state = live(initialState, [...flood(5010), ...happyPath]);
+    const uncapped = reduceAll(initialState, [...flood(5010), ...happyPath]);
+    expect({ ...state, trace: [] }).toEqual({ ...uncapped, trace: [] });
   });
 });
 

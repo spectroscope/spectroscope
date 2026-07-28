@@ -2,6 +2,7 @@
 // placeholders, and unknown keys pass through loudly (they render as the key).
 import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
+import { TRACE_FACES } from "../state/traceFace";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -24,6 +25,13 @@ describe("i18n dict", () => {
     }
     for (const p of ["pending", "in_progress", "completed"]) {
       expect(dict[`plan.${p}`], `plan.${p}`).toBeDefined();
+    }
+    // The trace's faces are interpolated twice: as the master switch's buttons
+    // and titles, and as the open frame's own row of modes. A face added to the
+    // store without its strings would render as the bare key.
+    for (const f of TRACE_FACES) {
+      expect(dict[`trace.mode.${f}`], `trace.mode.${f}`).toBeDefined();
+      expect(dict[`trace.faceTitle.${f}`], `trace.faceTitle.${f}`).toBeDefined();
     }
   });
 });
