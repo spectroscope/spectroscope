@@ -70,12 +70,12 @@ export const DESIGNS: ReadonlyArray<{
   {
     id: "graphite",
     label: "spectro graphite",
-    sub: "dark · ocean line",
+    sub: "dark · one blue",
     // A dark ground is where the dust signature reads; the canvas takes its
     // colours from the live tokens, so it arrives already tuned to this skin.
     particles: true,
     bg: "#262624",
-    accent: "#2cb1c4",
+    accent: "#0071e3",
   },
 ];
 

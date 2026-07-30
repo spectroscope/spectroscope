@@ -213,8 +213,9 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       text: "#ffffff",
       "text-dim": "#c2c2be",
       "text-faint": "#8f8f8b",
-      // The accent is the ocean line itself, as espresso's is the amber one.
-      accent: "#2cb1c4",
+      // Owner 2026-07-30: still's blue, verbatim — graphite is its dark twin.
+      // Only espresso keeps a spectral-line accent; the ramp is untouched.
+      accent: "#0071e3",
       sand: ESPRESSO.sand,
       "sp-red": ESPRESSO["sp-red"],
       "sp-amber": ESPRESSO["sp-amber"],

@@ -60,16 +60,21 @@
   --text: #ffffff;
   --text-dim: #c2c2be;
   --text-faint: #8f8f8b;
-  --text-on-accent: #04252a;
+  --text-on-accent: #ffffff;
 
-  /* Espresso's accent IS a spectral line (--sp-amber, to the byte). Graphite
-     keeps that rule and picks the cool one, so the design still spends colour
-     only where the brand allows it. */
-  --accent: #2cb1c4;
-  --accent-hover: #5dc3d4;
-  --accent-pressed: #1e98a9;
-  --accent-soft: rgba(44, 177, 196, 0.13);
-  --accent-glow: rgba(44, 177, 196, 0.22);
+  /* Owner 2026-07-30: the same blue still uses — no turquoise. Graphite reads
+     as still's dark twin, so it spends its accent on the identical blue family
+     rather than the ocean line this block opened with. Espresso keeps the
+     accent-is-a-spectral-line rule; the spectral ramp itself is untouched.
+     Measured on this ground: accent 3.23:1 and hover 3.51:1 (both clear the
+     3:1 component floor; the retired cyan sat at 5.91:1), white on accent
+     4.70:1. The soft/glow steps keep graphite's own alphas; only the hue
+     moved. */
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-pressed: #005bb8;
+  --accent-soft: rgba(0, 113, 227, 0.13);
+  --accent-glow: rgba(0, 113, 227, 0.22);
 }
 
 /* ---------- spectro white (id `still`) — minimal light: white, gray, one blue ---------- */
