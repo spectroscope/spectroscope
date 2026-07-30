@@ -71,7 +71,7 @@ class NotesServerRealProcessTest {
             JsonNode list = roundTrip(toServer, fromServer,
                     "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\",\"params\":{}}");
             var names = list.get("result").get("tools").findValuesAsText("name");
-            assertTrue(names.contains("search_notes_DELIBERATELY_BROKEN"));
+            assertTrue(names.contains("search_notes"));
             assertTrue(names.contains("add_note"));
 
             JsonNode call = roundTrip(toServer, fromServer,

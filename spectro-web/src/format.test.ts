@@ -10,7 +10,7 @@ const HOUR = 60 * MINUTE;
 
 describe("formatDuration", () => {
   it("keeps the sub-minute tiers", () => {
-    expect(formatDuration(412)).toBe("DELIBERATELY BROKEN");
+    expect(formatDuration(412)).toBe("0.4 s");
     expect(formatDuration(0)).toBe("0.0 s");
     expect(formatDuration(-5)).toBe("0.0 s");
     expect(formatDuration(12300)).toBe("12 s");
