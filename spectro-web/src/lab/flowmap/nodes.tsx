@@ -7,7 +7,7 @@
 import { Fragment, useContext, useState, type CSSProperties, type ReactNode } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
 import { ExpandAllContext } from "./expandContext";
-import { JsonTree } from "../../components/JsonTree";
+import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
@@ -283,17 +283,9 @@ export function AgentNode({ data }: NodeProps) {
         </div>
       </div>
     ) : null;
-  const jsonToolPanel =
-    d.tool && !isGenImage ? (
-      <div className="pf-panelbox">
-        <div className="pf-panelbox__label">
-          {t(lang, "map.ctx.toolCall")} · {d.tool.name}
-        </div>
-        <div className="nowheel" style={{ maxHeight: 150, overflow: "auto" }}>
-          <JsonTree value={d.tool.input} defaultDepth={3} />
-        </div>
-      </div>
-    ) : null;
+  // Two-faced since card 120: the insight tree or the call as the thing it is,
+  // under the map's master face with a per-panel strip on top.
+  const toolPanel = d.tool && !isGenImage ? <ToolCallPanel tool={d.tool} /> : null;
   const noToolPanel = d.tool ? null : <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>;
   // stacked (simulator / collapsed): everything inline, the image among the rest.
   const ctxPanels = (
@@ -301,7 +293,7 @@ export function AgentNode({ data }: NodeProps) {
       {sysPanel}
       {ctxBarsPanel}
       {genImagePanel}
-      {jsonToolPanel}
+      {toolPanel}
       {noToolPanel}
     </>
   );
@@ -325,7 +317,7 @@ export function AgentNode({ data }: NodeProps) {
               <div className="pf-eyebrow">{t(lang, "map.disc.context")}</div>
               {sysPanel}
               {ctxBarsPanel}
-              {jsonToolPanel}
+              {toolPanel}
               {noToolPanel}
             </div>
           </div>
@@ -460,7 +452,8 @@ function ShellBody({ command, active }: { command?: string | null; active: boole
   );
 }
 
-/** The active MCP call line plus its JSON disclosure. */
+/** The active MCP call line plus its call disclosure — the same two-faced
+ *  panel as the agent card's, so the master face governs it too. */
 function McpBody({
   active,
   mcp,
@@ -478,12 +471,7 @@ function McpBody({
       </div>
       {tool && (
         <Disclosure label={t(lang, "map.mcp.call")}>
-          <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{tool.name}</div>
-            <div className="nowheel" style={{ maxHeight: 130, overflow: "auto" }}>
-              <JsonTree value={tool.input} defaultDepth={3} />
-            </div>
-          </div>
+          <ToolCallPanel tool={tool} />
         </Disclosure>
       )}
     </>

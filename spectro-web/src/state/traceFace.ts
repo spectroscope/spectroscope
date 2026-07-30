@@ -1,7 +1,7 @@
-// Which face an expanded trace frame OPENS in (owner 2026-07-27) — a tiny
-// external store à la traceColumns.ts / disclosure.ts, persisted to
-// localStorage. It decides the DEFAULT only; a row's own click still wins until
-// the master moves again.
+// Which face an expanded trace frame OPENS in (owner 2026-07-27) — a face
+// store on the shared epoch mechanism in faceStore.ts (extracted from here by
+// card 120), persisted to localStorage. It decides the DEFAULT only; a row's
+// own click still wins until the master moves again.
 //
 //   structured — the frame rendered as the thing it is (the pre-master default)
 //   insight    — the collapsible tree
@@ -16,15 +16,10 @@
 // exactly the case it exists for. The two controls answer different complaints;
 // this is not an inconsistency to iron out.
 //
-// The reset keeps no list of rows: an override is stamped with the epoch it was
-// made under, and every real master change bumps the epoch, so all stamps go
-// stale at once. The epoch is monotonic rather than the face's own value,
-// because structured → compact → structured must not resurrect an override made
-// under the first structured. It is never persisted: overrides do not outlive a
-// reload either.
+// How the reset works without keeping a list of rows: faceStore.ts.
 
-import { useSyncExternalStore } from "react";
 import { DETAIL_MODES, type DetailMode } from "../components/traceDetail";
+import { createFaceStore, overrideFace, useFaceStore, type FaceOverride, type FacePref } from "./faceStore";
 
 /** Structured leads; the other three are exactly the detail panel's modes, read
  *  from there so the two lists cannot drift apart. */
@@ -35,57 +30,25 @@ export type TraceFace = "structured" | DetailMode;
 export const DEFAULT_TRACE_FACE: TraceFace = "structured";
 
 /** The master switch as the frames read it. */
-export interface TraceFacePref {
-  face: TraceFace;
-  /** Bumped on every real master change — see the header. */
-  epoch: number;
-}
+export type TraceFacePref = FacePref<TraceFace>;
 
 /** What one row was switched to by hand, and under which master. */
-export interface RowFace {
-  face: TraceFace;
-  epoch: number;
-}
+export type RowFace = FaceOverride<TraceFace>;
 
-const KEY = "spectroscope:trace.face";
-
-function isFace(raw: string | null): raw is TraceFace {
-  return raw !== null && (TRACE_FACES as readonly string[]).includes(raw);
-}
+const store = createFaceStore<TraceFace>("spectroscope:trace.face", TRACE_FACES, DEFAULT_TRACE_FACE);
 
 /** Visible for tests: the stored master, or the default for anything else. */
 export function parseTraceFace(raw: string | null): TraceFace {
-  return isFace(raw) ? raw : DEFAULT_TRACE_FACE;
+  return store.parse(raw);
 }
-
-function readSaved(): TraceFacePref {
-  try {
-    return { face: parseTraceFace(localStorage.getItem(KEY)), epoch: 0 };
-  } catch {
-    /* no localStorage (tests) — default */
-  }
-  return { face: DEFAULT_TRACE_FACE, epoch: 0 };
-}
-
-let pref: TraceFacePref = readSaved();
-const listeners = new Set<() => void>();
 
 export function setTraceFace(next: TraceFace): void {
-  if (next === pref.face) return;
-  // A fresh object per change, the same one between changes — the snapshot
-  // identity is what useSyncExternalStore compares.
-  pref = { face: next, epoch: pref.epoch + 1 };
-  try {
-    localStorage.setItem(KEY, pref.face);
-  } catch {
-    /* ignore */
-  }
-  for (const l of listeners) l();
+  store.set(next);
 }
 
 /** Visible for tests. */
 export function currentTraceFace(): TraceFacePref {
-  return pref;
+  return store.current();
 }
 
 /**
@@ -96,17 +59,9 @@ export function currentTraceFace(): TraceFacePref {
  * @return the row's own face while its stamp is current, else the master's
  */
 export function rowFace(master: TraceFacePref, override: RowFace | null): TraceFace {
-  return override !== null && override.epoch === master.epoch ? override.face : master.face;
-}
-
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-function getSnapshot(): TraceFacePref {
-  return pref;
+  return overrideFace(master, override);
 }
 
 export function useTraceFace(): TraceFacePref {
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useFaceStore(store);
 }

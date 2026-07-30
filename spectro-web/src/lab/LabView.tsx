@@ -18,6 +18,7 @@ import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
 import { ExpandAllContext } from "./flowmap/expandContext";
+import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -61,6 +62,9 @@ export function LabView(props: {
 }) {
   const st = useStepper();
   const lang = useLang();
+  // The master face of the map's tool panels (card 120): moving it re-faces
+  // open panels too — a per-panel pick holds only until the next move here.
+  const labFace = useLabFace();
   const { replay, liveEvents } = props;
 
   // Compact vs expanded agent cards (owner switch): expanded provides the
@@ -184,26 +188,47 @@ export function LabView(props: {
         <LabTransport
           running={props.running}
           trailing={
-            <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
-              <button
-                type="button"
-                className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
-                aria-pressed={!expanded}
-                title={t(lang, "lab.viewCompactTitle")}
-                onClick={() => pickView(false)}
-              >
-                {t(lang, "lab.viewCompact")}
-              </button>
-              <button
-                type="button"
-                className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
-                aria-pressed={expanded}
-                title={t(lang, "lab.viewExpandedTitle")}
-                onClick={() => pickView(true)}
-              >
-                {t(lang, "lab.viewExpanded")}
-              </button>
-            </div>
+            <>
+              {/* The labelled master, trace-parity (the trace's "hauptschalter"
+                  precedent): its buttons reuse the shared face labels. */}
+              <div className="lab-seg lab-face-seg" role="group" aria-label={t(lang, "lab.faceAria")}>
+                <span className="lab-seg-label mono" title={t(lang, "lab.faceHint")}>
+                  {t(lang, "lab.face")}
+                </span>
+                {LAB_FACES.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={labFace.face === f ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                    aria-pressed={labFace.face === f}
+                    title={t(lang, `lab.faceTitle.${f}`)}
+                    onClick={() => setLabFace(f)}
+                  >
+                    {t(lang, `trace.mode.${f}`)}
+                  </button>
+                ))}
+              </div>
+              <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
+                <button
+                  type="button"
+                  className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                  aria-pressed={!expanded}
+                  title={t(lang, "lab.viewCompactTitle")}
+                  onClick={() => pickView(false)}
+                >
+                  {t(lang, "lab.viewCompact")}
+                </button>
+                <button
+                  type="button"
+                  className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                  aria-pressed={expanded}
+                  title={t(lang, "lab.viewExpandedTitle")}
+                  onClick={() => pickView(true)}
+                >
+                  {t(lang, "lab.viewExpanded")}
+                </button>
+              </div>
+            </>
           }
         >
           <ExpandAllContext.Provider value={expanded}>
