@@ -1,9 +1,12 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   __resetForTests,
   __setTestHooks,
   applyAndSaveDesign,
   DEFAULT_PREFS,
+  DESIGNS,
   type DesignPrefs,
   isDirty,
   parsePrefs,
@@ -33,8 +36,12 @@ beforeEach(() => {
 const lastApplied = (): DesignPrefs => applied[applied.length - 1];
 
 describe("designPrefs store", () => {
-  it("defaults to the brand design with both effects on when storage is empty", () => {
-    expect(DEFAULT_PREFS.design).toBe("spectroscope");
+  it("defaults to spectro white, whose look carries no particles", () => {
+    expect(DEFAULT_PREFS.design).toBe("still");
+    // The default must not contradict its own design: still declares no
+    // particles, so the toggle starts off rather than lighting the settings
+    // note that says the effect is on and the design has none.
+    expect(DEFAULT_PREFS.particles).toBe(false);
     expect(readSaved()).toEqual(DEFAULT_PREFS);
     expect(isDirty()).toBe(false);
     expect(lastApplied()).toEqual(DEFAULT_PREFS); // reset applied the default
@@ -70,7 +77,7 @@ describe("designPrefs store", () => {
     expect(lastApplied()).toEqual({
       design: "still",
       scroll: true,
-      particles: true,
+      particles: false,
       reasoningLens: false,
       timelineLens: false,
       otelRows: false,
@@ -79,7 +86,7 @@ describe("designPrefs store", () => {
 
   it("parsePrefs seeds from storage and rejects an unknown design id", () => {
     const p = parsePrefs(JSON.stringify({ design: "bogus", scroll: false, particles: false }));
-    expect(p.design).toBe("spectroscope"); // unknown -> default
+    expect(p.design).toBe("still"); // unknown -> default
     expect(p.scroll).toBe(false);
     expect(p.particles).toBe(false);
   });
@@ -127,7 +134,7 @@ describe("designPrefs store", () => {
     // still stores one must land on the brand default, other prefs intact.
     for (const retired of ["classic", "nebula", "nocturne", "obsidian", "staffwise", "neon-riot", "prisma"]) {
       const p = parsePrefs(JSON.stringify({ design: retired, particles: false }));
-      expect(p.design).toBe("spectroscope");
+      expect(p.design).toBe("still");
       expect(p.particles).toBe(false);
     }
   });
@@ -156,5 +163,41 @@ describe("designPrefs store", () => {
   it("parsePrefs is null- and garbage-safe", () => {
     expect(parsePrefs(null)).toEqual(DEFAULT_PREFS);
     expect(parsePrefs("not json")).toEqual(DEFAULT_PREFS);
+  });
+
+  it("accepts the cool dark design (graphite) and round-trips it", () => {
+    expect(parsePrefs(JSON.stringify({ design: "graphite" })).design).toBe("graphite");
+    setDraft({ design: "graphite" });
+    saveDesign();
+    expect(JSON.parse(store.get(KEY) ?? "{}").design).toBe("graphite");
+    expect(lastApplied().design).toBe("graphite");
+  });
+});
+
+describe("the catalog is the one list every surface reads", () => {
+  // The picker, the settings block and the export dialog all map over DESIGNS.
+  // These hold the three places that CANNOT map over it — the id union, the
+  // export table and the pre-paint guard in index.html — to the same catalog,
+  // so a fifth design is one entry rather than four edits and a bug report.
+  it("offers the four designs, white first-run default unchanged", () => {
+    expect(DESIGNS.map((d) => d.id)).toEqual(["spectroscope", "paper", "still", "graphite"]);
+    expect(DEFAULT_PREFS.design).toBe("still");
+  });
+
+  it("gives every design a distinct swatch, so the picker rows are told apart", () => {
+    const grounds = DESIGNS.map((d) => d.bg.toLowerCase());
+    expect(new Set(grounds).size).toBe(DESIGNS.length);
+  });
+
+  it("index.html's FOUC guard knows every id the catalog offers", () => {
+    // The guard runs before the bundle and cannot import: it carries a literal
+    // copy of the id list. An id missing there is not a crash — the design
+    // paints as espresso for one frame and then swaps, which reads as a flash
+    // rather than as the bug it is.
+    const html = readFileSync(fileURLToPath(new URL("../../index.html", import.meta.url)), "utf8");
+    const list = /var ids = \[([^\]]*)\]/.exec(html);
+    expect(list, "index.html no longer declares `var ids = [...]`").not.toBeNull();
+    const ids = (list?.[1] ?? "").split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
+    expect(ids).toEqual(DESIGNS.map((d) => d.id));
   });
 });

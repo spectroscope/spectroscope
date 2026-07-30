@@ -26,6 +26,12 @@ describe("i18n dict", () => {
     for (const p of ["pending", "in_progress", "completed"]) {
       expect(dict[`plan.${p}`], `plan.${p}`).toBeDefined();
     }
+    // A workflow run's headline row: the labels are reached only as
+    // `tv.run.${RunStat["key"]}`, so a stat added without its word would ship as
+    // the bare key in the one place a reader counts dead agents.
+    for (const k of ["agents", "failed", "skipped", "empty", "tokens", "tools", "elapsed"]) {
+      expect(dict[`tv.run.${k}`], `tv.run.${k}`).toBeDefined();
+    }
     // The trace's faces are interpolated twice: as the master switch's buttons
     // and titles, and as the open frame's own row of modes. A face added to the
     // store without its strings would render as the bare key.

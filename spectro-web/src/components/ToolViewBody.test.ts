@@ -1,11 +1,11 @@
 // House test style: pure logic only, no DOM/testing-library (the repo has none).
 // The JSX is covered by the TypeScript build like every other component here;
-// what can drift are the two judgements the faces rest on — which answer a
-// reader is shown for a question, and which bodies may be rendered as prose
-// instead of as the bytes that came back.
+// what can drift is the judgement the question view rests on — which answer a
+// reader is shown. The file body's own judgement moved out with it, to
+// bodyFace.ts and bodyFace.test.ts.
 
 import { describe, expect, it } from "vitest";
-import { answerFace, markdownBody } from "./ToolViewBody";
+import { answerFace } from "./ToolViewBody";
 import type { AskedQuestion } from "./toolViews";
 
 /** A single-choice question, answered by picking the first option. */
@@ -64,28 +64,5 @@ describe("answerFace", () => {
       show: "note",
       key: "tv.unanswered",
     });
-  });
-});
-
-describe("markdownBody", () => {
-  it("recognises a markdown file by its extension, whatever its case", () => {
-    expect(markdownBody("notes.md")).toBe(true);
-    expect(markdownBody("/Users/x/Spectroscope/CLAUDE.md")).toBe(true);
-    expect(markdownBody("docs/README.MARKDOWN")).toBe(true);
-  });
-
-  it("leaves plain text alone — .txt has no markup to render", () => {
-    expect(markdownBody("cli-usage.txt")).toBe(false);
-    expect(markdownBody("src/App.tsx")).toBe(false);
-  });
-
-  it("does not claim a name that merely contains the word", () => {
-    expect(markdownBody("md")).toBe(false);
-    expect(markdownBody("markdown")).toBe(false);
-    expect(markdownBody("notes.md.bak")).toBe(false);
-  });
-
-  it("leaves .mdx alone: its JSX is not markdown and would misparse", () => {
-    expect(markdownBody("page.mdx")).toBe(false);
   });
 });

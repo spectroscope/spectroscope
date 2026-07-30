@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEventHandler } from "react";
 import { DISCLOSURE_LEVELS, setDisclosure, useDisclosure } from "../state/disclosure";
 import { CHAT_WIDTHS, setChatWidth, useChatWidth } from "../state/chatWidth";
+import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -16,6 +17,7 @@ export function DisclosureMenu({ placement }: { placement: "up" | "down" }) {
   const lang = useLang();
   const level = useDisclosure();
   const width = useChatWidth();
+  const chatView = useChatView();
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(0);
   const ref = useRef<HTMLDivElement>(null);
@@ -146,6 +148,36 @@ export function DisclosureMenu({ placement }: { placement: "up" | "down" }) {
                   <span className="wsg-mode-body">
                     <span className="wsg-mode-name mono">{t(lang, `width.${w}`)}</span>
                     <span className="wsg-mode-hint">{t(lang, `width.${w}.hint`)}</span>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* chat-v2 (PROTOTYPE): which reading of the transcript is on screen.
+              It belongs in this menu and not in the tab bar, because the tab
+              bar's entries are different FOLDS of the stream and this is a
+              different reading of one of them. Default stays v1. */}
+          <div className="wsg-section">
+            <div className="wsg-section-head">
+              <span>{t(lang, "work.mode")}</span>
+              <span className="wsg-proto">{t(lang, "work.proto")}</span>
+            </div>
+            <div className="wsg-modes" role="group" aria-label={t(lang, "work.mode")}>
+              {CHAT_VIEW_MODES.map((m) => (
+                <div
+                  key={m}
+                  role="menuitemradio"
+                  aria-checked={chatView === m}
+                  className={`wsg-mode-row${chatView === m ? " wsg-mode-row--active" : ""}`}
+                  onClick={() => setChatView(m)}
+                >
+                  <span className="wsg-mode-marker" aria-hidden="true">
+                    {chatView === m ? "›" : ""}
+                  </span>
+                  <span className="wsg-mode-body">
+                    <span className="wsg-mode-name mono">{t(lang, `work.${m}`)}</span>
+                    <span className="wsg-mode-hint">{t(lang, `work.${m}.hint`)}</span>
                   </span>
                 </div>
               ))}

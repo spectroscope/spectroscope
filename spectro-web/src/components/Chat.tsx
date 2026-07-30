@@ -7,10 +7,10 @@
 // -> the transcript lands IN THE INPUT, never straight at the agent).
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
 import type { Turn, UiState } from "../state/reducer";
-import { groupTurns } from "../state/threads";
+import { groupTurns, groupTurnsV2 } from "../state/threads";
 import { agentAccent, cacheSplit, clockTime, formatDuration } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
@@ -81,6 +81,16 @@ export function Chat(props: {
   stopRequested?: boolean;
   /** The stored session id when this archive can be exported (card 95). */
   exportId?: string;
+  /** Which grouping the scroll uses (branch chat-v2). Default "v1" — every
+   *  existing caller keeps the recorded rendering, subagent turns and all.
+   *  "v2" lifts the child turns out and asks {@link renderChip} for the marker
+   *  that stands where they were. ChatV2 is the only caller that passes it, so
+   *  a v2 bug cannot reach the view the owner uses every day. */
+  grouping?: "v1" | "v2";
+  /** v2 only: the chip that replaces a child's turns. Given the work ids that
+   *  start here; ChatV2 owns what it looks like, because it owns the panel it
+   *  points at. */
+  renderChip?: (workIds: string[], index: number) => ReactNode;
 }) {
   const { state, liveView } = props;
   const lang = useLang();
@@ -221,9 +231,13 @@ export function Chat(props: {
   // Subagent turns nest into thread blocks (one per child burst, stream order);
   // main turns render flat. Pure grouping over the reducer's chronological
   // list — the trace tab keeps the flat truth.
+  const grouping = props.grouping ?? "v1";
   const blocks = useMemo(
-    () => groupTurns(state.turns, state.cards, state.agents),
-    [state.turns, state.cards, state.agents],
+    () =>
+      grouping === "v2"
+        ? groupTurnsV2(state.turns, state.cards)
+        : groupTurns(state.turns, state.cards, state.agents),
+    [grouping, state.turns, state.cards, state.agents],
   );
 
   const vk = props.viewKey ?? "live";
@@ -476,6 +490,12 @@ export function Chat(props: {
             {blocks.map((b) =>
               b.kind === "turn" ? (
                 renderTurn(b.turn, b.index)
+              ) : b.kind === "chip" ? (
+                /* v2: the child's turns are in the panel, not in the scroll.
+                   The chip is the place they left, and the way back to them. */
+                <div key={`${vk}:chip-${b.index}`} className="work-chip-row">
+                  {props.renderChip?.(b.workIds, b.index)}
+                </div>
               ) : (
                 <section
                   key={`${vk}:thread-${b.agentId}-${b.items[0].index}`}

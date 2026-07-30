@@ -21,6 +21,12 @@ export type RunEvent =
       prompt: string;
       provider?: string;
       model?: string; // additive (card 87)
+      /** What woke a triggered node's run (additive, card 72), e.g.
+       *  "fs #4 watch:/drop". Absent on every run that nothing triggered, which
+       *  is the normal case — an absent trigger is a plain run, NOT an old
+       *  server. The field has been on the wire since card 72
+       *  (RunEvent.java:65-66); this line is the browser finally reading it. */
+      trigger?: string;
       attachments?: AttachmentRef[];
       ts: number;
     } // provider?, model?, attachments? all additive

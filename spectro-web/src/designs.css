@@ -7,7 +7,68 @@
    `still` ("spectro white"): a deliberately quiet all-white light theme.
    The seven retired skins (classic, nebula, nocturne, obsidian, staffwise,
    neon-riot, prisma — palettes from Fable_Designs_Pro) were removed on
-   2026-07-20 (owner call); git history keeps them. */
+   2026-07-20 (owner call); git history keeps them.
+   The other is `graphite` ("spectro graphite"): the cool dark, below. */
+
+/* ---------- spectro graphite (id `graphite`) — the cool dark ----------
+
+   Owner ask: a dark in the register of VS Code's "2026 Dark" (the default
+   since 1.113, whose stated goals are a reduced palette and strategic
+   accents). Those goals are this brand's own rule — colour only on the
+   spectral lines — so what is imported here is the GROUND, not the palette.
+
+   The ladder is espresso's, rung for rung, because espresso's L* ladder
+   already IS that theme's to two figures (ground 5.8, border 17.4 vs 17.5,
+   border-on-surface 1.22:1 both). Only the temperature moves: hue is aimed
+   at the ocean line's, and chroma is half espresso's. Half, not none — at
+   VS Code's chroma the ground is a neutral grey two RGB levels wide, and
+   copying that would put Microsoft's near-neutral under our marks. These sit
+   at 5 to 15 levels wide, which is a ground of our own.
+
+   The block declares the ground and the one line you click, and NOTHING
+   else: the spectral ramp, the status colours, the agent accents and the
+   typography inherit from :root. That is the design's entire claim, and
+   themes.drift.test.ts fails the day a line is declared here instead. The
+   ramp needs no retune because the ground did not change lightness — every
+   spectral line lands within 0.03 of its contrast on espresso, measured in
+   themes.test.ts. And no shadow tokens: :root's `none` is right here, both
+   by the brand rule and because a drop shadow has nothing to fall on at L* 6.
+   ---------------------------------------------------------------------- */
+[data-design="graphite"] {
+  color-scheme: dark;
+
+  --bg: #101415;
+  --surface: #151b1c;
+  --surface-2: #1c2324;
+  --surface-3: #1f282a;
+  --border: #232c2e;
+  --border-strong: #485557;
+  --scrim: rgba(16, 20, 21, 0.72);
+
+  /* Layering light is the ink's own colour at low alpha, as in espresso —
+     inheriting would spill warm cream highlights over a cool ground. */
+  --glint: rgba(187, 191, 192, 0.03);
+  --glint-bright: rgba(187, 191, 192, 0.1);
+  --hairline: rgba(187, 191, 192, 0.05);
+
+  /* Body ink stops short of white on purpose (10.0:1, where espresso runs
+     15.1:1). That is the "reduced palette" half of the borrowed idea: on this
+     ground full-strength cream is the brightest thing on screen and pulls rank
+     over the spectral lines, which are the only things here allowed to shout. */
+  --text: #bbbfc0;
+  --text-dim: #868d8e;
+  --text-faint: #485557;
+  --text-on-accent: #04252a;
+
+  /* Espresso's accent IS a spectral line (--sp-amber, to the byte). Graphite
+     keeps that rule and picks the cool one, so the design still spends colour
+     only where the brand allows it. */
+  --accent: #2cb1c4;
+  --accent-hover: #5dc3d4;
+  --accent-pressed: #1e98a9;
+  --accent-soft: rgba(44, 177, 196, 0.13);
+  --accent-glow: rgba(44, 177, 196, 0.22);
+}
 
 /* ---------- spectro white (id `still`) — minimal light: white, gray, one blue ---------- */
 [data-design="still"] {

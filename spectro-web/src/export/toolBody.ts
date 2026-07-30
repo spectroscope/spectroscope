@@ -30,13 +30,22 @@
 //     behind /api/images; an <img> pointing there is a network fetch, and this
 //     file has to open from file:// with the network unplugged. The path is
 //     printed and the absence is stated.
-//   - NO MARKDOWN FACE. The card offers to render a .md body; the export ships
-//     the bytes, which is the card's own default and the honest one — rendering
-//     consumes the characters a reader came to check.
+//   - NO MARKDOWN FACE. The card opens a .md body rendered and keeps the bytes
+//     one chip away; a file has no chips. Of the two the export can only ship
+//     one, and it ships the bytes, because rendering consumes the characters a
+//     reader came to check and nothing here can hand them back.
 
 import type { Lang } from "../i18n/i18n";
-import type { AskedQuestion, QuestionOption, ToolView } from "../components/toolViews";
-import { splitInput } from "../components/toolViews";
+import type {
+  AskedQuestion,
+  QuestionOption,
+  TaskOp,
+  TaskRow,
+  ToolView,
+  WorkflowRun,
+  WorkflowStage,
+} from "../components/toolViews";
+import { runStats, splitInput } from "../components/toolViews";
 import type { HlLang } from "../workspace/highlight";
 import { hlLangForPath } from "../workspace/highlight";
 import { prettyJson } from "../format";
@@ -143,6 +152,81 @@ function answerHtml(q: AskedQuestion, lang: Lang): string {
   }
 }
 
+/**
+ * The one line a launch with no outcome gets.
+ *
+ * `done` needs nothing (the numbers speak) and `pending` needs nothing either —
+ * the card already reads as open. The other two are the states a silent card
+ * would misreport: a run still out there, and a launch that never happened.
+ */
+function stageHtml(stage: WorkflowStage, lang: Lang): string {
+  if (stage === "launched") return `<p class="x-tv-note">${escapeHtml(label(lang, "wfOpen"))}</p>`;
+  if (stage === "failed") return `<p class="x-tv-note">${escapeHtml(label(lang, "wfFailed"))}</p>`;
+  return "";
+}
+
+/**
+ * What became of a run: the scannable row, then every agent that died.
+ *
+ * The failures are a region of their own, directly under the numbers and above
+ * the script. They are not a footnote and they are not folded into the status
+ * word, because the outcome says `completed` even when every agent in it hit a
+ * spend limit — that word is about the workflow engine finishing, not about the
+ * work finishing, and a card that repeats it alone is telling a comfortable lie.
+ */
+function runHtml(run: WorkflowRun, lang: Lang): string {
+  const stats = runStats(run)
+    .map(
+      (stat) =>
+        `<li class="x-tv-run-stat${stat.bad ? " x-tv-run-bad" : ""}">` +
+        `<span class="x-tv-run-k">${escapeHtml(label(lang, `run.${stat.key}`))}</span>` +
+        `<span class="x-tv-run-v">${escapeHtml(stat.value)}</span></li>`,
+    )
+    .join("");
+  const named = run.failures
+    .map(
+      (f) =>
+        `<li class="x-tv-fail">` +
+        (f.label === null ? "" : `<span class="x-tv-fail-who">${escapeHtml(f.label)}</span>`) +
+        (f.phase === null ? "" : `<span class="x-tv-in">${escapeHtml(f.phase)}</span>`) +
+        `<span class="x-tv-fail-why">${escapeHtml(f.reason)}</span></li>`,
+    )
+    .join("");
+  // Counted but unnamed: the outcome can report errors and name none of them,
+  // and an empty list under the word "failures" would read as none at all.
+  const unnamed =
+    run.failures.length === 0 && run.errors !== null && run.errors > 0
+      ? `<p class="x-tv-note">${escapeHtml(label(lang, "wfUnnamed", { n: run.errors }))}</p>`
+      : "";
+  return (
+    head(label(lang, "outcome"), run.status) +
+    `<ul class="x-tv-run">${stats}</ul>` +
+    (run.failures.length === 0
+      ? unnamed
+      : head(label(lang, "failures"), label(lang, "failuresN", { n: run.failures.length })) +
+        `<ul class="x-tv-fails">${named}</ul>`)
+  );
+}
+
+/**
+ * The phases of the meta literal, each carrying what the outcome said about it.
+ *
+ * Only failures are marked. `agents_done` is a count with no names in it, so
+ * nothing here can say a phase SUCCEEDED — and a tick nobody measured is the
+ * worse lie of the two.
+ */
+function phasesHtml(phases: readonly string[], run: WorkflowRun | null, lang: Lang): string {
+  const rows = phases
+    .map((phase) => {
+      const dead = run === null ? 0 : run.failures.filter((f) => f.phase === phase).length;
+      const mark =
+        dead === 0 ? "" : ` <span class="x-tv-dead">${escapeHtml(label(lang, "wfDead", { n: dead }))}</span>`;
+      return `<li class="x-tv-item">${escapeHtml(phase)}${mark}</li>`;
+    })
+    .join("");
+  return `<ul class="x-tv-list">${rows}</ul>`;
+}
+
 function questionHtml(q: AskedQuestion, lang: Lang): string {
   const tag = q.header === null ? "" : `<span class="x-tv-ask-tag">${escapeHtml(q.header)}</span>`;
   const meta = [
@@ -157,6 +241,40 @@ function questionHtml(q: AskedQuestion, lang: Lang): string {
     `<div class="x-tv-ask-meta">${escapeHtml(meta)}</div>` +
     `<ul class="x-tv-opts">${q.options.map((o) => optionHtml(o, lang)).join("")}</ul>` +
     answerHtml(q, lang) +
+    `</li>`
+  );
+}
+
+/** The heading is the only thing that separates the three task verbs; the row
+ *  below it is the same row in all three. */
+const TASK_HEAD: Record<TaskOp, string> = { create: "taskCreated", update: "taskUpdated", list: "tasks" };
+
+/**
+ * One task, in the one row shape a creation, an update and a roster line all
+ * share. Each part is left out when this call did not carry it, so a status
+ * update is a number and a state, and a roster line is a number, a state and a
+ * subject — the same vocabulary either way, which is the point of one row.
+ *
+ * The state prints as the wire word, like the plan writer above: the app's
+ * translated badge lives in a component, and a second copy of that table here
+ * would be a second thing to drift while the word itself is the record.
+ */
+function taskRowHtml(row: TaskRow, lang: Lang): string {
+  const parts = [
+    row.id === null ? "" : `<span class="x-tv-task-id">#${escapeHtml(row.id)}</span>`,
+    row.status === null ? "" : `<span class="x-tv-status">${escapeHtml(row.status)}</span>`,
+    row.subject === null ? "" : `<span class="x-tv-task-subject">${escapeHtml(row.subject)}</span>`,
+  ].join("");
+  const blocked =
+    row.blockedBy.length === 0
+      ? ""
+      : `<div class="x-tv-note">` +
+        escapeHtml(label(lang, "blockedBy", { ids: row.blockedBy.map((id) => `#${id}`).join(", ") })) +
+        `</div>`;
+  return (
+    `<li class="x-tv-task"><div class="x-tv-task-head">${parts}</div>` +
+    (row.description === null ? "" : `<div class="x-tv-desc">${escapeHtml(row.description)}</div>`) +
+    blocked +
     `</li>`
   );
 }
@@ -272,6 +390,25 @@ export const TOOL_HTML: Writers = {
       .join("") +
     `</ul>`,
 
+  // A count only under the roster: a creation and an update are one task each,
+  // and "1 task" under a heading that already says which verb ran is noise. An
+  // empty roster prints no count either, because a listing with nothing back yet
+  // and a list with nothing in it are both "nothing to show" and only one of
+  // them is "no tasks".
+  task: (view, { lang }) =>
+    head(
+      label(lang, TASK_HEAD[view.op]),
+      view.op === "list" && view.rows.length > 0 ? label(lang, "tasksN", { n: view.rows.length }) : "",
+    ) +
+    `<ul class="x-tv-tasks">${view.rows.map((row) => taskRowHtml(row, lang)).join("")}</ul>` +
+    // The one line worth a reader's eye: the result confirmed the update and
+    // named no field, so the state above is what was ASKED for and not a move.
+    (view.wrote === "nothing" ? `<p class="x-tv-note">${escapeHtml(label(lang, "unchanged"))}</p>` : "") +
+    // Empty whenever the outcome line was read — it names the id and echoes the
+    // subject, both of which the row already carries. What lands here is an
+    // error, and an error is never swallowed by a shape.
+    outputHtml(view.result, lang),
+
   // Several questions in one call are several blocks, in the order they were
   // asked — the result may list its answers in any order, but the asking had one.
   question: (view, { lang }) =>
@@ -289,21 +426,31 @@ export const TOOL_HTML: Writers = {
     // A fetched page and a result list are prose, not code.
     outputHtml(view.body, lang, "x-tv-prose"),
 
-  // The reader's order: what this workflow is, how far it goes, then the code.
+  // The reader's order: what this workflow is, WHAT BECAME OF IT, how far it
+  // goes, then the code. The outcome sits second because a run card that leads
+  // with a script and buries three dead agents underneath is the reading this
+  // whole shape exists against.
   workflow: (view, ctx) =>
     (view.name === null && view.description === null
       ? ""
       : head(label(ctx.lang, "workflow")) +
         (view.name === null ? "" : pathLine(view.name)) +
         (view.description === null ? "" : `<div class="x-tv-desc">${escapeHtml(view.description)}</div>`)) +
+    stageHtml(view.stage, ctx.lang) +
+    (view.run === null ? "" : runHtml(view.run, ctx.lang)) +
     (view.phases.length === 0
       ? ""
       : head(label(ctx.lang, "phases"), label(ctx.lang, "phasesN", { n: view.phases.length })) +
-        list(view.phases)) +
+        phasesHtml(view.phases, view.run, ctx.lang)) +
     (view.scriptPath === null ? "" : head(label(ctx.lang, "file")) + pathLine(view.scriptPath)) +
     (view.script === null ? "" : head(label(ctx.lang, "script")) + well(view.script, "javascript")) +
     (view.args === undefined ? "" : inputHtml(view.args, ctx, "args")) +
-    outputHtml(view.result, ctx.lang),
+    outputHtml(view.result, ctx.lang) +
+    // Last, and prose rather than code: a returned result is an agent's words
+    // and can run to tens of thousands of characters. Available, not dominant.
+    (view.run === null || view.run.result === ""
+      ? ""
+      : head(label(ctx.lang, "returned")) + well(view.run.result, null, "x-tv-prose")),
 
   generic: (view, ctx) => inputHtml(view.input, ctx) + outputHtml(view.output, ctx.lang),
 };
@@ -372,6 +519,11 @@ export const TOOL_CSS = `
 .x-tv-step-text{flex:1;min-width:0;font-size:13px;color:var(--text-dim);overflow-wrap:anywhere}
 .x-tv-status{border:1px solid var(--border-strong);border-radius:7px;padding:0 6px;
   font-family:var(--font-mono);font-size:11px;color:var(--text-dim);white-space:nowrap}
+.x-tv-tasks{margin:0;padding:0;list-style:none}
+.x-tv-tasks>li+li{margin-top:6px}
+.x-tv-task-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}
+.x-tv-task-id{font-family:var(--font-mono);font-size:12px;color:var(--accent);white-space:nowrap}
+.x-tv-task-subject{flex:1;min-width:0;font-size:13px;color:var(--text);overflow-wrap:anywhere}
 .x-tv-asks{margin:0;padding:0;list-style:none}
 .x-tv-ask+.x-tv-ask{margin-top:12px;padding-top:12px;border-top:1px solid var(--border)}
 .x-tv-ask-tag{margin-right:8px;border:1px solid var(--border);border-radius:999px;padding:0 6px;
@@ -385,6 +537,16 @@ export const TOOL_CSS = `
 .x-tv-opt-label{font-size:13px;color:var(--text-dim);overflow-wrap:anywhere}
 .x-tv-opt--chosen .x-tv-mark{color:var(--accent)}
 .x-tv-opt--chosen .x-tv-opt-label{color:var(--text);font-weight:500}
+.x-tv-run{display:flex;flex-wrap:wrap;gap:4px 16px;margin:0;padding:0;list-style:none}
+.x-tv-run-stat{display:flex;align-items:baseline;gap:6px}
+.x-tv-run-k{font-size:11px;color:var(--text-faint)}
+.x-tv-run-v{font-family:var(--font-mono);font-size:12px;color:var(--text)}
+.x-tv-run-bad .x-tv-run-k,.x-tv-run-bad .x-tv-run-v{color:var(--error)}
+.x-tv-fails{margin:0;padding:0;list-style:none}
+.x-tv-fail{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;padding:1px 0}
+.x-tv-fail-who{font-family:var(--font-mono);font-size:12px;color:var(--error)}
+.x-tv-fail-why{flex:1;min-width:0;font-size:13px;color:var(--text-dim);overflow-wrap:anywhere}
+.x-tv-dead{color:var(--error)}
 .x-tv-chosen{margin-left:8px;border:1px solid var(--accent);border-radius:999px;padding:0 6px;
   font-size:11px;color:var(--accent);white-space:nowrap}
 `;

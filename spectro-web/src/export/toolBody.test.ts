@@ -143,6 +143,58 @@ describe("the shapes that are not files", () => {
     expect(html).toContain('<span class="x-tv-status">in_progress</span>');
   });
 
+  it("draws a created task as its subject over its description, under the id the result gave", () => {
+    const html = body(
+      card(
+        "TaskCreate",
+        {
+          subject: "Reproduce stop bug against :8098 (timebox 60min, wire-first)",
+          description:
+            "Node WS script against ws://localhost:8098/ws: long-reasoning prompt, abort mid-stream.",
+          activeForm: "Reproducing stop bug against :8098",
+        },
+        "Task #2 created successfully: Reproduce stop bug against :8098 (timebox 60min, wire-first)",
+      ),
+    );
+    expect(html).toContain('<div class="x-io">task created');
+    expect(html).toContain('<span class="x-tv-task-id">#2</span>');
+    expect(html).toContain("Reproduce stop bug against :8098");
+    expect(html).toContain("Node WS script against ws://localhost:8098/ws");
+    // The present-tense phrasing is the same fact in a shorter tense, so it is
+    // not drawn a second time under the subject it paraphrases.
+    expect(html).not.toContain("Reproducing stop bug");
+    // The outcome line named the id and echoed the subject; both are above, so
+    // it is not reprinted as an output underneath.
+    expect(html).not.toContain("created successfully");
+  });
+
+  it("draws a status update as the task and the state, with no invented text", () => {
+    const html = body(card("TaskUpdate", { taskId: "1", status: "completed" }, "Updated task #1 status"));
+    expect(html).toContain('<div class="x-io">task updated');
+    expect(html).toContain('<span class="x-tv-task-id">#1</span>');
+    expect(html).toContain('<span class="x-tv-status">completed</span>');
+    expect(html).not.toContain("x-tv-task-subject");
+  });
+
+  it("says when the result confirmed the update and named no field", () => {
+    const html = body(card("TaskUpdate", { taskId: "9", status: "completed" }, "Updated task #9 "));
+    expect(html).toContain("nothing moved");
+  });
+
+  it("draws a roster as one row per task, counted", () => {
+    const html = body(
+      card("TaskList", {}, "#1 [completed] Brand tokens\n#2 [in_progress] Logo set and favicon\n"),
+    );
+    expect(html).toContain("2 tasks");
+    expect(html).toContain('<span class="x-tv-task-id">#2</span>');
+    expect(html).toContain("Logo set and favicon");
+  });
+
+  it("keeps a task result it could not read, rather than dropping it", () => {
+    const html = body(card("TaskUpdate", { taskId: "44", status: "completed" }, "No task #44.", true));
+    expect(html).toContain("No task #44.");
+  });
+
   it("draws a question with its options and marks the one that was picked", () => {
     const html = body(
       card(
@@ -249,5 +301,61 @@ describe("the record stays complete", () => {
       expect(html).not.toContain("<script");
       expect(html).toContain("&lt;script&gt;");
     }
+  });
+});
+
+describe("a workflow that ran", () => {
+  const script =
+    "export const meta = {\n  name: 'lab-repair',\n  phases: [{ title: 'Fix' }, { title: 'Verify' }],\n};\n";
+
+  const RECEIPT = "Workflow launched in background. Task ID: w82qt1zg0";
+
+  /** The receipt with the outcome the importer flattened under it. */
+  const joined = (failures?: string): string =>
+    [
+      RECEIPT,
+      "",
+      "--- task w7cocjg6h · completed ---",
+      "summary: Dynamic workflow completed",
+      "result: the finding",
+      ...(failures === undefined ? [] : [`failures: ${failures}`]),
+      "usage: agent_count=3 agents_done=1 agents_error=2 subagent_tokens=604733 " +
+        "tool_uses=313 duration_ms=3801742",
+    ].join("\n");
+
+  it("says a launch the transcript outlived is still open", () => {
+    const out = `${RECEIPT}\n\n--- task w82qt1zg0 · no result by the end of the transcript ---`;
+    const html = body(card("Workflow", { script }, out));
+    expect(html).toContain("no outcome");
+    expect(html).not.toContain("x-tv-run");
+  });
+
+  it("draws the outcome as a row of numbers in the app's own formats", () => {
+    const html = body(card("Workflow", { script }, joined()));
+    expect(html).toContain("1 / 3");
+    expect(html).toContain("605k");
+    expect(html).toContain("1 h 3 m");
+    expect(html).toContain("313");
+  });
+
+  it("names the dead agents instead of hiding them behind the summary", () => {
+    const html = body(card("Workflow", { script }, joined("[verify] failed: monthly spend limit")));
+    // The count is loud in the row AND the agent is named in a region of its own.
+    expect(html).toContain("x-tv-run-bad");
+    expect(html).toContain("x-tv-fail");
+    expect(html).toContain("monthly spend limit");
+    // And the phase its label points at, so a reader sees where it died — in
+    // the failure row AND on the phase itself, which is the ladder of the run.
+    expect(html).toContain("x-tv-fail-why");
+    expect(html).toContain('<li class="x-tv-item">Verify <span class="x-tv-dead">· 1 failed</span></li>');
+    expect(html).toContain('<li class="x-tv-item">Fix</li>');
+  });
+
+  it("keeps the receipt and the returned result apart", () => {
+    const html = body(card("Workflow", { script }, joined()));
+    expect(html).toContain("Task ID: w82qt1zg0");
+    expect(html).toContain("the finding");
+    // The section itself is consumed, not reprinted under the receipt.
+    expect(html).not.toContain("--- task");
   });
 });

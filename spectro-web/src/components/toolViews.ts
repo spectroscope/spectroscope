@@ -9,6 +9,7 @@
 // over a payload we did not understand — the model can send anything.
 
 import { hlLangForFence, hlLangForPath, type HlLang } from "../workspace/highlight";
+import { formatDuration, formatTokens } from "../format";
 
 /** One tool call, described as what it actually is. */
 export type ToolView =
@@ -23,6 +24,7 @@ export type ToolView =
   | { kind: "mcp"; server: string; tool: string; input: unknown; output: string }
   | { kind: "agents"; children: SpawnedAgent[]; result: string }
   | { kind: "plan"; steps: PlanRow[] }
+  | { kind: "task"; op: TaskOp; rows: TaskRow[]; wrote: Wrote; result: string }
   | { kind: "question"; questions: AskedQuestion[] }
   | { kind: "web"; url: string | null; query: string | null; body: string }
   | {
@@ -33,6 +35,8 @@ export type ToolView =
       script: string | null;
       scriptPath: string | null;
       args: unknown;
+      stage: WorkflowStage;
+      run: WorkflowRun | null;
       result: string;
     }
   | { kind: "generic"; input: unknown; output: string };
@@ -44,6 +48,46 @@ export type SpawnedAgent = { type: string; task: string; label: string | null };
 /** One plan step. `status` stays the English wire value (or null when the call
  *  omitted it) — the chrome translates, the data does not. */
 export type PlanRow = { text: string; status: string | null };
+
+/** What a call did to the task list. The verb is the view's own heading, and it
+ *  is the only thing that separates the three: all of them describe tasks. */
+export type TaskOp = "create" | "update" | "list";
+
+/**
+ * One task, as far as ONE call knew it. Every field but the id is null or empty
+ * when this call did not carry it, and that asymmetry is the shape rather than a
+ * gap in it: a creation knows a description and no state, a status update knows
+ * a state and no words, a roster line knows both and no description. Nothing is
+ * carried over from a neighbouring call, because a tool card describes its own
+ * call and the list it belongs to is not in the payload.
+ *
+ * `status` stays the wire value (`in_progress`, `completed`); the chrome
+ * translates it, the record does not.
+ */
+export type TaskRow = {
+  id: string | null;
+  subject: string | null;
+  description: string | null;
+  status: string | null;
+  blockedBy: string[];
+};
+
+/**
+ * What an update's result said it wrote:
+ *   named    it listed the fields it changed
+ *   nothing  it confirmed the update and listed NO field — the call set a value
+ *            the task already had, so nothing moved. Twice in 434 observed
+ *            updates, and the only case where the outcome contradicts the input
+ *   silent   there is no result yet, or it is worded in a way this cannot read
+ *            (an error). Also every creation and every listing, neither of which
+ *            reports fields at all
+ *
+ * The fields themselves are not carried. When the result names them they repeat
+ * what the row already shows — the new subject, the new state, the dependency —
+ * so a list of their names underneath would be a second, worse copy. What is
+ * worth a reader's eye is only the case where the result named none.
+ */
+export type Wrote = "named" | "nothing" | "silent";
 
 /** One choice offered for a question. `chosen` is only ever true when the result
  *  named this label EXACTLY: the mark is a claim about what a person picked, and
@@ -200,6 +244,43 @@ function planRow(entry: unknown): PlanRow | null {
   const text = firstStr(entry, "text", "content");
   if (text === null) return null;
   return { text, status: str(entry, "status") };
+}
+
+/** `Task #3 created successfully: <subject>` — all 256 observed creations. The
+ *  input never carries an id, so this line is the only place one exists; anchored
+ *  on the full known wording so an error yields null rather than a wrong number. */
+const TASK_CREATED = /^Task #(\d+) created successfully: /;
+
+/** `Updated task #3 status` / `Updated task #3 subject, description` — and, when
+ *  the value asked for was already the value there, `Updated task #3 ` with the
+ *  list empty. Anchored at both ends: a result that is not this sentence is an
+ *  error, and an error must not be read as a confirmation. */
+const TASK_UPDATED = /^Updated task #(\d+) ?(.*)$/;
+
+/** `#3 [in_progress] Logo-Set + Favicon` — one line of a printed roster. */
+const TASK_ROW = /^#(\d+) \[([^\]]+)\] (.+)$/;
+
+/**
+ * A printed roster as rows.
+ *
+ * All or nothing, the rule the plan and the question already follow: one line
+ * that does not parse would misstate the list's LENGTH as much as its content,
+ * and a roster is read for both. A differently worded listing therefore falls
+ * back to the raw pair instead of arriving one task short — which matters here,
+ * because the corpus carries a single TaskList call and this wording is all the
+ * evidence there is that it is the wording.
+ *
+ * @param out the tool result ("" while the call is still open)
+ * @return the rows in printed order, or null when any line is not one
+ */
+function rosterRows(out: string): TaskRow[] | null {
+  const rows: TaskRow[] = [];
+  for (const line of lines(out)) {
+    const m = TASK_ROW.exec(line);
+    if (m === null) return null;
+    rows.push({ id: m[1], subject: m[3], description: null, status: m[2], blockedBy: [] });
+  }
+  return rows;
 }
 
 /** The answer wording for a question that was closed without choosing. The
@@ -500,6 +581,53 @@ export function splitInput(name: string, input: unknown): InputSplit {
   return { shape, blocks };
 }
 
+/**
+ * How far a launch got.
+ *
+ *   pending   the call has not returned; nothing was launched yet
+ *   failed    the call came back as an error, so no run exists to wait for
+ *   launched  it started and no outcome ever joined: still running, or abandoned
+ *   done      the outcome is here, in `run`
+ *
+ * `launched` is the state this whole extension exists for. A workflow tool
+ * result is a RECEIPT — it says the run was accepted and that a notification
+ * will follow, and that notification is a separate message that lands minutes or
+ * hours later, or never. Drawn without this distinction, a run that died at the
+ * spend limit and a run nobody ever heard back from both read as complete.
+ */
+export type WorkflowStage = "pending" | "failed" | "launched" | "done";
+
+/** One agent that did not return, as the outcome named it.
+ *  `label` is the notification's own word for it (`fix:geometry`), `phase` the
+ *  phase of the meta literal that label points at, and null when it points at
+ *  none — a guess about where an agent sat would be a claim about the script. */
+export type WorkflowFailure = { label: string | null; phase: string | null; reason: string };
+
+/**
+ * What became of a launch.
+ *
+ * Every counter is nullable, and that is the honesty: a number the outcome did
+ * not report is UNKNOWN, not zero. Nought agents in error and no report of the
+ * error count are opposite readings of the same card.
+ */
+export type WorkflowRun = {
+  /** The wire word ("completed", "failed") — the chrome translates, not this. */
+  status: string;
+  agents: number | null;
+  done: number | null;
+  errors: number | null;
+  skipped: number | null;
+  empty: number | null;
+  tokens: number | null;
+  toolUses: number | null;
+  durationMs: number | null;
+  /** In the order the outcome listed them. Empty is not proof of a clean run:
+   *  `errors` can be non-zero with nothing named. */
+  failures: WorkflowFailure[];
+  /** What the run returned. Arbitrarily long — the renderers place it last. */
+  result: string;
+};
+
 /** The header a workflow script carries about itself. */
 type WorkflowMeta = { name: string | null; description: string | null; phases: string[] };
 
@@ -723,6 +851,205 @@ function workflowMeta(script: string): WorkflowMeta {
   };
 }
 
+// THE JOIN, AND WHY IT ARRIVES HERE AS TEXT.
+//
+// A Workflow call reaches a transcript as three separate things: the `tool_use`
+// that launches it, a `tool_result` RECEIPT naming a task id, and — much later,
+// as an ordinary user message — a `<task-notification>` block carrying what
+// happened. Only the importer can pair the first with the third, and it hands
+// the pair down the one channel a tool result already has: it appends a
+// flattened section to the receipt's own text (claudeCode.ts, outcomeSection).
+// Nothing about the event shape changes, and a session exported and read back
+// keeps its outcome. What is read back here is that section.
+
+/** The line above each outcome the importer joined on: `--- task <id> ---`, or
+ *  `--- task <id> · <status> ---` once the task reported an ending. */
+const SECTION = /^--- task (\S+)(?: · ([^\n]*?))? ---$/gm;
+
+/** The status the importer writes when a launch promised an outcome and the
+ *  transcript ended before one came. The join is text, so this phrase is the one
+ *  place the two modules have to agree by hand — a card that misread it would
+ *  present an abandoned run as a finished one, which is the whole point. */
+const UNFINISHED = "no result by the end of the transcript";
+
+/**
+ * The flattened fields of one section, and which occurrence of each is real.
+ *
+ * `false` means take the FIRST line that opens the field, `true` the LAST. The
+ * asymmetry is the hazard: `result` holds an agent's own words, and an agent
+ * writing about workflows will write a line beginning `failures:` inside it. The
+ * notification's own order puts `result` before everything below it, so a quote
+ * of a later field can only ever appear BEFORE that field's real line — the last
+ * one wins for those, the first for the ones the result cannot precede.
+ *
+ * A field with no entry here is not a delimiter and merges into its neighbour.
+ * That costs a reader nothing: the raw face carries the section verbatim.
+ */
+const OUTCOME_FIELDS: [string, boolean][] = [
+  ["output-file", false],
+  ["summary", false],
+  ["event", false],
+  ["result", false],
+  ["diagnostics", true],
+  ["failures", true],
+  ["usage", true],
+];
+
+/** One `agent_count=11` counter of the flattened usage line. */
+const COUNTER = /([a-z_]+)=(-?\d+)/g;
+
+/** `[fix:geometry] failed: <reason>` — the shape every failure line carries.
+ *  The verb is optional so a differently worded line keeps its reason instead of
+ *  being dropped for not matching. */
+const FAILURE_LINE = /^\[([^\]]*)\]\s*(?:failed\s*:\s*)?(.*)$/;
+
+/** The line-start index of the first or last `<label>: ` in a section, or -1. */
+function fieldAt(section: string, label: string, last: boolean): number {
+  const re = new RegExp(`^${label}: `, "gm");
+  let at = -1;
+  for (let m = re.exec(section); m !== null; m = re.exec(section)) {
+    at = m.index;
+    if (!last) break;
+  }
+  return at;
+}
+
+/**
+ * One section's fields, by label.
+ *
+ * The values are delimited by each OTHER, so a multi-line value keeps its own
+ * line breaks — the importer writes `result: {…}` and lets the rest of the value
+ * fall below unprefixed, and `failures:` carries one dead agent per line.
+ *
+ * @param section the text below one `--- task … ---` header
+ * @return the fields this section carries
+ */
+function outcomeFields(section: string): Map<string, string> {
+  const anchors = OUTCOME_FIELDS.map(([label, last]) => ({ label, at: fieldAt(section, label, last) }))
+    .filter((a) => a.at >= 0)
+    .sort((a, b) => a.at - b.at);
+  const out = new Map<string, string>();
+  anchors.forEach((a, i) => {
+    const end = anchors[i + 1]?.at ?? section.length;
+    out.set(a.label, section.slice(a.at + a.label.length + 2, end).trim());
+  });
+  return out;
+}
+
+/** The phase a failure label points at, or null. The label is `<phase>` or
+ *  `<phase>:<agent>`, and the engine slugs the phase's own spelling — so the
+ *  match is case-insensitive, and it must be UNIQUE: two phases a label could
+ *  mean is not evidence for either. */
+function phaseFor(label: string, phases: string[]): string | null {
+  const head = label.split(":")[0].trim().toLowerCase();
+  if (head === "") return null;
+  const hits = phases.filter((p) => p.trim().toLowerCase() === head);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/** One line of the failures block. A line with no bracket keeps its whole text
+ *  as the reason: an unreadable failure is still a failure. */
+function workflowFailure(line: string, phases: string[]): WorkflowFailure {
+  const m = FAILURE_LINE.exec(line);
+  if (m === null || m[1].trim() === "") return { label: null, phase: null, reason: line.trim() };
+  const label = m[1].trim();
+  return { label, phase: phaseFor(label, phases), reason: m[2].trim() };
+}
+
+/** One joined section: where it starts, and what its header claimed. */
+type Section = { at: number; body: number; status: string };
+
+/** Every outcome section of a tool result, in the order they were joined on. */
+function sections(out: string): Section[] {
+  const found: Section[] = [];
+  SECTION.lastIndex = 0;
+  for (let m = SECTION.exec(out); m !== null; m = SECTION.exec(out)) {
+    found.push({ at: m.index, body: m.index + m[0].length, status: m[2] ?? "" });
+  }
+  return found;
+}
+
+/**
+ * What became of a launch, or null when nothing came back.
+ *
+ * The LAST section is the outcome, because a task can report progress before it
+ * reports an ending and each report is joined on in arrival order. A last
+ * section that is the unfinished marker is not an outcome at all: it is the
+ * importer saying the transcript ran out first.
+ *
+ * @param out    the tool result, receipt and sections together
+ * @param phases the phase names of the meta literal, to place the failures
+ * @return the run, or null when the result carries no ending
+ */
+function workflowRun(out: string, phases: string[]): WorkflowRun | null {
+  const last = sections(out).at(-1);
+  if (last === undefined || last.status === "" || last.status === UNFINISHED) return null;
+  const fields = outcomeFields(out.slice(last.body));
+  const counters = new Map<string, number>();
+  for (const m of (fields.get("usage") ?? "").matchAll(COUNTER)) counters.set(m[1], Number(m[2]));
+  const count = (key: string): number | null => counters.get(key) ?? null;
+  const failures = fields.get("failures") ?? "";
+  return {
+    status: last.status,
+    agents: count("agent_count"),
+    done: count("agents_done"),
+    errors: count("agents_error"),
+    skipped: count("agents_skipped"),
+    empty: count("agents_empty_result"),
+    tokens: count("subagent_tokens"),
+    toolUses: count("tool_uses"),
+    durationMs: count("duration_ms"),
+    failures: failures
+      .split("\n")
+      .filter((line) => line.trim() !== "")
+      .map((line) => workflowFailure(line, phases)),
+    result: fields.get("result") ?? "",
+  };
+}
+
+/** One number of the headline row. `key` is a stable token each renderer maps to
+ *  its own word, `value` is already in the app's own format, and `bad` marks the
+ *  ones that are losses. */
+export type RunStat = {
+  key: "agents" | "failed" | "skipped" | "empty" | "tokens" | "tools" | "elapsed";
+  value: string;
+  bad: boolean;
+};
+
+/** The agents cell: done of total, or whichever half was reported. */
+function agentsValue(run: WorkflowRun): string | null {
+  if (run.done !== null && run.agents !== null) return `${run.done} / ${run.agents}`;
+  if (run.agents !== null) return String(run.agents);
+  return run.done === null ? null : String(run.done);
+}
+
+/**
+ * The headline numbers of a finished run, in reading order.
+ *
+ * Shared by both renderers so WHICH numbers show, and in what order, is one
+ * decision — the markup is theirs, the selection is not. A counter the outcome
+ * never reported is left out rather than printed as zero, and a loss appears
+ * only when there was one, so the row stays short on a clean run and grows
+ * exactly where something went wrong.
+ */
+export function runStats(run: WorkflowRun): RunStat[] {
+  const stats: RunStat[] = [];
+  const agents = agentsValue(run);
+  if (agents !== null) stats.push({ key: "agents", value: agents, bad: false });
+  const loss = ([key, n]: ["failed" | "skipped" | "empty", number | null]) => {
+    if (n !== null && n > 0) stats.push({ key, value: String(n), bad: true });
+  };
+  loss(["failed", run.errors]);
+  loss(["skipped", run.skipped]);
+  loss(["empty", run.empty]);
+  if (run.tokens !== null) stats.push({ key: "tokens", value: formatTokens(run.tokens), bad: false });
+  if (run.toolUses !== null) stats.push({ key: "tools", value: String(run.toolUses), bad: false });
+  if (run.durationMs !== null) {
+    stats.push({ key: "elapsed", value: formatDuration(run.durationMs), bad: false });
+  }
+  return stats;
+}
+
 /**
  * Describe one tool call as its real shape.
  *
@@ -859,6 +1186,70 @@ export function describeTool(
       return { kind: "plan", steps: steps as PlanRow[] };
     }
 
+    // The task list. Three verbs on one noun, so one shape with one row
+    // renderer — and deliberately NOT the plan above, which is where these
+    // landed the first time somebody looked: `planRow` reads only `text`, so a
+    // creation would arrive stripped of the description that is its whole
+    // substance, and 418 of 434 updates carry no text at all, which would draw a
+    // step labelled "1".
+    //
+    // The other Task* verbs are a DIFFERENT NOUN and stay generic. TaskStop and
+    // TaskOutput act on a spawned run: their id is an opaque slug (`wfsbmqs31`),
+    // their key is `task_id` rather than `taskId`, and they carry no subject,
+    // state or description. Drawn as a row, that slug would sit where a reader
+    // has learnt to find `#3`. TaskGet has no call in the corpus at all, so
+    // there is nothing observed to build a shape on.
+    case "TaskCreate": {
+      const subject = str(input, "subject");
+      if (subject === null) return generic;
+      const id = TASK_CREATED.exec(out)?.[1] ?? null;
+      return {
+        kind: "task",
+        op: "create",
+        rows: [{ id, subject, description: str(input, "description"), status: null, blockedBy: [] }],
+        wrote: "silent",
+        // The line names the id and echoes the subject, so once the id is read
+        // there is nothing in it the row does not already show. Anything else —
+        // an error — is kept whole rather than swallowed by a pretty card.
+        result: id === null ? out : "",
+      };
+    }
+
+    case "TaskUpdate": {
+      const asked = str(input, "taskId");
+      if (asked === null) return generic;
+      const deps = arr(input, "addBlockedBy") ?? [];
+      // A half-read dependency list would name the wrong tasks as blockers.
+      if (!deps.every((d) => typeof d === "string")) return generic;
+      const done = TASK_UPDATED.exec(out);
+      const changed = done === null ? [] : done[2].split(",").filter((f) => f.trim() !== "");
+      return {
+        kind: "task",
+        op: "update",
+        rows: [
+          {
+            // The result's number over the input's: the input says which task was
+            // aimed at, the result says which one answered.
+            id: done?.[1] ?? asked,
+            subject: str(input, "subject"),
+            description: str(input, "description"),
+            status: str(input, "status"),
+            blockedBy: deps as string[],
+          },
+        ],
+        wrote: done === null ? "silent" : changed.length === 0 ? "nothing" : "named",
+        result: done === null ? out : "",
+      };
+    }
+
+    case "TaskList": {
+      // Nothing to guard on the input — a listing takes no arguments — so the
+      // result is the whole evidence, and it is read strictly.
+      const rows = rosterRows(out);
+      if (rows === null) return generic;
+      return { kind: "task", op: "list", rows, wrote: "silent", result: "" };
+    }
+
     case "AskUserQuestion": {
       // The answers travel in the RESULT, as prose. A `__unparsedToolInput`
       // payload has no `questions` at all and lands in generic on purpose: it
@@ -896,6 +1287,11 @@ export function describeTool(
       const saved = str(input, "name");
       if (script === null && scriptPath === null && saved === null) return generic;
       const meta = script === null ? NO_META : workflowMeta(script);
+      // The result is the launch RECEIPT; the outcome is what the importer
+      // joined under it. Split them at the first section, so the receipt does
+      // not carry the whole outcome a second time as its own text.
+      const run = workflowRun(out, meta.phases);
+      const joined = sections(out)[0]?.at ?? -1;
       return {
         kind: "workflow",
         name: meta.name ?? saved,
@@ -904,7 +1300,9 @@ export function describeTool(
         script,
         scriptPath,
         args: field(input, "args"),
-        result: out,
+        stage: run !== null ? "done" : out === "" ? "pending" : isError ? "failed" : "launched",
+        run,
+        result: joined < 0 ? out : out.slice(0, joined).trimEnd(),
       };
     }
 

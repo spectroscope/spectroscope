@@ -67,6 +67,14 @@ const FIXTURES: Record<Kind, { name: string; input: unknown; output?: string; is
   mcp: { name: "mcp__ccd_session__mark_chapter", input: { title: "red" }, output: "ok" },
   agents: { name: "spawn_agents", input: { agents: [{ type: "reviewer", task: "read it" }] }, output: "ok" },
   plan: { name: "TodoWrite", input: { todos: [{ content: "ship", status: "pending" }] }, output: "ok" },
+  // A creation rather than an update, because it is the fixture that exercises
+  // every part of the row: the id comes out of the result, the subject and the
+  // description out of the input.
+  task: {
+    name: "TaskCreate",
+    input: { subject: "ship it", description: "all of it" },
+    output: "Task #3 created successfully: ship it",
+  },
   question: {
     name: "AskUserQuestion",
     input: { questions: [{ question: "deploy?", options: [{ label: "yes" }] }] },

@@ -11,9 +11,10 @@
 // boxes, one quiet label per region, the mono well only where content is
 // genuinely code.
 
-import { useState } from "react";
-import type { AskedQuestion, QuestionOption, ToolView } from "./toolViews";
-import { describeTool, splitInput } from "./toolViews";
+import { useMemo, useState } from "react";
+import type { AskedQuestion, QuestionOption, ToolView, WorkflowRun } from "./toolViews";
+import { describeTool, runStats, splitInput } from "./toolViews";
+import { bodyFace, markdownBody } from "./bodyFace";
 import { JsonTree } from "./JsonTree";
 import { Markdown } from "./Markdown";
 import { prettyJson } from "../format";
@@ -79,27 +80,6 @@ export function answerFace(q: AskedQuestion): AnswerFace {
   }
 }
 
-/** Extensions whose body may be offered as rendered prose. `mdx` is absent
- *  deliberately: it is JSX inside markdown, and this parser reads a component
- *  tag as text and its braces as prose — a render that is wrong about the file. */
-const MD_EXT = new Set(["md", "markdown"]);
-
-/**
- * Whether a path names a markdown file.
- *
- * The extension decides, and the body is never sniffed: a `#` on the first line
- * of a log is a character someone typed, and promoting it to a heading would be
- * the chrome inventing structure the file does not have.
- *
- * @param path the path the tool named, as it named it
- * @return true when the body is markdown by the file's own name
- */
-export function markdownBody(path: string): boolean {
-  const name = path.slice(path.lastIndexOf("/") + 1);
-  const dot = name.lastIndexOf(".");
-  return dot < 0 ? false : MD_EXT.has(name.slice(dot + 1).toLowerCase());
-}
-
 /** The two ways to read a markdown body, as chips in the region's own head. */
 function BodyFaces(props: { rendered: boolean; onPick: (rendered: boolean) => void; lang: Lang }) {
   return (
@@ -125,34 +105,39 @@ function BodyFaces(props: { rendered: boolean; onPick: (rendered: boolean) => vo
 }
 
 /**
- * A file's body, coloured by the file's language — and for a markdown file, with
- * the rendered face one click away.
+ * A file's body: a markdown file as the document it is, everything else coloured
+ * by its language, and either one a click from the other.
  *
- * Text is the default, and that is the decision, not an omission: a tool result
- * is EVIDENCE. Colouring lays a class over every byte and moves none of them,
- * which is why every other well here is coloured; rendering markdown CONSUMES
- * bytes — the hashes of a heading, the pipes of a table, the two trailing spaces
- * that became a line break are gone from the screen. A reader who came to check
- * whether an Edit's anchor is really in this file cannot check it against prose.
- * So the bytes are what a reader gets without asking, and the reading face is a
- * click they take on purpose.
+ * Which face opens is `bodyFace()`, and the argument it decides against — a tool
+ * result is evidence, and rendering spends the bytes a reader came to check —
+ * is written out there rather than here, because it is the reason the text chip
+ * can never be removed.
  */
 function Body(props: { label: string; path: string; text: string; lang: Lang }) {
-  const [rendered, setRendered] = useState(false);
+  const [manual, setManual] = useState<boolean | null>(null);
+  // Both faces are clipped at the same place, so the "(truncated)" line is the
+  // last thing the rendered one shows too — and the probes run on the clip, not
+  // on a body no reader will see.
+  const text = cut(props.text);
+  const face = useMemo(() => bodyFace(props.path, text), [props.path, text]);
+  // The disclosure pattern: a hand-made pick outlives the default, because a
+  // reader who switched this card meant this card. It cannot outlive the FILE,
+  // though: React reuses an element in place, so a pick made on a .md would
+  // otherwise ride along when this same slot draws the next call's .ts.
   const md = markdownBody(props.path);
+  const rendered = md && (manual ?? face.rendered);
   return (
     <Region
       label={props.label}
-      faces={md ? <BodyFaces rendered={rendered} onPick={setRendered} lang={props.lang} /> : undefined}
+      faces={md ? <BodyFaces rendered={rendered} onPick={setManual} lang={props.lang} /> : undefined}
     >
-      {md && rendered ? (
-        // Both faces are clipped at the same place, so the "(truncated)" line is
-        // the last thing the rendered one shows too.
+      {face.note !== null && <p className="tv-note">{t(props.lang, face.note)}</p>}
+      {rendered ? (
         <div className="tv-md">
-          <Markdown text={cut(props.text)} />
+          <Markdown text={text} />
         </div>
       ) : (
-        <pre className="tv-well mono">{highlight(cut(props.text), hlLangForPath(props.path))}</pre>
+        <pre className="tv-well mono">{highlight(text, hlLangForPath(props.path))}</pre>
       )}
     </Region>
   );
@@ -194,6 +179,53 @@ function Option({ option, lang }: { option: QuestionOption; lang: Lang }) {
         {option.preview !== null && <pre className="tv-well mono">{cut(option.preview)}</pre>}
       </div>
     </li>
+  );
+}
+
+/**
+ * What became of a launched workflow: the scannable row, then every agent that
+ * did not come back.
+ *
+ * The failures sit in a region of their own, directly under the numbers and
+ * above the script — not folded into the status word, and not a footnote. The
+ * outcome reports `completed` even when every agent in it hit a spend limit,
+ * because that word is the workflow ENGINE finishing, not the work; a card that
+ * repeats it alone reads as a clean run to the one person who most needs to know
+ * it was not. The count is in the row in the error colour AND the agents are
+ * named underneath, so neither a glance nor a read can miss it.
+ */
+function RunOutcome({ run, lang }: { run: WorkflowRun; lang: Lang }) {
+  return (
+    <>
+      <Region label={t(lang, "tv.outcome")} meta={run.status === "" ? undefined : run.status}>
+        <ul className="tv-run">
+          {runStats(run).map((stat) => (
+            <li key={stat.key} className={stat.bad ? "tv-run-stat tv-run-stat--bad" : "tv-run-stat"}>
+              <span className="tv-run-k">{t(lang, `tv.run.${stat.key}`)}</span>
+              <span className="tv-run-v mono tabular">{stat.value}</span>
+            </li>
+          ))}
+        </ul>
+      </Region>
+      {run.failures.length > 0 && (
+        <Region label={t(lang, "tv.failures")} meta={t(lang, "tv.failuresN", { n: run.failures.length })}>
+          <ul className="tv-fails">
+            {run.failures.map((f, i) => (
+              <li key={i} className="tv-fail">
+                {f.label !== null && <span className="tv-fail-who mono">{f.label}</span>}
+                {f.phase !== null && <span className="tv-in">{f.phase}</span>}
+                <span className="tv-fail-why">{f.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </Region>
+      )}
+      {/* Counted but unnamed. An empty list under the word "failures" would read
+          as none at all, so the number says so in its own sentence instead. */}
+      {run.failures.length === 0 && run.errors !== null && run.errors > 0 && (
+        <p className="tv-note tv-note--bad">{t(lang, "tv.wfUnnamed", { n: run.errors })}</p>
+      )}
+    </>
   );
 }
 
@@ -433,6 +465,66 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
         </Region>
       );
 
+    case "task": {
+      // The heading carries the verb, so the row never has to. That is why an
+      // update reads "#3 · done" and not "→ done": the call names the state it
+      // asked for and never the one it came from, and an arrow with nothing on
+      // its left invites a reader to look for a from-state that is not here.
+      const heading =
+        view.op === "create" ? "tv.taskCreated" : view.op === "update" ? "tv.taskUpdated" : "tv.tasks";
+      return (
+        <Region
+          label={t(lang, heading)}
+          // Only a roster is counted: a creation and an update are one task
+          // each, and "1 task" under a heading that already said which verb ran
+          // is noise. An empty roster is not called "0 tasks" either — a listing
+          // with nothing back yet reads the same as a list with nothing in it,
+          // and only one of those means there are no tasks.
+          meta={
+            view.op === "list" && view.rows.length > 0
+              ? t(lang, "tv.tasksN", { n: view.rows.length })
+              : undefined
+          }
+        >
+          <ul className="tv-tasks">
+            {view.rows.map((row, i) => (
+              <li key={i} className="tv-task">
+                <div className="tv-task-head">
+                  {row.id !== null && <span className="tv-task-id mono">#{row.id}</span>}
+                  {/* The agent-card dot/badge, same as the plan above, so a
+                      state reads identically wherever it shows up. */}
+                  {row.status !== null && (
+                    <>
+                      <span className={`agent-dot agent-dot--${row.status}`} aria-hidden="true" />
+                      <span className={`agent-badge agent-badge--${row.status}`}>
+                        {statusLabel(row.status, lang)}
+                      </span>
+                    </>
+                  )}
+                  {row.subject !== null && <span className="tv-task-subject">{row.subject}</span>}
+                </div>
+                {/* The substance of a creation, and the reason a plan step could
+                    never have held one: a step is its text and nothing under it. */}
+                {row.description !== null && <div className="tv-desc">{row.description}</div>}
+                {row.blockedBy.length > 0 && (
+                  <p className="tv-note">
+                    {t(lang, "tv.taskBlockedBy", {
+                      ids: row.blockedBy.map((id) => `#${id}`).join(", "),
+                    })}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+          {view.wrote === "nothing" && <p className="tv-note">{t(lang, "tv.taskUnchanged")}</p>}
+          {/* Empty whenever the outcome line was read: it names the id and
+              echoes the subject, both of which the row above already carries.
+              What lands here is an error, and a shape never swallows one. */}
+          {view.result !== "" && <pre className="tv-well mono">{cut(view.result)}</pre>}
+        </Region>
+      );
+    }
+
     case "question":
       return (
         <Region
@@ -519,15 +611,30 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
               {view.description !== null && <div className="tv-desc">{view.description}</div>}
             </Region>
           )}
+          {/* The two states a silent card would misreport. `done` needs no line
+              (the numbers are the line) and `pending` needs none either — the
+              card already reads as open while the call is on the wire. */}
+          {view.stage === "launched" && <p className="tv-note">{t(lang, "tv.wfOpen")}</p>}
+          {view.stage === "failed" && <p className="tv-note">{t(lang, "tv.wfFailed")}</p>}
+          {view.run !== null && <RunOutcome run={view.run} lang={lang} />}
           {view.phases.length > 0 && (
             <Region label={t(lang, "tv.phases")} meta={t(lang, "tv.phasesN", { n: view.phases.length })}>
               <ul className="tv-entries mono">
-                {view.phases.map((phase, i) => (
-                  <li key={i} className="tv-entry">
-                    <span className="tv-in tabular">{i + 1} </span>
-                    {phase}
-                  </li>
-                ))}
+                {view.phases.map((phase, i) => {
+                  // Only failures are marked. `agents_done` is a count with no
+                  // names in it, so nothing here can say a phase SUCCEEDED —
+                  // and a green tick nobody measured is the worse lie.
+                  const dead = view.run?.failures.filter((f) => f.phase === phase).length ?? 0;
+                  return (
+                    <li key={i} className="tv-entry">
+                      <span className="tv-in tabular">{i + 1} </span>
+                      {phase}
+                      {dead > 0 && (
+                        <span className="tv-phase-dead"> {t(lang, "tv.wfDead", { n: dead })}</span>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </Region>
           )}
@@ -547,6 +654,14 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
           {view.result !== "" && (
             <Region label={t(lang, "tv.output")}>
               <pre className="tv-well mono">{cut(view.result)}</pre>
+            </Region>
+          )}
+          {/* Last, and prose rather than code: what a run returned is an agent's
+              words and runs to tens of thousands of characters. Available, one
+              scroll away, and never the first thing on the card. */}
+          {view.run !== null && view.run.result !== "" && (
+            <Region label={t(lang, "tv.returned")}>
+              <pre className="tv-well">{cut(view.run.result)}</pre>
             </Region>
           )}
         </>

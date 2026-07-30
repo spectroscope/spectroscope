@@ -3,7 +3,7 @@
 // render it as itself instead of as two JSON blobs. Pure, DOM-free.
 
 import { describe, expect, it } from "vitest";
-import { describeTool, splitInput } from "./toolViews";
+import { describeTool, runStats, splitInput } from "./toolViews";
 
 describe("describeTool — files", () => {
   it("read_file becomes a file view with its path and body", () => {
@@ -444,14 +444,17 @@ describe("describeTool — what deliberately stays generic", () => {
   // the `until` field this list once cited as the thing a command view would
   // drop is not on the wire at all, the loop is inside the command.
   //
-  // TaskCreate/TaskUpdate stay: a plan view would drop TaskCreate's
-  // description, which is its substance, and TaskUpdate carries no text to put
-  // in a step (418 of 435 calls are taskId + status alone).
+  // TaskCreate/TaskUpdate left on the same grounds they were once kept for.
+  // Both objections were to the PLAN view — it would drop TaskCreate's
+  // description and label an update as step "1" — and neither was an argument
+  // that a task has no shape. It has one of its own; see "the task list" below.
+  //
+  // TaskStop stays, and it is the reason the family could not be routed by its
+  // prefix: it stops a spawned run, so its id is an opaque slug under `task_id`
+  // and there is no subject, state or description anywhere in the call.
   it("leaves the small-payload harness tools alone", () => {
     const calls: [string, unknown][] = [
-      ["TaskUpdate", { taskId: "t1", status: "done" }],
-      ["TaskCreate", { subject: "s", description: "d", activeForm: "a" }],
-      ["TaskStop", { taskId: "t1" }],
+      ["TaskStop", { task_id: "wfsbmqs31" }],
       ["ToolSearch", { query: "notebook", max_results: 5 }],
       // The wire field is `message` (SubagentManager's ReportStatusTool reads
       // input.path("message")), not `status` as this pin used to claim.
@@ -709,6 +712,187 @@ describe("describeTool — the question", () => {
   });
 });
 
+// Every payload below is a call taken verbatim out of the transcripts: 256
+// TaskCreate, 434 TaskUpdate, one TaskList. The corpus is what settled the
+// shape — 418 of the 434 updates carry nothing but an id and a status, which is
+// why an update reads as a row and not as a plan step called "1".
+describe("describeTool — the task list", () => {
+  it("a creation leads with its subject and keeps the description under it", () => {
+    const v = describeTool(
+      "TaskCreate",
+      {
+        subject: "Recon: spectro-local provider class + CancelSignal semantics",
+        description:
+          'Verify which LlmProvider class ServerProviders.build("spectro-local") returns and whether CancelSignal.onCancel fires immediately when registered on an already-cancelled signal. Facts before reproduction.',
+        activeForm: "Checking spectro-local provider class + CancelSignal semantics",
+      },
+      "Task #1 created successfully: Recon: spectro-local provider class + CancelSignal semantics",
+      false,
+    );
+    expect(v.kind).toBe("task");
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.op).toBe("create");
+    expect(v.rows).toHaveLength(1);
+    expect(v.rows[0].subject).toBe("Recon: spectro-local provider class + CancelSignal semantics");
+    expect(v.rows[0].description).toContain("Facts before reproduction.");
+    // A new task has no state in either half of the call, so the view claims none.
+    expect(v.rows[0].status).toBe(null);
+  });
+
+  it("takes the id from the result, which is the only half that carries one", () => {
+    const v = describeTool(
+      "TaskCreate",
+      {
+        subject: "Fix/harden stop path per repro findings (TDD)",
+        description: "Fix whatever the repro shows.",
+      },
+      "Task #3 created successfully: Fix/harden stop path per repro findings (TDD)",
+      false,
+    );
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.rows[0].id).toBe("3");
+    // The line said nothing the view does not already carry, so it is not
+    // reprinted underneath as an output.
+    expect(v.result).toBe("");
+  });
+
+  it("a creation still standing open shows its subject and no id", () => {
+    const v = describeTool("TaskCreate", { subject: "Ship it", description: "all of it" }, undefined, false);
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.rows[0].id).toBe(null);
+    expect(v.rows[0].subject).toBe("Ship it");
+    expect(v.wrote).toBe("silent");
+  });
+
+  it("an update is one row: the task the result confirms, and where it went", () => {
+    const v = describeTool(
+      "TaskUpdate",
+      { taskId: "1", status: "completed" },
+      "Updated task #1 status",
+      false,
+    );
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.op).toBe("update");
+    expect(v.rows).toEqual([
+      { id: "1", subject: null, description: null, status: "completed", blockedBy: [] },
+    ]);
+    expect(v.wrote).toBe("named");
+    expect(v.result).toBe("");
+  });
+
+  it("an update that rewrote the text carries the new words, not the old", () => {
+    const v = describeTool(
+      "TaskUpdate",
+      {
+        taskId: "9",
+        status: "in_progress",
+        subject: "Block 1 — P1 legibility (aggregate/roll-up/LOD/clustering)",
+        description: "Fleet canvas legibility folds: aggregate-by-name, subtree roll-ups, level-of-detail.",
+      },
+      "Updated task #9 subject, description, status",
+      false,
+    );
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.rows[0].subject).toBe("Block 1 — P1 legibility (aggregate/roll-up/LOD/clustering)");
+    expect(v.rows[0].description).toContain("aggregate-by-name");
+    expect(v.rows[0].status).toBe("in_progress");
+  });
+
+  it("reads a dependency out of addBlockedBy", () => {
+    const v = describeTool(
+      "TaskUpdate",
+      { taskId: "3", addBlockedBy: ["1", "2"] },
+      "Updated task #3 blockedBy",
+      false,
+    );
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.rows[0].blockedBy).toEqual(["1", "2"]);
+    expect(v.rows[0].status).toBe(null);
+  });
+
+  it("says so when the result confirms the update and names no field", () => {
+    // Twice in 434 calls: the status asked for was the one the task already
+    // had, so the list did not move. Rendering "completed" alone would report a
+    // transition the tool says did not happen.
+    const v = describeTool("TaskUpdate", { taskId: "9", status: "completed" }, "Updated task #9 ", false);
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.wrote).toBe("nothing");
+  });
+
+  it("keeps a result it cannot read whole, rather than swallowing it", () => {
+    const v = describeTool(
+      "TaskUpdate",
+      { taskId: "44", status: "completed" },
+      "<tool_use_error>No task #44.</tool_use_error>",
+      true,
+    );
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.wrote).toBe("silent");
+    expect(v.result).toBe("<tool_use_error>No task #44.</tool_use_error>");
+  });
+
+  it("a listing becomes the roster it printed", () => {
+    const v = describeTool(
+      "TaskList",
+      {},
+      "#1 [completed] Preflight: product-home diff committen, Harness-Baseline grün\n" +
+        "#2 [completed] Brand-Tokens in spectro-web verankern (espresso root + paper light)\n" +
+        "#3 [in_progress] Logo-Set + Favicon in spectro-web\n",
+      false,
+    );
+    if (v.kind !== "task") throw new Error("kind");
+    expect(v.op).toBe("list");
+    expect(v.rows).toHaveLength(3);
+    expect(v.rows[2]).toEqual({
+      id: "3",
+      subject: "Logo-Set + Favicon in spectro-web",
+      description: null,
+      status: "in_progress",
+      blockedBy: [],
+    });
+  });
+
+  it("falls back to generic when one roster line does not parse", () => {
+    // One unreadable line would misstate the list's length as much as its
+    // content, the same rule the plan and the question already follow.
+    expect(describeTool("TaskList", {}, "#1 [completed] fine\nNo further tasks.\n", false).kind).toBe(
+      "generic",
+    );
+  });
+
+  it("falls back to generic without the field that makes the call a task", () => {
+    expect(describeTool("TaskCreate", { description: "no subject here" }, "", false).kind).toBe("generic");
+    expect(describeTool("TaskUpdate", { status: "completed" }, "", false).kind).toBe("generic");
+  });
+
+  it("leaves the background-job verbs generic: a slug is not a task number", () => {
+    // TaskStop and TaskOutput stop and poll a SPAWNED RUN. Their id space is an
+    // opaque slug, their key is task_id rather than taskId, and they carry no
+    // subject, status or description at all — the only thing they share with
+    // the list above is the word "task". Drawn as a task row, a slug would land
+    // where a reader has learnt to read "#3".
+    expect(
+      describeTool(
+        "TaskStop",
+        { task_id: "wfsbmqs31" },
+        '{"message":"Successfully stopped task: wfsbmqs31 (Research real syntax-highlighting options)","task_id":"wfsbmqs31","task_type":"local_workflow"}',
+        false,
+      ).kind,
+    ).toBe("generic");
+    expect(
+      describeTool(
+        "TaskOutput",
+        { task_id: "w9kv07zis", block: false, timeout: 1000 },
+        "<status>running</status>",
+        false,
+      ).kind,
+    ).toBe("generic");
+    // TaskGet has no call anywhere in the corpus, so there is no observed input
+    // or result to build a shape on. It stays with the fallback until one exists.
+    expect(describeTool("TaskGet", { taskId: "3" }, "#3 [completed] ship it", false).kind).toBe("generic");
+  });
+});
+
 describe("describeTool — the routings that reuse a view", () => {
   it("reads Monitor as a command", () => {
     // All seven transcript calls: { command, description, persistent,
@@ -949,5 +1133,217 @@ describe("describeTool — the workflow", () => {
 
   it("falls back to generic with no script, path or name", () => {
     expect(describeTool("Workflow", { args: { a: 1 } }, "", false).kind).toBe("generic");
+  });
+});
+
+// The run half of a Workflow call. Measured in the owner's own session
+// (3e010de0…jsonl): 40 launches, 37 notifications, and the notification is a
+// SEPARATE user message arriving up to nineteen minutes later — so the join is
+// the importer's, and what reaches describeTool is the flattened section
+// claudeCode.ts writes under the receipt. Every payload below is that format,
+// over counters copied out of that file.
+describe("describeTool — the workflow run", () => {
+  const script = [
+    "export const meta = {",
+    '  name: "lab-repair",',
+    '  phases: [{ title: "Data" }, { title: "Fix" }, { title: "Verify" }],',
+    "};",
+    "",
+  ].join("\n");
+
+  const RECEIPT = [
+    "Workflow launched in background. Task ID: w82qt1zg0",
+    "Summary: Repair the lab layout",
+    "",
+    "You will be notified when it completes. Use /workflows to watch live progress.",
+  ].join("\n");
+
+  const USAGE =
+    "agent_count=3 agents_done=1 agents_error=2 agents_skipped=0 agents_empty_result=0 " +
+    "subagent_tokens=604733 tool_uses=313 duration_ms=3801742";
+
+  /** The receipt with one outcome section joined under it. */
+  const joined = (over: { failures?: string; result?: string; usage?: string; status?: string } = {}) =>
+    [
+      RECEIPT,
+      "",
+      `--- task w7cocjg6h · ${over.status ?? "completed"} ---`,
+      "output-file: /private/tmp/tasks/w7cocjg6h.output",
+      "summary: Dynamic workflow completed",
+      `result: ${over.result ?? '{"data":["the finding"]}'}`,
+      "diagnostics: Per-agent results: /tmp/wf/journal.jsonl",
+      ...(over.failures === undefined ? [] : [`failures: ${over.failures}`]),
+      `usage: ${over.usage ?? USAGE}`,
+    ].join("\n");
+
+  /** What the importer writes when the transcript ended before the outcome did. */
+  const unfinished = `${RECEIPT}\n\n--- task w82qt1zg0 · no result by the end of the transcript ---`;
+
+  it("reads a launch the transcript outlived as still open, not as finished", () => {
+    const v = describeTool("Workflow", { script }, unfinished, false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    // The one state this card existed to stop getting wrong.
+    expect(v.stage).toBe("launched");
+    expect(v.run).toBe(null);
+  });
+
+  it("reads a receipt nothing was ever joined to the same way", () => {
+    const v = describeTool("Workflow", { script }, RECEIPT, false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.stage).toBe("launched");
+  });
+
+  it("separates a call still on the wire from one that was launched", () => {
+    const v = describeTool("Workflow", { script }, undefined, false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.stage).toBe("pending");
+  });
+
+  it("reads an errored launch as failed, never as running", () => {
+    const v = describeTool("Workflow", { scriptPath: "wf/a.js" }, "ENOENT: no such file", true);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.stage).toBe("failed");
+    expect(v.run).toBe(null);
+  });
+
+  it("reads the outcome out of the section the importer joined on", () => {
+    const v = describeTool("Workflow", { script }, joined(), false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.stage).toBe("done");
+    const run = v.run;
+    if (run === null) throw new Error("run");
+    expect(run.status).toBe("completed");
+    expect(run.agents).toBe(3);
+    expect(run.done).toBe(1);
+    expect(run.errors).toBe(2);
+    expect(run.tokens).toBe(604733);
+    expect(run.toolUses).toBe(313);
+    expect(run.durationMs).toBe(3801742);
+    expect(run.result).toBe('{"data":["the finding"]}');
+  });
+
+  it("leaves the launch receipt as the result, with the section cut off it", () => {
+    const v = describeTool("Workflow", { script }, joined(), false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.result).toBe(RECEIPT);
+    expect(v.result).not.toContain("--- task");
+  });
+
+  it("takes the ending, not a progress report that came before it", () => {
+    // A task can report progress first; each report is joined on in arrival
+    // order, so the LAST section is the one that says what happened.
+    const out = `${RECEIPT}\n\n--- task w7cocjg6h ---\nsummary: still going\nevent: progress\n\n${joined().split("\n\n").slice(1).join("\n\n")}`;
+    const v = describeTool("Workflow", { script }, out, false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.stage).toBe("done");
+    expect(v.run?.agents).toBe(3);
+  });
+
+  it("reads a run that only ever reported progress as still open", () => {
+    const out = `${RECEIPT}\n\n--- task w7cocjg6h ---\nsummary: still going\n\n--- task w7cocjg6h · ${"no result by the end of the transcript"} ---`;
+    const v = describeTool("Workflow", { script }, out, false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.stage).toBe("launched");
+  });
+
+  it("names every agent that died, and where the label puts it", () => {
+    const v = describeTool(
+      "Workflow",
+      { script },
+      joined({
+        failures: [
+          "[fix:geometry] failed: You've hit your monthly spend limit",
+          "[fix:jsontree] failed: You've hit your monthly spend limit",
+          "[verify] failed: You've hit your monthly spend limit",
+        ].join("\n"),
+      }),
+      false,
+    );
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.run?.failures).toEqual([
+      { label: "fix:geometry", phase: "Fix", reason: "You've hit your monthly spend limit" },
+      { label: "fix:jsontree", phase: "Fix", reason: "You've hit your monthly spend limit" },
+      { label: "verify", phase: "Verify", reason: "You've hit your monthly spend limit" },
+    ]);
+  });
+
+  it("keeps a failure whose label names no phase rather than dropping it", () => {
+    const v = describeTool("Workflow", { script }, joined({ failures: "[web] failed: timed out" }), false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.run?.failures).toEqual([{ label: "web", phase: null, reason: "timed out" }]);
+  });
+
+  it("keeps a failure line that carries no label at all", () => {
+    const v = describeTool("Workflow", { script }, joined({ failures: "the run was cancelled" }), false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.run?.failures).toEqual([{ label: null, phase: null, reason: "the run was cancelled" }]);
+  });
+
+  it("reports a counter the outcome omitted as unknown, not as zero", () => {
+    const v = describeTool("Workflow", { script }, joined({ usage: "agent_count=2" }), false);
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.run?.agents).toBe(2);
+    expect(v.run?.done).toBe(null);
+    expect(v.run?.tokens).toBe(null);
+  });
+
+  it("does not let a result that writes about failures invent one", () => {
+    // The join is flat text and an agent's own words sit in `result`. In this
+    // repo those words are ABOUT failing agents, so a reader of the section has
+    // to know that the real field is the last one, not the quoted one.
+    const v = describeTool(
+      "Workflow",
+      { script },
+      joined({
+        result: "the card must show\nfailures: not like this\nunder the numbers",
+        failures: "[verify] failed: monthly spend limit",
+      }),
+      false,
+    );
+    if (v.kind !== "workflow") throw new Error("kind");
+    expect(v.run?.failures).toEqual([{ label: "verify", phase: "Verify", reason: "monthly spend limit" }]);
+    expect(v.run?.result).toContain("failures: not like this");
+  });
+});
+
+describe("runStats — the scannable row", () => {
+  const run = {
+    status: "completed",
+    agents: 11,
+    done: 11,
+    errors: 0,
+    skipped: 0,
+    empty: 0,
+    tokens: 1558378,
+    toolUses: 128,
+    durationMs: 1140752,
+    failures: [],
+    result: "",
+  };
+
+  it("reads as done of total, in the app's own number formats", () => {
+    expect(runStats(run)).toEqual([
+      { key: "agents", value: "11 / 11", bad: false },
+      { key: "tokens", value: "1558k", bad: false },
+      { key: "tools", value: "128", bad: false },
+      { key: "elapsed", value: "19 m 1 s", bad: false },
+    ]);
+  });
+
+  it("calls the dead agents out in the row itself", () => {
+    const stats = runStats({ ...run, agents: 3, done: 1, errors: 2 });
+    expect(stats[0]).toEqual({ key: "agents", value: "1 / 3", bad: false });
+    expect(stats[1]).toEqual({ key: "failed", value: "2", bad: true });
+  });
+
+  it("counts the quiet losses too, and only when there are any", () => {
+    const stats = runStats({ ...run, skipped: 1, empty: 2 });
+    expect(stats.map((s) => s.key)).toEqual(["agents", "skipped", "empty", "tokens", "tools", "elapsed"]);
+    expect(stats.find((s) => s.key === "empty")).toEqual({ key: "empty", value: "2", bad: true });
+  });
+
+  it("leaves out a number the outcome never reported", () => {
+    const stats = runStats({ ...run, tokens: null, toolUses: null, durationMs: null });
+    expect(stats.map((s) => s.key)).toEqual(["agents"]);
   });
 });
