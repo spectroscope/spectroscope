@@ -6,8 +6,9 @@
 // chrome there — so the notice gets the placement it was asked for without a
 // fourth floating control appearing over the canvas.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AboutDialog } from "./AboutDialog";
+import { onAboutRequested } from "../state/aboutSignal";
 import type { UiState } from "../state/reducer";
 import type { ConnectionStatus } from "../transport/ws";
 import { formatTokens } from "../format";
@@ -19,6 +20,9 @@ export function UsageFooter(props: { state: UiState; connection: ConnectionStatu
   const { connection } = props;
   const [aboutOpen, setAboutOpen] = useState(false);
   const lang = useLang();
+
+  // The desktop shell's menu bar opens this same panel from outside React.
+  useEffect(() => onAboutRequested(() => setAboutOpen(true)), []);
 
   const runStatus = running
     ? t(lang, "footer.runActive")
