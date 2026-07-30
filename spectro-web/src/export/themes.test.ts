@@ -4,10 +4,25 @@
 
 import { describe, expect, it } from "vitest";
 import { CODE_TOKENS, EXPORT_THEMES, MIN_CODE_CONTRAST, contrastRatio, themeById, themeCss } from "./themes";
+import { DESIGNS } from "../state/designPrefs";
 
 describe("the table covers the picker", () => {
   it("carries one entry per design the app offers", () => {
-    expect(EXPORT_THEMES.map((th) => th.id)).toEqual(["spectroscope", "paper", "still"]);
+    // Held to DESIGNS rather than to a literal: the export dialog lists the
+    // catalog, so a design in the picker with no theme here is a radio button
+    // that produces a document in somebody else's palette.
+    expect(EXPORT_THEMES.map((th) => th.id)).toEqual(DESIGNS.map((d) => d.id));
+  });
+
+  it("agrees with the catalog about which designs are dark", () => {
+    // The swatch in the picker and the colour-scheme in the exported file are
+    // two statements about the same design; a reader meets both.
+    for (const th of EXPORT_THEMES) {
+      const swatch = DESIGNS.find((d) => d.id === th.id);
+      expect(swatch, `no picker entry for ${th.id}`).toBeDefined();
+      expect(th.tokens.bg.toLowerCase()).toBe(swatch?.bg.toLowerCase());
+      expect(th.tokens.accent.toLowerCase()).toBe(swatch?.accent.toLowerCase());
+    }
   });
 
   it("names each theme in both chrome languages", () => {
@@ -100,6 +115,28 @@ describe("code stays readable on the ground it is printed on", () => {
     const still = themeById("still");
     const espressoTeal = themeById("spectroscope").tokens["sp-teal"];
     expect(contrastRatio(espressoTeal, still.tokens.bg)).toBeLessThan(2);
+  });
+
+  it("measures the espresso ramp on the graphite ground as the same ramp", () => {
+    // `still` borrows because its ground moved. Graphite's did not: it is the
+    // same rung of lightness in a different temperature, so every spectral line
+    // lands within a rounding error of where espresso puts it. That is the
+    // argument for graphite carrying no ramp of its own, and it is a number, so
+    // a future retune of either ground has to answer to it.
+    const graphite = themeById("graphite");
+    const espresso = themeById("spectroscope");
+    // themeById falls back to espresso for an id it does not ship, which would
+    // make every comparison below a colour against itself and pass on nothing.
+    expect(graphite.id, "no graphite theme: the rest of this test is vacuous").toBe("graphite");
+    expect(graphite.tokens.bg).not.toBe(espresso.tokens.bg);
+    for (const key of CODE_TOKENS) {
+      const here = contrastRatio(espresso.tokens[key], graphite.tokens.bg);
+      const there = contrastRatio(espresso.tokens[key], espresso.tokens.bg);
+      expect(
+        Math.abs(here - there),
+        `--${key} shifts by ${(here - there).toFixed(2)} between grounds`,
+      ).toBeLessThan(0.25);
+    }
   });
 });
 

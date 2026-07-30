@@ -308,7 +308,43 @@
   .tv-diff-side { flex: 1; min-width: 0; }
 }
 
+/* A workflow's run half. The row is the glance; the failures are the read. Both
+   carry the loss in the error colour, so neither reading can miss it. */
+.tv-run {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--sp-4);
+}
+.tv-run-stat { display: flex; align-items: baseline; gap: var(--sp-2); }
+.tv-run-k { font-size: var(--fs-11); color: var(--text-faint); }
+.tv-run-v { font-size: var(--fs-12); color: var(--text); }
+.tv-run-stat--bad .tv-run-k,
+.tv-run-stat--bad .tv-run-v { color: var(--error); }
+.tv-fails { list-style: none; margin: 0; padding: 0; }
+.tv-fail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 1px 0;
+}
+.tv-fail-who { font-size: var(--fs-12); color: var(--error); }
+.tv-fail-why {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-13);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+/* A phase the outcome named as dead. Nothing marks a phase as done: the counts
+   carry no names, so success is a claim this data cannot make. */
+.tv-phase-dead { color: var(--error); }
+
 .tv-note { margin: 0 0 var(--sp-1); font-size: var(--fs-11); color: var(--text-faint); }
+.tv-note--bad { color: var(--error); }
 .tv-denied { margin: 0; font-size: var(--fs-12); color: var(--warn); }
 
 /* An mcp call is TWO names; the server recedes so the tool reads as the verb. */
@@ -350,6 +386,18 @@
 .tv-plan { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .tv-step { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; }
 .tv-step-text { flex: 1; min-width: 0; font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }
+
+/* A task: the number as a mono handle, the state from the same agent-card set
+   the plan uses, the subject as the sentence. One row shape serves a creation,
+   an update and a roster line, so the parts a call did not carry simply do not
+   render and the rest keeps its places. The gap is the row gap and not a rule
+   between rows: a roster runs to thirty entries, and a hairline each would read
+   as thirty separate blocks. */
+.tv-tasks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.tv-task { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tv-task-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
+.tv-task-id { font-size: var(--fs-12); color: var(--accent); white-space: nowrap; }
+.tv-task-subject { flex: 1; min-width: 0; font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; }
 
 /* A question put to a person: the header as a chip, the question as its text,
    the options as rows under it. Several questions are several blocks, so each

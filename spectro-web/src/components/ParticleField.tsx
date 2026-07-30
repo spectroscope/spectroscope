@@ -19,8 +19,14 @@ function styleFor(design: DesignId): Style | null {
     case "paper":
       // Brand light: the landing page's ink dots on paper.
       return "dust";
+    case "graphite":
+      // The cool dark takes the same grain: the canvas reads --text-faint and
+      // the spectral lines off the live design, so it arrives already tuned.
+      return "dust";
     default:
-      // spectro white (`still`): deliberately no particle signature.
+      // spectro white (`still`): deliberately no particle signature. Named
+      // designs return above rather than falling through, so a new id owes an
+      // answer here instead of silently inheriting this one.
       return null;
   }
 }

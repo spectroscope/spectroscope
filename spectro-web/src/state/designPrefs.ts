@@ -9,7 +9,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export type DesignId = "spectroscope" | "paper" | "still";
+export type DesignId = "spectroscope" | "paper" | "still" | "graphite";
 
 export interface DesignPrefs {
   design: DesignId;
@@ -26,10 +26,15 @@ export interface DesignPrefs {
 }
 
 /** Catalog for the picker: swatch colors + whether the design ships a particle
- *  signature. Exactly three ship (owner 2026-07-20): the two brand themes and
- *  the white minimal light. The retired extra skins (classic, nebula, nocturne,
- *  obsidian, staffwise, neon-riot, prisma) live on in git history only;
- *  parsePrefs folds their stored ids back to the default. */
+ *  signature. Four ship: the two brand themes, the white minimal light, and
+ *  the cool dark (owner 2026-07-27). The retired extra skins (classic, nebula,
+ *  nocturne, obsidian, staffwise, neon-riot, prisma) live on in git history
+ *  only; parsePrefs folds their stored ids back to the default.
+ *
+ *  This array is the catalog every surface reads — the settings picker, the
+ *  export dialog's chooser, and (through the tests) the export theme table and
+ *  the pre-paint guard in index.html. A design is an entry here, not an edit
+ *  in five files. */
 export const DESIGNS: ReadonlyArray<{
   id: DesignId;
   label: string;
@@ -62,14 +67,30 @@ export const DESIGNS: ReadonlyArray<{
     bg: "#fbfbfd",
     accent: "#0071e3",
   },
+  {
+    id: "graphite",
+    label: "spectro graphite",
+    sub: "dark · ocean line",
+    // A dark ground is where the dust signature reads; the canvas takes its
+    // colours from the live tokens, so it arrives already tuned to this skin.
+    particles: true,
+    bg: "#101415",
+    accent: "#2cb1c4",
+  },
 ];
 
-const DESIGN_IDS = DESIGNS.map((d) => d.id);
+/** The ids the store accepts. Exported because index.html cannot import — its
+ *  FOUC guard carries a literal copy, and a test holds the copy to this. */
+export const DESIGN_IDS: readonly DesignId[] = DESIGNS.map((d) => d.id);
 export const STORAGE_KEY = "spectroscope:design";
 export const DEFAULT_PREFS: DesignPrefs = {
-  design: "spectroscope",
+  // Owner 2026-07-28: spectro white leads. Its DESIGNS entry carries
+  // particles: false, so the particle default follows it — otherwise a first
+  // run lands on the settings note that says the toggle is on and the design
+  // has none, which is a contradiction to open the app with.
+  design: "still",
   scroll: true,
-  particles: true,
+  particles: false,
   reasoningLens: false,
   // Card 69 (owner): timing bars are on out of the box — subtle enough to
   // read well idle, and the trace-toolbar chip switches them off persistently.

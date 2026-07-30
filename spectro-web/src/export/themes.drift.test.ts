@@ -11,7 +11,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { EXPORT_THEMES, STILL_BORROWS_FROM_PAPER } from "./themes";
+import { EXPORT_THEMES, GRAPHITE_BORROWS_FROM_ESPRESSO, STILL_BORROWS_FROM_PAPER } from "./themes";
 import type { DesignId } from "../state/designPrefs";
 
 const read = (name: string): string =>
@@ -50,6 +50,7 @@ const SOURCE: Record<DesignId, Record<string, string>> = {
   spectroscope: blockTokens(tokensCss, ":root"),
   paper: blockTokens(tokensCss, '[data-design="paper"]'),
   still: blockTokens(designsCss, '[data-design="still"]'),
+  graphite: blockTokens(designsCss, '[data-design="graphite"]'),
 };
 
 describe("the export table matches the app's stylesheets", () => {
@@ -75,6 +76,15 @@ describe("the borrow list still describes reality", () => {
     // removed rather than quietly outvoting the new values.
     for (const key of STILL_BORROWS_FROM_PAPER) {
       expect(SOURCE.still[key], `designs.css now declares --${key} for still`).toBeUndefined();
+    }
+  });
+
+  it("borrows exactly the spectral tokens `graphite` leaves undeclared", () => {
+    // Graphite's whole claim is that only the ground and the accent move. The
+    // day it declares a line of its own, that claim is false and the borrow
+    // here would keep printing espresso's over the top of it.
+    for (const key of GRAPHITE_BORROWS_FROM_ESPRESSO) {
+      expect(SOURCE.graphite[key], `designs.css now declares --${key} for graphite`).toBeUndefined();
     }
   });
 

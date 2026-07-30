@@ -8,7 +8,8 @@ import type { RunEvent } from "../events";
 import ccLinear from "./fixtures/cc-linear.jsonl?raw";
 import ccSubagent from "./fixtures/cc-subagent.jsonl?raw";
 import ccModern from "./fixtures/cc-modern.jsonl?raw";
-import { claudeCodeToRunEvents, parseTranscript } from "./claudeCode";
+import ccWorkflow from "./fixtures/cc-workflow.jsonl?raw";
+import { claudeCodeToRunEvents, parseTaskNotification, parseTranscript } from "./claudeCode";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
 
@@ -314,5 +315,307 @@ describe("claudeCode adapter (subagent labels)", () => {
     const scene = claudeCodeToRunEvents(nested).reduce(advanceScene, initialScene());
     expect(scene.focus).toBe("user");
     expect(scene.subagents.length).toBe(0);
+  });
+});
+
+describe("task-notification parse", () => {
+  it("reads the fields a real notification carries", () => {
+    const n = parseTaskNotification(
+      "<task-notification>\n<task-id>w82qt1zg0</task-id>\n<tool-use-id>toolu_A</tool-use-id>\n" +
+        "<status>completed</status>\n<summary>done</summary>\n" +
+        "<usage><agent_count>11</agent_count><duration_ms>1140752</duration_ms></usage>\n" +
+        "</task-notification>",
+    );
+    expect(n).toMatchObject({ taskId: "w82qt1zg0", callId: "toolu_A", status: "completed" });
+    expect(n?.fields).toContainEqual({ label: "summary", value: "done" });
+    expect(n?.fields).toContainEqual({ label: "usage", value: "agent_count=11 duration_ms=1140752" });
+  });
+
+  // A half-eaten block is worse than an unread one: the record has to survive
+  // intact for the reader who can still make sense of it.
+  it("returns null rather than half-eating a block it cannot read", () => {
+    expect(parseTaskNotification("plain user text")).toBeNull();
+    expect(parseTaskNotification("<task-notification>\n<task-id>b1</task-id>\n<summary>no close")).toBeNull();
+    expect(
+      parseTaskNotification("<task-notification>\n<summary>no id</summary>\n</task-notification>"),
+    ).toBeNull();
+  });
+});
+
+describe("claudeCode adapter (background tasks)", () => {
+  const events = parseTranscript(ccWorkflow);
+  const resultsFor = (callId: string) =>
+    events.filter((e) => e.type === "tool_result" && e.callId === callId) as Extract<
+      RunEvent,
+      { type: "tool_result" }
+    >[];
+
+  it("leaves the launch's own receipt where the launch put it", () => {
+    const call = events.findIndex((e) => e.type === "tool_call" && e.callId === "toolu_A");
+    const receipt = events.findIndex((e) => e.type === "tool_result" && e.callId === "toolu_A");
+    const next = events.findIndex((e) => e.type === "text_delta" && e.text.includes("read the fence"));
+    expect(call).toBeGreaterThan(-1);
+    expect(receipt).toBeGreaterThan(call);
+    expect(receipt).toBeLessThan(next);
+    expect((events[receipt] as { output: string }).output).toContain("Task ID: w82qt1zg0");
+  });
+
+  // The outcome is that call's outcome, so it rides on that call's tool_result:
+  // the reducer patches the card by callId and adds no turn, which is what keeps
+  // a notification arriving eighteen minutes later from moving anything.
+  it("joins the notification onto the launch by its tool-use id, in arrival order", () => {
+    const rs = resultsFor("toolu_A");
+    expect(rs.length).toBe(2);
+    const interleaved = events.findIndex((e) => e.type === "text_delta" && e.text.includes("read the fence"));
+    const joined = events.lastIndexOf(rs[1]);
+    expect(joined).toBeGreaterThan(interleaved);
+    expect(rs[1].output).toContain("Task ID: w82qt1zg0");
+    expect(rs[1].output).toContain("Dynamic workflow");
+    expect(rs[1].output).toContain("agent_count=11");
+    expect(rs[1].isError).toBe(false);
+    // 21:00:02 receipt -> 21:19:02 notification: the wait is measured, not zero.
+    expect(rs[1].durationMs).toBe(19 * 60 * 1000);
+  });
+
+  it("joins by task id when the notification carries no tool-use id", () => {
+    // receipt, two events, and the end-of-transcript marker: a monitor that
+    // reported progress never reported an ending.
+    const rs = resultsFor("toolu_C");
+    expect(rs.length).toBe(4);
+    expect(rs[1].output).toContain("both 0.4.0 POMs resolve");
+    expect(rs[2].output).toContain("both 0.4.0 POMs resolve");
+    expect(rs[2].output).toContain("0.4.1 POMs resolve too");
+  });
+
+  it("marks a launch that never reported back as still running", () => {
+    const rs = resultsFor("toolu_B");
+    expect(rs.length).toBe(2);
+    expect(rs[1].output).toMatch(/no result/i);
+    expect(rs[1].isError).toBe(false);
+    // A progress event is not an ending: the monitor is unfinished too.
+    expect(resultsFor("toolu_C").at(-1)?.output).toMatch(/no result/i);
+    expect(resultsFor("toolu_A").at(-1)?.output).not.toMatch(/no result/i);
+  });
+
+  it("lets a notification whose launch is missing stand on its own", () => {
+    const msgs = events.filter((e) => e.type === "agent_message" && e.from === "borphan99");
+    expect(msgs.length).toBe(1);
+    expect(msgs[0]).toMatchObject({ role: "result", state: "failed", to: "main" });
+    expect((msgs[0] as { text: string }).text).toContain("codesign");
+  });
+
+  it("emits nothing at all for a block it could not parse", () => {
+    expect(events.some((e) => JSON.stringify(e).includes("btruncat1"))).toBe(false);
+  });
+
+  it("shows the outcome on the launch's own card", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.cards["toolu_A"].output).toContain("Dynamic workflow");
+    expect(state.cards["toolu_A"].durationMs).toBe(19 * 60 * 1000);
+    expect(state.cards["toolu_B"].output).toMatch(/no result/i);
+  });
+});
+
+// Both of these happened in the owner's own session, and both are silent: the
+// first steals a task id, the second restarts a clock.
+const hazards: unknown[] = [
+  { type: "user", message: { role: "user", content: "count them" }, uuid: "u1" },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_grep", name: "Bash", input: { command: "grep -c Workflow" } }],
+    },
+    uuid: "a1",
+    parentUuid: "u1",
+    timestamp: "2026-07-26T21:00:00.000Z",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_grep",
+          // The id is in the output, but this call started nothing.
+          content: 'tool_result "Workflow launched": 39\nfirst: Task ID: wquoted01',
+        },
+      ],
+    },
+    uuid: "u2",
+    parentUuid: "a1",
+    timestamp: "2026-07-26T21:00:01.000Z",
+  },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_wf", name: "Workflow", input: { script: "x" } }],
+    },
+    uuid: "a2",
+    parentUuid: "u2",
+    timestamp: "2026-07-26T21:00:02.000Z",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_wf",
+          content: "Workflow launched in background. Task ID: wquoted01\nSummary: the real one",
+        },
+      ],
+    },
+    uuid: "u3",
+    parentUuid: "a2",
+    timestamp: "2026-07-26T21:00:03.000Z",
+  },
+  // The same receipt again, replayed after a compaction.
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_wf",
+          content: "Workflow launched in background. Task ID: wquoted01\nSummary: the real one",
+        },
+      ],
+    },
+    uuid: "u4",
+    parentUuid: "u3",
+    timestamp: "2026-07-26T21:10:03.000Z",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content:
+        "<task-notification>\n<task-id>wquoted01</task-id>\n<status>completed</status>\n<summary>the real one finished</summary>\n</task-notification>",
+    },
+    uuid: "u5",
+    parentUuid: "u4",
+    timestamp: "2026-07-26T21:20:03.000Z",
+  },
+];
+
+describe("claudeCode adapter (background task hazards)", () => {
+  const events = claudeCodeToRunEvents(hazards);
+  const outcome = events.filter((e) => e.type === "tool_result" && /the real one finished/.test(e.output));
+
+  it("does not let an output that merely quotes a task id claim it", () => {
+    expect(outcome.length).toBe(1);
+    expect((outcome[0] as { callId: string }).callId).toBe("toolu_wf");
+  });
+
+  it("measures the wait from the first receipt, not from a replayed copy", () => {
+    expect((outcome[0] as { durationMs: number }).durationMs).toBe(20 * 60 * 1000);
+  });
+});
+
+// Measured in the owner's session on toolu_01PpZ2wqdadw4CbiHSPG2AdC (task
+// wgqx5s006, 11 agents): the launch record is replayed AFTER the outcome
+// landed, not before it. The reducer patches by callId and the last write wins,
+// so a re-emitted bare receipt erases the outcome the card had already earned.
+const lateReplay: unknown[] = [
+  {
+    type: "user",
+    message: { role: "user", content: "ground the forensic lens" },
+    uuid: "u0",
+    timestamp: "2026-07-27T19:00:00.000Z",
+  },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_wf", name: "Workflow", input: { script: "x" } }],
+    },
+    uuid: "a1",
+    parentUuid: "u0",
+    timestamp: "2026-07-27T19:00:00.000Z",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_wf",
+          content: "Workflow launched in background. Task ID: wgqx5s006",
+        },
+      ],
+    },
+    uuid: "u1",
+    parentUuid: "a1",
+    timestamp: "2026-07-27T19:00:01.000Z",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content:
+        "<task-notification>\n<task-id>wgqx5s006</task-id>\n<tool-use-id>toolu_wf</tool-use-id>\n" +
+        "<status>completed</status>\n<summary>the forensic lens finished</summary>\n</task-notification>",
+    },
+    uuid: "u2",
+    parentUuid: "u1",
+    timestamp: "2026-07-27T19:19:01.000Z",
+  },
+  // The compaction replay of the SAME pair, verbatim and after the outcome —
+  // in the owner's session both records come back under their original uuids.
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      content: [{ type: "tool_use", id: "toolu_wf", name: "Workflow", input: { script: "x" } }],
+    },
+    uuid: "a1",
+    parentUuid: "u0",
+    timestamp: "2026-07-27T19:29:59.000Z",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        {
+          type: "tool_result",
+          tool_use_id: "toolu_wf",
+          content: "Workflow launched in background. Task ID: wgqx5s006",
+        },
+      ],
+    },
+    uuid: "u1",
+    parentUuid: "a1",
+    timestamp: "2026-07-27T19:30:00.000Z",
+  },
+];
+
+describe("claudeCode adapter (a launch replayed after its outcome)", () => {
+  const events = claudeCodeToRunEvents(lateReplay);
+  const results = events.filter((e) => e.type === "tool_result" && e.callId === "toolu_wf") as Extract<
+    RunEvent,
+    { type: "tool_result" }
+  >[];
+
+  it("does not let the replayed receipt erase the outcome that already landed", () => {
+    expect(results.at(-1)?.output).toContain("the forensic lens finished");
+  });
+
+  it("keeps the measured wait rather than resetting it to the replay", () => {
+    expect(results.at(-1)?.durationMs).toBe(19 * 60 * 1000);
+  });
+
+  // The compaction replays the WHOLE record pair, so the launch call comes back
+  // too. Re-creating the card is the same erasure by another route.
+  it("does not re-create the card and strand it with no result", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.cards["toolu_wf"].output).toContain("the forensic lens finished");
+    expect(state.cards["toolu_wf"].durationMs).toBe(19 * 60 * 1000);
   });
 });

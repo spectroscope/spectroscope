@@ -32,6 +32,40 @@ export const MIN_CODE_CONTRAST = 3;
  *  light theme needs a light-ground ramp; see the file header for the numbers. */
 export const STILL_BORROWS_FROM_PAPER = ["sp-red", "sp-amber", "sp-teal", "sp-ocean", "sp-violet"] as const;
 
+/**
+ * What `graphite` never declares, and takes from espresso instead.
+ *
+ * The opposite case to `still`, and worth the contrast. `still` borrows because
+ * its ground MOVED: a ramp built for L* 6 measures 1.83:1 on white, so it needs
+ * a ramp of its own and takes paper's. Graphite's ground did not move — it is
+ * espresso's ladder at a different temperature, same lightness rung for rung —
+ * so espresso's ramp lands within 0.03 of its own contrast there, and a second
+ * set of near-identical hexes would be two things to retune instead of one.
+ *
+ * So the list is longer than `still`'s: not just the spectral lines but the
+ * status colours and agent accents derived from them, and the typography. In
+ * the app these simply inherit from :root; a file has nothing to inherit from,
+ * which is why they are written out here and named to their source.
+ */
+export const GRAPHITE_BORROWS_FROM_ESPRESSO = [
+  "shade",
+  "sand",
+  "sp-red",
+  "sp-amber",
+  "sp-teal",
+  "sp-ocean",
+  "sp-violet",
+  "ok",
+  "warn",
+  "error",
+  "agent-root",
+  "agent-explore",
+  "agent-worker",
+  "agent-extra",
+  "font-ui",
+  "font-mono",
+] as const;
+
 export interface ExportTheme {
   id: DesignId;
   /** The word the document's meta line prints, so the header stops claiming
@@ -163,6 +197,41 @@ export const EXPORT_THEMES: readonly ExportTheme[] = [
       "sp-violet": "paper",
       "font-mono": "spectroscope",
     },
+  },
+  {
+    id: "graphite",
+    name: { en: "graphite", de: "Graphit" },
+    colorScheme: "dark",
+    tokens: {
+      bg: "#101415",
+      surface: "#151b1c",
+      "surface-2": "#1c2324",
+      "surface-3": "#1f282a",
+      border: "#232c2e",
+      "border-strong": "#485557",
+      shade: ESPRESSO.shade,
+      text: "#bbbfc0",
+      "text-dim": "#868d8e",
+      "text-faint": "#485557",
+      // The accent is the ocean line itself, as espresso's is the amber one.
+      accent: "#2cb1c4",
+      sand: ESPRESSO.sand,
+      "sp-red": ESPRESSO["sp-red"],
+      "sp-amber": ESPRESSO["sp-amber"],
+      "sp-teal": ESPRESSO["sp-teal"],
+      "sp-ocean": ESPRESSO["sp-ocean"],
+      "sp-violet": ESPRESSO["sp-violet"],
+      ok: ESPRESSO.ok,
+      warn: ESPRESSO.warn,
+      error: ESPRESSO.error,
+      "agent-root": ESPRESSO["agent-root"],
+      "agent-explore": ESPRESSO["agent-explore"],
+      "agent-worker": ESPRESSO["agent-worker"],
+      "agent-extra": ESPRESSO["agent-extra"],
+      "font-ui": FONT_UI,
+      "font-mono": FONT_MONO,
+    },
+    borrows: Object.fromEntries(GRAPHITE_BORROWS_FROM_ESPRESSO.map((k) => [k, "spectroscope"])),
   },
 ];
 
