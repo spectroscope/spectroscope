@@ -966,12 +966,25 @@ export function App() {
     }
   }, [wsPath]);
 
-  // auto-open the gallery when the first image of a view arrives
-  // (0 -> >0). Closing it afterwards sticks until the count drops to zero.
-  const hasImages = view.images.length > 0;
+  // The gallery opens for an image that ARRIVES while you are watching, never
+  // for one a view already had. The old rule keyed on "are there any images",
+  // so opening any archived session that happened to contain one threw the
+  // panel open unasked, on every load (owner 2026-07-28). A count and a
+  // previous count tell those two apart; a boolean cannot.
+  const imageCount = view.images.length;
+  const seenImages = useRef<number | null>(null);
   useEffect(() => {
-    if (hasImages) setImagesOpen(true);
-  }, [hasImages]);
+    const before = seenImages.current;
+    seenImages.current = imageCount;
+    // null means this view was just mounted or switched: whatever it holds, it
+    // held before we looked, so it is not an arrival.
+    if (before !== null && imageCount > before) setImagesOpen(true);
+  }, [imageCount]);
+  // A view change resets the baseline, so the next count is a starting point
+  // rather than a jump from the previous session's total.
+  useEffect(() => {
+    seenImages.current = null;
+  }, [viewKey]);
 
   // While the Lab tab is active it owns the permission flow (the dialog
   // appears when the user STEPS onto the request) — suppress the global
