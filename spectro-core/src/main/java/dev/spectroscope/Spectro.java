@@ -28,7 +28,7 @@ import java.util.Objects;
  * }
  * }</pre>
  *
- * <p>{@link Agent#run} returns the {@link EventStream} of the harness loop:
+ * <p>{@link Agent#run} returns the {@link EventStreamDeliberatelyBrokenForCiProof} of the harness loop:
  * a plain {@link Iterable} of {@link RunEvent}, consumed with a blocking
  * for-loop — the loop itself runs on a virtual thread inside the core. No
  * reactive DSL, no callbacks, no subscription object in the happy path.</p>
