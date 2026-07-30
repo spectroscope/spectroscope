@@ -1,0 +1,356 @@
+# tag.yml — cut a release up to the tag, and not one step further.
+#
+# This workflow runs playbook steps 1-5 (docs/RELEASE-PLAYBOOK.md): preflight,
+# version bump, the full gate, a local dry-run of the publish, then the release
+# commit and the annotated tag. The owner checks out that tag and runs steps
+# 6-9 (Maven Central, Developer ID signing, GitHub release, snippet flip) on
+# their own machine.
+#
+# It is structurally unable to publish: no portal credentials, no signing key,
+# no publishAndReleaseToMavenCentral task, and `contents: write` is the only
+# permission. The one request it makes to Maven Central is a read — the
+# preflight check that the version is not already burned.
+
+name: tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version to cut (plain, e.g. 0.4.2)"
+        required: true
+        type: string
+
+# The narrow write this pipeline needs: a version-bump commit and a tag ref.
+# Nothing else — no packages, no issues, no id-token.
+permissions:
+  contents: write
+
+# One cut at a time, and never cancel a running one: a half-made release is
+# worse than a queued one.
+concurrency:
+  group: tag
+  cancel-in-progress: false
+
+jobs:
+  cut-tag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    # The `release` environment carries the required-reviewer gate configured
+    # in GitHub (docs/CI-SETUP.md) — a workflow that can move a tag can move
+    # the wrong one, so a person approves every run.
+    environment: release
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      # Full history and tags: the preflight checks tags locally as well as on
+      # origin, and the push at the end must not come from a shallow clone.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Playbook step 1 — preflight. Every check here is cheap and reversible;
+      # everything after it assumes the answers.
+      - name: Preflight
+        run: |
+          # Shape first: $VERSION is interpolated into paths and refs below.
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::version must be plain X.Y.Z, got '${VERSION}'"
+            exit 1
+          fi
+          if [ "$GITHUB_REF_NAME" != "main" ]; then
+            echo "::error::release cuts run from main, not '${GITHUB_REF_NAME}'"
+            exit 1
+          fi
+          # The notes are written before the cut, not after it.
+          if [ ! -f "release-notes/v${VERSION}.md" ]; then
+            echo "::error::release-notes/v${VERSION}.md does not exist"
+            exit 1
+          fi
+          if [ -n "$(git tag --list "v${VERSION}")" ]; then
+            echo "::error::tag v${VERSION} already exists locally"
+            exit 1
+          fi
+          if [ -n "$(git ls-remote --tags origin "refs/tags/v${VERSION}")" ]; then
+            echo "::error::tag v${VERSION} already exists on origin"
+            exit 1
+          fi
+          # Maven Central is append-only: a version that resolves is burned
+          # forever. This is a read; the workflow can never write to Central.
+          code="$(curl -sS -o /dev/null -w '%{http_code}' \
+            "https://repo1.maven.org/maven2/dev/spectroscope/spectro-core/${VERSION}/")"
+          if [ "$code" = "200" ]; then
+            echo "::error::spectro-core ${VERSION} is already on Maven Central (append-only) — pick a higher version"
+            exit 1
+          fi
+          if [ "$code" != "404" ]; then
+            echo "::error::unexpected HTTP ${code} from repo1 — refusing to cut on an unclear answer"
+            exit 1
+          fi
+          echo "preflight ok: v${VERSION} is unused locally, on origin, and on Maven Central"
+
+      # Playbook step 2 — bump versions. The five Gradle modules and the
+      # desktop package move together; the current version is read from
+      # spectro-core so the sed can only replace the exact old literal.
+      - name: Bump versions
+        run: |
+          old="$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-core/build.gradle.kts | head -1)"
+          if [ -z "$old" ]; then
+            echo "::error::could not read the current version from spectro-core/build.gradle.kts"
+            exit 1
+          fi
+          if [ "$old" = "$VERSION" ]; then
+            echo "::error::the tree is already at ${VERSION}"
+            exit 1
+          fi
+          old_re="${old//./\\.}"
+          for f in spectro-core/build.gradle.kts \
+                   spectro-orchestrator/build.gradle.kts \
+                   spectro-cli/build.gradle.kts \
+                   spectro-server/build.gradle.kts \
+                   spectro-mcp-notes/build.gradle.kts; do
+            sed -i "s/^version = \"${old_re}\"/version = \"${VERSION}\"/" "$f"
+            if ! grep -q "^version = \"${VERSION}\"" "$f"; then
+              echo "::error::the bump did not land in ${f}"
+              exit 1
+            fi
+          done
+          sed -i "s/\"version\": \"${old_re}\"/\"version\": \"${VERSION}\"/" spectro-desktop/package.json
+          if ! grep -q "\"version\": \"${VERSION}\"" spectro-desktop/package.json; then
+            echo "::error::the bump did not land in spectro-desktop/package.json"
+            exit 1
+          fi
+          # The samples pin the published Maven coordinates and move with the
+          # release too (they resolve as soon as playbook step 6 publishes;
+          # they are not part of the root Gradle build, so the gate never
+          # compiles them against the not-yet-published version). The guard
+          # step below verifies nothing was missed.
+          for f in $(git ls-files 'samples/*/build.gradle.kts'); do
+            sed -i \
+              -e "s/spectro-core:${old_re}\"/spectro-core:${VERSION}\"/" \
+              -e "s/spectro-orchestrator:${old_re}\"/spectro-orchestrator:${VERSION}\"/" \
+              "$f"
+          done
+          echo "OLD_VERSION=${old}" >> "$GITHUB_ENV"
+          echo "bumped ${old} -> ${VERSION}"
+
+      # Playbook step 2, second half — grep for the old version string. A
+      # version literal outside the build files is a bug (0.2.0 shipped with
+      # the desktop launcher still pinning the 0.1.0 jar). Two exemptions:
+      # lockfiles, per the playbook (npm refreshes them on the next install),
+      # and test files, whose fixtures legitimately quote historical version
+      # strings (recorded session content, parser inputs) — shipped code may
+      # not.
+      - name: Fail on stray old-version literals
+        run: |
+          old_re="${OLD_VERSION//./\\.}"
+          if hits="$(git grep -n "${old_re}" -- '*.ts' '*.kts' '*.json' \
+              ':(exclude)*package-lock.json' ':(exclude)*.test.ts')"; then
+            echo "$hits"
+            echo "::error::${OLD_VERSION} is still referenced outside build files, lockfiles and test fixtures — fix the stragglers before cutting"
+            exit 1
+          fi
+          echo "no stray ${OLD_VERSION} literals"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # setup-gradle caches ~/.gradle (downloaded dependencies and the wrapper
+      # distribution). That is DEPENDENCY caching, not the Gradle BUILD cache —
+      # the gate below disables the build cache explicitly, so cached artifacts
+      # can never stand in for executed tests.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Dependency caching only (the npm cache directory), keyed on the
+      # lockfile — no build outputs are cached.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: spectro-web/package-lock.json
+
+      # Playbook step 3 — the full gate, identical to gate.yml, run against
+      # the bumped tree so the commit below is exactly what was tested.
+
+      # The PTY tests probe for the compiled helper and self-skip when it is
+      # absent. Build it first so those tests actually run instead of silently
+      # skipping. Plain cc; openpty needs no extra linking on current glibc.
+      - name: Build the PTY helper
+        run: ./scripts/build-spectro-pty.sh
+
+      # --rerun-tasks --no-build-cache is NOT optional. On a warm tree a plain
+      # `./gradlew test` reports BUILD SUCCESSFUL in half a second having
+      # executed zero tests (up-to-date checks skip the whole task, and even
+      # `cleanTest test` comes back FROM-CACHE). These flags force every test
+      # to execute on every run. The javadoc legs are here because a broken
+      # doc comment aborts the Maven upload at step 6 — this gate is the only
+      # place to catch it first.
+      - name: Java gate
+        run: >
+          ./gradlew test --rerun-tasks --no-build-cache
+          :spectro-core:javadoc :spectro-orchestrator:javadoc
+
+      # A green Gradle run is only trusted together with a non-zero test count.
+      # Sum the tests/failures/errors/skipped attributes over every JUnit XML
+      # result file, publish the totals to the job summary, and fail if the
+      # gate executed zero tests. (No `if: always()` here: in a release cut
+      # every step gates the next, so nothing runs after a failure.)
+      - name: Enforce a non-zero JUnit test count
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+
+          files = sorted(glob.glob("*/build/test-results/test/*.xml"))
+          tests = failures = errors = skipped = 0
+          for path in files:
+              attrs = ET.parse(path).getroot().attrib
+              tests += int(attrs.get("tests", 0))
+              failures += int(attrs.get("failures", 0))
+              errors += int(attrs.get("errors", 0))
+              skipped += int(attrs.get("skipped", 0))
+
+          line = (
+              f"JUnit: {tests} tests, {failures} failures, {errors} errors, "
+              f"{skipped} skipped ({len(files)} result files)"
+          )
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"### java gate\n\n{line}\n")
+
+          if tests == 0:
+              print("::error::The Java gate executed zero tests. On this tree "
+                    "a green build without a test count means the suite was "
+                    "skipped, not that it passed.")
+              sys.exit(1)
+          PY
+
+      - name: Install web dependencies
+        working-directory: spectro-web
+        run: npm ci
+
+      # The gate is tsc -b && eslint . && prettier --check . && vitest run &&
+      # vite build. The final `vite build` writes the bundle into
+      # spectro-server/src/main/resources/static — TRACKED files — so this
+      # step dirties the tree by design. Here that is not throwaway state:
+      # the release commit below picks the rebuilt bundle up via `git add -A`,
+      # exactly as the playbook does on the owner's machine. Do not add a
+      # "git status must be clean" check after this step.
+      #
+      # The gate's output is captured so the next step can read the vitest
+      # summary; pipefail keeps the tee pipe from masking a failing gate.
+      - name: Web gate
+        working-directory: spectro-web
+        run: |
+          set -o pipefail
+          npm run gate 2>&1 | tee "$RUNNER_TEMP/web-gate.log"
+
+      # A green gate is only trusted together with a non-zero test count.
+      # vitest prints a fixed-format summary line on pass, e.g.
+      #   "      Tests  1820 passed (1820)"
+      # (harmless Node warnings interleave with it, so the log is grepped
+      # rather than tailed). On a runner that line arrives COLORED: the CI
+      # env var alone makes vitest emit ANSI codes even into a piped log, and
+      # the escapes land between "Tests" and the digits — strip them first or
+      # the grep never matches. The count is a reported measurement; the
+      # pass/fail authority stays with the gate's exit status above. Publish
+      # the count and fail if it is missing or zero.
+      - name: Enforce a non-zero vitest test count
+        run: |
+          log="$RUNNER_TEMP/web-gate.log"
+          line="$(sed $'s/\x1b\\[[0-9;]*m//g' "$log" 2>/dev/null | grep -E '^[[:space:]]*Tests[[:space:]]+[0-9]+ passed' | tail -n 1 || true)"
+          count="$(printf '%s\n' "$line" | grep -oE '[0-9]+' | head -n 1 || true)"
+          {
+            echo "### web gate"
+            echo ""
+            echo "vitest: ${count:-0} tests passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "${count:-}" ] || [ "$count" -eq 0 ]; then
+            echo "::error::The web gate reported zero vitest tests — the summary line was missing or counted 0. The tick alone proves nothing."
+            exit 1
+          fi
+
+      # Playbook step 4 — dry-run the publish, minus the signatures.
+      # signAllPublications() is called unconditionally in both build files,
+      # so a keyless run dies inside signMavenPublication (and setting
+      # RELEASE_SIGNING_ENABLED=false does not override the explicit call —
+      # measured). Excluding the sign tasks is the working escape hatch: CI
+      # proves POM generation and the artifact set; GPG signing itself is
+      # confirmed on the owner's machine at playbook step 6, where the key
+      # lives. publishToMavenLocal writes to ~/.m2 on this runner and nowhere
+      # else.
+      - name: Dry-run the publish (Maven local, unsigned)
+        run: >
+          ./gradlew :spectro-core:publishToMavenLocal :spectro-orchestrator:publishToMavenLocal
+          -x :spectro-core:signMavenPublication -x :spectro-orchestrator:signMavenPublication
+
+      # The one cross-module fact the dry run must prove: the orchestrator POM
+      # depends on spectro-core at exactly this version, not a stale one.
+      - name: Check the orchestrator POM pins spectro-core
+        run: |
+          pom="$HOME/.m2/repository/dev/spectroscope/spectro-orchestrator/${VERSION}/spectro-orchestrator-${VERSION}.pom"
+          if [ ! -f "$pom" ]; then
+            echo "::error::the dry-run publish left no orchestrator POM at ${pom}"
+            exit 1
+          fi
+          if ! grep -A 2 '<artifactId>spectro-core</artifactId>' "$pom" | grep -q "<version>${VERSION}</version>"; then
+            echo "::error::the orchestrator POM does not pin spectro-core at ${VERSION}"
+            sed -n '/<dependencies>/,/<\/dependencies>/p' "$pom"
+            exit 1
+          fi
+          echo "orchestrator POM pins spectro-core at ${VERSION}"
+
+      # Playbook step 5 — commit, tag, push. `git add -A` deliberately
+      # includes the web bundle the gate just rebuilt, along with the version
+      # bump; build outputs and node_modules are gitignored and stay out. The
+      # push uses this workflow's GITHUB_TOKEN, which does not trigger
+      # gate.yml on the release commit — the full gate already ran above.
+      #
+      # If main carries the required-checks ruleset from docs/CI-SETUP.md
+      # section 2, the GitHub Actions app must be on that ruleset's bypass
+      # list: the release commit is created inside this run, so it can never
+      # have passing checks before it is pushed, and without the bypass the
+      # ruleset rejects this push after the whole gate has run.
+      - name: Commit, tag, push
+        run: |
+          git config user.name "Christopher Ezell"
+          git config user.email "chris@spectroscope.ai"
+          git add -A
+          git commit -m "release: cut v${VERSION}"
+          git tag -a "v${VERSION}" -m "spectroscope v${VERSION}"
+          git push origin main
+          git push origin "v${VERSION}"
+
+      # The tag is the handoff artifact. Everything irreversible — Maven
+      # Central, Developer ID signing, the GitHub release — happens on the
+      # owner's machine against this exact tag.
+      - name: Write the handoff
+        run: |
+          {
+            echo "## v${VERSION} is cut"
+            echo ""
+            echo "Release commit \`$(git rev-parse --short HEAD)\`, annotated tag \`v${VERSION}\`, pushed to main."
+            echo ""
+            echo "Next, on the owner's machine (docs/RELEASE-PLAYBOOK.md steps 6-9):"
+            echo ""
+            echo '```bash'
+            echo "git fetch --tags && git checkout v${VERSION}"
+            echo ""
+            echo "# step 6 — publish to Maven Central. IRREVERSIBLE; needs the portal token + GPG key."
+            echo "./gradlew publishAndReleaseToMavenCentral --no-configuration-cache"
+            echo ""
+            echo "# step 7 — build the release assets (Developer ID signing + notarization stay local)."
+            echo "./scripts/build-release-assets.sh"
+            echo ""
+            echo "# step 8 — GitHub release with the assets."
+            echo "gh release create v${VERSION} --title \"spectroscope v${VERSION}\" --notes-file release-notes/v${VERSION}.md build/release-assets/*"
+            echo ""
+            echo "# step 9 — flip the install snippets, only after step 6 resolves on repo1."
+            echo '```'
+            echo ""
+            echo "This workflow holds no portal credentials and no signing key; it cannot publish."
+          } >> "$GITHUB_STEP_SUMMARY"

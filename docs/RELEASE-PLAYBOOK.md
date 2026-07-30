@@ -61,8 +61,12 @@ Move together:
   `spectro-orchestrator/build.gradle.kts`.
 - **Apps (asset naming):** `version` in `spectro-cli`, `spectro-server`,
   `spectro-mcp-notes` build files and `spectro-desktop/package.json`.
+- **Samples:** the Maven coordinates pinned in `samples/*/build.gradle.kts`
+  (they resolve once step 6 publishes; the samples build standalone and are
+  not part of the root gate).
 - **Then grep the tree for the OLD version string** (`grep -rn "0\.2\.0" --include='*.ts' --include='*.kts' --include='*.json' .`
-  minus lockfiles): 0.2.0 shipped with `spectro-desktop/main.ts` still
+  minus lockfiles and `*.test.ts` — test fixtures legitimately quote
+  historical version strings): 0.2.0 shipped with `spectro-desktop/main.ts` still
   pinning `spectro-server-0.1.0.jar` — the desktop face died on a fresh
   clone. Version literals outside the build files are bugs; prefer globbing
   (the desktop launcher now globs the newest jar for exactly this reason).
@@ -71,7 +75,7 @@ Move together:
 ```bash
 ./gradlew test --rerun-tasks --no-build-cache \
   :spectro-core:javadoc :spectro-orchestrator:javadoc   # JUnit + javadoc (warnings ok, errors abort)
-( cd spectro-web && npx vitest run )                     # vitest
+( cd spectro-web && npm ci && npm run gate )             # tsc, eslint, prettier, vitest, vite build
 ```
 **`--rerun-tasks --no-build-cache` is not optional.** On a warm tree a plain
 `./gradlew test` reports `BUILD SUCCESSFUL` in half a second without running a
@@ -91,6 +95,11 @@ that runs javadoc is this one.
 ```
 Confirms GPG signing + POM generation. Check `~/.m2/repository/dev/spectroscope/…`:
 every artifact has a `.asc`, and the orchestrator POM depends on `spectro-core:<v>`.
+
+When the tag was cut by CI (`.github/workflows/tag.yml`), its dry run excluded
+the signing tasks — no key lives in CI — so a CI-cut tag has proven POM
+generation only. The first `.asc` files appear when this command, or step 6
+itself, runs on the owner's machine.
 
 ### 5. Commit + tag
 ```bash

@@ -1,0 +1,156 @@
+# gate.yml — the test gate for every push to main and every pull request.
+#
+# Two independent jobs: java-gate (Gradle + javadoc) and web-gate (the
+# spectro-web gate script). Each one extracts its REAL test count and fails on
+# zero, because on this tree a green tick alone is worthless — see the comments
+# on the run steps.
+
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+# One gate per ref. Pull requests cancel their own superseded runs. Pushes to
+# main never cancel a run in progress — but GitHub keeps at most one QUEUED
+# run per group, so under rapid successive pushes an intermediate commit can
+# lose its queued gate. The newest commit always gets a full one.
+concurrency:
+  group: gate-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  java-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # setup-gradle caches ~/.gradle (downloaded dependencies and the wrapper
+      # distribution). That is DEPENDENCY caching, not the Gradle BUILD cache —
+      # the gate below disables the build cache explicitly, so cached artifacts
+      # can never stand in for executed tests.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The PTY tests probe for the compiled helper and self-skip when it is
+      # absent. Build it first so those tests actually run instead of silently
+      # skipping. Plain cc; openpty needs no extra linking on current glibc.
+      - name: Build the PTY helper
+        run: ./scripts/build-spectro-pty.sh
+
+      # --rerun-tasks --no-build-cache is NOT optional. On a warm tree a plain
+      # `./gradlew test` reports BUILD SUCCESSFUL in half a second having
+      # executed zero tests (up-to-date checks skip the whole task, and even
+      # `cleanTest test` comes back FROM-CACHE). These flags force every test
+      # to execute on every run. The javadoc legs are here because javadoc
+      # otherwise only runs at release, which is the one place a broken doc
+      # comment is expensive to discover.
+      - name: Java gate
+        run: >
+          ./gradlew test --rerun-tasks --no-build-cache
+          :spectro-core:javadoc :spectro-orchestrator:javadoc
+
+      # A green Gradle run is only trusted together with a non-zero test count.
+      # Sum the tests/failures/errors/skipped attributes over every JUnit XML
+      # result file, publish the totals to the job summary, and fail if the
+      # gate executed zero tests.
+      - name: Enforce a non-zero JUnit test count
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import glob
+          import os
+          import sys
+          import xml.etree.ElementTree as ET
+
+          files = sorted(glob.glob("*/build/test-results/test/*.xml"))
+          tests = failures = errors = skipped = 0
+          for path in files:
+              attrs = ET.parse(path).getroot().attrib
+              tests += int(attrs.get("tests", 0))
+              failures += int(attrs.get("failures", 0))
+              errors += int(attrs.get("errors", 0))
+              skipped += int(attrs.get("skipped", 0))
+
+          line = (
+              f"JUnit: {tests} tests, {failures} failures, {errors} errors, "
+              f"{skipped} skipped ({len(files)} result files)"
+          )
+          print(line)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"### java gate\n\n{line}\n")
+
+          if tests == 0:
+              print("::error::The Java gate executed zero tests. On this tree "
+                    "a green build without a test count means the suite was "
+                    "skipped, not that it passed.")
+              sys.exit(1)
+          PY
+
+  web-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      # Dependency caching only (the npm cache directory), keyed on the
+      # lockfile — no build outputs are cached.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: spectro-web/package-lock.json
+
+      - name: Install dependencies
+        working-directory: spectro-web
+        run: npm ci
+
+      # The gate is tsc -b && eslint . && prettier --check . && vitest run &&
+      # vite build. The final `vite build` writes the bundle into
+      # spectro-server/src/main/resources/static — TRACKED files — so this
+      # step leaves the tree dirty by design. The CI checkout is a throwaway,
+      # so that is fine here; do not add a "git status must be clean" check
+      # after this step, it would fail on the gate's own output.
+      #
+      # The gate's output is captured so the next step can read the vitest
+      # summary; pipefail keeps the tee pipe from masking a failing gate.
+      - name: Web gate
+        working-directory: spectro-web
+        run: |
+          set -o pipefail
+          npm run gate 2>&1 | tee "$RUNNER_TEMP/web-gate.log"
+
+      # A green gate is only trusted together with a non-zero test count.
+      # vitest prints a fixed-format summary line on pass, e.g.
+      #   "      Tests  1820 passed (1820)"
+      # (harmless Node warnings interleave with it, so the log is grepped
+      # rather than tailed). On a runner that line arrives COLORED: the CI
+      # env var alone makes vitest emit ANSI codes even into a piped log, and
+      # the escapes land between "Tests" and the digits — strip them first or
+      # the grep never matches. The count is a reported measurement; the
+      # pass/fail authority stays with the gate's exit status above. Publish
+      # the count and fail if it is missing or zero.
+      - name: Enforce a non-zero vitest test count
+        if: always()
+        run: |
+          log="$RUNNER_TEMP/web-gate.log"
+          line="$(sed $'s/\x1b\\[[0-9;]*m//g' "$log" 2>/dev/null | grep -E '^[[:space:]]*Tests[[:space:]]+[0-9]+ passed' | tail -n 1 || true)"
+          count="$(printf '%s\n' "$line" | grep -oE '[0-9]+' | head -n 1 || true)"
+          {
+            echo "### web gate"
+            echo ""
+            echo "vitest: ${count:-0} tests passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "${count:-}" ] || [ "$count" -eq 0 ]; then
+            echo "::error::The web gate reported zero vitest tests — the summary line was missing or counted 0. The tick alone proves nothing."
+            exit 1
+          fi
