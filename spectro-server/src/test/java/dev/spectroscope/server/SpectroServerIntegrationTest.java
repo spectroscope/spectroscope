@@ -785,8 +785,12 @@ class SpectroServerIntegrationTest {
                     .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
                             collectInto(events, "never", unused))
                     .join();
+            // Sequence the two frames: the JDK WebSocket allows ONE pending text send —
+            // a second sendText while the first is in flight completes exceptionally
+            // (IllegalStateException "Send pending") and the ollama frame is silently
+            // never transmitted. That was the CI flake on the starved shared runner.
             socket.sendText("""
-                    {"type":"set_provider","provider":"openai","model":"carried-marker"}""", true);
+                    {"type":"set_provider","provider":"openai","model":"carried-marker"}""", true).join();
             socket.sendText("""
                     {"type":"set_provider","provider":"ollama"}""", true);
             for (int i = 0; i < 100 && providerInfoCount(events) < 3; i++) {
@@ -920,7 +924,9 @@ class SpectroServerIntegrationTest {
                     .buildAsync(URI.create("ws://127.0.0.1:" + port + "/ws"),
                             collectInto(events, "run_end", runEnded))
                     .join();
-            socket.sendText(reasoningFrame, true);
+            // Same JDK one-pending-send contract as the blank-model switch test: join
+            // the first frame, or the prompt frame can be silently dropped.
+            socket.sendText(reasoningFrame, true).join();
             socket.sendText("""
                     {"type":"user_message","text":"%s"}""".formatted(probeText), true);
             assertTrue(runEnded.await(20, TimeUnit.SECONDS), "run_end must arrive");

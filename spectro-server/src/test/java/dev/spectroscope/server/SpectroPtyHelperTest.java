@@ -43,8 +43,13 @@ class SpectroPtyHelperTest {
         try (PtyProvider.Pty pty = provider.open(cwd, 24, 80)) {
             Drain drain = Drain.on(pty);
             pty.write("tty\n".getBytes());
-            String seen = drain.await("/dev/tty", 10_000);
-            assertTrue(seen.contains("/dev/tty"), "the child has no controlling terminal:\n" + seen);
+            // Darwin names PTYs /dev/ttysNNN, Linux /dev/pts/N — the check must know both,
+            // or a green Linux helper fails its own test (the build script's verify pattern
+            // learned the same lesson). "/dev/" is the token both worlds emit; none of the
+            // probe's reachable failure strings contain either name, so the gate holds.
+            String seen = drain.await("/dev/", 10_000);
+            assertTrue(seen.contains("/dev/tty") || seen.contains("/dev/pts/"),
+                    "the child has no controlling terminal:\n" + seen);
         }
     }
 
