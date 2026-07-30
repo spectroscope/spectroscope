@@ -1,0 +1,19 @@
+meta {
+  name: list sessions
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/sessions
+  body: none
+  auth: none
+}
+
+docs {
+  List every stored session's metadata from the JSONL store (the sidebar list).
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

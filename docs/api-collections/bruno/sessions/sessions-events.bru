@@ -1,0 +1,19 @@
+meta {
+  name: session events
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/events
+  body: none
+  auth: none
+}
+
+docs {
+  All parsed RunEvents of one session as JSON; 404 when unreadable.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

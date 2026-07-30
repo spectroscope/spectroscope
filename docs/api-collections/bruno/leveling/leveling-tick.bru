@@ -1,0 +1,31 @@
+meta {
+  name: tick a criterion by hand
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/leveling/tick
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "criterion": "chat-first-run"
+  }
+}
+
+docs {
+  Tick a criterion by hand — the receipt records origin=manual, forever.
+  
+  Body: TickBody(String criterion). Unknown criteria are ignored by the recorder; state is still returned.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

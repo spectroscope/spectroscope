@@ -1,0 +1,21 @@
+meta {
+  name: delete a user skill
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/api/skills/{{skillName}}
+  body: none
+  auth: none
+}
+
+docs {
+  Delete a USER-root skill for good (seeding ledger keeps it away). 409 for a project skill, 404 unknown. Traversal-guarded.
+  
+  CAUTION: Deletion is permanent — the seeding ledger will not re-seed it.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: yes
+}

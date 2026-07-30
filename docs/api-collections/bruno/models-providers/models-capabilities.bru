@@ -1,0 +1,24 @@
+meta {
+  name: reasoning capabilities
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/models/capabilities
+  body: none
+  auth: none
+}
+
+params:query {
+  provider: anthropic
+  model: claude-sonnet-5
+}
+
+docs {
+  Reasoning capability of one (provider,model) pair — control/efforts/wire; live API overlay for anthropic/ollama/openrouter, static table otherwise. Never errors.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

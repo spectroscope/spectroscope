@@ -1,0 +1,19 @@
+meta {
+  name: health probe
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/health
+  body: none
+  auth: none
+}
+
+docs {
+  Health probe; always {"status":"ok"} — reachability IS the signal.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

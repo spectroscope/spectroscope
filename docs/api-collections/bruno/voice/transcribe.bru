@@ -1,0 +1,21 @@
+meta {
+  name: speech to text
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/transcribe
+  body: none
+  auth: none
+}
+
+docs {
+  Speech-to-text: webm→WAV (ffmpeg)→whisper-cli→{text}. 503 with setup hint when STT not installed, 500 temp-dir/interrupt. Sent without a body — as this request ships — Spring answers 400 (Required request body is missing) before the controller runs.
+  
+  Body: Send the raw webm/opus recording as the request body (curl --data-binary @recording.webm). No JSON wrapper.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

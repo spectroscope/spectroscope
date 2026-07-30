@@ -1,0 +1,35 @@
+meta {
+  name: patch local settings
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/settings/local
+  body: json
+  auth: none
+}
+
+params:query {
+  session: {{sessionId}}
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "model": "qwen3.5:27b-q4_K_M"
+  }
+}
+
+docs {
+  Patch the workspace's .spectro/settings.local.json (gitignored — the writer ensures the .gitignore entry).
+  
+  Body: Flat JSON patch.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: yes
+}

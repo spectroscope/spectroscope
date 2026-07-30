@@ -1,0 +1,44 @@
+docs {
+  The whole REST surface of spectro-server 0.4.1 — 47 endpoints in 16 folders, one per area.
+  
+  Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
+  
+  The chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.
+  
+  ## The fences, measured
+  
+  Measured with curl from loopback against a live spectro-server 0.4.1 (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.
+  
+  | endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |
+  |---|---|---|---|---|---|
+  | GET /api/sessions | none | 200 | 200 | 200 | 200 |
+  | GET /api/settings | host | 200 | 200 | 200 | 404 |
+  | GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |
+  | POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |
+  
+  Every fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.
+  
+  ## Variables
+  
+  - `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.
+  - `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.
+  - `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.
+  - `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.
+  - `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.
+  - `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills.
+  - `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.
+  - `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.
+  - `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.
+  - `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.
+  - `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.
+  - `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.
+  
+  ## Handle with care
+  
+  - **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an origin fence — the id shape check is the only guard. Point it at a throwaway home before replaying the whole collection.
+  - **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.
+  - **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.
+  - **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.
+  - **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.
+  - **POST /api/explain** — Spends the operator's API key on every call.
+}

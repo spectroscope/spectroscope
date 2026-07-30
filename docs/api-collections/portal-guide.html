@@ -1,0 +1,90 @@
+<!--
+  spectroscope.dev — "use the api" section (card 132).
+
+  This is a STANDALONE FRAGMENT, to be integrated into the dev-portal page
+  separately. It assumes the portal page's own stylesheet context: tokens.css
+  plus the classes defined in public/index.html (.wrap, .kicker, .card,
+  .grid2, .fmt-scroll, .fmt-table, .sec-note, pre, and the .k/.s/.t/.c code
+  spans). The download hrefs below assume the collection files land at
+  /api-collections/ next to the portal root — adjust them to wherever the
+  files are actually published (the source of truth is the generated set in
+  the harness repo: endpoints.json + build_api_collections.py).
+-->
+<section id="api-collections">
+  <div class="wrap">
+    <p class="kicker">use the api</p>
+    <h2>the whole surface, importable</h2>
+    <p>
+      Everything the cockpit does over REST, you can do over REST — the web
+      UI has no private wire. All <strong>47 endpoints</strong> of
+      spectro-server ship as ready-made collections, foldered by area
+      (sessions, fleet, settings, leveling, …), every request carrying its
+      own description and fence semantics. Host and port are collection
+      variables with localhost defaults: change them once and every request
+      re-targets.
+    </p>
+    <div class="grid2">
+      <div class="card">
+        <h4><i style="background: var(--sp-teal)"></i>downloads</h4>
+        <p>
+          <a href="api-collections/spectroscope-api.postman_collection.json">spectroscope-api.postman_collection.json</a>
+          — Postman Collection v2.1<br>
+          <a href="api-collections/bruno.zip">bruno collection folder</a>
+          — native <code>.bru</code> files, made to live in a git repo
+        </p>
+      </div>
+      <div class="card">
+        <h4><i style="background: var(--sp-amber)"></i>which client, which file</h4>
+        <p>
+          <strong>Postman</strong> imports the v2.1 file.
+          <strong>Bruno</strong> opens the folder natively (and imports the
+          Postman file too). <strong>Insomnia</strong> and
+          <strong>Hoppscotch</strong> both import the Postman v2.1 file
+          directly — that one file serves all four clients.
+        </p>
+      </div>
+    </div>
+    <p style="margin-top: 1.4rem;">
+      No client at hand? The API answers curl just the same. One worked
+      example — the starter-bundle catalog, from a fresh 0.4.1 install
+      (output abridged):
+    </p>
+    <pre><code><span class="c">$</span> curl -s http://localhost:8080/api/bundles
+{<span class="s">"bundles"</span>: [
+   {<span class="s">"id"</span>: <span class="s">"five-lines"</span>,  <span class="s">"name"</span>: <span class="s">"Five lines — a single agent"</span>,  <span class="s">"fleet"</span>: false},
+   {<span class="s">"id"</span>: <span class="s">"fleet"</span>,       <span class="s">"name"</span>: <span class="s">"Fleet — a review swarm"</span>,        <span class="s">"fleet"</span>: true},
+   {<span class="s">"id"</span>: <span class="s">"multi-agent"</span>, <span class="s">"name"</span>: <span class="s">"Multi-agent — a team that builds together"</span>, <span class="s">"fleet"</span>: true}],
+ <span class="s">"buildTools"</span>: [<span class="s">"gradle"</span>, <span class="s">"maven"</span>, <span class="s">"python"</span>, <span class="s">"bash"</span>],
+ <span class="s">"version"</span>: <span class="s">"0.4.1"</span>}</code></pre>
+    <p style="margin-top: 1.4rem;">
+      <strong>About the fences.</strong> Part of the surface is origin-gated
+      — the hardening that keeps a malicious web page from driving your
+      local server. A desktop REST client sends no browser
+      <code>Origin</code> header, and the server treats an absent Origin as
+      safe: from the same machine, targeting <code>localhost</code>, every
+      request in the collection passes. The fences bite in exactly two
+      cases — a foreign <code>Origin</code> header added by hand, or a URL
+      that names anything other than localhost (a LAN IP, a rebound DNS
+      name). Refusals are blank 404s, never 403, so a refused caller learns
+      nothing. Measured against a live 0.4.1 server:
+    </p>
+    <div class="fmt-scroll">
+      <table class="fmt-table">
+        <tr><th>endpoint</th><th>fence</th><th>no origin</th><th>evil origin</th><th>evil host</th></tr>
+        <tr><td class="f-name">GET /api/sessions</td><td>none</td><td>200</td><td>200</td><td>200</td></tr>
+        <tr><td class="f-name">GET /api/settings</td><td>host</td><td>200</td><td>200</td><td>404</td></tr>
+        <tr><td class="f-name">GET /api/leveling</td><td>host+origin</td><td>200</td><td>404</td><td>404</td></tr>
+        <tr><td class="f-name">POST /api/leveling/tick</td><td>host+origin</td><td>200</td><td>404</td><td>404</td></tr>
+      </table>
+    </div>
+    <p class="sec-note">
+      the collections are generated from one endpoint table, and the
+      generator diffs that table against the server's controller annotations
+      on every run — an endpoint added to the code fails the regeneration
+      until the table learns it. two endpoints deserve respect:
+      DELETE /api/sessions/{id} really deletes, and POST /api/fleet/nodes
+      answers 404 until the server runs with SPECTRO_ALLOW_SPAWN and a hub.
+      /ws and /ws/shell are WebSocket, not REST.
+    </p>
+  </div>
+</section>

@@ -1,0 +1,24 @@
+meta {
+  name: one file (preview)
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/file
+  body: none
+  auth: none
+}
+
+params:query {
+  path: {{workspaceFilePath}}
+  ~session: {{sessionId}}
+}
+
+docs {
+  One file for the preview pane, CSP-sandboxed. 404 outside/hidden/missing, 413 over caps (2 MB text / 25 MB image), 415 binary.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

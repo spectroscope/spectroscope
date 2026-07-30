@@ -1,0 +1,1443 @@
+{
+  "info": {
+    "_postman_id": "fadc2039-f132-54cb-addb-ef61a9079019",
+    "name": "spectroscope REST API (0.4.1)",
+    "description": "The whole REST surface of spectro-server 0.4.1 — 47 endpoints in 16 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server 0.4.1 (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/sessions | none | 200 | 200 | 200 | 200 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an origin fence — the id shape check is the only guard. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "health & doctor",
+      "description": "Reachability, the rolling server log, and the scheduler's job state.",
+      "item": [
+        {
+          "name": "health probe",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Health probe; always {\"status\":\"ok\"} — reachability IS the signal.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "server log tail",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/logs",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "logs"
+              ],
+              "query": [
+                {
+                  "key": "offset",
+                  "value": "0",
+                  "description": "optional. byte cursor from the previous poll",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "200",
+                  "description": "optional. tail lines for the no-offset form, max 1000",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "The rolling ~/.spectro/logs/spectroscope.log as tail + incremental deltas: {content, offset}. 256 KB response cap; rotation resets to a fresh tail.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "scheduler job state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/jobs/state",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "jobs",
+                "state"
+              ]
+            },
+            "description": "The scheduler's job-state map from ~/.spectro/jobs-state.json (what `spectroscope cron status` prints); empty when absent/corrupt.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "sessions",
+      "description": "The stored session JSONL store: list, read, export, delete.",
+      "item": [
+        {
+          "name": "list sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions"
+              ]
+            },
+            "description": "List every stored session's metadata from the JSONL store (the sidebar list).\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "session events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/{{sessionId}}/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{sessionId}}",
+                "events"
+              ]
+            },
+            "description": "All parsed RunEvents of one session as JSON; 404 when unreadable.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "export session JSONL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/{{sessionId}}/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{sessionId}}",
+                "export"
+              ]
+            },
+            "description": "The raw session JSONL, byte-identical, as an attachment (application/x-ndjson). Id shape-checked ([A-Za-z0-9][A-Za-z0-9-]*); 404 for foreign callers or malformed id.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "delete session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/sessions/{{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "sessions",
+                "{{sessionId}}"
+              ]
+            },
+            "description": "Delete one stored session (JSONL + blob folder). 204 success, 400 malformed id, 404 unknown.\n\nCAUTION: This really deletes the session, and it is the one destructive endpoint without an origin fence — the id shape check is the only guard. Point it at a throwaway home before replaying the whole collection.\n\nFence: none — No origin gating.\n\nWrites state: yes"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "config & onboarding",
+      "description": "Active provider/model, the assembled system context, and saving an API key.",
+      "item": [
+        {
+          "name": "active config",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/config",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "config"
+              ]
+            },
+            "description": "Active provider/model/logLevel, image-key presence (booleans only), per-provider onboarding status incl. spectro-local.\n\nSide effect: A ready provider establishes the 'provider-ready' leveling criterion — harmless, but a drift guard replaying the whole collection should know.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "save an API key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/onboarding/key",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "onboarding",
+                "key"
+              ]
+            },
+            "description": "Save an API key to ~/.spectro/.env (0600). 200 {saved:true,provider}, 400 unknown provider/empty key, 404 fenced out. Value never echoed.\n\nBody: KeyBody(String provider, String key). Replace the placeholder key before sending.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"anthropic\",\n  \"key\": \"sk-ant-xxxxxxxx\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "assembled system context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "context"
+              ]
+            },
+            "description": "The assembled system context (system prompt, tools, skills, MCP servers, subagent profiles) for the server's working directory — stateless.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "models & providers",
+      "description": "Live model lists, reasoning capabilities, and the built-in local-model catalogue.",
+      "item": [
+        {
+          "name": "live model list",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/models",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "models"
+              ],
+              "query": [
+                {
+                  "key": "provider",
+                  "value": "ollama",
+                  "description": "optional. anthropic | openai | lmstudio | openrouter | gemini | ollama",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Live model list for the picker (Anthropic Models API / /v1/models / ollama /api/tags), curated fallback; unknown provider answers [].\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "reasoning capabilities",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/models/capabilities?provider=anthropic&model=claude-sonnet-5",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "models",
+                "capabilities"
+              ],
+              "query": [
+                {
+                  "key": "provider",
+                  "value": "anthropic",
+                  "description": "required"
+                },
+                {
+                  "key": "model",
+                  "value": "claude-sonnet-5",
+                  "description": "required"
+                }
+              ]
+            },
+            "description": "Reasoning capability of one (provider,model) pair — control/efforts/wire; live API overlay for anthropic/ollama/openrouter, static table otherwise. Never errors.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "built-in model catalogue",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/local-model/catalog",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "local-model",
+                "catalog"
+              ]
+            },
+            "description": "The built-in model catalogue: machine RAM/disk/binaryPresent plus every model's size, licence, download state and preflight verdict. Fenced — hardware fingerprint.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "model download status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/local-model/status",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "local-model",
+                "status"
+              ],
+              "query": [
+                {
+                  "key": "model",
+                  "value": "{{localModelId}}",
+                  "description": "optional. absent = catalogue default",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "One model's download/presence state, polled for the progress bar. 404 for unknown ids.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "start model download",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/local-model/download",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "local-model",
+                "download"
+              ],
+              "query": [
+                {
+                  "key": "model",
+                  "value": "{{localModelId}}",
+                  "description": "optional",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Start (idempotent) one model's sha256-pinned download into ~/.spectro/models. Returns current status.\n\nCAUTION: Downloads are gigabytes — do not include this in an automated replay.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "settings",
+      "description": "Effective config with per-field provenance, and the three settings layers (user / project / local).",
+      "item": [
+        {
+          "name": "effective settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings"
+              ],
+              "query": [
+                {
+                  "key": "session",
+                  "value": "{{sessionId}}",
+                  "description": "optional. absent = process-moment view; present = session's workspace-joined view",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Effective config + per-field provenance + raw layers + file paths. 400 malformed session id, 404 session without workspace.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "patch user settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/user",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "user"
+              ]
+            },
+            "description": "Patch ~/.spectro/settings.json; answers the fresh process-moment view. 400 invalid patch, 500 I/O.\n\nBody: Flat JSON patch; a null-valued entry removes that key; logLevel applies live.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"logLevel\": \"debug\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "patch project settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/project?session={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "project"
+              ],
+              "query": [
+                {
+                  "key": "session",
+                  "value": "{{sessionId}}",
+                  "description": "required"
+                }
+              ]
+            },
+            "description": "Patch the session workspace's .spectro/settings.json; answers the fresh session-moment view.\n\nBody: Flat JSON patch.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"ollama\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "patch local settings",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/local?session={{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "local"
+              ],
+              "query": [
+                {
+                  "key": "session",
+                  "value": "{{sessionId}}",
+                  "description": "required"
+                }
+              ]
+            },
+            "description": "Patch the workspace's .spectro/settings.local.json (gitignored — the writer ensures the .gitignore entry).\n\nBody: Flat JSON patch.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": \"qwen3.5:27b-q4_K_M\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "skills",
+      "description": "Skills of both roots (user + project): list, disable, delete.",
+      "item": [
+        {
+          "name": "list skills",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/skills",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skills"
+              ]
+            },
+            "description": "All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "disable / enable a skill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/skills/{{skillName}}/disabled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skills",
+                "{{skillName}}",
+                "disabled"
+              ]
+            },
+            "description": "Flip the .disabled marker on a skill (user root wins when both roots carry it). 404 unknown.\n\nBody: {disabled: boolean} — false re-enables.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"disabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "delete a user skill",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/skills/{{skillName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skills",
+                "{{skillName}}"
+              ]
+            },
+            "description": "Delete a USER-root skill for good (seeding ledger keeps it away). 409 for a project skill, 404 unknown. Traversal-guarded.\n\nCAUTION: Deletion is permanent — the seeding ledger will not re-seed it.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "workspace & files",
+      "description": "The workspace tree, single-file preview, and the native folder chooser.",
+      "item": [
+        {
+          "name": "workspace tree",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/files",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "files"
+              ],
+              "query": [
+                {
+                  "key": "session",
+                  "value": "{{sessionId}}",
+                  "description": "optional. absent = server's boot cwd; present = that session's workspace",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "The workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag). 400 malformed session id, 404 no workspace folder.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "one file (preview)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/file?path={{workspaceFilePath}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "file"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "{{workspaceFilePath}}",
+                  "description": "required. root-relative, sandbox-checked"
+                },
+                {
+                  "key": "session",
+                  "value": "{{sessionId}}",
+                  "description": "optional",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "One file for the preview pane, CSP-sandboxed. 404 outside/hidden/missing, 413 over caps (2 MB text / 25 MB image), 415 binary.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "native folder chooser",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/pick-workspace",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pick-workspace"
+              ]
+            },
+            "description": "Open the NATIVE macOS folder chooser on the server machine (blocks up to 120 s). 200 {path}, 204 cancel, 409 dialog already open, 501 non-macOS, 500 failure. Picks only — changes nothing.\n\nCAUTION: Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "images",
+      "description": "The content-addressed image store and copying an image into a workspace.",
+      "item": [
+        {
+          "name": "one stored image",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/images/{{imageFile}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images",
+                "{{imageFile}}"
+              ]
+            },
+            "description": "One generated image from the content-addressed store (~/.spectro/images). Name must match [0-9a-f]{64}.(png|jpg|webp) — 400 otherwise, 404 non-local/missing.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "copy image to workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/images/copy-to-workspace",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "images",
+                "copy-to-workspace"
+              ]
+            },
+            "description": "Copy a stored image into the session's workspace. 200 {path}, 400 malformed inputs, 404 unknown image/workspace, 409 target exists.\n\nBody: CopyRequest(String file, String session, String name) — name optional (keeps store name; extension inherited).\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file\": \"{{imageFile}}\",\n  \"session\": \"{{sessionId}}\",\n  \"name\": \"beach-cat.png\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "import",
+      "description": "Claude Code transcripts under ~/.claude/projects, for the import path.",
+      "item": [
+        {
+          "name": "list Claude Code transcripts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts"
+              ]
+            },
+            "description": "List *.jsonl Claude Code transcripts under ~/.claude/projects, newest first, capped at 300. Absent store = empty list.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "one transcript's JSONL",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts/content?path={{transcriptPath}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts",
+                "content"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "{{transcriptPath}}",
+                  "description": "required. base-relative, canonicalized, .jsonl only"
+                }
+              ]
+            },
+            "description": "One transcript's raw JSONL for the import path. 400 non-.jsonl, 404 outside base/missing, 413 over 64 MB.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "leveling",
+      "description": "The ladder: progress, surface visits, mode, reset, manual ticks.",
+      "item": [
+        {
+          "name": "ladder state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/leveling",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leveling"
+              ]
+            },
+            "description": "The ladder + this home's progress: mode, level, marks, remaining, history.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "report a surface visit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/leveling/visit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leveling",
+                "visit"
+              ]
+            },
+            "description": "Report a surface was shown (how UI-only acts reach the ladder). Returns fresh state.\n\nBody: VisitBody(String surface, String sessionId, Integer agentsShown) — surface required to record, others optional.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"surface\": \"trace\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"agentsShown\": 3\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "switch leveling mode",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/leveling/mode",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leveling",
+                "mode"
+              ]
+            },
+            "description": "Switch the leveling mode. 400 unknown mode.\n\nBody: ModeBody(String mode) — ladder | checklist | off, exact match; a typo is 400.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mode\": \"ladder\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "reset the ladder",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/leveling/reset",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leveling",
+                "reset"
+              ]
+            },
+            "description": "Restart the ladder from the dark frame, keeping the mode.\n\nBody: No fields — an empty JSON object satisfies consumes=application/json.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "tick a criterion by hand",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/leveling/tick",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "leveling",
+                "tick"
+              ]
+            },
+            "description": "Tick a criterion by hand — the receipt records origin=manual, forever.\n\nBody: TickBody(String criterion). Unknown criteria are ignored by the recorder; state is still returned.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"criterion\": \"chat-first-run\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "fleet",
+      "description": "The fleet roster, per-node replay, and node control (stop / gate / spawn). The hub is opt-in via SPECTRO_HUB_PORT; without it the roster answers enabled:false and node routes answer 404.",
+      "item": [
+        {
+          "name": "fleet roster",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/fleet",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fleet"
+              ]
+            },
+            "description": "The fleet roster: {enabled, hubPort, nodes[]}. enabled:false with empty roster is a valid answer (hub is opt-in via SPECTRO_HUB_PORT).\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "per-node replay",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/fleet/{{nodeId}}/events",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fleet",
+                "{{nodeId}}",
+                "events"
+              ]
+            },
+            "description": "Per-node replay from the bounded hub ring: {node, ringBounded:true, truncated, events[]}; 404 for unknown nodes.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "stop a node",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fleet/{{nodeId}}/stop",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fleet",
+                "{{nodeId}}",
+                "stop"
+              ]
+            },
+            "description": "Dispatch ctl{stop} to a node over the hub. 202 sent (best-effort, no ack), 404 not local/no fleet/unknown, 409 node already left.\n\nBody: No fields — an empty JSON object satisfies consumes=application/json.\n\nFence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "answer a parked gate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fleet/{{nodeId}}/gate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fleet",
+                "{{nodeId}}",
+                "gate"
+              ]
+            },
+            "description": "Answer a parked permission gate on a fleet node. 202 sent, 400 missing callId/allow, 404, 409 node left.\n\nBody: GateAnswer(String callId, Boolean allow) — both required; allow is boxed so a missing verdict is 400, never a silent deny.\n\nFence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"callId\": \"call-1\",\n  \"allow\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "spawn a readonly node",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fleet/nodes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fleet",
+                "nodes"
+              ]
+            },
+            "description": "Spawn a readonly fleet node. 202 {id,note}, 400 bad input, 429 spawn cap, 500 process failure.\n\nBody: SpawnRequest(String prompt, String context, String role, String id, boolean linger) — prompt+context required; context matches [A-Za-z0-9._-]; the node is FORCED readonly.\n\nCAUTION: Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n\nFence: host+json+optin — Loopback fence plus Content-Type: application/json, and the server must run with SPECTRO_ALLOW_SPAWN set (default off). Disabled and fenced-out both answer 404 — there is no enablement oracle.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Summarize the repo README\",\n  \"context\": \"fleet-demo\",\n  \"role\": \"worker\",\n  \"id\": \"{{nodeId}}\",\n  \"linger\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "translate",
+      "description": "Session translation: engine availability and the streaming translate call.",
+      "item": [
+        {
+          "name": "translation engine availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/translate/engines",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "translate",
+                "engines"
+              ]
+            },
+            "description": "Which translation engines this install can offer: {local:{available,...}, cloud:{available,...}} with reasons no-binary | no-model | needs-key | provider-is-local.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "translate passages (NDJSON stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/translate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "translate"
+              ]
+            },
+            "description": "Translate session passages, streamed NDJSON ({meta}, per-unit {unit,delta}/{unit,end}|{unit,error}, {done}). Never writes — the record survives. 400/413/503 as bounds/readiness dictate.\n\nBody: TranslateBody(engine local|cloud, target en|de|uk|ru|fr|es|..., units[max 40, 4000 chars each, 60000 total]). The cloud engine spends the operator's API key.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: no",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"engine\": \"cloud\",\n  \"target\": \"de\",\n  \"units\": [\n    {\n      \"kind\": \"prompt\",\n      \"text\": \"Hello world\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "explain",
+      "description": "LLM interpretation of a run digest, streamed as NDJSON.",
+      "item": [
+        {
+          "name": "explain a run digest (NDJSON stream)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/explain",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "explain"
+              ]
+            },
+            "description": "LLM interpretation of a run digest, streamed as NDJSON ({meta}, {delta}..., {done}|{error}). 400 blank, 413 oversize, 503 no provider ready.\n\nBody: ExplainBody(String digest, String lang) — digest required, max 200000 chars; lang en | de.\n\nCAUTION: Spends the operator's API key on every call.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: no",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"digest\": \"user: say OK\\nassistant: OK\",\n  \"lang\": \"en\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "voice",
+      "description": "Speech-to-text for the composer microphone.",
+      "item": [
+        {
+          "name": "speech to text",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transcribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transcribe"
+              ]
+            },
+            "description": "Speech-to-text: webm→WAV (ffmpeg)→whisper-cli→{text}. 503 with setup hint when STT not installed, 500 temp-dir/interrupt. Sent without a body — as this request ships — Spring answers 400 (Required request body is missing) before the controller runs.\n\nBody: Send the raw webm/opus recording as the request body (curl --data-binary @recording.webm). No JSON wrapper.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "otlp",
+      "description": "The OTLP exporter probe.",
+      "item": [
+        {
+          "name": "probe the OTLP endpoint",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/otlp/probe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "otlp",
+                "probe"
+              ]
+            },
+            "description": "Probe the configured OTLP exporter endpoint with an empty batch: {configured:false} | {configured:true, endpoint, ok, message?}. Auth never echoed.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "starter bundles",
+      "description": "The starter-bundle catalog and scaffolding a bundle into a folder.",
+      "item": [
+        {
+          "name": "starter-bundle catalog",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bundles",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bundles"
+              ]
+            },
+            "description": "The starter-bundle catalog: {bundles:[{id,name,description,fleet}], buildTools:[gradle,maven,python,bash], version}.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "one bundle's files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/bundles/{{bundleId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bundles",
+                "{{bundleId}}"
+              ],
+              "query": [
+                {
+                  "key": "build",
+                  "value": "gradle",
+                  "description": "optional. gradle | maven | python | bash",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "One bundle's rendered file set for copy-paste: {id, buildTool, files:{path:content}}. 404 unknown bundle.\n\nFence: none — No origin gating.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "scaffold a bundle",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/bundles/{{bundleId}}/scaffold",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "bundles",
+                "{{bundleId}}",
+                "scaffold"
+              ]
+            },
+            "description": "Write the bundle's files into a picked folder; refuses overwrites (409 with conflicts), rejects escaping paths. 200 {written, dir}. Answers 400 (Not a folder) until the target dir exists — the default {{scaffoldDir}} (/tmp/spectro-scaffold) is not created for you.\n\nBody: {dir: string (required, existing folder), build: string (optional)}.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"dir\": \"{{scaffoldDir}}\",\n  \"build\": \"gradle\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "host",
+      "value": "localhost",
+      "type": "string",
+      "description": "Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint."
+    },
+    {
+      "key": "port",
+      "value": "8080",
+      "type": "string",
+      "description": "spectro-server port. 8080 is the default; change once to re-target every request."
+    },
+    {
+      "key": "baseUrl",
+      "value": "http://{{host}}:{{port}}",
+      "type": "string",
+      "description": "Composed base URL. Every request targets {{baseUrl}}."
+    },
+    {
+      "key": "sessionId",
+      "value": "20260730-120000-abcdef12",
+      "type": "string",
+      "description": "A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions."
+    },
+    {
+      "key": "nodeId",
+      "value": "node-1",
+      "type": "string",
+      "description": "A fleet node id. Take a real one from GET /api/fleet."
+    },
+    {
+      "key": "skillName",
+      "value": "brainstorming",
+      "type": "string",
+      "description": "A skill name from GET /api/skills."
+    },
+    {
+      "key": "bundleId",
+      "value": "five-lines",
+      "type": "string",
+      "description": "A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent."
+    },
+    {
+      "key": "localModelId",
+      "value": "qwen3-4b",
+      "type": "string",
+      "description": "A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b."
+    },
+    {
+      "key": "imageFile",
+      "value": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png",
+      "type": "string",
+      "description": "A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result."
+    },
+    {
+      "key": "transcriptPath",
+      "value": "-Users-you-project/session.jsonl",
+      "type": "string",
+      "description": "A Claude Code transcript path from GET /api/claude/transcripts."
+    },
+    {
+      "key": "workspaceFilePath",
+      "value": "README.md",
+      "type": "string",
+      "description": "Root-relative file path inside the workspace, for GET /api/file."
+    },
+    {
+      "key": "scaffoldDir",
+      "value": "/tmp/spectro-scaffold",
+      "type": "string",
+      "description": "An existing target folder for POST /api/bundles/{id}/scaffold."
+    }
+  ]
+}

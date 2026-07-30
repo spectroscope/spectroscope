@@ -1,0 +1,29 @@
+meta {
+  name: stop a node
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/fleet/{{nodeId}}/stop
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Dispatch ctl{stop} to a node over the hub. 202 sent (best-effort, no ack), 404 not local/no fleet/unknown, 409 node already left.
+  
+  Body: No fields — an empty JSON object satisfies consumes=application/json.
+  
+  Fence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}
