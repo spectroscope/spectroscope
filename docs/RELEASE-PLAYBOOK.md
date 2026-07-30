@@ -141,6 +141,21 @@ gh release create v<v> --title "spectroscope v<v>" --notes-file <notes>.md build
 gh release upload v<v> build/release-assets/* --clobber
 ```
 
+### 8b. Bump the Homebrew tap
+
+The cask at github.com/spectroscope/homebrew-tap serves
+`brew install --cask spectroscope/tap/spectroscope`. After the GitHub
+release is up, in the tap repo:
+
+```bash
+scripts/bump-cask.sh <v>     # reads the DMG's sha256 from the release asset digest
+brew audit --cask spectroscope/tap/spectroscope
+git commit -am "bump to <v>" && git push
+```
+
+The script refuses when the release carries no dmg asset, so step 7's
+desktop build is a prerequisite, not a suggestion.
+
 ### 9. Flip install snippets (only after step 6 resolves)
 - **Landing** (`design/website/index.html`): "on Maven Central", enable the
   GitHub + Maven Central footer links → `python3 tools/sync_website_repo.py`,
