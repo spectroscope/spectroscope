@@ -117,12 +117,17 @@ describe("code stays readable on the ground it is printed on", () => {
     expect(contrastRatio(espressoTeal, still.tokens.bg)).toBeLessThan(2);
   });
 
-  it("measures the espresso ramp on the graphite ground as the same ramp", () => {
-    // `still` borrows because its ground moved. Graphite's did not: it is the
-    // same rung of lightness in a different temperature, so every spectral line
-    // lands within a rounding error of where espresso puts it. That is the
-    // argument for graphite carrying no ramp of its own, and it is a number, so
-    // a future retune of either ground has to answer to it.
+  it("keeps the borrowed ramp above the code floor on graphite's lighter ground", () => {
+    // This test used to assert PARITY: graphite sat at espresso's lightness in a
+    // different temperature, so every spectral line landed within a rounding
+    // error of where espresso put it, and that was the argument for graphite
+    // carrying no ramp of its own. The owner moved the ground to anthracite on
+    // 2026-07-28, which is a deliberate lift, so parity is gone and the old
+    // assertion was right to fail. What justifies the borrowing now is weaker
+    // and still sufficient: the ramp was built for a dark ground, this ground is
+    // darker than any light theme, and every code token clears the floor on it
+    // with room. Measured here rather than asserted, so a further lift has to
+    // answer to a number again.
     const graphite = themeById("graphite");
     const espresso = themeById("spectroscope");
     // themeById falls back to espresso for an id it does not ship, which would
@@ -131,11 +136,9 @@ describe("code stays readable on the ground it is printed on", () => {
     expect(graphite.tokens.bg).not.toBe(espresso.tokens.bg);
     for (const key of CODE_TOKENS) {
       const here = contrastRatio(espresso.tokens[key], graphite.tokens.bg);
-      const there = contrastRatio(espresso.tokens[key], espresso.tokens.bg);
-      expect(
-        Math.abs(here - there),
-        `--${key} shifts by ${(here - there).toFixed(2)} between grounds`,
-      ).toBeLessThan(0.25);
+      expect(here, `--${key} reads ${here.toFixed(2)}:1 on graphite`).toBeGreaterThanOrEqual(
+        MIN_CODE_CONTRAST,
+      );
     }
   });
 });

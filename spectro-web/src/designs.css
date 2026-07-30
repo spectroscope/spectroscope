@@ -8,9 +8,9 @@
    The seven retired skins (classic, nebula, nocturne, obsidian, staffwise,
    neon-riot, prisma — palettes from Fable_Designs_Pro) were removed on
    2026-07-20 (owner call); git history keeps them.
-   The other is `graphite` ("spectro graphite"): the cool dark, below. */
+   The other is `graphite` ("spectro graphite"): neutral anthracite, below. */
 
-/* ---------- spectro graphite (id `graphite`) — the cool dark ----------
+/* ---------- spectro graphite (id `graphite`) — neutral anthracite ----------
 
    Owner ask: a dark in the register of VS Code's "2026 Dark" (the default
    since 1.113, whose stated goals are a reduced palette and strategic
@@ -37,27 +37,29 @@
 [data-design="graphite"] {
   color-scheme: dark;
 
-  --bg: #101415;
-  --surface: #151b1c;
-  --surface-2: #1c2324;
-  --surface-3: #1f282a;
-  --border: #232c2e;
-  --border-strong: #485557;
-  --scrim: rgba(16, 20, 21, 0.72);
+  --bg: #262624;
+  --surface: #2e2e2c;
+  --surface-2: #363634;
+  --surface-3: #3e3e3b;
+  --border: #464643;
+  --border-strong: #6b6b67;
+  --scrim: rgba(38, 38, 36, 0.72);
 
-  /* Layering light is the ink's own colour at low alpha, as in espresso —
-     inheriting would spill warm cream highlights over a cool ground. */
-  --glint: rgba(187, 191, 192, 0.03);
-  --glint-bright: rgba(187, 191, 192, 0.1);
-  --hairline: rgba(187, 191, 192, 0.05);
+  /* Layering light is plain white at low alpha. Espresso tints its glints with
+     its own cream ink because its ground is warm; a neutral ground has nothing
+     to tint towards, and any cast here would be the thing this design removed. */
+  --glint: rgba(255, 255, 255, 0.03);
+  --glint-bright: rgba(255, 255, 255, 0.1);
+  --hairline: rgba(255, 255, 255, 0.05);
 
-  /* Body ink stops short of white on purpose (10.0:1, where espresso runs
-     15.1:1). That is the "reduced palette" half of the borrowed idea: on this
-     ground full-strength cream is the brightest thing on screen and pulls rank
-     over the spectral lines, which are the only things here allowed to shout. */
-  --text: #bbbfc0;
-  --text-dim: #868d8e;
-  --text-faint: #485557;
+  /* White ink, and the steps below it are plain light greys (owner 2026-07-28).
+     The ground is anthracite rather than near-black, so white reads at 15.2:1
+     without glare; dim 8.5:1 and faint 4.7:1 are the two gradations. The
+     spectral ramp still clears the code floor on the lighter ground: violet
+     4.50:1, ocean 5.91:1, teal 8.00:1, against a minimum of 3. */
+  --text: #ffffff;
+  --text-dim: #c2c2be;
+  --text-faint: #8f8f8b;
   --text-on-accent: #04252a;
 
   /* Espresso's accent IS a spectral line (--sp-amber, to the byte). Graphite
