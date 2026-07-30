@@ -22,4 +22,5 @@
 @import "./styles/workspace-gear.css"; /* Composer gear: permission mode + always-allow rules (Task 16) */
 @import "./styles/leveling.css";
 @import "./styles/terminal.css"; /* Files tab: the PTY terminal pane + its tab strip (card 93) */
+@import "./styles/work.css"; /* Chat v2 (branch chat-v2): the work panel + its chip */
 @import "./styles/about.css"; /* About: the licence notice panel + its footer entry */

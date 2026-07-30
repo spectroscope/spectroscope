@@ -20,6 +20,9 @@ import type { UiState } from "./state/reducer";
 import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
+import { ChatV2 } from "./components/ChatV2";
+import { useChatView } from "./state/chatView";
+import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
 import { ImportDialog } from "./components/ImportDialog";
@@ -179,6 +182,10 @@ export function App() {
   const [traceAgent, setTraceAgent] = useState<string | null>(null);
   // A Spectrum-band click hands one exact event to the Trace (open + flash it).
   const [focusEvent, setFocusEvent] = useState<RunEvent | null>(null);
+  // chat-v2 (PROTOTYPE): which reading the chat is in, and which work item the
+  // transcript's chip is pointing at.
+  const chatView = useChatView();
+  const [workHighlight, setWorkHighlight] = useState<string | null>(null);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]); // raw, for the graph
   // Card 89: bumped per rAF batch that carried a disk-relevant event — the
   // Files tab refetches (throttled) instead of waiting for a manual reload.
@@ -869,6 +876,30 @@ export function App() {
     () => (replay === null ? null : { id: replay.id, events: shownEvents }),
     [replay, shownEvents],
   );
+  // chat-v2: the work fold, over the SHOWN stream, so the panel and the
+  // transcript can never describe different sessions. Folded only while v2 is
+  // the reading — v1 pays nothing for a prototype it does not render.
+  const work = useMemo(() => (chatView === "v2" ? foldWork(shownEvents) : []), [chatView, shownEvents]);
+  // The Spectrum / FleetCanvas hand-off, lifted to one place so the work panel
+  // uses the SAME seam instead of a second one. Scope the trace to the event's
+  // OWN agent so the focused row is never hidden by the filter.
+  const focusInTrace = (agentId: string, event: RunEvent): void => {
+    const evAgent =
+      typeof (event as { agentId?: unknown }).agentId === "string"
+        ? (event as { agentId: string }).agentId
+        : agentId;
+    setTraceAgent(evAgent);
+    setFocusEvent(event);
+    setTab("trace");
+  };
+  // Choosing v2 opens the panel it is half of: a reading whose right column is
+  // collapsed is v1 with the children missing. Only on the flip INTO v2 — a
+  // reader who then closes the panel is not fought with.
+  useEffect(() => {
+    if (chatView !== "v2") return;
+    openRightPanel();
+    setActiveRightTab("work");
+  }, [chatView]);
   const translation = useTranslation(viewKey);
   const labSeed = `${showingTranslation}:${translation.status}`;
   const seededRef = useRef(labSeed);
@@ -1198,24 +1229,42 @@ export function App() {
               ref={chatRowRef}
               style={{ "--right-panel-w": `${layout.rightPanelW}px` } as CSSProperties}
             >
-              <Chat
-                state={view}
-                events={tabEvents}
-                sessionLabel={shownSessionId}
-                viewKey={viewKey}
-                liveView={viewingLive}
-                onSend={send}
-                onReturnToLive={returnToLive}
-                onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
-                onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
-                exportId={canResume ? replay!.id : undefined}
-                sendClient={sendClient}
-                onPickFolder={pickWorkspace}
-                queued={queue}
-                onUnqueue={unqueue}
-                onAbort={abort}
-                stopRequested={stopRequested}
-              />
+              {(() => {
+                // chat-v2 (PROTOTYPE): the two readings take the SAME props.
+                // v1 is the default and is passed nothing extra, so it renders
+                // exactly what it always rendered.
+                const chatProps = {
+                  state: view,
+                  events: tabEvents,
+                  sessionLabel: shownSessionId,
+                  viewKey,
+                  liveView: viewingLive,
+                  onSend: send,
+                  onReturnToLive: returnToLive,
+                  onResume: canResume ? () => void resumeSession(replay!.id) : undefined,
+                  onDelete: canDelete ? () => void deleteSession(replay!.id) : undefined,
+                  exportId: canResume ? replay!.id : undefined,
+                  sendClient,
+                  onPickFolder: pickWorkspace,
+                  queued: queue,
+                  onUnqueue: unqueue,
+                  onAbort: abort,
+                  stopRequested,
+                };
+                return chatView === "v2" ? (
+                  <ChatV2
+                    {...chatProps}
+                    work={work}
+                    onOpenWork={(id) => {
+                      setWorkHighlight(id);
+                      openRightPanel();
+                      setActiveRightTab("work");
+                    }}
+                  />
+                ) : (
+                  <Chat {...chatProps} />
+                );
+              })()}
               {imagesOpen && (
                 <>
                   <Resizer
@@ -1258,6 +1307,10 @@ export function App() {
                     onPickFolder={viewingLive ? pickWorkspace : undefined}
                     canPickFolder={canPickWorkspace}
                     fsRefreshSignal={viewingLive ? fsTick : undefined}
+                    work={chatView === "v2" ? work : undefined}
+                    workHighlight={workHighlight}
+                    onFocusEvent={focusInTrace}
+                    liveView={viewingLive}
                   />
                 </>
               )}
@@ -1275,37 +1328,19 @@ export function App() {
               setTraceAgent(agentId);
               setTab("trace");
             }}
-            onFocusEvent={(agentId, event) => {
-              // Scope the trace to the event's OWN agent so the focused row is
-              // never hidden by the filter: an agent_spawn tick sits on the
-              // parent lane but carries the child's agentId; events without an
-              // agentId (agent_message) stay visible under any filter, so the
-              // lane is a safe fallback there.
-              const evAgent =
-                typeof (event as { agentId?: unknown }).agentId === "string"
-                  ? (event as { agentId: string }).agentId
-                  : agentId;
-              setTraceAgent(evAgent);
-              setFocusEvent(event);
-              setTab("trace");
-            }}
+            /* The seam is one function now (focusInTrace, above): an
+               agent_spawn tick sits on the parent lane but carries the child's
+               agentId, and events without an agentId stay visible under any
+               filter, so the lane is a safe fallback there. */
+            onFocusEvent={focusInTrace}
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (
             <FleetCanvas
               model={enteredFleetModel}
               events={shownEvents}
-              onFocusEvent={(agentId, event) => {
-                // Same hand-off as the Spectrum band: scope the trace to the
-                // event's own agent so the focused row survives the filter.
-                const evAgent =
-                  typeof (event as { agentId?: unknown }).agentId === "string"
-                    ? (event as { agentId: string }).agentId
-                    : agentId;
-                setTraceAgent(evAgent);
-                setFocusEvent(event);
-                setTab("trace");
-              }}
+              /* Same hand-off as the Spectrum band and the work panel. */
+              onFocusEvent={focusInTrace}
               /* A scripted fleet scenario has no live hub — hide the spawn panel
                  (its node command would connect to nothing). */
               contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
