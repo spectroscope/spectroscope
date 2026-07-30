@@ -42,6 +42,14 @@
  *         2 for a usage or protocol error, 1 when the pty could not be created
  */
 
+/* glibc hides the POSIX surface this file uses — kill, sigaction, usleep —
+ * behind feature-test macros when compiled as strict -std=c11; Darwin exposes
+ * it regardless, which is why the gap only shows on a Linux runner. The
+ * defines must precede every include. _XOPEN_SOURCE 700 uncovers kill and
+ * sigaction; _DEFAULT_SOURCE keeps usleep, which POSIX.1-2008 dropped. */
+#define _XOPEN_SOURCE 700
+#define _DEFAULT_SOURCE
+
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
