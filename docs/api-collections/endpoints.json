@@ -2,10 +2,9 @@
   "meta": {
     "product": "spectroscope",
     "module": "spectro-server",
-    "version": "0.4.1",
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-07-30",
-    "measuredAgainst": "spectro-server-0.4.1 on 127.0.0.1:8199, fresh throwaway home",
+    "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8199, fresh throwaway home",
     "endpointCount": 47,
     "wsEndpoints": ["/ws", "/ws/shell"],
     "wsNote": "The chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.",
@@ -19,7 +18,7 @@
     },
     "refusalShape": "Every fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.",
     "fenceMeasurement": {
-      "note": "Measured with curl from loopback against a live spectro-server 0.4.1 (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.",
+      "note": "Measured with curl from loopback against a live spectro-server built from this tree (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.",
       "probes": [
         {"endpoint": "GET /api/sessions", "fence": "none", "noOrigin": 200, "localhostOrigin": 200, "evilOrigin": 200, "evilHost": 200},
         {"endpoint": "GET /api/settings", "fence": "host", "noOrigin": 200, "localhostOrigin": 200, "evilOrigin": 200, "evilHost": 404},

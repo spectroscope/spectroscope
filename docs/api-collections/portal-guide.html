@@ -46,7 +46,7 @@
     </div>
     <p style="margin-top: 1.4rem;">
       No client at hand? The API answers curl just the same. One worked
-      example — the starter-bundle catalog, from a fresh 0.4.1 install
+      example — the starter-bundle catalog, from a fresh install
       (output abridged):
     </p>
     <pre><code><span class="c">$</span> curl -s http://localhost:8080/api/bundles
@@ -66,7 +66,7 @@
       cases — a foreign <code>Origin</code> header added by hand, or a URL
       that names anything other than localhost (a LAN IP, a rebound DNS
       name). Refusals are blank 404s, never 403, so a refused caller learns
-      nothing. Measured against a live 0.4.1 server:
+      nothing. Measured against a live server built from this tree:
     </p>
     <div class="fmt-scroll">
       <table class="fmt-table">

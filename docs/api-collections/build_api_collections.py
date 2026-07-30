@@ -209,7 +209,7 @@ def collection_overview(table: dict) -> str:
     meta = table["meta"]
     m = meta["fenceMeasurement"]
     lines = [
-        f"The whole REST surface of {meta['module']} {meta['version']} — "
+        f"The whole REST surface of {meta['module']} — "
         f"{meta['endpointCount']} endpoints in {len(table['areas'])} folders, one per area.",
         "",
         "Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port "
@@ -261,8 +261,8 @@ def build_postman(table: dict) -> dict:
         folders.append({"name": a["name"], "description": a["description"], "item": by_area[a["id"]]})
     return {
         "info": {
-            "_postman_id": str(uuid.uuid5(uuid.NAMESPACE_URL, "https://spectroscope.dev/api-collections/postman/" + meta["version"])),
-            "name": f"{meta['collectionName']} ({meta['version']})",
+            "_postman_id": str(uuid.uuid5(uuid.NAMESPACE_URL, "https://spectroscope.dev/api-collections/postman/" + meta["collectionName"])),
+            "name": meta['collectionName'],
             "description": collection_overview(table),
             "schema": POSTMAN_SCHEMA,
         },

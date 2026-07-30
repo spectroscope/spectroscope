@@ -1,5 +1,5 @@
 docs {
-  The whole REST surface of spectro-server 0.4.1 — 47 endpoints in 16 folders, one per area.
+  The whole REST surface of spectro-server — 47 endpoints in 16 folders, one per area.
   
   Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
   
@@ -7,7 +7,7 @@ docs {
   
   ## The fences, measured
   
-  Measured with curl from loopback against a live spectro-server 0.4.1 (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.
+  Measured with curl from loopback against a live spectro-server built from this tree (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.
   
   | endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |
   |---|---|---|---|---|---|

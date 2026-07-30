@@ -1,6 +1,6 @@
 # spectroscope REST API collections
 
-The whole REST surface of spectro-server 0.4.1 — 47 endpoints in 16 area
+The whole REST surface of the spectro-server built from this tree — 47 endpoints in 16 area
 folders — as importable collections for the four popular REST clients
 (card 132). One table, one generator, four client files.
 
@@ -50,7 +50,7 @@ Several endpoints are origin-gated (the 0.3.0 hardening). The good news for
 REST clients: **a browserless client sends no `Origin` header, and the
 server treats an absent Origin as safe** — from the same machine, targeting
 `localhost`, every request in this collection passes. Measured with curl
-from loopback against a live spectro-server 0.4.1 (2026-07-30):
+from loopback against a live the spectro-server built from this tree (2026-07-30):
 
 | endpoint | fence | no Origin | `Origin: http://localhost:<port>` | `Origin: https://evil.example` | `Host: evil.example` |
 |---|---|---|---|---|---|
@@ -113,7 +113,7 @@ the scan guards the table.
 
 All 28 non-destructive requests (every GET plus the two safe leveling
 POSTs, variables substituted) were replayed from the generated table
-against a live spectro-server 0.4.1 on a fresh throwaway home: **23
+against a live the spectro-server built from this tree on a fresh throwaway home: **23
 answered 200; the five 404s are exactly the documented placeholder-id
 cases** (unknown `sessionId` ×2, missing `imageFile`, unknown
 `transcriptPath`, `nodeId` without a running hub). Determinism was proven
