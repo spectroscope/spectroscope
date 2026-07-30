@@ -54,8 +54,9 @@ esac
 # that its caller died, and it takes the shell down immediately when it comes.
 PROBE="$({ printf '\x00\x00\x00\x00\x04tty\n'; sleep 1; } \
   | "$BIN" 24 80 -- /bin/sh -c 'tty' 2>/dev/null || true)"
+# Darwin names PTYs /dev/ttysNNN, Linux /dev/pts/N — the check must know both, or a green Linux helper fails its own build.
 case "$PROBE" in
-  *"/dev/tty"*) echo "    a child of the helper sees a real terminal" ;;
+  *"/dev/tty"*|*"/dev/pts/"*) echo "    a child of the helper sees a real terminal" ;;
   *) echo "!! the helper's child has no tty (got: ${PROBE:-<nothing>})"; exit 1 ;;
 esac
 
