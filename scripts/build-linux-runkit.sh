@@ -31,7 +31,12 @@ D=spectro-desktop
 ARCH="$(uname -m)"
 [ "$ARCH" = "x86_64" ] || { echo "!! only x86_64 is wired (asset pin + artifact names) — extend the pins for $ARCH"; exit 1; }
 
-VERSION="${VERSION:-$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)}"
+# Two versions, deliberately separate: SERVER_VERSION is what Gradle builds
+# and therefore what the jar on disk is called; KIT_VERSION is what the
+# packaged artifacts claim to be. They differ on every build that is not a
+# release cut (the first CI run conflated them and looked for a jar Gradle
+# never wrote).
+SERVER_VERSION="$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)"
 
 # KIT_VERSION stamps the artifacts with something other than the tree's release
 # version. A build off main is NOT the release whose number the tree carries:
@@ -41,9 +46,9 @@ VERSION="${VERSION:-$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/bui
 # the plus, and dpkg sorts it above 0.4.1 and below 0.4.2, so a later release
 # still upgrades over it. electron-builder names both artifacts from
 # package.json, so the version has to land there before it runs.
+VERSION="${KIT_VERSION:-$SERVER_VERSION}"
 if [ -n "${KIT_VERSION:-}" ]; then
   ( cd "$D" && npm version --no-git-tag-version --allow-same-version "$KIT_VERSION" >/dev/null )
-  VERSION="$KIT_VERSION"
   echo "==> stamped $D/package.json with KIT_VERSION $KIT_VERSION (not a release build)"
 fi
 echo "==> linux run kit for spectro-server ${VERSION} (host: $(uname -sm))"
@@ -54,7 +59,7 @@ if [ "${SKIP_BOOTJAR:-0}" = "1" ] && [ -f "$D/build/spectro-server.jar" ]; then
 else
   echo "==> [1/5] server bootJar"
   ./gradlew :spectro-server:bootJar --console=plain
-  JAR="spectro-server/build/libs/spectro-server-${VERSION}.jar"
+  JAR="spectro-server/build/libs/spectro-server-${SERVER_VERSION}.jar"
   [ -f "$JAR" ] || { echo "!! server jar not found: $JAR"; exit 1; }
   mkdir -p "$D/build"; cp -f "$JAR" "$D/build/spectro-server.jar"
 fi
@@ -98,10 +103,15 @@ echo "==> [5/5] electron-builder --linux (AppImage, deb)"
 ( cd "$D" && { [ -d node_modules ] || npm ci; } && npm run build \
   && npx electron-builder --linux --x64 )
 
-APPIMAGE="$D/release/spectroscope-${VERSION}-x86_64.AppImage"
-DEB="$D/release/spectroscope_${VERSION}_amd64.deb"
-[ -f "$APPIMAGE" ] || { echo "!! AppImage not built: $APPIMAGE"; exit 1; }
-[ -f "$DEB" ] || { echo "!! deb not built: $DEB"; exit 1; }
+# Find the artifacts rather than predict their names: electron-builder does
+# its own sanitising of a version string (a build-metadata "+" is exactly the
+# kind of character that gets rewritten), and a build that succeeded must not
+# fail on a guessed filename. What the artifacts CLAIM is checked where the
+# claim actually lives, in the deb's own Version field (see linux-kit.yml).
+APPIMAGE="$(ls "$D"/release/spectroscope-*-x86_64.AppImage 2>/dev/null | head -1)"
+DEB="$(ls "$D"/release/spectroscope_*_amd64.deb 2>/dev/null | head -1)"
+[ -n "$APPIMAGE" ] && [ -f "$APPIMAGE" ] || { echo "!! no AppImage in $D/release"; exit 1; }
+[ -n "$DEB" ] && [ -f "$DEB" ] || { echo "!! no deb in $D/release"; exit 1; }
 
 echo ""
 echo "==> done:"
