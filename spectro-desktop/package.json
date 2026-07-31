@@ -52,6 +52,8 @@
     },
     "linux": {
       "icon": "icon.png",
+      "// executableName": "explicit on purpose: electron-builder derives it from the npm name (spectro-desktop), which would put /usr/bin/spectro-desktop on PATH and contradict every other identity the product ships under",
+      "executableName": "spectroscope",
       "target": [
         "AppImage",
         "deb"
