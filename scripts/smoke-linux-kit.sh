@@ -60,21 +60,34 @@ SPECTRO_HEALTH_BUDGET_MS="$((BOOT_BUDGET_S * 1000))" \
   >"$LOG" 2>&1 &
 WRAPPER_PID=$!
 
-# The shell picks a random free port and passes --server.port to the JVM; the
-# child's stdout is piped through the shell, so Spring Boot's bind line lands
-# in our log. That line is the port oracle.
+# The port oracle is the JVM child's own command line, not the log: the shell
+# picks a free port and passes it as --server.port (spectro-desktop/src/main.ts),
+# so the argument IS the answer. Measured on this server: stdout carries only
+# Spring Boot's banner and every log line after it goes to
+# ~/.spectro/logs/spectroscope.log, so grepping stdout for a bind line waits
+# forever on a server that bound long ago - the desktop shell itself never did
+# that, it polls health.
 PORT=""
 for _ in $(seq 1 "$BOOT_BUDGET_S"); do
-  PORT="$(grep -oE 'Tomcat started on port [0-9]+' "$LOG" | grep -oE '[0-9]+$' | head -1 || true)"
+  for pid in $(pgrep -f 'spectro-server\.jar' || true); do
+    PORT="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | sed -nE 's/^--server\.port=([0-9]+)$/\1/p' | head -1)"
+    [ -n "$PORT" ] && break
+  done
   [ -n "$PORT" ] && break
-  kill -0 "$WRAPPER_PID" 2>/dev/null || { echo "!! shell exited before the server bound — log tail:"; tail -30 "$LOG"; exit 1; }
+  kill -0 "$WRAPPER_PID" 2>/dev/null || { echo "!! shell exited before the server started — log tail:"; tail -30 "$LOG"; exit 1; }
   sleep 1
 done
-[ -n "$PORT" ] || { echo "!! no Tomcat bind line within ${BOOT_BUDGET_S}s — log tail:"; tail -30 "$LOG"; exit 1; }
-echo "    server bound on port $PORT"
+[ -n "$PORT" ] || { echo "!! no JVM child with a --server.port within ${BOOT_BUDGET_S}s — log tail:"; tail -30 "$LOG"; exit 1; }
+echo "    server process up, port $PORT"
 
 echo "==> [3/4] /api/health"
-HEALTH="$(curl -fsS "http://127.0.0.1:${PORT}/api/health")"
+HEALTH=""
+for _ in $(seq 1 "$BOOT_BUDGET_S"); do
+  HEALTH="$(curl -fsS "http://127.0.0.1:${PORT}/api/health" 2>/dev/null || true)"
+  [ -n "$HEALTH" ] && break
+  sleep 1
+done
+[ -n "$HEALTH" ] || { echo "!! /api/health never answered on port $PORT within ${BOOT_BUDGET_S}s"; tail -30 "$LOG"; exit 1; }
 echo "    GET /api/health -> $HEALTH"
 
 echo "==> [4/4] quit + reap"
