@@ -157,6 +157,26 @@ git commit -am "bump to <v>" && git push
 The script refuses when the release carries no dmg asset, so step 7's
 desktop build is a prerequisite, not a suggestion.
 
+### 8c. Build and attach the Linux kit
+
+The Linux kit is the one desktop artifact CI can build end to end, because
+nothing on Linux is signed: no Gatekeeper, no Developer ID, no notarization.
+Dispatch it against the tag, not a branch:
+
+```bash
+gh workflow run linux-kit -f ref=v<v>
+```
+
+It builds the AppImage and the deb on an ubuntu runner, re-verifies the
+llama-server closure, boots both under xvfb (health answered, JVM reaped),
+asserts the deb's own Version field, and attaches both to the release for a
+`vX.Y.Z` ref. The attach step refuses a ref that is not the tag it names: it
+fetches the tag from origin and requires HEAD to be exactly that commit, so a
+branch called `v0.4.2` cannot ferry bytes onto a release.
+
+Development builds off `main` are stamped `<next>-dev.<sha>` and are for the
+apt repository, never for a release.
+
 ### 9. Flip install snippets (only after step 6 resolves)
 - **Landing** (`design/website/index.html`): "on Maven Central", enable the
   GitHub + Maven Central footer links → `python3 tools/sync_website_repo.py`,
