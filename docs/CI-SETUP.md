@@ -55,17 +55,17 @@ workflow file instead of ambient.
    - `web-gate`
 4. Recommended: enable **Require a pull request before merging** so the checks
    actually stand between a change and `main`.
-5. **Bypass list** — add two entries, each allowed to bypass **always** (not
-   "for pull requests only"):
-   - the **GitHub Actions** app. Required status checks reject any push whose
-     head commit lacks passing checks — and `tag.yml`'s release commit is
-     created inside the run, so it can never have them. Without this entry
-     the ruleset refuses the tag workflow's final push, after the whole gate
-     has run. The read-only default from section 1 keeps the bypass narrow in
-     practice: `tag.yml` is the only workflow holding a write token.
-   - the **Repository admin** role, so the owner's direct pushes to `main`
-     (including the release-notes and cleanup pushes in section 6d) are not
-     rejected by the same rule.
+5. **Bypass list** — one entry, allowed to bypass **always** (not "for pull
+   requests only"): the **Repository admin** role, so the owner's direct
+   pushes to `main` (including the release-notes and cleanup pushes in
+   section 6d) are not rejected by the rule.
+
+   A note from the first walk, measured as GH013 on run 30616343650: on a
+   user-owned repository the **GitHub Actions app cannot be a bypass
+   actor** (the API refuses the integration), so `tag.yml` never pushes
+   `main` directly. It pushes a `release/v*` branch plus the tag — tags are
+   not governed by the branch ruleset — and opens the release pull request;
+   the bump reaches `main` through the same checks as every other change.
 6. Create the ruleset.
 
 Note: the status-check picker only lists checks that have run at least once.
@@ -142,8 +142,11 @@ What it does — release playbook steps 1–5, and not one step further:
    excluded, see section 4), verifying that the orchestrator POM pins
    `spectro-core` at exactly `<version>`.
 5. **Commit + tag**: commits `release: cut v<version>` as Christopher Ezell
-   `<chris@spectroscope.ai>`, creates the annotated tag `v<version>`, and
-   pushes `main` and the tag.
+   `<chris@spectroscope.ai>` on a `release/v<version>` branch, creates the
+   annotated tag `v<version>`, pushes both, and opens the release pull
+   request (the bump reaches `main` through the same required checks as
+   every other change; merge it with a merge commit or rebase, never
+   squash, so the tagged commit stays an ancestor of `main`).
 
 The tag is the handoff artifact. A gate that ran in a clean environment from
 a clean checkout is a stronger claim than the same gate on a warm working

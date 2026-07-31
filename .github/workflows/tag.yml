@@ -21,10 +21,16 @@ on:
         required: true
         type: string
 
-# The narrow write this pipeline needs: a version-bump commit and a tag ref.
-# Nothing else — no packages, no issues, no id-token.
+# The narrow writes this pipeline needs: the release branch + tag refs, and
+# the pull request that carries the bump to main. Nothing else — no packages,
+# no issues, no id-token. Measured on walk 30616343650: a user-owned repo
+# cannot grant the Actions app a ruleset bypass, so a direct push to main is
+# structurally impossible here (GH013) — the PR flow below is not a
+# workaround but the stricter design: main is pull-request-only for
+# everyone, this workflow included.
 permissions:
   contents: write
+  pull-requests: write
 
 # One cut at a time, and never cancel a running one: a half-made release is
 # worse than a queued one.
@@ -305,24 +311,37 @@ jobs:
 
       # Playbook step 5 — commit, tag, push. `git add -A` deliberately
       # includes the web bundle the gate just rebuilt, along with the version
-      # bump; build outputs and node_modules are gitignored and stay out. The
-      # push uses this workflow's GITHUB_TOKEN, which does not trigger
-      # gate.yml on the release commit — the full gate already ran above.
+      # bump; build outputs and node_modules are gitignored and stay out.
       #
-      # If main carries the required-checks ruleset from docs/CI-SETUP.md
-      # section 2, the GitHub Actions app must be on that ruleset's bypass
-      # list: the release commit is created inside this run, so it can never
-      # have passing checks before it is pushed, and without the bypass the
-      # ruleset rejects this push after the whole gate has run.
-      - name: Commit, tag, push
+      # The release commit rides a release/v* branch, never main directly:
+      # the main ruleset is pull-request-only with required checks, and a
+      # user-owned repo cannot exempt the Actions app (measured, GH013 on
+      # walk 30616343650). The TAG is the handoff artifact and tags are not
+      # governed by the branch ruleset — the owner can check it out the
+      # moment this step ends, before the PR merges.
+      - name: Commit, tag, push the release branch
         run: |
           git config user.name "Christopher Ezell"
           git config user.email "chris@spectroscope.ai"
+          git checkout -b "release/v${VERSION}"
           git add -A
           git commit -m "release: cut v${VERSION}"
           git tag -a "v${VERSION}" -m "spectroscope v${VERSION}"
-          git push origin main
+          git push origin "release/v${VERSION}"
           git push origin "v${VERSION}"
+
+      # The bump reaches main the same way every other change does: through a
+      # pull request with green required checks. The gate re-runs on the PR;
+      # merging it is one click after that — or `gh pr merge --squash` from
+      # the machine. Never squash away the tagged commit: merge with a merge
+      # commit or rebase so v${VERSION} stays an ancestor of main.
+      - name: Open the release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr create --base main --head "release/v${VERSION}" \
+            --title "release: cut v${VERSION}" \
+            --body "The v${VERSION} cut from the tag workflow: version bump + rebuilt bundle. The annotated tag v${VERSION} already points at this commit; playbook steps 6-9 run against the tag and do not wait for this merge. Merge with a merge commit or rebase (not squash), so the tagged commit stays an ancestor of main."
 
       # The tag is the handoff artifact. Everything irreversible — Maven
       # Central, Developer ID signing, the GitHub release — happens on the
@@ -332,7 +351,7 @@ jobs:
           {
             echo "## v${VERSION} is cut"
             echo ""
-            echo "Release commit \`$(git rev-parse --short HEAD)\`, annotated tag \`v${VERSION}\`, pushed to main."
+            echo "Release commit \`$(git rev-parse --short HEAD)\` on \`release/v${VERSION}\`, annotated tag \`v${VERSION}\` pushed; the release PR carries the bump to main after its checks."
             echo ""
             echo "Next, on the owner's machine (docs/RELEASE-PLAYBOOK.md steps 6-9):"
             echo ""
