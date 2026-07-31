@@ -13,8 +13,11 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 > (0.1.0 → 0.1.1 → …), never a re-publish of an existing version.
 >
 > **Version counter — bump this line with every cut.** Published so far:
-> **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27). Those numbers are burned
-> forever; the next release MUST be **0.4.2 or higher**. This applies to every
+> **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27), **0.5.0** (2026-07-31).
+> Those numbers are burned forever; the next release MUST be **0.5.1 or
+> higher**. Pick the number by what is in the cut, not by habit: 0.5.0 carries
+> features (node triggers, the PTY shell, reasoning capabilities), so a patch
+> number would have undersold it and readers skip patches. This applies to every
 > artifact in the table below, not just the Maven libs: apps and the desktop
 > kit move to the same number in step 2.
 
@@ -29,12 +32,21 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 | `spectro-<v>.zip` (CLI) | GitHub release asset | `scripts/build-release-assets.sh` |
 | `spectro-server-<v>.jar` | GitHub release asset | ″ |
 | `spectro-mcp-notes-<v>.zip` | GitHub release asset | ″ |
-| `spectro-web-<v>.zip` (built UI) | GitHub release asset | ″ |
-| `spectroscope-<v>-<arch>.dmg` (desktop run kit) | GitHub release asset | `scripts/build-desktop-runkit.sh` |
+| `spectroscope-<v>-<arch>.dmg` (macOS desktop run kit) | GitHub release asset | `scripts/build-desktop-runkit.sh` |
+| `spectroscope-<v>-x86_64.AppImage` (Linux run kit) | GitHub release asset | `linux-kit.yml`, step 8c |
+| `spectroscope_<v>_amd64.deb` (Linux run kit) | GitHub release asset | ″ |
 
-Rule of thumb: **every module ships something.** Libraries go to Maven; the CLI,
-server, mcp-notes, web and desktop go to the GitHub release. `spectro-web` and
-`spectro-desktop` are npm/frontend modules and can never go to Maven Central.
+Rule of thumb: **every module ships something a user can actually run.** The
+libraries go to Maven; the CLI, the server, mcp-notes and the two desktop kits
+go to the GitHub release. Two deliberate exceptions: `spectro-web` shipped a
+built-UI zip once, at 0.1.0, and it was pulled the same day (owner: a single
+page application without its server is dead as a file) - the UI ships inside
+the server jar and the desktop kits instead; and `spectro-desktop` is an npm
+module that can never go to Maven Central.
+
+Beyond the release itself, three surfaces carry the same artifacts onward and
+are bumped in steps 8b to 9: the Homebrew cask (macOS), the apt repository
+(Debian/Ubuntu), and the install snippets on both websites.
 
 ## Prerequisites (one-time, owner)
 
