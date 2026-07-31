@@ -67,8 +67,8 @@ agents on a shared bus and hands you one merged event stream. Both artifacts
 are on Maven Central:
 
 ```kotlin
-implementation("dev.spectroscope:spectro-core:0.4.1")
-implementation("dev.spectroscope:spectro-orchestrator:0.4.1")   // fleets
+implementation("dev.spectroscope:spectro-core:0.5.0")
+implementation("dev.spectroscope:spectro-orchestrator:0.5.0")   // fleets
 ```
 
 ## the tour
@@ -153,13 +153,62 @@ implementation("dev.spectroscope:spectro-orchestrator:0.4.1")   // fleets
 More in the [gallery](https://gallery.spectroscope.ai) and the
 [user guide](https://spectroscope.ai/guide/), both in light and dark.
 
+## install
+
+Four routes to 0.5.0, each with the platform it covers. Every asset is on the
+[release page](https://github.com/spectroscope/spectroscope/releases/latest),
+where `SHA256SUMS.linux` covers the two Linux kits.
+
+**Homebrew — macOS on Apple silicon.**
+
+```sh
+brew install --cask spectroscope/tap/spectroscope
+```
+
+The signed and notarized desktop kit, which brings its own Java runtime and its
+own `llama-server`. Uninstalling leaves `~/.spectro` alone: that is where your
+sessions live, and the CLI and the server jar share it. Apple silicon only,
+there is no Intel build.
+
+**The disk image — macOS on Apple silicon.** `spectroscope-0.5.0-arm64.dmg`
+from the release page is the same kit without the tap.
+
+**apt — Debian 12 and Ubuntu 24.04, x86_64.**
+
+```sh
+curl -fsSL https://apt.spectroscope.dev/spectroscope.asc | sudo gpg --dearmor -o /usr/share/keyrings/spectroscope.gpg
+echo "deb [signed-by=/usr/share/keyrings/spectroscope.gpg] https://apt.spectroscope.dev stable main" | sudo tee /etc/apt/sources.list.d/spectroscope.list
+sudo apt update && sudo apt install spectroscope
+```
+
+The index is GPG-signed and pinned to that one key with `signed-by`; there is no
+`trusted=yes` and no allow-insecure switch. x86_64 only, so on arm64 apt takes
+the source and then finds nothing to install. For x86_64 distributions that do
+not use apt, `spectroscope-0.5.0-x86_64.AppImage` is the same kit as one file.
+Neither Linux kit is signed, because Linux has no equivalent gate to pass. Both
+are covered by `SHA256SUMS.linux` on the release page, so the check to run on a
+download is:
+
+```sh
+sha256sum -c SHA256SUMS.linux --ignore-missing
+```
+
+**From source.** Clone this repository and use the `./spectro` launcher below.
+
+**Everywhere else — arm64 Linux, Windows, anything with a JVM.** There is no
+desktop kit, and no macOS route will help. Take `spectro-0.5.0.zip` (the CLI) or
+`spectro-server-0.5.0.jar` and run them on a JDK 21; that is the smallest way
+in, and the only way onto a platform with no kit. Two things the kits carry are
+missing there: a bundled `llama-server` for the built-in models, which you
+supply yourself (`brew install llama.cpp`, or your package manager), and the
+`spectro-pty` helper the Files tab terminal needs, which is POSIX-only either
+way. The bundled example MCP server ships separately as
+`spectro-mcp-notes-0.5.0.zip`.
+
 ## run it
 
-Grab a [release](https://github.com/spectroscope/spectroscope/releases): the
-desktop run kit for macOS (arm64, Developer ID signed and notarized, bundles
-its own JRE — and, from v0.4.0, its own `llama-server`, so the built-in model
-needs nothing installed), the CLI zip, the server jar, or the mcp-notes zip. Or run from source with the `./spectro`
-launcher, which resolves a JDK 21+ for you and loads the gitignored `./.env`:
+The desktop kits open the cockpit themselves. From a clone, the `./spectro`
+launcher resolves a JDK 21+ for you and loads the gitignored `./.env`:
 
 ```bash
 ./spectro web start   # web UI → http://127.0.0.1:8080, in the background
@@ -171,8 +220,8 @@ launcher, which resolves a JDK 21+ for you and loads the gitignored `./.env`:
 ./spectro tour        # guided feature tour
 ```
 
-It also knows `cron`, `sessions`, `resume <id>`, `level` and `mcp-notes`. Raw Gradle
-works too (JDK 21+ as `JAVA_HOME`):
+It also knows `node`, `cron`, `sessions`, `resume <id>`, `level` and
+`mcp-notes`. Raw Gradle works too (JDK 21+ as `JAVA_HOME`):
 
 ```bash
 ./gradlew build                                  # everything + all tests
@@ -210,7 +259,7 @@ with an empty batch and tells you whether it answers. Details in
 | `spectro-mcp-notes` | bundled example MCP server (notes search/add over stdio) |
 | `spectro-orchestrator` | the fleet: lanes as full agents on a shared bus, one merged stream |
 
-Runs on Spring and almost nothing else. Seventeen hand-built architecture
+Runs on Spring and almost nothing else. Twenty-one hand-built architecture
 diagrams live in [docs/diagrams/](docs/diagrams/), each in both themes;
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
 [docs/WEB-UI.md](docs/WEB-UI.md) go deep.
@@ -222,7 +271,7 @@ history intact:
 
 | provider | runs | needs |
 |---|---|---|
-| `built-in` | local, via llama-server | nothing with the desktop app, which bundles one; with the server jar, `brew install llama.cpp` |
+| `built-in` | local, via llama-server | nothing with the desktop kits, which bundle one; with the server jar, `brew install llama.cpp` |
 | `anthropic` | cloud | `ANTHROPIC_API_KEY` |
 | `ollama` | local | a running Ollama |
 | `openai` | api.openai.com or any compatible server | `OPENAI_API_KEY` (optional for local servers) |
@@ -236,7 +285,7 @@ which of them can drive the agent's tools and whether your machine has the
 memory and disk for each, then downloads your pick sha256-pinned — four of
 them from Qwen's own repository, VibeThinker from a community requantization
 of WeiboAI's model. Each row links its licence and its source. The desktop
-app carries its own `llama-server`, so nothing else needs installing; with the
+kits carry their own `llama-server`, so nothing else needs installing; with the
 server jar you bring your own (`brew install llama.cpp`) and the chooser says
 so when it is missing. No key and no account, and the model itself runs on
 your machine.
@@ -253,8 +302,9 @@ permission gate.
 
 ## tested
 
-The v0.4.1 gate: 959 JUnit tests and 1003 vitest tests, all green before the
-release cut. The suites run without any API key; provider wire mappings
+The v0.5.0 gate: 1166 JUnit tests and 1841 vitest tests across 130 files, no
+failures, measured on the release tree with the build cache and the up-to-date
+checks disabled. The suites run without any API key; provider wire mappings
 are tested against scripted local servers, and the one live contract check
 skips itself unless a key is set. Concurrency suites (bus, hub, fleet) pass
 three consecutive runs before a release.
@@ -263,7 +313,7 @@ three consecutive runs before a release.
 
 - [user guide](https://spectroscope.ai/guide/), 120+ pages, HTML and PDF, light and dark editions, real captured screens
 - [dev portal](https://spectroscope.dev) with a generated, searchable reference extracted from this source tree
-- [samples/](samples/) — standalone, runnable examples against the published Maven artifacts: the five lines, fleets, session recording, OTel export, a LangChain4j bridge
+- [samples/](samples/) — eight numbered examples, six of them standalone Gradle projects that resolve spectroscope from Maven Central rather than from this tree: the five lines, a fleet, recording a run for `spectro web`, a fleet across processes, OTel export, and a LangChain4j provider
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WEB-UI.md](docs/WEB-UI.md), [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md), [docs/INTEROP.md](docs/INTEROP.md)
 - [release-notes/](release-notes/) for what each version brought
 
