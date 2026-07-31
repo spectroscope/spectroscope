@@ -30,8 +30,12 @@ workflows.
    the workflows use).
 2. Under **Workflow permissions**, select **Read repository contents and
    packages permissions** (read-only).
-3. Leave **Allow GitHub Actions to create and approve pull requests**
-   unchecked.
+3. Check **Allow GitHub Actions to create and approve pull requests**. This
+   is what lets `tag.yml` open the release pull request; without it the cut
+   dies at its last step with "GitHub Actions is not permitted to create or
+   approve pull requests" (measured on walk 30616661551). Merges stay gated
+   by the required checks either way, and no workflow here approves
+   anything.
 4. Save.
 
 Why read-only as the default: two of the three workflows never need to write
