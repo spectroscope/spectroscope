@@ -16,6 +16,14 @@
 # the same resources/{jre,bin} layout the shell already resolves via
 # process.resourcesPath — main.ts needs no per-OS path branch.
 #
+# Naming, stated once because two of these are derived by default and both
+# defaults are wrong here: package.json's build.linux.executableName and
+# build.deb.packageName are BOTH pinned to "spectroscope". Left alone,
+# electron-builder takes them from the npm package name (spectro-desktop) and
+# a user would apt-install one spelling and type another. The values live in
+# package.json because electron-builder validates its config object and
+# rejects any commentary key next to them.
+#
 # Prereqs: a Linux machine (or container), JDK 21 (jlink + jmods), Node + npm,
 # a C compiler (PTY helper), binutils (readelf). electron-builder downloads
 # its own fpm and AppImage tooling. Env:
