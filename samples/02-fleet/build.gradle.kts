@@ -7,9 +7,9 @@ repositories {
 }
 
 dependencies {
-    implementation("dev.spectroscope:spectro-core:0.4.1")
+    implementation("dev.spectroscope:spectro-core:0.0.999")
     // Spectro.panel() resolves its implementation from this module at runtime.
-    implementation("dev.spectroscope:spectro-orchestrator:0.4.1")
+    implementation("dev.spectroscope:spectro-orchestrator:0.0.999")
     runtimeOnly("org.slf4j:slf4j-simple:2.0.18")
 }
 
