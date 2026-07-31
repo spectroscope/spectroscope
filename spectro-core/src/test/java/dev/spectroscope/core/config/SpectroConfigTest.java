@@ -953,4 +953,34 @@ class SpectroConfigTest {
                 "nothing to seed — must report false");
         assertFalse(Files.exists(SpectroConfig.USER_SETTINGS_PATH));
     }
+
+    @Test
+    void spectroLocalIsAKeylessKnownProvider() {
+        assertTrue(SpectroConfig.isKnownProvider("spectro-local"));
+        assertNull(SpectroConfig.keyEnvFor("spectro-local"), "local, no key");
+        // Not a literal any more. This line used to read "vibethinker-3b" and that
+        // is exactly how the two defaults drifted apart: the catalogue moved its
+        // default to Qwen3 4B and this constant stayed put, so a picker switch
+        // silently started the tool-free row. The catalogue is the single source;
+        // LocalCatalogDefaultTest pins what that default must be able to do.
+        assertEquals(dev.spectroscope.core.local.LocalCatalog.bundled().defaultId(),
+                SpectroConfig.defaultModelFor("spectro-local"));
+    }
+
+    @Test
+    void spectroLocalStatusReflectsModelPresence() {
+        assertEquals("ready", SpectroConfig.localModelStatus(true));
+        assertEquals("needs-download", SpectroConfig.localModelStatus(false));
+    }
+
+    @Test
+    void spectroLocalCannotBeBuiltFromThePureConfigPath() {
+        // The pure config path cannot start a subprocess — spectro-local must go
+        // through the runtime layer (LocalProviderFactory). Fail readably, not
+        // with a cryptic "Unknown provider".
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "spectro-local", null, null, null, null, null));   // flags win over user settings
+        IllegalStateException e = assertThrows(IllegalStateException.class, config::providerFromConfig);
+        assertTrue(e.getMessage().contains("local runtime"), "readable pointer at the runtime layer");
+    }
 }

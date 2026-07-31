@@ -1,0 +1,19 @@
+meta {
+  name: starter-bundle catalog
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/bundles
+  body: none
+  auth: none
+}
+
+docs {
+  The starter-bundle catalog: {bundles:[{id,name,description,fleet}], buildTools:[gradle,maven,python,bash], version}.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

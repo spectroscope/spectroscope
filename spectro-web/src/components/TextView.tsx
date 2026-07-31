@@ -11,14 +11,39 @@
 // recorded run. The deterministic gates panel in the trace tab is untouched.
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import type { RunEvent } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { buildExplainDigest, parseNdjsonChunk } from "../state/explainStream";
+import { reportCount, useSearch } from "../state/search";
 import { buildTextFeed, eventsToJsonl, feedToPlainText } from "../state/textFeed";
+import type { LineHits } from "./textSearch";
+import { NO_LINES, feedHits, markLine } from "./textSearch";
 import { CopyButton } from "./CopyButton";
+import { ExportMenu } from "./ExportMenu";
 
 type TextMode = "text" | "jsonl";
+
+/**
+ * One rendered line with every hit marked and the current one marked apart.
+ *
+ * @param text    the line as it renders
+ * @param hits    that line's entry from feedHits
+ * @param current the store's global hit index
+ * @return the line's runs, plain strings between the marks
+ */
+function marked(text: string, hits: LineHits, current: number): ReactNode[] {
+  return markLine(text, hits).map((run, i) =>
+    run.ordinal < 0 ? (
+      run.text
+    ) : (
+      <mark key={i} className={run.ordinal === current ? "tf-hit tf-hit--current" : "tf-hit"}>
+        {run.text}
+      </mark>
+    ),
+  );
+}
 
 /** The mode survives tab switches and reloads — same pattern as the graph toggle. */
 const MODE_STORAGE_KEY = "spectroscope.textView.mode";
@@ -44,10 +69,20 @@ const EXPLAIN_IDLE: ExplainState = { status: "idle", text: "", meta: null, error
 export function TextView({
   events,
   explainReady = true,
+  label,
+  viewKey,
 }: {
   events: readonly RunEvent[];
   /** False when the current provider needs a key — the button says why. */
   explainReady?: boolean;
+  /** Names the export files (the session id). Absent for a stream that has no
+   *  id yet, and then the file names honestly carry only kind and date. */
+  label?: string | null;
+  /** Which session view's translation the export sheet may read. Present only
+   *  while the stream below IS that translation — App decides that through
+   *  textExportViewKey, because this tab holds one array and cannot tell which
+   *  one it was given. Absent means the sheet claims nothing. */
+  viewKey?: string;
 }) {
   const lang = useLang();
   const [mode, setMode] = useState<TextMode>(storedMode);
@@ -132,8 +167,46 @@ export function TextView({
     setExplain(EXPLAIN_IDLE);
   };
 
-  const feed = useMemo(() => buildTextFeed(events), [events]);
+  // Owner 2026-07-26 ("wollen wir nicht auch ehrlich sein"): the reading feed
+  // leaves frames out — extended shows the WHOLE record, including the
+  // assembled request (system prompt + tool schemas) and the token truth.
+  const [extended, setExtended] = useState(false);
+  const feed = useMemo(() => buildTextFeed(events, extended), [events, extended]);
   const jsonl = useMemo(() => (mode === "jsonl" ? eventsToJsonl(events) : []), [events, mode]);
+
+  // In-view search (state/search.ts). The haystack is exactly what is on
+  // screen: the JSONL lines in jsonl mode, otherwise the feed as `extended`
+  // currently builds it. Nothing on this surface is collapsed or clipped, so
+  // every hit counted here is one the reader can actually see.
+  const { open: searchOpen, query, regex, index: hitIndex } = useSearch();
+  const searching = searchOpen && query.trim() !== "";
+  const searchLines = useMemo(
+    () => (!searching ? NO_LINES : mode === "jsonl" ? jsonl : feed.map((s) => s.text)),
+    [searching, mode, jsonl, feed],
+  );
+  // Typing only moves `query`; the lines change when the session or a switch
+  // does. So a keystroke re-walks the feed once, and a new event does not
+  // re-walk it per character.
+  const hits = useMemo(() => feedHits(searchLines, query, regex), [searchLines, query, regex]);
+
+  // The store learns the count from the view — in an effect, never mid-render.
+  useEffect(() => {
+    if (searching) reportCount(hits.total);
+    // See Chat.tsx: the store zeroes the count when the query or the mode
+    // changes, so both must be dependencies or an unchanged hit COUNT leaves
+    // the store believing there are none.
+  }, [searching, query, regex, hits.total]);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  // Follow the reader's own step. Deliberately NOT keyed on the hit count: a
+  // live run changes it constantly, and pulling the view back on every event
+  // would fight whoever is reading further down.
+  useEffect(() => {
+    if (!searching) return;
+    scrollRef.current
+      ?.querySelector(".tf-hit--current")
+      ?.scrollIntoView({ block: "center", inline: "nearest" });
+  }, [searching, hitIndex, query, mode, extended]);
 
   return (
     <div className="textview" data-reveal>
@@ -161,6 +234,22 @@ export function TextView({
         <span className="textview-note">
           {mode === "jsonl" ? t(lang, "tf.jsonlNote", { n: jsonl.length }) : t(lang, "tf.textNote")}
         </span>
+        {/* The reading feed leaves frames out, so a search over it can honestly
+            miss. Say where the edge is instead of letting a 0 read as absence. */}
+        {searching && mode === "text" && !extended && (
+          <span className="tf-search-scope">{t(lang, "tf.searchScope")}</span>
+        )}
+        {mode === "text" && (
+          <button
+            type="button"
+            className={extended ? "trace-lens mono trace-lens--on" : "trace-lens mono"}
+            aria-pressed={extended}
+            title={t(lang, "tf.extendedTitle")}
+            onClick={() => setExtended((v) => !v)}
+          >
+            {t(lang, "tf.extended")}
+          </button>
+        )}
         <button
           type="button"
           className={explain.status === "streaming" ? "trace-lens mono trace-lens--on" : "trace-lens mono"}
@@ -171,6 +260,11 @@ export function TextView({
           {t(lang, "tf.explain")}
         </button>
         <CopyButton text={() => (mode === "jsonl" ? jsonl.join("\n") : feedToPlainText(feed))} />
+        {/* The feed as a file. `extended` travels with it, so the document is
+            the view the reader had on screen and not a second reading of it —
+            and `events` is that same array, which is why the exported text pane
+            comes out of buildTextFeed exactly as the feed below does. */}
+        <ExportMenu kind="text" events={events} label={label} extended={extended} viewKey={viewKey} />
       </div>
 
       {explain.status !== "idle" && (
@@ -223,24 +317,34 @@ export function TextView({
       {events.length === 0 ? (
         <p className="textview-empty">{t(lang, "tf.empty")}</p>
       ) : mode === "jsonl" ? (
-        <div className="textview-scroll">
+        <div className="textview-scroll" ref={scrollRef}>
           <pre className="tf-jsonl">
-            {jsonl.map((line, i) => (
-              <div key={i} className="tf-jsonl-line">
-                {line}
-              </div>
-            ))}
+            {jsonl.map((line, i) => {
+              const lineHits = hits.byLine.get(i);
+              return (
+                <div key={i} className="tf-jsonl-line">
+                  {lineHits === undefined ? line : marked(line, lineHits, hitIndex)}
+                </div>
+              );
+            })}
           </pre>
         </div>
       ) : (
-        <div className="textview-scroll">
+        <div className="textview-scroll" ref={scrollRef}>
           <div className="tf-feed">
-            {feed.map((s, i) => (
-              <div key={i} className={`tf tf--${s.kind}`}>
-                {s.agentId !== "main" && s.agentId !== "" && <span className="tf-agent">[{s.agentId}]</span>}
-                {s.text}
-              </div>
-            ))}
+            {feed.map((s, i) => {
+              // A miss stays the plain string it already was — the feed is long
+              // and mostly misses, and only the hits pay for being sliced.
+              const lineHits = hits.byLine.get(i);
+              return (
+                <div key={i} className={`tf tf--${s.kind}`}>
+                  {s.agentId !== "main" && s.agentId !== "" && (
+                    <span className="tf-agent">[{s.agentId}]</span>
+                  )}
+                  {lineHits === undefined ? s.text : marked(s.text, lineHits, hitIndex)}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

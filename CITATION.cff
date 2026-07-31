@@ -1,0 +1,22 @@
+cff-version: 1.2.0
+message: "If spectroscope helps your work, please cite it and keep the credit line."
+title: "spectroscope"
+type: software
+authors:
+  - family-names: "Ezell"
+    given-names: "Christopher"
+    email: "chris@spectroscope.ai"
+version: "0.3.0"
+date-released: "2026-07-24"
+license: MIT
+url: "https://spectroscope.ai"
+repository-code: "https://github.com/spectroscope/spectroscope"
+abstract: "The agent orchestrator you can watch: a JVM agent harness and fleet orchestrator that records every run as a JSONL event stream and renders it live as spectra, traces, and fleet canvases."
+keywords:
+  - agents
+  - orchestrator
+  - observability
+  - jvm
+  - java
+  - opentelemetry
+  - llm

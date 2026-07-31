@@ -41,7 +41,8 @@ class RunEventJsonTest {
                 new RunEvent.ImageGenerated("main", "c3", "a lighthouse at dusk", "gemini",
                         "gemini-2.5-flash-image", "image/png", "images/3f7a.png", "3f7a", 14L),
                 new RunEvent.ContextInfo("main", 2, 5, 2612, 100_000,
-                        List.of(new RunEvent.ContextPart("conversation", 10448, 2612)), 15L),
+                        List.of(new RunEvent.ContextPart("conversation", 10448, 2612, null),
+                                new RunEvent.ContextPart("system prompt", 160, 40, "You are …")), 15L),
                 new RunEvent.AgentMessage("main", "worker-1", "task", "submitted",
                         "Plan the feature", "build_plan", 16L),
                 new RunEvent.Plan("main", List.of(
@@ -69,6 +70,27 @@ class RunEventJsonTest {
         // The cache-carrying shape (Anthropic prompt caching) round-trips losslessly.
         RunEvent.Usage cached = new RunEvent.Usage("main", 13, 1084, 1500, 200, 12L);
         assertEquals(cached, JSON.readValue(JSON.writeValueAsString(cached), RunEvent.class));
+    }
+
+    @Test
+    void toolResultGateWaitIsAdditiveAndOmittedWhenAbsent() throws Exception {
+        // Card 111, the cacheReadTokens precedent: the legacy shape (no gate
+        // wait) serializes EXACTLY as before — old sessions, the TypeScript
+        // and the Python edition stay byte-identical.
+        String legacy = JSON.writeValueAsString(
+                new RunEvent.ToolResult("main", "c1", "ok", false, 12L, 7L));
+        assertEquals("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\","
+                + "\"output\":\"ok\",\"isError\":false,\"durationMs\":12,\"ts\":7}", legacy);
+
+        // The gated shape round-trips losslessly: execution and wait apart.
+        RunEvent.ToolResult gated =
+                new RunEvent.ToolResult("main", "c1", "ok", false, 100L, 2000L, 7L);
+        assertEquals(gated, JSON.readValue(JSON.writeValueAsString(gated), RunEvent.class));
+
+        // The old-reader promise: a pre-card-111 line has no gateWaitMs at all —
+        // it parses, and the absence stays absent (null), never zero.
+        RunEvent.ToolResult old = (RunEvent.ToolResult) JSON.readValue(legacy, RunEvent.class);
+        assertEquals(null, old.gateWaitMs(), "absent field must deserialize to null, never 0");
     }
 
     private record Trip(RunEvent original, RunEvent reborn) {}

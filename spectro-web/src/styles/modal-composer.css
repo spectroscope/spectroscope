@@ -81,6 +81,15 @@
   max-height: 50vh;
   overflow-y: auto;
 }
+/* The payload is the one part that gives way. A column bounded by the viewport
+   keeps Deny and Allow on screen no matter how many lines arrive, and a person
+   never has to scroll the page to find the two buttons they came for. */
+.modal--gate { display: flex; flex-direction: column; max-height: calc(100vh - var(--sp-6)); }
+.modal--gate .modal-input { flex: 1 1 auto; min-height: 0; }
+.modal--gate .modal-remember { margin-top: var(--sp-3); }
+/* One scroller, not two: a well that scrolls inside a scrolling box hides its
+   tail behind a second scrollbar nobody goes looking for. */
+.modal-input .tv-well { max-height: none; overflow: visible; }
 
 .modal-actions {
   display: flex;
@@ -151,6 +160,60 @@
 }
 
 .send { min-height: 42px; }
+
+/* Card 78 #2: the bottom stop — same accent-outline family as the header
+   stop, sized to sit next to Send; disarmed ("stopping …") while the abort
+   is on its way to the run_end. */
+.composer-stop { min-height: 42px; padding: 6px var(--sp-4); }
+.composer-stop:disabled {
+  opacity: 0.55;
+  cursor: default;
+  box-shadow: none;
+}
+.composer-stop:disabled:hover { background: transparent; }
+
+/* Card 78 #3: the waiting line — queued messages as removable chips. */
+.queue-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  max-width: var(--content-max);
+  margin: 0 auto var(--sp-2);
+  width: 100%;
+}
+.queue-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  max-width: 420px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  padding: 3px var(--sp-2) 3px var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+}
+.queue-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.queue-chip-att {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.queue-chip-x {
+  border: none;
+  background: none;
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-14);
+  line-height: 1;
+  padding: 0 2px;
+}
+.queue-chip-x:hover { color: var(--error); }
 
 /* The irreversible action reads as danger, and LOUDLY once armed. */
 .archive-delete { color: var(--text-dim); }
@@ -224,3 +287,154 @@
   }
 }
 
+
+/* The built-in-model download modal + the picker's local note. */
+.provider-local-note {
+  margin: 0.4rem 0 0.2rem;
+  font-size: 0.82rem;
+  color: var(--ink-dim, #9a8f80);
+  line-height: 1.4;
+}
+.lm-modal {
+  max-width: 34rem;
+}
+/* The chooser rows: radio + name + good-for on the left, size + badges on the
+   right, the fit line underneath, the blurb only on the selected row. */
+.lm-list {
+  list-style: none;
+  margin: 0.6rem 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 21rem;
+  overflow-y: auto;
+}
+.lm-row {
+  border: 1px solid var(--line-faint, rgba(140, 130, 115, 0.25));
+  border-radius: 8px;
+  padding: 0.5rem 0.65rem;
+}
+.lm-row.sel {
+  border-color: var(--accent, #ce9440);
+}
+.lm-row-main {
+  display: flex;
+  align-items: baseline;
+  gap: 0.55rem;
+  cursor: pointer;
+}
+.lm-row-name {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.lm-goodfor {
+  font-size: 0.78rem;
+  color: var(--ink-dim, #9a8f80);
+}
+.lm-row-meta {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+.lm-badge {
+  font-size: 0.68rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-faint, rgba(140, 130, 115, 0.35));
+  color: var(--ink-dim, #9a8f80);
+}
+.lm-badge.ok {
+  color: var(--ok, #2dd4a7);
+  border-color: currentColor;
+}
+.lm-badge.warn {
+  color: var(--warn, #ce9440);
+  border-color: currentColor;
+}
+.lm-badge.think,
+.lm-badge.lm-default {
+  color: var(--ink-dim, #9a8f80);
+}
+.lm-fit {
+  display: block;
+  margin: 0.25rem 0 0 1.6rem;
+  font-size: 0.75rem;
+  color: var(--ink-dim, #9a8f80);
+}
+.lm-fit.blocked {
+  color: var(--err, #d9695f);
+}
+.lm-detail {
+  margin: 0.35rem 0 0 1.6rem;
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+.lm-detail p {
+  margin: 0.25rem 0;
+}
+.lm-caveat {
+  color: var(--warn, #ce9440);
+}
+.lm-links a {
+  color: inherit;
+}
+/* The onboarding sheet's inline "choose a model" call-to-action. */
+.ob-opt-cta {
+  border: 1px solid var(--accent, #ce9440);
+  border-radius: 999px;
+  background: none;
+  color: var(--accent, #ce9440);
+  font: inherit;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.6rem;
+  cursor: pointer;
+}
+.lm-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+.lm-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--line-faint, rgba(140, 130, 115, 0.25));
+  overflow: hidden;
+}
+.lm-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent, #ce9440);
+  transition: width 0.4s ease;
+}
+.lm-error {
+  margin: 0.4rem 0;
+  font-size: 0.82rem;
+  color: var(--err, #d9695f);
+}
+.lm-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+}
+
+/* Card 95: export sits beside resume/delete — a link that downloads, styled
+   like the ghost buttons around it. */
+.archive-export {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  padding: 6px var(--sp-3);
+  text-decoration: none;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.archive-export:hover { color: var(--accent); border-color: var(--accent); }

@@ -12,6 +12,14 @@ import { useLang } from "../state/lang";
 import { hlLangForPath, tokenize } from "./highlight";
 import { fileUrl, formatBytes, previewKind } from "./preview";
 import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
+import { TerminalPane } from "./TerminalPane";
+import {
+  TERM_OPEN_KEY,
+  TERM_SPLIT_KEY,
+  clampTermPct,
+  readStoredTermOpen,
+  readStoredTermSplit,
+} from "./shellPrefs";
 import type { WorkspaceInfo } from "../state/reducer";
 
 interface FileNode {
@@ -166,10 +174,14 @@ export function WorkspaceTab({
   workspace,
   onPickFolder,
   canPickFolder,
+  refreshSignal,
 }: {
   workspace: WorkspaceInfo | null;
   /** Opens the native folder picker on the spectroscope machine (macOS dialog). */
   onPickFolder?: () => void;
+  /** Bumped by App when the live run touched the disk (tool_result/run_end) —
+   *  the tree refetches, throttled, so it never feels stale (card 89). */
+  refreshSignal?: number;
   /** False once the agent ran — then the workspace is baked in. */
   canPickFolder?: boolean;
 }) {
@@ -225,18 +237,104 @@ export function WorkspaceTab({
     setSplit((s) => clampSplitPct(s + (e.key === "ArrowUp" ? -4 : 4)));
   };
 
+  // The terminal pane (card 93): shut until the operator asks for it, because
+  // opening it spawns a real shell. Its own divider measures from the bottom —
+  // the terminal keeps its height while the tree/preview split moves above it.
+  const [termOpen, setTermOpen] = useState<boolean>(() => {
+    try {
+      return readStoredTermOpen(localStorage.getItem(TERM_OPEN_KEY));
+    } catch {
+      return false;
+    }
+  });
+  const [termPct, setTermPct] = useState<number>(() => {
+    try {
+      return readStoredTermSplit(localStorage.getItem(TERM_SPLIT_KEY));
+    } catch {
+      return readStoredTermSplit(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(TERM_OPEN_KEY, termOpen ? "1" : "0");
+      localStorage.setItem(TERM_SPLIT_KEY, String(Math.round(termPct)));
+    } catch {
+      /* storage blocked — the pane just reverts on the next load */
+    }
+  }, [termOpen, termPct]);
+
+  const termDragging = useRef(false);
+  const applyTermFromClientY = (clientY: number): void => {
+    const cont = containerRef.current;
+    if (cont === null) return;
+    const box = cont.getBoundingClientRect();
+    if (box.height <= 0) return;
+    setTermPct(clampTermPct(((box.bottom - clientY) / box.height) * 100));
+  };
+  const onTermDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    termDragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onTermMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (termDragging.current) applyTermFromClientY(e.clientY);
+  };
+  const onTermUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!termDragging.current) return;
+    termDragging.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const onTermKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    setTermPct((p) => clampTermPct(p + (e.key === "ArrowUp" ? 4 : -4)));
+  };
+
   const sessionId = workspace?.sessionId;
+  // Auto-refresh dedupe (card 89): identical payloads never re-render the
+  // tree — the 5 s safety poll must not make the panel flicker.
+  const lastJson = useRef("");
   const load = useCallback((): void => {
     fetch(sessionId === undefined ? "/api/files" : `/api/files?session=${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((res) => {
-        setTree(res as FilesResponse);
         setFailed(false);
+        const next = JSON.stringify(res);
+        if (next !== lastJson.current) {
+          lastJson.current = next;
+          setTree(res as FilesResponse);
+        }
       })
       .catch(() => setFailed(true));
   }, [sessionId]);
 
   useEffect(load, [load]);
+
+  // Card 89: the tree follows the RUN — a tool wrote something (tool_result)
+  // or the run ended, App bumped the signal, the tree refetches at most once
+  // per second (trailing throttle, so the LAST write always lands).
+  const REFRESH_THROTTLE_MS = 1000;
+  const lastSignalFetch = useRef(0);
+  useEffect(() => {
+    if (refreshSignal === undefined || refreshSignal === 0) return;
+    const since = Date.now() - lastSignalFetch.current;
+    const wait = since >= REFRESH_THROTTLE_MS ? 0 : REFRESH_THROTTLE_MS - since;
+    const timer = window.setTimeout(() => {
+      lastSignalFetch.current = Date.now();
+      load();
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [refreshSignal, load]);
+
+  // The safety net for writers OUTSIDE the run (the operator's editor): a slow
+  // poll while the tab is actually visible; the dedupe above keeps it calm.
+  const SAFETY_POLL_MS = 5000;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, SAFETY_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   const toggle = (path: string): void => {
     setOpen((prev) => {
@@ -272,6 +370,21 @@ export function WorkspaceTab({
             {t(lang, "ws.pick")}
           </button>
         )}
+        {/* Inline bilingual pair rather than an i18n key: a sibling owns
+            i18n.ts this run, and card 64 folds these ternaries back in. */}
+        <button
+          type="button"
+          className="ws-term-toggle"
+          aria-pressed={termOpen}
+          title={
+            lang === "de"
+              ? "ein terminal im ordner des agenten, mit deinen eigenen rechten"
+              : "a terminal in the agent's folder, running with your own privileges"
+          }
+          onClick={() => setTermOpen((open) => !open)}
+        >
+          {lang === "de" ? "terminal" : "terminal"}
+        </button>
         <button type="button" className="ws-refresh" onClick={load} title={t(lang, "ws.refresh")}>
           ⟳
         </button>
@@ -322,6 +435,26 @@ export function WorkspaceTab({
           </>
         )}
       </div>
+      {termOpen && (
+        <>
+          <div
+            className="ws-divider"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={
+              lang === "de" ? "trenner ziehen, um das terminal zu ändern" : "drag to resize the terminal"
+            }
+            tabIndex={0}
+            onPointerDown={onTermDown}
+            onPointerMove={onTermMove}
+            onPointerUp={onTermUp}
+            onKeyDown={onTermKey}
+          />
+          <div className="ws-term" style={{ flex: `0 0 ${termPct}%` }}>
+            <TerminalPane sessionId={sessionId} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

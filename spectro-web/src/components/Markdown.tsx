@@ -9,13 +9,40 @@ import type { ReactNode } from "react";
 import { parseMarkdown } from "../markdown/parse";
 import type { Block, Inline } from "../markdown/parse";
 import { CopyButton } from "./CopyButton";
+import { hlLangForFence } from "../workspace/highlight";
+import { findRanges, getSearch } from "../state/search";
+import { highlight } from "./Highlighted";
 
-function renderInline(nodes: Inline[], key: string): ReactNode[] {
+/** Wrap every literal occurrence of `query` in `text`. Case-insensitive and
+ *  non-overlapping, matching the find box's own rule. */
+function markText(text: string, query: string, key: string, regex: boolean): ReactNode[] {
+  const ranges = findRanges(text, query, regex);
+  if (ranges.length === 0) return [text];
+  const out: ReactNode[] = [];
+  let at = 0;
+  ranges.forEach(([from, to], i) => {
+    if (from > at) out.push(text.slice(at, from));
+    out.push(
+      <mark key={`${key}.m${i}`} className="find-hit">
+        {text.slice(from, to)}
+      </mark>,
+    );
+    at = to;
+  });
+  if (at < text.length) out.push(text.slice(at));
+  return out;
+}
+
+function renderInline(nodes: Inline[], key: string, mark?: string): ReactNode[] {
   return nodes.map((n, i) => {
     const k = `${key}.${i}`;
     switch (n.kind) {
       case "text":
-        return n.text;
+        // The only place a rendered answer holds raw text, so the only place a
+        // find can mark an occurrence without rewriting the tree.
+        return mark !== undefined && mark.trim() !== ""
+          ? markText(n.text, mark, k, getSearch().regex)
+          : n.text;
       case "br":
         return <br key={k} />;
       case "code":
@@ -25,18 +52,18 @@ function renderInline(nodes: Inline[], key: string): ReactNode[] {
           </code>
         );
       case "strong":
-        return <strong key={k}>{renderInline(n.children, k)}</strong>;
+        return <strong key={k}>{renderInline(n.children, k, mark)}</strong>;
       case "em":
-        return <em key={k}>{renderInline(n.children, k)}</em>;
+        return <em key={k}>{renderInline(n.children, k, mark)}</em>;
       case "del":
-        return <del key={k}>{renderInline(n.children, k)}</del>;
+        return <del key={k}>{renderInline(n.children, k, mark)}</del>;
       case "link":
         return n.href !== null ? (
           <a key={k} href={n.href} target="_blank" rel="noopener noreferrer">
-            {renderInline(n.children, k)}
+            {renderInline(n.children, k, mark)}
           </a>
         ) : (
-          <span key={k}>{renderInline(n.children, k)}</span>
+          <span key={k}>{renderInline(n.children, k, mark)}</span>
         );
     }
   });
@@ -58,14 +85,14 @@ function renderList(list: Extract<Block, { kind: "list" }>, key: string): ReactN
   );
 }
 
-function renderBlock(block: Block, key: string): ReactNode {
+function renderBlock(block: Block, key: string, mark?: string): ReactNode {
   switch (block.kind) {
     case "heading": {
       const Tag = `h${Math.min(block.level, 6)}` as "h1";
-      return <Tag key={key}>{renderInline(block.children, key)}</Tag>;
+      return <Tag key={key}>{renderInline(block.children, key, mark)}</Tag>;
     }
     case "para":
-      return <p key={key}>{renderInline(block.children, key)}</p>;
+      return <p key={key}>{renderInline(block.children, key, mark)}</p>;
     case "code":
       return (
         <div key={key} className="md-pre">
@@ -74,14 +101,16 @@ function renderBlock(block: Block, key: string): ReactNode {
             <CopyButton text={() => block.text} />
           </div>
           <pre>
-            <code>{block.text}</code>
+            <code>{highlight(block.text, block.lang != null ? hlLangForFence(block.lang) : null)}</code>
           </pre>
         </div>
       );
     case "list":
       return renderList(block, key);
     case "quote":
-      return <blockquote key={key}>{block.children.map((b, i) => renderBlock(b, `${key}.${i}`))}</blockquote>;
+      return (
+        <blockquote key={key}>{block.children.map((b, i) => renderBlock(b, `${key}.${i}`, mark))}</blockquote>
+      );
     case "hr":
       return <hr key={key} className="md-hr" />;
     case "table":
@@ -114,7 +143,7 @@ function renderBlock(block: Block, key: string): ReactNode {
   }
 }
 
-export function Markdown(props: { text: string }) {
+export function Markdown(props: { text: string; mark?: string }) {
   const blocks = useMemo(() => parseMarkdown(props.text), [props.text]);
-  return <div className="md">{blocks.map((b, i) => renderBlock(b, `b${i}`))}</div>;
+  return <div className="md">{blocks.map((b, i) => renderBlock(b, `b${i}`, props.mark))}</div>;
 }

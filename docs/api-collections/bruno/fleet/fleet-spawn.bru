@@ -1,0 +1,37 @@
+meta {
+  name: spawn a readonly node
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/fleet/nodes
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "prompt": "Summarize the repo README",
+    "context": "fleet-demo",
+    "role": "worker",
+    "id": "{{nodeId}}",
+    "linger": false
+  }
+}
+
+docs {
+  Spawn a readonly fleet node. 202 {id,note}, 400 bad input, 429 spawn cap, 500 process failure.
+  
+  Body: SpawnRequest(String prompt, String context, String role, String id, boolean linger) — prompt+context required; context matches [A-Za-z0-9._-]; the node is FORCED readonly.
+  
+  CAUTION: Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.
+  
+  Fence: host+json+optin — Loopback fence plus Content-Type: application/json, and the server must run with SPECTRO_ALLOW_SPAWN set (default off). Disabled and fenced-out both answer 404 — there is no enablement oracle.
+  
+  Writes state: yes
+}

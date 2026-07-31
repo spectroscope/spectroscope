@@ -1,0 +1,15 @@
+# OTel Collector bridge for Phoenix: accept OTLP/JSON on 4318, forward
+# OTLP protobuf to Phoenix on the host. Used by the README's docker run.
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  otlphttp:
+    endpoint: http://host.docker.internal:6006
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [otlphttp]

@@ -55,11 +55,11 @@ public final class OllamaProvider implements LlmProvider {
         this.baseUrl = options.baseUrl().replaceAll("/$", "");
         this.model = options.model();
         // The JDK HttpClient transport, NOT the default HttpURLConnection one:
-        // cancelling a run closes the streaming response, and only the JDK
-        // client's close CANCELS the body subscription promptly. The default
-        // (SimpleClientHttpRequestFactory) instead tries to DRAIN the stream for
-        // connection reuse on close, which BLOCKS when a slow or cloud model has
-        // stalled mid-stream — so the stop button could never interrupt it.
+        // closing the JDK client's RAW body stream cancels the body subscription
+        // and tears the connection down promptly — the stop button's whole
+        // mechanism. NOTE: Spring's response-level close() drains the remaining
+        // body on EVERY transport (StreamUtils.drain), so the iterator closes
+        // the raw stream, never the response (see NdjsonIterator).
         this.http = RestClient.builder()
                 .baseUrl(baseUrl)
                 .requestFactory(new JdkClientHttpRequestFactory())
@@ -78,6 +78,11 @@ public final class OllamaProvider implements LlmProvider {
         } catch (RuntimeException unreachable) {
             return Optional.empty();
         }
+    }
+
+    @Override
+    public String modelName() {
+        return model;
     }
 
     /**
@@ -103,12 +108,13 @@ public final class OllamaProvider implements LlmProvider {
      * @param messages the full conversation including the system message
      * @param tools    the advertised tools as function specs
      * @param options  generation options (the completion cap)
-     * @param think    true to request reasoning; null omits the field so unconditional
-     *                 reasoners stay unaffected
+     * @param think    Boolean on/off, or a level string ("low".."max") for the
+     *                 families that take one (qwen3, gpt-oss); null omits the
+     *                 field so unconditional reasoners stay unaffected
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ChatRequest(String model, boolean stream, List<WireMessage> messages,
-                       List<WireTool> tools, WireOptions options, Boolean think) {}
+                       List<WireTool> tools, WireOptions options, Object think) {}
 
     /**
      * One chat message on Ollama's wire.
@@ -301,10 +307,16 @@ public final class OllamaProvider implements LlmProvider {
                             throw classifyHttpFailure(
                                     clientResponse.getStatusCode().value(), detail, hasImages);
                         }
+                        // The close handle is the RAW body stream, NEVER the Spring
+                        // response: Spring's close() DRAINS the remaining body first,
+                        // so a mid-generation cancel would read the model's whole
+                        // remaining output on the cancelling thread while the server
+                        // never sees a disconnect (card 78). The raw JDK stream close
+                        // cancels the subscription and tears the connection down.
                         InputStream bodyStream = clientResponse.getBody();
                         return new OpenResponse(
                                 new BufferedReader(new InputStreamReader(bodyStream, StandardCharsets.UTF_8)),
-                                clientResponse::close);
+                                () -> closeBody(bodyStream));
                     }, false);
             this.lines = open.reader();
             this.closeResponse = open.close();
@@ -430,6 +442,16 @@ public final class OllamaProvider implements LlmProvider {
      */
     private record OpenResponse(BufferedReader reader, Runnable close) {}
 
+    /** Closes the raw body stream, quietly — closing an already-broken stream is
+     *  fine; the point is the prompt subscription cancel + connection teardown. */
+    private static void closeBody(InputStream body) {
+        try {
+            body.close();
+        } catch (IOException ignored) {
+            // the reader's own IOException path handles the aftermath
+        }
+    }
+
     // ---- request mapping ----------------------------------------------------
 
     /**
@@ -443,12 +465,41 @@ public final class OllamaProvider implements LlmProvider {
                 .map(spec -> new WireTool("function",
                         new WireFunctionSpec(spec.name(), spec.description(), spec.inputSchema())))
                 .toList();
-        // think:true is sent only when thinking is enabled — it encourages models that
-        // gate reasoning behind the flag (qwen3). Left null (omitted) otherwise, so
-        // models that reason unconditionally (gpt-oss) are unaffected.
-        Boolean think = request.thinking() ? Boolean.TRUE : null;
         return new ChatRequest(model, true, toWireMessages(request), tools,
-                new WireOptions(request.maxTokens()), think);
+                new WireOptions(request.maxTokens()), thinkWireValue(model, request));
+    }
+
+    /**
+     * The {@code think} value for one request, capability-gated: a level string
+     * where the family takes one (qwen3, gpt-oss), the boolean toggle
+     * otherwise, and NOTHING where the family has no off state — gpt-oss
+     * ignores true/false and a fabricated off would pretend.
+     *
+     * <p>The three toggle states are not interchangeable. think:true encourages
+     * models that gate reasoning behind the flag (qwen3); OMITTING the field
+     * leaves the choice with the model, so an unconditional reasoner is
+     * unaffected; think:false is the explicit off switch, and it is not a
+     * nicety: num_predict caps reasoning and answer TOGETHER. MEASURED
+     * 2026-07-27, glm-5.2 via ollama, one 181-character passage at num_predict
+     * 512 — with the field omitted the reasoning phase spent the entire budget
+     * (eval_count 512, done_reason "length") and the answer never started;
+     * with think:false, zero reasoning and the answer in 0.9 s.</p>
+     *
+     * @param model   the model the request runs
+     * @param request the neutral request carrying reasoning mode and effort
+     * @return Boolean, level String, or null to omit the field
+     */
+    static Object thinkWireValue(String model, ProviderRequest request) {
+        ReasoningCapability cap = ReasoningCapabilities.resolve("ollama", model);
+        if (request.effort() != null && cap.efforts().contains(request.effort())
+                && request.reasoning() != ProviderRequest.Reasoning.OFF) {
+            return request.effort();
+        }
+        return switch (request.reasoning()) {
+            case ON -> Boolean.TRUE;
+            case OFF -> cap.offSwitch() ? Boolean.FALSE : null;
+            case DEFAULT -> null;
+        };
     }
 
     /**

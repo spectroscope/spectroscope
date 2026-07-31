@@ -1425,8 +1425,14 @@
    agent card grows a second column (context beside the controls), the user
    card carries its prompt beside it. Shells may override the widths (edu's
    lesson camera does); these are the working defaults. */
+/* The two columns each need at least what the SAME block gets in the compact
+   card (302px of content): the tool grid halves its column, so a narrower one
+   clips "generate_image", and the context column carries the tool JSON, which
+   at 251px wrapped a shell command every four words. 680 = 302 + 302 + the
+   16px gutter, the column rule and the card's own padding. EXPANDED_CARD.agent
+   in sceneToFlow.ts mirrors this width — the seats are derived from it. */
 .pf-agent--wide {
-  width: 540px;
+  width: 680px;
 }
 .pf-agent__cols {
   display: flex;
@@ -1434,7 +1440,7 @@
   align-items: stretch;
 }
 .pf-agent__main {
-  flex: 0 0 200px;
+  flex: 0 0 302px;
   display: flex;
   flex-direction: column;
 }

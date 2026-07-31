@@ -14,19 +14,35 @@ import {
   recordResumeMarker,
   reduceAll,
   traceFromEvents,
+  windowTrace,
 } from "./state/reducer";
 import type { UiState } from "./state/reducer";
 import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
+import { ChatV2 } from "./components/ChatV2";
+import { useChatView } from "./state/chatView";
+import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
 import { ImportDialog } from "./components/ImportDialog";
 import { GateBar } from "./components/GateBar";
+import { LevelPill } from "./components/LevelPill";
+import { LevelingPanel } from "./components/LevelingPanel";
+import { LockedSurface } from "./components/LockedSurface";
+import { LevelingIntro } from "./components/LevelingIntro";
+import { useLeveling } from "./state/useLeveling";
+import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
+import { setBeaconSink } from "./state/levelingBeacon";
+import { parseRoute } from "./state/route";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
+import { SearchBox } from "./components/SearchBox";
 import { Onboarding } from "./components/Onboarding";
 import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
+import { LocalModelNotice } from "./components/LocalModelNotice";
+import { LocalModelDialog } from "./components/LocalModelDialog";
+import { LOCAL_NOTICE_KEY, shouldShowLocalNotice } from "./components/localNoticeFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { StarterDialog } from "./components/StarterDialog";
 import { compile } from "./scenario/compile";
@@ -35,6 +51,9 @@ import { Sidebar } from "./components/Sidebar";
 import { Resizer } from "./components/Resizer";
 import { RightPanel } from "./components/RightPanel";
 import { fetchSettings, putSettings } from "./state/serverSettings";
+import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasoning";
+import { useReasoningCapability } from "./components/ReasoningControl";
+import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
 import {
   openRightPanel,
   setActiveRightTab,
@@ -45,6 +64,7 @@ import {
   useLayout,
 } from "./state/layout";
 import { TextView } from "./components/TextView";
+import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
@@ -71,6 +91,8 @@ import {
   fleetPending,
   removeFleet,
 } from "./state/fleetStore";
+import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
+import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
 import { t } from "./i18n/i18n";
@@ -104,27 +126,81 @@ export function App() {
   // entered, feeding the tabs that fleet's events instead of the own session.
   const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
   const [conn, setConn] = useState<ConnState>({ status: "connecting", retryAt: null });
+  // Queue-while-running (card 78 #3): messages submitted during a run wait
+  // here as chips and auto-send on run_end. Session-local — a new chat or a
+  // resume clears it with the fresh socket.
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  // Stop feedback (card 78 #2): true from the stop click until the root
+  // run_end flips running off — the button reads "stopping …" meanwhile.
+  const [stopRequested, setStopRequested] = useState(false);
+  // True from an accepted user_message until its run_start (or an error event)
+  // arrives — the drain's re-entry guard for the tiny accepted-but-not-started
+  // gap. A ref, not state: it flips inside the send path mid-commit.
+  const awaitingRunStart = useRef(false);
   const [connNonce, setConnNonce] = useState(0); // bumped by "New chat" to force a fresh socket session
   const [resumeId, setResumeId] = useState<string | null>(null); // non-null: the socket continues this stored session
   const [refreshToken, setRefreshToken] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
-  const [tab, setTab] = useState<"chat" | "spectrum" | "graph" | "trace" | "text" | "lab">("chat"); // spectrum = fleet lanes; trace = wire view; text = readable feed + raw JSONL; lab = step-through Flow map
+  const [tab, setTab] = useState<"chat" | "spectrum" | "graph" | "trace" | "text" | "lab">("chat");
+  // The ladder (card 80). Server state only: every lock is derived from the
+  // snapshot on render, never cached, so a mode flipped elsewhere cannot leave
+  // a stale lock behind.
+  const leveling = useLeveling();
+  // Held in a ref because onEvents is memoised with no dependencies; reading the
+  // callback fresh here is the same stale-closure guard providerModelField uses.
+  const refreshLeveling = useRef(leveling.refresh);
+  refreshLeveling.current = leveling.refresh;
+  const beaconRef = useRef(leveling.visit);
+  beaconRef.current = leveling.visit;
+  // Components too deep for a prop report through the module beacon; the app is
+  // the only thing that knows where those reports should go.
+  useEffect(() => {
+    setBeaconSink((surface, sessionId) => beaconRef.current(surface, sessionId ?? null));
+    return () => setBeaconSink(null);
+  }, []);
+  const [levelPanelOpen, setLevelPanelOpen] = useState(false);
+  const [levelUp, setLevelUp] = useState<{ level: number; opened: string[] } | null>(null);
+  const lastLevel = useRef<number | null>(null);
+  const levelSnapshot = leveling.snapshot;
+  useEffect(() => {
+    if (!levelSnapshot) return;
+    const before = lastLevel.current;
+    lastLevel.current = levelSnapshot.level;
+    // First read of the session is not a climb, and a reset walking back down
+    // is not one either.
+    if (before === null || levelSnapshot.level <= before) return;
+    setLevelUp({
+      level: levelSnapshot.level,
+      opened: newlyOpened(levelSnapshot.ladder, before, levelSnapshot.level),
+    });
+    const clear = setTimeout(() => setLevelUp(null), 7000);
+    return () => clearTimeout(clear);
+  }, [levelSnapshot]); // spectrum = fleet lanes; trace = wire view; text = readable feed + raw JSONL; lab = step-through Flow map
   // Spectrum -> Trace hand-off: clicking a lane pins its agent as the trace's
   // agent filter (null = all agents). The chip row in the trace clears it.
   const [traceAgent, setTraceAgent] = useState<string | null>(null);
   // A Spectrum-band click hands one exact event to the Trace (open + flash it).
   const [focusEvent, setFocusEvent] = useState<RunEvent | null>(null);
+  // chat-v2 (PROTOTYPE): which reading the chat is in, and which work item the
+  // transcript's chip is pointing at.
+  const chatView = useChatView();
+  const [workHighlight, setWorkHighlight] = useState<string | null>(null);
   const [liveEvents, setLiveEvents] = useState<RunEvent[]>([]); // raw, for the graph
+  // Card 89: bumped per rAF batch that carried a disk-relevant event — the
+  // Files tab refetches (throttled) instead of waiting for a manual reload.
+  const [fsTick, setFsTick] = useState(0);
   // Provider/model, thinking and the image backend now live in the user's
   // server-side settings (~/.spectro/settings.json) — the server builds every
   // connection's agent straight from them. The useState seeds below are only
   // the harness's hardcoded BOOTSTRAP fallback until the settings-hydration
   // effect (below, near the /api/config fetch) pulls the real values once the
-  // socket is open. A local flip still writes the user scope
-  // (changeImageProvider/toggleThinking below), which shapes the default for
-  // the NEXT session — and also latches controlsTouched so a later reconnect
-  // never overwrites what the user just chose.
+  // socket is open. An image-backend flip still writes the user scope
+  // (changeImageProvider below), which shapes the default for the NEXT
+  // session — and also latches controlsTouched so a later reconnect never
+  // overwrites what the user just chose. thinking only DISPLAYS here (the
+  // right panel's context line); its control moved into the model picker
+  // (card 88), which mirrors the server's visibility coupling on send.
   const [imageProvider, setImageProvider] = useState("gemini");
   const [imagesOpen, setImagesOpen] = useState(false); // gallery panel
   const [thinking, setThinking] = useState(true); // reasoning visibility (on by default)
@@ -133,6 +209,10 @@ export function App() {
   const [keymapOpen, setKeymapOpen] = useState(false); // the ? shortcut sheet (edu port)
   const [spawnDialogOpen, setSpawnDialogOpen] = useState(false); // start a fleet node from the sidebar
   const [onboardingOpen, setOnboardingOpen] = useState(false); // first-run backend info sheet
+  // Built-in model first-use notice (card 91): opens once when spectro-local
+  // becomes the ACTIVE backend (wire truth); "got it" persists the dismissal.
+  const [localNoticeOpen, setLocalNoticeOpen] = useState(false);
+  const [localChooserOpen, setLocalChooserOpen] = useState(false); // the built-in model chooser, opened from onboarding
   const [onboardingDismissed, setOnboardingDismissed] = useState<boolean>(() => {
     try {
       return !shouldOnboard(localStorage.getItem(ONBOARDED_KEY));
@@ -158,6 +238,7 @@ export function App() {
         setKeymapOpen(true);
       } else if (e.key === "Escape") {
         setKeymapOpen(false);
+        setLevelPanelOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -208,14 +289,38 @@ export function App() {
 
   // One setState per animation-frame batch: n events, one React render.
   // The same batch is kept raw — the graph tab is just another reducer.
+  // This state is the one the socket grows without an end in sight, so it is
+  // also the one whose trace is a window; every other fold here is finite.
   const onEvents = useCallback((batch: RunEvent[]) => {
-    setLive((s) => reduceAll(s, batch));
+    setLive((s) => windowTrace(reduceAll(s, batch)));
     setLiveEvents((prev) => [...prev, ...batch]);
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
+    // Card 89: a tool result or a run end may have changed the workspace on
+    // disk — nudge the Files tab (it throttles + dedupes on its side).
+    if (
+      batch.some((e) => {
+        const type = (e as { type?: string }).type;
+        return type === "tool_result" || type === "run_end" || type === "workspace_info";
+      })
+    ) {
+      setFsTick((n) => n + 1);
+    }
+    // The ladder's server-side marks (a finished run settles first light) arrive
+    // without the client asking, so a run end is the moment to re-read it. Same
+    // shape as the Files nudge above, and cheaper than a socket frame nobody
+    // else needs.
+    if (batch.some((e) => (e as { type?: string }).type === "run_end")) {
+      refreshLeveling.current();
+    }
   }, []);
 
   useEffect(() => {
+    // A fresh socket is a fresh session — waiting chips, the drain latch and
+    // the stop feedback belong to the old one (card 78). Harmless on mount.
+    setQueue([]);
+    setStopRequested(false);
+    awaitingRunStart.current = false;
     const connection = connect({
       onEvents,
       resume: resumeId ?? undefined, // ?resume=<id>: the server reloads the JSONL history
@@ -239,13 +344,42 @@ export function App() {
     if (!running) setRefreshToken((n) => n + 1);
   }, [running]);
 
+  // Card 78: run transitions release the stop feedback and the drain latch.
+  useEffect(() => {
+    if (running) {
+      awaitingRunStart.current = false; // run_start arrived — the send gap is closed
+    } else {
+      setStopRequested(false); // run_end arrived (or nothing runs) — stop visibly took
+    }
+  }, [running]);
+  // An error event releases the latch too: a send the server refused (or a run
+  // that died before run_start) must not jam the queue until a reload. The
+  // latch is a ref (synchronous reads in the send path), so the release alone
+  // would not re-run the drain effect — the kick state makes it reactive
+  // (review find F2: a queued chip stalled until some unrelated dep changed).
+  const [drainKick, setDrainKick] = useState(0);
+  const errorTurns = live.turns.reduce((n, turn) => (turn.kind === "error" ? n + 1 : n), 0);
+  useEffect(() => {
+    awaitingRunStart.current = false;
+    setDrainKick((k) => k + 1);
+  }, [errorTurns]);
+
   // The ONE place client frames leave the app: every outgoing ClientMessage
   // is traced (dir "out") — but only when it actually hit the wire; send()
   // returns false while the socket is down and dropped frames never crossed.
   const sendClient = useCallback((msg: ClientMessage): boolean => {
     const sent = connRef.current?.send(msg) === true;
     if (sent) {
-      setLive((s) => recordOutgoing(s, msg));
+      // Outbound rows land in the same growing array as inbound ones, so they
+      // are windowed by the same rule — a chatty sender cannot outgrow it.
+      setLive((s) => windowTrace(recordOutgoing(s, msg)));
+      // Leveling beacons ride here rather than in each component: this is the one
+      // place every client message passes, so a gate answered from the bar, the
+      // lab or a fleet all report the same way, and a future sender gets it free.
+      // Both acts are things the event stream cannot tell apart on its own — the
+      // core emits the same permission events for an allowlist auto-approval.
+      if (msg.type === "permission_response") beaconRef.current("gate");
+      if (msg.type === "set_permission_mode") beaconRef.current("permission-mode");
     }
     return sent;
   }, []);
@@ -253,21 +387,72 @@ export function App() {
   // the frame carries the bytes ({ mediaType, dataBase64 }); the
   // thumbnails are parked in the state and picked up by the run_start case —
   // the reducer builds the user bubble, so there is no local echo turn.
+  const sendNow = useCallback(
+    (text: string, attachments?: PendingAttachment[]): boolean => {
+      const sent = sendClient({
+        type: "user_message",
+        text,
+        ...(attachments !== undefined && attachments.length > 0
+          ? { attachments: attachments.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 })) }
+          : {}),
+      });
+      if (sent && attachments !== undefined && attachments.length > 0) {
+        const parked = attachments.map(({ name, mediaType, dataBase64 }) => ({
+          name,
+          mediaType,
+          dataBase64,
+        }));
+        setLive((s) => ({ ...s, outboxAttachments: parked }));
+      }
+      if (sent) {
+        // Latched until the server's run_start (or an error event) — the drain
+        // must not fire again in the accepted-but-not-yet-started gap.
+        awaitingRunStart.current = true;
+      }
+      return sent;
+    },
+    [sendClient],
+  );
+  // Queue-while-running (card 78 #3): the composer never locks. A submit
+  // during a run (or while the socket is down, or while a queued send is in
+  // flight) waits in the queue; the drain effect below sends it the moment
+  // the session is free. Order is preserved — the queue is the only waiting
+  // line, the direct path exists just to keep idle sends chip-flash-free.
   const send = (text: string, attachments?: PendingAttachment[]): void => {
-    const sent = sendClient({
-      type: "user_message",
-      text,
-      ...(attachments !== undefined && attachments.length > 0
-        ? { attachments: attachments.map(({ mediaType, dataBase64 }) => ({ mediaType, dataBase64 })) }
-        : {}),
-    });
-    if (sent && attachments !== undefined && attachments.length > 0) {
-      const parked = attachments.map(({ name, mediaType, dataBase64 }) => ({ name, mediaType, dataBase64 }));
-      setLive((s) => ({ ...s, outboxAttachments: parked }));
+    // queue.length in the guard: while chips wait, a new submit must join the
+    // line, never jump it (review find F2 — order stays submission order).
+    if (live.running || awaitingRunStart.current || conn.status !== "open" || queue.length > 0) {
+      setQueue((q) => enqueue(q, text, attachments));
+      return;
     }
+    sendNow(text, attachments);
   };
   const abort = (): void => {
-    sendClient({ type: "abort" });
+    // The visible half of stop (card 78 #1/#2): the button disarms to
+    // "stopping …" until the root run_end actually flips running off — but
+    // ONLY when the abort frame actually hit the wire. A flapped socket
+    // drops the frame (send() returns false) and a latched "stopping …"
+    // would disarm the button forever (review find F1).
+    const sent = sendClient({ type: "abort" });
+    if (sent && live.running) {
+      setStopRequested(true);
+    }
+  };
+  // The queue drain: the moment the session is free (and the socket open), the
+  // next waiting message goes out. The latch guards the accepted-but-not-yet-
+  // started gap; a failed send keeps its chip for the next attempt.
+  const connOpen = conn.status === "open";
+  useEffect(() => {
+    if (!connOpen || live.running || awaitingRunStart.current || queue.length === 0) {
+      return;
+    }
+    const next = queue[0];
+    if (sendNow(next.text, next.attachments)) {
+      setQueue((q) => removeQueued(q, next.id));
+    }
+  }, [connOpen, live.running, queue, sendNow, drainKick]);
+  const unqueue = (id: number): void => {
+    setQueue((q) => removeQueued(q, id));
   };
   const decide = (
     callId: string,
@@ -295,16 +480,42 @@ export function App() {
     // 404 against openai's endpoint (the settings panel resets it the same way).
     putSettings("user", { imageProvider: provider, imageModel: null }).catch(() => {});
   };
-  // Reasoning visibility: flips local state and tells the server (traced too).
-  // Applies to the next run — the server keeps one agent per connection. The
-  // user-settings write is fire-and-forget for the same reason as above.
-  const toggleThinking = (): void => {
-    controlsTouched.current = true; // ditto
-    const next = !thinking;
-    setThinking(next);
-    sendClient({ type: "set_thinking", enabled: next });
-    putSettings("user", { thinking: next }).catch(() => {});
-  };
+  // Card 88: the picker's reasoning choice rides the run. The store keeps one
+  // choice per (provider, model) — both ReasoningControl hosts only WRITE the
+  // store; this effect is the one wire site. It fires when the socket opens
+  // (reconnect included), when the active pair changes (a confirmed provider
+  // switch applies the new pair's choice — or clears the old one) and when the
+  // choice itself flips. A connection that never saw a non-default choice gets
+  // NO frame: an unprompted "default" would stomp the server's own thinking
+  // default (set_reasoning re-seeds visibility server-side).
+  // The record rules the wire as well as the seg: a stored choice is clamped
+  // against the ACTIVE pair's capability record before it is spent, so a
+  // choice that outlived its record (an overlay that narrowed the ladder, a
+  // table change between releases) can never send a field the seg no longer
+  // offers. An unknown record spends nothing, exactly as it renders nothing.
+  const liveProvider = live.providerInfo?.provider ?? serverCfg?.provider ?? "";
+  const liveModel = live.providerInfo?.model ?? serverCfg?.model ?? "";
+  const liveCap = useReasoningCapability(liveProvider, liveModel);
+  const storedChoice = useReasoningChoice(liveProvider, liveModel);
+  // Memoized: the effect below compares by reference, and wireChoice may mint
+  // a clamped object.
+  const liveChoice = useMemo(() => wireChoice(liveCap, storedChoice), [liveCap, storedChoice]);
+  const reasoningSent = useRef(false);
+  useEffect(() => {
+    if (conn.status !== "open") {
+      reasoningSent.current = false; // a fresh connection starts clean server-side
+      return;
+    }
+    if (liveProvider === "" || liveModel === "") return;
+    if (liveChoice.mode === "default" && !reasoningSent.current) return;
+    if (sendClient(reasoningFrame(liveChoice))) {
+      reasoningSent.current = liveChoice.mode !== "default";
+      if (liveChoice.mode !== "default") controlsTouched.current = true;
+      // Mirror onSetReasoning exactly: "off" hides the stream, everything
+      // else re-enables visibility — the panel's Thinking line stays honest.
+      setThinking(liveChoice.mode !== "off");
+    }
+  }, [conn.status, liveProvider, liveModel, liveChoice, sendClient]);
   // Switch the LLM backend mid-session. Deliberately NOT optimistic: the chip
   // only flips when the server answers with a provider_info frame — a refused
   // switch (e.g. anthropic without a key) must never leave a lying chip. Only
@@ -326,6 +537,28 @@ export function App() {
       }).catch(() => {});
     }
   }, [confirmedProviderInfo]);
+
+  useEffect(() => {
+    let stored: string | null = null;
+    try {
+      stored = localStorage.getItem(LOCAL_NOTICE_KEY);
+    } catch {
+      /* blocked storage: the notice may repeat — better than never showing */
+    }
+    if (shouldShowLocalNotice(stored, live.providerInfo?.provider ?? null)) {
+      setLocalNoticeOpen(true);
+    }
+  }, [live.providerInfo]);
+  const dismissLocalNotice = (persist: boolean): void => {
+    setLocalNoticeOpen(false);
+    if (persist) {
+      try {
+        localStorage.setItem(LOCAL_NOTICE_KEY, "1");
+      } catch {
+        /* ignore */
+      }
+    }
+  };
 
   // The active LLM backend (provider + model) for the header and the Lab map.
   // /api/config is the boot truth; a switch overrides it optimistically.
@@ -357,8 +590,13 @@ export function App() {
   // saving a key auto-dismisses it. Readiness-gated because the localStorage flag
   // alone is fragile (per-origin, blocked in the desktop shell).
   useEffect(() => {
-    setOnboardingOpen(shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus));
-  }, [onboardingDismissed, serverCfg, providerStatus]);
+    // The ladder's intro asks first. Two welcome dialogs stacked on a first run
+    // is the wall this wave exists to remove, so the backend sheet waits its turn.
+    const introPending = leveling.snapshot ? !leveling.snapshot.introSeen : false;
+    setOnboardingOpen(
+      !introPending && shouldShowOnboarding(onboardingDismissed, serverCfg?.provider ?? null, providerStatus),
+    );
+  }, [onboardingDismissed, serverCfg, providerStatus, leveling.snapshot]);
 
   // Settings hydration: the thinking toggle and the image-backend picker seed
   // from a hardcoded fallback (see the useState calls above) until the
@@ -398,13 +636,25 @@ export function App() {
   }, [imageKeys, imageProvider, conn.status]);
 
   // Replay: fetch the stored events and push them through the SAME reducer.
-  const openSession = async (id: string): Promise<void> => {
+  const openSession = async (id: string, atEvent?: number | null): Promise<void> => {
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
       if (!res.ok) throw new Error(String(res.status));
       const events = (await res.json()) as RunEvent[];
       setReplay({ id, state: foldArchive(events), events });
       setEnteredFleet(null);
+      beaconRef.current("session", id);
+      // A deep link resolves its index against the events as STORED, then hands
+      // the event itself to the existing focus seam. An index past the end (a
+      // stale link, a rewritten file) simply opens the session unseeked: landing
+      // on the wrong frame would be worse than landing on none.
+      if (atEvent !== null && atEvent !== undefined) {
+        const target = events[atEvent];
+        if (target) {
+          setTab("trace");
+          setFocusEvent(target);
+        }
+      }
     } catch {
       // Server unreachable or session gone — stay on the current view.
     }
@@ -422,12 +672,19 @@ export function App() {
     setEnteredFleet(contextId);
     setTraceAgent(null);
     setTab("spectrum");
+    beaconRef.current("fleet", contextId);
   };
 
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
   const [importOpen, setImportOpen] = useState(false);
-  const openImport = (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code"): void => {
+  const [importNote, setImportNote] = useState<string | null>(null);
+
+  const openImport = (
+    events: RunEvent[],
+    label: string,
+    kind: "spectroscope" | "claude-code" | "vscode-agent",
+  ): void => {
     setReplay({
       id: `import:${kind}:${label}`,
       state: foldArchive(events),
@@ -435,6 +692,11 @@ export function App() {
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setImportOpen(false);
+    // The dialog is gone by the time this note matters, so it belongs to the
+    // session, not to the dialog. A VS Code export records that each tool ran
+    // and whether it succeeded, never what it returned; without this line the
+    // empty tool bodies read as a broken import.
+    setImportNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
   };
 
   // Scenario playback: compile the bilingual DSL in the current chrome
@@ -534,8 +796,38 @@ export function App() {
   };
   const canDelete = canResume && replay !== null && replay.id !== resumeId;
 
+  // Deep links: #/session/{id}@{n}. Built for the ladder's receipts, useful on
+  // its own — the hash is a shareable address for one frame of one run.
+  const openSessionRef = useRef(openSession);
+  openSessionRef.current = openSession;
+  useEffect(() => {
+    const follow = (): void => {
+      const route = parseRoute(window.location.hash);
+      if (route) void openSessionRef.current(route.sessionId, route.eventIndex);
+    };
+    follow();
+    window.addEventListener("hashchange", follow);
+    return () => window.removeEventListener("hashchange", follow);
+  }, []);
+
   const viewingLive = replay === null;
-  const view = replay === null ? live : replay.state;
+
+  // Showing a tab IS the observation for the view-only criteria. The session id
+  // travels with it because two of them are joins: the ladder only counts a
+  // trace you opened on a session that actually ran a tool, and a spectrum you
+  // opened on a session that actually fanned out.
+  const shownSessionId = viewingLive ? (live.workspace?.sessionId ?? null) : (replay?.id ?? null);
+  const shownRef = useRef(shownSessionId);
+  shownRef.current = shownSessionId;
+  const openRef = useRef(true);
+  openRef.current = leveling.snapshot ? isSurfaceOpen(leveling.snapshot, tab) : true;
+  useEffect(() => {
+    // Only a surface that actually RENDERED counts. Clicking a locked tab shows
+    // its teaser, and a teaser is not the trace — reporting it would let a tab
+    // unlock itself by being clicked, which is the whole ladder walked around.
+    if (tab !== "chat" && openRef.current) beaconRef.current(tab, shownRef.current);
+  }, [tab]);
+  const recordedView = replay === null ? live : replay.state;
 
   // The tabs' flat event source, third-source duality: an entered fleet's events
   // win over the own live/replay session. The fold-tabs (spectrum/graph/text)
@@ -548,6 +840,80 @@ export function App() {
       enteredFleet !== null ? enteredFleetModel.events : viewingLive ? liveEvents : (replay?.events ?? []),
     [enteredFleet, enteredFleetModel.events, viewingLive, liveEvents, replay],
   );
+  // The translation is applied HERE, to the one array the tabs fold, because
+  // every tab is a fold over it: translating the stream translates the chat,
+  // the trace, the text feed, the graph, the spectrum and the lab at once.
+  // `shownEvents` is `tabEvents` BY IDENTITY whenever nothing has been
+  // translated or the reader asked for the original, so the untranslated app
+  // recomputes exactly nothing. The recorded array itself is never touched —
+  // it stays the thing the translate sheet plans and exports from.
+  const viewKey = enteredFleet ?? replay?.id ?? "live";
+  // The selector is readonly by contract — it hands back the recorded array
+  // itself when there is nothing to show. The tab props are not, and widening
+  // once here beats five casts at the call sites; nothing downstream writes.
+  const shownEvents = useTranslatedEvents(viewKey, tabEvents) as RunEvent[];
+  const showingTranslation = shownEvents !== tabEvents;
+  // The chat reads a FOLDED state, so a translated stream has to be folded
+  // again — the same reducer, the same events, different text. Two things are
+  // deliberately not taken from that second fold: the trace keeps its recorded
+  // rows (with only the payloads swapped) so the frames this app SENT survive,
+  // and everything App itself steers by — running, pending gates, the live
+  // socket's provider — keeps reading `live`. A fleet is excluded because its
+  // events are not this view's session at all.
+  const view = useMemo(() => {
+    if (!showingTranslation || enteredFleet !== null) return recordedView;
+    const folded = reduceAll(initialState, shownEvents);
+    return {
+      ...(replay === null ? folded : normalizeReplay(folded)),
+      trace: swapTracePayloads(recordedView.trace, tabEvents, shownEvents),
+    };
+  }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents, tabEvents]);
+  // The lab is the one tab that does not fold on render: it STEPS a stream out
+  // of a dam this app seeded. So it is handed the translated stream as the
+  // stream it steps, which restarts its scrub. An archive re-seeds itself off
+  // this new object; the live dam has no such prop and gets the effect below.
+  const labReplay = useMemo(
+    () => (replay === null ? null : { id: replay.id, events: shownEvents }),
+    [replay, shownEvents],
+  );
+  // chat-v2: the work fold, over the SHOWN stream, so the panel and the
+  // transcript can never describe different sessions. Folded only while v2 is
+  // the reading — v1 pays nothing for a prototype it does not render.
+  const work = useMemo(() => (chatView === "v2" ? foldWork(shownEvents) : []), [chatView, shownEvents]);
+  // The Spectrum / FleetCanvas hand-off, lifted to one place so the work panel
+  // uses the SAME seam instead of a second one. Scope the trace to the event's
+  // OWN agent so the focused row is never hidden by the filter.
+  const focusInTrace = (agentId: string, event: RunEvent): void => {
+    const evAgent =
+      typeof (event as { agentId?: unknown }).agentId === "string"
+        ? (event as { agentId: string }).agentId
+        : agentId;
+    setTraceAgent(evAgent);
+    setFocusEvent(event);
+    setTab("trace");
+  };
+  // Choosing v2 opens the panel it is half of: a reading whose right column is
+  // collapsed is v1 with the children missing. Only on the flip INTO v2 — a
+  // reader who then closes the panel is not fought with.
+  useEffect(() => {
+    if (chatView !== "v2") return;
+    openRightPanel();
+    setActiveRightTab("work");
+  }, [chatView]);
+  const translation = useTranslation(viewKey);
+  const labSeed = `${showingTranslation}:${translation.status}`;
+  const seededRef = useRef(labSeed);
+  const labStreamRef = useRef(shownEvents);
+  labStreamRef.current = shownEvents;
+  useEffect(() => {
+    // Deliberately NOT keyed on the stream itself: that changes with every
+    // streamed batch, and re-seeding per batch would throw the reader back to
+    // event 0 while they step. A finished run and a flipped toggle are the two
+    // moments the lab is actually looking at different text.
+    if (!viewingLive || enteredFleet !== null || seededRef.current === labSeed) return;
+    seededRef.current = labSeed;
+    labBackToLive(labStreamRef.current);
+  }, [labSeed, viewingLive, enteredFleet]);
   // The entered fleet's parked permission gates (block 4): the same GateBar,
   // but answered over REST to the node (POST /api/fleet/{node}/gate) instead of
   // the session socket. Best-effort like stop — if the node left, its own close
@@ -590,8 +956,8 @@ export function App() {
   // The trace tab is a fold-tab too: an entered fleet's frames become inbound
   // trace entries (drill-in shows the MEMBER's wire, not the own session).
   const traceEntries = useMemo(
-    () => (enteredFleet !== null ? traceFromEvents(tabEvents) : view.trace),
-    [enteredFleet, tabEvents, view.trace],
+    () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
+    [enteredFleet, shownEvents, view.trace],
   );
 
   // The effective LLM backend for the header + the Lab map: the server's
@@ -631,12 +997,25 @@ export function App() {
     }
   }, [wsPath]);
 
-  // auto-open the gallery when the first image of a view arrives
-  // (0 -> >0). Closing it afterwards sticks until the count drops to zero.
-  const hasImages = view.images.length > 0;
+  // The gallery opens for an image that ARRIVES while you are watching, never
+  // for one a view already had. The old rule keyed on "are there any images",
+  // so opening any archived session that happened to contain one threw the
+  // panel open unasked, on every load (owner 2026-07-28). A count and a
+  // previous count tell those two apart; a boolean cannot.
+  const imageCount = view.images.length;
+  const seenImages = useRef<number | null>(null);
   useEffect(() => {
-    if (hasImages) setImagesOpen(true);
-  }, [hasImages]);
+    const before = seenImages.current;
+    seenImages.current = imageCount;
+    // null means this view was just mounted or switched: whatever it holds, it
+    // held before we looked, so it is not an arrival.
+    if (before !== null && imageCount > before) setImagesOpen(true);
+  }, [imageCount]);
+  // A view change resets the baseline, so the next count is a starting point
+  // rather than a jump from the previous session's total.
+  useEffect(() => {
+    seenImages.current = null;
+  }, [viewKey]);
 
   // While the Lab tab is active it owns the permission flow (the dialog
   // appears when the user STEPS onto the request) — suppress the global
@@ -660,6 +1039,7 @@ export function App() {
       <ParticleField design={designPrefs.design} enabled={designPrefs.particles} />
       {sidebarOpen && (
         <Sidebar
+          fleetsLocked={leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false}
           activeId={replay === null ? null : replay.id}
           refreshToken={refreshToken}
           onSelectLive={returnToLive}
@@ -705,8 +1085,6 @@ export function App() {
           showPanelToggle={tab === "chat"}
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
-          thinking={thinking}
-          onToggleThinking={toggleThinking}
           settingsOpen={settingsOpen}
           onToggleSettings={() => setSettingsOpen((o) => !o)}
           doctorOpen={doctorOpen}
@@ -796,9 +1174,43 @@ export function App() {
           >
             lab
           </button>
+          {/* The way back to the record, on EVERY lens. The chat header has the
+              same toggle next to the translate trigger, but a reader who is
+              looking at the trace or the text feed must not have to leave the
+              tab they are on to see what was actually recorded. Rendered only
+              once something IS translated — an always-present span would eat
+              the auto margin the level pill sits on. */}
+          {translation.byId.size > 0 && (
+            <span className="tab-nav__translate">
+              <TranslateToggle viewKey={viewKey} />
+            </span>
+          )}
+          {leveling.snapshot && leveling.snapshot.mode !== "off" && (
+            <span className="tab-nav__level">
+              <LevelPill
+                snapshot={leveling.snapshot}
+                flareSlot={levelUp ? levelUp.level - 1 : -1}
+                onOpen={() => setLevelPanelOpen(true)}
+              />
+            </span>
+          )}
         </nav>
 
-        {tab === "chat" ? (
+        {/* Find-in-view. One mount for every tab: the box positions itself
+            against this wrapper, and each view reports its own hits. */}
+        <SearchBox />
+        {tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
+          /* A locked surface shows a teaser, never its content. The tab itself
+             stays visible and clickable: a feature nobody can see is a feature
+             nobody adopts. Chat is excluded by name because it opens at level 0,
+             and the gate bar below sits OUTSIDE this chain by construction, so
+             no lock can ever cover a permission request. */
+          <LockedSurface
+            snapshot={leveling.snapshot}
+            surface={tab}
+            onOpenEverything={() => void leveling.setMode("checklist")}
+          />
+        ) : tab === "chat" ? (
           enteredFleet !== null ? (
             /* A fleet has no chat — show its home (getting-started + spawn), not
                the stale session chat, so entering a fleet switches the pane. */
@@ -817,16 +1229,42 @@ export function App() {
               ref={chatRowRef}
               style={{ "--right-panel-w": `${layout.rightPanelW}px` } as CSSProperties}
             >
-              <Chat
-                state={view}
-                liveView={viewingLive}
-                onSend={send}
-                onReturnToLive={returnToLive}
-                onResume={canResume ? () => void resumeSession(replay!.id) : undefined}
-                onDelete={canDelete ? () => void deleteSession(replay!.id) : undefined}
-                sendClient={sendClient}
-                onPickFolder={pickWorkspace}
-              />
+              {(() => {
+                // chat-v2 (PROTOTYPE): the two readings take the SAME props.
+                // v1 is the default and is passed nothing extra, so it renders
+                // exactly what it always rendered.
+                const chatProps = {
+                  state: view,
+                  events: tabEvents,
+                  sessionLabel: shownSessionId,
+                  viewKey,
+                  liveView: viewingLive,
+                  onSend: send,
+                  onReturnToLive: returnToLive,
+                  onResume: canResume ? () => void resumeSession(replay!.id) : undefined,
+                  onDelete: canDelete ? () => void deleteSession(replay!.id) : undefined,
+                  exportId: canResume ? replay!.id : undefined,
+                  sendClient,
+                  onPickFolder: pickWorkspace,
+                  queued: queue,
+                  onUnqueue: unqueue,
+                  onAbort: abort,
+                  stopRequested,
+                };
+                return chatView === "v2" ? (
+                  <ChatV2
+                    {...chatProps}
+                    work={work}
+                    onOpenWork={(id) => {
+                      setWorkHighlight(id);
+                      openRightPanel();
+                      setActiveRightTab("work");
+                    }}
+                  />
+                ) : (
+                  <Chat {...chatProps} />
+                );
+              })()}
               {imagesOpen && (
                 <>
                   <Resizer
@@ -868,6 +1306,11 @@ export function App() {
                     workspace={view.workspace}
                     onPickFolder={viewingLive ? pickWorkspace : undefined}
                     canPickFolder={canPickWorkspace}
+                    fsRefreshSignal={viewingLive ? fsTick : undefined}
+                    work={chatView === "v2" ? work : undefined}
+                    workHighlight={workHighlight}
+                    onFocusEvent={focusInTrace}
+                    liveView={viewingLive}
                   />
                 </>
               )}
@@ -875,7 +1318,7 @@ export function App() {
           )
         ) : tab === "spectrum" ? (
           <SpectrumView
-            events={tabEvents}
+            events={shownEvents}
             running={
               enteredFleet !== null
                 ? enteredFleetModel.roster.some((node) => node.connected)
@@ -885,37 +1328,19 @@ export function App() {
               setTraceAgent(agentId);
               setTab("trace");
             }}
-            onFocusEvent={(agentId, event) => {
-              // Scope the trace to the event's OWN agent so the focused row is
-              // never hidden by the filter: an agent_spawn tick sits on the
-              // parent lane but carries the child's agentId; events without an
-              // agentId (agent_message) stay visible under any filter, so the
-              // lane is a safe fallback there.
-              const evAgent =
-                typeof (event as { agentId?: unknown }).agentId === "string"
-                  ? (event as { agentId: string }).agentId
-                  : agentId;
-              setTraceAgent(evAgent);
-              setFocusEvent(event);
-              setTab("trace");
-            }}
+            /* The seam is one function now (focusInTrace, above): an
+               agent_spawn tick sits on the parent lane but carries the child's
+               agentId, and events without an agentId stay visible under any
+               filter, so the lane is a safe fallback there. */
+            onFocusEvent={focusInTrace}
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (
             <FleetCanvas
               model={enteredFleetModel}
-              events={tabEvents}
-              onFocusEvent={(agentId, event) => {
-                // Same hand-off as the Spectrum band: scope the trace to the
-                // event's own agent so the focused row survives the filter.
-                const evAgent =
-                  typeof (event as { agentId?: unknown }).agentId === "string"
-                    ? (event as { agentId: string }).agentId
-                    : agentId;
-                setTraceAgent(evAgent);
-                setFocusEvent(event);
-                setTab("trace");
-              }}
+              events={shownEvents}
+              /* Same hand-off as the Spectrum band and the work panel. */
+              onFocusEvent={focusInTrace}
               /* A scripted fleet scenario has no live hub — hide the spawn panel
                  (its node command would connect to nothing). */
               contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
@@ -927,11 +1352,17 @@ export function App() {
               }}
             />
           ) : (
-            <GraphView events={tabEvents} isReplay={!viewingLive} />
+            <GraphView events={shownEvents} isReplay={!viewingLive} />
           )
         ) : tab === "text" ? (
           <TextView
-            events={tabEvents}
+            events={shownEvents}
+            label={shownSessionId}
+            // The tab is handed the SHOWN stream and holds no second copy, so
+            // its export sheet may read this view's translation — the
+            // provenance line, the language tag on the jsonl — only while that
+            // stream IS the translation. See textExportClaim.ts.
+            viewKey={textExportViewKey({ viewKey, showingTranslation })}
             // Explain spends the server's BASE-config provider (that is what the
             // endpoint builds, not a live-switched session provider) — offer it
             // unless that provider explicitly reports needs-key; unknown maps
@@ -949,8 +1380,8 @@ export function App() {
             />
           ) : (
             <LabView
-              replay={replay}
-              liveEvents={liveEvents}
+              replay={labReplay}
+              liveEvents={viewingLive ? shownEvents : liveEvents}
               running={live.running}
               provider={viewingLive ? curProvider : (view.provider ?? undefined)}
               model={viewingLive ? curModel : undefined}
@@ -970,6 +1401,50 @@ export function App() {
             focusEvent={focusEvent}
             onFocusHandled={() => setFocusEvent(null)}
           />
+        )}
+        {leveling.snapshot && !leveling.snapshot.introSeen && (
+          /* Asked once per home, and only for a home that has never been used —
+             an existing operator is grandfathered into checklist by the server
+             and never meets this screen. */
+          <LevelingIntro onChoose={(mode) => void leveling.setMode(mode)} />
+        )}
+        {levelPanelOpen && leveling.snapshot && (
+          <div className="lvl-drawer-scrim" onClick={() => setLevelPanelOpen(false)}>
+            <div
+              className="lvl-drawer"
+              role="dialog"
+              aria-label={t(lang, "leveling.panel.title")}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="lvl-drawer__head">
+                <span>{t(lang, "leveling.panel.title")}</span>
+                <button type="button" className="lvl-drawer__close" onClick={() => setLevelPanelOpen(false)}>
+                  ×
+                </button>
+              </div>
+              <LevelingPanel
+                snapshot={leveling.snapshot}
+                onTick={(criterion) => void leveling.tick(criterion)}
+                onOpenEverything={() => void leveling.setMode("checklist")}
+              />
+            </div>
+          </div>
+        )}
+        {levelUp && leveling.snapshot && (
+          <div className="lvl-toast" role="status">
+            {t(lang, "leveling.levelUp.title", {
+              name: translated(
+                (k) => t(lang, k),
+                leveling.snapshot.ladder.levels[levelUp.level]?.nameKey ?? "",
+                levelName(leveling.snapshot.levelId),
+              ),
+            })}
+            {levelUp.opened.length > 0 && (
+              <div className="lvl-toast__opened">
+                {t(lang, "leveling.levelUp.opened", { surfaces: levelUp.opened.join(" · ") })}
+              </div>
+            )}
+          </div>
         )}
         {/* The gate surface: pending permissions as a first-class bar, on
             every lens — the violet line means "the run waits on you". */}
@@ -1003,8 +1478,24 @@ export function App() {
         onClose={() => setSettingsOpen(false)}
         providerStatus={providerStatus ?? undefined}
         onKeySaved={() => setConfigNonce((n) => n + 1)}
+        leveling={leveling}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
+      {importNote !== null && (
+        <div className="import-note-bar" role="status">
+          <span>{importNote}</span>
+          <button type="button" className="ghost" onClick={() => setImportNote(null)}>
+            {t(lang, "common.close")}
+          </button>
+        </div>
+      )}
+      {localNoticeOpen && (
+        <LocalModelNotice
+          model={live.providerInfo?.model}
+          onGotIt={() => dismissLocalNotice(true)}
+          onClose={() => dismissLocalNotice(false)}
+        />
+      )}
       <Onboarding
         open={onboardingOpen}
         onClose={() => {
@@ -1016,7 +1507,28 @@ export function App() {
             /* storage may be blocked — readiness gating still hides it once configured */
           }
         }}
+        onStartLocal={() => {
+          // The zero-install path: the sheet's job is done (count it as seen),
+          // and the chooser takes over.
+          setOnboardingOpen(false);
+          setOnboardingDismissed(true);
+          try {
+            localStorage.setItem(ONBOARDED_KEY, "1");
+          } catch {
+            /* ignore */
+          }
+          setLocalChooserOpen(true);
+        }}
       />
+      {localChooserOpen && (
+        <LocalModelDialog
+          onUse={(modelId) => {
+            setLocalChooserOpen(false);
+            changeProvider("spectro-local", modelId);
+          }}
+          onClose={() => setLocalChooserOpen(false)}
+        />
+      )}
       {spawnDialogOpen && (
         <div
           className="fleet-spawn-modal-backdrop"

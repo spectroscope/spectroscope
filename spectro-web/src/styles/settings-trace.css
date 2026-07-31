@@ -206,12 +206,28 @@
   gap: var(--sp-5);
 }
 
+/* Section heading. The owner missed the LEVELING section entirely at the old
+   weight, and the reason was measurable: faint ink at 11px, sitting the same
+   distance from the section above it as from the fields it names. Law of
+   proximity — a heading belongs to what follows it, so the gap above is now
+   three times the gap below, and the ink carries enough contrast to be read
+   rather than skimmed past. */
 .settings-label {
-  font-size: var(--fs-11);
+  font-size: var(--fs-13);
   letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: var(--sp-2);
+  color: var(--text-dim);
+  /* .settings-body is a flex column with a 24px gap, so that gap — not these
+     margins — is the baseline between a heading and its fields. A positive
+     margin adds to it; binding the heading DOWNWARD needs a negative one that
+     eats most of it. 36px above, 8px below: the heading reads as belonging to
+     the fields under it rather than standing on its own. */
+  margin-top: var(--sp-3);
+  margin-bottom: calc(var(--sp-2) - var(--sp-5));
+}
+/* The first heading in a panel has no section above it to separate from. */
+.settings-label:first-child {
+  margin-top: 0;
 }
 
 /* ---- design picker ---- */
@@ -460,6 +476,25 @@
 .provider-pop-foot .primary {
   padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-13);
+}
+
+/* Card 88: the reasoning seg — the house .trace-seg shape, condensed so the
+   full ladder (off + five efforts) sits inside the 260px picker popover; a
+   record with longer tokens wraps instead of clipping. Same block serves the
+   Settings host. */
+.reasoning-seg {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.reasoning-seg button {
+  padding: 3px 6px;
+}
+.reasoning-seg button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.reasoning-seg button[disabled]:hover {
+  color: var(--text-faint);
 }
 
 

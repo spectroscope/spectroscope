@@ -1,0 +1,19 @@
+meta {
+  name: per-node replay
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/fleet/{{nodeId}}/events
+  body: none
+  auth: none
+}
+
+docs {
+  Per-node replay from the bounded hub ring: {node, ringBounded:true, truncated, events[]}; 404 for unknown nodes.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

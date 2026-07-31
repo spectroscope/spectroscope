@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../../events";
 import type { FleetModel, FleetNode } from "../../spectrum/fleetModel";
 import { buildFleetLabScene } from "../fleetLabScene";
-import { deriveDetail } from "./sceneToFlow";
+import { deriveDetail, EXPANDED_CARD } from "./sceneToFlow";
 import { fleetToFlow, FLEET_CARD_STEP_Y } from "./fleetToFlow";
 
 const ts = 1;
@@ -132,6 +132,71 @@ describe("fleetToFlow — the machine-room layout", () => {
 
     const noMain = flowOf([node("worker-1", "worker"), node("worker-2", "worker")], []);
     expect(byId(noMain.flow, "user")).toBeUndefined();
+  });
+
+  it("expanded: the card grid starts clear of the wide user card", () => {
+    const model: FleetModel = { roster: [node("main", "root")], events: [], epochBySender: {} };
+    const scene = buildFleetLabScene(model);
+    const flow = fleetToFlow(scene, deriveDetail([]), { lang: "en", expanded: true });
+    const user = byId(flow, "user")!;
+    const card = byId(flow, "card-main")!;
+    expect(card.position.x).toBeGreaterThan(user.position.x + EXPANDED_CARD.user.w);
+  });
+
+  it("expanded: the OS band clears the last row of OPEN cards", () => {
+    const roster = [node("main", "root")];
+    for (let i = 1; i <= 3; i++) roster.push(node(`worker-${i}`, "worker"));
+    const { flow } = flowOf(roster, []);
+    const expanded = fleetToFlow(
+      buildFleetLabScene({ roster, events: [], epochBySender: {} }),
+      deriveDetail([]),
+      {
+        lang: "en",
+        expanded: true,
+      },
+    );
+    const os = byId(expanded, "z-os")!;
+    for (const card of expanded.nodes.filter((n) => n.type === "subagent")) {
+      expect(card.position.y + EXPANDED_CARD["fleet-card"].h).toBeLessThanOrEqual(os.position.y);
+    }
+    // compact keeps its own, tighter reserve
+    expect(byId(flow, "z-os")!.position.y).toBeLessThan(os.position.y);
+  });
+
+  it("expanded: the machine frame contains the OPEN local LLM station", () => {
+    const roster = [node("main", "root")];
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts },
+    ];
+    const flow = fleetToFlow(
+      buildFleetLabScene({ roster, events, epochBySender: {} }),
+      deriveDetail(events),
+      {
+        lang: "en",
+        expanded: true,
+      },
+    );
+    const local = byId(flow, "llm-local")!;
+    const mac = byId(flow, "z-mac")!;
+    const style = mac as unknown as { style: { width: number; height: number } };
+    expect(local.position.y + EXPANDED_CARD.llm.h).toBeLessThanOrEqual(mac.position.y + style.style.height);
+    expect(local.position.x + EXPANDED_CARD.llm.w).toBeLessThanOrEqual(mac.position.x + style.style.width);
+  });
+
+  it("compact: the computed frame is untouched", () => {
+    const roster = [node("main", "root"), node("worker-1", "worker")];
+    const events: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts },
+    ];
+    const { flow } = flowOf(roster, events);
+    expect(byId(flow, "user")!.position).toEqual({ x: 40, y: 150 });
+    expect(byId(flow, "card-main")!.position).toEqual({ x: 250, y: 110 });
+    expect(byId(flow, "card-worker-1")!.position).toEqual({ x: 250, y: 300 });
+    expect(byId(flow, "z-os")!.position).toEqual({ x: 24, y: 668 });
+    expect(byId(flow, "os-disk")!.position).toEqual({ x: 58, y: 748 });
+    expect(byId(flow, "llm-local")!.position).toEqual({ x: 880, y: 676 });
+    const mac = byId(flow, "z-mac")! as unknown as { style: { width: number; height: number } };
+    expect(mac.style).toEqual({ width: 1344, height: 940 });
   });
 
   it("streams think/answer into the station the speaking node belongs to", () => {

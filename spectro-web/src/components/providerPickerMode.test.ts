@@ -1,5 +1,26 @@
 import { describe, it, expect } from "vitest";
-import { modelFieldMode, pickModel, PROVIDERS } from "./providerPickerMode";
+import { modelFieldMode, pickModel, PROVIDERS, providerDisplayName } from "./providerPickerMode";
+
+describe("the built-in provider", () => {
+  it("is its own selectable entry", () => {
+    expect(PROVIDERS).toContain("spectro-local");
+  });
+  it("reads plainly 'built-in' — the model is the chooser's business, not the row's", () => {
+    // The old hardcoded "built-in · VibeThinker-3B" died with the catalogue: a
+    // provider row naming ONE model would lie whenever another one is selected.
+    expect(providerDisplayName("spectro-local")).toBe("built-in");
+  });
+  it("leaves every other provider's label as-is", () => {
+    expect(providerDisplayName("anthropic")).toBe("anthropic");
+    expect(providerDisplayName("lmstudio")).toBe("lmstudio");
+  });
+  it("renders a needs-download field mode when no model is there", () => {
+    expect(modelFieldMode("spectro-local", { "spectro-local": "needs-download" }, [])).toBe("needs-download");
+  });
+  it("is a plain freetext (chooser-managed model) once ready", () => {
+    expect(modelFieldMode("spectro-local", { "spectro-local": "ready" }, [])).toBe("freetext");
+  });
+});
 
 describe("pickModel", () => {
   const ollama = ["qwen3.5:27b", "glm-5.2", "llama4"];
@@ -50,7 +71,15 @@ describe("modelFieldMode", () => {
     expect(modelFieldMode("anthropic", undefined, [])).toBe("freetext");
   });
 
-  it("offers all five providers, including the two OpenAI-compatible ones", () => {
-    expect(PROVIDERS).toEqual(["anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini"]);
+  it("offers every provider, including the OpenAI-compatible ones and the built-in", () => {
+    expect(PROVIDERS).toEqual([
+      "anthropic",
+      "ollama",
+      "openai",
+      "lmstudio",
+      "openrouter",
+      "gemini",
+      "spectro-local",
+    ]);
   });
 });

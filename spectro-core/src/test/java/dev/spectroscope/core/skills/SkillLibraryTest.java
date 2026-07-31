@@ -42,6 +42,20 @@ class SkillLibraryTest {
         return new ToolContext(tempDir, new CancelSignal());
     }
 
+    @Test
+    void aDisabledMarkerHidesTheSkill() throws IOException {
+        // Card 90: the settings skill manager disables per skill via a
+        // `.disabled` marker file — the loader must respect it everywhere
+        // (system prompt catalog, use_skill) without deleting anything.
+        Path root = tempDir.resolve("roots").resolve("user");
+        skillIn(root, "loud", "# loud\nbody");
+        skillIn(root, "quiet", "# quiet\nbody");
+        Files.writeString(root.resolve("quiet").resolve(".disabled"), "");
+        SkillLibrary lib = SkillLibrary.load(List.of(root));
+        assertEquals(1, lib.skills().size());
+        assertEquals("loud", lib.skills().get(0).name());
+    }
+
     // ---- parsing ---------------------------------------------------------------------
 
     @Test

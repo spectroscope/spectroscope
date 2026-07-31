@@ -1,0 +1,19 @@
+meta {
+  name: scheduler job state
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/jobs/state
+  body: none
+  auth: none
+}
+
+docs {
+  The scheduler's job-state map from ~/.spectro/jobs-state.json (what `spectroscope cron status` prints); empty when absent/corrupt.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

@@ -8,11 +8,11 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import type { ContextSnapshot } from "../state/reducer";
 import { formatTokens } from "../format";
 import { contextWindowFor, formatWindow } from "./contextWindow";
+import { contextDenominator } from "./contextRingMath";
 
 const SIZE = 18;
 const R = 7;
 const CIRCUMFERENCE = 2 * Math.PI * R;
-const FALLBACK_THRESHOLD = 100000;
 // Gauge tones — deliberately mirrors the CLI gauge's thresholds.
 const WARM_AT_PCT = 70;
 const CRITICAL_AT_PCT = 90;
@@ -27,7 +27,8 @@ export function ContextRing(props: {
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
 
-  const threshold = context?.threshold ?? FALLBACK_THRESHOLD;
+  const denominator = contextDenominator(context?.threshold, modelWindow);
+  const threshold = denominator.value;
   const pct = threshold > 0 ? (lastInputTokens / threshold) * 100 : 0;
   const shownPct = Math.round(pct);
   const frac = Math.max(0, Math.min(1, pct / 100));
@@ -85,9 +86,10 @@ export function ContextRing(props: {
         <div className="context-pop" role="dialog" aria-label="Context usage">
           <span className="eyebrow">Context</span>
           <p className="context-line tabular">
-            {formatTokens(lastInputTokens)} of {formatTokens(threshold)} before compaction ({shownPct}%)
+            {formatTokens(lastInputTokens)} of {formatTokens(threshold)}{" "}
+            {denominator.of === "compaction" ? "before compaction" : "of the model window"} ({shownPct}%)
           </p>
-          {modelWindow !== null && (
+          {modelWindow !== null && denominator.of === "compaction" && (
             <p className="context-window tabular">model window · {formatWindow(modelWindow)}</p>
           )}
           {context !== null ? (

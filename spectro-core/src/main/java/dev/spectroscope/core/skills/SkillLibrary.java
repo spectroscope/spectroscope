@@ -85,6 +85,9 @@ public final class SkillLibrary {
                     if (!Files.isRegularFile(skillFile)) {
                         return; // a folder without SKILL.md is not a skill
                     }
+                    if (Files.exists(dir.resolve(".disabled"))) {
+                        return; // the skill manager's per-skill off switch (card 90)
+                    }
                     try {
                         Skill skill = parse(skillFile, dir.getFileName().toString());
                         byName.put(skill.name(), skill); // later roots win by name
@@ -190,7 +193,13 @@ public final class SkillLibrary {
      * @param folderName name of the containing folder — the skill-name fallback
      * @return the parsed skill with all fallbacks applied
      */
-    private static Skill parse(Path skillFile, String folderName) throws IOException {
+    /** Parses ONE skill file — public for the server's skill manager (card 90),
+     *  which lists raw per-root skills incl. disabled ones the loader hides.
+     *  @param skillFile the SKILL.md to parse
+     *  @param folderName the folder name, the name fallback
+     *  @return the parsed skill
+     *  @throws IOException when unreadable */
+    public static Skill parse(Path skillFile, String folderName) throws IOException {
         String raw = Files.readString(skillFile, StandardCharsets.UTF_8);
         // \R matches \n, \r\n and \r alike — a CRLF-edited SKILL.md parses the same.
         List<String> lines = List.of(raw.split("\\R", -1));

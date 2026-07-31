@@ -1,0 +1,23 @@
+meta {
+  name: workspace tree
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/files
+  body: none
+  auth: none
+}
+
+params:query {
+  ~session: {{sessionId}}
+}
+
+docs {
+  The workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag). 400 malformed session id, 404 no workspace folder.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

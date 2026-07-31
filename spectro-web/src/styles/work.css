@@ -1,0 +1,350 @@
+/* The work panel and its chip (branch chat-v2, PROTOTYPE).
+   Design-system rules: colour only on the spectral marks and lines, labels
+   lowercase where the app already is, no shadows, no glow. Every token here is
+   one the app already defines — this file adds no new colour value. */
+
+/* ---- the chip that stands where a child's turns were ------------------- */
+
+.work-chip-row {
+  margin: 0.6rem 0;
+}
+
+.work-chip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.work-chip-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  /* The left edge carries the agent's own spectral colour — the same accent the
+     thread block wears in v1, so a reader recognises the lane across readings. */
+  border-left: 2px solid var(--agent-color, var(--border-strong));
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.work-chip-btn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  border-left-color: var(--agent-color, var(--border-strong));
+}
+
+.work-chip-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--agent-color, var(--text-faint));
+}
+
+.work-chip-btn--working .work-chip-dot {
+  background: var(--warn);
+}
+.work-chip-btn--failed .work-chip-dot {
+  background: var(--error);
+}
+
+/* ---- the panel --------------------------------------------------------- */
+
+.work-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.6rem;
+}
+
+.work-empty {
+  padding: 1rem 0.9rem;
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* The honest note: said in faint ink, never hidden. */
+.work-empty-note {
+  margin-top: 0.7rem;
+  padding-top: 0.7rem;
+  border-top: 1px solid var(--border);
+  color: var(--text-faint);
+  font-size: 0.74rem;
+  line-height: 1.5;
+}
+
+.work-panel > .work-empty-note {
+  padding: 0.7rem 0.3rem 0;
+  margin: 0;
+}
+
+/* level 1 — the group */
+
+.work-group {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.work-group--working {
+  border-left: 2px solid var(--warn);
+}
+.work-group--completed {
+  border-left: 2px solid var(--ok);
+}
+.work-group--failed {
+  border-left: 2px solid var(--error);
+}
+.work-group--lit {
+  border-color: var(--accent);
+}
+
+.work-group-head {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem 0.3rem;
+  background: none;
+  border: 0;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-group-caret {
+  color: var(--text-faint);
+  font-size: 0.7rem;
+}
+
+.work-group-name {
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.work-group-kind {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+}
+
+.work-group-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  padding: 0 0.6rem 0.35rem 1.55rem;
+  color: var(--text-dim);
+  font-size: 0.72rem;
+}
+
+/* One square per member: filled when it settled, hollow while it runs. Nothing
+   is interpolated — a running member is not a bar guessing how far it got. */
+.work-squares {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 0 0.6rem 0.5rem 1.55rem;
+}
+
+.work-square {
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--border-strong);
+  border-radius: 1px;
+}
+
+.work-square--completed {
+  background: var(--ok);
+  border-color: var(--ok);
+}
+.work-square--failed {
+  background: var(--error);
+  border-color: var(--error);
+}
+.work-square--working {
+  border-color: var(--warn);
+}
+.work-square--gate {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+/* level 2 and 3 — the items */
+
+.work-items,
+.work-children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0.5rem 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.work-children {
+  padding: 0.35rem 0 0 0.6rem;
+  border-left: 1px solid var(--border);
+  margin-left: 0.35rem;
+}
+
+.work-item {
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--agent-color, var(--border-strong));
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.work-item--lit {
+  border-color: var(--accent);
+}
+
+.work-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.work-item-name {
+  font-size: 0.8rem;
+  color: var(--text);
+}
+
+.work-item-id {
+  color: var(--text-faint);
+  font-size: 0.68rem;
+}
+
+.work-item-head .agent-badge {
+  margin-left: auto;
+}
+
+.work-item-intent {
+  margin-top: 0.2rem;
+  color: var(--text-dim);
+  font-size: 0.74rem;
+  line-height: 1.4;
+}
+
+.work-item-status {
+  margin-top: 0.15rem;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+}
+
+.work-item-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.3rem;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+/* A figure with a frame behind it reads as a link; one without is plain text,
+   so a reader can tell at a glance which numbers go anywhere. */
+.work-fig {
+  padding: 0;
+  background: none;
+  border: 0;
+  border-bottom: 1px dotted var(--border-strong);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.work-fig:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.work-fig--dead {
+  border-bottom: 0;
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.work-clock,
+.work-model {
+  color: var(--text-faint);
+}
+
+.work-gates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.3rem;
+}
+
+.work-gate {
+  padding: 0.05rem 0.35rem;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  border: 1px solid var(--border-strong);
+  border-radius: 2px;
+}
+
+/* A denial is a MARK, not an error: the call did what it was told to do. */
+.work-gate--denied {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.work-gate--pending {
+  color: var(--warn);
+  border-color: var(--warn);
+}
+
+/* Numbers a task reported about work that is not in this stream. */
+.work-opaque {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin-top: 0.35rem;
+  padding-left: 0.5rem;
+  border-left: 1px dashed var(--border-strong);
+  color: var(--text-faint);
+  font-size: 0.7rem;
+}
+
+.work-missing {
+  margin-top: 0.3rem;
+  color: var(--text-faint);
+  font-size: 0.68rem;
+  font-style: italic;
+}
+
+.work-toggle {
+  margin-top: 0.35rem;
+  padding: 0;
+  display: inline-flex;
+  gap: 0.3rem;
+  align-items: center;
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.work-toggle:hover {
+  color: var(--text);
+}
+
+/* The prototype tag in the disclosure menu's section head. */
+.wsg-proto {
+  margin-left: auto;
+  padding: 0 0.3rem;
+  font-size: 0.62rem;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 2px;
+}

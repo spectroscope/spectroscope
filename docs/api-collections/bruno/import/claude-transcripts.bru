@@ -1,0 +1,19 @@
+meta {
+  name: list Claude Code transcripts
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/claude/transcripts
+  body: none
+  auth: none
+}
+
+docs {
+  List *.jsonl Claude Code transcripts under ~/.claude/projects, newest first, capped at 300. Absent store = empty list.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

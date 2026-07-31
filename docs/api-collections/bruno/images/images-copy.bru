@@ -1,0 +1,33 @@
+meta {
+  name: copy image to workspace
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/images/copy-to-workspace
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "file": "{{imageFile}}",
+    "session": "{{sessionId}}",
+    "name": "beach-cat.png"
+  }
+}
+
+docs {
+  Copy a stored image into the session's workspace. 200 {path}, 400 malformed inputs, 404 unknown image/workspace, 409 target exists.
+  
+  Body: CopyRequest(String file, String session, String name) — name optional (keeps store name; extension inherited).
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

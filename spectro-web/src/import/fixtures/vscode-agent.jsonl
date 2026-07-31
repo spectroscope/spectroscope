@@ -1,0 +1,16 @@
+{"type":"user.message","data":{"content":"The checkout pods keep restarting. Find out why.","attachments":[]},"id":"r1","timestamp":"2026-07-24T14:43:45.448Z","parentId":null}
+{"type":"assistant.turn_start","data":{"turnId":"1"},"id":"r2","timestamp":"2026-07-24T14:43:45.900Z","parentId":"r1"}
+{"type":"assistant.message","data":{"messageId":"m1","content":"Checking the pod logs first.","toolRequests":[{"toolCallId":"call-1","name":"run_in_terminal","arguments":{"command":"kubectl logs checkout-7f9"},"type":"function"}],"reasoningText":"A restart loop usually shows in the last log lines."},"id":"r3","timestamp":"2026-07-24T14:43:46.100Z","parentId":"r2"}
+{"type":"tool.execution_start","data":{"toolCallId":"call-1","toolName":"run_in_terminal","arguments":{"command":"kubectl logs checkout-7f9"}},"id":"r4","timestamp":"2026-07-24T14:43:46.500Z","parentId":"r3"}
+{"type":"tool.execution_complete","data":{"toolCallId":"call-1","success":true},"id":"r5","timestamp":"2026-07-24T14:43:49.000Z","parentId":"r4"}
+{"type":"assistant.turn_end","data":{"turnId":"1"},"id":"r6","timestamp":"2026-07-24T14:43:49.100Z","parentId":"r5"}
+{"type":"assistant.turn_start","data":{"turnId":"2"},"id":"r7","timestamp":"2026-07-24T14:43:49.200Z","parentId":"r6"}
+{"type":"assistant.message","data":{"messageId":"m2","content":"","toolRequests":[{"toolCallId":"call-2","name":"read_file","arguments":{"filePath":"deploy/checkout.yaml"},"type":"function"}],"reasoningText":"The memory limit in the manifest is the next suspect."},"id":"r8","timestamp":"2026-07-24T14:43:49.400Z","parentId":"r7"}
+{"type":"tool.execution_start","data":{"toolCallId":"call-2","toolName":"read_file","arguments":{"filePath":"deploy/checkout.yaml"}},"id":"r9","timestamp":"2026-07-24T14:43:49.600Z","parentId":"r8"}
+{"type":"tool.execution_complete","data":{"toolCallId":"call-2","success":false},"id":"r10","timestamp":"2026-07-24T14:43:50.100Z","parentId":"r9"}
+{"type":"assistant.turn_end","data":{"turnId":"2"},"id":"r11","timestamp":"2026-07-24T14:43:50.200Z","parentId":"r10"}
+{"type":"user.message","data":{"content":"Stop there and roll the deploy back.","attachments":[]},"id":"r12","timestamp":"2026-07-24T14:44:10.000Z","parentId":"r11"}
+{"type":"assistant.turn_start","data":{"turnId":"2"},"id":"r13","timestamp":"2026-07-24T14:44:10.300Z","parentId":"r12"}
+{"type":"assistant.message","data":{"messageId":"m3","content":"Rolling back now.","toolRequests":[{"toolCallId":"call-3","name":"kill_terminal","arguments":{"id":"term-1"},"type":"function"}],"reasoningText":""},"id":"r14","timestamp":"2026-07-24T14:44:10.500Z","parentId":"r13"}
+{"type":"tool.execution_complete","data":{"toolCallId":"call-3","success":true},"id":"r15","timestamp":"2026-07-24T14:44:11.000Z","parentId":"r14"}
+{"type":"assistant.turn_end","data":{"turnId":"2"},"id":"r16","timestamp":"2026-07-24T14:44:11.200Z","parentId":"r15"}

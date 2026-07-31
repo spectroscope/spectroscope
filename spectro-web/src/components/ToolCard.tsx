@@ -1,28 +1,33 @@
 // One card per callId — the workhorse of the chat. tool_call creates it,
-// tool_result switches the status; collapsed by default, the whole header row
-// is the toggle button. Status is always dot + text, never color alone.
+// tool_result switches the status; collapsed by default on level "normal",
+// open by default on "extended" (card 78 #4) — a manual click on THIS card
+// overrides the level until it unmounts. The whole header row is the toggle
+// button. Status is always dot + text, never color alone.
 
 import { useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import type { ToolCard as ToolCardModel } from "../state/reducer";
-import { agentAccent, compactJson, formatDuration, prettyJson } from "../format";
+import { agentAccent, formatDuration } from "../format";
+import { defaultOpen, useDisclosure } from "../state/disclosure";
+import { TOOL_VIEW_MODES, setToolView, useToolView } from "../state/toolView";
+import { ToolViewBody } from "./ToolViewBody";
+import { toolTeaser } from "./toolTeaser";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { beacon } from "../state/levelingBeacon";
 
-/** Visible input/output clip — the full payload stays in the JSON views. */
-const IO_CLIP_CHARS = 4000;
 /** Live duration count-up tick while a tool runs. */
 const RUNNING_TICK_MS = 250;
 /** How long the copy button shows its "copied" confirmation. */
 const COPY_FEEDBACK_MS = 1400;
 
-const cut = (s: string, max = IO_CLIP_CHARS): string =>
-  s.length > max ? `${s.slice(0, max)}\n... (truncated)` : s;
-
 export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?: boolean }) {
   const { card, live } = props;
   const lang = useLang();
-  const [open, setOpen] = useState(false);
+  const level = useDisclosure();
+  const viewMode = useToolView();
+  const [manual, setManual] = useState<boolean | null>(null);
+  const open = manual ?? defaultOpen(level, "tool");
   const [copied, setCopied] = useState(false);
 
   const denied = card.permission === "denied";
@@ -86,7 +91,11 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
         type="button"
         className="tool-card-head"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          setManual(!open);
+          // Expanding is the act the ladder watches; collapsing again is not.
+          if (!open) beacon("disclosure");
+        }}
       >
         <span className={`dot ${dotTone}`} aria-hidden="true" />
         <span className="tool-name">{card.name}</span>
@@ -98,7 +107,11 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
             {card.agentId}
           </span>
         )}
-        <span className="tool-preview">{compactJson(card.input)}</span>
+        {/* One line, and the row's only clue while the card is folded: the
+            fields that identify the call, with any body named by its size. */}
+        <span className="tool-preview">
+          {toolTeaser(card.name, card.input, (n) => t(lang, "tv.lines", { n }))}
+        </span>
         {/* The gate outcome, made visible: an allowed call is didactically
             different from a permission-free one — it went through the gate. */}
         {card.permission !== undefined && (
@@ -124,23 +137,35 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
 
       <div className={`tool-card-body${open ? " open" : ""}`}>
         <div className="tool-card-inner">
-          <div className="io-label">Input</div>
-          <pre className="io-block">{cut(prettyJson(card.input))}</pre>
-          <div className="io-label">Output</div>
-          {denied ? (
-            <p className="denied-line">{t(lang, "tool.deniedByUser")}</p>
-          ) : (
-            <div className="output-wrap">
-              <pre className={`io-block output${card.status === "error" ? " error" : ""}`}>
-                {card.output === undefined ? "(no result yet)" : cut(card.output)}
-              </pre>
-              {card.output !== undefined && (
-                <button type="button" className="copy" onClick={copyOutput}>
-                  {copied ? t(lang, "common.copied") : t(lang, "common.copy")}
-                </button>
-              )}
-            </div>
-          )}
+          {/* Card 94: three faces of the same call — structured (the tool AS
+              ITSELF), json (collapsible trees), raw (the untouched pair). The
+              choice is a persisted preference, like the trace lenses. */}
+          <div className="tv-modes" role="group" aria-label={t(lang, "tv.modeAria")}>
+            {TOOL_VIEW_MODES.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={`tv-mode${viewMode === m ? " tv-mode--on" : ""}`}
+                aria-pressed={viewMode === m}
+                onClick={() => setToolView(m)}
+              >
+                {t(lang, `tv.mode.${m}`)}
+              </button>
+            ))}
+            {card.output !== undefined && !denied && (
+              <button type="button" className="copy tv-copy" onClick={copyOutput}>
+                {copied ? t(lang, "common.copied") : t(lang, "common.copy")}
+              </button>
+            )}
+          </div>
+          <ToolViewBody
+            mode={viewMode}
+            name={card.name}
+            input={card.input}
+            output={card.output}
+            isError={card.status === "error"}
+            denied={denied}
+          />
         </div>
       </div>
     </div>

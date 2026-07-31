@@ -1,0 +1,89 @@
+# Agents online: mention @claude in an issue or a pull request and Claude Code
+# joins the thread. What this job is for, concretely:
+#   - read a failing gate run and say WHY it failed, not just that it is red
+#   - triage a dependency alert against the code that actually uses the dependency
+#   - review a diff against this repository's own rules (AGENTS.md is the rulebook)
+#
+# It works under the house evidence discipline: a verdict needs a measurement.
+# The prompt below spells that out, together with the one gate trap that makes
+# naive measurements worthless here.
+#
+# Auth: the ANTHROPIC_API_KEY repository secret. Never commit the key.
+# Click-by-click setup: docs/CI-SETUP.md.
+
+name: agent
+
+"on":
+  issue_comment:
+    types: [created]
+  pull_request_review_comment:
+    types: [created]
+  issues:
+    types: [opened]
+
+jobs:
+  claude:
+    # Only start a runner when the event actually carries the mention. The
+    # action checks its trigger phrase again on its own; this guard just keeps
+    # every ordinary comment from booting a VM for nothing.
+    if: >
+      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
+      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+    runs-on: ubuntu-latest
+    # Generous on purpose: an honest answer may include running the full Java
+    # suite from a cold checkout.
+    timeout-minutes: 60
+    permissions:
+      contents: read # read the tree; this job never pushes code
+      issues: write # post the answer as an issue comment
+      pull-requests: write # post the answer on pull requests
+      actions: read # read gate runs and their logs, to explain a red gate
+      id-token: write # the action exchanges an OIDC token for its GitHub credential
+    steps:
+      # The action checks the repository out itself; these steps only provision
+      # toolchains, so "run the gate and quote the count" is an instruction the
+      # agent can actually follow on this runner.
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run Claude Code
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Read AGENTS.md at the repository root before anything else. It is
+            the rulebook for working in this tree and it wins over habit.
+
+            The evidence rule is absolute here: a verdict needs a measurement.
+            Before you state that something passes, fails, or is safe, run the
+            command that proves it and quote its output in your answer. A claim
+            without output is no claim.
+
+            The gate commands, with their traps:
+            - Java: ./gradlew test --rerun-tasks --no-build-cache :spectro-core:javadoc :spectro-orchestrator:javadoc
+              A plain "./gradlew test" reports green in under a second while
+              running ZERO tests on a warm tree. Never trust it, and never
+              trust a green tick anywhere without a test count next to it.
+              If you run the Java suite, run scripts/build-spectro-pty.sh
+              first, or the PTY tests skip silently and undercount.
+            - Web: cd spectro-web && npm ci && npm run gate
+              The final "vite build" leg rewrites the committed bundle under
+              spectro-server/src/main/resources/static, so a dirty tree after
+              the gate is expected behaviour, not a finding.
+
+            When asked about a failing workflow run, read the actual logs,
+            name the failing test or step, and say why it failed. When
+            reviewing a diff, check it against AGENTS.md and cite the rule
+            you are applying. When triaging a dependency alert, find where
+            this repository actually uses the dependency before judging
+            severity. If you cannot measure something from this runner, say
+            so plainly instead of guessing.

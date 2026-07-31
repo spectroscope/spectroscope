@@ -1,5 +1,8 @@
 package dev.spectroscope.core;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -11,12 +14,17 @@ import java.util.List;
  */
 public final class CancelSignal {
 
+    private static final Logger log = LoggerFactory.getLogger(CancelSignal.class);
+
     private volatile boolean cancelled = false;
     private final List<Runnable> listeners = new ArrayList<>();
 
     /**
      * Flips the signal and fires every registered listener exactly once — repeat calls
-     * are no-ops. Listeners run synchronously on the cancelling thread.
+     * are no-ops. Listeners run synchronously on the cancelling thread. Cancel is a
+     * best-effort broadcast: a listener that throws is logged and skipped, so one
+     * broken close can neither starve the remaining listeners nor ride an exception
+     * up the cancelling thread (which used to kill the WebSocket session, card 78).
      */
     public synchronized void cancel() {
         if (cancelled) {
@@ -25,7 +33,17 @@ public final class CancelSignal {
         cancelled = true;
         // Copy the listener list so a listener that registers another one cannot break us.
         for (Runnable listener : new ArrayList<>(listeners)) {
+            fireIsolated(listener);
+        }
+    }
+
+    /** Runs one listener, exception-isolated — the full trace goes to the log
+     *  (the card-78 hunt started from a swallowed NoSuchElementException). */
+    private static void fireIsolated(Runnable listener) {
+        try {
             listener.run();
+        } catch (RuntimeException failure) {
+            log.warn("cancel listener failed (ignored)", failure);
         }
     }
 
@@ -47,7 +65,10 @@ public final class CancelSignal {
      */
     public synchronized Runnable onCancel(Runnable listener) {
         if (cancelled) {
-            listener.run();
+            // The immediate fire is isolated exactly like the broadcast — a
+            // register-after-cancel (e.g. a fresh provider stream opened while
+            // stop was already pressed) must not throw into the registrant.
+            fireIsolated(listener);
             return () -> { };
         }
         listeners.add(listener);

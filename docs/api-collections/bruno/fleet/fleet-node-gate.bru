@@ -1,0 +1,32 @@
+meta {
+  name: answer a parked gate
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/fleet/{{nodeId}}/gate
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "callId": "call-1",
+    "allow": true
+  }
+}
+
+docs {
+  Answer a parked permission gate on a fleet node. 202 sent, 400 missing callId/allow, 404, 409 node left.
+  
+  Body: GateAnswer(String callId, Boolean allow) — both required; allow is boxed so a missing verdict is 400, never a silent deny.
+  
+  Fence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

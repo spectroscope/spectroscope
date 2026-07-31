@@ -1,14 +1,32 @@
 // Pure logic for the provider picker, split out so it is testable without a DOM.
 
 /** Every selectable LLM backend. The two OpenAI-compatible presets (lmstudio,
- *  openrouter) sit next to the cloud ones; the picker treats them uniformly. */
-export const PROVIDERS = ["anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini"] as const;
+ *  openrouter) sit next to the cloud ones; spectro-local is the bundled model,
+ *  its own first-class entry; the picker treats them uniformly. */
+export const PROVIDERS = [
+  "anthropic",
+  "ollama",
+  "openai",
+  "lmstudio",
+  "openrouter",
+  "gemini",
+  "spectro-local",
+] as const;
+
+/** The picker label for a provider. spectro-local reads "built-in" — which model
+ *  it runs is the chooser dialog's business now that there is a catalogue, so
+ *  the provider row no longer hardcodes a model name. Every other provider
+ *  keeps its id. */
+export function providerDisplayName(provider: string): string {
+  return provider === "spectro-local" ? "built-in" : provider;
+}
 
 /** What the model field should render for the selected provider. */
 export type ModelFieldMode =
   | "needs-key" // an API provider with no key — show 'add it to .env', not a list
+  | "needs-download" // the built-in model is not there yet — the download modal, not a list
   | "list" // a live/curated model list to choose from
-  | "freetext"; // no list (a local backend that isn't running) — free text, honestly labelled
+  | "freetext"; // no list (a local backend that isn't running, or a fixed model) — free text
 
 /**
  * Decide the model field's mode from the provider's onboarding status (from
@@ -23,6 +41,9 @@ export function modelFieldMode(
 ): ModelFieldMode {
   if (providerStatus?.[provider] === "needs-key") {
     return "needs-key";
+  }
+  if (providerStatus?.[provider] === "needs-download") {
+    return "needs-download";
   }
   return models.length > 0 ? "list" : "freetext";
 }

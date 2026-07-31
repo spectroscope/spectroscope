@@ -1,10 +1,12 @@
 // Format auto-detection for the session importer. Raw spectroscope JSONL (one RunEvent
 // per line — the canonical wire format) replays verbatim; a Claude Code
-// transcript (message records with content blocks) runs through the adapter.
+// transcript (message records with content blocks) and a VS Code agent-mode
+// export (dotted types, payload under `data`) run through their adapters.
 // Ported from the LLM_Simulator; keep the two in sync.
 
 import type { RunEvent } from "../events";
 import { claudeCodeToRunEvents } from "./claudeCode";
+import { vscodeAgentToRunEvents } from "./vscodeAgent";
 
 const SPECTRO_TYPES = new Set([
   "run_start",
@@ -27,7 +29,45 @@ const SPECTRO_TYPES = new Set([
   "plan",
 ]);
 
-export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectroscope" | "claude-code" } {
+/** The complete type vocabulary of a VS Code / GitHub Copilot agent-mode
+ *  export. Matching a name from this list AND a `data` object keeps the
+ *  recognizer off the other two formats and off any tool that merely happens to
+ *  log dotted type names: spectroscope types are never dotted, and a Claude Code
+ *  record carries `message`, not `data`. */
+const VSCODE_AGENT_TYPES = new Set([
+  "assistant.turn_start",
+  "assistant.turn_end",
+  "assistant.message",
+  "tool.execution_start",
+  "tool.execution_complete",
+  "user.message",
+]);
+
+const hasDataObject = (r: { data?: unknown }): boolean =>
+  !!r.data && typeof r.data === "object" && !Array.isArray(r.data);
+
+/** How many distinct type names the failure message may name, and how long each
+ *  may be. A file we do not understand is a file we do not trust: without these
+ *  caps a hostile or merely enormous export could flood the dialog. */
+const MAX_REPORTED_TYPES = 5;
+const MAX_TYPE_CHARS = 32;
+
+/** The type names come from an unrecognised file and are rendered into the
+ *  dialog, so they are data, not markup: collapse every control character
+ *  (newlines above all — they would forge extra lines of interface text) and
+ *  cap the length. */
+function safeTypeName(raw: string): string {
+  // C0, DEL, C1 and the two Unicode line separators — everything a renderer
+  // could read as "start a new line".
+  // eslint-disable-next-line no-control-regex
+  const flat = raw.replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, " ").trim();
+  return flat.length > MAX_TYPE_CHARS ? `${flat.slice(0, MAX_TYPE_CHARS)}…` : flat;
+}
+
+export function detectAndLoad(text: string): {
+  events: RunEvent[];
+  kind: "spectroscope" | "claude-code" | "vscode-agent";
+} {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) throw new Error("empty file");
 
@@ -42,14 +82,31 @@ export function detectAndLoad(text: string): { events: RunEvent[]; kind: "spectr
   // attachment, ai-title, …) before the first message — scan for the first
   // line that identifies a format instead of trusting line one.
   for (const rec of records) {
-    const r = rec as { type?: unknown; message?: unknown } | null;
+    const r = rec as { type?: unknown; message?: unknown; data?: unknown } | null;
     if (!r || typeof r.type !== "string") continue;
     if (SPECTRO_TYPES.has(r.type)) {
       return { events: records as RunEvent[], kind: "spectroscope" };
+    }
+    if (VSCODE_AGENT_TYPES.has(r.type) && hasDataObject(r)) {
+      return { events: vscodeAgentToRunEvents(records), kind: "vscode-agent" };
     }
     if (r.message !== undefined) {
       return { events: claudeCodeToRunEvents(records), kind: "claude-code" };
     }
   }
-  throw new Error("unrecognized format");
+  // Nothing matched. Say what arrived and what is accepted — "unrecognized
+  // format" sends the reader back to the file with no idea what to look at.
+  const seen: string[] = [];
+  for (const rec of records) {
+    const t = (rec as { type?: unknown } | null)?.type;
+    if (typeof t !== "string" || !t.trim()) continue;
+    const name = safeTypeName(t);
+    if (name && !seen.includes(name)) seen.push(name);
+    if (seen.length >= MAX_REPORTED_TYPES) break;
+  }
+  const found = seen.length > 0 ? `Found ${seen.join(", ")}.` : "No record carried a type field.";
+  throw new Error(
+    `This is not a spectroscope session, a Claude Code transcript or a VS Code agent export. ${found} ` +
+      `spectroscope sessions live in ~/.spectro/sessions; Claude Code transcripts in ~/.claude/projects.`,
+  );
 }

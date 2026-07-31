@@ -9,6 +9,7 @@ import type { ConnectionStatus } from "../transport/ws";
 import type { ProviderInfo } from "../state/reducer";
 import { fetchSettings, type SettingsView } from "../state/serverSettings";
 import type { SessionMeta } from "../events";
+import { LogPane } from "./LogPane";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -203,6 +204,9 @@ export function DoctorPanel(props: {
               </li>
             ))}
           </ul>
+          {/* The live server log (card 85): tail + delta polls, WARN/ERROR
+              tinted, follow-bottom while tailing. */}
+          <LogPane />
           <p className="doctor-cli mono">$ spectro doctor</p>
           <p className="doctor-cli-hint">{t(lang, "doc.cliHint")}</p>
         </div>

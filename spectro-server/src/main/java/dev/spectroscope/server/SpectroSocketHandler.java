@@ -91,6 +91,9 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
                     connection.onSetImageProvider(frame.path("provider").asText());
             case "set_thinking" ->                             // thinking, additive
                     connection.onSetThinking(frame.path("enabled").asBoolean());
+            case "set_reasoning" ->                            // picker reasoning control, additive (card 88)
+                    connection.onSetReasoning(
+                            frame.path("mode").asText(""), frame.path("effort").asText(""));
             case "set_provider" ->                             // provider picker, additive
                     connection.onSetProvider(
                             frame.path("provider").asText(""), frame.path("model").asText(""));

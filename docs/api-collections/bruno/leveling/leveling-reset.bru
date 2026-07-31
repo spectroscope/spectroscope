@@ -1,0 +1,29 @@
+meta {
+  name: reset the ladder
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/leveling/reset
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {}
+}
+
+docs {
+  Restart the ladder from the dark frame, keeping the mode.
+  
+  Body: No fields — an empty JSON object satisfies consumes=application/json.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

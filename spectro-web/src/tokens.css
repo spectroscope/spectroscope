@@ -102,6 +102,7 @@
   --radius-modal: 10px;
   --sidebar-w: 280px;
   --content-max: 860px; /* reading width of the chat history */
+  --content-max-wide: 1118px; /* the "wide" setting: 30% more room (owner) */
   --z-sticky: 10;
   --z-dropdown: 100;
   --z-modal: 1000;

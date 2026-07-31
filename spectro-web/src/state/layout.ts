@@ -9,8 +9,10 @@
 import { useSyncExternalStore } from "react";
 
 /** Which tab the Chat tab's right-docked panel shows — the Claude-Code
- *  right-sidebar pattern. "files" is the Phase 5 workspace panel. */
-export type RightTab = "agents" | "context" | "plan" | "files";
+ *  right-sidebar pattern. "files" is the Phase 5 workspace panel; "work" is the
+ *  chat-v2 prototype's concurrent-work panel, and is additive: DEFAULT_LAYOUT
+ *  still opens on "agents", so a v1 reader never lands on it. */
+export type RightTab = "agents" | "context" | "plan" | "files" | "work";
 
 export interface LayoutState {
   /** Sidebar (chat history) width in px. */

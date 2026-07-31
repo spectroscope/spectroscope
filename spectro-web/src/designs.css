@@ -2,12 +2,80 @@
    existing token names (tokens.css) — because the whole UI reads var(--token),
    flipping the attribute on <html> reskins everything in place, no reload.
    Since the phase-4 design transplant, :root IS the brand dark (espresso,
-   picker name "spectro dark") and [data-design="paper"] is the brand light
-   ("spectro bright") — both live in tokens.css. The one extra skin here is
+   picker name "spectro espresso") and [data-design="paper"] is the brand light
+   ("spectro paper") — both live in tokens.css. The one extra skin here is
    `still` ("spectro white"): a deliberately quiet all-white light theme.
    The seven retired skins (classic, nebula, nocturne, obsidian, staffwise,
    neon-riot, prisma — palettes from Fable_Designs_Pro) were removed on
-   2026-07-20 (owner call); git history keeps them. */
+   2026-07-20 (owner call); git history keeps them.
+   The other is `graphite` ("spectro graphite"): neutral anthracite, below. */
+
+/* ---------- spectro graphite (id `graphite`) — neutral anthracite ----------
+
+   Owner ask: a dark in the register of VS Code's "2026 Dark" (the default
+   since 1.113, whose stated goals are a reduced palette and strategic
+   accents). Those goals are this brand's own rule — colour only on the
+   spectral lines — so what is imported here is the GROUND, not the palette.
+
+   The ladder is espresso's, rung for rung, because espresso's L* ladder
+   already IS that theme's to two figures (ground 5.8, border 17.4 vs 17.5,
+   border-on-surface 1.22:1 both). Only the temperature moves: hue is aimed
+   at the ocean line's, and chroma is half espresso's. Half, not none — at
+   VS Code's chroma the ground is a neutral grey two RGB levels wide, and
+   copying that would put Microsoft's near-neutral under our marks. These sit
+   at 5 to 15 levels wide, which is a ground of our own.
+
+   The block declares the ground and the one line you click, and NOTHING
+   else: the spectral ramp, the status colours, the agent accents and the
+   typography inherit from :root. That is the design's entire claim, and
+   themes.drift.test.ts fails the day a line is declared here instead. The
+   ramp needs no retune because the ground did not change lightness — every
+   spectral line lands within 0.03 of its contrast on espresso, measured in
+   themes.test.ts. And no shadow tokens: :root's `none` is right here, both
+   by the brand rule and because a drop shadow has nothing to fall on at L* 6.
+   ---------------------------------------------------------------------- */
+[data-design="graphite"] {
+  color-scheme: dark;
+
+  --bg: #262624;
+  --surface: #2e2e2c;
+  --surface-2: #363634;
+  --surface-3: #3e3e3b;
+  --border: #464643;
+  --border-strong: #6b6b67;
+  --scrim: rgba(38, 38, 36, 0.72);
+
+  /* Layering light is plain white at low alpha. Espresso tints its glints with
+     its own cream ink because its ground is warm; a neutral ground has nothing
+     to tint towards, and any cast here would be the thing this design removed. */
+  --glint: rgba(255, 255, 255, 0.03);
+  --glint-bright: rgba(255, 255, 255, 0.1);
+  --hairline: rgba(255, 255, 255, 0.05);
+
+  /* White ink, and the steps below it are plain light greys (owner 2026-07-28).
+     The ground is anthracite rather than near-black, so white reads at 15.2:1
+     without glare; dim 8.5:1 and faint 4.7:1 are the two gradations. The
+     spectral ramp still clears the code floor on the lighter ground: violet
+     4.50:1, ocean 5.91:1, teal 8.00:1, against a minimum of 3. */
+  --text: #ffffff;
+  --text-dim: #c2c2be;
+  --text-faint: #8f8f8b;
+  --text-on-accent: #ffffff;
+
+  /* Owner 2026-07-30: the same blue still uses — no turquoise. Graphite reads
+     as still's dark twin, so it spends its accent on the identical blue family
+     rather than the ocean line this block opened with. Espresso keeps the
+     accent-is-a-spectral-line rule; the spectral ramp itself is untouched.
+     Measured on this ground: accent 3.23:1 and hover 3.51:1 (both clear the
+     3:1 component floor; the retired cyan sat at 5.91:1), white on accent
+     4.70:1. The soft/glow steps keep graphite's own alphas; only the hue
+     moved. */
+  --accent: #0071e3;
+  --accent-hover: #0077ed;
+  --accent-pressed: #005bb8;
+  --accent-soft: rgba(0, 113, 227, 0.13);
+  --accent-glow: rgba(0, 113, 227, 0.22);
+}
 
 /* ---------- spectro white (id `still`) — minimal light: white, gray, one blue ---------- */
 [data-design="still"] {

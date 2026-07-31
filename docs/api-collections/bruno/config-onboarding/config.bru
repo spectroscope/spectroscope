@@ -1,0 +1,21 @@
+meta {
+  name: active config
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/config
+  body: none
+  auth: none
+}
+
+docs {
+  Active provider/model/logLevel, image-key presence (booleans only), per-provider onboarding status incl. spectro-local.
+  
+  Side effect: A ready provider establishes the 'provider-ready' leveling criterion — harmless, but a drift guard replaying the whole collection should know.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

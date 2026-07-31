@@ -11,6 +11,12 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 > **Maven Central is append-only.** There is no unpublishing, only new versions.
 > Publish *only* after a full green gate, and the next release is always a bump
 > (0.1.0 → 0.1.1 → …), never a re-publish of an existing version.
+>
+> **Version counter — bump this line with every cut.** Published so far:
+> **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27). Those numbers are burned
+> forever; the next release MUST be **0.4.2 or higher**. This applies to every
+> artifact in the table below, not just the Maven libs: apps and the desktop
+> kit move to the same number in step 2.
 
 ---
 
@@ -55,18 +61,33 @@ Move together:
   `spectro-orchestrator/build.gradle.kts`.
 - **Apps (asset naming):** `version` in `spectro-cli`, `spectro-server`,
   `spectro-mcp-notes` build files and `spectro-desktop/package.json`.
+- **Samples:** the Maven coordinates pinned in `samples/*/build.gradle.kts`
+  (they resolve once step 6 publishes; the samples build standalone and are
+  not part of the root gate).
 - **Then grep the tree for the OLD version string** (`grep -rn "0\.2\.0" --include='*.ts' --include='*.kts' --include='*.json' .`
-  minus lockfiles): 0.2.0 shipped with `spectro-desktop/main.ts` still
+  minus lockfiles and `*.test.ts` — test fixtures legitimately quote
+  historical version strings): 0.2.0 shipped with `spectro-desktop/main.ts` still
   pinning `spectro-server-0.1.0.jar` — the desktop face died on a fresh
   clone. Version literals outside the build files are bugs; prefer globbing
   (the desktop launcher now globs the newest jar for exactly this reason).
 
 ### 3. Full gate — must be green before anything irreversible
 ```bash
-./gradlew test :spectro-core:javadoc :spectro-orchestrator:javadoc   # JUnit + javadoc (warnings ok, errors abort)
-( cd spectro-web && npx vitest run )                                  # vitest
+./gradlew test --rerun-tasks --no-build-cache \
+  :spectro-core:javadoc :spectro-orchestrator:javadoc   # JUnit + javadoc (warnings ok, errors abort)
+( cd spectro-web && npm ci && npm run gate )             # tsc, eslint, prettier, vitest, vite build
 ```
-Baseline at v0.1.0: **JUnit 678** (1 skipped = the live-Opus test), **vitest 383**.
+**`--rerun-tasks --no-build-cache` is not optional.** On a warm tree a plain
+`./gradlew test` reports `BUILD SUCCESSFUL` in half a second without running a
+single test (UP-TO-DATE — and even `cleanTest test` comes back FROM-CACHE). A
+release check that trusts that green has checked nothing; count the tests in
+the output.
+
+Baseline at v0.4.1: **JUnit 959**, **vitest 1003** (the live-Opus contract check
+self-skips without a key). A new release should never gate below the last one.
+The javadoc leg is not decoration: at the 0.4.0 cut it caught three doc
+comments orphaned from their methods by a mid-wave insertion — the only gate
+that runs javadoc is this one.
 
 ### 4. Dry-run the publish (no portal)
 ```bash
@@ -74,6 +95,12 @@ Baseline at v0.1.0: **JUnit 678** (1 skipped = the live-Opus test), **vitest 383
 ```
 Confirms GPG signing + POM generation. Check `~/.m2/repository/dev/spectroscope/…`:
 every artifact has a `.asc`, and the orchestrator POM depends on `spectro-core:<v>`.
+
+When the tag was cut by CI (`.github/workflows/tag.yml`), this step ran as
+POM generation and the pin check only — no key lives in CI, and a keyless
+publish would fail artifact validation on the declared `.asc` files. So a
+CI-cut tag has proven the POMs, nothing more; the first `.asc` files appear
+when this command, or step 6 itself, runs on the owner's machine.
 
 ### 5. Commit + tag
 ```bash
@@ -115,6 +142,21 @@ gh release create v<v> --title "spectroscope v<v>" --notes-file <notes>.md build
 gh release upload v<v> build/release-assets/* --clobber
 ```
 
+### 8b. Bump the Homebrew tap
+
+The cask at github.com/spectroscope/homebrew-tap serves
+`brew install --cask spectroscope/tap/spectroscope`. After the GitHub
+release is up, in the tap repo:
+
+```bash
+scripts/bump-cask.sh <v>     # reads the DMG's sha256 from the release asset digest
+brew audit --cask spectroscope/tap/spectroscope
+git commit -am "bump to <v>" && git push
+```
+
+The script refuses when the release carries no dmg asset, so step 7's
+desktop build is a prerequisite, not a suggestion.
+
 ### 9. Flip install snippets (only after step 6 resolves)
 - **Landing** (`design/website/index.html`): "on Maven Central", enable the
   GitHub + Maven Central footer links → `python3 tools/sync_website_repo.py`,
@@ -130,28 +172,41 @@ gh release upload v<v> build/release-assets/* --clobber
 
 `scripts/build-desktop-runkit.sh` produces a **self-contained** app: the Electron
 shell (`spectro-desktop`) spawns and supervises the server, and the build bundles
-both the server jar *and* a **jlink'd JRE** into the app, so the target machine
-needs no Java. Double-click → server starts with it → cockpit opens.
+the server jar, a **jlink'd JRE** *and* llama.cpp's **`llama-server`** into the
+app, so the target machine needs no Java and no Homebrew. Double-click → server
+starts with it → cockpit opens; the built-in model runs out of the box.
 
 Mechanics:
 1. `:spectro-server:bootJar` → copied to `spectro-desktop/build/spectro-server.jar`
    (the version-neutral path `package.json` `extraResources` points at).
 2. `jlink --add-modules ALL-MODULE-PATH` from the host JDK → `spectro-desktop/jre`
    (full module set so Spring Boot's reflection is safe; ~160 MB, gitignored).
-3. `resolveJavaBin()` in `src/main.ts` uses `Resources/jre/bin/java` when packaged,
+3. `scripts/fetch-llama-server.sh` → `spectro-desktop/bin`: llama.cpp's
+   `llama-server` plus its dylib closure (11 Mach-O files, ~22 MB), pinned by
+   build tag **and** tarball sha256. The script **fails the build** if any load
+   path points outside the bundle. Without this step the packaged app falls
+   back to a `llama-server` on the PATH — which only a Homebrew user has.
+   `src/main.ts` passes the staged dir as `-Dspectro.bundle.bin`.
+4. `resolveJavaBin()` in `src/main.ts` uses `Resources/jre/bin/java` when packaged,
    the PATH `java` in dev.
-4. App icon: `icon.svg` → `icon.icns` (rsvg-convert + `sips` + `iconutil`; the
+5. App icon: `icon.svg` → `icon.icns` (rsvg-convert + `sips` + `iconutil`; the
    committed `icon.icns` is the fallback when rsvg-convert is absent).
-5. `electron-builder --dir` (app only) → **ad-hoc** `codesign --force --deep
-   --sign -` → **verify** → `hdiutil` packs the signed app into the `.dmg`.
+6. Signing is auto-selected (details in
+   [DESKTOP-SIGNING.md](DESKTOP-SIGNING.md)): with a **Developer ID** in the
+   keychain, the JRE and `bin/` are signed inside-out (hardened runtime +
+   entitlements) *before* `electron-builder --dir`, the app is resealed and
+   hard-verified, `hdiutil` packs the `.dmg`, and — when the notarytool
+   profile is present — the dmg is **notarized and stapled**. Every shipped
+   dmg since 0.2.0 went through this path. Without an identity: **ad-hoc**
+   `codesign --force --deep --sign -` → verify → `hdiutil`.
 
 **Why the two-phase build + explicit codesign:** electron-builder's "skip
 signing" leaves an *invalid* bundle seal (`codesign --verify` fails with "code
 has no resources but signature indicates they must be present"), and macOS calls
 that **"damaged"** on download — worse than "unidentified developer". The
-explicit `codesign --sign -` writes a valid ad-hoc seal, which downgrades the
-download prompt to the normal right-click → Open. Sign with `-` (ad-hoc) only —
-**never** a corporate/Valtech identity that `security find-identity` may list.
+explicit codesign pass writes a valid seal in both modes. On the ad-hoc path
+sign with `-` only — **never** a corporate/Valtech identity that
+`security find-identity` may list.
 
 **Verify it actually works** (not just that it built): launch the packaged
 `.app`, confirm a `…/Resources/jre/bin/java` child bound a port and
@@ -159,13 +214,17 @@ download prompt to the normal right-click → Open. Sign with `-` (ad-hoc) only 
 `codesign --verify --deep --strict` the app (pass = not "damaged").
 
 ### Known limits (be honest in the release notes)
-- **Per-platform.** `electron-builder` + the JRE are OS/arch specific; the script
-  builds the **host** target only. Windows/Linux/Intel need building on/for each.
-- **Ad-hoc signed, not notarized.** On download macOS shows *"unidentified
-  developer"* → **right-click → Open** once (or `xattr -cr`). For a zero-warning,
-  double-click app you need a paid Apple Developer ID + notarization: the full
-  procedure is [`docs/DESKTOP-SIGNING.md`](DESKTOP-SIGNING.md). (A local build has
-  no quarantine flag, so it launches directly — which is why the verify step
+- **Per-platform.** `electron-builder`, the JRE *and* the llama-server binary
+  set are OS/arch specific; the script builds the **host** target only, and the
+  pinned llama sha256 is the arm64 asset. Windows/Linux/Intel need building
+  on/for each (and their own `LLAMA_SHA256`).
+- **Notarized only on the release machine.** The script signs + notarizes when
+  a Developer ID and the notarytool profile are present (every shipped dmg
+  since 0.2.0 is notarized + stapled). On a machine without them it falls back
+  to ad-hoc signing: macOS then shows *"unidentified developer"* →
+  **right-click → Open** once (or `xattr -cr`). Setup:
+  [`docs/DESKTOP-SIGNING.md`](DESKTOP-SIGNING.md). (A local build has no
+  quarantine flag, so it launches directly — which is why the verify step
   above works without any prompt.)
 
 ---

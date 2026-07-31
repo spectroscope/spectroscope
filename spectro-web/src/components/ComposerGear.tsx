@@ -25,27 +25,61 @@ import { useEffect, useRef, useState } from "react";
 import type { KeyboardEventHandler } from "react";
 import type { ClientMessage } from "../events";
 import type { WorkspaceInfo } from "../state/reducer";
-import { fetchSettings, putSettings, type SettingsView } from "../state/serverSettings";
+import { fetchSettings, originLabel, putSettings, type SettingsView } from "../state/serverSettings";
 import {
   buildGearModel,
+  formatOverrideValue,
   MODES,
   overridableFields,
+  overrideSupport,
   parseBlockJson,
   parseLocalOverrideValue,
   rulesWith,
   rulesWithout,
+  type OverrideSupport,
 } from "./workspaceGear";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-/** Renders a local-override row's raw value for the popover. Every value
- *  this UI itself ever writes is already the primitive `parseLocalOverrideValue`
- *  produced (string/number/boolean); the object/array branch is a defensive
- *  fallback for a settings.local.json edited by hand outside this popover. */
-function formatOverrideValue(value: unknown): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "object" && value !== null) return JSON.stringify(value);
-  return String(value);
+/** The value a key would carry into the editor: what it resolves to today,
+ *  as text. An unset field (imageModel/sttModel default to null) starts
+ *  blank rather than with the word "null". */
+function seedValue(field: string, view: SettingsView | null): string {
+  return formatOverrideValue(overrideSupport(field, view).effective);
+}
+
+/** The "what may I type here" line under the field picker. A closed set
+ *  lists it as ALLOWED (the server refuses the rest); a known-but-open set
+ *  lists it as KNOWN (completions, not a constraint); a number states its
+ *  floor; free text says plainly that there is no list, so nobody reads the
+ *  empty space as a missing feature. */
+function ruleLine(support: OverrideSupport, lang: Lang): string {
+  const { kind, options, min } = support.spec;
+  if (kind === "enum") return t(lang, "wsg.local.allowed", { values: options.join(", ") });
+  if (kind === "boolean") return t(lang, "wsg.local.allowed", { values: "true, false" });
+  if (kind === "number") {
+    return min === null
+      ? t(lang, "wsg.local.numRuleFree")
+      : t(lang, "wsg.local.numRule", { min: String(min) });
+  }
+  if (support.suggestions.length > 0) {
+    return t(lang, "wsg.local.known", { values: support.suggestions.join(", ") });
+  }
+  return t(lang, "wsg.local.freeText");
+}
+
+/** The provenance line: the value in force plus the layer that supplied it,
+ *  in one sentence. `originLabel` already renders the layer chain in the
+ *  reader's language; a view without an origin for this field (an older
+ *  server, a field it does not resolve) drops the clause instead of guessing
+ *  a source. */
+function nowLine(support: OverrideSupport, lang: Lang): string {
+  const value = formatOverrideValue(support.effective);
+  const shown = value === "" ? t(lang, "wsg.local.unset") : value;
+  const origin = originLabel(support.origin, lang);
+  return origin === ""
+    ? t(lang, "wsg.local.now", { value: shown })
+    : t(lang, "wsg.local.nowOrigin", { value: shown, origin });
 }
 
 export function ComposerGear({
@@ -125,6 +159,10 @@ export function ComposerGear({
       .then((v) => {
         if (!alive) return;
         setView(v);
+        // Seed the value box with what the key resolves to TODAY, straight
+        // off the fetch's own result: the editor opens on the truth, so
+        // "change the model" is an edit rather than a guess from blank.
+        setLocalValue(seedValue(overridableFields()[0] ?? "", v));
         setMcpDraft(JSON.stringify(v.layers.project?.mcpServers ?? {}, null, 2));
         setHooksDraft(JSON.stringify(v.layers.project?.hooks ?? [], null, 2));
       })
@@ -220,12 +258,21 @@ export function ComposerGear({
   // that function's doc) — the server's own 400 is still the second net for
   // anything the client-side check missed (e.g. an unknown provider name).
   const localFields = model.view?.layers.local ?? {};
+  // Everything the editor needs about the key currently picked: its value
+  // today, which layer supplied it, whether local already owns it, and what
+  // may legally be typed. Recomputed each render off `model.view`, so a
+  // write's fresh view flows straight into the provenance line.
+  const selected = overrideSupport(localField, model.view);
+  const choices = selected.spec.kind === "boolean" ? ["true", "false"] : selected.spec.options;
 
   const removeLocalOverride = (field: string): void => {
     if (sessionId === undefined) return;
     putSettings("local", { [field]: null }, sessionId)
       .then((v) => {
         setView(v);
+        // Removing the selected key drops the value back to whatever layer
+        // was underneath it — show that, not the value that no longer applies.
+        if (field === localField) setLocalValue(seedValue(field, v));
         setLocalError(null);
       })
       .catch((e: unknown) => setLocalError(errorMessage(e)));
@@ -235,13 +282,15 @@ export function ComposerGear({
     if (sessionId === undefined) return;
     const parsed = parseLocalOverrideValue(localField, localValue);
     if (!parsed.ok) {
-      setLocalError(parsed.error);
+      setLocalError(t(lang, parsed.problem.key, parsed.problem.params));
       return;
     }
     putSettings("local", { [localField]: parsed.value }, sessionId)
       .then((v) => {
         setView(v);
-        setLocalValue("");
+        // Re-seed rather than blank: the write just changed what "now" is,
+        // and the line above it is about to say so.
+        setLocalValue(seedValue(localField, v));
         setLocalError(null);
       })
       .catch((e: unknown) => setLocalError(errorMessage(e)));
@@ -406,30 +455,44 @@ export function ComposerGear({
                 <p className="wsg-empty">{t(lang, "wsg.local.empty")}</p>
               ) : (
                 <ul className="wsg-rules">
-                  {Object.entries(localFields).map(([field, value]) => (
-                    <li key={field} className="wsg-rule-row">
-                      <span className="mono wsg-rule-text" title={`${field}: ${formatOverrideValue(value)}`}>
-                        {field}: {formatOverrideValue(value)}
-                      </span>
-                      <button
-                        type="button"
-                        className="wsg-rule-del"
-                        aria-label={t(lang, "wsg.local.removeAria", { field })}
-                        onClick={() => removeLocalOverride(field)}
-                      >
-                        ✕
-                      </button>
-                    </li>
-                  ))}
+                  {Object.entries(localFields).map(([field, value]) => {
+                    const beaten = overrideSupport(field, model.view).origin?.shadowed ?? [];
+                    return (
+                      <li key={field} className="wsg-override-row">
+                        <span className="wsg-override-line">
+                          <span
+                            className="mono wsg-rule-text"
+                            title={`${field}: ${formatOverrideValue(value)}`}
+                          >
+                            {field}: {formatOverrideValue(value)}
+                          </span>
+                          <button
+                            type="button"
+                            className="wsg-rule-del"
+                            aria-label={t(lang, "wsg.local.removeAria", { field })}
+                            onClick={() => removeLocalOverride(field)}
+                          >
+                            ✕
+                          </button>
+                        </span>
+                        {beaten.length > 0 && (
+                          <span className="wsg-override-note">
+                            {originLabel(overrideSupport(field, model.view).origin, lang)}
+                          </span>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
-              <div className="wsg-local-add">
+              <div className="wsg-local-editor">
                 <select
                   className="wsg-local-field-select mono"
                   aria-label={t(lang, "wsg.local.fieldAria")}
                   value={localField}
                   onChange={(e) => {
                     setLocalField(e.target.value);
+                    setLocalValue(seedValue(e.target.value, model.view));
                     setLocalError(null);
                   }}
                 >
@@ -439,25 +502,66 @@ export function ComposerGear({
                     </option>
                   ))}
                 </select>
-                <input
-                  type="text"
-                  className="wsg-local-value-input mono"
-                  value={localValue}
-                  placeholder={t(lang, "wsg.local.valuePh")}
-                  onChange={(e) => {
-                    setLocalValue(e.target.value);
-                    setLocalError(null);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      addLocalOverride();
-                    }
-                  }}
-                />
-                <button type="button" className="ghost wsg-local-add-btn" onClick={addLocalOverride}>
-                  {t(lang, "wsg.local.add")}
-                </button>
+                <p className="wsg-local-desc">{t(lang, selected.spec.descKey)}</p>
+                <p className="wsg-local-now">{nowLine(selected, lang)}</p>
+                <p className="wsg-local-note">
+                  {t(lang, selected.setLocally ? "wsg.local.setHere" : "wsg.local.beats")}
+                </p>
+                <p className="wsg-local-rule">{ruleLine(selected, lang)}</p>
+                <div className="wsg-local-add">
+                  {selected.spec.kind === "enum" || selected.spec.kind === "boolean" ? (
+                    <select
+                      className="wsg-local-value-input mono"
+                      aria-label={t(lang, "wsg.local.valueAria", { field: localField })}
+                      value={choices.includes(localValue) ? localValue : ""}
+                      onChange={(e) => {
+                        setLocalValue(e.target.value);
+                        setLocalError(null);
+                      }}
+                    >
+                      {/* Only reachable when the value in force is outside the
+                          set — an older file, or a layer this build predates.
+                          Shown rather than silently swapped for a legal value
+                          the user never chose. */}
+                      {!choices.includes(localValue) && <option value="">{t(lang, "wsg.local.pick")}</option>}
+                      {choices.map((c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type={selected.spec.kind === "number" ? "number" : "text"}
+                      className="wsg-local-value-input mono"
+                      aria-label={t(lang, "wsg.local.valueAria", { field: localField })}
+                      list={selected.suggestions.length > 0 ? "wsg-local-suggest" : undefined}
+                      min={selected.spec.min ?? undefined}
+                      value={localValue}
+                      placeholder={t(lang, "wsg.local.valuePh")}
+                      onChange={(e) => {
+                        setLocalValue(e.target.value);
+                        setLocalError(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addLocalOverride();
+                        }
+                      }}
+                    />
+                  )}
+                  <button type="button" className="ghost wsg-local-add-btn" onClick={addLocalOverride}>
+                    {t(lang, "wsg.local.add")}
+                  </button>
+                </div>
+                {selected.suggestions.length > 0 && (
+                  <datalist id="wsg-local-suggest">
+                    {selected.suggestions.map((s) => (
+                      <option key={s} value={s} />
+                    ))}
+                  </datalist>
+                )}
               </div>
               {localError !== null && <p className="settings-error wsg-inline-error">{localError}</p>}
             </div>

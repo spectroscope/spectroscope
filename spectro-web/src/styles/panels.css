@@ -144,12 +144,16 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
-/* Syntax highlighting for the file preview — brand spectral palette, both themes
-   (the --sp-* tokens carry their own light-design values). Read-only, no glow. */
-.ws-code .hl-keyword { color: var(--sp-violet); }
-.ws-code .hl-string  { color: var(--sp-teal); }
-.ws-code .hl-number  { color: var(--sp-ocean); }
-.ws-code .hl-comment { color: var(--text-faint); font-style: italic; }
+/* Syntax highlighting wherever the tokenizer runs — the file preview and the
+   fenced code blocks in an answer. Brand spectral palette, both themes (the
+   --sp-* tokens carry their own light-design values). Read-only, no glow.
+   Unscoped on purpose: the class comes only from tokenize(), so anything
+   wearing it IS a token, and scoping the colour to one surface is what left
+   markdown blocks rendering grey spans that had already been classified. */
+.hl-keyword { color: var(--sp-violet); }
+.hl-string  { color: var(--sp-teal); }
+.hl-number  { color: var(--sp-ocean); }
+.hl-comment { color: var(--text-faint); font-style: italic; }
 
 .ws-md { flex: 1; overflow-y: auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); }
 .ws-note { margin: var(--sp-2); font-size: var(--fs-12); color: var(--text-dim); }
@@ -454,6 +458,8 @@
 .trace-seg button + button { border-left: 1px solid var(--border); }
 .trace-seg button:hover { color: var(--text); }
 .trace-seg button[aria-pressed="true"] { background: var(--surface-3); color: var(--text); }
+/* Optional columns: the same segmented control, but with a leading name so the two toggles read as columns rather than as another filter. */
+.trace-seg-label { display: flex; align-items: center; background: var(--surface); border-right: 1px solid var(--border); color: var(--text-faint); font-size: var(--fs-11); letter-spacing: var(--track-eyebrow); padding: 3px var(--sp-2); text-transform: uppercase; }
 
 /* Type chips: toggles, all on by default. */
 .trace-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1); }
@@ -472,7 +478,11 @@
 
 /* Shared column grid for header and rows: # | time | dt | dir | agent | type | summary. */
 .trace-head,
-.trace-row { display: grid; grid-template-columns: 48px 92px 60px 20px 64px 140px 96px 150px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center; padding: 2px var(--sp-4); }
+.trace-row { display: grid; grid-template-columns: 48px 92px 60px 20px 64px 140px 110px 96px 150px minmax(0, 1fr); column-gap: var(--sp-2); align-items: center; padding: 2px var(--sp-4); }
+/* host and model are optional (owner 2026-07-27): when one is switched off in the toolbar its track leaves with its cells, so header and rows stay in step. */
+.trace-table--no-host .trace-head, .trace-table--no-host .trace-row { grid-template-columns: 48px 92px 60px 20px 64px 110px 96px 150px minmax(0, 1fr); }
+.trace-table--no-model .trace-head, .trace-table--no-model .trace-row { grid-template-columns: 48px 92px 60px 20px 64px 140px 96px 150px minmax(0, 1fr); }
+.trace-table--no-host.trace-table--no-model .trace-head, .trace-table--no-host.trace-table--no-model .trace-row { grid-template-columns: 48px 92px 60px 20px 64px 96px 150px minmax(0, 1fr); }
 .trace-head { position: sticky; top: 0; z-index: 1; background: var(--bg); border-bottom: 1px solid var(--border); padding-top: var(--sp-2); padding-bottom: var(--sp-1); font-size: var(--fs-11); font-weight: 500; text-transform: uppercase; letter-spacing: var(--track-eyebrow); color: var(--text-faint); }
 
 .trace-row { width: 100%; background: none; border: 0; color: var(--text); cursor: pointer; font-family: var(--font-mono); font-size: var(--fs-12); text-align: left; transition: background var(--t-fast); }
@@ -480,14 +490,18 @@
 .trace-row[aria-expanded="true"] { background: var(--surface-2); }
 /* Timeline lens: the row wears its wait as a proportional bottom bar (--tl is
    the wait as a fraction of the largest visible gap). Behind the text, never
-   over it — a latency read, not a decoration. */
+   over it — a latency read, not a decoration. With the lens on, EVERY row
+   (bar or not) gains 5 px top and bottom so the bars sit on their own line
+   between rows instead of crowding the next row's text (owner 2026-07-25). */
+.trace-body--tl .trace-row { padding-top: 7px; padding-bottom: 7px; }
 .trace-row--tl { position: relative; }
 .trace-row--tl::after {
   content: "";
   position: absolute;
   left: var(--sp-4);
-  bottom: 0;
+  bottom: 2px;
   height: 2px;
+  border-radius: 999px;
   width: calc(var(--tl, 0) * (100% - 2 * var(--sp-4)));
   background: var(--accent);
   opacity: 0.5;
@@ -509,6 +523,8 @@
 .trace-col--llm { text-align: center; font-weight: 600; }
 .trace-col--proto { color: var(--text-faint); font-size: var(--fs-11); letter-spacing: 0.02em; }
 .trace-col--host { color: var(--text-faint); font-size: var(--fs-11); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Card 87: the model column — quiet mono, ellipsized like host. */
+.trace-col--model { color: var(--text-faint); font-size: var(--fs-11); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .trace-col--llm-to { color: var(--sand); }
 .trace-col--llm-from { color: var(--accent); }
 .trace-col--llm-internal { color: var(--text-faint); }
@@ -540,6 +556,34 @@
 .trace-detail:hover .copy,
 .trace-detail .copy:focus-visible { opacity: 1; }
 
+/* ---------- Structured face of one frame (trace detail + Lab JSONL row) ----------
+   The frame rendered as the thing it is. Tool calls come through the chat's own
+   tool view (.tv-*), so only the frame-level regions live here. Labels are the
+   payload's field names: the wire view names the wire. */
+.ed { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.ed-sec { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ed-label { display: block; font-size: var(--fs-11); color: var(--text-faint); }
+.ed-rows { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.ed-rows > div { display: flex; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-12); }
+.ed-rows dt { flex-shrink: 0; min-width: 116px; color: var(--text-faint); }
+.ed-rows dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.ed-note { color: var(--text-faint); margin-left: var(--sp-2); }
+.ed-more { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
+.ed-empty { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* Rendered markdown reads as prose, one step below the chat's own size. */
+.ed-md { font-size: var(--fs-12); color: var(--text); overflow-wrap: anywhere; }
+.ed-md .md h1 { font-size: var(--fs-14); }
+.ed-md .md h2 { font-size: var(--fs-13); }
+.ed-md .md h3, .ed-md .md h4 { font-size: var(--fs-12); }
+.ed-md .md > :first-child { margin-top: 0; }
+.ed-md .md > :last-child { margin-bottom: 0; }
+.ed-img { display: block; max-width: min(100%, 320px); max-height: 240px; border-radius: var(--radius-chip); border: 1px solid var(--border); }
+.ed-path { font-size: var(--fs-11); color: var(--text-faint); overflow-wrap: anywhere; }
+/* The Lab's JSONL strip is half as wide as the trace: same regions, less room. */
+.lab-line-body .ed { gap: var(--sp-2); }
+.lab-line-body .ed-rows dt { min-width: 0; }
+.lab-line-body .ed-img { max-width: 100%; }
+
 /* New frames arrived while the reader was scrolled up. */
 .trace-pill { position: absolute; bottom: var(--sp-4); left: 50%; transform: translateX(-50%); z-index: var(--z-sticky); display: inline-flex; align-items: center; gap: var(--sp-1); background: var(--surface-2); border: 1px solid var(--accent); border-radius: 999px; box-shadow: var(--shadow-raised); color: var(--accent); cursor: pointer; font: inherit; font-size: var(--fs-12); padding: 4px var(--sp-3); transition: background var(--t-fast); animation: rise-in 200ms var(--ease) backwards; }
 .trace-pill:hover { background: var(--accent-soft); }
@@ -560,6 +604,7 @@
 .json-line { white-space: pre-wrap; word-break: break-word; }
 .json-key { color: var(--text-dim); }
 .json-string { color: var(--agent-explore); }
+.json-string-block { display: block; } /* a value whose own line breaks are data starts at the node's indent */
 .json-number { color: var(--agent-root); }
 .json-bool { color: var(--agent-worker); }
 .json-punct { color: var(--text-faint); }
@@ -644,6 +689,15 @@
 }
 .trace-row--dim { opacity: 0.38; }
 .trace-row--anchor { opacity: 0.9; }
+
+/* In-view search. The hit is the whole ROW (the trace is a table), amber so it
+   never reads as the lens' violet; the current one carries the left mark, the
+   others only a tint. Doubled class + placed after the hover/expanded/lens
+   rules so the mark survives hovering, an open frame and a dimmed lens row —
+   a hit the reader cannot find is worse than no hit. */
+.trace-row.trace-row--hit { background: color-mix(in srgb, var(--accent) 9%, transparent); opacity: 1; }
+.trace-row.trace-row--hit-cur { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 2px 0 0 var(--accent); opacity: 1; }
+.trace-search-note { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--accent); white-space: nowrap; }
 
 /* Said-vs-did pairing line under a block-ending thinking row. */
 .trace-pair {
@@ -742,3 +796,25 @@
   border-radius: 1px;
   flex-shrink: 0;
 }
+
+/* ---------- In-view search: the text tab's hits (state/search.ts) ---------- */
+/* Every hit keeps its line's own colour — the feed's kinds ARE meaning (think,
+   output, error), and a search must not repaint them. The mark is the ground. */
+.tf-hit { background: var(--accent-soft); color: inherit; border-radius: 2px; }
+.tf-hit--current { background: var(--accent); color: var(--text-on-accent); }
+.tf-search-scope { font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
+
+/* ---------- Export menu (chat + text tab) ---------- */
+/* Borrows the composer gear's popover surface. Compound selectors throughout:
+   workspace-gear.css loads AFTER this file (app.css), so a bare .export-pop
+   would lose the cascade to .wsg-pop — the same trap .disc-pop documents. */
+.export-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* The text bar is a flex row and spaces its own children; the chat corner is a
+   plain block, where the two inline anchors would otherwise touch. */
+.chat-disc .export-anchor { margin-right: var(--sp-1); vertical-align: middle; }
+/* Opens DOWNWARD: both mounts sit at the TOP of their surface (the chat corner,
+   the text tab's bar), where wsg-pop's upward default would open off-screen. */
+.wsg-pop.export-pop { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; width: 268px; }
+/* The rows are buttons here, not divs — undo what the UA paints on a button. */
+.export-pop .wsg-mode-row { width: 100%; background: none; border: 0; font: inherit; text-align: left; }
+.export-pop .wsg-mode-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }

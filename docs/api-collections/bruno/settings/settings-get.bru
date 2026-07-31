@@ -1,0 +1,23 @@
+meta {
+  name: effective settings
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/settings
+  body: none
+  auth: none
+}
+
+params:query {
+  ~session: {{sessionId}}
+}
+
+docs {
+  Effective config + per-field provenance + raw layers + file paths. 400 malformed session id, 404 session without workspace.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

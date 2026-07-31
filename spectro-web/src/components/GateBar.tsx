@@ -3,11 +3,20 @@
 // mark for "waiting on you"; approve/deny act inline, the expanded view shows
 // the full input and the recorded outcomes of earlier gates. The run stays
 // paused server-side until a decision lands — the bar just refuses to shout.
+//
+// The collapsed row is a glance: one line of compact JSON, ellipsized, with the
+// whole of it in the title. The expanded detail is the READ, and it is the same
+// rendering the permission modal and the tool card use — escaped newlines are
+// what make a command unreadable, and a node's gate deserves the same reading
+// as a local one. Unclipped, in a bounded box that scrolls: the buttons sit
+// above the detail, so no payload can push them anywhere.
 
 import { useState } from "react";
 import type { PendingPermission, ToolCard } from "../state/reducer";
-import { compactJson, prettyJson } from "../format";
+import { compactJson } from "../format";
 import { agentAccent } from "../format";
+import { gateSubject, GateSubjectLine } from "./PermissionDialog";
+import { InputRegions } from "./ToolViewBody";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import type { CSSProperties } from "react";
@@ -33,6 +42,8 @@ export function GateBar(props: {
 
   const current = props.pending[0];
   if (current === undefined) return null;
+
+  const subject = gateSubject(current.name, current.input);
 
   const decide = (allowed: boolean): void => {
     props.onDecide(current.callId, allowed, allowed ? { remember, persist: remember && persist } : undefined);
@@ -108,7 +119,16 @@ export function GateBar(props: {
 
       {expanded && (
         <div className="gate-detail">
-          <pre className="gate-input-full mono">{prettyJson(current.input)}</pre>
+          {subject !== null && <GateSubjectLine subject={subject} lang={lang} />}
+          <div className="gate-payload" tabIndex={0} aria-label={t(lang, "tv.input")}>
+            <InputRegions
+              label={t(lang, "tv.input")}
+              name={current.name}
+              input={current.input}
+              lang={lang}
+              clip={false}
+            />
+          </div>
           {decided.length > 0 && (
             <div className="gate-history">
               <span className="gate-history-label mono">{t(lang, "gate.recorded")}</span>

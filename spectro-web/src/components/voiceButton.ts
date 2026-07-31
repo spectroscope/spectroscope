@@ -25,15 +25,11 @@ export const STT_SETUP_HINT = "Speech-to-text is not installed — run bash scri
  * - unavailable (a prior 503): disabled, tooltip points at the setup script.
  * - transcribing: disabled (the POST is in flight), never a second recording.
  * - recording: enabled (press stops it), the caller renders the dot + timer.
- * - idle: enabled, ready to record.
- * While a run streams the composer is busy, so the button is disabled then too.
+ * - idle: enabled, ready to record — even mid-run: the transcript only lands
+ *   in the DRAFT, and since card 78 the composer stays alive while a run
+ *   streams (queue-while-running), so there is nothing to protect.
  */
-export function micButtonState(
-  phase: MicPhase,
-  available: boolean,
-  running: boolean,
-  lang: Lang = "en",
-): MicView {
+export function micButtonState(phase: MicPhase, available: boolean, lang: Lang = "en"): MicView {
   if (!available) {
     return {
       title: lang === "en" ? STT_SETUP_HINT : t(lang, "mic.sttHint"),
@@ -47,7 +43,7 @@ export function micButtonState(
   if (phase === "recording") {
     return { title: t(lang, "mic.stop"), recording: true, disabled: false };
   }
-  return { title: t(lang, "mic.record"), recording: false, disabled: running };
+  return { title: t(lang, "mic.record"), recording: false, disabled: false };
 }
 
 /** mm:ss for the recording timer — seconds since the recording began. */

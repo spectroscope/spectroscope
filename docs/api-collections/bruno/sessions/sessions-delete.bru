@@ -1,0 +1,21 @@
+meta {
+  name: delete session
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}
+  body: none
+  auth: none
+}
+
+docs {
+  Delete one stored session (JSONL + blob folder). 204 success, 400 malformed id, 404 unknown.
+  
+  CAUTION: This really deletes the session, and it is the one destructive endpoint without an origin fence — the id shape check is the only guard. Point it at a throwaway home before replaying the whole collection.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: yes
+}

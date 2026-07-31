@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
-import { deriveDetail, sceneToFlow } from "./sceneToFlow";
+import {
+  deriveDetail,
+  EXPANDED_CARD,
+  EXP_GAP,
+  reportOversizeCards,
+  sceneToFlow,
+  seatCollisions,
+} from "./sceneToFlow";
 
 const T = 1700000000000;
 
@@ -195,6 +202,222 @@ describe("sceneToFlow — the edu-upstreamed flags (card 42)", () => {
     const yOf = (flow: { nodes: { id: string; position: { y: number } }[] }, id: string) =>
       flow.nodes.find((n) => n.id === id)!.position.y;
     expect(yOf(one, "sub-worker-1")).toBe(yOf(two, "sub-worker-1")); // slot pinned
+  });
+});
+
+describe("sceneToFlow — the expanded seats (owner report: expanded is broken)", () => {
+  const T = 1;
+  // A run with three workers and a tool call in flight: every card type is on
+  // the map at once, each with the panels an expanded shell opens.
+  const busy = (provider: string): RunEvent[] => [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider, ts: T },
+    { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "t1", ts: T } as RunEvent,
+    { type: "agent_spawn", agentId: "worker-2", parentId: "main", task: "t2", ts: T } as RunEvent,
+    { type: "agent_spawn", agentId: "worker-3", parentId: "main", task: "t3", ts: T } as RunEvent,
+    {
+      type: "tool_call",
+      agentId: "main",
+      callId: "c1",
+      name: "run_command",
+      input: { command: "echo one\necho two" },
+      ts: T,
+    } as RunEvent,
+  ];
+  const flowOf = (provider: string, expanded: boolean) => {
+    const events = busy(provider);
+    const scene = events.reduce(advanceScene, initialScene());
+    return sceneToFlow(scene, deriveDetail(events), {
+      local: provider === "ollama",
+      provider,
+      model: "m",
+      expanded,
+    });
+  };
+  interface Box {
+    id: string;
+    x: number;
+    y: number;
+    w: number;
+    h: number;
+  }
+  /**
+   * Heights measured in the browser off the flow pane, session
+   * 20260717-151355-0cfef768 (main plus three workers, every panel open).
+   *
+   * These numbers exist so the overlap check does not read the same table the
+   * layout reads. A seat derived from EXPANDED_CARD and then checked against
+   * EXPANDED_CARD only proves the table is self-consistent; the collision this
+   * test is here to catch happens between the seat and the DOM, so the two
+   * sides of the comparison have to come from different places. The three
+   * workers differ because their orders differ — the tallest is the bound the
+   * column has to be pitched for.
+   *
+   * Widths stay on the envelope: they are set outright by flowmap.css
+   * (.pf-user--wide 400 · .pf-agent--wide 680 · .pf-sub 216) and content
+   * cannot move them, which the measured 216-wide collisions confirmed.
+   */
+  const MEASURED_H: Record<string, number> = {
+    user: 166,
+    agent: 730,
+    llm: 514,
+    "os-shell": 201,
+    "os-net": 92,
+    "sub-worker-1": 394,
+    "sub-worker-2": 377,
+    "sub-worker-3": 377,
+  };
+  const envelopeOf = (id: string, type?: string) => EXPANDED_CARD[id] ?? EXPANDED_CARD[type ?? ""];
+  /** Every card at the size the layout SEATS it for. */
+  const cards = (flow: { nodes: { id: string; type?: string; position: { x: number; y: number } }[] }) =>
+    flow.nodes
+      .map((n) => {
+        const env = envelopeOf(n.id, n.type);
+        return env === undefined ? null : { id: n.id, ...n.position, ...env };
+      })
+      .filter((b): b is Box => b !== null);
+  /** Every card at the size it RENDERED at, where that was measured. */
+  const rendered = (flow: { nodes: { id: string; type?: string; position: { x: number; y: number } }[] }) =>
+    cards(flow).map((b) => ({ ...b, h: MEASURED_H[b.id] ?? b.h }));
+  const zone = (
+    flow: { nodes: { id: string; position: { x: number; y: number }; style?: unknown }[] },
+    id: string,
+  ) => {
+    const n = flow.nodes.find((z) => z.id === id)!;
+    const s = n.style as { width: number; height: number };
+    return { x: n.position.x, y: n.position.y, w: s.width, h: s.height };
+  };
+  const overlaps = (a: Box, b: Box) =>
+    Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x) > 0 &&
+    Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y) > 0;
+
+  for (const provider of ["anthropic", "ollama"]) {
+    it(`expanded (${provider}): no two RENDERED cards overlap`, () => {
+      const boxes = rendered(flowOf(provider, true));
+      const hits: string[] = [];
+      for (let i = 0; i < boxes.length; i++) {
+        for (let j = i + 1; j < boxes.length; j++) {
+          const a = boxes[i];
+          const b = boxes[j];
+          if (!overlaps(a, b)) continue;
+          const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+          const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+          hits.push(`${a.id}/${b.id} ${w}x${h}`);
+        }
+      }
+      expect(hits).toEqual([]);
+    });
+
+    it(`expanded (${provider}): every open card stays inside a frame`, () => {
+      const flow = flowOf(provider, true);
+      const mac = zone(flow, "z-mac");
+      const outside = zone(flow, "z-outside");
+      const inside = (b: Box, z: { x: number; y: number; w: number; h: number }) =>
+        b.x >= z.x && b.y >= z.y && b.x + b.w <= z.x + z.w && b.y + b.h <= z.y + z.h;
+      const escaped = cards(flow)
+        .filter((b) => !inside(b, mac) && !inside(b, outside))
+        .map((b) => b.id);
+      expect(escaped).toEqual([]);
+    });
+  }
+
+  it("no card renders taller than the envelope its seat was derived from", () => {
+    // The seats are only as good as this table, and nothing else in the suite
+    // compares it against a real card. Every height recorded off the DOM belongs
+    // here: an entry that exceeds its envelope means the seat below it is short
+    // by that much, which is the collision, found before it reaches a screen.
+    const over = Object.entries(MEASURED_H)
+      .map(([id, h]) => {
+        const type = id.startsWith("sub-") ? "subagent" : undefined;
+        return { id, h, bound: envelopeOf(id, type).h };
+      })
+      .filter((c) => c.h > c.bound)
+      .map((c) => `${c.id} ${c.h} > ${c.bound}`);
+    expect(over).toEqual([]);
+  });
+
+  it("expanded: the worker column is pitched by the subagent envelope, not by a constant", () => {
+    const flow = flowOf("anthropic", true);
+    const subs = flow.nodes
+      .filter((n) => n.id.startsWith("sub-"))
+      .sort((a, b) => a.position.y - b.position.y);
+    expect(subs).toHaveLength(3);
+    const pitch = subs[1].position.y - subs[0].position.y;
+    expect(pitch).toBe(subs[2].position.y - subs[1].position.y);
+    // The one derivation that matters: pitch follows the card's own envelope the
+    // way every other expanded seat follows the envelope beside it.
+    expect(pitch).toBe(EXPANDED_CARD.subagent.h + EXP_GAP);
+  });
+
+  it("expanded: the seats the layout emits are collision-free by its own reckoning", () => {
+    for (const provider of ["anthropic", "ollama"]) {
+      expect(seatCollisions(flowOf(provider, true).nodes)).toEqual([]);
+    }
+  });
+
+  it("seatCollisions can fail: two cards on one seat are reported with their overlap", () => {
+    const nodes = [
+      { id: "sub-a", type: "subagent", position: { x: 100, y: 100 } },
+      { id: "sub-b", type: "subagent", position: { x: 100, y: 120 } },
+    ];
+    expect(seatCollisions(nodes)).toEqual([`sub-a/sub-b 216x${EXPANDED_CARD.subagent.h - 20}`]);
+  });
+
+  it("a card measured taller than its envelope is reported, once, and names both numbers", () => {
+    const said: string[] = [];
+    const measured = [
+      { id: "sub-worker-1", type: "subagent", h: EXPANDED_CARD.subagent.h + 12 },
+      { id: "agent", h: EXPANDED_CARD.agent.h },
+    ];
+    reportOversizeCards(measured, (m) => said.push(m));
+    reportOversizeCards(measured, (m) => said.push(m));
+    expect(said).toHaveLength(1); // a per-frame layout may not shout per frame
+    expect(said[0]).toContain("sub-worker-1");
+    expect(said[0]).toContain(String(EXPANDED_CARD.subagent.h + 12));
+    expect(said[0]).toContain(String(EXPANDED_CARD.subagent.h));
+  });
+
+  it("expanded: the agent seat clears the wide user card, so the prompt rail reads left to right", () => {
+    const flow = flowOf("anthropic", true);
+    const user = cards(flow).find((b) => b.id === "user")!;
+    const agent = cards(flow).find((b) => b.id === "agent")!;
+    expect(agent.x).toBeGreaterThan(user.x + user.w);
+  });
+
+  it("expanded: the OS band sits below the tall agent card", () => {
+    const flow = flowOf("anthropic", true);
+    const agent = cards(flow).find((b) => b.id === "agent")!;
+    const band = zone(flow, "z-os");
+    expect(band.y).toBeGreaterThanOrEqual(agent.y + agent.h);
+    for (const station of cards(flow).filter((b) => b.id.startsWith("os-"))) {
+      expect(station.y).toBeGreaterThanOrEqual(agent.y + agent.h);
+    }
+  });
+
+  it("expanded: the outside stations sit below the tall LLM card", () => {
+    const flow = flowOf("anthropic", true);
+    const llm = cards(flow).find((b) => b.id === "llm")!;
+    for (const id of ["netz", "mcpserver"]) {
+      expect(cards(flow).find((b) => b.id === id)!.y).toBeGreaterThanOrEqual(llm.y + llm.h);
+    }
+  });
+
+  it("compact: the hand-authored seats are untouched", () => {
+    const flow = flowOf("anthropic", false);
+    const at = (id: string) => flow.nodes.find((n) => n.id === id)!.position;
+    expect(at("user")).toEqual({ x: 40, y: 380 });
+    expect(at("agent")).toEqual({ x: 250, y: 150 });
+    expect(at("llm")).toEqual({ x: 1092, y: 240 });
+    expect(at("netz")).toEqual({ x: 1090, y: 660 });
+    expect(at("mcpserver")).toEqual({ x: 1290, y: 660 });
+    expect(at("os-disk")).toEqual({ x: 58, y: 748 });
+    expect(at("os-shell")).toEqual({ x: 236, y: 748 });
+    expect(at("os-mcp")).toEqual({ x: 462, y: 748 });
+    expect(at("os-net")).toEqual({ x: 678, y: 748 });
+    expect(zone(flow, "z-mac")).toEqual({ x: 0, y: 24, w: 1000, h: 900 });
+    expect(zone(flow, "z-os")).toEqual({ x: 24, y: 668, w: 792, h: 236 });
+    expect(zone(flow, "z-outside")).toEqual({ x: 1052, y: 24, w: 520, h: 900 });
+    expect(at("z-boundary")).toEqual({ x: 1016, y: 24 });
+    expect(at("sub-worker-1").x).toBe(685);
   });
 });
 

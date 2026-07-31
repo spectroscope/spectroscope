@@ -71,12 +71,32 @@ jlink --module-path "$JDK/jmods" --add-modules ALL-MODULE-PATH \
       --strip-debug --no-header-files --no-man-pages --output "$D/jre"
 echo -n "    bundled runtime: "; "$D/jre/bin/java" -version 2>&1 | head -1
 
-# 2b) SIGNED path: sign every Mach-O in the runtime inside-out, BEFORE
-#     electron-builder seals the app over it (a single unsigned dylib in the JRE
-#     fails notarization). Ad-hoc path skips this — its --deep --sign - covers all.
+# 2b) llama.cpp's llama-server + its dylib closure. This is what makes the
+#     built-in model a real one-click affair: without it the server falls back to
+#     a `llama-server` on the PATH, which only a Homebrew user has. Pinned by
+#     build tag and sha256, and the script refuses to stage a set with any load
+#     path pointing outside the bundle. ~22 MB.
+echo "==> [2b/7] bundled llama-server"
+./scripts/fetch-llama-server.sh
+
+# 2b2) the PTY helper for the Files-tab shell (card 93). AFTER the llama-server
+#      step on purpose: fetch-llama-server.sh clears $D/bin before staging, so a
+#      helper built earlier would be deleted. ~52 KB, no dependencies beyond libc,
+#      and 2c below signs it along with everything else in $D/bin.
+echo "==> [2b2/7] bundled spectro-pty"
+./scripts/build-spectro-pty.sh --force
+
+# 2c) SIGNED path: sign every Mach-O in the runtime and the binaries inside-out,
+#     BEFORE electron-builder seals the app over it (a single unsigned dylib in
+#     the JRE fails notarization). Dylibs first, then executables, so nothing is
+#     sealed over an unsigned dependency. Ad-hoc path skips this — its
+#     --deep --sign - covers all.
 if [ -n "$ID" ]; then
-  echo "==> [2b/7] codesign bundled JRE (hardened runtime)"
-  find "$D/jre" -type f \( -name '*.dylib' -o -perm +111 \) -print0 \
+  echo "==> [2c/7] codesign bundled JRE + llama-server (hardened runtime)"
+  find "$D/jre" "$D/bin" -type f -name '*.dylib' -print0 \
+    | xargs -0 -I{} codesign --force --timestamp --options runtime \
+        --entitlements "$ENT" --sign "$ID" "{}"
+  find "$D/jre" "$D/bin" -type f ! -name '*.dylib' -perm +111 -print0 \
     | xargs -0 -I{} codesign --force --timestamp --options runtime \
         --entitlements "$ENT" --sign "$ID" "{}"
 fi
@@ -122,12 +142,20 @@ fi
 codesign --verify --deep --strict "$APP" || { echo "!! signature did not verify"; exit 1; }
 echo "    $(codesign -dv "$APP" 2>&1 | grep -i 'Signature\|Authority' | head -1)"
 
-# 6) package the signed app into a .dmg (hdiutil preserves the signature exactly)
+# 6) package the signed app into a .dmg (hdiutil preserves the signature exactly),
+#    then sign the .dmg ITSELF: notarization accepts an unsigned dmg and stapler
+#    staples it, but `spctl -a -t open --context context:primary-signature` (the
+#    documented verify line) rejects it with "no usable signature". One codesign
+#    makes the container's provenance checkable, not just the app inside.
 echo "==> [6/7] package .dmg"
 STAGE="$(mktemp -d)"; ditto "$APP" "$STAGE/spectroscope.app"; ln -s /Applications "$STAGE/Applications"
 DMG="$D/release/spectroscope-${VERSION}-${ARCH}.dmg"; rm -f "$DMG"
 hdiutil create -volname "spectroscope" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
 rm -rf "$STAGE"
+if [ -n "$ID" ]; then
+  codesign --force --timestamp --sign "$ID" "$DMG"
+  codesign --verify "$DMG" || { echo "!! dmg signature did not verify"; exit 1; }
+fi
 
 # 7) SIGNED path: notarize + staple if a notarytool profile is available.
 #    Submitting uploads the build to Apple — set NOTARY_PROFILE (default

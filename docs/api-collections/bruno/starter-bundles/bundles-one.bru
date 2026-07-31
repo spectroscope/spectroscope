@@ -1,0 +1,23 @@
+meta {
+  name: one bundle's files
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/bundles/{{bundleId}}
+  body: none
+  auth: none
+}
+
+params:query {
+  ~build: gradle
+}
+
+docs {
+  One bundle's rendered file set for copy-paste: {id, buildTool, files:{path:content}}. 404 unknown bundle.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

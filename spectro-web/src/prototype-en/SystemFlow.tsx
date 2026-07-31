@@ -29,8 +29,8 @@ const PROVIDERS = [
   { id: "openai", model: "gpt-4o", name: "OpenAI · remote" },
 ];
 const GENOMES = [
-  { id: "spectroscope", name: "spectro dark" },
-  { id: "paper", name: "spectro bright" },
+  { id: "spectroscope", name: "spectro espresso" },
+  { id: "paper", name: "spectro paper" },
   { id: "still", name: "spectro white" },
 ];
 

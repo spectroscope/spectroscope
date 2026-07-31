@@ -11,8 +11,10 @@ import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { PROVIDERS } from "./providerPickerMode";
+import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
+import { LocalModelDialog } from "./LocalModelDialog";
+import { ReasoningControl } from "./ReasoningControl";
 
 export function ProviderPicker({
   provider,
@@ -38,7 +40,10 @@ export function ProviderPicker({
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(provider);
   const [model, setModel] = useState("");
+  const [showDownload, setShowDownload] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const isLocal = sel === "spectro-local";
 
   // Opening seeds the form from the active provider and the real current model.
   useEffect(() => {
@@ -75,6 +80,13 @@ export function ProviderPicker({
   const dot = status === "open" ? "ok" : status === "connecting" ? "warn" : "error";
 
   const apply = (): void => {
+    // The built-in provider always routes through the chooser: WHICH model runs
+    // is a real decision now (five entries, different tools/size trade-offs),
+    // and the dialog is also where an absent model gets downloaded.
+    if (isLocal) {
+      setShowDownload(true);
+      return;
+    }
     onApply(sel, model.trim());
     setOpen(false);
   };
@@ -118,34 +130,56 @@ export function ProviderPicker({
             >
               {PROVIDERS.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {providerDisplayName(p)}
                 </option>
               ))}
             </select>
           </label>
-          <label className="provider-field">
-            <span className="provider-field-label">{t(lang, "pp.model")}</span>
-            <ModelField
-              provider={sel}
-              models={models}
-              mode={mode}
-              model={model}
-              onModelChange={setModel}
-              providerStatus={providerStatus}
-              keyAffordance="link"
-              onOpenSettings={() => {
-                setOpen(false);
-                onOpenSettings?.();
-              }}
-              onEnter={apply}
-            />
-          </label>
+          {isLocal ? (
+            <p className="provider-local-note">{t(lang, "pp.localNote")}</p>
+          ) : (
+            <label className="provider-field">
+              <span className="provider-field-label">{t(lang, "pp.model")}</span>
+              <ModelField
+                provider={sel}
+                models={models}
+                mode={mode}
+                model={model}
+                onModelChange={setModel}
+                providerStatus={providerStatus}
+                keyAffordance="link"
+                onOpenSettings={() => {
+                  setOpen(false);
+                  onOpenSettings?.();
+                }}
+                onEnter={apply}
+              />
+            </label>
+          )}
+          {/* Card 88: the thinking control lives with the model it belongs to.
+              Driven purely by the capability record — a model without a
+              reasoning channel shows nothing here. The choice persists per
+              (provider, model); App watches the store and wires the ACTIVE
+              pair, so a flip on the current model applies immediately and a
+              flip on a pending switch rides along once the switch confirms. */}
+          {model.trim() !== "" && <ReasoningControl provider={sel} model={model.trim()} />}
           <div className="provider-pop-foot">
             <button type="button" className="primary" onClick={apply}>
-              {t(lang, "pp.switch")}
+              {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}
             </button>
           </div>
         </div>
+      )}
+
+      {showDownload && (
+        <LocalModelDialog
+          onUse={(modelId) => {
+            setShowDownload(false);
+            onApply("spectro-local", modelId);
+            setOpen(false);
+          }}
+          onClose={() => setShowDownload(false)}
+        />
       )}
     </div>
   );

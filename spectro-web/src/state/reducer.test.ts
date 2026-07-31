@@ -1,6 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { ClientMessage, RunEvent } from "../events";
-import { initialState, normalizeReplay, recordOutgoing, reduce, reduceAll, traceFromEvents } from "./reducer";
+import type { UiState } from "./reducer";
+import {
+  initialState,
+  normalizeReplay,
+  recordOutgoing,
+  reduce,
+  reduceAll,
+  traceFromEvents,
+  windowTrace,
+} from "./reducer";
 
 // A realistic root run: prompt -> streamed answer -> usage -> end.
 const happyPath: RunEvent[] = [
@@ -93,7 +102,8 @@ describe("reduce — happy path", () => {
     const state = reduceAll(initialState, happyPath);
     expect(state.turns).toEqual([
       { kind: "user", text: "Summarize pom.xml" },
-      // the usage event (ts 5) stamps the answer's tokens + duration (from ts 3, its first delta)
+      // the usage event (ts 5) stamps the answer's tokens + duration (from ts 3,
+      // its first delta) + the end wall-clock (card 87 — start derives from it)
       {
         kind: "assistant",
         agentId: "main",
@@ -101,6 +111,7 @@ describe("reduce — happy path", () => {
         thinking: "",
         usage: { inputTokens: 120, outputTokens: 30 },
         durationMs: 2,
+        endTs: 5,
       },
     ]);
   });
@@ -553,15 +564,15 @@ describe("reduce — wire trace (trace tab)", () => {
     expect(state.trace[0]?.agentId).toBeUndefined();
   });
 
-  it("caps the trace at 5000 entries, dropping the oldest", () => {
-    const flood: RunEvent[] = Array.from(
-      { length: 5010 },
+  it("a finite fold keeps every row, however long the session", () => {
+    const long: RunEvent[] = Array.from(
+      { length: 6000 },
       (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: i }) as RunEvent,
     );
-    const state = reduceAll(initialState, flood);
-    expect(state.trace).toHaveLength(5000);
-    expect(state.trace[0]?.seq).toBe(11); // the first ten fell off the window
-    expect(state.trace[4999]?.seq).toBe(5010);
+    const state = reduceAll(initialState, long);
+    expect(state.trace).toHaveLength(6000);
+    expect(state.trace[0]?.seq).toBe(1); // an import begins at its beginning
+    expect(state.trace[5999]?.seq).toBe(6000);
   });
 
   it("recordOutgoing appends a dir 'out' entry and continues the seq counter", () => {
@@ -609,6 +620,61 @@ describe("reduce — wire trace (trace tab)", () => {
       remember: true,
       persist: true,
     });
+  });
+});
+
+describe("the live trace window (windowTrace)", () => {
+  const flood = (n: number, from = 0): RunEvent[] =>
+    Array.from(
+      { length: n },
+      (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: from + i }) as RunEvent,
+    );
+
+  /** What the socket seam does: fold the batch, then window what it grew. */
+  const live = (s: UiState, batch: RunEvent[]): UiState => windowTrace(reduceAll(s, batch));
+
+  it("keeps the last 5000 rows of a stream past the window, dropping the oldest", () => {
+    const state = live(initialState, flood(5010));
+    expect(state.trace).toHaveLength(5000);
+    expect(state.trace[0]?.seq).toBe(11); // the first ten fell off the window
+    expect(state.trace[4999]?.seq).toBe(5010);
+  });
+
+  it("bounds a stream that arrives in many batches, not just one", () => {
+    let state = initialState;
+    for (let batch = 0; batch < 60; batch++) state = live(state, flood(100, batch * 100));
+    expect(state.trace).toHaveLength(5000);
+    expect(state.trace[4999]?.seq).toBe(6000);
+  });
+
+  it("hands back a trace that fits unchanged, array identity included", () => {
+    const state = reduceAll(initialState, happyPath);
+    const windowed = windowTrace(state);
+    expect(windowed).toBe(state);
+    expect(windowed.trace).toBe(state.trace);
+  });
+
+  it("leaves the newest row in place, so seq keeps counting after a window", () => {
+    const windowed = live(initialState, flood(5000));
+    const next = live(windowed, flood(1, 5000));
+    expect(next.trace).toHaveLength(5000);
+    expect(next.trace[4999]?.seq).toBe(5001);
+    // No two rows share a seq — the counter never restarts inside the window.
+    expect(new Set(next.trace.map((t) => t.seq)).size).toBe(5000);
+  });
+
+  it("windows an outgoing frame's append too — both directions grow the same array", () => {
+    const full = live(initialState, flood(5000));
+    const sent = windowTrace(recordOutgoing(full, { type: "abort" }));
+    expect(sent.trace).toHaveLength(5000);
+    const last = sent.trace[4999];
+    expect(last).toMatchObject({ seq: 5001, dir: "out", type: "abort" });
+  });
+
+  it("changes nothing but the trace", () => {
+    const state = live(initialState, [...flood(5010), ...happyPath]);
+    const uncapped = reduceAll(initialState, [...flood(5010), ...happyPath]);
+    expect({ ...state, trace: [] }).toEqual({ ...uncapped, trace: [] });
   });
 });
 
@@ -908,5 +974,170 @@ describe("traceFromEvents — a flat inbound stream for the fleet trace tab", ()
 
   it("is empty for an empty stream", () => {
     expect(traceFromEvents([])).toEqual([]);
+  });
+});
+
+describe("card 87 — the model rides run_start into footer and trace", () => {
+  const runStart = {
+    type: "run_start",
+    runId: "r9",
+    agentId: "main",
+    prompt: "hi",
+    provider: "spectro-local",
+    model: "vibethinker-3b",
+    ts: 1000,
+  } as unknown as RunEvent;
+
+  it("stamps the answer's model and end time at usage", () => {
+    let s = reduce(initialState, runStart);
+    s = reduce(s, { type: "text_delta", agentId: "main", text: "yo", ts: 1200 } as unknown as RunEvent);
+    s = reduce(s, {
+      type: "usage",
+      agentId: "main",
+      inputTokens: 5,
+      outputTokens: 7,
+      ts: 1600,
+    } as unknown as RunEvent);
+    const answers = s.turns.filter((turn) => turn.kind === "assistant");
+    const answer = answers[answers.length - 1];
+    expect(answer.kind === "assistant" && answer.model).toBe("vibethinker-3b");
+    expect(answer.kind === "assistant" && answer.endTs).toBe(1600);
+  });
+
+  it("stamps trace rows inside the run with the run's model — the run_start row included", () => {
+    let s = reduce(initialState, runStart);
+    s = reduce(s, { type: "text_delta", agentId: "main", text: "yo", ts: 1200 } as unknown as RunEvent);
+    const rows = s.trace.filter((e) => e.type === "run_start" || e.type === "text_delta");
+    expect(rows.map((e) => e.model)).toEqual(["vibethinker-3b", "vibethinker-3b"]);
+  });
+
+  it("leaves pre-run rows and old archives blank instead of guessing", () => {
+    const s = reduce(initialState, {
+      type: "run_start",
+      runId: "r0",
+      agentId: "main",
+      prompt: "old file",
+      ts: 500,
+    } as unknown as RunEvent);
+    expect(s.trace[0].model).toBeUndefined();
+  });
+});
+
+describe("the answer footer — the cache split rides along with the tokens", () => {
+  const run = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "hi",
+    ts: 1,
+  } as unknown as RunEvent;
+
+  const answerUsage = (s: ReturnType<typeof reduceAll>) => {
+    const turn = s.turns[s.turns.length - 1];
+    return turn.kind === "assistant" ? turn.usage : undefined;
+  };
+
+  it("carries the additive cache counts onto the answer they belong to", () => {
+    const s = reduceAll(initialState, [
+      run,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 2 },
+      {
+        type: "usage",
+        agentId: "main",
+        inputTokens: 98,
+        outputTokens: 192,
+        cacheReadTokens: 3410,
+        cacheCreationTokens: 314,
+        ts: 3,
+      },
+    ]);
+    expect(answerUsage(s)).toEqual({
+      inputTokens: 98,
+      outputTokens: 192,
+      cacheReadTokens: 3410,
+      cacheCreationTokens: 314,
+    });
+  });
+
+  it("leaves the cache fields absent when the provider reported none", () => {
+    const s = reduceAll(initialState, [
+      run,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 2 },
+      { type: "usage", agentId: "main", inputTokens: 98, outputTokens: 192, ts: 3 },
+    ]);
+    const usage = answerUsage(s);
+    expect(usage).toEqual({ inputTokens: 98, outputTokens: 192 });
+    expect(usage !== undefined && "cacheReadTokens" in usage).toBe(false);
+    expect(usage !== undefined && "cacheCreationTokens" in usage).toBe(false);
+  });
+});
+
+describe("the answer footer — the model of a session that announces through provider_info", () => {
+  const announce = (model: string, ts: number) =>
+    ({
+      type: "provider_info",
+      provider: "anthropic",
+      model,
+      host: "api.anthropic.com",
+      ts,
+    }) as unknown as RunEvent;
+
+  it("stamps an answer whose run_start never carried a model", () => {
+    const s = reduceAll(initialState, [
+      announce("claude-opus-4-1", 1),
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 2 } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+    ]);
+    const last = s.turns[s.turns.length - 1];
+    expect(last.kind === "assistant" && last.model).toBe("claude-opus-4-1");
+  });
+
+  it("gives each answer the model announced for IT, not the last one in the file", () => {
+    // The shape a Claude Code import has: one long run, the switch announced
+    // mid-stream at the message where the transcript changed model.
+    const s = reduceAll(initialState, [
+      announce("claude-sonnet-4-5", 1),
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 2 } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "first answer", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+      { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: {}, ts: 5 },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "ok",
+        isError: false,
+        durationMs: 1,
+        ts: 6,
+      },
+      announce("claude-opus-4-1", 7),
+      { type: "text_delta", agentId: "main", text: "second answer", ts: 8 },
+      { type: "usage", agentId: "main", inputTokens: 9, outputTokens: 3, ts: 9 },
+    ]);
+    const answers = s.turns.filter((turn) => turn.kind === "assistant");
+    expect(answers).toHaveLength(2);
+    expect(answers.map((a) => (a.kind === "assistant" ? a.model : null))).toEqual([
+      "claude-sonnet-4-5",
+      "claude-opus-4-1",
+    ]);
+  });
+
+  it("lets an explicit run_start model win over a stale announcement", () => {
+    const s = reduceAll(initialState, [
+      announce("claude-sonnet-4-5", 1),
+      {
+        type: "run_start",
+        runId: "r1",
+        agentId: "main",
+        prompt: "hi",
+        model: "vibethinker-3b",
+        ts: 2,
+      } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+    ]);
+    const last = s.turns[s.turns.length - 1];
+    expect(last.kind === "assistant" && last.model).toBe("vibethinker-3b");
   });
 });

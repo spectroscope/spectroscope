@@ -1,0 +1,21 @@
+meta {
+  name: native folder chooser
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/pick-workspace
+  body: none
+  auth: none
+}
+
+docs {
+  Open the NATIVE macOS folder chooser on the server machine (blocks up to 120 s). 200 {path}, 204 cancel, 409 dialog already open, 501 non-macOS, 500 failure. Picks only — changes nothing.
+  
+  CAUTION: Blocks until a human answers the dialog on the server machine — exclude it from automated replays.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

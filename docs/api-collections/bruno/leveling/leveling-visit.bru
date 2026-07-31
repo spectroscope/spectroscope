@@ -1,0 +1,33 @@
+meta {
+  name: report a surface visit
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/leveling/visit
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "surface": "trace",
+    "sessionId": "{{sessionId}}",
+    "agentsShown": 3
+  }
+}
+
+docs {
+  Report a surface was shown (how UI-only acts reach the ladder). Returns fresh state.
+  
+  Body: VisitBody(String surface, String sessionId, Integer agentsShown) — surface required to record, others optional.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

@@ -586,3 +586,16 @@
 
 /* The compact/expanded card-view seg, docked at the now-band's right end. */
 .lab-view-seg { margin-left: auto; }
+
+/* Card 120: the master tool-panel face, docked left of the view seg. The
+   band's own gap separates the two segs, so the view seg's auto margin steps
+   aside when the face seg (which now carries it) sits in front. */
+.lab-face-seg { margin-left: auto; }
+.lab-face-seg + .lab-view-seg { margin-left: 0; }
+.lab-seg-label {
+  color: var(--text-faint);
+  font-size: var(--fs-11);
+  letter-spacing: var(--track-eyebrow);
+  padding: 2px var(--sp-2);
+  text-transform: uppercase;
+}
