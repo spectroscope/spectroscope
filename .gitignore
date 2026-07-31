@@ -21,6 +21,10 @@ spectro-desktop/jre/
 # desktop run kit: llama.cpp's llama-server + dylib closure, fetched and sha256-pinned
 # by scripts/fetch-llama-server.sh (build artifact, 22 MB, never committed)
 spectro-desktop/bin/
+# Linux run kit staging (card 134): OS/arch-suffixed so a Linux build can never
+# contaminate the macOS dirs above — scripts/build-linux-runkit.sh
+spectro-desktop/jre-linux-x64/
+spectro-desktop/bin-linux-x64/
 .gradle/
 .kotlin/
 .DS_Store

@@ -9,7 +9,10 @@ import * as net from "node:net";
 import * as path from "node:path";
 import { appMenuTemplate, openAboutScript } from "./menu";
 
-const HEALTH_BUDGET_MS = 30_000; // total time we wait for the server to report healthy
+// Health budget: 30 s by default, overridable for slow environments (the CI
+// xvfb smoke and emulated containers boot the JVM far slower than any laptop).
+// Unset, the behavior is identical to the old constant.
+const HEALTH_BUDGET_MS = Number(process.env.SPECTRO_HEALTH_BUDGET_MS ?? "") || 30_000; // total time we wait for the server to report healthy
 const HEALTH_INTERVAL_MS = 500;  // gap between health polls
 const JOBS_POLL_MS = 30_000;     // notification poller cadence
 const KILL_GRACE_MS = 5_000;     // SIGTERM -> wait -> SIGKILL
@@ -265,6 +268,17 @@ if (!gotTheLock) {
   // process is still alive. On Windows there are no POSIX signals: kill terminates hard. Fine
   // here (platform difference).
   app.on("before-quit", shutdown);
+
+  // (f') Linux only: a terminating signal (kill, session logout, the CI xvfb
+  // smoke) does NOT route through before-quit there — Chromium just dies, and
+  // the JVM child would orphan with its scheduler still running. Translate the
+  // signal into an ordinary quit so shutdown() reaps the server. Guarded to
+  // linux so the darwin path is untouched by construction.
+  if (process.platform === "linux") {
+    for (const sig of ["SIGTERM", "SIGINT"] as const) {
+      process.on(sig, () => app.quit());
+    }
+  }
 }
 
 async function startup(): Promise<void> {

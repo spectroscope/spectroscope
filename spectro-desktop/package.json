@@ -28,26 +28,69 @@
     "files": [
       "dist/**"
     ],
-    "extraResources": [
-      {
-        "from": "build/spectro-server.jar",
-        "to": "spectro-server.jar"
-      },
-      {
-        "from": "jre",
-        "to": "jre"
-      },
-      {
-        "from": "bin",
-        "to": "bin"
-      }
-    ],
     "mac": {
       "icon": "icon.icns",
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extraResources": [
+        {
+          "from": "build/spectro-server.jar",
+          "to": "spectro-server.jar"
+        },
+        {
+          "from": "jre",
+          "to": "jre"
+        },
+        {
+          "from": "bin",
+          "to": "bin"
+        }
+      ]
+    },
+    "linux": {
+      "icon": "icon.png",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Development",
+      "maintainer": "Christopher Ezell <chris@spectroscope.ai>",
+      "synopsis": "the agent orchestrator you can watch",
+      "extraResources": [
+        {
+          "from": "build/spectro-server.jar",
+          "to": "spectro-server.jar"
+        },
+        {
+          "from": "jre-linux-x64",
+          "to": "jre"
+        },
+        {
+          "from": "bin-linux-x64",
+          "to": "bin"
+        }
+      ]
+    },
+    "appImage": {
+      "artifactName": "spectroscope-${version}-x86_64.AppImage"
+    },
+    "deb": {
+      "artifactName": "spectroscope_${version}_amd64.deb",
+      "packageName": "spectroscope",
+      "depends": [
+        "libgtk-3-0",
+        "libnotify4",
+        "libnss3",
+        "libxss1",
+        "libxtst6",
+        "xdg-utils",
+        "libatspi2.0-0",
+        "libuuid1",
+        "libsecret-1-0",
+        "libssl3 | libssl3t64"
+      ]
     }
   }
 }

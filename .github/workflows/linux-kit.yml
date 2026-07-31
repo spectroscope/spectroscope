@@ -1,0 +1,130 @@
+# linux-kit.yml — build the Linux desktop run kit (card 134): AppImage + .deb,
+# on demand, from any ref.
+#
+# Linux is the one desktop target CI can build END TO END: nothing is signed
+# at this layer (no Gatekeeper, no notarization), so a runner-built kit is the
+# real artifact — unlike the macOS DMG, which stays on the owner's machine for
+# the Developer ID.
+#
+# HONESTY RULE: only a kit built FROM A RELEASE TAG may ride a GitHub release.
+# A branch or SHA build stops at workflow artifacts — attaching a main-built
+# kit to a version tag would claim provenance the bytes do not have. That is
+# the only reason `contents: write` appears here, and the attach step is gated
+# on the dispatched ref literally being a vX.Y.Z tag.
+
+name: linux-kit
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, vX.Y.Z tag, or SHA)"
+        required: true
+        default: "main"
+
+# Write access exists ONLY for the tag-gated release attach at the bottom;
+# every other step just reads the checkout.
+permissions:
+  contents: write
+
+concurrency:
+  group: linux-kit-${{ github.event.inputs.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: spectro-desktop/package-lock.json
+
+      # Dependency caching only (~/.gradle), same discipline as gate.yml.
+      - uses: gradle/actions/setup-gradle@v4
+
+      # bootJar -> jlink -> pinned llama-server closure (the closure check
+      # runs inside and FAILS the build on any out-of-bundle load path) ->
+      # PTY helper -> electron-builder AppImage + deb.
+      - name: Build the Linux run kit
+        run: ./scripts/build-linux-runkit.sh
+
+      # The check already gated the build; re-running it as its own step makes
+      # the card-100 guarantee a visible green line in the run log.
+      - name: Re-verify the llama-server closure
+        run: ./scripts/fetch-llama-server-linux.sh --verify-only
+
+      # Boot smoke, deb edition: install like a user would, launch headless,
+      # wait for the JVM child's /api/health, then quit and prove the JVM is
+      # reaped (the exact orphan risk the SIGTERM branch in main.ts exists for).
+      - name: xvfb smoke — deb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb dbus dbus-x11 \
+            ./spectro-desktop/release/spectroscope_*_amd64.deb
+          ./scripts/smoke-linux-kit.sh deb
+
+      - name: xvfb smoke — AppImage (extracted, no FUSE)
+        run: ./scripts/smoke-linux-kit.sh appimage spectro-desktop/release/spectroscope-*-x86_64.AppImage
+
+      - name: sha256 manifest
+        working-directory: spectro-desktop/release
+        run: sha256sum spectroscope-*-x86_64.AppImage spectroscope_*_amd64.deb | tee SHA256SUMS.linux
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-kit-${{ github.run_id }}
+          path: |
+            spectro-desktop/release/spectroscope-*-x86_64.AppImage
+            spectro-desktop/release/spectroscope_*_amd64.deb
+            spectro-desktop/release/SHA256SUMS.linux
+          if-no-files-found: error
+
+      # See the honesty rule in the header: the gate is the DISPATCH INPUT —
+      # the bytes above were built from exactly this tag's tree, or this step
+      # does not run. The name check alone is spoofable (a BRANCH named
+      # vX.Y.Z would pass it), so the step also asserts the checked-out HEAD
+      # is the commit origin's TAG of that name points at. The release itself
+      # must already exist (the owner cuts releases; CI only ferries the
+      # Linux kit onto one).
+      - name: Attach to the GitHub release (tag builds only)
+        if: startsWith(github.event.inputs.ref, 'v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REF: ${{ github.event.inputs.ref }}
+        run: |
+          if ! printf '%s\n' "$REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "ref '$REF' is not a vX.Y.Z tag — skipping the release attach"
+            exit 0
+          fi
+          # Provenance is the commit, not the ref NAME: fetch the tag as it
+          # exists on origin right now and require HEAD to be exactly that
+          # commit. A branch named vX.Y.Z has no tag ref -> the fetch fails;
+          # a tag moved mid-build -> the SHAs differ. Both refuse loudly.
+          if ! git fetch --no-tags --force origin "refs/tags/$REF:refs/tags/$REF"; then
+            echo "::error::no tag '$REF' on origin — a branch of that name does not count; refusing the release attach"
+            exit 1
+          fi
+          HEAD_SHA="$(git rev-parse HEAD)"
+          TAG_SHA="$(git rev-parse "refs/tags/$REF^{commit}")"
+          if [ "$HEAD_SHA" != "$TAG_SHA" ]; then
+            echo "::error::checked-out HEAD $HEAD_SHA is not tag $REF ($TAG_SHA) — refusing the release attach"
+            exit 1
+          fi
+          echo "provenance ok: HEAD $HEAD_SHA == refs/tags/$REF"
+          gh release upload "$REF" \
+            spectro-desktop/release/spectroscope-*-x86_64.AppImage \
+            spectro-desktop/release/spectroscope_*_amd64.deb \
+            spectro-desktop/release/SHA256SUMS.linux \
+            --repo "$GITHUB_REPOSITORY" --clobber
