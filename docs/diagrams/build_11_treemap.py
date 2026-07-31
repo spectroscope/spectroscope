@@ -1,49 +1,139 @@
 #!/usr/bin/env python3
 """11 — Code inventory treemap: area proportional to lines of source.
 
-Counted 2026-07-16 on branch refactor-clean-code with:
-  find <module>/src/... -name '*.java'|'*.ts'|'*.tsx'|'*.css' | xargs wc -l
-Tests are drawn as dashed tiles inside their module. Deterministic layout
-(squarified treemap, fixed input order).
+Counted from the tree AT BUILD TIME (no hardcoded table — the numbers can
+never drift from the code again). The rule, same as the original 2026-07-16
+hand count:
+
+  newline count per file (wc -l), <module>/src/ only, main + tests.
+  Extensions per module: .java for the Java modules, .ts/.tsx/.css for
+  spectro-web and spectro-desktop, .c for the native PTY helper (an
+  extension added when native/ appeared), .sh + the ./spectro launcher
+  for the scripts group.
+
+Stated exclusions: everything outside <module>/src/ (build/, gradle/,
+docs/, samples/, node_modules/, module-root configs) never enters; the
+generated vite bundle under spectro-server/src/main/resources/static/ is
+excluded mechanically by the .java-only rule; non-source files inside
+spectro-web/src (.jsonl fixtures, .md, .txt licenses, .woff2 fonts) fall
+out via the extension rule. Tests are drawn as dashed tiles inside their
+module (web tests = *.test.ts/tsx, Java tests = src/test). Deterministic
+given a tree; the subtitle carries the build date.
 """
+
+from datetime import date
+from pathlib import Path
 
 import svg_common as C
 
-# (module, zone_color, [(tile, loc, is_test)])
-DATA = [
-    ("spectro-web", C.ZONE_FACE, [
-        ("components/", 3553, False), ("lab/", 2490, False),
-        ("prototype-en/", 1479, False), ("state/", 1112, False),
-        ("graph/", 1025, False), ("App + root", 587, False),
-        ("prototype/", 472, False), ("scenario/", 443, False),
-        ("markdown/", 319, False), ("workspace/", 235, False),
-        ("import/", 195, False), ("transport/", 146, False),
-        ("i18n/", 136, False), ("effects/", 57, False),
-        ("styles (css)", 4554, False), ("vitest suites", 2812, True),
-    ]),
-    ("spectro-core", C.ZONE_CORE, [
-        ("provider/", 1529, False), ("mcp/", 1118, False),
-        ("tools/", 904, False), ("subagents/", 858, False),
-        ("dev.spectroscope.core (root)", 598, False), ("session/", 502, False),
-        ("scheduler/", 502, False), ("config/", 475, False),
-        ("image/", 468, False), ("skills/", 229, False),
-        ("events/", 168, False), ("hooks/", 161, False),
-        ("permission/", 121, False), ("JUnit suites", 6291, True),
-    ]),
-    ("spectro-cli", C.ZONE_FACE, [
-        ("main", 3177, False), ("JUnit suites", 793, True),
-    ]),
-    ("spectro-server", C.ZONE_FACE, [
-        ("main", 1346, False), ("JUnit suites", 764, True),
-    ]),
-    ("spectro-mcp-notes", C.ZONE_EXT, [
-        ("main", 496, False), ("JUnit suites", 412, True),
-    ]),
-    ("spectro-desktop", C.ZONE_FACE, [("main.ts", 222, False)]),
-    ("launcher + scripts", C.ZONE_DISK, [
-        ("./spectro", 137, False), ("setup-stt/tts.sh", 185, False),
-    ]),
-]
+REPO = Path(__file__).resolve().parents[2]
+
+JAVA_EXT = {".java"}
+WEB_EXT = {".ts", ".tsx", ".css"}
+
+
+def _loc(p: Path) -> int:
+    return p.read_bytes().count(b"\n")
+
+
+def _java_module(name: str):
+    """(main_loc, [(test_loc, test_files, at_test_lines)])."""
+    main = sum(_loc(p) for p in sorted((REPO / name / "src/main").rglob("*.java")))
+    test = files = at = 0
+    for p in sorted((REPO / name / "src/test").rglob("*.java")):
+        test += _loc(p)
+        files += 1
+        at += sum(1 for ln in p.read_text(encoding="utf-8", errors="replace")
+                  .splitlines() if "@Test" in ln)
+    return main, test, files, at
+
+
+def _core_tiles():
+    """spectro-core main, rolled per package under dev.spectroscope.core."""
+    base = REPO / "spectro-core/src/main/java/dev/spectroscope"
+    rolled: dict[str, int] = {}
+    for p in sorted(base.rglob("*.java")):
+        rel = p.relative_to(base)
+        if rel.parts[0] != "core":
+            key = "dev.spectroscope (facade)"
+        elif len(rel.parts) == 2:
+            key = "dev.spectroscope.core (root)"
+        else:
+            key = rel.parts[1] + "/"
+        rolled[key] = rolled.get(key, 0) + _loc(p)
+    return [(k, v, False) for k, v in rolled.items() if v]
+
+
+def _web_tiles():
+    """spectro-web main per top-level src dir + one aggregated test tile."""
+    src = REPO / "spectro-web/src"
+    dirs: dict[str, int] = {}
+    root = test = test_files = 0
+    for p in sorted(src.rglob("*")):
+        if not (p.is_file() and p.suffix in WEB_EXT):
+            continue
+        n = _loc(p)
+        if p.name.endswith((".test.ts", ".test.tsx")):
+            test += n
+            test_files += 1
+            continue
+        rel = p.relative_to(src)
+        if len(rel.parts) == 1:
+            root += n
+        else:
+            dirs[rel.parts[0] + "/"] = dirs.get(rel.parts[0] + "/", 0) + n
+    tiles = [(k, v, False) for k, v in dirs.items() if v]
+    tiles.append(("App + root", root, False))
+    tiles.append(("vitest suites", test, True))
+    return tiles, test_files
+
+
+def count_tree():
+    """Build (DATA, TEST_NOTES) in the shape the layout has always eaten:
+    [(module, zone_color, [(tile, loc, is_test)])], notes keyed (module, tile)."""
+    notes: dict[tuple[str, str], str] = {}
+    data = []
+
+    web_tiles, web_test_files = _web_tiles()
+    data.append(("spectro-web", C.ZONE_FACE, web_tiles))
+    notes[("spectro-web", "vitest suites")] = f"{web_test_files} test files"
+
+    core_main, core_test, core_files, core_at = _java_module("spectro-core")
+    core_tiles = _core_tiles()
+    assert sum(v for _, v, _ in core_tiles) == core_main
+    data.append(("spectro-core", C.ZONE_CORE,
+                 core_tiles + [("JUnit suites", core_test, True)]))
+    notes[("spectro-core", "JUnit suites")] = f"{core_files} classes · {core_at} @Test"
+
+    for name, zone in [("spectro-server", C.ZONE_FACE),
+                       ("spectro-cli", C.ZONE_FACE),
+                       ("spectro-orchestrator", C.ZONE_CORE),
+                       ("spectro-mcp-notes", C.ZONE_EXT)]:
+        main, test, files, at = _java_module(name)
+        data.append((name, zone, [("main", main, False),
+                                  ("JUnit suites", test, True)]))
+        notes[(name, "JUnit suites")] = f"{files} classes · {at} @Test"
+
+    desk = [(p.name, _loc(p), False)
+            for p in sorted((REPO / "spectro-desktop/src").glob("*"))
+            if p.is_file() and p.suffix in WEB_EXT]
+    data.append(("spectro-desktop", C.ZONE_FACE, desk))
+
+    nat = [(p.name, _loc(p), False)
+           for p in sorted((REPO / "native").glob("*.c"))]
+    data.append(("native", C.ZONE_DISK, nat))
+
+    launcher = [("./spectro", _loc(REPO / "spectro"), False)]
+    launcher += [(p.name, _loc(p), False)
+                 for p in sorted((REPO / "scripts").glob("*.sh"))]
+    data.append(("launcher + scripts", C.ZONE_DISK, launcher))
+
+    # Descending order everywhere: squarify keeps its aspect ratios honest.
+    data = [(name, zone, sorted(tiles, key=lambda t: -t[1]))
+            for name, zone, tiles in data]
+    data.sort(key=lambda m: -sum(v for _, v, _ in m[2]))
+    return data, notes
+
 
 W, H_MAP, PAD = 1680, 880, 56
 
@@ -110,25 +200,20 @@ def _lay_row(row, scale, x, y, w, h):
 def build():
     mk = C.Markers("treemap")
     body = []
+    data, test_notes = count_tree()
     head, y0 = C.header(
         W, "spectroscope · architecture dossier · 11",
         "Code inventory.",
-        "Area proportional to lines of source (main + tests), counted per module and package on 2026-07-16.")
+        "Area proportional to lines of source (main + tests), counted from "
+        f"the tree at build time (this build: {date.today().isoformat()}).")
     body.append(head)
 
-    total = sum(v for _, _, tiles in DATA for _, v, _ in tiles)
+    total = sum(v for _, _, tiles in data for _, v, _ in tiles)
     modules = [((name, color, tiles), sum(v for _, v, _ in tiles))
-               for name, color, tiles in DATA]
+               for name, color, tiles in data]
     placed = squarify([(m, v) for m, v in modules],
                       PAD, y0, W - 2 * PAD, H_MAP)
 
-    TEST_NOTES = {
-        ("spectro-core", "JUnit suites"): "42 classes · 267 @Test",
-        ("spectro-web", "vitest suites"): "22 files · 244 cases",
-        ("spectro-cli", "JUnit suites"): "5 classes · 33 @Test",
-        ("spectro-server", "JUnit suites"): "6 classes · 30 @Test",
-        ("spectro-mcp-notes", "JUnit suites"): "4 classes · 18 @Test",
-    }
     unlabeled = []
     GAPM = 7
     for (name, color, tiles), (mx, my, mw, mh) in placed:
@@ -136,10 +221,16 @@ def build():
         mod_total = sum(v for _, v, _ in tiles)
         body.append(C.rect(mx, my, mw, mh, C.CARD_SOFT, C.STROKE, rx=10))
         loc_s = f"{mod_total:,} LOC"
-        name_w = C.est_w(name, 15, weight=700)
+        # est_w runs ~15% narrow on long bold lowercase names (measured on
+        # "spectro-orchestrator"); pad the estimate so the LOC never collides.
+        name_w = C.est_w(name, 15, weight=700) * 1.15
+        name_w13 = C.est_w(name, 13, weight=700) * 1.15
         if name_w + C.est_w(loc_s, 12.5) + 34 <= mw:
             body.append(C.text(mx + 12, my + 22, name, 15, C.WHITE, 700))
             body.append(C.text(mx + 12 + name_w + 10, my + 22, loc_s, 12.5, C.GREY_MID))
+        elif name_w13 + C.est_w(loc_s, 11) + 28 <= mw:
+            body.append(C.text(mx + 12, my + 22, name, 13, C.WHITE, 700))
+            body.append(C.text(mx + 12 + name_w13 + 8, my + 22, loc_s, 11, C.GREY_MID))
         elif name_w + 24 <= mw:
             body.append(C.text(mx + 12, my + 22, name, 15, C.WHITE, 700))
         elif C.est_w(name, 11.5, weight=700) + 16 <= mw:
@@ -161,7 +252,7 @@ def build():
             body.append(C.rect(tx, ty, tw, th, fill, color, rx=7, sw=1.1,
                                dash=dash))
             label, loc = tname, f"{v:,}"
-            note = TEST_NOTES.get((name, tname))
+            note = test_notes.get((name, tname))
             if tw > C.est_w(label, 13, True) + 14 and th > 44:
                 body.append(C.text(tx + 8, ty + 19, label, 13,
                                    C.GREY_LIGHT, mono=True))
@@ -174,26 +265,36 @@ def build():
                 body.append(C.text(tx + 6, ty + 15, label, 11,
                                    C.GREY_MID, mono=True))
             else:
-                unlabeled.append(f"{name} {label} ({v})")
+                unlabeled.append(f"{name} {label} ({v:,})")
 
     y_leg = y0 + H_MAP + 34
     body.append(C.legend(PAD, y_leg, [
-        (C.ZONE_CORE, "core library", "stroke"),
+        (C.ZONE_CORE, "libraries (core, orchestrator)", "stroke"),
         (C.ZONE_FACE, "faces (cli, server, web, desktop)", "stroke"),
         (C.ZONE_EXT, "example MCP server", "stroke"),
-        (C.ZONE_DISK, "launcher + scripts", "stroke"),
+        (C.ZONE_DISK, "launcher · scripts · native", "stroke"),
         (C.GREY_MID, "dashed tile = test code", "dash"),
     ]))
+    n_modules = sum(1 for name, _, _ in data if name.startswith("spectro-"))
     body.append(C.text(PAD, y_leg + 30,
-                       f"Total: {total:,} lines across 6 modules + launcher. "
-                       f"Gate on this state: 348 JUnit + 244 vitest, 0 failures.",
+                       f"Total: {total:,} lines across {n_modules} modules "
+                       f"+ launcher scripts + the native PTY helper, "
+                       f"counted from this tree at build time.",
                        13.5, C.GREY_MID))
+    body.append(C.text(PAD, y_leg + 50,
+                       "Rule: newline count per file under <module>/src — "
+                       ".java | .ts | .tsx | .css (native: .c, scripts: .sh); "
+                       "generated bundles and non-source files fall out via "
+                       "the extension rule.",
+                       12, C.GREY_DIM))
+    y_tail = y_leg + 50
     if unlabeled:
-        body.append(C.text(PAD, y_leg + 52,
-                           "Too small to label: " + " · ".join(unlabeled),
-                           11, C.GREY_DIM, mono=True))
+        for ln in C.wrap("Too small to label: " + " · ".join(unlabeled),
+                         11, W - 2 * PAD, mono=True):
+            y_tail += 20
+            body.append(C.text(PAD, y_tail, ln, 11, C.GREY_DIM, mono=True))
     body.append(C.provenance(W, y_leg + 30, "build_11_treemap.py"))
-    height = y_leg + 74
+    height = y_tail + 44
     return C.doc(W, height, f"<defs>{mk.defs()}</defs>" + "".join(body),
                  "treemap")
 
