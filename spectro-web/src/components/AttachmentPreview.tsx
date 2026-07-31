@@ -21,7 +21,12 @@ export async function downscaleImage(file: File, maxEdge = MAX_EDGE): Promise<Pe
   const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
   if (!(scale < 1 || file.size > REENCODE_OVER) || file.type === "image/gif") {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    return { name: file.name, mediaType: file.type, dataBase64: toBase64(bytes), sizeBytes: bytes.byteLength };
+    return {
+      name: file.name,
+      mediaType: file.type,
+      dataBase64: toBase64(bytes),
+      sizeBytes: bytes.byteLength,
+    };
   }
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -33,7 +38,12 @@ export async function downscaleImage(file: File, maxEdge = MAX_EDGE): Promise<Pe
     canvas.toBlob((b) => (b !== null ? res(b) : rej(new Error("toBlob returned null"))), "image/jpeg", 0.85),
   );
   const bytes = new Uint8Array(await blob.arrayBuffer());
-  return { name: file.name, mediaType: "image/jpeg", dataBase64: toBase64(bytes), sizeBytes: bytes.byteLength };
+  return {
+    name: file.name,
+    mediaType: "image/jpeg",
+    dataBase64: toBase64(bytes),
+    sizeBytes: bytes.byteLength,
+  };
 }
 
 // btoa needs a binary string; chunked, because String.fromCharCode(...hugeArray)
@@ -61,13 +71,11 @@ export function AttachmentPreview(props: {
     <div className="attach-strip" role="list" aria-label="Attached images">
       {props.attachments.map((a, i) => (
         <div key={`${a.name}-${i}`} className="attach-chip" role="listitem">
-          <img
-            className="attach-thumb"
-            src={`data:${a.mediaType};base64,${a.dataBase64}`}
-            alt={a.name}
-          />
+          <img className="attach-thumb" src={`data:${a.mediaType};base64,${a.dataBase64}`} alt={a.name} />
           <div className="attach-meta">
-            <span className="attach-name" title={a.name}>{a.name}</span>
+            <span className="attach-name" title={a.name}>
+              {a.name}
+            </span>
             <span className="attach-size">{formatSize(a.sizeBytes)}</span>
           </div>
           <button
@@ -76,8 +84,16 @@ export function AttachmentPreview(props: {
             aria-label={`Remove ${a.name}`}
             onClick={() => props.onRemove(i)}
           >
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor"
-              strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+            <svg
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>

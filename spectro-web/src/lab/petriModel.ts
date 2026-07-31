@@ -98,7 +98,8 @@ export function fire(marking: Marking, event: RunEvent): { marking: Marking; fir
       return { marking: next, firing: move("done", "llm", "user") };
     case "error": {
       // The run collapses back to the user from wherever the token sits.
-      const from: Place | null = next.llm > 0 ? "llm" : next.tool > 0 ? "tool" : next.gate > 0 ? "gate" : null;
+      const from: Place | null =
+        next.llm > 0 ? "llm" : next.tool > 0 ? "tool" : next.gate > 0 ? "gate" : null;
       return {
         marking: next,
         firing: from !== null ? move("error", from, "user", true) : pulse("error", "user", true),

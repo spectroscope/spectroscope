@@ -3,11 +3,17 @@
 // honestly (chronology wins over tidiness).
 import { describe, expect, it } from "vitest";
 import type { AgentInfo, ToolCard, Turn } from "./reducer";
-import { groupTurns, type ChatBlock } from "./threads";
+import { groupTurns, groupTurnsV2, type ChatBlock, type ChatBlockV2 } from "./threads";
 
 const worker: AgentInfo = {
-  id: "worker-1", parentId: "main", label: "build_plan", task: "Plan the flag",
-  state: "working", lastStatus: null, inTokens: 0, outTokens: 0,
+  id: "worker-1",
+  parentId: "main",
+  label: "build_plan",
+  task: "Plan the flag",
+  state: "working",
+  lastStatus: null,
+  inTokens: 0,
+  outTokens: 0,
 };
 
 const cards: Record<string, ToolCard> = {
@@ -59,11 +65,50 @@ describe("groupTurns", () => {
   });
 
   it("an unknown child still threads, with an empty task", () => {
-    const blocks2 = groupTurns(
-      [{ kind: "assistant", agentId: "ghost-9", text: "hi", thinking: "" }], {}, []);
+    const blocks2 = groupTurns([{ kind: "assistant", agentId: "ghost-9", text: "hi", thinking: "" }], {}, []);
     const th = blocks2[0] as Extract<ChatBlock, { kind: "thread" }>;
     expect(th.kind).toBe("thread");
     expect(th.task).toBe("");
     expect(th.label).toBeNull();
+  });
+});
+
+describe("groupTurnsV2", () => {
+  const blocks = groupTurnsV2(turns, cards);
+
+  it("keeps main turns flat and replaces the child's turns with one chip", () => {
+    const kinds = blocks.map((b) => (b.kind === "turn" ? b.turn.kind : "chip"));
+    // v1 on this exact fixture yields ["user","assistant","thread","assistant","thread","tool"]:
+    // the SAME child appears twice because main streamed between its bursts.
+    expect(kinds).toEqual(["user", "assistant", "chip", "assistant", "tool"]);
+  });
+
+  it("the chip names the work item and sits where the child first spoke", () => {
+    const chip = blocks[2] as Extract<ChatBlockV2, { kind: "chip" }>;
+    expect(chip.workIds).toEqual(["worker-1"]);
+    expect(chip.index).toBe(2);
+  });
+
+  it("a later burst from an already-chipped child leaves no second chip", () => {
+    expect(blocks.filter((b) => b.kind === "chip")).toHaveLength(1);
+  });
+
+  it("a fan-out that starts together leaves ONE chip naming every child", () => {
+    const fan: Turn[] = [
+      { kind: "user", text: "review" },
+      { kind: "assistant", agentId: "w1", text: "", thinking: "a" },
+      { kind: "assistant", agentId: "w2", text: "", thinking: "b" },
+      { kind: "assistant", agentId: "w3", text: "", thinking: "c" },
+      { kind: "assistant", agentId: "main", text: "back", thinking: "" },
+    ];
+    const out = groupTurnsV2(fan, {});
+    expect(out.map((b) => b.kind)).toEqual(["turn", "chip", "turn"]);
+    const chip = out[1] as Extract<ChatBlockV2, { kind: "chip" }>;
+    expect(chip.workIds).toEqual(["w1", "w2", "w3"]);
+  });
+
+  it("a transcript with no children is untouched", () => {
+    const only: Turn[] = [{ kind: "user", text: "hi" }];
+    expect(groupTurnsV2(only, {})).toEqual([{ kind: "turn", turn: only[0], index: 0 }]);
   });
 });

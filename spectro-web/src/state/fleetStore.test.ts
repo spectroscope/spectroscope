@@ -1,7 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import {
   fleetPushLive,
+  fleetLoadScenario,
   hydrateFleet,
+  removeFleet,
   fleetPending,
   __getFleet,
   __getFleets,
@@ -24,8 +26,15 @@ function eventFrame(sender: string, epoch: number): FleetFrame {
   return {
     type: "fleet_event",
     frame: {
-      sender, epoch, contextId: "c", taskId: "t", sequence: 0, parentId: null,
-      topic: "run." + sender, ts: 1, payload: { type: "text_delta", agentId: sender, text: "x", ts: 1 },
+      sender,
+      epoch,
+      contextId: "c",
+      taskId: "t",
+      sequence: 0,
+      parentId: null,
+      topic: "run." + sender,
+      ts: 1,
+      payload: { type: "text_delta", agentId: sender, text: "x", ts: 1 },
     },
   };
 }
@@ -83,9 +92,73 @@ describe("fleetStore", () => {
   });
 
   it("never throws when the probe fails", async () => {
-    __setTestHooks({ fetch: async () => { throw new Error("network down"); } });
+    __setTestHooks({
+      fetch: async () => {
+        throw new Error("network down");
+      },
+    });
     await hydrateFleet();
     expect(__getFleet().roster).toEqual([]);
+  });
+
+  it("hydrates each node's ring replay too — a parked gate is visible to a fresh browser", async () => {
+    // The roster alone cannot show a gate parked BEFORE this browser opened;
+    // the aggregator holds the ring, so hydration pulls /api/fleet/{node}/events
+    // per node and folds the frames like live ones.
+    const gate: RunEvent = {
+      type: "permission_request",
+      agentId: "security-1",
+      callId: "g1",
+      name: "write_file",
+      input: {},
+      ts: 5,
+    };
+    __setTestHooks({
+      fetch: async (url) => {
+        const path = String(url);
+        if (path.endsWith("/api/fleet")) {
+          return fakeResponse({ enabled: true, nodes: [node("security-1")] });
+        }
+        if (path.endsWith("/api/fleet/security-1/events")) {
+          return fakeResponse({
+            node: "security-1",
+            events: [
+              {
+                sender: "security-1",
+                epoch: 7,
+                contextId: "pr-42",
+                taskId: "t",
+                sequence: 3,
+                parentId: null,
+                topic: "run.security-1",
+                ts: 5,
+                payload: gate,
+              },
+            ],
+          });
+        }
+        throw new Error("unexpected fetch " + path);
+      },
+    });
+    await hydrateFleet();
+    expect(__getFleet().events).toEqual([gate]);
+    expect(__getFleets().some((f) => f.pendingGate)).toBe(true);
+  });
+
+  it("drops a live frame the hydration already delivered (same sender/epoch/sequence)", async () => {
+    const frame = eventFrame("a", 2);
+    __setTestHooks({
+      fetch: async (url) => {
+        const path = String(url);
+        if (path.endsWith("/api/fleet")) {
+          return fakeResponse({ enabled: true, nodes: [node("a")] });
+        }
+        return fakeResponse({ node: "a", events: [(frame as { frame: unknown }).frame] });
+      },
+    });
+    await hydrateFleet();
+    fleetPushLive([frame as unknown as RunEvent]); // the socket redelivers it
+    expect(__getFleet().events).toHaveLength(1);
   });
 });
 
@@ -99,18 +172,39 @@ function ctxEvent(sender: string, ctx: string, sequence: number, payload: RunEve
   return {
     type: "fleet_event",
     frame: {
-      sender, epoch: 0, contextId: ctx, taskId: "t", sequence, parentId: null,
-      topic: ctx + ".events", ts: payload.ts, payload,
+      sender,
+      epoch: 0,
+      contextId: ctx,
+      taskId: "t",
+      sequence,
+      parentId: null,
+      topic: ctx + ".events",
+      ts: payload.ts,
+      payload,
     },
   };
 }
 
-const delta = (sender: string, text: string): RunEvent =>
-  ({ type: "text_delta", agentId: sender, text, ts: 1 });
-const gateRequest = (sender: string, callId: string, ts: number): RunEvent =>
-  ({ type: "permission_request", agentId: sender, callId, name: "run_command", input: {}, ts });
-const gateDecision = (callId: string, allowed: boolean, ts: number): RunEvent =>
-  ({ type: "permission_decision", callId, allowed, ts });
+const delta = (sender: string, text: string): RunEvent => ({
+  type: "text_delta",
+  agentId: sender,
+  text,
+  ts: 1,
+});
+const gateRequest = (sender: string, callId: string, ts: number): RunEvent => ({
+  type: "permission_request",
+  agentId: sender,
+  callId,
+  name: "run_command",
+  input: {},
+  ts,
+});
+const gateDecision = (callId: string, allowed: boolean, ts: number): RunEvent => ({
+  type: "permission_decision",
+  callId,
+  allowed,
+  ts,
+});
 
 describe("fleetStore multi-fleet keying", () => {
   beforeEach(() => __resetForTests());
@@ -131,7 +225,10 @@ describe("fleetStore multi-fleet keying", () => {
 
   it("summarizes agent/online counts and a pending gate per fleet", () => {
     fleetPushLive([
-      { type: "fleet_roster", nodes: [ctxNode("a", "ctxA", true), ctxNode("b", "ctxA", false)] } as unknown as RunEvent,
+      {
+        type: "fleet_roster",
+        nodes: [ctxNode("a", "ctxA", true), ctxNode("b", "ctxA", false)],
+      } as unknown as RunEvent,
       ctxEvent("a", "ctxA", 0, gateRequest("a", "c1", 2)) as unknown as RunEvent,
     ]);
     const summary = __getFleets().find((f) => f.contextId === "ctxA")!;
@@ -177,14 +274,26 @@ describe("fleetPending", () => {
     // an operator can answer it (agentId names the node the answer POSTs to).
     const pending = fleetPending(
       model([
-        { type: "permission_request", agentId: "node-a", callId: "c1", name: "write_file", input: { path: "a.txt" }, ts: 1 },
-        { type: "permission_request", agentId: "node-b", callId: "c2", name: "run_command", input: { cmd: "ls" }, ts: 2 },
+        {
+          type: "permission_request",
+          agentId: "node-a",
+          callId: "c1",
+          name: "write_file",
+          input: { path: "a.txt" },
+          ts: 1,
+        },
+        {
+          type: "permission_request",
+          agentId: "node-b",
+          callId: "c2",
+          name: "run_command",
+          input: { cmd: "ls" },
+          ts: 2,
+        },
         { type: "permission_decision", callId: "c1", allowed: true, ts: 3 },
       ]),
     );
-    expect(pending).toEqual([
-      { callId: "c2", agentId: "node-b", name: "run_command", input: { cmd: "ls" } },
-    ]);
+    expect(pending).toEqual([{ callId: "c2", agentId: "node-b", name: "run_command", input: { cmd: "ls" } }]);
   });
 
   it("keeps the parked order — first-parked first (the queue the GateBar shows)", () => {
@@ -207,5 +316,112 @@ describe("fleetPending", () => {
         ]),
       ),
     ).toEqual([]);
+  });
+
+  describe("fleetLoadScenario", () => {
+    const evs: RunEvent[] = [
+      { type: "run_start", runId: "s-main", agentId: "main", prompt: "go", ts: 1 },
+      { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "a", ts: 2 },
+      { type: "agent_spawn", agentId: "worker-2", parentId: "main", task: "b", ts: 3 },
+      { type: "text_delta", agentId: "worker-1", text: "hi", ts: 4 },
+    ];
+
+    it("folds a compiled scenario into a fleet model under its contextId", () => {
+      fleetLoadScenario("scenario:demo", evs);
+      const fleet = __getFleetOf("scenario:demo");
+      expect(fleet.events).toHaveLength(evs.length);
+      // roster derived from the agents; roles from the ids (worker-N → worker).
+      const byId = new Map(fleet.roster.map((n) => [n.id, n]));
+      expect(byId.get("main")?.role).toBe("root");
+      expect(byId.get("worker-1")?.role).toBe("worker");
+      expect(byId.get("worker-2")?.role).toBe("worker");
+      // it is a replay, not a live hub — nothing connected.
+      expect(fleet.roster.every((n) => !n.connected)).toBe(true);
+    });
+
+    it("shows up in the fleet summaries list", () => {
+      fleetLoadScenario("scenario:demo", evs);
+      expect(__getFleets().some((s) => s.contextId === "scenario:demo")).toBe(true);
+    });
+
+    it("is idempotent — re-loading replaces, never doubles, the frames", () => {
+      fleetLoadScenario("scenario:demo", evs);
+      fleetLoadScenario("scenario:demo", evs);
+      expect(__getFleetOf("scenario:demo").events).toHaveLength(evs.length);
+    });
+
+    it("coexists with a live fleet under a different contextId", () => {
+      fleetPushLive([eventFrame("node-a", 0)] as unknown as RunEvent[]);
+      fleetLoadScenario("scenario:demo", evs);
+      expect(__getFleetOf("c").events.length).toBeGreaterThan(0); // the live one survives
+      expect(__getFleetOf("scenario:demo").events).toHaveLength(evs.length);
+    });
+  });
+});
+
+describe("removeFleet — dropping a finished fleet from the list (owner)", () => {
+  beforeEach(() => __resetForTests());
+
+  it("removes the context's frames and summaries; other fleets stay", () => {
+    fleetPushLive([
+      {
+        type: "fleet_event",
+        frame: {
+          sender: "a",
+          epoch: 0,
+          contextId: "done-fleet",
+          taskId: "t",
+          sequence: 0,
+          parentId: null,
+          topic: "done-fleet.events",
+          ts: 1,
+          payload: { type: "text_delta", agentId: "a", text: "x", ts: 1 },
+        },
+      } as unknown as RunEvent,
+      {
+        type: "fleet_event",
+        frame: {
+          sender: "b",
+          epoch: 0,
+          contextId: "other",
+          taskId: "t",
+          sequence: 0,
+          parentId: null,
+          topic: "other.events",
+          ts: 1,
+          payload: { type: "text_delta", agentId: "b", text: "y", ts: 1 },
+        },
+      } as unknown as RunEvent,
+    ]);
+    expect(
+      __getFleets()
+        .map((f) => f.contextId)
+        .sort(),
+    ).toEqual(["done-fleet", "other"]);
+    removeFleet("done-fleet");
+    expect(__getFleets().map((f) => f.contextId)).toEqual(["other"]);
+    // Its envelope identities are forgotten too — a re-run of the same fleet
+    // (same context, same sequences) folds fresh instead of being deduped away.
+    fleetPushLive([
+      {
+        type: "fleet_event",
+        frame: {
+          sender: "a",
+          epoch: 0,
+          contextId: "done-fleet",
+          taskId: "t",
+          sequence: 0,
+          parentId: null,
+          topic: "done-fleet.events",
+          ts: 2,
+          payload: { type: "text_delta", agentId: "a", text: "again", ts: 2 },
+        },
+      } as unknown as RunEvent,
+    ]);
+    expect(
+      __getFleets()
+        .map((f) => f.contextId)
+        .sort(),
+    ).toEqual(["done-fleet", "other"]);
   });
 });

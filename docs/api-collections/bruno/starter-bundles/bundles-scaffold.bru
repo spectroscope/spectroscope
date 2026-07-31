@@ -1,0 +1,32 @@
+meta {
+  name: scaffold a bundle
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/bundles/{{bundleId}}/scaffold
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "dir": "{{scaffoldDir}}",
+    "build": "gradle"
+  }
+}
+
+docs {
+  Write the bundle's files into a picked folder; refuses overwrites (409 with conflicts), rejects escaping paths. 200 {written, dir}. Answers 400 (Not a folder) until the target dir exists — the default {{scaffoldDir}} (/tmp/spectro-scaffold) is not created for you.
+  
+  Body: {dir: string (required, existing folder), build: string (optional)}.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

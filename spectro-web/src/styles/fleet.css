@@ -180,6 +180,33 @@
   min-height: 460px;
   width: 100%;
 }
+/* Graph reading: aggregated (groups) vs expanded (every agent). Top-left,
+   above the pane so a drag on it never pans the canvas. */
+.fleet-mode {
+  position: absolute;
+  top: var(--sp-2);
+  left: var(--sp-2);
+  z-index: 5;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+.fleet-mode-btn {
+  background: none;
+  border: 0;
+  border-radius: 999px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.fleet-mode-btn:hover { color: var(--text-dim); }
+.fleet-mode-btn--on { background: var(--surface-3); color: var(--text); }
 .fleet-node-card {
   width: 208px;
   box-sizing: border-box;
@@ -297,3 +324,180 @@
 .fleet-canvas .react-flow__controls-button:hover {
   background: var(--surface-3);
 }
+
+/* ---- fleet control: the spawn panel (a React Flow Panel over the canvas) +
+   the per-node stop button. Token-based, no shadows. ---- */
+/* ---- fleet home: the chat-tab getting-started panel for an entered fleet ---- */
+.fleet-home {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: var(--sp-5) var(--sp-3);
+}
+.fleet-home-inner { width: 100%; max-width: 560px; }
+.fleet-home-eyebrow { margin: 0; font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
+.fleet-home-title { margin: 2px 0 var(--sp-2); font-size: var(--fs-18); color: var(--text); }
+.fleet-home-lead { margin: 0 0 var(--sp-4); font-size: var(--fs-13); line-height: 1.55; color: var(--text-dim); }
+.fleet-home-card { border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--shade); padding: var(--sp-3); }
+.fleet-home-card-label { margin: 0 0 var(--sp-2); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.fleet-home-code { display: flex; align-items: center; gap: var(--sp-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); padding: var(--sp-2); }
+.fleet-home-code code { flex: 1; min-width: 0; font-size: var(--fs-11); color: var(--text-dim); overflow-x: auto; white-space: nowrap; }
+.fleet-home-copy { flex: none; background: none; border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text-faint); font: inherit; font-size: var(--fs-11); padding: 2px var(--sp-2); cursor: pointer; }
+.fleet-home-copy:hover { color: var(--text); border-color: var(--accent); }
+.fleet-home-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); }
+.fleet-home-spawn { background: none; border: 1px solid var(--accent); border-radius: var(--radius-chip); color: var(--accent); font: inherit; font-size: var(--fs-12); padding: var(--sp-1) var(--sp-2); cursor: pointer; }
+.fleet-home-spawn:hover { filter: brightness(1.1); }
+.fleet-home-link { font-size: var(--fs-12); color: var(--text-faint); text-decoration: none; }
+.fleet-home-link:hover { color: var(--accent); }
+
+.fleet-spawn { margin: 8px; }
+.fleet-spawn-open {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.fleet-spawn-open:hover { color: var(--text); border-color: var(--accent); }
+.fleet-spawn-panel {
+  width: 320px;
+  max-width: 78vw;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.fleet-spawn-head { display: flex; align-items: center; justify-content: space-between; }
+.fleet-spawn-title { font-size: var(--fs-12); color: var(--text); text-transform: lowercase; letter-spacing: 0.02em; }
+.fleet-spawn-close {
+  background: none; border: 0; color: var(--text-dim); font-size: var(--fs-20); line-height: 1; cursor: pointer;
+}
+.fleet-spawn-close:hover { color: var(--text); }
+.fleet-spawn-field { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; }
+.fleet-spawn-field > span { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.fleet-spawn-field textarea, .fleet-spawn-field input,
+.fleet-spawn-role-select, .fleet-spawn-role-custom {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: var(--sp-1) var(--sp-2);
+  resize: vertical;
+}
+.fleet-spawn-role-select, .fleet-spawn-role-custom { width: 100%; }
+.fleet-spawn-role-custom { margin-top: 3px; }
+.fleet-spawn-field textarea:focus, .fleet-spawn-field input:focus,
+.fleet-spawn-role-select:focus, .fleet-spawn-role-custom:focus { outline: none; border-color: var(--accent); }
+.fleet-spawn-row { display: flex; gap: var(--sp-2); }
+.fleet-spawn-check { display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono); font-size: var(--fs-12); color: var(--text-dim); align-self: flex-end; padding-bottom: 4px; }
+.fleet-spawn-go {
+  margin-top: 2px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  font: inherit; font-size: var(--fs-12);
+  padding: var(--sp-2);
+  cursor: pointer;
+  transition: filter var(--t-fast);
+}
+.fleet-spawn-go:hover:not(:disabled) { filter: brightness(1.08); }
+.fleet-spawn-go:disabled { opacity: 0.5; cursor: default; }
+.fleet-spawn-status { margin: 0; font-size: var(--fs-11); font-family: var(--font-mono); }
+.fleet-spawn-status--ok { color: var(--ok); }
+.fleet-spawn-status--error { color: var(--error); }
+.fleet-spawn-why {
+  margin: var(--sp-1) 0 0;
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  color: var(--text-faint);
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+.fleet-spawn-cli-perm { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.fleet-spawn-perm {
+  font-family: var(--font-mono); font-size: var(--fs-11);
+  background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-chip);
+  color: var(--text-dim); padding: 1px var(--sp-2); cursor: pointer;
+}
+.fleet-spawn-perm--on { color: var(--accent); border-color: var(--accent); }
+.fleet-spawn-perm-hint { font-size: var(--fs-11); color: var(--text-faint); }
+.fleet-spawn-cli {
+  display: flex; align-items: stretch; gap: var(--sp-2);
+  background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip);
+  padding: var(--sp-2);
+}
+.fleet-spawn-cli code { flex: 1; min-width: 0; font-size: var(--fs-11); color: var(--text-dim); overflow-x: auto; white-space: nowrap; }
+.fleet-spawn-copy {
+  flex: none; align-self: center;
+  font-family: var(--font-mono); font-size: var(--fs-11);
+  background: none; border: 1px solid var(--border-strong); border-radius: var(--radius-chip);
+  color: var(--text-dim); padding: 2px var(--sp-2); cursor: pointer;
+}
+.fleet-spawn-copy:hover { color: var(--text); border-color: var(--accent); }
+
+.fleet-node-stop {
+  margin-left: auto;
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font-size: var(--fs-14);
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  transition: color var(--t-fast);
+}
+.fleet-node-stop:hover { color: var(--error); }
+
+/* ---- spawn from the sidebar: a modal (reusing .fleet-spawn-panel) so the FIRST
+   node is startable even from the empty state, and the empty-state CTA. ---- */
+.fleet-spawn-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-4);
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(3px);
+}
+.fleet-spawn-modal .fleet-spawn-panel {
+  width: 400px;
+  max-width: 92vw;
+}
+.sidebar-spawn {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.fleet-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+}
+.fleet-empty-spawn {
+  margin: var(--sp-1) 0 0 var(--sp-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-chip);
+  color: var(--text);
+  padding: var(--sp-2) var(--sp-3);
+  cursor: pointer;
+  transition: filter var(--t-fast);
+}
+.fleet-empty-spawn:hover { filter: brightness(1.08); }

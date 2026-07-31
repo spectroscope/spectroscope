@@ -6,6 +6,7 @@
 import { useState } from "react";
 import type { GeneratedImage } from "../state/reducer";
 import { t } from "../i18n/i18n";
+import { imageUrl, isDemoImage } from "../lab/flowmap/imageUrl";
 import { useLang } from "../state/lang";
 
 /** The blob store is addressed by file name only — strip the directory part. */
@@ -51,24 +52,27 @@ export function ImagePanel(props: {
         return;
       }
       const body = (await res.json().catch(() => null)) as { message?: string } | null;
-      window.alert(t(lang, "img.copyFailed") + (body?.message ? ` ${body.message}` : ` (HTTP ${res.status})`));
+      window.alert(
+        t(lang, "img.copyFailed") + (body?.message ? ` ${body.message}` : ` (HTTP ${res.status})`),
+      );
     } catch {
       window.alert(t(lang, "img.copyFailed"));
     }
   };
 
   return (
-    <aside className="image-panel" style={props.width !== undefined ? { width: props.width } : undefined} aria-label={t(lang, "img.aria")}>
+    <aside
+      className="image-panel"
+      style={props.width !== undefined ? { width: props.width } : undefined}
+      aria-label={t(lang, "img.aria")}
+    >
       <div className="image-panel-head">
         <span className="eyebrow">{t(lang, "img.title")}</span>
         <span className="badge tabular">{props.images.length}</span>
 
         <label className="image-provider">
           <span className="image-provider-label">Provider</span>
-          <select
-            value={props.provider}
-            onChange={(e) => props.onProviderChange(e.target.value)}
-          >
+          <select value={props.provider} onChange={(e) => props.onProviderChange(e.target.value)}>
             <option value="gemini">
               gemini{props.keys && !props.keys.gemini ? ` · ${t(lang, "img.noKey")}` : ""}
             </option>
@@ -104,7 +108,7 @@ export function ImagePanel(props: {
           <p className="image-panel-empty">{t(lang, "img.empty")}</p>
         ) : (
           newestFirst.map((image) => {
-            const url = `/api/images/${fileName(image.blobPath)}`;
+            const url = imageUrl(image.blobPath);
             return (
               <a
                 key={image.callId}
@@ -119,7 +123,7 @@ export function ImagePanel(props: {
                 <span className="image-meta">
                   <span className="badge">{image.provider}</span>
                   <span className="mono image-model">{image.model}</span>
-                  {props.sessionId !== undefined && (
+                  {props.sessionId !== undefined && !isDemoImage(image.blobPath) && (
                     <button
                       type="button"
                       className="image-copy"

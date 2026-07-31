@@ -1,0 +1,218 @@
+/* The export dialog: options on the left, a real preview on the right.
+
+   Imported from ExportDialog.tsx rather than from app.css, on the FlowMap
+   precedent — app.css is the shared entry and this surface is self-contained.
+
+   Colours are tokens only. The preview frame deliberately does NOT inherit the
+   app's palette: it shows the document in the theme that was CHOSEN, which is
+   frequently not the theme the app is wearing, and that difference is the whole
+   point of the control. */
+
+.xd-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--scrim);
+}
+
+.xd-modal {
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, 100%);
+  max-height: min(760px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-modal, 20px);
+  background: var(--surface);
+  box-shadow: var(--shadow-modal);
+}
+
+.xd-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 16px 20px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.xd-title {
+  margin: 0;
+  font-size: var(--fs-16, 16px);
+  font-weight: 500;
+}
+
+.xd-sub {
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11, 11px);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.xd-close {
+  margin-left: auto;
+}
+
+.xd-body {
+  display: grid;
+  grid-template-columns: minmax(280px, 340px) 1fr;
+  gap: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.xd-options {
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  border-right: 1px solid var(--border);
+}
+
+.xd-group + .xd-group {
+  margin-top: 20px;
+}
+
+.xd-legend {
+  margin: 0 0 8px;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11, 11px);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.xd-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 4px 0;
+  cursor: pointer;
+  line-height: 1.45;
+}
+
+.xd-row input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+  flex: none;
+}
+
+.xd-row--disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.xd-name {
+  font-size: var(--fs-13, 13px);
+}
+
+.xd-hint {
+  display: block;
+  color: var(--text-dim);
+  font-size: var(--fs-12, 12px);
+}
+
+/* A cost printed where the choice is made. Never a generic caution — the
+   numbers come off the stream in front of the reader. */
+.xd-loss {
+  margin: 6px 0 0 24px;
+  padding: 6px 10px;
+  border-left: 2px solid var(--warn);
+  background: var(--warn-soft, transparent);
+  color: var(--text-dim);
+  font-size: var(--fs-12, 12px);
+}
+
+.xd-loss li {
+  margin: 2px 0;
+}
+
+.xd-loss ul {
+  margin: 0;
+  padding-left: 16px;
+}
+
+.xd-lossless {
+  margin: 6px 0 0 24px;
+  color: var(--ok);
+  font-size: var(--fs-12, 12px);
+}
+
+.xd-preview-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: var(--surface-2);
+}
+
+.xd-preview-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11, 11px);
+}
+
+.xd-bounded {
+  color: var(--warn);
+}
+
+.xd-frame {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: 0;
+  background: #fff;
+}
+
+.xd-print-frame {
+  position: absolute;
+  width: 0;
+  height: 0;
+  border: 0;
+  visibility: hidden;
+}
+
+.xd-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.xd-foot-note {
+  color: var(--text-faint);
+  font-size: var(--fs-12, 12px);
+  margin-right: auto;
+}
+
+.xd-actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .xd-body {
+    grid-template-columns: 1fr;
+  }
+
+  .xd-options {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* The preview is the first thing to go when there is no room for it: a
+     squeezed 120px frame teaches nothing, and the options still have to work. */
+  .xd-preview-wrap {
+    min-height: 240px;
+  }
+}

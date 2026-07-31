@@ -13,23 +13,75 @@ type Parallel = Extract<OverviewNode, { t: "parallel" }>;
  *  (gated write inside the child) → wrapper result → final answer → end. */
 function spawnSession(): RunEvent[] {
   return [
-    { type: "run_start", runId: "r1", agentId: "main", prompt: "Plan the version flag, then implement it step by step", ts: 1 },
+    {
+      type: "run_start",
+      runId: "r1",
+      agentId: "main",
+      prompt: "Plan the version flag, then implement it step by step",
+      ts: 1,
+    },
     { type: "turn_start", agentId: "main", turn: 1, ts: 2 },
     { type: "thinking_delta", agentId: "main", text: "I should delegate the plan.", ts: 3 },
     { type: "text_delta", agentId: "main", text: "Delegating to a planner.", ts: 4 },
-    { type: "tool_call", agentId: "main", callId: "c1", name: "build_plan", input: { task: "Plan the flag" }, ts: 5 },
+    {
+      type: "tool_call",
+      agentId: "main",
+      callId: "c1",
+      name: "build_plan",
+      input: { task: "Plan the flag" },
+      ts: 5,
+    },
     { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "Plan the flag", ts: 6 },
-    { type: "agent_message", from: "main", to: "worker-1", role: "task", state: "submitted", text: "Plan the flag", label: "plan", ts: 7 },
+    {
+      type: "agent_message",
+      from: "main",
+      to: "worker-1",
+      role: "task",
+      state: "submitted",
+      text: "Plan the flag",
+      label: "plan",
+      ts: 7,
+    },
     { type: "run_start", runId: "rc", agentId: "worker-1", parentId: "main", prompt: "Plan the flag", ts: 8 },
     { type: "turn_start", agentId: "worker-1", turn: 1, ts: 9 },
     { type: "thinking_delta", agentId: "worker-1", text: "Sketching the plan.", ts: 10 },
-    { type: "tool_call", agentId: "worker-1", callId: "k1", name: "write_file", input: { path: "docs/plan.md", content: "…" }, ts: 11 },
-    { type: "permission_request", agentId: "worker-1", callId: "k1", name: "write_file", input: { path: "docs/plan.md" }, ts: 12 },
+    {
+      type: "tool_call",
+      agentId: "worker-1",
+      callId: "k1",
+      name: "write_file",
+      input: { path: "docs/plan.md", content: "…" },
+      ts: 11,
+    },
+    {
+      type: "permission_request",
+      agentId: "worker-1",
+      callId: "k1",
+      name: "write_file",
+      input: { path: "docs/plan.md" },
+      ts: 12,
+    },
     { type: "permission_decision", callId: "k1", allowed: true, ts: 13 },
-    { type: "tool_result", agentId: "worker-1", callId: "k1", output: "Wrote: docs/plan.md", isError: false, durationMs: 5, ts: 14 },
+    {
+      type: "tool_result",
+      agentId: "worker-1",
+      callId: "k1",
+      output: "Wrote: docs/plan.md",
+      isError: false,
+      durationMs: 5,
+      ts: 14,
+    },
     { type: "text_delta", agentId: "worker-1", text: "Plan written.", ts: 15 },
     { type: "run_end", runId: "rc", stopReason: "end_turn", ts: 16 },
-    { type: "tool_result", agentId: "main", callId: "c1", output: "Plan written.", isError: false, durationMs: 900, ts: 17 },
+    {
+      type: "tool_result",
+      agentId: "main",
+      callId: "c1",
+      output: "Plan written.",
+      isError: false,
+      durationMs: 900,
+      ts: 17,
+    },
     { type: "turn_start", agentId: "main", turn: 2, ts: 18 },
     { type: "text_delta", agentId: "main", text: "The plan is ready.", ts: 19 },
     { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 20 },
@@ -91,14 +143,38 @@ describe("buildOverview", () => {
   it("a denied gate reddens the tool activity on the main spine", () => {
     const ev: RunEvent[] = [
       { type: "run_start", runId: "r2", agentId: "main", prompt: "Delete it", ts: 1 },
-      { type: "tool_call", agentId: "main", callId: "c9", name: "run_command", input: { command: "rm -rf build" }, ts: 2 },
-      { type: "permission_request", agentId: "main", callId: "c9", name: "run_command", input: { command: "rm -rf build" }, ts: 3 },
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "c9",
+        name: "run_command",
+        input: { command: "rm -rf build" },
+        ts: 2,
+      },
+      {
+        type: "permission_request",
+        agentId: "main",
+        callId: "c9",
+        name: "run_command",
+        input: { command: "rm -rf build" },
+        ts: 3,
+      },
       { type: "permission_decision", callId: "c9", allowed: false, ts: 4 },
-      { type: "tool_result", agentId: "main", callId: "c9", output: "denied", isError: true, durationMs: 0, ts: 5 },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c9",
+        output: "denied",
+        isError: true,
+        durationMs: 0,
+        ts: 5,
+      },
       { type: "run_end", runId: "r2", stopReason: "end_turn", ts: 6 },
     ];
     const nodes = buildOverview(ev);
-    const acts = nodes.filter((nd): nd is Extract<OverviewNode, { t: "activity" }> => nd.t === "activity").map((nd) => nd.a);
+    const acts = nodes
+      .filter((nd): nd is Extract<OverviewNode, { t: "activity" }> => nd.t === "activity")
+      .map((nd) => nd.a);
     const rm = acts.find((a) => a.kind === "tool");
     expect(rm).toMatchObject({ gate: "denied", isError: true });
     expect(rm!.label).toBe("$ rm -rf build");
@@ -115,8 +191,9 @@ describe("token streaming", () => {
       { type: "run_end", runId: "r3", stopReason: "end_turn", ts: 5 },
     ];
     const nodes = buildOverview(ev);
-    const say = nodes.find((nd): nd is Extract<OverviewNode, { t: "activity" }> =>
-      nd.t === "activity" && nd.a.kind === "say")!;
+    const say = nodes.find(
+      (nd): nd is Extract<OverviewNode, { t: "activity" }> => nd.t === "activity" && nd.a.kind === "say",
+    )!;
     expect(say.a.label).toBe("The flag is ready.");
     expect(say.a.from).toBe(1);
     expect(say.a.to).toBe(3);

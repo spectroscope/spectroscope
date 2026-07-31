@@ -19,8 +19,7 @@ export function ConnectionBanner(props: {
     return () => window.clearInterval(timer);
   }, []);
 
-  const seconds =
-    props.retryAt !== null ? Math.max(0, Math.ceil((props.retryAt - now) / 1000)) : null;
+  const seconds = props.retryAt !== null ? Math.max(0, Math.ceil((props.retryAt - now) / 1000)) : null;
 
   return (
     <div className="conn-banner" role="status">
@@ -31,7 +30,9 @@ export function ConnectionBanner(props: {
         <>
           <span>
             {t(lang, "conn.lost")}
-            {seconds !== null && <span className="tabular"> &middot; {t(lang, "conn.retryIn", { s: seconds })}</span>}
+            {seconds !== null && (
+              <span className="tabular"> &middot; {t(lang, "conn.retryIn", { s: seconds })}</span>
+            )}
           </span>
           <button type="button" className="link" onClick={props.onRetry}>
             {t(lang, "conn.retryNow")}

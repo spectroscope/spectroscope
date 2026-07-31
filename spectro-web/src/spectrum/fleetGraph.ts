@@ -28,6 +28,10 @@ export interface FleetGraphNode {
   spawnedBy: string | null;
   inTokens: number;
   outTokens: number;
+  /** Timestamps of the agent's first/last observed act (event ts, ms) — the
+   *  span answers "who was slow" right on the canvas. Null until it acts. */
+  firstTs: number | null;
+  lastTs: number | null;
 }
 
 export interface FleetGraphEdge {
@@ -48,8 +52,17 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
     let node = nodes.get(id);
     if (node === undefined) {
       node = {
-        id, role: "", connected: false, epoch: model.epochBySender[id] ?? 0,
-        state: "idle", pendingGate: false, spawnedBy: null, inTokens: 0, outTokens: 0,
+        id,
+        role: "",
+        connected: false,
+        epoch: model.epochBySender[id] ?? 0,
+        state: "idle",
+        pendingGate: false,
+        spawnedBy: null,
+        inTokens: 0,
+        outTokens: 0,
+        firstTs: null,
+        lastTs: null,
       };
       nodes.set(id, node);
     }
@@ -77,7 +90,18 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
   const undecided = new Set<string>();
   const gateAgent = new Map<string, string>();
 
+  // Every event stamps its ACTOR's activity window: the agentId it carries, or
+  // the sender of a message (the receiver hasn't acted yet — its own events
+  // stamp it). A decision event names no agent and stamps nobody.
+  const stamp = (id: string, ts: number): void => {
+    const node = ensure(id);
+    if (node.firstTs === null || ts < node.firstTs) node.firstTs = ts;
+    if (node.lastTs === null || ts > node.lastTs) node.lastTs = ts;
+  };
+
   for (const event of model.events) {
+    const actor = event.type === "agent_message" ? event.from : "agentId" in event ? event.agentId : null;
+    if (actor != null && typeof event.ts === "number") stamp(actor, event.ts);
     switch (event.type) {
       case "run_start": {
         const node = ensure(event.agentId);

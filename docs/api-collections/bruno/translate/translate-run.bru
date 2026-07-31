@@ -1,0 +1,38 @@
+meta {
+  name: translate passages (NDJSON stream)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/translate
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "engine": "cloud",
+    "target": "de",
+    "units": [
+      {
+        "kind": "prompt",
+        "text": "Hello world"
+      }
+    ]
+  }
+}
+
+docs {
+  Translate session passages, streamed NDJSON ({meta}, per-unit {unit,delta}/{unit,end}|{unit,error}, {done}). Never writes — the record survives. 400/413/503 as bounds/readiness dictate.
+  
+  Body: TranslateBody(engine local|cloud, target en|de|uk|ru|fr|es|..., units[max 40, 4000 chars each, 60000 total]). The cloud engine spends the operator's API key.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: no
+}

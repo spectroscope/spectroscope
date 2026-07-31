@@ -7,13 +7,13 @@
 import type { RunEvent } from "../events";
 
 export type TickKind =
-  | "token"      // text_delta            — teal
-  | "reasoning"  // thinking_delta        — violet ("the line you follow")
-  | "tool"       // tool_call/result      — amber
-  | "gate"       // permission events     — red (violet while pending)
-  | "subagent"   // spawn + agent_message — ocean
-  | "lifecycle"  // run/turn boundaries   — faint
-  | "error";     // error / failed result — red, full height
+  | "token" // text_delta            — teal
+  | "reasoning" // thinking_delta        — violet ("the line you follow")
+  | "tool" // tool_call/result      — amber
+  | "gate" // permission events     — red (violet while pending)
+  | "subagent" // spawn + agent_message — ocean
+  | "lifecycle" // run/turn boundaries   — faint
+  | "error"; // error / failed result — red, full height
 
 export interface LaneTick {
   /** Position on the shared time axis, normalized 0..1. */
@@ -67,6 +67,10 @@ export const MAX_LANE_TICKS = 1200;
  *  (latest wins), so a long chain of thought stays a peek, not a memory leak. */
 export const MAX_LANE_THINKING = 4096;
 
+/** Divider between distinct reasoning segments in a lane's aggregated thinking
+ *  (rendered pre-wrap, so the blank lines + rule read as a break). */
+const LANE_THINKING_SEP = "\n\n———\n\n";
+
 interface RawTick {
   ts: number;
   kind: TickKind;
@@ -97,7 +101,18 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
     let l = acc.get(id);
     if (l === undefined) {
       l = {
-        lane: { id, parentId: null, label: null, task: "", state: "submitted", lastStatus: null, pendingGate: false, inTokens: 0, outTokens: 0, thinking: "" },
+        lane: {
+          id,
+          parentId: null,
+          label: null,
+          task: "",
+          state: "submitted",
+          lastStatus: null,
+          pendingGate: false,
+          inTokens: 0,
+          outTokens: 0,
+          thinking: "",
+        },
         ticks: [],
       };
       acc.set(id, l);
@@ -139,12 +154,16 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
         break;
       case "thinking_delta": {
         const l = laneOf(event.agentId);
-        const merged = l.lane.thinking + event.text;
+        // A distinct reasoning segment: thinking that RESUMES after any
+        // non-reasoning activity (a new turn, an answer, a tool) gets a divider,
+        // so the whole run's aggregated reasoning doesn't read as one glued blob.
+        const prevKind = l.ticks[l.ticks.length - 1]?.kind;
+        const resumed = prevKind !== undefined && prevKind !== "reasoning" && l.lane.thinking.length > 0;
+        const merged = l.lane.thinking + (resumed ? LANE_THINKING_SEP : "") + event.text;
         // Bounded, latest wins: keep the tail so the peek shows the most
         // recent reasoning rather than an unbounded transcript.
-        l.lane.thinking = merged.length > MAX_LANE_THINKING
-          ? merged.slice(merged.length - MAX_LANE_THINKING)
-          : merged;
+        l.lane.thinking =
+          merged.length > MAX_LANE_THINKING ? merged.slice(merged.length - MAX_LANE_THINKING) : merged;
         tick(event.agentId, { ts, kind: "reasoning", seq });
         break;
       }

@@ -1,0 +1,19 @@
+meta {
+  name: assembled system context
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/context
+  body: none
+  auth: none
+}
+
+docs {
+  The assembled system context (system prompt, tools, skills, MCP servers, subagent profiles) for the server's working directory — stateless.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

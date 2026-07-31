@@ -54,6 +54,10 @@ public class FleetController {
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("enabled", fleet.enabled());
+        // The loopback hub port (null when the hub is off) — the cockpit prints it
+        // into the exact `spectro node --hub 127.0.0.1:<port>` command for a
+        // full-power node, since the UI spawn is deliberately readonly-only.
+        body.put("hubPort", fleet.enabled() ? fleet.port() : null);
         body.put("nodes", fleet.snapshot().stream().map(FleetAggregator::nodeJson).toList());
         return ResponseEntity.ok(body);
     }
@@ -197,16 +201,41 @@ public class FleetController {
     }
 
     /**
-     * A local-origin request: a loopback remote address AND a localhost Host
-     * header. The Host check is the DNS-rebinding defense — a rebinding page
-     * reaches loopback but carries the attacker's Host (which JS cannot forge),
-     * so it fails here; loopback alone would let it through.
+     * The shared fence for every local-only endpoint (fleet control, key save,
+     * bundle scaffold, settings, the OTLP probe — also called cross-package):
+     * a loopback remote address AND a localhost Host header. The Host check is
+     * the DNS-rebinding defense — a rebinding page reaches loopback but carries
+     * the attacker's Host (which JS cannot forge), so it fails here; loopback
+     * alone would let it through.
      *
      * @param request the servlet request
      * @return true only for a loopback peer with a localhost Host
      */
-    static boolean isLocalOrigin(HttpServletRequest request) {
+    public static boolean isLocalOrigin(HttpServletRequest request) {
         return isLoopback(request.getRemoteAddr()) && isLocalHostName(request.getServerName());
+    }
+
+    /**
+     * The CSRF half of the fence, shared like {@link #isLocalOrigin}: true when
+     * {@code Origin} is absent (non-browser) or points at loopback. A cross-site
+     * page's request arrives via loopback with a localhost Host, so only its
+     * Origin header (the page's own domain, browser-set) betrays it.
+     *
+     * @param request the servlet request
+     * @return whether the Origin is safe
+     */
+    public static boolean originIsLoopbackOrAbsent(HttpServletRequest request) {
+        String origin = request.getHeader("Origin");
+        if (origin == null || origin.isBlank()) {
+            return true;
+        }
+        try {
+            String host = java.net.URI.create(origin).getHost();
+            return "localhost".equals(host) || "127.0.0.1".equals(host)
+                    || "::1".equals(host) || "[::1]".equals(host);
+        } catch (RuntimeException malformed) {
+            return false;
+        }
     }
 
     /** Whether a Host header names loopback (localhost or a loopback literal). */

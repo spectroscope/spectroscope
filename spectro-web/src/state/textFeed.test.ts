@@ -32,7 +32,15 @@ describe("buildTextFeed — the <think> boundaries", () => {
     const events: RunEvent[] = [
       { type: "thinking_delta", agentId: "main", text: "I should look.", ts },
       { type: "tool_call", agentId: "main", callId: "c1", name: "list_dir", input: { path: "apps" }, ts },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "cli\nweb", isError: false, durationMs: 9, ts },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "cli\nweb",
+        isError: false,
+        durationMs: 9,
+        ts,
+      },
     ];
     expect(feedTexts(events)).toEqual([
       "<think>",
@@ -60,7 +68,14 @@ describe("buildTextFeed — the <think> boundaries", () => {
       { type: "text_delta", agentId: "main", text: " more", ts },
     ];
     expect(feedTexts(events)).toEqual([
-      "<think>", "first", "</think>", "answer", "<think>", "second", "</think>", " more",
+      "<think>",
+      "first",
+      "</think>",
+      "answer",
+      "<think>",
+      "second",
+      "</think>",
+      " more",
     ]);
   });
 });
@@ -69,7 +84,15 @@ describe("buildTextFeed — tools, gate, children", () => {
   it("carries the full tool result output and marks errors", () => {
     const events: RunEvent[] = [
       { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: { path: "x" }, ts },
-      { type: "tool_result", agentId: "main", callId: "c1", output: "ERROR: not found", isError: true, durationMs: 2, ts },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "ERROR: not found",
+        isError: true,
+        durationMs: 2,
+        ts,
+      },
     ];
     expect(feedTexts(events)).toEqual([
       '[tool_call read_file {"path":"x"}]',
@@ -80,7 +103,14 @@ describe("buildTextFeed — tools, gate, children", () => {
 
   it("shows the permission gate as protocol markers", () => {
     const events: RunEvent[] = [
-      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: { command: "ls" }, ts },
+      {
+        type: "permission_request",
+        agentId: "main",
+        callId: "c1",
+        name: "run_command",
+        input: { command: "ls" },
+        ts,
+      },
       { type: "permission_decision", callId: "c1", allowed: true, ts },
     ];
     expect(feedTexts(events)).toEqual([
@@ -131,5 +161,62 @@ describe("eventsToJsonl", () => {
     expect(lines).toHaveLength(2);
     expect(lines[0]).toBe('{"type":"run_start","runId":"r1","agentId":"main","prompt":"hi","ts":1}');
     expect(lines[1]).toContain('"text":"hello"');
+  });
+});
+
+describe("buildTextFeed — the extended feed (owner 2026-07-26)", () => {
+  const events = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "anthropic", ts: 1 },
+    { type: "turn_start", agentId: "main", turn: 1, ts: 2 },
+    {
+      type: "context_info",
+      agentId: "main",
+      turn: 1,
+      messages: 2,
+      estimatedTokens: 300,
+      threshold: 100000,
+      parts: [
+        { label: "system prompt", chars: 40, estTokens: 10, text: "You are spectroscope, a coding agent." },
+        { label: "conversation", chars: 8, estTokens: 2, text: "USER:\ngo\n" },
+      ],
+      ts: 3,
+    },
+    { type: "text_delta", agentId: "main", text: "hi", ts: 4 },
+    { type: "usage", agentId: "main", inputTokens: 120, outputTokens: 8, ts: 5 },
+    { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 6 },
+  ] as unknown as RunEvent[];
+
+  it("the normal feed stays a reading feed — no context, no usage", () => {
+    const text = buildTextFeed(events)
+      .map((s) => s.text)
+      .join("\n");
+    expect(text).not.toContain("You are spectroscope");
+    expect(text).not.toContain("120 in");
+  });
+
+  it("extended carries the WHOLE request — the system prompt the model got", () => {
+    const segments = buildTextFeed(events, true);
+    const text = segments.map((s) => s.text).join("\n");
+    expect(text).toContain("[context_info");
+    expect(text).toContain("You are spectroscope, a coding agent.");
+    expect(text).toContain("system prompt");
+    expect(text).toContain("USER:");
+  });
+
+  it("extended shows the token truth and the turn boundaries", () => {
+    const text = buildTextFeed(events, true)
+      .map((s) => s.text)
+      .join("\n");
+    expect(text).toContain("120 in");
+    expect(text).toContain("8 out");
+    expect(text).toContain("[turn_start 1]");
+  });
+
+  it("extended never loses what the normal feed had", () => {
+    const normal = buildTextFeed(events).map((s) => s.text);
+    const extended = buildTextFeed(events, true).map((s) => s.text);
+    for (const block of normal) {
+      expect(extended).toContain(block);
+    }
   });
 });

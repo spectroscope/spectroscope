@@ -3,11 +3,20 @@
 // mark for "waiting on you"; approve/deny act inline, the expanded view shows
 // the full input and the recorded outcomes of earlier gates. The run stays
 // paused server-side until a decision lands — the bar just refuses to shout.
+//
+// The collapsed row is a glance: one line of compact JSON, ellipsized, with the
+// whole of it in the title. The expanded detail is the READ, and it is the same
+// rendering the permission modal and the tool card use — escaped newlines are
+// what make a command unreadable, and a node's gate deserves the same reading
+// as a local one. Unclipped, in a bounded box that scrolls: the buttons sit
+// above the detail, so no payload can push them anywhere.
 
 import { useState } from "react";
 import type { PendingPermission, ToolCard } from "../state/reducer";
-import { compactJson, prettyJson } from "../format";
+import { compactJson } from "../format";
 import { agentAccent } from "../format";
+import { gateSubject, GateSubjectLine } from "./PermissionDialog";
+import { InputRegions } from "./ToolViewBody";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import type { CSSProperties } from "react";
@@ -24,11 +33,7 @@ export function GateBar(props: {
    *  a FLEET gate passes false — a remote node has no allowlist we control, so
    *  remember would be an inert, misleading control (block 4). */
   allowRemember?: boolean;
-  onDecide: (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ) => void;
+  onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
 }) {
   const lang = useLang();
   const [expanded, setExpanded] = useState(false);
@@ -38,12 +43,10 @@ export function GateBar(props: {
   const current = props.pending[0];
   if (current === undefined) return null;
 
+  const subject = gateSubject(current.name, current.input);
+
   const decide = (allowed: boolean): void => {
-    props.onDecide(
-      current.callId,
-      allowed,
-      allowed ? { remember, persist: remember && persist } : undefined,
-    );
+    props.onDecide(current.callId, allowed, allowed ? { remember, persist: remember && persist } : undefined);
     setRemember(false);
     setPersist(false);
   };
@@ -75,21 +78,13 @@ export function GateBar(props: {
         )}
         {props.allowRemember !== false && (
           <label className="gate-remember">
-            <input
-              type="checkbox"
-              checked={remember}
-              onChange={(e) => setRemember(e.target.checked)}
-            />
+            <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             {t(lang, "gate.remember")}
           </label>
         )}
         {props.allowRemember !== false && remember && props.workspaceConfigured && (
           <label className="gate-remember">
-            <input
-              type="checkbox"
-              checked={persist}
-              onChange={(e) => setPersist(e.target.checked)}
-            />
+            <input type="checkbox" checked={persist} onChange={(e) => setPersist(e.target.checked)} />
             {t(lang, "gate.persist")}
           </label>
         )}
@@ -106,8 +101,17 @@ export function GateBar(props: {
           aria-label={t(lang, expanded ? "gate.collapse" : "gate.expandAria")}
           onClick={() => setExpanded((v) => !v)}
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor"
-            strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             {expanded ? <path d="M4 10l4-4 4 4" /> : <path d="M4 6l4 4 4-4" />}
           </svg>
         </button>
@@ -115,15 +119,22 @@ export function GateBar(props: {
 
       {expanded && (
         <div className="gate-detail">
-          <pre className="gate-input-full mono">{prettyJson(current.input)}</pre>
+          {subject !== null && <GateSubjectLine subject={subject} lang={lang} />}
+          <div className="gate-payload" tabIndex={0} aria-label={t(lang, "tv.input")}>
+            <InputRegions
+              label={t(lang, "tv.input")}
+              name={current.name}
+              input={current.input}
+              lang={lang}
+              clip={false}
+            />
+          </div>
           {decided.length > 0 && (
             <div className="gate-history">
               <span className="gate-history-label mono">{t(lang, "gate.recorded")}</span>
               {decided.map((c) => (
                 <span key={c.callId} className="gate-history-row mono">
-                  <span
-                    className={`gate-outcome gate-outcome--${c.permission}`}
-                  >
+                  <span className={`gate-outcome gate-outcome--${c.permission}`}>
                     {t(lang, c.permission === "allowed" ? "gate.histAllowed" : "gate.histDenied")}
                   </span>
                   {c.name}

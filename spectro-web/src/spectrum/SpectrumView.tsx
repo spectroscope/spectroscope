@@ -14,20 +14,48 @@ import { ThinkingDisclosure } from "../components/ThinkingDisclosure";
 import { buildSpectrum } from "./spectrumModel";
 import type { Lane, TickKind } from "./spectrumModel";
 import { SpectrumBand, TICK_COLOR } from "./SpectrumBand";
+import { useEffect } from "react";
+import { beacon } from "../state/levelingBeacon";
 
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
 const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
 
-function LaneRow({ lane, running, events, t0, onOpen, onFocusEvent }: {
+/** How a lane names itself. The id is the addressable truth (Trace filters by
+ *  it), but an imported Claude Code session hands us a 26-char toolu_* id next
+ *  to a readable agent type in the label — so the label leads when there is one
+ *  and the id steps back into the chip. No label, no chip: the id keeps the
+ *  title and nothing is invented to fill the slot. */
+export function laneNames(lane: { id: string; label: string | null }): {
+  title: string;
+  chip: string | null;
+} {
+  const label = lane.label === null ? "" : lane.label.trim();
+  if (label === "" || label === lane.id) return { title: lane.id, chip: null };
+  return { title: label, chip: lane.id };
+}
+
+function LaneRow({
+  lane,
+  running,
+  events,
+  t0,
+  onOpen,
+  onFocusEvent,
+  tipBelow,
+}: {
   lane: Lane;
   running: boolean;
   events: RunEvent[];
   t0: number;
   onOpen: (id: string) => void;
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  /** The TOP row has no room above it — its tick preview opens downward
+   *  instead of being clipped by the toolbar (owner 2026-07-26). */
+  tipBelow?: boolean;
 }) {
   const lang = useLang();
   const live = running && lane.state === "working";
+  const names = laneNames(lane);
   return (
     <div className="spectrum-lane">
       <button
@@ -37,9 +65,16 @@ function LaneRow({ lane, running, events, t0, onOpen, onFocusEvent }: {
         onClick={() => onOpen(lane.id)}
       >
         <span className="spectrum-rail-head">
-          <span className={`dot ${lane.state === "failed" ? "error" : lane.state === "working" ? "accent" : lane.state === "completed" ? "ok" : "faint"}${live ? " pulse" : ""}`} aria-hidden="true" />
-          <span className="spectrum-id mono">{lane.id}</span>
-          {lane.label !== null && <span className="spectrum-label mono">{lane.label}</span>}
+          <span
+            className={`dot ${lane.state === "failed" ? "error" : lane.state === "working" ? "accent" : lane.state === "completed" ? "ok" : "faint"}${live ? " pulse" : ""}`}
+            aria-hidden="true"
+          />
+          <span className="spectrum-id mono">{names.title}</span>
+          {names.chip !== null && (
+            <span className="spectrum-label mono" title={names.chip}>
+              {names.chip}
+            </span>
+          )}
           {lane.pendingGate && <span className="spectrum-gate mono pulse">{t(lang, "sp.gateOpen")}</span>}
         </span>
         <span className="spectrum-task" title={lane.task}>
@@ -51,7 +86,7 @@ function LaneRow({ lane, running, events, t0, onOpen, onFocusEvent }: {
             ` · ${formatTokens(lane.inTokens)} in / ${formatTokens(lane.outTokens)} out`}
         </span>
       </button>
-      <SpectrumBand lane={lane} events={events} t0={t0} onFocusEvent={onFocusEvent} />
+      <SpectrumBand lane={lane} events={events} t0={t0} onFocusEvent={onFocusEvent} tipBelow={tipBelow} />
     </div>
   );
 }
@@ -70,6 +105,12 @@ export function SpectrumView(props: {
   // stream it is handed — one lane per agent, live and replay through one path.
   const running = props.running;
   const model = useMemo(() => buildSpectrum(props.events), [props.events]);
+  // What this view actually put on screen. The fan-out criterion cannot be settled
+  // from the server's stream for a scenario, which never reaches it, so the face
+  // reports its own lane count as the witness for what it rendered.
+  useEffect(() => {
+    if (model.lanes.length >= 2) beacon("spectrum", null, model.lanes.length);
+  }, [model.lanes.length]);
   const dropped = model.lanes.reduce((n, l) => n + l.dropped, 0);
   const span = model.t1 - model.t0;
 
@@ -98,7 +139,7 @@ export function SpectrumView(props: {
         </div>
       ) : (
         <div className="spectrum-lanes" role="list" aria-label={t(lang, "sp.lanesAria")}>
-          {model.lanes.map((lane) => (
+          {model.lanes.map((lane, laneIndex) => (
             <div key={lane.id} className="spectrum-lane-group">
               <LaneRow
                 lane={lane}
@@ -107,21 +148,17 @@ export function SpectrumView(props: {
                 t0={model.t0}
                 onOpen={props.onOpenTrace}
                 onFocusEvent={props.onFocusEvent}
+                tipBelow={laneIndex === 0}
               />
               {lane.thinking !== "" && (
-                <ThinkingDisclosure
-                  text={lane.thinking}
-                  active={running && lane.state === "working"}
-                />
+                <ThinkingDisclosure text={lane.thinking} active={running && lane.state === "working"} />
               )}
             </div>
           ))}
         </div>
       )}
 
-      {dropped > 0 && (
-        <p className="spectrum-note mono">{t(lang, "sp.dropped", { n: dropped })}</p>
-      )}
+      {dropped > 0 && <p className="spectrum-note mono">{t(lang, "sp.dropped", { n: dropped })}</p>}
     </div>
   );
 }

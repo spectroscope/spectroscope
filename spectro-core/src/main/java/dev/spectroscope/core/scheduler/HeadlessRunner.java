@@ -13,6 +13,7 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPort;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.tools.StandardTools;
@@ -64,6 +65,11 @@ public final class HeadlessRunner {
      *  broker) that replaces the fixed readonly/auto policy; null = the constant
      *  {@code request -> autoApprove} broker, the frozen default. */
     private final PermissionBroker externalBroker;
+    /** The trigger stamp for this run's {@code run_start} (card 72) — what woke
+     *  a triggered node's run. Only the runner's caller knows it, so it is
+     *  stamped at this seam, never inside the Agent; null = no stamp, the
+     *  frozen default. */
+    private final String trigger;
 
     /**
      * The production constructor — the provider is built fresh from config per run.
@@ -83,12 +89,12 @@ public final class HeadlessRunner {
      * @param providerOverride the scripted provider, or null to build from config
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
-        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null);
+        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null, null);
     }
 
     private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
                            String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal,
-                           PermissionBroker externalBroker) {
+                           PermissionBroker externalBroker, String trigger) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
@@ -96,6 +102,7 @@ public final class HeadlessRunner {
         this.auxiliaryPort = auxiliaryPort;
         this.externalSignal = externalSignal;
         this.externalBroker = externalBroker;
+        this.trigger = trigger;
     }
 
     /**
@@ -109,7 +116,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withIdentity(String agentId) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker);
+                externalSignal, externalBroker, trigger);
     }
 
     /**
@@ -126,7 +133,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withAuxiliaryPort(TracingPort port) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, port,
-                externalSignal, externalBroker);
+                externalSignal, externalBroker, trigger);
     }
 
     /**
@@ -141,7 +148,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withCancelSignal(CancelSignal signal) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                signal, externalBroker);
+                signal, externalBroker, trigger);
     }
 
     /**
@@ -156,7 +163,23 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withBroker(PermissionBroker broker) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, broker);
+                externalSignal, broker, trigger);
+    }
+
+    /**
+     * A copy of this runner whose {@code run_start} carries {@code trigger}
+     * (card 72) — the "what woke this run" stamp of a triggered fleet node.
+     * The stamp is applied at the runner's event seam because only the
+     * caller knows the trigger; the Agent stays untouched. Every consumer
+     * (session JSONL, auxiliary port, onEvent) sees the same stamped event.
+     * Unset (the default), the run_start is byte-identical to before.
+     *
+     * @param trigger the stamp, e.g. "fs #4 watch:/drop"; null keeps the default
+     * @return the stamped runner; this instance is unchanged
+     */
+    public HeadlessRunner withTrigger(String trigger) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, externalBroker, trigger);
     }
 
     /**
@@ -243,6 +266,7 @@ public final class HeadlessRunner {
         // auxiliary port (a node's bus publisher) is REGISTERED: durability
         // first, isolation for the extra consumer.
         TracingPorts tracing = new TracingPorts().require(new JsonlSink(store));
+        OtlpSink.fromConfig(config, store.id()).ifPresent(tracing::register);
         if (auxiliaryPort != null) {
             tracing.register(auxiliaryPort);
         }
@@ -255,7 +279,15 @@ public final class HeadlessRunner {
         boolean turnLimitHit = false;
 
         try (EventStream events = agent.run(prompt, new RunOptions(signal, attachments))) {
-            for (RunEvent event : events) {
+            for (RunEvent rawEvent : events) {
+                // Card 72: the run_start is re-stamped BEFORE any consumer sees
+                // it — the session file, the bus and onEvent must never disagree
+                // about what woke the run.
+                RunEvent event = trigger != null && rawEvent instanceof RunEvent.RunStart start
+                        ? new RunEvent.RunStart(start.runId(), start.agentId(), start.parentId(),
+                                start.prompt(), start.provider(), start.model(), trigger,
+                                start.attachments(), start.ts())
+                        : rawEvent;
                 tracing.onEvent(event); // headless runs are normal sessions too
                 if (onEvent != null) {
                     onEvent.accept(event);

@@ -206,12 +206,28 @@
   gap: var(--sp-5);
 }
 
+/* Section heading. The owner missed the LEVELING section entirely at the old
+   weight, and the reason was measurable: faint ink at 11px, sitting the same
+   distance from the section above it as from the fields it names. Law of
+   proximity — a heading belongs to what follows it, so the gap above is now
+   three times the gap below, and the ink carries enough contrast to be read
+   rather than skimmed past. */
 .settings-label {
-  font-size: var(--fs-11);
+  font-size: var(--fs-13);
   letter-spacing: var(--track-eyebrow);
   text-transform: uppercase;
-  color: var(--text-faint);
-  margin-bottom: var(--sp-2);
+  color: var(--text-dim);
+  /* .settings-body is a flex column with a 24px gap, so that gap — not these
+     margins — is the baseline between a heading and its fields. A positive
+     margin adds to it; binding the heading DOWNWARD needs a negative one that
+     eats most of it. 36px above, 8px below: the heading reads as belonging to
+     the fields under it rather than standing on its own. */
+  margin-top: var(--sp-3);
+  margin-bottom: calc(var(--sp-2) - var(--sp-5));
+}
+/* The first heading in a panel has no section above it to separate from. */
+.settings-label:first-child {
+  margin-top: 0;
 }
 
 /* ---- design picker ---- */
@@ -414,6 +430,44 @@
   font-size: 0.72rem;
   color: var(--text-faint);
 }
+/* The no-key note: amber, so 'add a key to .env' reads as an action, not a shrug. */
+.provider-field-note--warn {
+  color: var(--sp-amber);
+}
+/* Paste-a-key affordance under the needs-key note. */
+.pp-keyinput {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.pp-keyrow {
+  display: flex;
+  gap: 0.4rem;
+  align-items: stretch;
+}
+.pp-keyrow .provider-input {
+  flex: 1;
+  min-width: 0;
+}
+.pp-keysave {
+  white-space: nowrap;
+}
+/* Header picker's needs-key affordance: no key entry here — a link to Settings,
+   where the one key write lives. Styled as a quiet accent link, not a button. */
+.provider-settings-link {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.provider-settings-link:hover {
+  color: var(--accent-strong, var(--accent));
+}
 
 .provider-pop-foot {
   display: flex;
@@ -422,6 +476,25 @@
 .provider-pop-foot .primary {
   padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-13);
+}
+
+/* Card 88: the reasoning seg — the house .trace-seg shape, condensed so the
+   full ladder (off + five efforts) sits inside the 260px picker popover; a
+   record with longer tokens wraps instead of clipping. Same block serves the
+   Settings host. */
+.reasoning-seg {
+  align-self: flex-start;
+  flex-wrap: wrap;
+}
+.reasoning-seg button {
+  padding: 3px 6px;
+}
+.reasoning-seg button[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.reasoning-seg button[disabled]:hover {
+  color: var(--text-faint);
 }
 
 
@@ -445,3 +518,22 @@
 
 .tf-jsonl { margin: 0; font-family: var(--font-mono); font-size: var(--fs-12); line-height: 1.6; }
 .tf-jsonl-line { white-space: pre; }
+
+/* The LLM-backed explain (card 62) — the model's reading, docked above the feed. */
+.tf-explain { border-bottom: 1px solid var(--border); padding: var(--sp-3) var(--sp-4); }
+.tf-explain-head { display: flex; align-items: center; gap: var(--sp-3); min-height: 24px; }
+.tf-explain-title { font-size: var(--fs-12); color: var(--accent); text-transform: lowercase; }
+.tf-explain-model { font-size: var(--fs-11); color: var(--text-dim); }
+.tf-explain-honesty { flex: 1; font-size: var(--fs-11); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tf-explain-body { margin-top: var(--sp-2); font-size: var(--fs-13); line-height: 1.6; color: var(--text); white-space: pre-wrap; max-width: 88ch; }
+.tf-explain-working { color: var(--text-faint); font-style: italic; }
+.tf-explain-cursor { color: var(--accent); animation: tf-explain-blink 1s steps(2) infinite; }
+.tf-explain-foot { margin-top: var(--sp-2); font-size: var(--fs-12); color: var(--text-faint); }
+.tf-explain-foot--error { color: var(--error); }
+@media (prefers-reduced-motion: reduce) { .tf-explain-cursor { animation: none; } }
+@keyframes tf-explain-blink { 50% { opacity: 0; } }
+
+/* The agent chip reads as loudly as the type chip (owner: it drowned) — the
+   generic .agent-badge got dimmed to text-faint by a later panel rule; in the
+   trace the agent IS a primary column, so it carries the type's text color. */
+.trace-col--agent .agent-badge { color: var(--text-dim); }

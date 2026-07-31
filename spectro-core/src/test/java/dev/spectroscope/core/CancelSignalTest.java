@@ -40,4 +40,33 @@ class CancelSignalTest {
         signal.cancel();
         assertEquals(1, fired.get());
     }
+
+    @Test
+    void aThrowingListenerRegisteredAfterCancelDoesNotThrowIntoTheRegistrant() {
+        // The immediate-fire path must be isolated like the broadcast: a fresh
+        // provider stream opened while stop was already pressed registers its
+        // close on a cancelled signal — a broken close must not ride up.
+        CancelSignal signal = new CancelSignal();
+        signal.cancel();
+        Runnable handle = signal.onCancel(() -> {
+            throw new IllegalStateException("broken close");
+        }); // must not throw
+        handle.run(); // and the no-op handle stays a no-op
+    }
+
+    @Test
+    void aThrowingListenerBreaksNeitherTheCascadeNorTheCancellingThread() {
+        // The live stop-button failure (card 78): a provider close listener threw
+        // out of cancel(), the exception rode up the WebSocket handler and Spring
+        // CLOSED the session. Cancel is a best-effort broadcast — one broken
+        // listener must neither skip the remaining listeners nor hit the caller.
+        CancelSignal signal = new CancelSignal();
+        AtomicInteger survivorFired = new AtomicInteger();
+        signal.onCancel(() -> {
+            throw new IllegalStateException("broken close");
+        });
+        signal.onCancel(survivorFired::incrementAndGet);
+        signal.cancel(); // must not throw
+        assertEquals(1, survivorFired.get(), "the listener after the broken one must still fire");
+    }
 }

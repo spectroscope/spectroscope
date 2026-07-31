@@ -163,6 +163,11 @@ public class FleetAggregator implements AutoCloseable {
         json.put("role", state.card().role());
         json.put("capabilities", state.card().capabilities());
         json.put("topic", state.card().topic());
+        // Card 72: hand-mapped like every card field — and only when present,
+        // so a plain node's roster shape stays exactly pre-card-72.
+        if (state.card().trigger() != null) {
+            json.put("trigger", state.card().trigger());
+        }
         json.put("connected", state.connected());
         json.put("lastSeen", state.lastSeen());
         return json;

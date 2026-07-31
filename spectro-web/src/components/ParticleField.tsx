@@ -19,8 +19,14 @@ function styleFor(design: DesignId): Style | null {
     case "paper":
       // Brand light: the landing page's ink dots on paper.
       return "dust";
+    case "graphite":
+      // The cool dark takes the same grain: the canvas reads --text-faint and
+      // the spectral lines off the live design, so it arrives already tuned.
+      return "dust";
     default:
-      // spectro white (`still`): deliberately no particle signature.
+      // spectro white (`still`): deliberately no particle signature. Named
+      // designs return above rather than falling through, so a new id owes an
+      // answer here instead of silently inheriting this one.
       return null;
   }
 }
@@ -64,8 +70,12 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
       line("--sp-ocean", "#2CB1C4"),
       line("--sp-violet", "#8B7CF0"),
     ];
-    // The brand drift runs at half tempo (owner 2026-07-20).
-    const speed = 0.5;
+    // The brand drift tempo. At half speed (owner 2026-07-20) the slowest
+    // marks moved <0.1 px/frame and, since positions snap to whole pixels
+    // for crispness, they visibly stuttered; nudged up so motion crosses
+    // pixel boundaries smoothly without changing the mark SIZE (owner
+    // 2026-07-23: "a little faster, the size is perfect").
+    const speed = 0.85;
 
     let w = 0;
     let h = 0;
@@ -125,7 +135,12 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
         ctx.globalAlpha = breathe;
         ctx.fillStyle = p.color;
         // Blocky marks: a square pixel, or a 3.2× tall bar for a spectral ray.
-        ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.r), Math.round(p.spectral ? p.r * 3.2 : p.r));
+        ctx.fillRect(
+          Math.round(p.x),
+          Math.round(p.y),
+          Math.round(p.r),
+          Math.round(p.spectral ? p.r * 3.2 : p.r),
+        );
       }
       ctx.globalAlpha = 1;
     };
@@ -158,5 +173,8 @@ export function ParticleField({ design, enabled }: { design: DesignId; enabled: 
   }, [active, style, design]);
 
   if (!active) return null;
-  return createPortal(<canvas ref={canvasRef} className="particle-field" aria-hidden="true" />, document.body);
+  return createPortal(
+    <canvas ref={canvasRef} className="particle-field" aria-hidden="true" />,
+    document.body,
+  );
 }

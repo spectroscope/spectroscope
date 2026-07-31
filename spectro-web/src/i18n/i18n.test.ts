@@ -2,6 +2,8 @@
 // placeholders, and unknown keys pass through loudly (they render as the key).
 import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
+import { LAB_FACES } from "../state/labFace";
+import { TRACE_FACES } from "../state/traceFace";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -24,6 +26,49 @@ describe("i18n dict", () => {
     }
     for (const p of ["pending", "in_progress", "completed"]) {
       expect(dict[`plan.${p}`], `plan.${p}`).toBeDefined();
+    }
+    // A workflow run's headline row: the labels are reached only as
+    // `tv.run.${RunStat["key"]}`, so a stat added without its word would ship as
+    // the bare key in the one place a reader counts dead agents.
+    for (const k of ["agents", "failed", "skipped", "empty", "tokens", "tools", "elapsed"]) {
+      expect(dict[`tv.run.${k}`], `tv.run.${k}`).toBeDefined();
+    }
+    // The trace's faces are interpolated twice: as the master switch's buttons
+    // and titles, and as the open frame's own row of modes. A face added to the
+    // store without its strings would render as the bare key.
+    for (const f of TRACE_FACES) {
+      expect(dict[`trace.mode.${f}`], `trace.mode.${f}`).toBeDefined();
+      expect(dict[`trace.faceTitle.${f}`], `trace.faceTitle.${f}`).toBeDefined();
+    }
+    // The lab's tool-panel faces (card 120): the master seg and the panel strip
+    // interpolate the shared face labels plus a lab title per face; the seg
+    // itself carries a label, an aria name and a hint.
+    for (const f of LAB_FACES) {
+      expect(dict[`trace.mode.${f}`], `trace.mode.${f}`).toBeDefined();
+      expect(dict[`lab.faceTitle.${f}`], `lab.faceTitle.${f}`).toBeDefined();
+    }
+    for (const k of ["lab.face", "lab.faceAria", "lab.faceHint"]) {
+      expect(dict[k], k).toBeDefined();
+    }
+    // The reasoning seg (card 88): every string the shared control renders.
+    // A missing key ships as its bare name — it happened twice this week.
+    for (const k of [
+      "rc.label",
+      "rc.aria",
+      "rc.on",
+      "rc.off",
+      "rc.onTitle",
+      "rc.offTitle",
+      "rc.clearTitle",
+      "rc.effortTitle",
+      "rc.offCap",
+      "rc.noOff",
+      "rc.noneThinks",
+      "rc.noneQuiet",
+      "rc.settingsLabel",
+      "rc.settingsNote",
+    ]) {
+      expect(dict[k], k).toBeDefined();
     }
   });
 });

@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { llmDirection, tokenizeSummary, wireHost, wireProtocol } from "./eventSummary";
 
-const kinds = (raw: string): string => tokenizeSummary(raw).map((t) => t.kind).join(",");
-const joined = (raw: string): string => tokenizeSummary(raw).map((t) => t.text).join("");
+const kinds = (raw: string): string =>
+  tokenizeSummary(raw)
+    .map((t) => t.kind)
+    .join(",");
+const joined = (raw: string): string =>
+  tokenizeSummary(raw)
+    .map((t) => t.text)
+    .join("");
 
 describe("tokenizeSummary", () => {
   it("re-joins to exactly the input (lossless)", () => {
@@ -60,9 +66,18 @@ describe("llmDirection", () => {
 
   it("treats harness plumbing (and unknown types) as 'internal'", () => {
     for (const t of [
-      "permission_request", "permission_decision", "permission_response",
-      "agent_spawn", "agent_message", "context_info", "compaction",
-      "image_generated", "set_provider", "abort", "error", "some_future_event",
+      "permission_request",
+      "permission_decision",
+      "permission_response",
+      "agent_spawn",
+      "agent_message",
+      "context_info",
+      "compaction",
+      "image_generated",
+      "set_provider",
+      "abort",
+      "error",
+      "some_future_event",
     ]) {
       expect(llmDirection(t)).toBe("internal");
     }
@@ -90,7 +105,14 @@ describe("wireProtocol", () => {
   });
 
   it("keeps harness-internal frames off every wire", () => {
-    for (const t of ["permission_request", "permission_decision", "plan", "context_info", "agent_message", "compaction"]) {
+    for (const t of [
+      "permission_request",
+      "permission_decision",
+      "plan",
+      "context_info",
+      "agent_message",
+      "compaction",
+    ]) {
       expect(wireProtocol(t, "anthropic", null)).toBe("—");
     }
   });
@@ -99,7 +121,9 @@ describe("wireProtocol", () => {
 describe("wireHost", () => {
   it("shows the live LLM host from provider_info for LLM rows", () => {
     expect(wireHost("text_delta", "ollama", "localhost:11434", null, null, null)).toBe("localhost:11434");
-    expect(wireHost("run_start", "anthropic", "api.anthropic.com", null, null, null)).toBe("api.anthropic.com");
+    expect(wireHost("run_start", "anthropic", "api.anthropic.com", null, null, null)).toBe(
+      "api.anthropic.com",
+    );
   });
 
   it("falls back honestly in replays: anthropic is fixed, local backends unknown", () => {
@@ -110,15 +134,25 @@ describe("wireHost", () => {
   });
 
   it("names a tool row's own counterpart", () => {
-    expect(wireHost("tool_call", "ollama", "localhost:11434", "mcp__notes__search_notes", null, null)).toBe("notes");
-    expect(wireHost("tool_call", "ollama", null, "web_fetch", "https://example.com:8443/page", null)).toBe("example.com:8443");
-    expect(wireHost("tool_result", "ollama", null, "web_fetch", "https://example.com/page", null)).toBe("example.com");
-    expect(wireHost("tool_call", "ollama", null, "browse_page", "https://spa.example/app", null)).toBe("spa.example");
+    expect(wireHost("tool_call", "ollama", "localhost:11434", "mcp__notes__search_notes", null, null)).toBe(
+      "notes",
+    );
+    expect(wireHost("tool_call", "ollama", null, "web_fetch", "https://example.com:8443/page", null)).toBe(
+      "example.com:8443",
+    );
+    expect(wireHost("tool_result", "ollama", null, "web_fetch", "https://example.com/page", null)).toBe(
+      "example.com",
+    );
+    expect(wireHost("tool_call", "ollama", null, "browse_page", "https://spa.example/app", null)).toBe(
+      "spa.example",
+    );
     // web_search: the client cannot know the tier (tavily vs duckduckgo) —
     // the result header names it; the host column stays honest with "—".
     expect(wireHost("tool_call", "ollama", null, "web_search", null, null)).toBe("—");
     expect(wireHost("tool_call", "ollama", null, "read_file", null, null)).toBe("—");
-    expect(wireHost("image_generated", "ollama", null, null, null, "gemini")).toBe("generativelanguage.googleapis.com");
+    expect(wireHost("image_generated", "ollama", null, null, null, "gemini")).toBe(
+      "generativelanguage.googleapis.com",
+    );
     expect(wireHost("image_generated", "ollama", null, null, null, "openai")).toBe("api.openai.com");
   });
 

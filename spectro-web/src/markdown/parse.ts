@@ -248,7 +248,12 @@ function parseBlocks(lines: string[]): Block[] {
         body.push(lines[j]);
         j += 1;
       }
-      out.push({ kind: "code", lang: fence[1] !== "" ? fence[1] : null, text: body.join("\n"), open: !closed });
+      out.push({
+        kind: "code",
+        lang: fence[1] !== "" ? fence[1] : null,
+        text: body.join("\n"),
+        open: !closed,
+      });
       i = j;
       continue;
     }
@@ -268,7 +273,12 @@ function parseBlocks(lines: string[]): Block[] {
     }
 
     // Table before hr: a delimiter row like |---|---| must not read as a rule.
-    if (line.includes("|") && i + 1 < lines.length && lines[i + 1].includes("-") && TABLE_DELIM.test(lines[i + 1])) {
+    if (
+      line.includes("|") &&
+      i + 1 < lines.length &&
+      lines[i + 1].includes("-") &&
+      TABLE_DELIM.test(lines[i + 1])
+    ) {
       flushPara();
       const header = splitRow(line).map(parseInline);
       const align = splitRow(lines[i + 1]).map(parseAlign);

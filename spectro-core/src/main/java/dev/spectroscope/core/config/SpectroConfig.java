@@ -17,6 +17,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -81,6 +82,13 @@ import java.util.function.Function;
  * @param sttModel            path to the local whisper.cpp model file;
  *                            {@code null} means the CLI-side default —
  *                            env {@code SPECTRO_STT_MODEL}
+ * @param otlpEndpoint        OTLP traces endpoint (e.g. a local Langfuse's
+ *                            {@code http://localhost:3000/api/public/otel});
+ *                            null keeps the exporter off. Env
+ *                            {@code SPECTRO_OTLP_ENDPOINT}
+ * @param otlpBasicAuth       optional {@code pk:sk} pair sent as Basic auth
+ *                            (Langfuse project keys); null sends no auth
+ *                            header. Env {@code SPECTRO_OTLP_BASIC_AUTH}
  * @param chromeBinary        override for the system-Chrome binary used by
  *                            {@code browse_page}; {@code null} means the
  *                            built-in discovery — env {@code SPECTRO_CHROME}
@@ -102,7 +110,9 @@ public record SpectroConfig(
         String logLevel,
         String imageModel,
         String sttModel,
-        String chromeBinary) {
+        String chromeBinary,
+        String otlpEndpoint,
+        String otlpBasicAuth) {
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -130,7 +140,14 @@ public record SpectroConfig(
 
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.
-    static final Set<String> KNOWN_PROVIDERS = Set.of("anthropic", "ollama", "openai");
+    static final Set<String> KNOWN_PROVIDERS =
+            Set.of("anthropic", "ollama", "openai", "lmstudio", "openrouter", "gemini", "spectro-local");
+    /** A stable, human-readable listing of {@link #KNOWN_PROVIDERS} for error
+     *  messages — {@link Set#of} has no guaranteed iteration order, so it is
+     *  spelled out once and shared by config validation and the live picker
+     *  switch instead of being rebuilt (in a different order) in each place. */
+    public static final String KNOWN_PROVIDERS_DISPLAY =
+            "anthropic, ollama, openai, lmstudio, openrouter, gemini, spectro-local";
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
@@ -143,7 +160,8 @@ public record SpectroConfig(
             "gemini", true, List.of(), 2, true, List.of(), // 2 retries; caching on; no hooks
             null, // workspace: per-session temp folder unless configured
             "info", // logLevel: file diagnostics at info; console stays WARN-quiet
-            null, null, null); // imageModel/sttModel/chromeBinary: backend/CLI/discovery defaults
+            null, null, null, // imageModel/sttModel/chromeBinary: backend/CLI/discovery defaults
+            null, null); // otlpEndpoint/otlpBasicAuth: exporter off by default
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -427,7 +445,7 @@ public record SpectroConfig(
         SpectroConfig base = folded.merged();
 
         validateKnown("provider", base.provider(), KNOWN_PROVIDERS,
-                "anthropic, ollama, openai");
+                KNOWN_PROVIDERS_DISPLAY);
         validateKnown("image provider", base.imageProvider(), KNOWN_IMAGE_PROVIDERS,
                 "gemini, openai");
         // A typo must not silently disable what the owner configured — the same
@@ -441,18 +459,15 @@ public record SpectroConfig(
         // Local providers without an explicitly set model: use sensible local defaults
         // instead of the Claude id.
         if (!explicitModel) {
-            String fallback = switch (base.provider()) {
-                case "ollama" -> "qwen3";
-                case "openai" -> "local-model"; // LM Studio ignores unknown ids and uses the loaded one
-                default -> base.model();
-            };
-            if (!fallback.equals(base.model())) {
+            String fallback = defaultModelFor(base.provider());
+            if (fallback != null && !fallback.equals(base.model())) {
                 base = new SpectroConfig(base.provider(), fallback, base.baseUrl(),
                         base.compactionThreshold(), base.permissionMode(), base.autoApprove(),
                         base.imageProvider(), base.thinking(), base.mcpServers(),
                         base.maxRetries(), base.promptCaching(), base.hooks(),
                         base.workspace(), base.logLevel(),
-                        base.imageModel(), base.sttModel(), base.chromeBinary());
+                        base.imageModel(), base.sttModel(), base.chromeBinary(),
+                        base.otlpEndpoint(), base.otlpBasicAuth());
             }
         }
         return base;
@@ -493,7 +508,9 @@ public record SpectroConfig(
             new FieldProbe("logLevel", p -> p.logLevel),
             new FieldProbe("imageModel", p -> p.imageModel),
             new FieldProbe("sttModel", p -> p.sttModel),
-            new FieldProbe("chromeBinary", p -> p.chromeBinary));
+            new FieldProbe("chromeBinary", p -> p.chromeBinary),
+            new FieldProbe("otlpEndpoint", p -> p.otlpEndpoint),
+            new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth));
 
     /** Circularity + process-global rule: a workspace settings file must not
      *  re-point the workspace itself, nor reconfigure the one-per-process log
@@ -526,7 +543,51 @@ public record SpectroConfig(
                 compactionThreshold, permissionMode, autoApprove,
                 imageProvider, thinking, mcpServers,
                 maxRetries, promptCaching, hooks,
-                workspace, logLevel, imageModel, sttModel, chromeBinary);
+                workspace, logLevel, imageModel, sttModel, chromeBinary,
+                otlpEndpoint, otlpBasicAuth);
+    }
+
+    /** Whether {@code provider} is a selectable LLM backend — the single source
+     *  shared by config validation and the live header-picker switch, so the two
+     *  cannot drift apart. */
+    public static boolean isKnownProvider(String provider) {
+        return KNOWN_PROVIDERS.contains(provider);
+    }
+
+    /**
+     * The default model for a provider when none is set explicitly, or {@code null}
+     * when the provider has no honest default. A local backend serves whatever model
+     * is loaded — lmstudio and the openai preset ignore the id — or a small default
+     * (ollama), never the Claude id: that was the "opus for lmstudio" bug. anthropic
+     * defaults to its real model; gemini and openrouter have NO baked default, so
+     * they return null and the caller must obtain an explicit model rather than
+     * fabricate a foreign id (a live switch to them would otherwise send a Claude id
+     * to a non-Claude endpoint). Shared by boot resolution ({@link #finishResolve})
+     * and a live provider switch, so a switch can never carry the previous model.
+     */
+    public static String defaultModelFor(String provider) {
+        return switch (provider) {
+            case "ollama" -> "qwen3";
+            case "lmstudio", "openai" -> "local-model";
+            // Ask the catalogue rather than repeat it. This used to be a constant,
+            // and it drifted: the catalogue moved its default to a model that
+            // shows its thinking AND drives tools, while a live picker switch
+            // kept starting the tool-free one with the research-only licence.
+            case "spectro-local" -> dev.spectroscope.core.local.LocalCatalog.bundled().defaultId();
+            case "anthropic" -> DEFAULTS.model(); // claude-opus-4-8, a real anthropic model
+            default -> null; // gemini, openrouter: no baked default — the caller decides
+        };
+    }
+
+    /** Whether a LIVE provider switch to {@code provider} requires an API key to be
+     *  present. True for the cloud services that cannot work without one (anthropic,
+     *  gemini, openrouter). False for the local backends (ollama, lmstudio) AND for
+     *  openai — openai is the generic OpenAI-compatible escape hatch, routinely
+     *  pointed at a keyless local server via a custom base url, so a switch to it
+     *  stays tolerant (its default-endpoint keyless gap is pre-existing and out of
+     *  this method's scope). */
+    public static boolean switchRequiresKey(String provider) {
+        return keyEnvFor(provider) != null && !"openai".equals(provider);
     }
 
     /**
@@ -598,10 +659,15 @@ public record SpectroConfig(
     public LlmProvider providerFromConfig() {
         LlmProvider real = switch (provider) {
             case "ollama" -> new OllamaProvider(new OllamaOptions(baseUrl, model));
-            case "openai" -> new OpenAiCompatProvider(
-                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model,
-                            System.getenv("OPENAI_API_KEY")));
-            case "anthropic" -> new AnthropicProvider(model, promptCaching);
+            case "openai", "lmstudio", "openrouter", "gemini" -> new OpenAiCompatProvider(
+                    // The label rides along as the wire dialect — the reasoning
+                    // fields differ per provider (card 88), nothing else does.
+                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey(), provider));
+            case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
+            case "spectro-local" -> throw new IllegalStateException(
+                    "spectro-local runs through the bundled local runtime "
+                    + "(dev.spectroscope.core.local.LocalProviderFactory), wired by the "
+                    + "server/CLI — not the pure config path, which cannot start a subprocess");
             default -> throw new IllegalArgumentException("Unknown provider: " + provider);
         };
         // The autologging proxy sits around the CONCRETE provider,
@@ -612,28 +678,210 @@ public record SpectroConfig(
     }
 
     /**
-     * The openai provider's EFFECTIVE endpoint, static and pure for tests: an
-     * explicit baseUrl always wins; the untouched Ollama default swaps to
-     * api.openai.com when a key exists (a key means the cloud) and to LM
-     * Studio's port otherwise. The provider, {@link #providerHost()} and the
-     * server's live model list all derive from this one rule.
+     * The EFFECTIVE endpoint for an OpenAI-compatible provider, static and pure
+     * for tests: an explicit baseUrl always wins; otherwise the provider's own
+     * preset. No key-based swapping — the provider names the endpoint, the key
+     * only authenticates. The provider, {@link #providerHost()} and the server's
+     * live model list all derive from this one rule.
      *
-     * @param baseUrl the configured base url
-     * @param hasKey  whether OPENAI_API_KEY is set (non-blank)
+     * @param provider "openai" | "lmstudio" | "openrouter"
+     * @param baseUrl  the configured base url
      * @return the endpoint the openai-compatible provider talks to
      */
-    public static String effectiveOpenAiBaseUrl(String baseUrl, boolean hasKey) {
+    public static String effectiveOpenAiBaseUrl(String provider, String baseUrl) {
         if (!"http://localhost:11434".equals(baseUrl)) {
-            return baseUrl;
+            return baseUrl; // an explicit endpoint always wins
         }
-        return hasKey ? "https://api.openai.com" : "http://localhost:1234";
+        return openAiCompatPreset(provider);
     }
 
-    /** The effective openai endpoint for THIS config, key read from the environment.
-     *  @return the effective base URL for the openai-compatible endpoint */
+    /** The preset endpoint root for each OpenAI-compatible provider (before an
+     *  explicit override): openai = the cloud, lmstudio = a local LM Studio
+     *  server, openrouter = the OpenRouter gateway.
+     *  @param provider the provider name
+     *  @return the preset base URL */
+    static String openAiCompatPreset(String provider) {
+        return switch (provider) {
+            case "lmstudio" -> "http://localhost:1234";
+            case "openrouter" -> "https://openrouter.ai/api";
+            case "gemini" -> "https://generativelanguage.googleapis.com/v1beta/openai";
+            default -> "https://api.openai.com";
+        };
+    }
+
+    /** True for the OpenAI-compatible providers (one wire protocol, three hosts).
+     *  @param provider the provider name
+     *  @return whether it speaks the OpenAI chat/completions API */
+    static boolean isOpenAiCompat(String provider) {
+        return "openai".equals(provider)
+                || "lmstudio".equals(provider)
+                || "openrouter".equals(provider)
+                || "gemini".equals(provider);
+    }
+
+    /** The environment variable carrying a provider's API key, or {@code null}
+     *  for the local backends (ollama, lmstudio) that authenticate with nothing.
+     *  The single source for both the provider construction and the onboarding
+     *  status the faces show.
+     *  @param provider the provider name
+     *  @return the key env var name, or null when the provider is local */
+    public static String keyEnvFor(String provider) {
+        return switch (provider) {
+            case "anthropic" -> "ANTHROPIC_API_KEY";
+            case "openai" -> "OPENAI_API_KEY";
+            case "openrouter" -> "OPENROUTER_API_KEY";
+            case "gemini" -> "GEMINI_API_KEY"; // same key as the gemini image backend
+            default -> null; // ollama, lmstudio: local, no key
+        };
+    }
+
+    /** A provider's onboarding status for the first-run dialog and the picker:
+     *  an API provider is {@code "ready"} once its key is present and
+     *  {@code "needs-key"} otherwise; a local provider (ollama, lmstudio) is
+     *  {@code "local"} — its readiness is a reachability question the live model
+     *  list answers, not a key check.
+     *  @param provider   the provider name
+     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank
+     *  @return "ready" | "needs-key" | "local" */
+    public static String onboardingStatus(String provider, boolean keyPresent) {
+        return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
+    }
+
+    /** The built-in local provider's picker status: {@code "ready"} once the
+     *  model file is present, else {@code "needs-download"} — the lean DMG's
+     *  first-run modal fills it. Unlike {@link #onboardingStatus}'s {@code
+     *  "local"} (a reachability question), a bundled model's readiness is a
+     *  file-presence fact the server can answer directly.
+     *  @param modelPresent whether the GGUF resolves (bundle or user models dir)
+     *  @return "ready" | "needs-download" */
+    public static String localModelStatus(boolean modelPresent) {
+        return modelPresent ? "ready" : "needs-download";
+    }
+
+    /** {@code ~/.spectro/.env} — where the UI's "save key" writes API keys, read
+     *  back as a fallback to the process environment. User-scoped so it works the
+     *  same from the jar, the launcher and the desktop app.
+     *  @return the path (the file may not exist) */
+    public static Path dotEnvPath() {
+        return Path.of(System.getProperty("user.home"), ".spectro", ".env");
+    }
+
+    /** Resolve an API key: the process environment first (a real env var or a
+     *  launcher-loaded ./.env always wins), then {@link #dotEnvPath()}. A running
+     *  JVM cannot change its own {@code System.getenv}, so this file fallback is
+     *  what lets a key saved from the UI take effect on the next provider build.
+     *  @param keyEnv the env var name (e.g. ANTHROPIC_API_KEY), or null
+     *  @return the key value, or null when set nowhere */
+    public static String resolveApiKey(String keyEnv) {
+        if (keyEnv == null) {
+            return null;
+        }
+        String env = System.getenv(keyEnv);
+        if (env != null && !env.isBlank()) {
+            return env;
+        }
+        return dotEnvValue(keyEnv);
+    }
+
+    /** Presence of an API key across env and {@link #dotEnvPath()} — never the value.
+     *  @param keyEnv the env var name, or null
+     *  @return true when set and non-blank somewhere */
+    public static boolean hasApiKey(String keyEnv) {
+        String v = resolveApiKey(keyEnv);
+        return v != null && !v.isBlank();
+    }
+
+    /** Image-provider API keys the image subsystem may need — kept next to
+     *  {@link #imageEnv()} so a new image backend adds its key here. */
+    private static final java.util.List<String> IMAGE_KEY_ENVS =
+            java.util.List.of("GEMINI_API_KEY", "OPENAI_API_KEY");
+
+    /** The environment the image subsystem builds its provider from: the process
+     *  environment, overlaid with any image key the UI wrote to {@link #dotEnvPath()}
+     *  (so 'set key in UI' feeds image generation, not only chat). The process env
+     *  wins when it already carries the key — same precedence as {@link #resolveApiKey}. */
+    public static java.util.Map<String, String> imageEnv() {
+        return imageEnvFrom(System.getenv());
+    }
+
+    /** {@link #imageEnv()} over an injectable base environment (for tests). A
+     *  process var that is absent OR blank counts as unset — same as
+     *  {@link #resolveApiKey} — so a UI-saved {@link #dotEnvPath()} key still
+     *  surfaces (a blank {@code GEMINI_API_KEY=} must not shadow it). */
+    static java.util.Map<String, String> imageEnvFrom(java.util.Map<String, String> base) {
+        java.util.Map<String, String> env = new java.util.HashMap<>(base);
+        for (String keyEnv : IMAGE_KEY_ENVS) {
+            String existing = env.get(keyEnv);
+            if (existing == null || existing.isBlank()) {
+                String fromDotEnv = dotEnvValue(keyEnv);
+                if (fromDotEnv != null && !fromDotEnv.isBlank()) {
+                    env.put(keyEnv, fromDotEnv);
+                }
+            }
+        }
+        return env;
+    }
+
+    /** One key's value from {@link #dotEnvPath()} (KEY=value; one layer of quotes
+     *  stripped), or null. */
+    private static String dotEnvValue(String keyEnv) {
+        Path env = dotEnvPath();
+        if (!Files.exists(env)) {
+            return null;
+        }
+        try {
+            for (String line : Files.readAllLines(env)) {
+                String t = line.strip();
+                int eq = t.indexOf('=');
+                if (t.isEmpty() || t.startsWith("#") || eq < 1) {
+                    continue;
+                }
+                if (!t.substring(0, eq).strip().equals(keyEnv)) {
+                    continue;
+                }
+                String v = t.substring(eq + 1).strip();
+                if (v.length() >= 2
+                        && ((v.startsWith("\"") && v.endsWith("\"")) || (v.startsWith("'") && v.endsWith("'")))) {
+                    v = v.substring(1, v.length() - 1);
+                }
+                return v.isBlank() ? null : v;
+            }
+        } catch (IOException unreadable) {
+            return null;
+        }
+        return null;
+    }
+
+    /** Upsert an API key into {@link #dotEnvPath()} (0600) — the write half of the
+     *  UI "save key". The caller validates {@code keyEnv} against {@link #keyEnvFor}.
+     *  @param keyEnv the env var name
+     *  @param value  the secret (never logged)
+     *  @throws IOException if the file cannot be written */
+    public static void writeApiKey(String keyEnv, String value) throws IOException {
+        Path env = dotEnvPath();
+        Files.createDirectories(env.getParent());
+        List<String> lines = Files.exists(env) ? new ArrayList<>(Files.readAllLines(env)) : new ArrayList<>();
+        lines.removeIf(l -> l.strip().startsWith(keyEnv + "="));
+        lines.add(keyEnv + "=" + value);
+        Files.write(env, lines);
+        try {
+            Files.setPosixFilePermissions(env, PosixFilePermissions.fromString("rw-------"));
+        } catch (UnsupportedOperationException | IOException nonPosix) {
+            // Windows / non-POSIX: best effort — the file stays under the user's home.
+        }
+    }
+
+    /** This provider's API key from the environment — {@code OPENROUTER_API_KEY}
+     *  for openrouter, {@code OPENAI_API_KEY} otherwise (LM Studio ignores it).
+     *  @return the key, or null when unset */
+    private String openAiCompatKey() {
+        return resolveApiKey(keyEnvFor(provider)); // null keyEnv (lmstudio) -> no key
+    }
+
+    /** The effective openai-compatible endpoint for THIS config.
+     *  @return the effective base URL */
     private String openAiBaseUrl() {
-        String key = System.getenv("OPENAI_API_KEY");
-        return effectiveOpenAiBaseUrl(baseUrl, key != null && !key.isBlank());
+        return effectiveOpenAiBaseUrl(provider, baseUrl);
     }
 
     /**
@@ -649,7 +897,7 @@ public record SpectroConfig(
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
         }
-        String effective = "openai".equals(provider) ? openAiBaseUrl() : baseUrl;
+        String effective = isOpenAiCompat(provider) ? openAiBaseUrl() : baseUrl;
         try {
             java.net.URI url = java.net.URI.create(effective);
             String host = url.getHost();
@@ -672,7 +920,7 @@ public record SpectroConfig(
      * @return the image backend named by {@code imageProvider} ("gemini" or "openai")
      */
     public dev.spectroscope.core.image.ImageProvider imageProviderFromConfig() {
-        return dev.spectroscope.core.image.ImageProviders.create(imageProvider, imageModel, System.getenv());
+        return dev.spectroscope.core.image.ImageProviders.create(imageProvider, imageModel, imageEnv());
     }
 
     /** The env map for Chrome discovery: the process env, with the configured
@@ -708,6 +956,33 @@ public record SpectroConfig(
             }
         }
         return "";
+    }
+
+    /**
+     * AGENTS.md from the agent's WORKSPACE — the emerging cross-tool
+     * agent-instructions convention, read from where the agent actually works
+     * (its workspace, next to the code it edits), and appended to the system
+     * prompt. This is a different scope than {@link #loadProjectMd(Path)}:
+     * SPECTRO.md carries spectroscope's own project context from the project
+     * root, AGENTS.md carries the workspace's agent house-rules. Both append
+     * when present; neither shadows the other. A {@code null} or AGENTS.md-less
+     * workspace yields an empty string. Provider-neutral, like SPECTRO.md.
+     *
+     * @param workspace the agent's working directory searched for AGENTS.md
+     *                  (may be {@code null} when no workspace is resolved yet)
+     * @return the ready-to-append prompt section, or "" when no file is present
+     */
+    public static String loadAgentsMd(Path workspace) {
+        if (workspace == null) {
+            return "";
+        }
+        Path file = workspace.resolve("AGENTS.md");
+        try {
+            String content = Files.readString(file, StandardCharsets.UTF_8).strip();
+            return "\n\n## Agent instructions (AGENTS.md)\n\n" + content;
+        } catch (IOException absent) {
+            return "";
+        }
     }
 
     /** Reads one layer into a partial holder, or an all-null holder if absent.
@@ -790,6 +1065,8 @@ public record SpectroConfig(
         public String imageModel;
         public String sttModel;
         public String chromeBinary;
+        public String otlpEndpoint;
+        public String otlpBasicAuth;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -820,6 +1097,8 @@ public record SpectroConfig(
             out.imageModel = Optional.ofNullable(higher.imageModel).orElse(imageModel);
             out.sttModel = Optional.ofNullable(higher.sttModel).orElse(sttModel);
             out.chromeBinary = Optional.ofNullable(higher.chromeBinary).orElse(chromeBinary);
+            out.otlpEndpoint = Optional.ofNullable(higher.otlpEndpoint).orElse(otlpEndpoint);
+            out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -847,7 +1126,9 @@ public record SpectroConfig(
                     Optional.ofNullable(logLevel).orElse(DEFAULTS.logLevel()),
                     Optional.ofNullable(imageModel).orElse(DEFAULTS.imageModel()),
                     Optional.ofNullable(sttModel).orElse(DEFAULTS.sttModel()),
-                    Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()));
+                    Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()),
+                    Optional.ofNullable(otlpEndpoint).orElse(DEFAULTS.otlpEndpoint()),
+                    Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()));
         }
 
         /**
@@ -872,6 +1153,10 @@ public record SpectroConfig(
             // per-session temp folder (resolved later, when the session id exists).
             out.workspace = env.get("SPECTRO_WORKSPACE");
             out.imageProvider = env.get("SPECTRO_IMAGE_PROVIDER");
+            // The OTLP exporter (off unless an endpoint is set): traces of every
+            // run stream to the configured backend (Langfuse, Jaeger, ...).
+            out.otlpEndpoint = env.get("SPECTRO_OTLP_ENDPOINT");
+            out.otlpBasicAuth = env.get("SPECTRO_OTLP_BASIC_AUTH");
             // SPECTRO_THINKING (1/0/true/false) sits next to SPECTRO_PROVIDER in the env layer.
             String thinking = env.get("SPECTRO_THINKING");
             if (thinking != null) {

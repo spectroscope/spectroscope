@@ -37,7 +37,15 @@ const URL_PREVIEW_CHARS = 60;
 
 /** Open a think/say activity from its first delta. */
 function textActivity(id: string, kind: ActivityKind, agentId: string, text: string, i: number): Activity {
-  return { id, kind, label: cut(text, ACTIVITY_LABEL_CHARS), agentId, from: i, to: i, text: text.slice(0, TEXT_CAP) };
+  return {
+    id,
+    kind,
+    label: cut(text, ACTIVITY_LABEL_CHARS),
+    agentId,
+    from: i,
+    to: i,
+    text: text.slice(0, TEXT_CAP),
+  };
 }
 
 /** Stretch an open think/say activity by one more delta. */
@@ -77,7 +85,8 @@ function toolLabel(name: string, input: unknown): string {
   if (name === "write_file") return `write ${fileLabel(inputStr(input, "path") ?? "file")}`;
   if (name === "edit_file") return `edit ${fileLabel(inputStr(input, "path") ?? "file")}`;
   if (name === "list_dir") return `ls ${inputStr(input, "path") ?? ""}`.trim();
-  if (name === "run_command") return `$ ${cut(inputStr(input, "command") ?? "command", COMMAND_PREVIEW_CHARS)}`;
+  if (name === "run_command")
+    return `$ ${cut(inputStr(input, "command") ?? "command", COMMAND_PREVIEW_CHARS)}`;
   if (name === "web_fetch") return `fetch ${cut(inputStr(input, "url") ?? "url", URL_PREVIEW_CHARS)}`;
   if (name === "web_search") return `search "${cut(inputStr(input, "query") ?? "query", URL_PREVIEW_CHARS)}"`;
   if (name === "browse_page") return `browse ${cut(inputStr(input, "url") ?? "url", URL_PREVIEW_CHARS)}`;
@@ -144,7 +153,8 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
     block = null;
     wrapperCallId = null;
   };
-  const branchOf = (agentId: string): Branch | null => block?.branches.find((b) => b.agentId === agentId) ?? null;
+  const branchOf = (agentId: string): Branch | null =>
+    block?.branches.find((b) => b.agentId === agentId) ?? null;
 
   const foldChildContent = (i: number, agentId: string, e: RunEvent) => {
     const br = branchOf(agentId);
@@ -153,15 +163,28 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
     const open = branchOpen.get(agentId) ?? null;
     if (e.type === "thinking_delta" || e.type === "text_delta") {
       const kind: ActivityKind = e.type === "thinking_delta" ? "think" : "say";
-      if (open && open.kind === kind) { growText(open, e.text, i); return; }
+      if (open && open.kind === kind) {
+        growText(open, e.text, i);
+        return;
+      }
       const a = textActivity(nextId(), kind, agentId, e.text, i);
       br.activities.push(a);
       branchOpen.set(agentId, a);
       return;
     }
     if (e.type === "tool_call") {
-      if (e.name === "report_status") { if (open) open.to = i; return; }
-      const a: Activity = { id: nextId(), kind: "tool", label: toolLabel(e.name, e.input), agentId, from: i, to: i };
+      if (e.name === "report_status") {
+        if (open) open.to = i;
+        return;
+      }
+      const a: Activity = {
+        id: nextId(),
+        kind: "tool",
+        label: toolLabel(e.name, e.input),
+        agentId,
+        from: i,
+        to: i,
+      };
       br.activities.push(a);
       branchOpen.set(agentId, a);
       byCall.set(e.callId, a);
@@ -169,8 +192,11 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
     }
     if (e.type === "tool_result") {
       const a = byCall.get(e.callId);
-      if (a && a.agentId === agentId) { a.to = i; a.isError = e.isError || a.gate === "denied"; branchOpen.set(agentId, null); }
-      else if (open) open.to = i;
+      if (a && a.agentId === agentId) {
+        a.to = i;
+        a.isError = e.isError || a.gate === "denied";
+        branchOpen.set(agentId, null);
+      } else if (open) open.to = i;
       return;
     }
     if (open) open.to = i;
@@ -180,13 +206,19 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
     // ---- gate events route by callId, wherever the tool lives ----
     if (e.type === "permission_request") {
       const a = byCall.get(e.callId);
-      if (a) { a.gate = "pending"; a.to = Math.max(a.to, i); }
+      if (a) {
+        a.gate = "pending";
+        a.to = Math.max(a.to, i);
+      }
       extend(i);
       return;
     }
     if (e.type === "permission_decision") {
       const a = byCall.get(e.callId);
-      if (a) { a.gate = e.allowed ? "allowed" : "denied"; a.to = Math.max(a.to, i); }
+      if (a) {
+        a.gate = e.allowed ? "allowed" : "denied";
+        a.to = Math.max(a.to, i);
+      }
       extend(i);
       return;
     }
@@ -208,7 +240,10 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
       }
       const agent = "agentId" in e && typeof e.agentId === "string" ? e.agentId : null;
       if (agent && agent !== "main" && branchOf(agent)) {
-        if (e.type === "run_start" || e.type === "turn_start") { block.to = i; return; }
+        if (e.type === "run_start" || e.type === "turn_start") {
+          block.to = i;
+          return;
+        }
         foldChildContent(i, agent, e);
         return;
       }
@@ -218,7 +253,8 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
         return;
       }
       if (e.type === "tool_result" && agent === "main") {
-        const closes = (wrapperCallId !== null && e.callId === wrapperCallId) ||
+        const closes =
+          (wrapperCallId !== null && e.callId === wrapperCallId) ||
           (wrapperCallId === null && branchOf(e.callId) !== null);
         block.to = i;
         if (closes) closeBlock(i);
@@ -232,12 +268,22 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
     switch (e.type) {
       case "run_start":
         closeMain();
-        pushMain({ id: nextId(), kind: "user", label: cut(e.prompt, ACTIVITY_LABEL_CHARS), agentId: "main", from: i, to: i });
+        pushMain({
+          id: nextId(),
+          kind: "user",
+          label: cut(e.prompt, ACTIVITY_LABEL_CHARS),
+          agentId: "main",
+          from: i,
+          to: i,
+        });
         return;
       case "thinking_delta":
       case "text_delta": {
         const kind: ActivityKind = e.type === "thinking_delta" ? "think" : "say";
-        if (cur && cur.kind === kind) { growText(cur, e.text, i); return; }
+        if (cur && cur.kind === kind) {
+          growText(cur, e.text, i);
+          return;
+        }
         closeMain();
         pushMain(textActivity(nextId(), kind, "main", e.text, i));
         return;
@@ -248,7 +294,14 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
           return;
         }
         closeMain();
-        const a: Activity = { id: nextId(), kind: "tool", label: toolLabel(e.name, e.input), agentId: "main", from: i, to: i };
+        const a: Activity = {
+          id: nextId(),
+          kind: "tool",
+          label: toolLabel(e.name, e.input),
+          agentId: "main",
+          from: i,
+          to: i,
+        };
         byCall.set(e.callId, a);
         pushMain(a);
         return;
@@ -260,8 +313,11 @@ export function buildOverview(events: RunEvent[]): OverviewNode[] {
         return;
       case "tool_result": {
         const a = byCall.get(e.callId);
-        if (a) { a.to = i; a.isError = e.isError || a.gate === "denied"; if (cur === a) closeMain(); }
-        else extend(i);
+        if (a) {
+          a.to = i;
+          a.isError = e.isError || a.gate === "denied";
+          if (cur === a) closeMain();
+        } else extend(i);
         return;
       }
       case "compaction":

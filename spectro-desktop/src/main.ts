@@ -2,15 +2,21 @@
 // spectro-server JVM. The core never runs in Electron (there is no JVM here); the main
 // process spawns "java -jar spectro-server.jar" as a child, health-checks it, and points a
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
+import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
+import { appMenuTemplate, openAboutScript } from "./menu";
 
 const HEALTH_BUDGET_MS = 30_000; // total time we wait for the server to report healthy
 const HEALTH_INTERVAL_MS = 500;  // gap between health polls
 const JOBS_POLL_MS = 30_000;     // notification poller cadence
 const KILL_GRACE_MS = 5_000;     // SIGTERM -> wait -> SIGKILL
+
+// The name in the menu bar. Not app.name, which is the npm package name — see
+// the note on appMenuTemplate for why that one is left alone.
+const PRODUCT_NAME = "spectroscope";
 
 // 16x16 diamond (Ebony #12120F) as an embedded PNG — no icon asset needed.
 const TRAY_ICON =
@@ -38,19 +44,56 @@ function findFreePort(): Promise<number> {
 }
 
 // (b) Resolve the jar: packaged, it sits in the app resources (extraResources, package.json);
-// in dev it comes straight from the Gradle build (`./gradlew :spectro-server:bootJar`). Keep
-// the version in sync with the `version` in spectro-server/build.gradle.kts.
+// in dev it comes straight from the Gradle build (`./gradlew :spectro-server:bootJar`). The dev
+// path GLOBS the boot jar so a version bump (0.1.0 -> 0.2.0 -> ...) never breaks it — bootJar
+// writes spectro-server-<version>.jar (and a -plain.jar we must skip) into build/libs.
 function resolveJarPath(): string {
-  return app.isPackaged
-    ? path.join(process.resourcesPath, "spectro-server.jar")
-    : path.join(__dirname, "..", "..", "spectro-server", "build", "libs", "spectro-server-0.0.1.jar");
+  if (app.isPackaged) return path.join(process.resourcesPath, "spectro-server.jar");
+  const libs = path.join(__dirname, "..", "..", "spectro-server", "build", "libs");
+  // Newest by mtime, not by name: old versions linger in build/libs until a
+  // `clean`, and a name sort would mis-rank 0.10 below 0.2. bootJar's freshest
+  // output is always the one we want.
+  const boot = fs
+    .readdirSync(libs)
+    .filter((f) => /^spectro-server-.*\.jar$/.test(f) && !f.endsWith("-plain.jar"))
+    .map((f) => ({ f, m: fs.statSync(path.join(libs, f)).mtimeMs }))
+    .sort((a, b) => b.m - a.m);
+  if (boot.length === 0) {
+    throw new Error(`no spectro-server boot jar in ${libs} — run ./gradlew :spectro-server:bootJar`);
+  }
+  return path.join(libs, boot[0].f);
+}
+
+// (b') Resolve the java binary: the packaged app bundles its OWN runtime (extraResources `jre`,
+// jlink'd from the JDK), so a fresh machine needs no system Java — a true one-click run kit. In
+// dev we fall through to whatever `java` is on the PATH.
+function resolveJavaBin(): string {
+  if (!app.isPackaged) return "java";
+  return path.join(process.resourcesPath, "jre", "bin", "java");
+}
+
+// (b'') Resolve the bundled binaries dir: the packaged app carries llama.cpp's `llama-server`
+// plus its dylib closure (extraResources `bin`), which is what lets the built-in model run with
+// nothing else installed. Handed to the JVM as `spectro.bundle.bin`, the property the server's
+// ServerLocalRuntime already reads. In dev there is no bundle and it falls back to the PATH.
+function resolveBundledBinDir(): string | null {
+  if (!app.isPackaged) return null;
+  const dir = path.join(process.resourcesPath, "bin");
+  return fs.existsSync(path.join(dir, "llama-server")) ? dir : null;
 }
 
 // (b) Spawn the JVM. A missing java binary surfaces as ENOENT on the spawn — that must become
 // a sentence, not a stack trace. Every startup failure kills the child before it can linger.
 function spawnServer(port: number): ChildProcess {
   const jarPath = resolveJarPath();
-  const jvm = spawn("java", ["-jar", jarPath, "--server.port=" + port]);
+  const binDir = resolveBundledBinDir();
+  const args = [
+    ...(binDir ? ["-Dspectro.bundle.bin=" + binDir] : []),
+    "-jar",
+    jarPath,
+    "--server.port=" + port,
+  ];
+  const jvm = spawn(resolveJavaBin(), args);
 
   jvm.on("error", (err: NodeJS.ErrnoException) => {
     if (err.code === "ENOENT") {
@@ -95,6 +138,16 @@ function createWindow(port: number): BrowserWindow {
     // talks to the server over WebSocket — the shell exposes no Node API to it.
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
+
+  // Links leave for the real browser. Electron's default would open them in a
+  // second BrowserWindow with no address bar and no back button, which is a
+  // worse browser than the one the user already has — and the About panel is
+  // mostly links: the repository, the two licences, the author.
+  w.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    return { action: "deny" };
+  });
+
   void w.loadURL(`http://127.0.0.1:${port}`); // the stage-8 UI, WebSocket as always
   w.on("closed", () => { win = null; });
   return w;
@@ -154,17 +207,43 @@ function createTray(): Tray {
   return t;
 }
 
+// Show the app's own About panel: the licence terms in full, in the theme the
+// user is running, with the attribution line and its copy button. The native
+// macOS panel stays available to nobody — it can only carry a version and a
+// copyright line, and the thing worth reading here is the grant.
+//
+// The window may be closed (the tray keeps the app alive), so this opens one
+// and waits for the page before dispatching. A menu item that silently did
+// nothing on the first click would be the worst version of this feature.
+function showAbout(): void {
+  focusOrCreateWindow();
+  const page = win?.webContents;
+  if (!page) return;
+  const dispatch = (): void => {
+    void page.executeJavaScript(openAboutScript()).catch(() => {
+      // The page is not the app (a load failure, an error page). There is
+      // nothing honest to show here, and a native fallback would be a second
+      // copy of the licence.
+    });
+  };
+  if (page.isLoading()) page.once("did-finish-load", dispatch);
+  else dispatch();
+}
+
 function createAppMenu(): void {
-  const template: Electron.MenuItemConstructorOptions[] = [
-    ...(process.platform === "darwin" ? [{ role: "appMenu" as const }] : []),
-    { label: "File", submenu: [
-      { label: "New chat", accelerator: "CmdOrCtrl+N", click: () => { focusOrCreateWindow(); win?.webContents.reload(); } },
-      { role: "quit" },
-    ] },
-    { role: "editMenu" },
-    { role: "viewMenu" },
-  ];
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate(
+      appMenuTemplate({
+        productName: PRODUCT_NAME,
+        isMac: process.platform === "darwin",
+        onAbout: showAbout,
+        onNewChat: () => {
+          focusOrCreateWindow();
+          win?.webContents.reload();
+        },
+      }),
+    ),
+  );
 }
 
 // (e) Single-instance lock: a second launch focuses the first instance instead of starting a

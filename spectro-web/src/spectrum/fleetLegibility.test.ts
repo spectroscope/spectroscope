@@ -4,12 +4,26 @@ import type { FleetGraph, FleetGraphNode } from "./fleetGraph";
 
 function anode(id: string, over: Partial<FleetGraphNode> = {}): FleetGraphNode {
   return {
-    id, role: "", connected: true, epoch: 0, state: "working",
-    pendingGate: false, spawnedBy: null, inTokens: 0, outTokens: 0, ...over,
+    id,
+    role: "",
+    connected: true,
+    epoch: 0,
+    state: "working",
+    pendingGate: false,
+    spawnedBy: null,
+    inTokens: 0,
+    outTokens: 0,
+    firstTs: null,
+    lastTs: null,
+    ...over,
   };
 }
-const spawn = (source: string, target: string) =>
-  ({ id: `spawn:${source}->${target}`, source, target, kind: "spawn" as const });
+const spawn = (source: string, target: string) => ({
+  id: `spawn:${source}->${target}`,
+  source,
+  target,
+  kind: "spawn" as const,
+});
 
 describe("collapseFleetGraph — aggregate-by-name", () => {
   it("collapses same-role siblings into one group node when >= minGroup", () => {
@@ -35,6 +49,37 @@ describe("collapseFleetGraph — aggregate-by-name", () => {
     // the three spawn edges collapse to one deduped panel -> group edge
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0]).toMatchObject({ source: "panel", target: group.id, kind: "spawn" });
+  });
+
+  it("never folds under an unreachable threshold (the canvas's expanded mode)", () => {
+    // FleetCanvas implements "expanded" as minGroup: Number.MAX_SAFE_INTEGER —
+    // pin that the sentinel really means "no groups, every agent individual".
+    const graph: FleetGraph = {
+      nodes: [
+        anode("panel", { role: "conductor" }),
+        ...Array.from({ length: 8 }, (_, i) => anode(`w${i}`, { role: "worker", spawnedBy: "panel" })),
+      ],
+      edges: Array.from({ length: 8 }, (_, i) => spawn("panel", `w${i}`)),
+    };
+    const out = collapseFleetGraph(graph, { minGroup: Number.MAX_SAFE_INTEGER });
+    expect(out.nodes.every((n) => n.kind === "agent")).toBe(true);
+    expect(out.nodes).toHaveLength(9);
+  });
+
+  it("folds the members' activity span into the group (min first, max last)", () => {
+    const graph: FleetGraph = {
+      nodes: [
+        anode("panel", { role: "conductor" }),
+        anode("w1", { role: "worker", spawnedBy: "panel", firstTs: 10, lastTs: 40 }),
+        anode("w2", { role: "worker", spawnedBy: "panel", firstTs: 5, lastTs: 20 }),
+        anode("w3", { role: "worker", spawnedBy: "panel" }), // unstamped — ignored
+      ],
+      edges: [spawn("panel", "w1"), spawn("panel", "w2"), spawn("panel", "w3")],
+    };
+
+    const group = collapseFleetGraph(graph, { minGroup: 3 }).nodes.find((n) => n.kind === "group")!;
+    expect(group.firstTs).toBe(5);
+    expect(group.lastTs).toBe(40);
   });
 
   it("does not collide a top-level fan-out with children of an agent literally named 'root'", () => {
@@ -90,8 +135,11 @@ describe("collapseFleetGraph — subtree roll-up", () => {
         anode("t2", { role: "tool", spawnedBy: "w2", inTokens: 4 }),
       ],
       edges: [
-        spawn("panel", "w1"), spawn("panel", "w2"), spawn("panel", "w3"),
-        spawn("w1", "t1"), spawn("w2", "t2"),
+        spawn("panel", "w1"),
+        spawn("panel", "w2"),
+        spawn("panel", "w3"),
+        spawn("w1", "t1"),
+        spawn("w2", "t2"),
       ],
     };
 
@@ -125,8 +173,12 @@ describe("collapseFleetGraph — subtree roll-up", () => {
         anode("s3", { role: "sub", spawnedBy: "w1" }),
       ],
       edges: [
-        spawn("panel", "w1"), spawn("panel", "w2"), spawn("panel", "w3"),
-        spawn("w1", "s1"), spawn("w1", "s2"), spawn("w1", "s3"),
+        spawn("panel", "w1"),
+        spawn("panel", "w2"),
+        spawn("panel", "w3"),
+        spawn("w1", "s1"),
+        spawn("w1", "s2"),
+        spawn("w1", "s3"),
       ],
     };
 
@@ -137,7 +189,9 @@ describe("collapseFleetGraph — subtree roll-up", () => {
     // the sub-group's parent reroutes to the worker group it lives under
     const subGroup = out.nodes.find((n) => n.id === "group:w1:sub")!;
     expect(subGroup.spawnedBy).toBe("group:panel:worker");
-    expect(out.edges.some((e) => e.source === "group:panel:worker" && e.target === "group:w1:sub")).toBe(true);
+    expect(out.edges.some((e) => e.source === "group:panel:worker" && e.target === "group:w1:sub")).toBe(
+      true,
+    );
   });
 });
 
@@ -223,19 +277,21 @@ describe("collapseFleetGraph — expand a folded group (Finding C)", () => {
         anode("s3", { role: "sub", spawnedBy: "w1" }),
       ],
       edges: [
-        spawn("panel", "w1"), spawn("panel", "w2"), spawn("panel", "w3"),
-        spawn("w1", "s1"), spawn("w1", "s2"), spawn("w1", "s3"),
+        spawn("panel", "w1"),
+        spawn("panel", "w2"),
+        spawn("panel", "w3"),
+        spawn("w1", "s1"),
+        spawn("w1", "s2"),
+        spawn("w1", "s3"),
       ],
     };
 
     const base = collapseFleetGraph(nested, { minGroup: 3 });
-    expect(base.nodes.map((n) => n.id).sort())
-      .toEqual(["group:panel:worker", "group:w1:sub", "panel"]);
+    expect(base.nodes.map((n) => n.id).sort()).toEqual(["group:panel:worker", "group:w1:sub", "panel"]);
 
     const out = collapseFleetGraph(nested, { minGroup: 3, expanded: ["group:w1:sub"] });
     // the worker group stays folded; s1..s3 surface individually (NOT absorbed)
-    expect(out.nodes.map((n) => n.id).sort())
-      .toEqual(["group:panel:worker", "panel", "s1", "s2", "s3"]);
+    expect(out.nodes.map((n) => n.id).sort()).toEqual(["group:panel:worker", "panel", "s1", "s2", "s3"]);
     const s1 = out.nodes.find((n) => n.id === "s1")!;
     expect(s1.kind).toBe("agent");
     expect(s1.groupId).toBe("group:w1:sub"); // carries its collapse-back id
@@ -257,8 +313,12 @@ describe("collapseFleetGraph — expand a folded group (Finding C)", () => {
         anode("b3", { role: "beta", spawnedBy: "root" }),
       ],
       edges: [
-        spawn("root", "a1"), spawn("root", "a2"), spawn("root", "a3"),
-        spawn("root", "b1"), spawn("root", "b2"), spawn("root", "b3"),
+        spawn("root", "a1"),
+        spawn("root", "a2"),
+        spawn("root", "a3"),
+        spawn("root", "b1"),
+        spawn("root", "b2"),
+        spawn("root", "b3"),
       ],
     };
 

@@ -1,0 +1,23 @@
+meta {
+  name: one transcript's JSONL
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/claude/transcripts/content
+  body: none
+  auth: none
+}
+
+params:query {
+  path: {{transcriptPath}}
+}
+
+docs {
+  One transcript's raw JSONL for the import path. 400 non-.jsonl, 404 outside base/missing, 413 over 64 MB.
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

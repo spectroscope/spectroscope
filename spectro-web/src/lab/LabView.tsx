@@ -13,9 +13,25 @@ import { Resizer } from "../components/Resizer";
 import { setChatW, setTraceW, toggleChat, toggleTrace, useLayout } from "../state/layout";
 import type { PendingAttachment } from "../components/AttachmentPreview";
 import { backToLive, loadReplay, step, useStepper } from "../state/stepper";
-import { LabControls, LabHint } from "./LabControls";
+import { LabHint } from "./LabControls";
+import { LabTransport } from "./LabTransport";
 import { FlowMap } from "./FlowMap";
 import { LabTrace } from "./LabTrace";
+import { ExpandAllContext } from "./flowmap/expandContext";
+import { LAB_FACES, setLabFace, useLabFace } from "../state/labFace";
+import { t } from "../i18n/i18n";
+import { useLang } from "../state/lang";
+
+/** The card-view choice survives tab switches and reloads (TextView pattern). */
+const VIEW_STORAGE_KEY = "spectroscope.lab.view";
+
+function storedExpanded(): boolean {
+  try {
+    return localStorage.getItem(VIEW_STORAGE_KEY) === "expanded";
+  } catch {
+    return false;
+  }
+}
 
 // Pane-resize clamps: neither side pane shrinks below its minimum, and the
 // centre always keeps room for the stepper visuals.
@@ -35,11 +51,7 @@ export function LabView(props: {
   /** The current model name, shown in the Map's LLM node. */
   model?: string;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
-  onDecide: (
-    callId: string,
-    allowed: boolean,
-    opts?: { remember?: boolean; persist?: boolean },
-  ) => void;
+  onDecide: (callId: string, allowed: boolean, opts?: { remember?: boolean; persist?: boolean }) => void;
   onReturnToLive: () => void;
   /** Present only for resumable archives — passed through to the Lab's chat. */
   onResume?: () => void;
@@ -49,7 +61,24 @@ export function LabView(props: {
   sendClient: (msg: ClientMessage) => boolean;
 }) {
   const st = useStepper();
+  const lang = useLang();
+  // The master face of the map's tool panels (card 120): moving it re-faces
+  // open panels too — a per-panel pick holds only until the next move here.
+  const labFace = useLabFace();
   const { replay, liveEvents } = props;
+
+  // Compact vs expanded agent cards (owner switch): expanded provides the
+  // engine's ExpandAllContext — every disclosure open, the context beside the
+  // agent, the prompt beside the user — exactly the edu lessons' reading.
+  const [expanded, setExpanded] = useState<boolean>(storedExpanded);
+  const pickView = (next: boolean): void => {
+    setExpanded(next);
+    try {
+      localStorage.setItem(VIEW_STORAGE_KEY, next ? "expanded" : "compact");
+    } catch {
+      // private mode: the toggle simply does not stick
+    }
+  };
 
   // Flow = paced auto-play: a timer calls step() every intervalMs (fine/coarse
   // honoured by step itself). An empty queue makes step() a no-op, so live
@@ -118,17 +147,23 @@ export function LabView(props: {
   const rowRef = useRef<HTMLDivElement>(null);
   const resizeChat = (clientX: number): void => {
     const r = rowRef.current?.getBoundingClientRect();
-    if (r) setChatW(Math.max(LAB_CHAT_MIN_WIDTH_PX,
-        Math.min(clientX - r.left, r.width - LAB_CENTER_MIN_WIDTH_PX)));
+    if (r)
+      setChatW(
+        Math.max(LAB_CHAT_MIN_WIDTH_PX, Math.min(clientX - r.left, r.width - LAB_CENTER_MIN_WIDTH_PX)),
+      );
   };
   const resizeTrace = (clientX: number): void => {
     const r = rowRef.current?.getBoundingClientRect();
-    if (r) setTraceW(Math.max(LAB_TRACE_MIN_WIDTH_PX,
-        Math.min(r.right - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX)));
+    if (r)
+      setTraceW(
+        Math.max(LAB_TRACE_MIN_WIDTH_PX, Math.min(r.right - clientX, r.width - LAB_CENTER_MIN_WIDTH_PX)),
+      );
   };
-  const rowClass =
-    `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;
-  const rowStyle = { "--lab-chat-w": `${layout.chatW}px`, "--lab-trace-w": `${layout.traceW}px` } as CSSProperties;
+  const rowClass = `lab-row${layout.chatOpen ? "" : " lab-row--chat-collapsed"}${layout.traceOpen ? "" : " lab-row--trace-collapsed"}`;
+  const rowStyle = {
+    "--lab-chat-w": `${layout.chatW}px`,
+    "--lab-trace-w": `${layout.traceW}px`,
+  } as CSSProperties;
 
   return (
     <div className={rowClass} ref={rowRef} style={rowStyle}>
@@ -150,9 +185,62 @@ export function LabView(props: {
       />
 
       <section className="lab-center" aria-label="System-Map (Flow)">
-        <LabControls running={props.running} />
-
-        <FlowMap scene={st.scene} applied={st.applied} provider={props.provider} model={props.model} systemPrompt={sysPrompt ?? undefined} />
+        <LabTransport
+          running={props.running}
+          trailing={
+            <>
+              {/* The labelled master, trace-parity (the trace's "hauptschalter"
+                  precedent): its buttons reuse the shared face labels. */}
+              <div className="lab-seg lab-face-seg" role="group" aria-label={t(lang, "lab.faceAria")}>
+                <span className="lab-seg-label mono" title={t(lang, "lab.faceHint")}>
+                  {t(lang, "lab.face")}
+                </span>
+                {LAB_FACES.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    className={labFace.face === f ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                    aria-pressed={labFace.face === f}
+                    title={t(lang, `lab.faceTitle.${f}`)}
+                    onClick={() => setLabFace(f)}
+                  >
+                    {t(lang, `trace.mode.${f}`)}
+                  </button>
+                ))}
+              </div>
+              <div className="lab-seg lab-view-seg" role="group" aria-label={t(lang, "lab.viewAria")}>
+                <button
+                  type="button"
+                  className={!expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                  aria-pressed={!expanded}
+                  title={t(lang, "lab.viewCompactTitle")}
+                  onClick={() => pickView(false)}
+                >
+                  {t(lang, "lab.viewCompact")}
+                </button>
+                <button
+                  type="button"
+                  className={expanded ? "lab-seg-btn lab-seg-btn--active" : "lab-seg-btn"}
+                  aria-pressed={expanded}
+                  title={t(lang, "lab.viewExpandedTitle")}
+                  onClick={() => pickView(true)}
+                >
+                  {t(lang, "lab.viewExpanded")}
+                </button>
+              </div>
+            </>
+          }
+        >
+          <ExpandAllContext.Provider value={expanded}>
+            <FlowMap
+              scene={st.scene}
+              applied={st.applied}
+              provider={props.provider}
+              model={props.model}
+              systemPrompt={sysPrompt ?? undefined}
+            />
+          </ExpandAllContext.Provider>
+        </LabTransport>
 
         <LabHint />
       </section>

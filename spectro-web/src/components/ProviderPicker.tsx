@@ -1,74 +1,64 @@
 // The header provider picker: the connection/provider chip is a button that opens
-// a small popover to switch the LLM backend (anthropic / ollama / openai) and its
-// model mid-session. Sends set_provider; the switch applies on the next prompt.
+// a small popover to switch the LLM backend (anthropic / ollama / openai / …) and
+// its model mid-session. Sends set_provider; the switch applies on the next prompt.
 //
 // The model field is a REAL dropdown (owner decision) fed by GET /api/models —
-// Ollama lists its actually-installed models live, the cloud providers a curated
-// set. The current model is always selectable even when the list doesn't carry
-// it, "Eigenes Modell …" reveals a free-text input for anything newer than the
-// curated list, and an EMPTY list (Ollama down, no key) falls back to free text.
+// see providerModelField.tsx for the shared brain. When a provider needs a key,
+// this picker does NOT take one: the key write lives only in Settings, so it
+// points there instead (owner decision).
 
 import { useEffect, useRef, useState } from "react";
 import type { ConnectionStatus } from "../transport/ws";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-
-const PROVIDERS = ["anthropic", "ollama", "openai"] as const;
-const CUSTOM = "__custom__";
-
-// A sensible model prefill per provider (the real current model wins).
-const DEFAULT_MODEL: Record<string, string> = {
-  anthropic: "claude-opus-4-8",
-  ollama: "qwen3",
-  openai: "gpt-4o-mini",
-};
+import { PROVIDERS, providerDisplayName } from "./providerPickerMode";
+import { ModelField, useProviderModels } from "./providerModelField";
+import { LocalModelDialog } from "./LocalModelDialog";
+import { ReasoningControl } from "./ReasoningControl";
 
 export function ProviderPicker({
   provider,
   model: activeModel,
   status,
+  providerStatus,
   onApply,
+  onOpenSettings,
 }: {
   provider: string;
   /** The current model, so the chip shows it and the form prefills the real one. */
   model?: string;
   status: ConnectionStatus;
+  /** Per-provider onboarding status from /api/config: ready | needs-key | local.
+   *  Drives the honest 'no key' affordance instead of a fake list. */
+  providerStatus?: Record<string, string>;
   onApply: (provider: string, model: string) => void;
+  /** Open the Settings panel — the needs-key affordance points there, since the
+   *  key write lives only in Settings. */
+  onOpenSettings?: () => void;
 }) {
   const lang = useLang();
   const [open, setOpen] = useState(false);
   const [sel, setSel] = useState(provider);
   const [model, setModel] = useState("");
-  const [custom, setCustom] = useState(false);
-  const [models, setModels] = useState<string[]>([]); // per-provider list for the dropdown
+  const [showDownload, setShowDownload] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+
+  const isLocal = sel === "spectro-local";
 
   // Opening seeds the form from the active provider and the real current model.
   useEffect(() => {
     if (open) {
       setSel(provider);
-      setModel(activeModel || DEFAULT_MODEL[provider] || "");
-      setCustom(false);
+      setModel(activeModel || "");
     }
   }, [open, provider, activeModel]);
 
-  // The model list follows the selected provider (Ollama: live installed models;
-  // cloud: curated). An empty list keeps the free-text fallback.
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    fetch(`/api/models?provider=${encodeURIComponent(sel)}`)
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (alive && Array.isArray(list)) setModels(list.filter((m) => typeof m === "string"));
-      })
-      .catch(() => {
-        if (alive) setModels([]);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [open, sel]);
+  // Shared model list + field mode; autoPick snaps a stale local model.
+  const { models, mode } = useProviderModels(open ? sel : "", providerStatus, {
+    model,
+    onModelChange: setModel,
+    autoPick: true,
+  });
 
   // Close on outside click / Escape.
   useEffect(() => {
@@ -90,13 +80,16 @@ export function ProviderPicker({
   const dot = status === "open" ? "ok" : status === "connecting" ? "warn" : "error";
 
   const apply = (): void => {
+    // The built-in provider always routes through the chooser: WHICH model runs
+    // is a real decision now (five entries, different tools/size trade-offs),
+    // and the dialog is also where an absent model gets downloaded.
+    if (isLocal) {
+      setShowDownload(true);
+      return;
+    }
     onApply(sel, model.trim());
     setOpen(false);
   };
-
-  // The dropdown always carries the seeded/current model, even when the
-  // fetched list doesn't — the selection must show reality, never lie.
-  const options = model !== "" && !custom && !models.includes(model) ? [model, ...models] : models;
 
   return (
     <div className="provider-picker" ref={ref}>
@@ -112,7 +105,14 @@ export function ProviderPicker({
         <span className="mono">{provider}</span>
         {activeModel && <span className="provider-chip-model mono">{activeModel}</span>}
         <svg viewBox="0 0 12 12" width="10" height="10" aria-hidden="true" className="provider-caret">
-          <path d="M3 4.5 L6 7.5 L9 4.5" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M3 4.5 L6 7.5 L9 4.5"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </button>
 
@@ -125,79 +125,61 @@ export function ProviderPicker({
               value={sel}
               onChange={(e) => {
                 setSel(e.target.value);
-                setModel(DEFAULT_MODEL[e.target.value] ?? "");
-                setCustom(false);
+                setModel("");
               }}
             >
               {PROVIDERS.map((p) => (
                 <option key={p} value={p}>
-                  {p}
+                  {providerDisplayName(p)}
                 </option>
               ))}
             </select>
           </label>
-          <label className="provider-field">
-            <span className="provider-field-label">{t(lang, "pp.model")}</span>
-            {models.length > 0 ? (
-              <select
-                className="provider-select"
-                value={custom ? CUSTOM : model}
-                onChange={(e) => {
-                  if (e.target.value === CUSTOM) {
-                    setCustom(true);
-                    setModel("");
-                  } else {
-                    setCustom(false);
-                    setModel(e.target.value);
-                  }
-                }}
-              >
-                {options.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-                <option value={CUSTOM}>{t(lang, "pp.custom")}</option>
-              </select>
-            ) : (
-              // No list (backend down, Ollama unreachable, no key): free text
-              // stays — but SAY so, or the fallback reads as a broken picker.
-              <>
-                <input
-                  className="provider-input"
-                  type="text"
-                  value={model}
-                  placeholder={t(lang, "pp.keepPh")}
-                  onChange={(e) => setModel(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") apply();
-                  }}
-                />
-                <span className="provider-field-note">{t(lang, "pp.noList")}</span>
-              </>
-            )}
-          </label>
-          {custom && models.length > 0 && (
+          {isLocal ? (
+            <p className="provider-local-note">{t(lang, "pp.localNote")}</p>
+          ) : (
             <label className="provider-field">
-              <input
-                className="provider-input"
-                type="text"
-                autoFocus
-                value={model}
-                placeholder={t(lang, "pp.customPh")}
-                onChange={(e) => setModel(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") apply();
+              <span className="provider-field-label">{t(lang, "pp.model")}</span>
+              <ModelField
+                provider={sel}
+                models={models}
+                mode={mode}
+                model={model}
+                onModelChange={setModel}
+                providerStatus={providerStatus}
+                keyAffordance="link"
+                onOpenSettings={() => {
+                  setOpen(false);
+                  onOpenSettings?.();
                 }}
+                onEnter={apply}
               />
             </label>
           )}
+          {/* Card 88: the thinking control lives with the model it belongs to.
+              Driven purely by the capability record — a model without a
+              reasoning channel shows nothing here. The choice persists per
+              (provider, model); App watches the store and wires the ACTIVE
+              pair, so a flip on the current model applies immediately and a
+              flip on a pending switch rides along once the switch confirms. */}
+          {model.trim() !== "" && <ReasoningControl provider={sel} model={model.trim()} />}
           <div className="provider-pop-foot">
             <button type="button" className="primary" onClick={apply}>
-              {t(lang, "pp.switch")}
+              {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}
             </button>
           </div>
         </div>
+      )}
+
+      {showDownload && (
+        <LocalModelDialog
+          onUse={(modelId) => {
+            setShowDownload(false);
+            onApply("spectro-local", modelId);
+            setOpen(false);
+          }}
+          onClose={() => setShowDownload(false)}
+        />
       )}
     </div>
   );

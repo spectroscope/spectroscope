@@ -133,6 +133,35 @@ class SpectroConfigTest {
                 new SpectroConfig.Overrides("ollama", null, null, null, null, null), projectDir).model());
         assertEquals("local-model", SpectroConfig.load(
                 new SpectroConfig.Overrides("openai", null, null, null, null, null), projectDir).model());
+        // lmstudio serves whatever model is loaded, ignoring the id — it must NOT
+        // inherit the Claude default (that was the "opus for lmstudio" bug).
+        assertEquals("local-model", SpectroConfig.load(
+                new SpectroConfig.Overrides("lmstudio", null, null, null, null, null), projectDir).model());
+    }
+
+    @Test
+    void defaultModelForResolvesEachProvidersDefault() {
+        // The shared source for boot resolution AND the live picker switch: a
+        // switch must land on the TARGET's default, never carry the old model.
+        assertEquals("qwen3", SpectroConfig.defaultModelFor("ollama"));
+        assertEquals("local-model", SpectroConfig.defaultModelFor("lmstudio"));
+        assertEquals("local-model", SpectroConfig.defaultModelFor("openai"));
+        assertEquals("claude-opus-4-8", SpectroConfig.defaultModelFor("anthropic"));
+        // gemini/openrouter have NO honest default — null, so a switch asks for a
+        // model instead of fabricating the Claude id under a non-Claude endpoint.
+        assertNull(SpectroConfig.defaultModelFor("gemini"));
+        assertNull(SpectroConfig.defaultModelFor("openrouter"));
+    }
+
+    @Test
+    void switchRequiresKeyOnlyForKeyRequiringCloudProviders() {
+        assertTrue(SpectroConfig.switchRequiresKey("anthropic"));
+        assertTrue(SpectroConfig.switchRequiresKey("gemini"));
+        assertTrue(SpectroConfig.switchRequiresKey("openrouter"));
+        // Local backends need no key; openai is the keyless-capable compat escape hatch.
+        assertFalse(SpectroConfig.switchRequiresKey("ollama"));
+        assertFalse(SpectroConfig.switchRequiresKey("lmstudio"));
+        assertFalse(SpectroConfig.switchRequiresKey("openai"));
     }
 
     @Test
@@ -178,7 +207,7 @@ class SpectroConfigTest {
     @Test
     void unknownProvidersFailLoudly(@TempDir Path projectDir) {
         assertThrows(IllegalArgumentException.class, () -> SpectroConfig.load(
-                new SpectroConfig.Overrides("gemini", null, null, null, null, null), projectDir));
+                new SpectroConfig.Overrides("not-a-real-provider", null, null, null, null, null), projectDir));
     }
 
     @Test
@@ -334,6 +363,37 @@ class SpectroConfigTest {
     }
 
     @Test
+    void agentsMdFromWorkspaceIsWrappedIntoASystemPromptSection(@TempDir Path workspace) throws IOException {
+        assertEquals("", SpectroConfig.loadAgentsMd(workspace), "absent AGENTS.md → empty string");
+        Files.writeString(workspace.resolve("AGENTS.md"), "Always run the tests; never touch generated/.");
+        String section = SpectroConfig.loadAgentsMd(workspace);
+        assertTrue(section.contains("## Agent instructions (AGENTS.md)"), section);
+        assertTrue(section.contains("never touch generated/"), section);
+    }
+
+    @Test
+    void loadAgentsMdToleratesANullWorkspace() {
+        // Some prompt-building paths (e.g. the stateless context endpoint) may not
+        // have a resolved workspace — that is "absent", not a crash.
+        assertEquals("", SpectroConfig.loadAgentsMd(null));
+    }
+
+    @Test
+    void projectMdAndAgentsMdBothAppendWhenEachIsPresent(@TempDir Path projectDir, @TempDir Path workspace)
+            throws IOException {
+        // SPECTRO.md is the project's context (project root); AGENTS.md is the
+        // cross-tool agent-instructions convention (the workspace). Different
+        // scopes, different files — both append, neither shadows the other.
+        Files.writeString(projectDir.resolve("SPECTRO.md"), "project rules here");
+        Files.writeString(workspace.resolve("AGENTS.md"), "agent rules here");
+        String combined = SpectroConfig.loadProjectMd(projectDir) + SpectroConfig.loadAgentsMd(workspace);
+        assertTrue(combined.contains("## Project context (SPECTRO.md)"), combined);
+        assertTrue(combined.contains("project rules here"), combined);
+        assertTrue(combined.contains("## Agent instructions (AGENTS.md)"), combined);
+        assertTrue(combined.contains("agent rules here"), combined);
+    }
+
+    @Test
     void hooksDefaultToAnEmptyListNeverNull(@TempDir Path projectDir) {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir);
         org.junit.jupiter.api.Assertions.assertNotNull(config.hooks());
@@ -441,7 +501,7 @@ class SpectroConfigTest {
     private static SpectroConfig configFor(String provider, String baseUrl) {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
-                null, null, null);
+                null, null, null, null, null);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -494,22 +554,119 @@ class SpectroConfigTest {
         // (providerHost on the default would depend on the machine's env).
         assertEquals("my-gpu-box:8000",
                 configFor("openai", "http://my-gpu-box:8000/v1").providerHost());
+        // The two new OpenAI-compatible providers name their own preset hosts.
+        assertEquals("localhost:1234",
+                configFor("lmstudio", "http://localhost:11434").providerHost());
+        assertEquals("openrouter.ai",
+                configFor("openrouter", "http://localhost:11434").providerHost());
+        // openai no longer depends on the key — it is always the cloud host.
+        assertEquals("api.openai.com",
+                configFor("openai", "http://localhost:11434").providerHost());
         // An unparseable url degrades to the raw value instead of throwing.
         assertEquals("not a url", configFor("ollama", "not a url").providerHost());
     }
 
     @Test
-    void effectiveOpenAiBaseUrlPrefersTheCloudOnceAKeyExists() {
-        // Untouched Ollama default, no key: the local LM-Studio port (as ever).
-        assertEquals("http://localhost:1234",
-                SpectroConfig.effectiveOpenAiBaseUrl("http://localhost:11434", false));
-        // Untouched default + OPENAI_API_KEY: a key means the cloud — the
-        // provider, the host column and the model list all follow it.
+    void effectiveOpenAiBaseUrlUsesEachProvidersPreset() {
+        // No more silent key-based swap: each OpenAI-compatible provider has an
+        // explicit preset endpoint, so openai never quietly becomes LM Studio.
         assertEquals("https://api.openai.com",
-                SpectroConfig.effectiveOpenAiBaseUrl("http://localhost:11434", true));
-        // An explicit baseUrl always wins, key or not.
+                SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://localhost:11434"));
+        assertEquals("http://localhost:1234",
+                SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://localhost:11434"));
+        assertEquals("https://openrouter.ai/api",
+                SpectroConfig.effectiveOpenAiBaseUrl("openrouter", "http://localhost:11434"));
+        assertEquals("https://generativelanguage.googleapis.com/v1beta/openai",
+                SpectroConfig.effectiveOpenAiBaseUrl("gemini", "http://localhost:11434"));
+        // An explicit (non-default) baseUrl always wins for any of them.
         assertEquals("http://my-box:8000",
-                SpectroConfig.effectiveOpenAiBaseUrl("http://my-box:8000", true));
+                SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://my-box:8000"));
+        assertEquals("http://my-box:8000",
+                SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://my-box:8000"));
+    }
+
+    @Test
+    void apiKeyRoundTripsThroughTheDotEnvWriteAndRead() throws java.io.IOException {
+        // Hermetic: the build test-home persists between runs, so start clean.
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        // The UI's 'save key' writes ~/.spectro/.env; resolveApiKey reads it back
+        // (user.home points into the build dir for tests). No key set -> null.
+        assertNull(SpectroConfig.resolveApiKey("OPENROUTER_API_KEY"));
+        assertFalse(SpectroConfig.hasApiKey("OPENROUTER_API_KEY"));
+
+        SpectroConfig.writeApiKey("OPENROUTER_API_KEY", "sk-or-test");
+        assertEquals("sk-or-test", SpectroConfig.resolveApiKey("OPENROUTER_API_KEY"));
+        assertTrue(SpectroConfig.hasApiKey("OPENROUTER_API_KEY"));
+
+        // Upsert: writing again replaces the line, never duplicates it.
+        SpectroConfig.writeApiKey("OPENROUTER_API_KEY", "sk-or-second");
+        assertEquals("sk-or-second", SpectroConfig.resolveApiKey("OPENROUTER_API_KEY"));
+        long lines = java.nio.file.Files.readAllLines(SpectroConfig.dotEnvPath()).stream()
+                .filter(l -> l.startsWith("OPENROUTER_API_KEY=")).count();
+        assertEquals(1, lines);
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath()); // don't leak into the build dir
+    }
+
+    @Test
+    void imageEnvOverlaysADotEnvKeySoUiSavedKeysReachTheImageSubsystem() throws java.io.IOException {
+        // The point of 'set key in UI': a GEMINI_API_KEY written to ~/.spectro/.env
+        // must reach the IMAGE subsystem too, not just chat — image generation reads
+        // its key from this map. Skip if the test JVM already exports the var.
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getenv("GEMINI_API_KEY") == null);
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        assertNull(SpectroConfig.imageEnv().get("GEMINI_API_KEY"));
+
+        SpectroConfig.writeApiKey("GEMINI_API_KEY", "AI-test");
+        assertEquals("AI-test", SpectroConfig.imageEnv().get("GEMINI_API_KEY"),
+                "a UI-saved .env key must surface in the image env");
+        // the process environment still passes through untouched.
+        assertEquals(System.getenv("PATH"), SpectroConfig.imageEnv().get("PATH"));
+
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+    }
+
+    @Test
+    void imageEnvOverlaysWhenTheProcessVarIsPresentButBlank() throws java.io.IOException {
+        // Same precedence as resolveApiKey: a blank env var counts as ABSENT, so the
+        // .env key must still surface — otherwise chat works (resolveApiKey skips
+        // blank) while image fails (it kept the blank), which is the reported bug.
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+        SpectroConfig.writeApiKey("GEMINI_API_KEY", "AI-from-dotenv");
+
+        // blank process var -> .env wins
+        assertEquals("AI-from-dotenv",
+                SpectroConfig.imageEnvFrom(java.util.Map.of("GEMINI_API_KEY", "")).get("GEMINI_API_KEY"));
+        // a real process var still wins over .env
+        assertEquals("AI-from-env",
+                SpectroConfig.imageEnvFrom(java.util.Map.of("GEMINI_API_KEY", "AI-from-env")).get("GEMINI_API_KEY"));
+        // absent -> .env overlay
+        assertEquals("AI-from-dotenv",
+                SpectroConfig.imageEnvFrom(java.util.Map.of()).get("GEMINI_API_KEY"));
+
+        java.nio.file.Files.deleteIfExists(SpectroConfig.dotEnvPath());
+    }
+
+    @Test
+    void keyEnvNamesTheApiProvidersSecretAndIsNullForLocalOnes() {
+        assertEquals("ANTHROPIC_API_KEY", SpectroConfig.keyEnvFor("anthropic"));
+        assertEquals("OPENAI_API_KEY", SpectroConfig.keyEnvFor("openai"));
+        assertEquals("OPENROUTER_API_KEY", SpectroConfig.keyEnvFor("openrouter"));
+        assertEquals("GEMINI_API_KEY", SpectroConfig.keyEnvFor("gemini"));
+        // The local backends need no key — reachability decides them instead.
+        assertNull(SpectroConfig.keyEnvFor("ollama"));
+        assertNull(SpectroConfig.keyEnvFor("lmstudio"));
+    }
+
+    @Test
+    void onboardingStatusReflectsKeyPresenceForApiProvidersAndLocalForTheRest() {
+        // API providers: ready once the key is set, needs-key otherwise.
+        assertEquals("needs-key", SpectroConfig.onboardingStatus("anthropic", false));
+        assertEquals("ready", SpectroConfig.onboardingStatus("anthropic", true));
+        assertEquals("needs-key", SpectroConfig.onboardingStatus("openrouter", false));
+        // Local backends never need a key — their readiness is a reachability
+        // question the model list answers, not a key check.
+        assertEquals("local", SpectroConfig.onboardingStatus("ollama", true));
+        assertEquals("local", SpectroConfig.onboardingStatus("lmstudio", false));
     }
 
     // ---- imageModel / sttModel / chromeBinary (settings productization) ----------------
@@ -795,5 +952,35 @@ class SpectroConfigTest {
         assertFalse(SpectroConfig.ensureSeeded(java.util.Map.of("PATH", "/usr/bin")),
                 "nothing to seed — must report false");
         assertFalse(Files.exists(SpectroConfig.USER_SETTINGS_PATH));
+    }
+
+    @Test
+    void spectroLocalIsAKeylessKnownProvider() {
+        assertTrue(SpectroConfig.isKnownProvider("spectro-local"));
+        assertNull(SpectroConfig.keyEnvFor("spectro-local"), "local, no key");
+        // Not a literal any more. This line used to read "vibethinker-3b" and that
+        // is exactly how the two defaults drifted apart: the catalogue moved its
+        // default to Qwen3 4B and this constant stayed put, so a picker switch
+        // silently started the tool-free row. The catalogue is the single source;
+        // LocalCatalogDefaultTest pins what that default must be able to do.
+        assertEquals(dev.spectroscope.core.local.LocalCatalog.bundled().defaultId(),
+                SpectroConfig.defaultModelFor("spectro-local"));
+    }
+
+    @Test
+    void spectroLocalStatusReflectsModelPresence() {
+        assertEquals("ready", SpectroConfig.localModelStatus(true));
+        assertEquals("needs-download", SpectroConfig.localModelStatus(false));
+    }
+
+    @Test
+    void spectroLocalCannotBeBuiltFromThePureConfigPath() {
+        // The pure config path cannot start a subprocess — spectro-local must go
+        // through the runtime layer (LocalProviderFactory). Fail readably, not
+        // with a cryptic "Unknown provider".
+        SpectroConfig config = SpectroConfig.load(new SpectroConfig.Overrides(
+                "spectro-local", null, null, null, null, null));   // flags win over user settings
+        IllegalStateException e = assertThrows(IllegalStateException.class, config::providerFromConfig);
+        assertTrue(e.getMessage().contains("local runtime"), "readable pointer at the runtime layer");
     }
 }

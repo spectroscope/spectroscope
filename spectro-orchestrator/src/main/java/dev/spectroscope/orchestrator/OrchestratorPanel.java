@@ -175,7 +175,7 @@ public final class OrchestratorPanel implements FleetPanel {
             try {
                 publishConductor(panelPen, contextId, conductorOut, new RunEvent.RunStart(
                         contextId, PANEL_AGENT_ID, null,
-                        "fleet of " + lanes.size() + " agents", "fleet", null, t0));
+                        "fleet of " + lanes.size() + " agents", "fleet", null, null, t0));
 
                 List<Thread> threads = new ArrayList<>();
                 for (Lane lane : lanes.values()) {

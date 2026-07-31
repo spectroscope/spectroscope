@@ -1,0 +1,25 @@
+meta {
+  name: start model download
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/local-model/download
+  body: none
+  auth: none
+}
+
+params:query {
+  ~model: {{localModelId}}
+}
+
+docs {
+  Start (idempotent) one model's sha256-pinned download into ~/.spectro/models. Returns current status.
+  
+  CAUTION: Downloads are gigabytes — do not include this in an automated replay.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: yes
+}

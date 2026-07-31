@@ -8,12 +8,16 @@
     <title>spectroscope</title>
     <script>
       // FOUC guard: apply the saved skin + effect flags before the bundle paints.
-      // Mirrors designPrefs.applyToDom / readSaved — keep the id list in sync.
+      // Mirrors designPrefs.applyToDom / readSaved. This file cannot import, so
+      // the id list is a copy; designPrefs.test.ts reads it back out of this
+      // HTML and holds it to DESIGN_IDS, because the failure mode of a missing
+      // id is not an error — it is one espresso frame in front of the design
+      // you actually chose, which reads as a flicker and gets lived with.
       (function () {
         try {
           var raw = localStorage.getItem("spectroscope:design");
           var p = raw ? JSON.parse(raw) : {};
-          var ids = ["spectroscope", "paper", "still"];
+          var ids = ["spectroscope", "paper", "still", "graphite"];
           var el = document.documentElement;
           el.setAttribute("data-design", ids.indexOf(p.design) >= 0 ? p.design : "spectroscope");
           el.classList.toggle("fx-scroll", typeof p.scroll === "boolean" ? p.scroll : true);
@@ -23,8 +27,8 @@
         }
       })();
     </script>
-    <script type="module" crossorigin src="/assets/index-J3xbCEE1.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-W7RbZNt7.css">
+    <script type="module" crossorigin src="/assets/index-Bdn7GnXB.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Df8vz7oC.css">
   </head>
   <body>
     <div id="root"></div>

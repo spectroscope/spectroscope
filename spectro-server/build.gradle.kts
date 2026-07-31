@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "dev.spectroscope"
-version = "0.0.1"
+version = "0.4.1"
 
 repositories {
     mavenCentral()
@@ -82,4 +82,12 @@ tasks.withType<JavaExec>().configureEach {
     // Run from the spectroscope root, not the module dir, so SpectroConfig's project layer
     // resolves <root>/.spectro/settings.json — where the mcpServers block lives.
     workingDir = rootProject.projectDir
+}
+
+// Card 90: the repo's own skills ride every artifact (jar, DMG) — seeded into
+// ~/.spectro/skills on first start by BundledSkills, absent-only + ledgered.
+tasks.processResources {
+    from(rootProject.layout.projectDirectory.dir(".spectro/skills")) {
+        into("bundled-skills")
+    }
 }

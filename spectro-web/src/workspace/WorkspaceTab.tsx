@@ -4,11 +4,22 @@
 // run in an opaque origin and can never reach the spectroscope UI), markdown through
 // the shared Markdown component, images inline, everything else as text.
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { Markdown } from "../components/Markdown";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { hlLangForPath, tokenize } from "./highlight";
 import { fileUrl, formatBytes, previewKind } from "./preview";
+import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
+import { TerminalPane } from "./TerminalPane";
+import {
+  TERM_OPEN_KEY,
+  TERM_SPLIT_KEY,
+  clampTermPct,
+  readStoredTermOpen,
+  readStoredTermSplit,
+} from "./shellPrefs";
 import type { WorkspaceInfo } from "../state/reducer";
 
 interface FileNode {
@@ -77,6 +88,26 @@ function Tree({
   );
 }
 
+/** Read-only syntax highlighting for recognised languages; plain text otherwise. */
+function HighlightedText({ path, text }: { path: string; text: string }) {
+  const lang = hlLangForPath(path);
+  if (lang === null) return <pre className="ws-text">{text}</pre>;
+  const tokens = tokenize(text, lang);
+  return (
+    <pre className="ws-text ws-code">
+      {tokens.map((tok, idx) =>
+        tok.cls === "plain" ? (
+          tok.text
+        ) : (
+          <span key={idx} className={`hl hl-${tok.cls}`}>
+            {tok.text}
+          </span>
+        ),
+      )}
+    </pre>
+  );
+}
+
 function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
   const lang = useLang();
   const kind = previewKind(path);
@@ -104,7 +135,9 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
   if (kind === "html") {
     // The iframe sandbox plus the server's CSP sandbox header: scripts may
     // run, but in an opaque origin — no cookies, no /api, no parent access.
-    return <iframe className="ws-frame" sandbox="allow-scripts" src={fileUrl(path, sessionId)} title={path} />;
+    return (
+      <iframe className="ws-frame" sandbox="allow-scripts" src={fileUrl(path, sessionId)} title={path} />
+    );
   }
   if (kind === "image") {
     return (
@@ -116,7 +149,11 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
   if (error !== null) {
     return (
       <p className="ws-note">
-        {error === 415 ? t(lang, "ws.binary") : error === 413 ? t(lang, "ws.tooBig") : t(lang, "ws.loadError")}
+        {error === 415
+          ? t(lang, "ws.binary")
+          : error === 413
+            ? t(lang, "ws.tooBig")
+            : t(lang, "ws.loadError")}
       </p>
     );
   }
@@ -130,17 +167,21 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
       </div>
     );
   }
-  return <pre className="ws-text">{text}</pre>;
+  return <HighlightedText path={path} text={text} />;
 }
 
 export function WorkspaceTab({
   workspace,
   onPickFolder,
   canPickFolder,
+  refreshSignal,
 }: {
   workspace: WorkspaceInfo | null;
   /** Opens the native folder picker on the spectroscope machine (macOS dialog). */
   onPickFolder?: () => void;
+  /** Bumped by App when the live run touched the disk (tool_result/run_end) —
+   *  the tree refetches, throttled, so it never feels stale (card 89). */
+  refreshSignal?: number;
   /** False once the agent ran — then the workspace is baked in. */
   canPickFolder?: boolean;
 }) {
@@ -150,18 +191,150 @@ export function WorkspaceTab({
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
 
+  // Resizable tree/preview divider: `split` is the tree's % of the vertical space.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
+  const dragging = useRef(false);
+  const [split, setSplit] = useState<number>(() => {
+    try {
+      return readStoredSplit(localStorage.getItem(WS_SPLIT_KEY));
+    } catch {
+      return readStoredSplit(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(WS_SPLIT_KEY, String(Math.round(split)));
+    } catch {
+      /* storage blocked — the split just resets on the next load */
+    }
+  }, [split]);
+  const applySplitFromClientY = (clientY: number): void => {
+    const tree = treeRef.current;
+    const cont = containerRef.current;
+    if (tree === null || cont === null) return;
+    const top = tree.getBoundingClientRect().top;
+    const height = cont.getBoundingClientRect().bottom - top;
+    if (height <= 0) return;
+    setSplit(clampSplitPct(((clientY - top) / height) * 100));
+  };
+  const onDividerDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    dragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onDividerMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (dragging.current) applySplitFromClientY(e.clientY);
+  };
+  const onDividerUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!dragging.current) return;
+    dragging.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const onDividerKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    setSplit((s) => clampSplitPct(s + (e.key === "ArrowUp" ? -4 : 4)));
+  };
+
+  // The terminal pane (card 93): shut until the operator asks for it, because
+  // opening it spawns a real shell. Its own divider measures from the bottom —
+  // the terminal keeps its height while the tree/preview split moves above it.
+  const [termOpen, setTermOpen] = useState<boolean>(() => {
+    try {
+      return readStoredTermOpen(localStorage.getItem(TERM_OPEN_KEY));
+    } catch {
+      return false;
+    }
+  });
+  const [termPct, setTermPct] = useState<number>(() => {
+    try {
+      return readStoredTermSplit(localStorage.getItem(TERM_SPLIT_KEY));
+    } catch {
+      return readStoredTermSplit(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(TERM_OPEN_KEY, termOpen ? "1" : "0");
+      localStorage.setItem(TERM_SPLIT_KEY, String(Math.round(termPct)));
+    } catch {
+      /* storage blocked — the pane just reverts on the next load */
+    }
+  }, [termOpen, termPct]);
+
+  const termDragging = useRef(false);
+  const applyTermFromClientY = (clientY: number): void => {
+    const cont = containerRef.current;
+    if (cont === null) return;
+    const box = cont.getBoundingClientRect();
+    if (box.height <= 0) return;
+    setTermPct(clampTermPct(((box.bottom - clientY) / box.height) * 100));
+  };
+  const onTermDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    termDragging.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onTermMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (termDragging.current) applyTermFromClientY(e.clientY);
+  };
+  const onTermUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
+    if (!termDragging.current) return;
+    termDragging.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+  const onTermKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
+    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+    e.preventDefault();
+    setTermPct((p) => clampTermPct(p + (e.key === "ArrowUp" ? 4 : -4)));
+  };
+
   const sessionId = workspace?.sessionId;
+  // Auto-refresh dedupe (card 89): identical payloads never re-render the
+  // tree — the 5 s safety poll must not make the panel flicker.
+  const lastJson = useRef("");
   const load = useCallback((): void => {
     fetch(sessionId === undefined ? "/api/files" : `/api/files?session=${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((res) => {
-        setTree(res as FilesResponse);
         setFailed(false);
+        const next = JSON.stringify(res);
+        if (next !== lastJson.current) {
+          lastJson.current = next;
+          setTree(res as FilesResponse);
+        }
       })
       .catch(() => setFailed(true));
   }, [sessionId]);
 
   useEffect(load, [load]);
+
+  // Card 89: the tree follows the RUN — a tool wrote something (tool_result)
+  // or the run ended, App bumped the signal, the tree refetches at most once
+  // per second (trailing throttle, so the LAST write always lands).
+  const REFRESH_THROTTLE_MS = 1000;
+  const lastSignalFetch = useRef(0);
+  useEffect(() => {
+    if (refreshSignal === undefined || refreshSignal === 0) return;
+    const since = Date.now() - lastSignalFetch.current;
+    const wait = since >= REFRESH_THROTTLE_MS ? 0 : REFRESH_THROTTLE_MS - since;
+    const timer = window.setTimeout(() => {
+      lastSignalFetch.current = Date.now();
+      load();
+    }, wait);
+    return () => window.clearTimeout(timer);
+  }, [refreshSignal, load]);
+
+  // The safety net for writers OUTSIDE the run (the operator's editor): a slow
+  // poll while the tab is actually visible; the dedupe above keeps it calm.
+  const SAFETY_POLL_MS = 5000;
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") load();
+    }, SAFETY_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [load]);
 
   const toggle = (path: string): void => {
     setOpen((prev) => {
@@ -176,7 +349,7 @@ export function WorkspaceTab({
   if (tree === null) return <p className="ctx-empty">{t(lang, "ws.loading")}</p>;
 
   return (
-    <div className="ws">
+    <div className="ws" ref={containerRef}>
       <div className="ws-head">
         <span className="ws-root mono" title={workspace !== null ? workspace.path : t(lang, "ws.rootTitle")}>
           {tree.root}/
@@ -197,11 +370,32 @@ export function WorkspaceTab({
             {t(lang, "ws.pick")}
           </button>
         )}
+        {/* Inline bilingual pair rather than an i18n key: a sibling owns
+            i18n.ts this run, and card 64 folds these ternaries back in. */}
+        <button
+          type="button"
+          className="ws-term-toggle"
+          aria-pressed={termOpen}
+          title={
+            lang === "de"
+              ? "ein terminal im ordner des agenten, mit deinen eigenen rechten"
+              : "a terminal in the agent's folder, running with your own privileges"
+          }
+          onClick={() => setTermOpen((open) => !open)}
+        >
+          {lang === "de" ? "terminal" : "terminal"}
+        </button>
         <button type="button" className="ws-refresh" onClick={load} title={t(lang, "ws.refresh")}>
           ⟳
         </button>
       </div>
-      <div className="ws-tree" role="tree" aria-label="Workspace">
+      <div
+        className="ws-tree"
+        role="tree"
+        aria-label="Workspace"
+        ref={treeRef}
+        style={{ flex: `0 0 ${split}%` }}
+      >
         {tree.entries.length === 0 ? (
           <p className="ws-note">{t(lang, "ws.empty")}</p>
         ) : (
@@ -216,6 +410,17 @@ export function WorkspaceTab({
         )}
         {tree.truncated && <p className="ws-note">{t(lang, "ws.truncated")}</p>}
       </div>
+      <div
+        className="ws-divider"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={lang === "de" ? "trenner ziehen, um die höhe zu ändern" : "drag to resize"}
+        tabIndex={0}
+        onPointerDown={onDividerDown}
+        onPointerMove={onDividerMove}
+        onPointerUp={onDividerUp}
+        onKeyDown={onDividerKey}
+      />
       <div className="ws-preview">
         {selected === null ? (
           <p className="ws-note">{t(lang, "ws.hint")}</p>
@@ -230,6 +435,26 @@ export function WorkspaceTab({
           </>
         )}
       </div>
+      {termOpen && (
+        <>
+          <div
+            className="ws-divider"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label={
+              lang === "de" ? "trenner ziehen, um das terminal zu ändern" : "drag to resize the terminal"
+            }
+            tabIndex={0}
+            onPointerDown={onTermDown}
+            onPointerMove={onTermMove}
+            onPointerUp={onTermUp}
+            onKeyDown={onTermKey}
+          />
+          <div className="ws-term" style={{ flex: `0 0 ${termPct}%` }}>
+            <TerminalPane sessionId={sessionId} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

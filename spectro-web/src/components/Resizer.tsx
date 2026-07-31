@@ -57,9 +57,11 @@ export function Resizer(props: {
       className={`lab-resizer${props.collapsed ? " lab-resizer--collapsed" : ""}${props.className ? " " + props.className : ""}`}
       role="separator"
       aria-orientation="vertical"
-      aria-label={props.collapsed
-        ? t(lang, "rz.ariaExpand", { label: props.label })
-        : t(lang, "rz.ariaHandle", { label: props.label })}
+      aria-label={
+        props.collapsed
+          ? t(lang, "rz.ariaExpand", { label: props.label })
+          : t(lang, "rz.ariaHandle", { label: props.label })
+      }
       tabIndex={0}
       onMouseDown={onMouseDown}
       onKeyDown={onKeyDown}

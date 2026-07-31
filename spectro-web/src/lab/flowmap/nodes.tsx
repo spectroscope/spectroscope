@@ -4,9 +4,10 @@
 // beats a hand-rolled SVG for this view. All styling is design-token based, so
 // every node reskins with the 6 genomes; the disk animates via CSS.
 
-import { Fragment, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useContext, useState, type CSSProperties, type ReactNode } from "react";
 import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { JsonTree } from "../../components/JsonTree";
+import { ExpandAllContext } from "./expandContext";
+import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
@@ -35,8 +36,17 @@ function Handles() {
   );
 }
 
-function Disclosure({ label, children, open: openDefault = false }: { label: string; children: ReactNode; open?: boolean }) {
-  const [open, setOpen] = useState(openDefault);
+function Disclosure({
+  label,
+  children,
+  open: openDefault = false,
+}: {
+  label: string;
+  children: ReactNode;
+  open?: boolean;
+}) {
+  const expandAll = useContext(ExpandAllContext);
+  const [open, setOpen] = useState(openDefault || expandAll);
   return (
     <div className="pf-disc">
       <button className="pf-disc__btn nodrag" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
@@ -48,10 +58,58 @@ function Disclosure({ label, children, open: openDefault = false }: { label: str
   );
 }
 
-interface Activity { text: string; color: string; }
+interface Activity {
+  text: string;
+  color: string;
+}
 
-/** The tool chips the agent hub shows (the standard tool belt). */
-const AGENT_TOOL_CHIPS = ["read_file", "write_file", "list_dir", "run_command"];
+/** The tool chips the agent hub shows (the tool belt + the extension actions). */
+const AGENT_TOOL_CHIPS = [
+  "read_file",
+  "write_file",
+  "list_dir",
+  "run_command",
+  "use_skill",
+  "call_mcp",
+  "generate_image",
+];
+
+/** A tiny "generated image" thumbnail (a placeholder, not a real asset) shown
+ *  when the agent's active tool is generate_image. */
+/** The generated image: the REAL blob when it exists (GET /api/images/<file>),
+ *  the gradient placeholder while generating — or when the blob is gone
+ *  (scripted sessions, cleaned stores): onError swaps back to the placeholder,
+ *  so a missing file never renders as a broken-image glyph. */
+function GenImage({ src, alt }: { src?: string; alt?: string }) {
+  const [broken, setBroken] = useState(false);
+  if (src !== undefined && !broken) {
+    return (
+      <img
+        className="pf-genimg"
+        width={72}
+        height={48}
+        style={{ objectFit: "cover" }}
+        src={src}
+        alt={alt ?? ""}
+        onError={() => setBroken(true)}
+      />
+    );
+  }
+  return (
+    <svg className="pf-genimg" width="72" height="48" viewBox="0 0 72 48" aria-hidden="true">
+      <defs>
+        <linearGradient id="pf-gi" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0" stopColor="var(--sp-ocean)" />
+          <stop offset="0.5" stopColor="var(--sp-violet)" />
+          <stop offset="1" stopColor="var(--sp-amber)" />
+        </linearGradient>
+      </defs>
+      <rect x="1" y="1" width="70" height="46" rx="4" fill="url(#pf-gi)" opacity="0.85" />
+      <circle cx="20" cy="18" r="6" fill="var(--surface)" opacity="0.7" />
+      <path d="M6 42 L26 24 L38 34 L52 18 L66 42 Z" fill="var(--surface)" opacity="0.5" />
+    </svg>
+  );
+}
 
 /** The shell's one-line display clips a running command to this width. */
 const SHELL_PREVIEW_CHARS = 26;
@@ -62,6 +120,28 @@ const SHELL_PREVIEW_CHARS = 26;
 export function UserNode({ data }: NodeProps) {
   const d = data as { active: boolean; prompt: string };
   const lang = useLang();
+  const expandAll = useContext(ExpandAllContext);
+
+  // edu: the prompt sits BESIDE the user, in a column (like the agent card).
+  if (expandAll && d.prompt) {
+    return (
+      <div className={`pf-card pf-user pf-user--wide${d.active ? " pf-card--active" : ""}`}>
+        <div className="pf-user__col">
+          <Keyboard active={d.active} />
+          <div className="pf-user__name">User</div>
+          <div className="pf-user__sub">{d.active ? t(lang, "map.user.typing") : "PROMPT"}</div>
+        </div>
+        <div className="pf-user__prompt">
+          <div className="pf-eyebrow">prompt</div>
+          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+            {d.prompt}
+          </div>
+        </div>
+        <Handles />
+      </div>
+    );
+  }
+
   return (
     <div className={`pf-card pf-user${d.active ? " pf-card--active" : ""}`}>
       <Keyboard active={d.active} />
@@ -69,7 +149,9 @@ export function UserNode({ data }: NodeProps) {
       <div className="pf-user__sub">{d.active ? t(lang, "map.user.typing") : "PROMPT"}</div>
       {d.prompt && (
         <Disclosure label="Prompt">
-          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>{d.prompt}</div>
+          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+            {d.prompt}
+          </div>
         </Disclosure>
       )}
       <Handles />
@@ -82,80 +164,175 @@ export function UserNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 export function AgentNode({ data }: NodeProps) {
   const d = data as {
-    active: boolean; error: boolean; focus: Focus; activity: Activity;
-    gate: GateState; gateNote: string; gateColor: string; activeTool: string | null;
-    ctxParts: CtxPart[] | null; ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
-    prompt: string; systemPrompt: string | null; tool: { name: string; input: unknown } | null;
+    active: boolean;
+    error: boolean;
+    focus: Focus;
+    activity: Activity;
+    gate: GateState;
+    gateNote: string;
+    gateColor: string;
+    activeTool: string | null;
+    ctxParts: CtxPart[] | null;
+    ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
+    prompt: string;
+    systemPrompt: string | null;
+    tool: { name: string; input: unknown } | null;
+    genImage: { src: string; prompt: string } | null;
   };
   const lang = useLang();
+  const expandAll = useContext(ExpandAllContext);
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
   const maxTok = Math.max(1, ...(d.ctxParts ?? []).map((p) => p.estTokens));
-  return (
-    <div className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}`}>
-      <div className="pf-agent__head">
-        <div className="pf-agent__title">
-          <span className="pf-avatar">◆</span>
-          Agent
-        </div>
-        <span className="pf-status" style={{ color: d.activity.color }}>
-          <span className={`pf-status__dot${busy ? " pf-pulse" : ""}`} />
-          {d.activity.text}
-        </span>
-      </div>
 
-      <div className={`pf-row${d.focus === "agent" ? " pf-row--lit" : ""}`}>
-        <span className="pf-row__label">Loop</span>
-        <span className="pf-row__note">{t(lang, "map.loop.note")}</span>
+  const head = (
+    <div className="pf-agent__head">
+      <div className="pf-agent__title">
+        <span className="pf-avatar">◆</span>
+        Agent
       </div>
-
-      <div className="pf-row" style={{ borderColor: d.gateColor }}>
-        <span className="pf-row__label">
-          <span className="pf-lock" style={{ color: d.gateColor }} />
-          {t(lang, "map.node.gate")}
-        </span>
-        <span className="pf-row__note" style={{ color: d.gateColor }}>{d.gateNote}</span>
+      <span className="pf-status" style={{ color: d.activity.color }}>
+        <span className={`pf-status__dot${busy ? " pf-pulse" : ""}`} />
+        {d.activity.text}
+      </span>
+    </div>
+  );
+  const loopRow = (
+    <div className={`pf-row${d.focus === "agent" ? " pf-row--lit" : ""}`}>
+      <span className="pf-row__label">Loop</span>
+      <span className="pf-row__note">{t(lang, "map.loop.note")}</span>
+    </div>
+  );
+  const gateRow = (
+    <div className="pf-row" style={{ borderColor: d.gateColor }}>
+      <span className="pf-row__label">
+        <span className="pf-lock" style={{ color: d.gateColor }} />
+        {t(lang, "map.node.gate")}
+      </span>
+      <span className="pf-row__note" style={{ color: d.gateColor }}>
+        {d.gateNote}
+      </span>
+    </div>
+  );
+  const toolsBlock = (
+    <>
+      <div className="pf-eyebrow" style={{ marginTop: 10 }}>
+        Tools
       </div>
-
-      <div className="pf-eyebrow" style={{ marginTop: 10 }}>Tools</div>
       <div className="pf-tools">
         {AGENT_TOOL_CHIPS.map((tool) => (
-          <span key={tool} className={`pf-chip${d.activeTool === tool ? " pf-chip--on" : ""}`}>{tool}</span>
+          <span key={tool} className={`pf-chip${d.activeTool === tool ? " pf-chip--on" : ""}`}>
+            {tool}
+          </span>
         ))}
       </div>
+    </>
+  );
+  // a generated image has no competing right-column JSON, so in the wide edu
+  // layout it spans BOTH columns (full card width) — the prompt reads clearly.
+  const isGenImage = d.tool?.name === "generate_image";
+  const sysPanel = d.systemPrompt ? (
+    <div className="pf-panelbox">
+      <div className="pf-panelbox__label">{t(lang, "map.ctx.systemPrompt")}</div>
+      <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+        {d.systemPrompt}
+      </div>
+    </div>
+  ) : null;
+  const ctxBarsPanel =
+    d.ctxParts && d.ctxTotals ? (
+      <div className="pf-panelbox">
+        <div className="pf-panelbox__label">
+          {t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} /{" "}
+          {d.ctxTotals.threshold.toLocaleString()} tok
+        </div>
+        <div className="pf-ctx">
+          {d.ctxParts.map((p) => (
+            <div className="pf-ctx__row" key={p.label}>
+              <span>{p.label}</span>
+              <span className="pf-ctx__bar">
+                <span className="pf-ctx__fill" style={{ width: `${(p.estTokens / maxTok) * 100}%` }} />
+              </span>
+              <span className="pf-ctx__tok">{p.estTokens}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    ) : null;
+  const genImagePanel =
+    d.tool && isGenImage ? (
+      // in flight: the placeholder + the requested prompt
+      <div className="pf-panelbox pf-genimg-panel">
+        <div className="pf-panelbox__label">
+          {t(lang, "map.ctx.toolCall")} · {d.tool.name}
+        </div>
+        <div className="pf-genimg-wrap">
+          <GenImage />
+          <span className="pf-genimg-cap">
+            {String((d.tool.input as { prompt?: string })?.prompt ?? "a generated image")}
+          </span>
+        </div>
+      </div>
+    ) : d.genImage ? (
+      // done: the REAL image off the store (falls back to the placeholder
+      // when the blob is gone — scripted sessions, cleaned stores)
+      <div className="pf-panelbox pf-genimg-panel">
+        <div className="pf-panelbox__label">{t(lang, "map.ctx.genImage")}</div>
+        <div className="pf-genimg-wrap">
+          <GenImage src={d.genImage.src} alt={d.genImage.prompt} />
+          <span className="pf-genimg-cap">{d.genImage.prompt}</span>
+        </div>
+      </div>
+    ) : null;
+  // Two-faced since card 120: the insight tree or the call as the thing it is,
+  // under the map's master face with a per-panel strip on top.
+  const toolPanel = d.tool && !isGenImage ? <ToolCallPanel tool={d.tool} /> : null;
+  const noToolPanel = d.tool ? null : <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>;
+  // stacked (simulator / collapsed): everything inline, the image among the rest.
+  const ctxPanels = (
+    <>
+      {sysPanel}
+      {ctxBarsPanel}
+      {genImagePanel}
+      {toolPanel}
+      {noToolPanel}
+    </>
+  );
 
-      <Disclosure label={t(lang, "map.disc.context")} open={false}>
-        {d.systemPrompt && (
-          <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{t(lang, "map.ctx.systemPrompt")}</div>
-            <div className="pf-prose nowheel" style={{ textAlign: "left" }}>{d.systemPrompt}</div>
-          </div>
-        )}
-        {d.ctxParts && d.ctxTotals && (
-          <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{t(lang, "map.ctx.toLlm")} · {d.ctxTotals.estimatedTokens.toLocaleString()} / {d.ctxTotals.threshold.toLocaleString()} tok</div>
-            <div className="pf-ctx">
-              {d.ctxParts.map((p) => (
-                <div className="pf-ctx__row" key={p.label}>
-                  <span>{p.label}</span>
-                  <span className="pf-ctx__bar"><span className="pf-ctx__fill" style={{ width: `${(p.estTokens / maxTok) * 100}%` }} /></span>
-                  <span className="pf-ctx__tok">{p.estTokens}</span>
-                </div>
-              ))}
+  return (
+    <div
+      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}${expandAll ? " pf-agent--wide" : ""}`}
+    >
+      {head}
+      {expandAll ? (
+        // edu: the context sits BESIDE the controls (wider card, not a tall stack).
+        // A generated image spans both columns underneath — no JSON competes with it.
+        <>
+          <div className="pf-agent__cols">
+            <div className="pf-agent__main">
+              {loopRow}
+              {gateRow}
+              {toolsBlock}
+            </div>
+            <div className="pf-agent__ctx">
+              <div className="pf-eyebrow">{t(lang, "map.disc.context")}</div>
+              {sysPanel}
+              {ctxBarsPanel}
+              {toolPanel}
+              {noToolPanel}
             </div>
           </div>
-        )}
-        {d.tool ? (
-          <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{t(lang, "map.ctx.toolCall")} · {d.tool.name}</div>
-            <div className="nowheel" style={{ maxHeight: 150, overflow: "auto" }}>
-              <JsonTree value={d.tool.input} defaultDepth={3} />
-            </div>
-          </div>
-        ) : (
-          <div className="pf-kv">{t(lang, "map.ctx.noTool")}</div>
-        )}
-      </Disclosure>
-
+          {genImagePanel && <div className="pf-agent__genfull">{genImagePanel}</div>}
+        </>
+      ) : (
+        <>
+          {loopRow}
+          {gateRow}
+          {toolsBlock}
+          <Disclosure label={t(lang, "map.disc.context")} open={false}>
+            {ctxPanels}
+          </Disclosure>
+        </>
+      )}
       <Handles />
     </div>
   );
@@ -195,21 +372,46 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
     <>
       <div className="pf-disk" data-disk={disk}>
         <svg width="76" height="54" viewBox="0 0 76 54">
-          <circle className="pf-ripple" cx="30" cy="30" r="12" fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+          <circle
+            className="pf-ripple"
+            cx="30"
+            cy="30"
+            r="12"
+            fill="none"
+            stroke="var(--accent)"
+            strokeWidth="1.2"
+          />
           <g className="pf-platter">
-            <circle cx="30" cy="30" r="16" fill="var(--surface-3)" stroke="var(--border-strong)" strokeWidth="1.5" />
+            <circle
+              cx="30"
+              cy="30"
+              r="16"
+              fill="var(--surface-3)"
+              stroke="var(--border-strong)"
+              strokeWidth="1.5"
+            />
             <circle cx="30" cy="30" r="10" fill="none" stroke="var(--border-strong)" />
             <circle cx="30" cy="30" r="2" fill="var(--border-strong)" />
             <circle cx="30" cy="17" r="1.8" fill="var(--accent)" />
           </g>
           <g className="pf-arm">
-            <line x1="58" y1="12" x2="40" y2="26" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" />
+            <line
+              x1="58"
+              y1="12"
+              x2="40"
+              y2="26"
+              stroke="var(--text-dim)"
+              strokeWidth="2"
+              strokeLinecap="round"
+            />
             <circle cx="58" cy="12" r="2.6" fill="var(--text-dim)" />
           </g>
         </svg>
       </div>
       {disk && disk !== "idle" && (
-        <div className={`pf-filepill${disk === "write" ? " pf-filepill--write" : ""}`}>{file ?? t(lang, "map.act.file")}</div>
+        <div className={`pf-filepill${disk === "write" ? " pf-filepill--write" : ""}`}>
+          {file ?? t(lang, "map.act.file")}
+        </div>
       )}
     </>
   );
@@ -219,40 +421,57 @@ function DiskBody({ disk, file }: { disk?: "idle" | "read" | "write"; file?: str
 function ShellBody({ command, active }: { command?: string | null; active: boolean }) {
   const lang = useLang();
   const shown = command
-    ? (command.length > SHELL_PREVIEW_CHARS ? `${command.slice(0, SHELL_PREVIEW_CHARS - 1)}…` : command)
+    ? command.length > SHELL_PREVIEW_CHARS
+      ? `${command.slice(0, SHELL_PREVIEW_CHARS - 1)}…`
+      : command
     : "";
   return (
     <>
       <div className={`pf-shell${active ? " pf-shell--on" : ""}`}>
         <span className="pf-shell__prompt">$</span>
-        {shown
-          ? <span key={shown} className="pf-shell__cmd" style={{ "--n": shown.length } as CSSProperties}>{shown}</span>
-          : <span className="pf-shell__idle">{t(lang, "map.gate.none")}</span>}
+        {shown ? (
+          <span key={shown} className="pf-shell__cmd" style={{ "--n": shown.length } as CSSProperties}>
+            {shown}
+          </span>
+        ) : (
+          <span className="pf-shell__idle">{t(lang, "map.gate.none")}</span>
+        )}
         <span className="pf-shell__cursor" />
       </div>
       {command && (
         <Disclosure label={t(lang, "map.shell.cmd")}>
-          <div className="pf-panelbox pf-mono nowheel" style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}>$ {command}</div>
+          <div
+            className="pf-panelbox pf-mono nowheel"
+            style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}
+          >
+            $ {command}
+          </div>
         </Disclosure>
       )}
     </>
   );
 }
 
-/** The active MCP call line plus its JSON disclosure. */
-function McpBody({ active, mcp, tool }: { active: boolean; mcp?: string | null; tool?: { name: string; input: unknown } | null }) {
+/** The active MCP call line plus its call disclosure — the same two-faced
+ *  panel as the agent card's, so the master face governs it too. */
+function McpBody({
+  active,
+  mcp,
+  tool,
+}: {
+  active: boolean;
+  mcp?: string | null;
+  tool?: { name: string; input: unknown } | null;
+}) {
   const lang = useLang();
   return (
     <>
-      <div className={`pf-os__line${active ? " pf-os__line--on" : ""}`}>{mcp ?? t(lang, "map.gate.none")}</div>
+      <div className={`pf-os__line${active ? " pf-os__line--on" : ""}`}>
+        {mcp ?? t(lang, "map.gate.none")}
+      </div>
       {tool && (
         <Disclosure label={t(lang, "map.mcp.call")}>
-          <div className="pf-panelbox">
-            <div className="pf-panelbox__label">{tool.name}</div>
-            <div className="nowheel" style={{ maxHeight: 130, overflow: "auto" }}>
-              <JsonTree value={tool.input} defaultDepth={3} />
-            </div>
-          </div>
+          <ToolCallPanel tool={tool} />
         </Disclosure>
       )}
     </>
@@ -261,9 +480,13 @@ function McpBody({ active, mcp, tool }: { active: boolean; mcp?: string | null; 
 
 export function OsNode({ data }: NodeProps) {
   const d = data as {
-    kind: "disk" | "shell" | "net" | "mcp"; active: boolean;
-    disk?: "idle" | "read" | "write"; file?: string | null;
-    command?: string | null; mcp?: string | null; tool?: { name: string; input: unknown } | null;
+    kind: "disk" | "shell" | "net" | "mcp";
+    active: boolean;
+    disk?: "idle" | "read" | "write";
+    file?: string | null;
+    command?: string | null;
+    mcp?: string | null;
+    tool?: { name: string; input: unknown } | null;
   };
   const lang = useLang();
 
@@ -298,7 +521,14 @@ export function OsNode({ data }: NodeProps) {
 // LLM
 // ---------------------------------------------------------------------------
 export function LlmNode({ data }: NodeProps) {
-  const d = data as { active: boolean; local: boolean; provider: string; model: string; think: AgentStream[]; answer: AgentStream[] };
+  const d = data as {
+    active: boolean;
+    local: boolean;
+    provider: string;
+    model: string;
+    think: AgentStream[];
+    answer: AgentStream[];
+  };
   const lang = useLang();
   // One shared model, many callers: every agent's stream renders as its own
   // marked entry — subagents indented and tinted so the interleaving reads.
@@ -319,10 +549,14 @@ export function LlmNode({ data }: NodeProps) {
   return (
     <div className={`pf-card pf-llm${d.active ? " pf-card--active pf-llm--active" : ""}`}>
       <div className="pf-llm__halo" />
-      <div className="pf-llm__net"><NeuralNet active={d.active} /></div>
+      <div className="pf-llm__net">
+        <NeuralNet active={d.active} />
+      </div>
       <div className="pf-llm__name">LLM</div>
       <div className="pf-llm__model">{d.model || d.provider}</div>
-      <div className="pf-llm__loc"><b>{d.local ? t(lang, "map.local") : t(lang, "map.remote")}</b> · {d.provider}</div>
+      <div className="pf-llm__loc">
+        <b>{d.local ? t(lang, "map.local") : t(lang, "map.remote")}</b> · {d.provider}
+      </div>
       {(d.think.length > 0 || d.answer.length > 0) && (
         <Disclosure label={t(lang, "map.llm.reasoning")}>
           {section("Thinking", d.think)}
@@ -354,7 +588,9 @@ export function ExtNode({ data }: NodeProps) {
     <div className={`pf-card pf-ext pf-ext--center${d.active ? " pf-card--active" : ""}`}>
       <div className="pf-ext__head">MCP-Server</div>
       <AluChip active={d.active} />
-      <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>{d.mcp ?? t(lang, "map.extServer")}</div>
+      <div className={`pf-ext__sub${d.active ? " pf-ext__sub--on" : ""}`}>
+        {d.mcp ?? t(lang, "map.extServer")}
+      </div>
       <Handles />
     </div>
   );
@@ -366,9 +602,17 @@ export function ExtNode({ data }: NodeProps) {
 export function SubagentNode({ data }: NodeProps) {
   const lang = useLang();
   const d = data as {
-    id: string; label: string | null; task: string; state: SubagentInfo["state"];
-    stateLabel: string; stateColor: string; lastStatus: string | null; activity: Activity;
-    focus: Focus; active: boolean; think: string;
+    id: string;
+    label: string | null;
+    task: string;
+    state: SubagentInfo["state"];
+    stateLabel: string;
+    stateColor: string;
+    lastStatus: string | null;
+    activity: Activity;
+    focus: Focus;
+    active: boolean;
+    think: string;
   };
   return (
     <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
@@ -377,7 +621,9 @@ export function SubagentNode({ data }: NodeProps) {
           <span className="pf-sub__dot" style={{ background: d.stateColor }} />
           {d.label ? `${d.label} · ${d.id}` : d.id}
         </span>
-        <span className="pf-badge" style={{ color: d.stateColor }}>{d.stateLabel}</span>
+        <span className="pf-badge" style={{ color: d.stateColor }}>
+          {d.stateLabel}
+        </span>
       </div>
       <div className="pf-sub__task">{d.task}</div>
       <div className="pf-sub__status" style={{ color: d.activity.color }}>
@@ -390,7 +636,11 @@ export function SubagentNode({ data }: NodeProps) {
             <div className="pf-panelbox__label">{t(lang, "map.sub.order")}</div>
             <div className="pf-prose nowheel">{d.task}</div>
           </div>
-          {d.lastStatus && <div className="pf-kv">{t(lang, "map.sub.lastStatus")} <b>{d.lastStatus}</b></div>}
+          {d.lastStatus && (
+            <div className="pf-kv">
+              {t(lang, "map.sub.lastStatus")} <b>{d.lastStatus}</b>
+            </div>
+          )}
         </Disclosure>
       )}
       <Handles />

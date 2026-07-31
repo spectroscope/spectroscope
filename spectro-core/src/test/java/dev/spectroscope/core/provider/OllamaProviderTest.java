@@ -34,6 +34,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -186,6 +187,72 @@ class OllamaProviderTest {
     }
 
     @Test
+    void aCancelDuringAFastStreamReturnsInstantlyAndTearsTheConnectionDown() throws Exception {
+        // Twin of the OpenAI-compat fast-flood pin (the live card-78 stop bug):
+        // Spring's draining close made cancel() read the rest of the generation
+        // on the cancelling thread while the server never saw a disconnect. The
+        // three pins: cancel() detaches instantly without throwing, the reader
+        // ends ABORTED promptly, and the server SEES the disconnect.
+        CountDownLatch firstDelta = new CountDownLatch(1);
+        CountDownLatch serverSawDisconnect = new CountDownLatch(1);
+        server.removeContext("/api/chat");
+        server.createContext("/api/chat", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/x-ndjson");
+            exchange.sendResponseHeaders(200, 0); // chunked: an open NDJSON stream
+            OutputStream out = exchange.getResponseBody();
+            try {
+                for (int i = 0; i < 1200; i++) { // ~6 s of continuous deltas, bounded
+                    out.write(("{\"message\":{\"content\":\"t" + i + " \"}}\n")
+                            .getBytes(StandardCharsets.UTF_8));
+                    out.flush();
+                    firstDelta.countDown();
+                    Thread.sleep(5);
+                }
+            } catch (IOException clientGone) {
+                serverSawDisconnect.countDown(); // the teardown that stops the model
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+
+        CancelSignal signal = new CancelSignal();
+        ProviderRequest req = new ProviderRequest("sys", oneUser("go"), List.of(), 500, signal);
+        Iterator<ProviderEvent> it = provider().stream(req).iterator();
+
+        AtomicReference<ProviderEvent> lastEvent = new AtomicReference<>();
+        CountDownLatch done = new CountDownLatch(1);
+        Thread reader = Thread.ofVirtual().start(() -> {
+            try {
+                while (it.hasNext()) {
+                    lastEvent.set(it.next());
+                }
+            } finally {
+                done.countDown();
+            }
+        });
+
+        assertTrue(firstDelta.await(5, TimeUnit.SECONDS));
+        Thread.sleep(150); // mid-flood, like the owner's click
+
+        long cancelStarted = System.nanoTime();
+        signal.cancel();   // must neither block on a drain nor throw
+        long cancelMillis = (System.nanoTime() - cancelStarted) / 1_000_000;
+
+        assertTrue(cancelMillis < 1_500,
+                "cancel() must detach instantly, not drain the stream (took " + cancelMillis + " ms)");
+        assertTrue(done.await(3, TimeUnit.SECONDS),
+                "the reader must end promptly after a mid-flood cancel");
+        assertEquals(PStop.StopReason.ABORTED,
+                assertInstanceOf(PStop.class, lastEvent.get()).reason());
+        assertTrue(serverSawDisconnect.await(5, TimeUnit.SECONDS),
+                "the server must SEE the disconnect — that is what stops the model's generation");
+        reader.join(1_000);
+    }
+
+    @Test
     void translatesDeltasUsageAndStopFromTheNdjsonStream() {
         scriptedNdjson = """
                 {"message":{"content":"Hel"},"done":false}
@@ -311,6 +378,24 @@ class OllamaProviderTest {
         JsonNode plain = JSON.readTree(lastChatBody.get());
         assertTrue(plain.get("think") == null || plain.get("think").isNull(),
                 "think must be omitted when thinking is off");
+    }
+
+    @Test
+    void refusingReasoningSendsThinkFalseInsteadOfSayingNothing() throws IOException {
+        // The third wire state, and the reason it exists: num_predict caps
+        // reasoning and answer together, so a caller that needs the whole budget
+        // for the answer (translation) has to switch reasoning OFF. Omitting the
+        // field leaves it to the model, which for a reasoning model means the
+        // budget can be spent before the answer starts.
+        scriptedNdjson = """
+                {"message":{"content":"ok"},"done":true}
+                """;
+        collect(new ProviderRequest("You are a test.", oneUser("Translate this."), List.of(), 500,
+                ProviderRequest.Reasoning.OFF, new CancelSignal()));
+
+        JsonNode sent = JSON.readTree(lastChatBody.get());
+        assertNotNull(sent.get("think"), "think:false must be on the wire, not absent: " + sent);
+        assertFalse(sent.get("think").asBoolean(), "reasoning is refused, not requested");
     }
 
     @Test

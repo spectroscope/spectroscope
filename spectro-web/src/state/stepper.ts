@@ -14,6 +14,7 @@ import { fire, initialMarking, isDelta } from "../lab/petriModel";
 import type { Firing, Marking } from "../lab/petriModel";
 import { advanceScene, initialScene } from "../lab/labScene";
 import type { Scene } from "../lab/labScene";
+import { beacon } from "./levelingBeacon";
 
 export type StepSource = "live" | { replayId: string };
 export type StepMode = "step" | "flow";
@@ -122,6 +123,25 @@ function blockCount(queue: RunEvent[]): number {
   return n;
 }
 
+/** The coarse-step boundaries of a stream: [0, b1, b2, …, length]. The replay
+ *  scrubber walks these, so a drag lands on a whole step, never mid-block. */
+export function stepBoundaries(events: RunEvent[]): number[] {
+  const bs = [0];
+  let cursor = 0;
+  while (cursor < events.length) {
+    cursor += blockCount(events.slice(cursor));
+    bs.push(cursor);
+  }
+  return bs;
+}
+
+/** The marks stack for an arbitrary applied prefix — coarse boundaries, or one
+ *  per event in fine grain — so stepBack stays symmetric after a seek(). */
+function marksFor(applied: RunEvent[], grain: StepGrain): number[] {
+  if (grain === "fine") return applied.map((_, i) => i + 1);
+  return stepBoundaries(applied).slice(1);
+}
+
 // ---- actions ---------------------------------------------------------------
 
 /** App feeds every live batch here; ignored while a replay is loaded. */
@@ -138,6 +158,9 @@ export function pushLive(batch: RunEvent[]): void {
 export function step(): void {
   if (state.queue.length === 0) return;
   state = applyN(state, state.grain === "fine" ? 1 : blockCount(state.queue));
+  // Stepping is the act the ladder watches, and it is distinct from opening the
+  // lab: walking a run one event at a time is the thing worth crediting.
+  beacon("lab-step");
   emit();
 }
 
@@ -146,6 +169,7 @@ export function step(): void {
  *  step that applied 3 events is undone as 3). */
 export function stepBack(): void {
   if (state.applied.length === 0) return;
+  beacon("lab-step");
   const marks = state.marks;
   const target = marks.length >= 2 ? marks[marks.length - 2] : 0;
   const movedBack = state.applied.slice(target);
@@ -157,6 +181,25 @@ export function stepBack(): void {
     ...foldFrom(applied),
     fireSeq: state.fireSeq + 1,
     marks: marks.slice(0, -1),
+  };
+  emit();
+}
+
+/** Scrub to an absolute cursor: fold the first n events, re-queue the rest, and
+ *  rebuild the coarse marks stack (so stepBack still undoes a whole block). n is
+ *  clamped to [0, total]; a no-op when already there. */
+export function seek(n: number): void {
+  const all = [...state.applied, ...state.queue];
+  const target = Math.max(0, Math.min(all.length, Math.round(n)));
+  if (target === state.applied.length) return;
+  const applied = all.slice(0, target);
+  state = {
+    ...state,
+    applied,
+    queue: all.slice(target),
+    ...foldFrom(applied),
+    fireSeq: state.fireSeq + 1,
+    marks: marksFor(applied, state.grain),
   };
   emit();
 }

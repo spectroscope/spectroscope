@@ -7,7 +7,14 @@
 import { getBezierPath, type EdgeProps } from "@xyflow/react";
 
 export function PacketEdge({
-  id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data,
+  id,
+  sourceX,
+  sourceY,
+  targetX,
+  targetY,
+  sourcePosition,
+  targetPosition,
+  data,
 }: EdgeProps) {
   const [path] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
   const d = (data ?? {}) as { active?: boolean; net?: boolean; err?: boolean; dim?: boolean; flow?: boolean };
@@ -18,7 +25,9 @@ export function PacketEdge({
     d.active ? "pf-rail--active" : "",
     d.active && d.flow ? "pf-rail--flow" : "",
     d.err ? "pf-rail--err" : "",
-  ].join(" ").trim();
+  ]
+    .join(" ")
+    .trim();
 
   const pathId = `p-${id}`;
   const cometCls = d.err ? "pf-comet pf-comet--err" : "pf-comet";

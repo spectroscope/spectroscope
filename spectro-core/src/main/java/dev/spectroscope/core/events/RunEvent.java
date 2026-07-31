@@ -61,14 +61,48 @@ public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
      * @param parentId    the spawning agent's id; null (omitted) on the main agent
      * @param prompt      the user message that started the run
      * @param provider    label of the LLM backend serving the run (additive)
+     * @param model       the model id serving the run (additive, card 87); null when unknown
+     * @param trigger     what woke a triggered node's run (additive, card 72),
+     *                    e.g. "fs #4 watch:/drop"; null on every non-triggered run
      * @param attachments images riding along with the prompt (additive); null when none
      * @param ts          epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record RunStart(String runId, String agentId, String parentId, String prompt,
                     String provider,                  // additive
+                    String model,                     // additive (card 87)
+                    String trigger,                   // additive (card 72)
                     List<Attachment> attachments,     // from additive
-                    long ts) implements RunEvent {}
+                    long ts) implements RunEvent {
+        /** Pre-card-72 arity — no trigger; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param model       the model id serving the run; null when unknown
+         * @param attachments images riding along with the prompt; null when none
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, String model, List<Attachment> attachments, long ts) {
+            this(runId, agentId, parentId, prompt, provider, model, null, attachments, ts);
+        }
+
+        /** Pre-card-87 arity — model unknown; Jackson keeps using the canonical.
+         *
+         * @param runId       unique id of the run
+         * @param agentId     the agent running it
+         * @param parentId    the spawning agent's id; null on the main agent
+         * @param prompt      the user message that started the run
+         * @param provider    label of the LLM backend serving the run
+         * @param attachments images riding along with the prompt; null when none
+         * @param ts          epoch millis of emission */
+        public RunStart(String runId, String agentId, String parentId, String prompt,
+                        String provider, List<Attachment> attachments, long ts) {
+            this(runId, agentId, parentId, prompt, provider, null, null, attachments, ts);
+        }
+    }
 
     /**
      * One provider round-trip begins; the loop's turn brake caps how many a run may take.
@@ -145,12 +179,33 @@ public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
      * @param callId     correlation id of the originating {@link ToolCall}
      * @param output     the tool output, or an {@code ERROR: } string on denial/failure
      * @param isError    true when {@code output} is such an {@code ERROR: } string
-     * @param durationMs wall-clock execution time of the call
+     * @param durationMs wall-clock EXECUTION time of the call — the clock starts
+     *                   when the tool actually runs, never when it was requested
+     *                   (card 111); 0 when it never executed (denied, hook-blocked,
+     *                   unknown). In sessions recorded before card 111 the number
+     *                   still spans request-to-finish, gate wait included.
+     * @param gateWaitMs additive (card 111): how long the call sat parked at the
+     *                   permission gate before the decision; present only when a
+     *                   gate parked the call — absent (null, omitted on the wire)
+     *                   otherwise, so ungated results stay byte-identical
      * @param ts         epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record ToolResult(String agentId, String callId, String output, boolean isError,
-                      long durationMs, long ts) implements RunEvent {}
+                      long durationMs, Long gateWaitMs, long ts) implements RunEvent {
+        /** The pre-card-111 arity — no gate wait recorded; Jackson keeps using the canonical.
+         *
+         * @param agentId    the agent the call ran under
+         * @param callId     correlation id of the originating {@link ToolCall}
+         * @param output     the tool output, or an {@code ERROR: } string
+         * @param isError    true when {@code output} is such an {@code ERROR: } string
+         * @param durationMs wall-clock execution time of the call
+         * @param ts         epoch millis of emission */
+        public ToolResult(String agentId, String callId, String output, boolean isError,
+                          long durationMs, long ts) {
+            this(agentId, callId, output, isError, durationMs, null, ts);
+        }
+    }
 
     /**
      * A subagent enters; its events interleave on the same stream under its own id.
@@ -284,9 +339,12 @@ public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
     /** One labeled slice of the context estimate; not a RunEvent itself, like {@link Attachment}.
      *  @param label     what the slice covers (e.g. "system prompt")
      *  @param chars     raw character count of the slice
-     *  @param estTokens the chars/4 token estimate */
+     *  @param estTokens the chars/4 token estimate
+     *  @param text      the slice's CONTENT (additive, card 86 follow-up) — what
+     *                   actually rides to the provider, capped by the emitter;
+     *                   null in pre-content sessions */
     @JsonInclude(JsonInclude.Include.NON_NULL)
-    record ContextPart(String label, int chars, int estTokens) {}
+    record ContextPart(String label, int chars, int estTokens, String text) {}
 
     /**
      * A2A-lite, additive: one visible message between two agents — the protocol

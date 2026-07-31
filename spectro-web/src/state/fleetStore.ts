@@ -11,6 +11,7 @@ import {
   buildFleet,
   EMPTY_FLEET,
   isFleetFrame,
+  type FleetEnvelope,
   type FleetFrame,
   type FleetModel,
   type FleetNode,
@@ -52,10 +53,17 @@ function subscribe(cb: () => void): () => void {
 }
 
 let frames: FleetFrame[] = [];
+// Envelope identities already folded (contextId·sender·epoch·sequence) — the
+// hydration replay and the live socket overlap for frames in flight while the
+// page loads; the store keeps exactly one of each.
+let seenEnvelopes = new Set<string>();
+// The loopback hub port from GET /api/fleet (null when the hub is off) — the
+// spawn panel prints it into the exact copy-paste node command.
+let hubPort: number | null = null;
 // Per-context models, cached so useSyncExternalStore sees a stable reference for
 // a fleet that did not change this push.
 let byContext = new Map<string, FleetModel>();
-// The all-frames merged model — the no-arg useFleet()/​__getFleet() view.
+// The all-frames merged model — the no-arg useFleet() / __getFleet() view.
 let merged: FleetModel = EMPTY_FLEET;
 // The sidebar list, cached; a new array only when something changed.
 let summaries: FleetSummary[] = [];
@@ -145,13 +153,34 @@ function changedContexts(incoming: FleetFrame[]): Set<string> {
   return changed;
 }
 
+/** One fleet_event's identity for the hydration/live dedup. */
+function envelopeKey(frame: FleetFrame): string | null {
+  if (frame.type !== "fleet_event") return null; // rosters are latest-wins, never deduped
+  const e = frame.frame;
+  return `${e.contextId}·${e.sender}·${e.epoch}·${e.sequence}`;
+}
+
+/** Accept only frames the store has not folded yet (see seenEnvelopes). */
+function acceptNew(incoming: FleetFrame[]): FleetFrame[] {
+  const fresh: FleetFrame[] = [];
+  for (const frame of incoming) {
+    const key = envelopeKey(frame);
+    if (key !== null) {
+      if (seenEnvelopes.has(key)) continue;
+      seenEnvelopes.add(key);
+    }
+    fresh.push(frame);
+  }
+  return fresh;
+}
+
 /** Ingest a live socket batch: pull out the fleet frames the reducer ignores,
  *  fold (per fleet), and notify. A batch with no fleet frames is a no-op. */
 export function fleetPushLive(batch: RunEvent[]): void {
   // Filter over unknown[]: isFleetFrame is an (event: unknown) => event is
   // FleetFrame guard, and FleetFrame is not a RunEvent subtype, so narrowing
   // straight off RunEvent[] can't apply the guard (tsc -b rejects the cast).
-  const incoming = (batch as unknown[]).filter(isFleetFrame);
+  const incoming = acceptNew((batch as unknown[]).filter(isFleetFrame));
   if (incoming.length === 0) {
     return;
   }
@@ -160,26 +189,141 @@ export function fleetPushLive(batch: RunEvent[]): void {
   emit();
 }
 
+/** Which fleet a frame belongs to (single-context frames — as scenario frames
+ *  are by construction; a live multi-context roster is identified by its first
+ *  node, which never matches a synthetic `scenario:…` id). */
+function contextOf(frame: FleetFrame): string {
+  return frame.type === "fleet_event"
+    ? frame.frame.contextId
+    : frame.nodes.length > 0
+      ? contextOfTopic(frame.nodes[0].topic)
+      : "";
+}
+
+/** A node's role from its id: a trailing "-N" / "N" is dropped so a fan-out of
+ *  worker-1…worker-7 all cluster as "worker"; "main" is the fleet root. */
+function roleFromAgentId(id: string): string {
+  if (id === "main") return "root";
+  return id.replace(/[-_]?\d+$/, "") || id;
+}
+
+/**
+ * Load a compiled scenario's events as a REPLAY fleet under `contextId`: derive
+ * a roster from the agents in the stream and wrap each event as a fleet_event
+ * envelope, then fold them in exactly like live frames — so the whole
+ * entered-fleet UI (canvas, roster, drill-in, gate bar) works with no live hub.
+ * Idempotent: re-loading the same contextId replaces its prior frames.
+ */
+export function fleetLoadScenario(contextId: string, events: RunEvent[]): void {
+  const topic = contextId + TOPIC_SUFFIX;
+  const roles = new Map<string, string>();
+  const note = (id: string | undefined): void => {
+    if (id !== undefined && id !== "" && !roles.has(id)) roles.set(id, roleFromAgentId(id));
+  };
+  for (const ev of events) {
+    const e = ev as { agentId?: string; from?: string; to?: string; type: string };
+    note(e.agentId);
+    if (e.type === "agent_message") {
+      note(e.from);
+      note(e.to);
+    }
+  }
+  const roster: FleetNode[] = [...roles].map(([id, role]) => ({
+    id,
+    role,
+    capabilities: [],
+    topic,
+    connected: false,
+    lastSeen: 0,
+  }));
+  const fresh: FleetFrame[] = [
+    { type: "fleet_roster", nodes: roster },
+    ...events.map((payload, i) => ({
+      type: "fleet_event" as const,
+      frame: {
+        sender: (payload as { agentId?: string }).agentId ?? "main",
+        epoch: 0,
+        contextId,
+        taskId: contextId,
+        sequence: i,
+        parentId: null,
+        topic,
+        ts: (payload as { ts?: number }).ts ?? 0,
+        payload,
+      },
+    })),
+  ];
+  frames = frames.filter((f) => contextOf(f) !== contextId).concat(fresh);
+  const changed = changedContexts(fresh);
+  changed.add(contextId); // ensure the (possibly emptied-then-refilled) context rebuilds
+  rebuild(changed);
+  emit();
+}
+
+/** Drop one fleet from the store (owner: finished fleets clutter the list).
+ *  Removes its frames, summaries and envelope identities — a later re-run of
+ *  the same context folds fresh. A LIVE fleet whose nodes still publish will
+ *  simply reappear with the next frame; deletion is honest only for done ones
+ *  (the UI offers it only when every node is offline). */
+export function removeFleet(contextId: string): void {
+  frames = frames.filter((frame) => contextOf(frame) !== contextId);
+  const prefix = `${contextId}·`;
+  for (const key of [...seenEnvelopes]) {
+    if (key.startsWith(prefix)) seenEnvelopes.delete(key);
+  }
+  byContext.delete(contextId);
+  rebuild(new Set([contextId]));
+  emit();
+}
+
 // The fetch seam — swappable in tests via __setTestHooks.
 let doFetch: typeof fetch = (...args) => fetch(...args);
 
-/** Hydrate the roster once from GET /api/fleet, so a tab opened after nodes
- *  joined shows them immediately; live fleet_roster frames take over (latest-
- *  wins). A hub that is off, or any failure, leaves it empty. */
+/** Hydrate once from GET /api/fleet: the roster, PLUS each node's ring replay
+ *  (GET /api/fleet/{node}/events) — so a browser opened after the fact still
+ *  sees the fleet's recent history, most importantly a gate parked BEFORE this
+ *  page loaded. Live frames take over from there; the envelope dedup drops the
+ *  overlap. Bounded honestly by the hub ring — older evicted frames stay gone.
+ *  A hub that is off, or any failure, leaves the view empty (never throws). */
 export async function hydrateFleet(): Promise<void> {
   try {
     const res = await doFetch("/api/fleet");
     if (!res.ok) {
       return;
     }
-    const body = (await res.json()) as { enabled?: boolean; nodes?: FleetNode[] };
+    const body = (await res.json()) as { enabled?: boolean; hubPort?: number; nodes?: FleetNode[] };
     if (body.enabled !== true || !Array.isArray(body.nodes)) {
       return;
     }
+    hubPort = typeof body.hubPort === "number" ? body.hubPort : null;
     const roster: FleetFrame = { type: "fleet_roster", nodes: body.nodes };
     frames = [roster, ...frames]; // oldest frame; a later live roster overrides it
     rebuild(changedContexts([roster]));
     emit();
+
+    // Per-node ring replay, all nodes in parallel; a failed node is skipped.
+    const replays = await Promise.all(
+      body.nodes.map(async (n) => {
+        try {
+          const r = await doFetch(`/api/fleet/${encodeURIComponent(n.id)}/events`);
+          if (!r.ok) return [];
+          const data = (await r.json()) as { events?: FleetEnvelope[] };
+          return Array.isArray(data.events) ? data.events : [];
+        } catch {
+          return [];
+        }
+      }),
+    );
+    const envelopes = replays
+      .flat()
+      .filter((e): e is FleetEnvelope => e !== null && typeof e === "object" && "payload" in e)
+      .sort((a, b) => (a.ts !== b.ts ? a.ts - b.ts : a.sequence - b.sequence));
+    const fresh = acceptNew(envelopes.map((frame) => ({ type: "fleet_event" as const, frame })));
+    if (fresh.length > 0) {
+      frames = [...frames, ...fresh];
+      rebuild(changedContexts(fresh));
+      emit();
+    }
   } catch {
     // The fleet view simply stays empty — never break the app over a probe.
   }
@@ -211,7 +355,7 @@ export function fleetPending(model: FleetModel): PendingPermission[] {
  *  contextId = that one fleet's model (the entered-fleet event source). */
 export function useFleet(contextId?: string): FleetModel {
   const getSnap = useCallback(
-    () => (contextId === undefined ? merged : byContext.get(contextId) ?? EMPTY_FLEET),
+    () => (contextId === undefined ? merged : (byContext.get(contextId) ?? EMPTY_FLEET)),
     [contextId],
   );
   return useSyncExternalStore(subscribe, getSnap, getSnap);
@@ -220,6 +364,16 @@ export function useFleet(contextId?: string): FleetModel {
 /** React binding: the coexisting fleets, for the sidebar list. */
 export function useFleets(): FleetSummary[] {
   return useSyncExternalStore(subscribe, getSummaries, getSummaries);
+}
+
+/** React binding: the loopback hub port (null when the hub is off), for the
+ *  spawn panel's copy-paste node command. */
+export function useFleetHubPort(): number | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => hubPort,
+    () => hubPort,
+  );
 }
 function getSummaries(): FleetSummary[] {
   return summaries;
@@ -250,6 +404,8 @@ export function __getFleetOf(contextId: string): FleetModel {
 /** Reset all module state — call in beforeEach so tests never bleed. */
 export function __resetForTests(): void {
   frames = [];
+  seenEnvelopes = new Set();
+  hubPort = null;
   byContext = new Map();
   merged = EMPTY_FLEET;
   summaries = [];

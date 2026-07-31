@@ -9,11 +9,13 @@ import {
   pushLive,
   reset,
   resetLive,
+  seek,
   setGrain,
   setMode,
   setSpeed,
   step,
   stepBack,
+  stepBoundaries,
 } from "./stepper";
 
 const T = 1700000000000;
@@ -24,7 +26,15 @@ const run: RunEvent[] = [
   { type: "text_delta", agentId: "main", text: "Hel", ts: T } as RunEvent,
   { type: "text_delta", agentId: "main", text: "lo", ts: T } as RunEvent,
   { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: {}, ts: T } as RunEvent,
-  { type: "tool_result", agentId: "main", callId: "c1", output: "x", isError: false, durationMs: 1, ts: T } as RunEvent,
+  {
+    type: "tool_result",
+    agentId: "main",
+    callId: "c1",
+    output: "x",
+    isError: false,
+    durationMs: 1,
+    ts: T,
+  } as RunEvent,
   { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T } as RunEvent,
 ];
 
@@ -56,12 +66,7 @@ describe("stepper", () => {
     step(); // turn_start
     step(); // the whole text run in ONE click — nothing more
     let s = __getState();
-    expect(s.applied.map((e) => e.type)).toEqual([
-      "run_start",
-      "turn_start",
-      "text_delta",
-      "text_delta",
-    ]);
+    expect(s.applied.map((e) => e.type)).toEqual(["run_start", "turn_start", "text_delta", "text_delta"]);
     step(); // tool_call is its own step
     s = __getState();
     expect(s.applied[s.applied.length - 1].type).toBe("tool_call");
@@ -212,5 +217,40 @@ describe("stepper", () => {
     const before = __getState();
     step();
     expect(__getState()).toBe(before); // same object — nothing emitted/changed
+  });
+});
+
+describe("stepBoundaries (the replay scrubber walks these)", () => {
+  it("collapses a same-type delta run into one boundary", () => {
+    // the two text_deltas (idx 2,3) are one block: 2 -> 4 in a single step.
+    expect(stepBoundaries(run)).toEqual([0, 1, 2, 4, 5, 6, 7]);
+  });
+  it("is [0] for an empty stream", () => {
+    expect(stepBoundaries([])).toEqual([0]);
+  });
+});
+
+describe("seek (scrub to an absolute cursor)", () => {
+  it("folds to exactly n events and re-queues the rest", () => {
+    loadReplay("r", run);
+    seek(4);
+    const s = __getState();
+    expect(s.applied).toHaveLength(4);
+    expect(s.queue).toHaveLength(3);
+    // the scene is a full re-fold, identical to stepping there by hand
+    expect(s.ui).toEqual(reduceAll(initialState, run.slice(0, 4)));
+  });
+  it("clamps out-of-range targets", () => {
+    loadReplay("r", run);
+    seek(999);
+    expect(__getState().applied).toHaveLength(run.length);
+    seek(-5);
+    expect(__getState().applied).toHaveLength(0);
+  });
+  it("leaves a coarse marks stack so stepBack undoes a whole block", () => {
+    loadReplay("r", run); // grain defaults to coarse
+    seek(4); // lands past the text_delta block
+    stepBack(); // should undo the whole block, back to boundary 2
+    expect(__getState().applied).toHaveLength(2);
   });
 });

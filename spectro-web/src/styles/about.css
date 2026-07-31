@@ -1,0 +1,204 @@
+/* The About panel. Anchored to the bottom-right corner rather than centred:
+   the footer entry that opens it sits there, so the panel opens where the
+   pointer already is.
+
+   Tokens only, and no shadow — separation comes from --border-strong, the way
+   the keymap sheet does it. The mark's bars are the only colour; everything
+   else is ink on a surface, which is what a licence notice should look like.
+
+   Long licence sentences want a comfortable measure, so the panel is wider
+   than a menu and scrolls internally rather than growing past the viewport. */
+
+.about-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  background: var(--scrim);
+}
+
+.about-panel {
+  position: absolute;
+  right: var(--sp-4);
+  bottom: var(--sp-4);
+  width: min(460px, calc(100vw - var(--sp-5)));
+  max-height: min(680px, calc(100vh - var(--sp-6)));
+  overflow-y: auto;
+  padding: var(--sp-4);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-modal);
+  color: var(--text);
+  font-size: var(--fs-13);
+}
+
+/* ---------- identity ---------- */
+
+.about-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-4);
+}
+.about-ident {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.about-mark { flex-shrink: 0; }
+.about-names {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.about-name {
+  margin: 0;
+  font-size: var(--fs-16);
+  font-weight: 600;
+  line-height: 1.2;
+}
+/* The version is the server's, so it reads as data, not as part of the name. */
+.about-version {
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  font-weight: 400;
+}
+.about-tagline {
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+}
+.about-close {
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 0 var(--sp-1);
+  color: var(--text-dim);
+  font-size: var(--fs-20);
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.about-close:hover { color: var(--text); }
+
+/* ---------- the terms ---------- */
+
+.about-section { border-top: 1px solid var(--border); padding-top: var(--sp-3); }
+.about-section-head {
+  color: var(--sand);
+  font-size: var(--fs-11);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: var(--sp-3);
+}
+
+.about-terms { margin: 0; }
+.about-terms dt {
+  font-size: var(--fs-12);
+  margin-bottom: var(--sp-1);
+}
+.about-terms dt a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.about-terms dt a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.about-terms dd {
+  margin: 0 0 var(--sp-4) 0;
+  color: var(--text-dim);
+  line-height: 1.55;
+}
+.about-terms dd:last-child { margin-bottom: 0; }
+
+.about-attrib-label {
+  margin-top: var(--sp-3);
+  margin-bottom: var(--sp-2);
+  color: var(--text-dim);
+}
+/* The credit line is meant to be taken away and pasted, so it is selectable
+   monospace with its own copy affordance rather than running prose. */
+.about-attrib {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+}
+.about-attrib code {
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+/* The shared .copy chip is absolute + opacity:0, revealed by hovering the
+   output well it normally sits in. There is no such well here and the credit
+   line is the one thing a reader came to take away, so it is pinned into the
+   row and always visible — the same correction graph.css makes. */
+.about-attrib .copy {
+  position: static;
+  opacity: 1;
+  flex-shrink: 0;
+}
+
+/* A condition, not a footnote: it keeps the ink of body text. */
+.about-condition {
+  margin: var(--sp-2) 0 0 0;
+  color: var(--text);
+  line-height: 1.55;
+}
+
+/* ---------- foot ---------- */
+
+.about-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-12);
+}
+.about-repo {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--t-fast);
+}
+.about-repo:hover { border-bottom-color: var(--accent); }
+.about-copyright { color: var(--text-dim); }
+
+/* ---------- the footer entry that opens it ---------- */
+
+.about-open {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color var(--t-fast);
+}
+.about-open:hover { color: var(--text); }
+
+@media (max-width: 640px) {
+  .about-panel {
+    right: var(--sp-2);
+    bottom: var(--sp-2);
+    width: calc(100vw - var(--sp-4));
+    max-height: calc(100vh - var(--sp-5));
+  }
+}

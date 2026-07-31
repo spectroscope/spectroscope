@@ -1,0 +1,24 @@
+meta {
+  name: server log tail
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/logs
+  body: none
+  auth: none
+}
+
+params:query {
+  ~offset: 0
+  ~limit: 200
+}
+
+docs {
+  The rolling ~/.spectro/logs/spectroscope.log as tail + incremental deltas: {content, offset}. 256 KB response cap; rotation resets to a fresh tail.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

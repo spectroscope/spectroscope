@@ -179,9 +179,9 @@ public final class DoctorCommand implements Callable<Integer> {
 
         // Provider reachability
         switch (config.provider()) {
-            case "anthropic" -> report(System.getenv("ANTHROPIC_API_KEY") != null,
-                    "ANTHROPIC_API_KEY " + (System.getenv("ANTHROPIC_API_KEY") != null
-                            ? "is set" : "is NOT set (export ANTHROPIC_API_KEY=...)"));
+            case "anthropic" -> report(SpectroConfig.hasApiKey("ANTHROPIC_API_KEY"),
+                    "ANTHROPIC_API_KEY " + (SpectroConfig.hasApiKey("ANTHROPIC_API_KEY")
+                            ? "is set" : "is NOT set (export it, or save it in the app)"));
             case "ollama" -> {
                 var version = new OllamaProvider(new OllamaOptions(config.baseUrl(), config.model()))
                         .serverVersion();
@@ -320,6 +320,17 @@ public final class DoctorCommand implements Callable<Integer> {
                     + " (" + SessionStore.listSessions().size() + " session(s))");
         } catch (Exception failure) {
             report(false, "sessions dir not writable: " + failure.getMessage());
+        }
+
+        // Leveling — an info line, never a hard check: the ladder is a nicety and
+        // an unreadable leveling file is not a broken environment.
+        try {
+            info(LevelCommand.doctorLine(dev.spectroscope.core.leveling.Ladder.bundled(),
+                    dev.spectroscope.core.leveling.LevelingStore.userStore().read()
+                            .orElseGet(() -> dev.spectroscope.core.leveling.LevelingState
+                                    .fresh(dev.spectroscope.core.leveling.LevelingState.Mode.CHECKLIST))));
+        } catch (RuntimeException unreadable) {
+            info("leveling: unavailable (" + unreadable.getClass().getSimpleName() + ")");
         }
 
         // Jobs file

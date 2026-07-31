@@ -1,5 +1,6 @@
 // Session import: paste or pick a .jsonl — raw spectroscope RunEvents replay
-// verbatim, real Claude Code transcripts run through the adapter. The loaded
+// verbatim; Claude Code transcripts and VS Code agent-mode exports run through
+// their adapters. The loaded
 // stream feeds the SAME replay path as a stored session, so every tab (chat,
 // graph, flow, lab, trace) renders it with zero extra plumbing.
 //
@@ -11,6 +12,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { RunEvent } from "../events";
 import { detectAndLoad } from "../import/detect";
+import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
@@ -29,11 +31,12 @@ function formatKb(bytes: number): string {
 }
 
 export function ImportDialog(props: {
-  onLoad: (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code") => void;
+  onLoad: (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code" | "vscode-agent") => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const [transcripts, setTranscripts] = useState<TranscriptInfo[]>([]);
   const lang = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -51,19 +54,43 @@ export function ImportDialog(props: {
     };
   }, []);
 
+  // Escape closes — the DoctorPanel pattern; all three picker dialogs lacked it.
+  const { onClose } = props;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  // Every entry point clears the previous error before it starts. Without this
+  // a failed pick left its red line standing while the next attempt succeeded,
+  // and only the textarea's onChange ever cleared it.
   const load = (raw: string, label: string): void => {
+    setError(null);
     try {
       const { events, kind } = detectAndLoad(raw);
+      // The VS Code export records that a tool ran and whether it succeeded,
+      // never what it returned. Say that once, here, rather than leaving the
+      // reader to infer it from a screen of empty tool bodies.
+      setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
       props.onLoad(events, label, kind);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setError(message);
+      // This is the blind spot the ring exists for: the whole import path runs
+      // in the browser and reaches no server, so nothing else records it.
+      reportBrowserError("import", e);
     }
   };
 
   const loadFromStore = (tr: TranscriptInfo): void => {
     setError(null);
     fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(tr.path)}`)
-      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((r) =>
+        r.ok ? r.text() : Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status }))),
+      )
       .then((raw) => load(raw, tr.file))
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
@@ -71,7 +98,13 @@ export function ImportDialog(props: {
   const onFile = (e: ChangeEvent<HTMLInputElement>): void => {
     const file = e.target.files?.[0];
     if (!file) return;
-    void file.text().then((raw) => load(raw, file.name));
+    setError(null);
+    // A rejected read (ejected volume, permission, NotReadableError) used to
+    // show the user nothing at all — the dialog simply sat there.
+    void file
+      .text()
+      .then((raw) => load(raw, file.name))
+      .catch(() => setError(t(lang, "imp.err.read", { name: file.name })));
   };
 
   return (
@@ -81,9 +114,7 @@ export function ImportDialog(props: {
           <span className="eyebrow sand">Import</span>
         </div>
         <h2 id="import-title">{t(lang, "imp.title")}</h2>
-        <p className="import-hint">
-          {t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" })}
-        </p>
+        <p className="import-hint">{t(lang, "imp.hint", { path: "~/.claude/projects/…/*.jsonl" })}</p>
 
         {transcripts.length > 0 && (
           <>
@@ -115,10 +146,14 @@ export function ImportDialog(props: {
           className="import-paste"
           placeholder={t(lang, "imp.placeholder")}
           value={text}
-          onChange={(e) => { setText(e.target.value); setError(null); }}
+          onChange={(e) => {
+            setText(e.target.value);
+            setError(null);
+          }}
           rows={6}
         />
         {error !== null && <p className="import-error">{error}</p>}
+        {note !== null && <p className="import-note">{note}</p>}
         <div className="modal-actions">
           <input ref={fileRef} type="file" accept=".jsonl,.json,.txt" hidden onChange={onFile} />
           <button type="button" className="ghost" onClick={() => fileRef.current?.click()}>

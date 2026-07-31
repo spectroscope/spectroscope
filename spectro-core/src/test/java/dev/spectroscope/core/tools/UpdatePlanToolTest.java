@@ -2,6 +2,7 @@ package dev.spectroscope.core.tools;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.tools.Tool.ToolContext;
@@ -69,6 +70,64 @@ class UpdatePlanToolTest {
         assertTrue(result.startsWith("ERROR:"), result);
         assertTrue(result.contains("pending, in_progress, completed"),
                 "the error must teach the allowed values");
+        assertTrue(events.isEmpty(), "a rejected plan emits no event");
+    }
+
+    @Test
+    void aStepThatSentTitleInsteadOfTextIsToldWhichKeyItSent() {
+        // Observed: one model, two calls, same turn — the first sent {status, title}
+        // and read "text is missing" as "guess again", the second happened to guess right.
+        String result = tool.execute(
+                readTree("{\"steps\":[{\"status\":\"in_progress\",\"title\":\"Run the dice test\"}]}"),
+                context());
+
+        assertTrue(result.startsWith("ERROR:"), result);
+        assertTrue(result.contains("\"title\""), "the message names the key it received: " + result);
+        assertTrue(result.contains("\"text\""), "and the key it needs: " + result);
+        assertFalse(result.contains("Run the dice test"),
+                "a step's own prose is never echoed back: " + result);
+        assertTrue(events.isEmpty(), "a rejected plan emits no event");
+    }
+
+    @Test
+    void aStepWithNoKeysAtAllKeepsThePlainMessage() {
+        assertEquals("ERROR: every step needs a non-empty text.",
+                tool.execute(readTree("{\"steps\":[{}]}"), context()),
+                "with nothing to name, naming nothing is the honest message");
+        assertTrue(events.isEmpty(), "a rejected plan emits no event");
+    }
+
+    @Test
+    void aStepWhoseTextIsPresentButBlankSaysThatInsteadOfListingKeys() {
+        String result = tool.execute(
+                readTree("{\"steps\":[{\"text\":\"   \",\"status\":\"pending\"}]}"), context());
+
+        assertTrue(result.startsWith("ERROR: steps[0]"), result);
+        assertTrue(result.contains("blank"),
+                "naming the keys here would read as \"but I DID send text\": " + result);
+        assertTrue(events.isEmpty(), "a rejected plan emits no event");
+    }
+
+    @Test
+    void theTaughtMessageNamesTheOffendingIndexStaysOneLineAndBoundsWhatItQuotes() {
+        ObjectNode good = JSON.createObjectNode();
+        good.put("text", "read the files");
+        good.put("status", "completed");
+        ObjectNode bad = JSON.createObjectNode();
+        bad.put("status", "in_progress");
+        bad.put("a newline\nand " + "y".repeat(4000), 1);
+        for (int i = 0; i < 12; i++) {
+            bad.put("k" + i, i);
+        }
+        ObjectNode input = JSON.createObjectNode();
+        input.set("steps", JSON.createArrayNode().add(good).add(bad));
+
+        String result = tool.execute(input, context());
+
+        assertTrue(result.contains("steps[1]"), "the message says WHICH step: " + result);
+        assertFalse(result.contains("\n"), "the message stays one line: " + result);
+        assertTrue(result.length() < 300,
+                "model-supplied keys are bounded, never echoed whole: " + result);
         assertTrue(events.isEmpty(), "a rejected plan emits no event");
     }
 

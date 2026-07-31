@@ -1,10 +1,26 @@
 import { describe, expect, it } from "vitest";
 import type { ClientMessage, RunEvent } from "../events";
-import { initialState, normalizeReplay, recordOutgoing, reduce, reduceAll, traceFromEvents } from "./reducer";
+import type { UiState } from "./reducer";
+import {
+  initialState,
+  normalizeReplay,
+  recordOutgoing,
+  reduce,
+  reduceAll,
+  traceFromEvents,
+  windowTrace,
+} from "./reducer";
 
 // A realistic root run: prompt -> streamed answer -> usage -> end.
 const happyPath: RunEvent[] = [
-  { type: "run_start", runId: "r1", agentId: "main", prompt: "Summarize pom.xml", provider: "anthropic", ts: 1 },
+  {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "Summarize pom.xml",
+    provider: "anthropic",
+    ts: 1,
+  },
   { type: "turn_start", agentId: "main", turn: 1, ts: 2 },
   { type: "text_delta", agentId: "main", text: "The pom ", ts: 3 },
   { type: "text_delta", agentId: "main", text: "declares one module.", ts: 4 },
@@ -23,15 +39,46 @@ describe("reduce — session-wide agents (persistence data model)", () => {
     const s = reduceAll(initialState, [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts: 1 },
       { type: "agent_spawn", agentId: "worker-1", parentId: "main", task: "Plan X", ts: 2 },
-      { type: "agent_message", from: "main", to: "worker-1", role: "task", state: "submitted", text: "Plan X", label: "build_plan", ts: 3 },
-      { type: "agent_message", from: "worker-1", to: "main", role: "status", state: "working", text: "drafting", ts: 4 },
+      {
+        type: "agent_message",
+        from: "main",
+        to: "worker-1",
+        role: "task",
+        state: "submitted",
+        text: "Plan X",
+        label: "build_plan",
+        ts: 3,
+      },
+      {
+        type: "agent_message",
+        from: "worker-1",
+        to: "main",
+        role: "status",
+        state: "working",
+        text: "drafting",
+        ts: 4,
+      },
       { type: "usage", agentId: "worker-1", inputTokens: 40, outputTokens: 12, ts: 5 },
-      { type: "agent_message", from: "worker-1", to: "main", role: "result", state: "completed", text: "done", ts: 6 },
+      {
+        type: "agent_message",
+        from: "worker-1",
+        to: "main",
+        role: "result",
+        state: "completed",
+        text: "done",
+        ts: 6,
+      },
     ] as RunEvent[]);
     const worker = s.agents.find((a) => a.id === "worker-1");
     expect(worker).toMatchObject({
-      id: "worker-1", parentId: "main", label: "build_plan", task: "Plan X",
-      state: "completed", lastStatus: "drafting", inTokens: 40, outTokens: 12,
+      id: "worker-1",
+      parentId: "main",
+      label: "build_plan",
+      task: "Plan X",
+      state: "completed",
+      lastStatus: "drafting",
+      inTokens: 40,
+      outTokens: 12,
     });
   });
 
@@ -55,7 +102,17 @@ describe("reduce — happy path", () => {
     const state = reduceAll(initialState, happyPath);
     expect(state.turns).toEqual([
       { kind: "user", text: "Summarize pom.xml" },
-      { kind: "assistant", agentId: "main", text: "The pom declares one module.", thinking: "" },
+      // the usage event (ts 5) stamps the answer's tokens + duration (from ts 3,
+      // its first delta) + the end wall-clock (card 87 — start derives from it)
+      {
+        kind: "assistant",
+        agentId: "main",
+        text: "The pom declares one module.",
+        thinking: "",
+        usage: { inputTokens: 120, outputTokens: 30 },
+        durationMs: 2,
+        endTs: 5,
+      },
     ]);
   });
 
@@ -90,7 +147,11 @@ describe("reduce — happy path", () => {
 
 describe("reduce — thinking (reasoning stream)", () => {
   const run: RunEvent = {
-    type: "run_start", runId: "r1", agentId: "main", prompt: "Add 17 and 25", ts: 1,
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "Add 17 and 25",
+    ts: 1,
   };
 
   it("accumulates thinking_delta into the current assistant turn's buffer", () => {
@@ -125,12 +186,31 @@ describe("reduce — thinking (reasoning stream)", () => {
     expect(state.thinkingActive).toBe(false);
   });
 
+  it("stamps the answer's usage and duration onto its assistant turn (the per-message footer)", () => {
+    const state = reduceAll(initialState, [
+      run, // ts 1 (run_start)
+      { type: "thinking_delta", agentId: "main", text: "let me", ts: 1000 }, // turn starts here
+      { type: "text_delta", agentId: "main", text: "the answer", ts: 1500 },
+      { type: "usage", agentId: "main", inputTokens: 120, outputTokens: 34, ts: 3300 },
+    ]);
+    const last = state.turns[state.turns.length - 1] as {
+      kind: string;
+      usage?: { inputTokens: number; outputTokens: number };
+      durationMs?: number;
+    };
+    expect(last.kind).toBe("assistant");
+    expect(last.usage).toEqual({ inputTokens: 120, outputTokens: 34 });
+    expect(last.durationMs).toBe(2300); // 3300 - 1000 (turn's first event)
+  });
+
   it("keeps the buffer on a thinking-only turn (never answered)", () => {
-    const state = normalizeReplay(reduceAll(initialState, [
-      run,
-      { type: "thinking_delta", agentId: "main", text: "pondering", ts: 2 },
-      // no text_delta, no run_end — replay of a torn session
-    ]));
+    const state = normalizeReplay(
+      reduceAll(initialState, [
+        run,
+        { type: "thinking_delta", agentId: "main", text: "pondering", ts: 2 },
+        // no text_delta, no run_end — replay of a torn session
+      ]),
+    );
     const last = state.turns[state.turns.length - 1];
     expect(last).toEqual({ kind: "assistant", agentId: "main", text: "", thinking: "pondering" });
     expect(state.thinkingActive).toBe(false); // normalizeReplay clears the live indicator
@@ -155,38 +235,65 @@ describe("reduce — thinking (reasoning stream)", () => {
     ];
     const state = normalizeReplay(reduceAll(initialState, stored));
     const last = state.turns[state.turns.length - 1];
-    expect(last).toEqual({ kind: "assistant", agentId: "main", text: "Answer.", thinking: "step 1. step 2." });
+    expect(last).toEqual({
+      kind: "assistant",
+      agentId: "main",
+      text: "Answer.",
+      thinking: "step 1. step 2.",
+    });
   });
 });
 
 describe("reduce — tool call and result pairing", () => {
   const call: RunEvent = {
-    type: "tool_call", agentId: "main", callId: "c1", name: "read_file",
-    input: { path: "pom.xml" }, ts: 3,
+    type: "tool_call",
+    agentId: "main",
+    callId: "c1",
+    name: "read_file",
+    input: { path: "pom.xml" },
+    ts: 3,
   };
 
   it("creates a pending card keyed by callId and a tool turn", () => {
     const state = reduce(reduce(initialState, happyPath[0]!), call);
     expect(state.turns[state.turns.length - 1]).toEqual({ kind: "tool", callId: "c1" });
     expect(state.cards["c1"]).toMatchObject({
-      callId: "c1", agentId: "main", name: "read_file",
-      input: { path: "pom.xml" }, status: "pending", startedAt: 3,
+      callId: "c1",
+      agentId: "main",
+      name: "read_file",
+      input: { path: "pom.xml" },
+      status: "pending",
+      startedAt: 3,
     });
   });
 
   it("pairs the result onto the same card (ok + duration)", () => {
     const result: RunEvent = {
-      type: "tool_result", agentId: "main", callId: "c1",
-      output: "<project>...</project>", isError: false, durationMs: 412, ts: 4,
+      type: "tool_result",
+      agentId: "main",
+      callId: "c1",
+      output: "<project>...</project>",
+      isError: false,
+      durationMs: 412,
+      ts: 4,
     };
     const state = reduceAll(initialState, [happyPath[0]!, call, result]);
-    expect(state.cards["c1"]).toMatchObject({ status: "ok", output: "<project>...</project>", durationMs: 412 });
+    expect(state.cards["c1"]).toMatchObject({
+      status: "ok",
+      output: "<project>...</project>",
+      durationMs: 412,
+    });
   });
 
   it("marks failed tools as error", () => {
     const failure: RunEvent = {
-      type: "tool_result", agentId: "main", callId: "c1",
-      output: "ERROR: no such file", isError: true, durationMs: 9, ts: 4,
+      type: "tool_result",
+      agentId: "main",
+      callId: "c1",
+      output: "ERROR: no such file",
+      isError: true,
+      durationMs: 9,
+      ts: 4,
     };
     const state = reduceAll(initialState, [happyPath[0]!, call, failure]);
     expect(state.cards["c1"]?.status).toBe("error");
@@ -194,8 +301,13 @@ describe("reduce — tool call and result pairing", () => {
 
   it("ignores results for unknown callIds instead of crashing", () => {
     const orphan: RunEvent = {
-      type: "tool_result", agentId: "main", callId: "ghost",
-      output: "", isError: false, durationMs: 1, ts: 4,
+      type: "tool_result",
+      agentId: "main",
+      callId: "ghost",
+      output: "",
+      isError: false,
+      durationMs: 1,
+      ts: 4,
     };
     const state = reduce(initialState, orphan);
     // The chat model is untouched — but the frame still shows in the wire view.
@@ -219,8 +331,22 @@ describe("reduce — tool call and result pairing", () => {
 describe("reduce — permission flow", () => {
   const base: RunEvent[] = [
     { type: "run_start", runId: "r1", agentId: "main", prompt: "write it", ts: 1 },
-    { type: "tool_call", agentId: "main", callId: "c9", name: "write_file", input: { path: "note.txt" }, ts: 2 },
-    { type: "permission_request", agentId: "main", callId: "c9", name: "write_file", input: { path: "note.txt" }, ts: 3 },
+    {
+      type: "tool_call",
+      agentId: "main",
+      callId: "c9",
+      name: "write_file",
+      input: { path: "note.txt" },
+      ts: 2,
+    },
+    {
+      type: "permission_request",
+      agentId: "main",
+      callId: "c9",
+      name: "write_file",
+      input: { path: "note.txt" },
+      ts: 3,
+    },
   ];
 
   it("queues the request and flags the card", () => {
@@ -259,7 +385,14 @@ describe("reduce — subagents", () => {
   const withChild: RunEvent[] = [
     { type: "run_start", runId: "r1", agentId: "main", prompt: "explore src", ts: 1 },
     { type: "agent_spawn", agentId: "explore-1", parentId: "main", task: "list all TODOs", ts: 2 },
-    { type: "run_start", runId: "r2", agentId: "explore-1", parentId: "main", prompt: "list all TODOs", ts: 3 },
+    {
+      type: "run_start",
+      runId: "r2",
+      agentId: "explore-1",
+      parentId: "main",
+      prompt: "list all TODOs",
+      ts: 3,
+    },
     { type: "text_delta", agentId: "explore-1", text: "Found 3.", ts: 4 },
     { type: "run_end", runId: "r2", stopReason: "end_turn", ts: 5 },
   ];
@@ -269,8 +402,11 @@ describe("reduce — subagents", () => {
     const userTurns = state.turns.filter((t) => t.kind === "user");
     expect(userTurns).toHaveLength(1);
     expect(state.turns[1]).toEqual({
-      kind: "info", text: "Subagent explore-1 spawned: list all TODOs", tone: "neutral",
-      infoKey: "info.spawned", infoVars: { id: "explore-1", task: "list all TODOs" },
+      kind: "info",
+      text: "Subagent explore-1 spawned: list all TODOs",
+      tone: "neutral",
+      infoKey: "info.spawned",
+      infoVars: { id: "explore-1", task: "list all TODOs" },
       agentId: "explore-1", // the chat groups the line into the child's thread
     });
   });
@@ -317,31 +453,48 @@ describe("reduce — forward compatibility and errors", () => {
 
   it("records compaction as a warn-toned info line", () => {
     const state = reduce(initialState, {
-      type: "compaction", agentId: "main", removedTurns: 12, summaryChars: 2048, ts: 1,
+      type: "compaction",
+      agentId: "main",
+      removedTurns: 12,
+      summaryChars: 2048,
+      ts: 1,
     });
     expect(state.turns[0]).toEqual({
-      kind: "info", text: "History compacted: 12 turns summarized", tone: "warn",
-      infoKey: "info.compacted", infoVars: { n: 12 },
+      kind: "info",
+      text: "History compacted: 12 turns summarized",
+      tone: "warn",
+      infoKey: "info.compacted",
+      infoVars: { n: 12 },
     });
   });
 });
 
 describe("reduce — image generation", () => {
   const generated: RunEvent = {
-    type: "image_generated", agentId: "main", callId: "img-1",
-    prompt: "a blacksmith spectroscope at dusk", provider: "gemini",
-    model: "gemini-2.5-flash-image", mediaType: "image/png",
-    blobPath: "/home/dev/.spectro/blobs/ab12cd.png", sha256: "ab12cd", ts: 9,
+    type: "image_generated",
+    agentId: "main",
+    callId: "img-1",
+    prompt: "a blacksmith spectroscope at dusk",
+    provider: "gemini",
+    model: "gemini-2.5-flash-image",
+    mediaType: "image/png",
+    blobPath: "/home/dev/.spectro/blobs/ab12cd.png",
+    sha256: "ab12cd",
+    ts: 9,
   };
 
   it("appends the image with all gallery fields", () => {
     const state = reduce(initialState, generated);
     expect(state.images).toEqual([
       {
-        callId: "img-1", prompt: "a blacksmith spectroscope at dusk",
-        provider: "gemini", model: "gemini-2.5-flash-image",
-        mediaType: "image/png", blobPath: "/home/dev/.spectro/blobs/ab12cd.png",
-        sha256: "ab12cd", ts: 9,
+        callId: "img-1",
+        prompt: "a blacksmith spectroscope at dusk",
+        provider: "gemini",
+        model: "gemini-2.5-flash-image",
+        mediaType: "image/png",
+        blobPath: "/home/dev/.spectro/blobs/ab12cd.png",
+        sha256: "ab12cd",
+        ts: 9,
       },
     ]);
   });
@@ -352,7 +505,12 @@ describe("reduce — image generation", () => {
   });
 
   it("keeps distinct callIds in arrival order", () => {
-    const second: RunEvent = { ...generated, callId: "img-2", prompt: "the same spectroscope at noon", ts: 12 };
+    const second: RunEvent = {
+      ...generated,
+      callId: "img-2",
+      prompt: "the same spectroscope at noon",
+      ts: 12,
+    };
     const state = reduceAll(initialState, [generated, second]);
     expect(state.images.map((i) => i.callId)).toEqual(["img-1", "img-2"]);
   });
@@ -388,7 +546,12 @@ describe("reduce — wire trace (trace tab)", () => {
     const state = reduce(initialState, unknown);
     expect(state.trace).toHaveLength(1);
     expect(state.trace[0]).toMatchObject({
-      seq: 1, dir: "in", ts: 42, type: "telemetry_v2", agentId: "worker-1", payload: unknown,
+      seq: 1,
+      dir: "in",
+      ts: 42,
+      type: "telemetry_v2",
+      agentId: "worker-1",
+      payload: unknown,
     });
   });
 
@@ -401,14 +564,15 @@ describe("reduce — wire trace (trace tab)", () => {
     expect(state.trace[0]?.agentId).toBeUndefined();
   });
 
-  it("caps the trace at 5000 entries, dropping the oldest", () => {
-    const flood: RunEvent[] = Array.from({ length: 5010 }, (_, i) =>
-      ({ type: "text_delta", agentId: "main", text: "x", ts: i }) as RunEvent,
+  it("a finite fold keeps every row, however long the session", () => {
+    const long: RunEvent[] = Array.from(
+      { length: 6000 },
+      (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: i }) as RunEvent,
     );
-    const state = reduceAll(initialState, flood);
-    expect(state.trace).toHaveLength(5000);
-    expect(state.trace[0]?.seq).toBe(11); // the first ten fell off the window
-    expect(state.trace[4999]?.seq).toBe(5010);
+    const state = reduceAll(initialState, long);
+    expect(state.trace).toHaveLength(6000);
+    expect(state.trace[0]?.seq).toBe(1); // an import begins at its beginning
+    expect(state.trace[5999]?.seq).toBe(6000);
   });
 
   it("recordOutgoing appends a dir 'out' entry and continues the seq counter", () => {
@@ -416,7 +580,10 @@ describe("reduce — wire trace (trace tab)", () => {
     const state = recordOutgoing(reduceAll(initialState, happyPath), message);
     const last = state.trace[state.trace.length - 1];
     expect(last).toMatchObject({
-      seq: happyPath.length + 1, dir: "out", type: "user_message", payload: message,
+      seq: happyPath.length + 1,
+      dir: "out",
+      type: "user_message",
+      payload: message,
     });
     // Outgoing frames are trace-only: the chat model does not change.
     expect(state.turns).toEqual(reduceAll(initialState, happyPath).turns);
@@ -428,28 +595,97 @@ describe("reduce — wire trace (trace tab)", () => {
     state = recordOutgoing(state, { type: "set_image_provider", provider: "openai" });
     state = recordOutgoing(state, { type: "set_thinking", enabled: false });
     expect(state.trace.map((t) => [t.dir, t.type])).toEqual([
-      ["out", "abort"], ["out", "permission_response"], ["out", "set_image_provider"],
+      ["out", "abort"],
+      ["out", "permission_response"],
+      ["out", "set_image_provider"],
       ["out", "set_thinking"],
     ]);
   });
 
   it("carries the additive remember/persist flags on permission_response without a new type", () => {
     const state = recordOutgoing(initialState, {
-      type: "permission_response", callId: "c1", allowed: true, remember: true, persist: true,
+      type: "permission_response",
+      callId: "c1",
+      allowed: true,
+      remember: true,
+      persist: true,
     });
     const last = state.trace[state.trace.length - 1];
     // Same OutgoingKind — just extra optional fields on the existing frame.
     expect(last.type).toBe("permission_response");
     expect(last.payload).toMatchObject({
-      type: "permission_response", callId: "c1", allowed: true, remember: true, persist: true,
+      type: "permission_response",
+      callId: "c1",
+      allowed: true,
+      remember: true,
+      persist: true,
     });
+  });
+});
+
+describe("the live trace window (windowTrace)", () => {
+  const flood = (n: number, from = 0): RunEvent[] =>
+    Array.from(
+      { length: n },
+      (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: from + i }) as RunEvent,
+    );
+
+  /** What the socket seam does: fold the batch, then window what it grew. */
+  const live = (s: UiState, batch: RunEvent[]): UiState => windowTrace(reduceAll(s, batch));
+
+  it("keeps the last 5000 rows of a stream past the window, dropping the oldest", () => {
+    const state = live(initialState, flood(5010));
+    expect(state.trace).toHaveLength(5000);
+    expect(state.trace[0]?.seq).toBe(11); // the first ten fell off the window
+    expect(state.trace[4999]?.seq).toBe(5010);
+  });
+
+  it("bounds a stream that arrives in many batches, not just one", () => {
+    let state = initialState;
+    for (let batch = 0; batch < 60; batch++) state = live(state, flood(100, batch * 100));
+    expect(state.trace).toHaveLength(5000);
+    expect(state.trace[4999]?.seq).toBe(6000);
+  });
+
+  it("hands back a trace that fits unchanged, array identity included", () => {
+    const state = reduceAll(initialState, happyPath);
+    const windowed = windowTrace(state);
+    expect(windowed).toBe(state);
+    expect(windowed.trace).toBe(state.trace);
+  });
+
+  it("leaves the newest row in place, so seq keeps counting after a window", () => {
+    const windowed = live(initialState, flood(5000));
+    const next = live(windowed, flood(1, 5000));
+    expect(next.trace).toHaveLength(5000);
+    expect(next.trace[4999]?.seq).toBe(5001);
+    // No two rows share a seq — the counter never restarts inside the window.
+    expect(new Set(next.trace.map((t) => t.seq)).size).toBe(5000);
+  });
+
+  it("windows an outgoing frame's append too — both directions grow the same array", () => {
+    const full = live(initialState, flood(5000));
+    const sent = windowTrace(recordOutgoing(full, { type: "abort" }));
+    expect(sent.trace).toHaveLength(5000);
+    const last = sent.trace[4999];
+    expect(last).toMatchObject({ seq: 5001, dir: "out", type: "abort" });
+  });
+
+  it("changes nothing but the trace", () => {
+    const state = live(initialState, [...flood(5010), ...happyPath]);
+    const uncapped = reduceAll(initialState, [...flood(5010), ...happyPath]);
+    expect({ ...state, trace: [] }).toEqual({ ...uncapped, trace: [] });
   });
 });
 
 describe("reduce — context_info (context ring)", () => {
   const info: RunEvent = {
-    type: "context_info", agentId: "main", turn: 3, messages: 12,
-    estimatedTokens: 8100, threshold: 100000,
+    type: "context_info",
+    agentId: "main",
+    turn: 3,
+    messages: 12,
+    estimatedTokens: 8100,
+    threshold: 100000,
     parts: [
       { label: "system prompt", chars: 1200, estTokens: 300 },
       { label: "history", chars: 31200, estTokens: 7800 },
@@ -460,7 +696,10 @@ describe("reduce — context_info (context ring)", () => {
   it("stores the snapshot without adding a chat turn", () => {
     const state = reduce(initialState, info);
     expect(state.context).toEqual({
-      turn: 3, messages: 12, estimatedTokens: 8100, threshold: 100000,
+      turn: 3,
+      messages: 12,
+      estimatedTokens: 8100,
+      threshold: 100000,
       parts: [
         { label: "system prompt", chars: 1200, estTokens: 300 },
         { label: "history", chars: 31200, estTokens: 7800 },
@@ -500,8 +739,15 @@ describe("reduce — lastInputTokens (context ring)", () => {
     // Anthropic + caching: 13 uncached in, but 1.5k rode from the cache — the
     // window really holds ~1.7k tokens and the ring must say so.
     const state = reduceAll(initialState, [
-      { type: "usage", agentId: "main", inputTokens: 13, outputTokens: 1084,
-        cacheReadTokens: 1500, cacheCreationTokens: 200, ts: 1 },
+      {
+        type: "usage",
+        agentId: "main",
+        inputTokens: 13,
+        outputTokens: 1084,
+        cacheReadTokens: 1500,
+        cacheCreationTokens: 200,
+        ts: 1,
+      },
     ]);
     expect(state.lastInputTokens).toBe(1713);
     expect(state.usage.inputTokens).toBe(13); // totals stay raw (billing view)
@@ -518,8 +764,22 @@ describe("replay — same reducer as live", () => {
   it("normalizeReplay closes running state and open questions of a torn session", () => {
     const torn: RunEvent[] = [
       { type: "run_start", runId: "r1", agentId: "main", prompt: "dangerous", ts: 1 },
-      { type: "tool_call", agentId: "main", callId: "c1", name: "run_command", input: { command: "rm x" }, ts: 2 },
-      { type: "permission_request", agentId: "main", callId: "c1", name: "run_command", input: { command: "rm x" }, ts: 3 },
+      {
+        type: "tool_call",
+        agentId: "main",
+        callId: "c1",
+        name: "run_command",
+        input: { command: "rm x" },
+        ts: 2,
+      },
+      {
+        type: "permission_request",
+        agentId: "main",
+        callId: "c1",
+        name: "run_command",
+        input: { command: "rm x" },
+        ts: 3,
+      },
       // no decision, no run_end — the session file just stops here
     ];
     const state = normalizeReplay(reduceAll(initialState, torn));
@@ -532,9 +792,14 @@ describe("replay — same reducer as live", () => {
 describe("reduce — attachments", () => {
   const parked = { name: "photo.png", mediaType: "image/png", dataBase64: "aWJt" };
   const startWithRefs: RunEvent = {
-    type: "run_start", runId: "r1", agentId: "main", prompt: "What is this?",
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "What is this?",
     provider: "anthropic",
-    attachments: [{ kind: "image", mediaType: "image/png", blobPath: "/x/blobs/3f7a", sha256: "3f7a1111deadbeef" }],
+    attachments: [
+      { kind: "image", mediaType: "image/png", blobPath: "/x/blobs/3f7a", sha256: "3f7a1111deadbeef" },
+    ],
     ts: 1,
   };
 
@@ -542,7 +807,9 @@ describe("reduce — attachments", () => {
     const withOutbox = { ...initialState, outboxAttachments: [parked] };
     const state = reduce(withOutbox, startWithRefs);
     expect(state.turns[0]).toEqual({
-      kind: "user", text: "What is this?", attachments: [parked],
+      kind: "user",
+      text: "What is this?",
+      attachments: [parked],
     });
     expect(state.outboxAttachments).toBeNull();
   });
@@ -550,7 +817,8 @@ describe("reduce — attachments", () => {
   it("replay: no bytes available — a placeholder per attachment, no blob route", () => {
     const state = reduce(initialState, startWithRefs);
     expect(state.turns[0]).toEqual({
-      kind: "user", text: "What is this?\n[image 3f7a1111]",
+      kind: "user",
+      text: "What is this?\n[image 3f7a1111]",
     });
   });
 
@@ -561,8 +829,12 @@ describe("reduce — attachments", () => {
 
   it("a subagent run_start never consumes the outbox", () => {
     const child: RunEvent = {
-      type: "run_start", runId: "r2", agentId: "explore-1", parentId: "main",
-      prompt: "look around", ts: 2,
+      type: "run_start",
+      runId: "r2",
+      agentId: "explore-1",
+      parentId: "main",
+      prompt: "look around",
+      ts: 2,
     };
     const withOutbox = { ...initialState, outboxAttachments: [parked] };
     const state = reduce(withOutbox, child);
@@ -577,7 +849,11 @@ describe("reduce — voice input", () => {
     // (chat model untouched) while the wire view still records it. This mirrors the
     // Java side, where the provenance line never enters the provider history.
     const voice = {
-      type: "voice_input", agentId: "main", durationMs: 3200, model: "ggml-small", ts: 0,
+      type: "voice_input",
+      agentId: "main",
+      durationMs: 3200,
+      model: "ggml-small",
+      ts: 0,
     } as unknown as RunEvent;
 
     const state = reduce(initialState, voice);
@@ -597,15 +873,19 @@ describe("reduce — plan snapshot (latest-wins)", () => {
 
   it("starts null and is set by a plan event", () => {
     expect(initialState.plan).toBeNull();
-    const s = reduceAll(initialState, [
-      plan([{ text: "read files", status: "completed" }], 1),
-    ]);
+    const s = reduceAll(initialState, [plan([{ text: "read files", status: "completed" }], 1)]);
     expect(s.plan).toEqual([{ text: "read files", status: "completed" }]);
   });
 
   it("the latest plan fully replaces the previous one", () => {
     const s = reduceAll(initialState, [
-      plan([{ text: "a", status: "pending" }, { text: "b", status: "pending" }], 1),
+      plan(
+        [
+          { text: "a", status: "pending" },
+          { text: "b", status: "pending" },
+        ],
+        1,
+      ),
       plan([{ text: "a", status: "completed" }], 2),
     ]);
     expect(s.plan).toEqual([{ text: "a", status: "completed" }]);
@@ -619,8 +899,11 @@ describe("reduce — plan snapshot (latest-wins)", () => {
 describe("workspace_info (socket-only frame)", () => {
   it("stores the announcement and keeps it out of the turn flow", () => {
     const frame = {
-      type: "workspace_info", sessionId: "s-1",
-      path: "/tmp/spectroscope-ws/s-1", configured: false, ts: 1,
+      type: "workspace_info",
+      sessionId: "s-1",
+      path: "/tmp/spectroscope-ws/s-1",
+      configured: false,
+      ts: 1,
     } as unknown as RunEvent;
     const s = reduce(initialState, frame);
     expect(s.workspace).toEqual({ sessionId: "s-1", path: "/tmp/spectroscope-ws/s-1", configured: false });
@@ -633,8 +916,11 @@ describe("workspace_info (socket-only frame)", () => {
 describe("provider_info (socket-only frame)", () => {
   it("announces the active backend, latest wins, and stays out of the turn flow", () => {
     const boot = {
-      type: "provider_info", provider: "ollama", model: "qwen3",
-      host: "localhost:11434", ts: 1,
+      type: "provider_info",
+      provider: "ollama",
+      model: "qwen3",
+      host: "localhost:11434",
+      ts: 1,
     } as unknown as RunEvent;
     const s1 = reduce(initialState, boot);
     expect(s1.providerInfo).toEqual({ provider: "ollama", model: "qwen3", host: "localhost:11434" });
@@ -644,12 +930,17 @@ describe("provider_info (socket-only frame)", () => {
 
     // The switch frame replaces the announcement — the chip follows the wire.
     const switched = {
-      type: "provider_info", provider: "anthropic", model: "claude-opus-4-8",
-      host: "api.anthropic.com", ts: 2,
+      type: "provider_info",
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      host: "api.anthropic.com",
+      ts: 2,
     } as unknown as RunEvent;
     const s2 = reduce(s1, switched);
     expect(s2.providerInfo).toEqual({
-      provider: "anthropic", model: "claude-opus-4-8", host: "api.anthropic.com",
+      provider: "anthropic",
+      model: "claude-opus-4-8",
+      host: "api.anthropic.com",
     });
     expect(s2.provider).toBe("anthropic");
   });
@@ -683,5 +974,170 @@ describe("traceFromEvents — a flat inbound stream for the fleet trace tab", ()
 
   it("is empty for an empty stream", () => {
     expect(traceFromEvents([])).toEqual([]);
+  });
+});
+
+describe("card 87 — the model rides run_start into footer and trace", () => {
+  const runStart = {
+    type: "run_start",
+    runId: "r9",
+    agentId: "main",
+    prompt: "hi",
+    provider: "spectro-local",
+    model: "vibethinker-3b",
+    ts: 1000,
+  } as unknown as RunEvent;
+
+  it("stamps the answer's model and end time at usage", () => {
+    let s = reduce(initialState, runStart);
+    s = reduce(s, { type: "text_delta", agentId: "main", text: "yo", ts: 1200 } as unknown as RunEvent);
+    s = reduce(s, {
+      type: "usage",
+      agentId: "main",
+      inputTokens: 5,
+      outputTokens: 7,
+      ts: 1600,
+    } as unknown as RunEvent);
+    const answers = s.turns.filter((turn) => turn.kind === "assistant");
+    const answer = answers[answers.length - 1];
+    expect(answer.kind === "assistant" && answer.model).toBe("vibethinker-3b");
+    expect(answer.kind === "assistant" && answer.endTs).toBe(1600);
+  });
+
+  it("stamps trace rows inside the run with the run's model — the run_start row included", () => {
+    let s = reduce(initialState, runStart);
+    s = reduce(s, { type: "text_delta", agentId: "main", text: "yo", ts: 1200 } as unknown as RunEvent);
+    const rows = s.trace.filter((e) => e.type === "run_start" || e.type === "text_delta");
+    expect(rows.map((e) => e.model)).toEqual(["vibethinker-3b", "vibethinker-3b"]);
+  });
+
+  it("leaves pre-run rows and old archives blank instead of guessing", () => {
+    const s = reduce(initialState, {
+      type: "run_start",
+      runId: "r0",
+      agentId: "main",
+      prompt: "old file",
+      ts: 500,
+    } as unknown as RunEvent);
+    expect(s.trace[0].model).toBeUndefined();
+  });
+});
+
+describe("the answer footer — the cache split rides along with the tokens", () => {
+  const run = {
+    type: "run_start",
+    runId: "r1",
+    agentId: "main",
+    prompt: "hi",
+    ts: 1,
+  } as unknown as RunEvent;
+
+  const answerUsage = (s: ReturnType<typeof reduceAll>) => {
+    const turn = s.turns[s.turns.length - 1];
+    return turn.kind === "assistant" ? turn.usage : undefined;
+  };
+
+  it("carries the additive cache counts onto the answer they belong to", () => {
+    const s = reduceAll(initialState, [
+      run,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 2 },
+      {
+        type: "usage",
+        agentId: "main",
+        inputTokens: 98,
+        outputTokens: 192,
+        cacheReadTokens: 3410,
+        cacheCreationTokens: 314,
+        ts: 3,
+      },
+    ]);
+    expect(answerUsage(s)).toEqual({
+      inputTokens: 98,
+      outputTokens: 192,
+      cacheReadTokens: 3410,
+      cacheCreationTokens: 314,
+    });
+  });
+
+  it("leaves the cache fields absent when the provider reported none", () => {
+    const s = reduceAll(initialState, [
+      run,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 2 },
+      { type: "usage", agentId: "main", inputTokens: 98, outputTokens: 192, ts: 3 },
+    ]);
+    const usage = answerUsage(s);
+    expect(usage).toEqual({ inputTokens: 98, outputTokens: 192 });
+    expect(usage !== undefined && "cacheReadTokens" in usage).toBe(false);
+    expect(usage !== undefined && "cacheCreationTokens" in usage).toBe(false);
+  });
+});
+
+describe("the answer footer — the model of a session that announces through provider_info", () => {
+  const announce = (model: string, ts: number) =>
+    ({
+      type: "provider_info",
+      provider: "anthropic",
+      model,
+      host: "api.anthropic.com",
+      ts,
+    }) as unknown as RunEvent;
+
+  it("stamps an answer whose run_start never carried a model", () => {
+    const s = reduceAll(initialState, [
+      announce("claude-opus-4-1", 1),
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 2 } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+    ]);
+    const last = s.turns[s.turns.length - 1];
+    expect(last.kind === "assistant" && last.model).toBe("claude-opus-4-1");
+  });
+
+  it("gives each answer the model announced for IT, not the last one in the file", () => {
+    // The shape a Claude Code import has: one long run, the switch announced
+    // mid-stream at the message where the transcript changed model.
+    const s = reduceAll(initialState, [
+      announce("claude-sonnet-4-5", 1),
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 2 } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "first answer", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+      { type: "tool_call", agentId: "main", callId: "c1", name: "read_file", input: {}, ts: 5 },
+      {
+        type: "tool_result",
+        agentId: "main",
+        callId: "c1",
+        output: "ok",
+        isError: false,
+        durationMs: 1,
+        ts: 6,
+      },
+      announce("claude-opus-4-1", 7),
+      { type: "text_delta", agentId: "main", text: "second answer", ts: 8 },
+      { type: "usage", agentId: "main", inputTokens: 9, outputTokens: 3, ts: 9 },
+    ]);
+    const answers = s.turns.filter((turn) => turn.kind === "assistant");
+    expect(answers).toHaveLength(2);
+    expect(answers.map((a) => (a.kind === "assistant" ? a.model : null))).toEqual([
+      "claude-sonnet-4-5",
+      "claude-opus-4-1",
+    ]);
+  });
+
+  it("lets an explicit run_start model win over a stale announcement", () => {
+    const s = reduceAll(initialState, [
+      announce("claude-sonnet-4-5", 1),
+      {
+        type: "run_start",
+        runId: "r1",
+        agentId: "main",
+        prompt: "hi",
+        model: "vibethinker-3b",
+        ts: 2,
+      } as unknown as RunEvent,
+      { type: "text_delta", agentId: "main", text: "yo", ts: 3 },
+      { type: "usage", agentId: "main", inputTokens: 5, outputTokens: 7, ts: 4 },
+    ]);
+    const last = s.turns[s.turns.length - 1];
+    expect(last.kind === "assistant" && last.model).toBe("vibethinker-3b");
   });
 });

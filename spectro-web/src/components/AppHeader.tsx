@@ -31,15 +31,17 @@ export function AppHeader(props: {
   showPanelToggle: boolean;
   panelOpen: boolean;
   onTogglePanel: () => void;
-  thinking: boolean;
-  onToggleThinking: () => void;
   settingsOpen: boolean;
   onToggleSettings: () => void;
   doctorOpen: boolean;
   onToggleDoctor: () => void;
+  /** Opens the ? keymap overlay (edu port). */
+  onOpenKeymap: () => void;
   /** Live: the interactive picker. Replay: a static chip with the view's provider. */
   viewingLive: boolean;
   provider?: string;
+  /** Per-provider onboarding status from /api/config, forwarded to the picker. */
+  providerStatus?: Record<string, string>;
   model?: string;
   archiveProvider?: string;
   status: ConnectionStatus;
@@ -94,21 +96,21 @@ export function AppHeader(props: {
         aria-expanded={props.imagesOpen}
         onClick={props.onToggleImages}
       >
-          <svg
-            viewBox="0 0 16 16"
-            width="16"
-            height="16"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <rect x="2" y="3" width="12" height="10" rx="2" />
-            <circle cx="6" cy="6.5" r="1" fill="currentColor" stroke="none" />
-            <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
-          </svg>
+        <svg
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="2" y="3" width="12" height="10" rx="2" />
+          <circle cx="6" cy="6.5" r="1" fill="currentColor" stroke="none" />
+          <path d="M2 11l3.5-3 2.5 2 3-2.5 3 2.5" />
+        </svg>
         {props.imageCount > 0 && (
           <span className="image-toggle-count tabular" aria-hidden="true">
             {props.imageCount}
@@ -124,27 +126,26 @@ export function AppHeader(props: {
           aria-expanded={props.panelOpen}
           onClick={props.onTogglePanel}
         >
-          <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg
+            viewBox="0 0 16 16"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
             <rect x="2" y="3" width="12" height="10" rx="2" />
             <path d="M10 3v10" />
           </svg>
         </button>
       )}
 
-      {/* Reasoning visibility toggle — Coral when on. */}
-      <button
-        type="button"
-        className={`thinking-toggle${props.thinking ? " thinking-toggle--on" : ""}`}
-        role="switch"
-        aria-checked={props.thinking}
-        aria-label={t(lang, "hdr.thinkingAria")}
-        onClick={props.onToggleThinking}
-      >
-        <span className="thinking-toggle-label">Thinking</span>
-        <span className="thinking-toggle-track" aria-hidden="true">
-          <span className="thinking-toggle-knob" />
-        </span>
-      </button>
+      {/* The thinking toggle moved into the provider picker (card 88): it is
+          a per-model control now, driven by the capability record — a header
+          switch could offer what the active model cannot do. */}
 
       {/* UI language toggle — chrome only; chats keep their own language. */}
       <button
@@ -157,6 +158,30 @@ export function AppHeader(props: {
         {lang.toUpperCase()}
       </button>
 
+      {/* keymap — the ? shortcut sheet (edu port). */}
+      <button
+        type="button"
+        className="icon-button"
+        aria-label={lang === "de" ? "Tastaturkürzel" : "keyboard shortcuts"}
+        title={lang === "de" ? "Tastaturkürzel (?)" : "keyboard shortcuts (?)"}
+        onClick={props.onOpenKeymap}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="1.5" y="4" width="13" height="8" rx="1.6" />
+          <path d="M4 6.5h0M6.5 6.5h0M9 6.5h0M11.5 6.5h0M5 9.5h6" />
+        </svg>
+      </button>
+
       {/* spectro doctor — the calibration/status page. Reference-lamp glyph:
           a source dot with its emission lines. */}
       <button
@@ -167,7 +192,16 @@ export function AppHeader(props: {
         aria-expanded={props.doctorOpen}
         onClick={props.onToggleDoctor}
       >
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          aria-hidden="true"
+        >
           <circle cx="5" cy="8" r="2.2" />
           <path d="M10 4.5v7M12.5 6v4M15 7v2" />
         </svg>
@@ -183,7 +217,17 @@ export function AppHeader(props: {
       >
         {/* A real GEAR — the button opens the settings PAGE now; the old sun
             icon read as a theme toggle and nobody found the settings. */}
-        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <svg
+          viewBox="0 0 24 24"
+          width="16"
+          height="16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <circle cx="12" cy="12" r="3" />
           <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
         </svg>
@@ -194,7 +238,11 @@ export function AppHeader(props: {
           provider={props.provider ?? FALLBACK_PROVIDER_LABEL}
           model={props.model ?? ""}
           status={props.status}
+          providerStatus={props.providerStatus}
           onApply={props.onApplyProvider}
+          onOpenSettings={() => {
+            if (!props.settingsOpen) props.onToggleSettings();
+          }}
         />
       ) : (
         <span className="provider-chip">
@@ -208,7 +256,7 @@ export function AppHeader(props: {
       )}
 
       {props.lastInputTokens > 0 && (
-        <ContextRing lastInputTokens={props.lastInputTokens} context={props.context} />
+        <ContextRing lastInputTokens={props.lastInputTokens} context={props.context} model={props.model} />
       )}
 
       {props.viewingLive && props.running && (

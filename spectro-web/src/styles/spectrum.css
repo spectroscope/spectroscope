@@ -205,6 +205,13 @@
   overflow: hidden;
   overflow-wrap: anywhere;
 }
+/* The TOP lane has nothing above it — its preview drops BELOW the band so the
+   toolbar cannot clip it (owner 2026-07-26). */
+.spectrum-tip--below {
+  bottom: auto;
+  top: calc(100% + 8px);
+}
+
 .spectrum-tip-foot {
   margin: var(--sp-2) 0 0;
   font-size: var(--fs-11);

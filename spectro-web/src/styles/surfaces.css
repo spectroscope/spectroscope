@@ -80,17 +80,11 @@
   gap: var(--sp-2);
   padding-top: var(--sp-2);
 }
-.gate-input-full {
-  margin: 0;
-  max-height: 9rem;
-  overflow: auto;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-chip);
-  padding: var(--sp-2) var(--sp-3);
-  font-size: var(--fs-12);
-  color: var(--text-dim);
-}
+/* The full payload, rendered as the tool card renders it. Bounded and scrolling
+   rather than clipped: the deny/allow buttons live above this box, so it can be
+   as tall as it likes, but a bar that grows past a screenful stops being a bar. */
+.gate-payload { max-height: 22rem; overflow-y: auto; }
+.gate-payload .tv-well { max-height: none; overflow: visible; }
 .gate-history {
   display: flex;
   align-items: center;
@@ -198,6 +192,83 @@
 
 /* ---------- Doctor page ---------- */
 .doctor-page { max-width: 34rem; }
+
+/* Live server log (card 85): mono pane under the checks, tail + copy in the
+   head row; WARN/ERROR lines tint via the status colors, never color alone
+   (the level word itself is in the line). */
+.log-pane-section { margin: 0 0 var(--sp-4); }
+.log-pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: var(--sp-2) 0;
+}
+.log-tail-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: none;
+  padding: 2px var(--sp-2);
+  color: var(--text-dim);
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.log-tail-toggle--on { color: var(--accent); }
+/* The knob/track slide is scoped to the header's .thinking-toggle--on — this
+   twin re-binds it for the tail switch (owner: "der Schalter schaltet sich
+   nicht ein" — it tinted but never slid). */
+.log-tail-toggle--on .thinking-toggle-track {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.log-tail-toggle--on .thinking-toggle-knob {
+  transform: translateX(14px);
+  background: var(--accent);
+}
+.log-copy { margin-left: auto; }
+.log-pane {
+  max-height: 260px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface-2);
+  padding: var(--sp-2) var(--sp-3);
+  font-size: var(--fs-11);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+.log-line { display: inline; color: var(--text-dim); }
+.log-line--warn { color: var(--warn); }
+.log-line--error { color: var(--error); }
+.log-line--faint { color: var(--text-faint); }
+/* Owner: the severity must be findable at a glance — the level token tints
+   and bolds on its own, the timestamp recedes. */
+.log-ts { color: var(--text-faint); }
+.log-level { font-weight: 600; }
+.log-level--info { color: var(--text-dim); }
+.log-level--warn { color: var(--warn); }
+.log-level--error { color: var(--error); }
+/* Browser-origin rows (state/browserLog) share the column format with the
+   server file but must never be mistaken for it: an accent wash behind the
+   row, the origin word on the accent. Background only — the severity tint on
+   .log-line--warn/--error keeps owning the text color. */
+.log-line--browser { background: var(--accent-soft); }
+.log-origin { color: var(--accent); font-weight: 600; }
+.log-source { color: var(--text-faint); }
+.log-count { color: var(--text-faint); }
+.log-detail { color: var(--text-faint); }
+.log-expand { flex: none; }
+/* Fullscreen (raw-modal pattern): the pane grows to the modal body — full
+   height even when the log is still short. */
+.log-modal { display: flex; flex-direction: column; height: 100%; }
+.log-modal .log-pane {
+  flex: 1;
+  max-height: none;
+  min-height: 0;
+}
 .doctor-page .settings-head { gap: var(--sp-3); }
 .doctor-page .settings-hint { text-align: right; }
 .doctor-lede { margin: 0 0 var(--sp-3); font-size: var(--fs-13); color: var(--text-dim); }
@@ -223,3 +294,87 @@
 }
 .doctor-cli { margin: 0; font-size: var(--fs-12); color: var(--text); }
 .doctor-cli-hint { margin: var(--sp-1) 0 0; font-size: var(--fs-12); color: var(--text-faint); }
+
+/* Skills + MCP managers (card 90): quiet rows in the settings page. */
+.skset { margin-top: var(--sp-4); }
+.skset-list { list-style: none; margin: var(--sp-2) 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.skset-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-1) 0;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--fs-12);
+}
+.skset-row:last-child { border-bottom: none; }
+.skset-name { flex: none; color: var(--text); }
+.skset-desc {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.skset-del {
+  flex: none;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-chip);
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 0 var(--sp-2);
+  cursor: pointer;
+}
+.skset-del:hover { color: var(--error); border-color: var(--error); }
+.skset-del--armed,
+.skset-del--armed:hover { color: var(--error); border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
+.skset-add { display: flex; gap: var(--sp-2); margin-top: var(--sp-2); }
+.skset-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 4px var(--sp-2);
+}
+.skset-input--wide { flex: 1; min-width: 0; }
+
+/* ---------- Find box (in-view search, Cmd+F) ----------
+   Floats over the top right of the CONTENT being read, not over the chrome.
+   It is positioned against .main-col, which starts at the app header, so the
+   offset clears the header and the tab row deliberately: parked at the top it
+   sat over the model picker, and a find box covering the control you use to
+   change models is a find box in the wrong room.
+   No scrim and no backdrop on purpose — the page stays readable, scrollable
+   and clickable while the box is open. It searches what you are reading; it
+   does not take it away. */
+.search-box {
+  position: absolute;
+  /* app header (52) + tab row (45) + a little air. */
+  top: 105px;
+  right: var(--sp-4);
+  z-index: var(--z-dropdown);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: calc(100% - var(--sp-5));
+  padding: var(--sp-1) var(--sp-1) var(--sp-1) var(--sp-3);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+}
+.search-box__glyph { flex: none; color: var(--text-faint); }
+.search-box__input { flex: 1; width: 11rem; min-width: 6rem; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text); font: inherit; font-size: var(--fs-13); padding: 3px var(--sp-2); }
+.search-box__input::placeholder { color: var(--text-faint); }
+.search-box__input:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 1px; }
+/* The readout carries the "nothing found" message, and it stays quiet ink
+   while it does: the field keeps its normal border, because a half-typed word
+   is not an error to flag. */
+.search-box__readout { flex: none; min-width: 3.2rem; text-align: right; font-size: var(--fs-12); font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
+.search-box__readout--none { color: var(--text-faint); }
+.search-box__nav { flex: none; width: 26px; height: 26px; }
+.search-box__nav:disabled { color: var(--text-faint); cursor: default; }
+.search-box__nav:disabled:hover { background: none; color: var(--text-faint); }

@@ -112,9 +112,9 @@ true secrets and never graduate into a settings file.</p>
 <h2 id="ch-config-keys">Every key</h2>
 <table class="tbl dense">
   <tr><th>key</th><th>type · default</th><th>env base (deprecated)</th><th>meaning</th></tr>
-  <tr><td><code>provider</code></td><td><code>anthropic</code> | <code>ollama</code> | <code>openai</code> · <code>anthropic</code></td><td><code>SPECTRO_PROVIDER</code></td><td>the LLM backend; unknown values fail loudly</td></tr>
+  <tr><td><code>provider</code></td><td><code>anthropic</code> | <code>ollama</code> | <code>openai</code> | <code>lmstudio</code> | <code>openrouter</code> · <code>anthropic</code></td><td><code>SPECTRO_PROVIDER</code></td><td>the LLM backend; unknown values fail loudly</td></tr>
   <tr><td><code>model</code></td><td>string · <code>claude-opus-4-8</code></td><td><code>SPECTRO_MODEL</code></td><td>if provider is ollama/openai and no layer set a model, the default flips to <code>qwen3</code> / <code>local-model</code></td></tr>
-  <tr><td><code>baseUrl</code></td><td>URL · <code>http://localhost:11434</code></td><td><code>SPECTRO_BASE_URL</code></td><td>ignored by anthropic; openai swaps an untouched Ollama default to <code>api.openai.com</code> when <code>OPENAI_API_KEY</code> is set (a key means the cloud), else to <code>:1234</code> (LM Studio) — an explicit URL always wins</td></tr>
+  <tr><td><code>baseUrl</code></td><td>URL · <code>http://localhost:11434</code></td><td><code>SPECTRO_BASE_URL</code></td><td>ignored by anthropic; the openai-compatible providers use a preset endpoint by name (openai → <code>api.openai.com</code>, lmstudio → <code>:1234</code>, openrouter → <code>openrouter.ai/api</code>) — no key-based swap; an explicit URL always wins</td></tr>
   <tr><td><code>compactionThreshold</code></td><td>int · <code>100000</code></td><td>— (flag only)</td><td>compaction trigger in input tokens</td></tr>
   <tr><td><code>permissionMode</code></td><td><code>ask</code> | <code>auto</code> | <code>readonly</code> · <code>ask</code></td><td>—</td><td>chapter 13; headless <code>run</code> has its own <code>--permissions</code>; live via the composer gear's <code>set_permission_mode</code></td></tr>
   <tr><td><code>workspace</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_WORKSPACE</code> / <code>--workspace</code></td><td>the agent's working directory (file tools, glob/grep, run_command); unset = a per-session folder <code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code> — a resume finds its files again, and the project you started spectroscope in stays clean; process-global — a workspace scope may not set this (a folder must not repoint the agent)</td></tr>
@@ -129,6 +129,8 @@ true secrets and never graduate into a settings file.</p>
   <tr><td><code>sttModel</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_STT_MODEL</code></td><td>absolute path to the whisper.cpp model (default <code>~/.spectro/models/ggml-small.bin</code>); machine-tool path</td></tr>
   <tr><td><code>chromeBinary</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_CHROME</code></td><td>override for the system-Chrome binary <code>browse_page</code> discovers automatically; machine-tool path</td></tr>
   <tr><td><code>hooks</code></td><td>array · <code>[]</code></td><td>—</td><td>pre/post tool hooks — whole-block (chapter 13)</td></tr>
+  <tr><td><code>otlpEndpoint</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_OTLP_ENDPOINT</code></td><td>the OTLP/HTTP traces endpoint; unset = the exporter is off (see Observability below)</td></tr>
+  <tr><td><code>otlpBasicAuth</code></td><td><code>pk:sk</code> · <em>unset</em></td><td><code>SPECTRO_OTLP_BASIC_AUTH</code></td><td>optional Basic-auth pair for the OTLP endpoint (Langfuse's public:secret); never echoed by any read</td></tr>
   <tr><td><code>tts</code></td><td><code>{enabled, voice}</code> · off, <code>en_US-lessac-medium</code></td><td>—</td><td>CLI-side voice output block in the same user settings file (not a <code>SpectroConfig</code> field)</td></tr>
 </table>
 <p>Every <code>SPECTRO_*</code> name in the "env base" column still works exactly as
@@ -137,6 +139,31 @@ one now defers to, and run <code>spectro doctor</code> to see which of yours are
 shadowed. The three "machine-tool path" fields are session-scoped like any other field,
 but discouraged from a committed project file — the header gear and the composer gear's
 local-overrides section are where they belong.</p>
+
+<h2 id="ch-config-observability">Observability: streaming to OTLP</h2>
+
+<p>Every run already writes its <code>session.jsonl</code>; that file is the durable record and
+never needs a network. On top of it, a run can ALSO stream its spans to any OTLP/HTTP backend —
+Langfuse, Jaeger, Phoenix, anything that speaks the OpenTelemetry protocol over HTTP. The export
+is additive: the JSONL is the anchor, and a dead backend warns once and never slows a run.</p>
+
+<p>Two settings turn it on, both off by default — the endpoint and an optional Basic-auth pair,
+either through <em>Settings → Observability</em> or the two <code>SPECTRO_OTLP_*</code> env bases
+in the table above:</p>
+
+<pre>SPECTRO_OTLP_ENDPOINT   = http://localhost:3000/api/public/otel/v1/traces   (Langfuse)
+SPECTRO_OTLP_BASIC_AUTH = pk-lf-...:sk-lf-...                               (optional)</pre>
+
+<p>The <strong>doctor</strong> carries an OTLP line: it posts an empty — but valid — OTLP batch to
+the configured endpoint and shows green when the endpoint accepts it, so you learn a real run's
+spans will land before you spend a run finding out. The auth value is never echoed. Each session
+becomes one trace whose span tree mirrors the run (agent → turns with token usage → tool calls →
+gates), carrying both Langfuse's <code>langfuse.observation.type</code> and OpenTelemetry's
+<code>gen_ai.*</code> conventions so either kind of consumer reads it. The full attribute mapping,
+the endpoint variants (Langfuse / Jaeger / Phoenix) and the backfill path for older sessions live
+in <code>docs/OBSERVABILITY.md</code>.</p>
+
+<!--SHOT:32-settings-observability|Settings → Observability: the OTLP endpoint and the optional pk:sk pair. The doctor’s OTLP line probes the endpoint for real — an empty valid batch — so a green light means a run’s spans will land.-->
 
 <h2 id="ch-config-env">Environment-only variables</h2>
 <p>Everything that used to live only in the environment has graduated to a settings
@@ -147,6 +174,7 @@ one outright (any <code>*_API_KEY</code>/<code>*_TOKEN</code>-shaped key is reje
   <tr><th>variable</th><th>consumed by</th></tr>
   <tr><td><code>ANTHROPIC_API_KEY</code></td><td>the Anthropic SDK; checked up front — a missing key refuses provider construction with a readable message</td></tr>
   <tr><td><code>OPENAI_API_KEY</code></td><td>optional Bearer for the chat provider; required by the OpenAI image backend</td></tr>
+  <tr><td><code>OPENROUTER_API_KEY</code></td><td>Bearer for the <code>openrouter</code> openai-compatible provider</td></tr>
   <tr><td><code>GEMINI_API_KEY</code></td><td>the Gemini image backend</td></tr>
   <tr><td><code>TAVILY_API_KEY</code></td><td>the Tavily tier of <code>web_search</code>; absent falls back to the keyless DuckDuckGo tier</td></tr>
 </table>
@@ -178,7 +206,7 @@ The counterpart of a CLAUDE.md, for spectroscope.</p>
 <!-- ============================== CH 31 ============================== -->
 <h1 data-ch="31" id="ch-build"><span class="ch-num">Chapter 31</span>Build &amp; test inventory</h1>
 
-<p class="lead">Four JVM modules, two npm toolchains, one version catalog — and a test
+<p class="lead">Five JVM modules, two npm toolchains, one version catalog — and a test
 suite that never needs an API key.</p>
 
 <!--MERMAID:13-modules|The module graph. spectro-server depends on spectro-cli deliberately: the transcription endpoint reuses the CLI's Transcriber, and the audio channel stays out of the core.-->
@@ -190,6 +218,7 @@ suite that never needs an API key.</p>
   <tr><td><code>spectro-cli</code></td><td>terminal face</td><td>application; picocli; slf4j-nop keeps output clean; registers the <code>tour</code> task; stdin wired for the REPL</td></tr>
   <tr><td><code>spectro-server</code></td><td>web backend</td><td>Spring Boot 3.5.3 (only here); starters web + websocket; depends on core <em>and</em> cli; serves the built UI from <code>static/</code></td></tr>
   <tr><td><code>spectro-mcp-notes</code></td><td>example MCP server</td><td>standalone; Jackson only; its test spawns the real child JVM</td></tr>
+  <tr><td><code>spectro-orchestrator</code></td><td>the fleet facade</td><td>java-library; Spectro.panel() lanes as core agents on a bus; POM pins spectro-core at the same version; Maven Central library</td></tr>
   <tr><td><code>spectro-web</code></td><td>browser UI</td><td>npm/Vite; React 19, React Flow 12, dagre; <code>npm run build</code> writes straight into the server's resources</td></tr>
   <tr><td><code>spectro-desktop</code></td><td>desktop shell</td><td>npm/Electron 37; TypeScript strict; zero runtime dependencies (health polling via built-in fetch)</td></tr>
 </table>

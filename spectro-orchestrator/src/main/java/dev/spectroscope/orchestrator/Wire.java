@@ -87,6 +87,11 @@ final class Wire {
             ArrayNode caps = cardNode.putArray("capabilities");
             card.capabilities().forEach(caps::add);
             cardNode.put("topic", card.topic());
+            // Card 72, additive like the card itself: written only when present,
+            // so a trigger-less hello stays byte-identical to the pre-72 line.
+            if (card.trigger() != null) {
+                cardNode.put("trigger", card.trigger());
+            }
         }
         return write(node);
     }
@@ -222,7 +227,9 @@ final class Wire {
         }
         List<String> capabilities = new ArrayList<>();
         card.path("capabilities").forEach(cap -> capabilities.add(cap.asText()));
-        return Optional.of(new NodeCard(id, card.path("role").asText(), capabilities, topic));
+        // Absent on every pre-card-72 line — null, exactly like the writer's omission.
+        String trigger = card.hasNonNull("trigger") ? card.path("trigger").asText() : null;
+        return Optional.of(new NodeCard(id, card.path("role").asText(), capabilities, topic, trigger));
     }
 
     private static ObjectNode base(String op) {

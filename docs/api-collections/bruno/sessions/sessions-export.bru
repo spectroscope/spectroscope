@@ -1,0 +1,19 @@
+meta {
+  name: export session JSONL
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/sessions/{{sessionId}}/export
+  body: none
+  auth: none
+}
+
+docs {
+  The raw session JSONL, byte-identical, as an attachment (application/x-ndjson). Id shape-checked ([A-Za-z0-9][A-Za-z0-9-]*); 404 for foreign callers or malformed id.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

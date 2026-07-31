@@ -72,8 +72,16 @@ function TickMark({ tick, highlighted }: { tick: LaneTick; highlighted: boolean 
   );
 }
 
-export function SpectrumBand({ lane, events, t0, onFocusEvent }: {
+export function SpectrumBand({
+  lane,
+  events,
+  t0,
+  onFocusEvent,
+  tipBelow,
+}: {
   lane: Lane;
+  /** Open the tick preview BELOW the band — the top row would clip it. */
+  tipBelow?: boolean;
   /** The FULL event stream — a tick's `seq` indexes into it. */
   events: RunEvent[];
   /** Stream start (epoch ms) for the relative time on the popup. */
@@ -88,17 +96,20 @@ export function SpectrumBand({ lane, events, t0, onFocusEvent }: {
   // array index can point at a different event between renders — a seq cannot.
   const [hoverSeq, setHoverSeq] = useState<number | null>(null);
 
-  const nearest = useCallback((clientX: number): number | null => {
-    const rect = bandRef.current?.getBoundingClientRect();
-    if (!rect || rect.width === 0) {
-      return null;
-    }
-    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    return nearestTick(lane.ticks, frac);
-  }, [lane.ticks]);
+  const nearest = useCallback(
+    (clientX: number): number | null => {
+      const rect = bandRef.current?.getBoundingClientRect();
+      if (!rect || rect.width === 0) {
+        return null;
+      }
+      const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+      return nearestTick(lane.ticks, frac);
+    },
+    [lane.ticks],
+  );
 
   const seqAt = (index: number | null): number | null =>
-    index == null ? null : lane.ticks[index]?.seq ?? null;
+    index == null ? null : (lane.ticks[index]?.seq ?? null);
   const onMove = (e: MouseEvent<HTMLDivElement>) => setHoverSeq(seqAt(nearest(e.clientX)));
   const onLeave = () => setHoverSeq(null);
 
@@ -131,18 +142,19 @@ export function SpectrumBand({ lane, events, t0, onFocusEvent }: {
     }
   };
 
-  const tick = hoverSeq !== null ? lane.ticks.find((t) => t.seq === hoverSeq) ?? null : null;
+  const tick = hoverSeq !== null ? (lane.ticks.find((t) => t.seq === hoverSeq) ?? null) : null;
   const event = tick ? events[tick.seq] : undefined;
   const preview = event ? eventPreview(event) : null;
-  const ts = event && typeof (event as { ts?: unknown }).ts === "number"
-    ? (event as { ts: number }).ts : null;
+  const ts =
+    event && typeof (event as { ts?: unknown }).ts === "number" ? (event as { ts: number }).ts : null;
   const rel = ts !== null && ts >= t0 ? formatDuration(ts - t0) : null;
   // The mark's true center anchors both the scrub line and the popup; near the
   // band edges the popup flips its growth direction (left/right aligned instead
   // of centered) so a long preview never spills off the band.
-  const rawLeft = tick ? (BAND_PAD_X + tick.x * (BAND_W - 2 * BAND_PAD_X)) / BAND_W * 100 : 0;
+  const rawLeft = tick ? ((BAND_PAD_X + tick.x * (BAND_W - 2 * BAND_PAD_X)) / BAND_W) * 100 : 0;
   const anchorPos = `${rawLeft}%`;
-  const tipTransform = rawLeft < 15 ? "translateX(0)" : rawLeft > 85 ? "translateX(-100%)" : "translateX(-50%)";
+  const tipTransform =
+    rawLeft < 15 ? "translateX(0)" : rawLeft > 85 ? "translateX(-100%)" : "translateX(-50%)";
 
   return (
     <div
@@ -165,9 +177,19 @@ export function SpectrumBand({ lane, events, t0, onFocusEvent }: {
       {tick && preview && (
         <>
           <span className="spectrum-scrub" style={{ left: anchorPos }} aria-hidden="true" />
-          <div className="spectrum-tip" style={{ left: anchorPos, transform: tipTransform }} role="tooltip" aria-live="polite" aria-atomic="true">
+          <div
+            className={`spectrum-tip${tipBelow === true ? " spectrum-tip--below" : ""}`}
+            style={{ left: anchorPos, transform: tipTransform }}
+            role="tooltip"
+            aria-live="polite"
+            aria-atomic="true"
+          >
             <div className="spectrum-tip-head">
-              <span className="spectrum-tip-dot" style={{ background: TICK_COLOR[tick.kind] }} aria-hidden="true" />
+              <span
+                className="spectrum-tip-dot"
+                style={{ background: TICK_COLOR[tick.kind] }}
+                aria-hidden="true"
+              />
               <span className="spectrum-tip-type mono">{preview.type}</span>
               {rel && <span className="spectrum-tip-time mono tabular">{rel}</span>}
             </div>

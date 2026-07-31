@@ -33,7 +33,15 @@ function Handles() {
   );
 }
 
-function Disclosure({ label, children, open: openDefault = false }: { label: string; children: ReactNode; open?: boolean }) {
+function Disclosure({
+  label,
+  children,
+  open: openDefault = false,
+}: {
+  label: string;
+  children: ReactNode;
+  open?: boolean;
+}) {
   const [open, setOpen] = useState(openDefault);
   return (
     <div className="pf-disc">
@@ -46,7 +54,10 @@ function Disclosure({ label, children, open: openDefault = false }: { label: str
   );
 }
 
-interface Activity { text: string; color: string; }
+interface Activity {
+  text: string;
+  color: string;
+}
 
 // ---------------------------------------------------------------------------
 // User
@@ -60,7 +71,9 @@ export function UserNode({ data }: NodeProps) {
       <div className="pf-user__sub">{d.active ? "typing …" : "PROMPT"}</div>
       {d.prompt && (
         <Disclosure label="Prompt">
-          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>{d.prompt}</div>
+          <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+            {d.prompt}
+          </div>
         </Disclosure>
       )}
       <Handles />
@@ -73,16 +86,27 @@ export function UserNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 export function AgentNode({ data }: NodeProps) {
   const d = data as {
-    active: boolean; error: boolean; focus: Focus; activity: Activity;
-    gate: GateState; gateNote: string; gateColor: string; activeTool: string | null;
-    ctxParts: CtxPart[] | null; ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
-    prompt: string; systemPrompt: string | null; tool: { name: string; input: unknown } | null;
+    active: boolean;
+    error: boolean;
+    focus: Focus;
+    activity: Activity;
+    gate: GateState;
+    gateNote: string;
+    gateColor: string;
+    activeTool: string | null;
+    ctxParts: CtxPart[] | null;
+    ctxTotals: { messages: number; estimatedTokens: number; threshold: number } | null;
+    prompt: string;
+    systemPrompt: string | null;
+    tool: { name: string; input: unknown } | null;
   };
   const busy = d.focus === "llm" || d.focus === "disk" || d.focus === "cmd" || d.focus === "mcp";
   const tools = ["read_file", "write_file", "list_dir", "run_command"];
   const maxTok = Math.max(1, ...(d.ctxParts ?? []).map((p) => p.estTokens));
   return (
-    <div className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}`}>
+    <div
+      className={`pf-card pf-agent${d.active || busy ? " pf-card--active" : ""}${d.error ? " pf-card--error" : ""}`}
+    >
       <div className="pf-agent__head">
         <div className="pf-agent__title">
           <span className="pf-avatar">◆</span>
@@ -104,13 +128,19 @@ export function AgentNode({ data }: NodeProps) {
           <span className="pf-lock" style={{ color: d.gateColor }} />
           Permission-Gate
         </span>
-        <span className="pf-row__note" style={{ color: d.gateColor }}>{d.gateNote}</span>
+        <span className="pf-row__note" style={{ color: d.gateColor }}>
+          {d.gateNote}
+        </span>
       </div>
 
-      <div className="pf-eyebrow" style={{ marginTop: 10 }}>Tools</div>
+      <div className="pf-eyebrow" style={{ marginTop: 10 }}>
+        Tools
+      </div>
       <div className="pf-tools">
         {tools.map((t) => (
-          <span key={t} className={`pf-chip${d.activeTool === t ? " pf-chip--on" : ""}`}>{t}</span>
+          <span key={t} className={`pf-chip${d.activeTool === t ? " pf-chip--on" : ""}`}>
+            {t}
+          </span>
         ))}
       </div>
 
@@ -118,17 +148,24 @@ export function AgentNode({ data }: NodeProps) {
         {d.systemPrompt && (
           <div className="pf-panelbox">
             <div className="pf-panelbox__label">System prompt</div>
-            <div className="pf-prose nowheel" style={{ textAlign: "left" }}>{d.systemPrompt}</div>
+            <div className="pf-prose nowheel" style={{ textAlign: "left" }}>
+              {d.systemPrompt}
+            </div>
           </div>
         )}
         {d.ctxParts && d.ctxTotals && (
           <div className="pf-panelbox">
-            <div className="pf-panelbox__label">Context to the LLM · {d.ctxTotals.estimatedTokens.toLocaleString()} / {d.ctxTotals.threshold.toLocaleString()} tok</div>
+            <div className="pf-panelbox__label">
+              Context to the LLM · {d.ctxTotals.estimatedTokens.toLocaleString()} /{" "}
+              {d.ctxTotals.threshold.toLocaleString()} tok
+            </div>
             <div className="pf-ctx">
               {d.ctxParts.map((p) => (
                 <div className="pf-ctx__row" key={p.label}>
                   <span>{p.label}</span>
-                  <span className="pf-ctx__bar"><span className="pf-ctx__fill" style={{ width: `${(p.estTokens / maxTok) * 100}%` }} /></span>
+                  <span className="pf-ctx__bar">
+                    <span className="pf-ctx__fill" style={{ width: `${(p.estTokens / maxTok) * 100}%` }} />
+                  </span>
                   <span className="pf-ctx__tok">{p.estTokens}</span>
                 </div>
               ))}
@@ -179,34 +216,64 @@ function NetGlobe({ active }: { active: boolean }) {
 // ---------------------------------------------------------------------------
 export function OsNode({ data }: NodeProps) {
   const d = data as {
-    kind: "disk" | "shell" | "net" | "mcp"; active: boolean;
-    disk?: "idle" | "read" | "write"; file?: string | null;
-    command?: string | null; mcp?: string | null; tool?: { name: string; input: unknown } | null;
+    kind: "disk" | "shell" | "net" | "mcp";
+    active: boolean;
+    disk?: "idle" | "read" | "write";
+    file?: string | null;
+    command?: string | null;
+    mcp?: string | null;
+    tool?: { name: string; input: unknown } | null;
   };
 
-  let title = "";
-  let body: ReactNode = null;
+  // The branch chain below is exhaustive (else-terminated) — both assign.
+  let title: string;
+  let body: ReactNode;
   if (d.kind === "disk") {
     title = "Disk";
     body = (
       <>
         <div className="pf-disk" data-disk={d.disk}>
           <svg width="76" height="54" viewBox="0 0 76 54">
-            <circle className="pf-ripple" cx="30" cy="30" r="12" fill="none" stroke="var(--accent)" strokeWidth="1.2" />
+            <circle
+              className="pf-ripple"
+              cx="30"
+              cy="30"
+              r="12"
+              fill="none"
+              stroke="var(--accent)"
+              strokeWidth="1.2"
+            />
             <g className="pf-platter">
-              <circle cx="30" cy="30" r="16" fill="var(--surface-3)" stroke="var(--border-strong)" strokeWidth="1.5" />
+              <circle
+                cx="30"
+                cy="30"
+                r="16"
+                fill="var(--surface-3)"
+                stroke="var(--border-strong)"
+                strokeWidth="1.5"
+              />
               <circle cx="30" cy="30" r="10" fill="none" stroke="var(--border-strong)" />
               <circle cx="30" cy="30" r="2" fill="var(--border-strong)" />
               <circle cx="30" cy="17" r="1.8" fill="var(--accent)" />
             </g>
             <g className="pf-arm">
-              <line x1="58" y1="12" x2="40" y2="26" stroke="var(--text-dim)" strokeWidth="2" strokeLinecap="round" />
+              <line
+                x1="58"
+                y1="12"
+                x2="40"
+                y2="26"
+                stroke="var(--text-dim)"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
               <circle cx="58" cy="12" r="2.6" fill="var(--text-dim)" />
             </g>
           </svg>
         </div>
         {d.disk && d.disk !== "idle" && (
-          <div className={`pf-filepill${d.disk === "write" ? " pf-filepill--write" : ""}`}>{d.file ?? "file"}</div>
+          <div className={`pf-filepill${d.disk === "write" ? " pf-filepill--write" : ""}`}>
+            {d.file ?? "file"}
+          </div>
         )}
       </>
     );
@@ -217,14 +284,23 @@ export function OsNode({ data }: NodeProps) {
       <>
         <div className={`pf-shell${d.active ? " pf-shell--on" : ""}`}>
           <span className="pf-shell__prompt">$</span>
-          {shown
-            ? <span key={shown} className="pf-shell__cmd" style={{ "--n": shown.length } as CSSProperties}>{shown}</span>
-            : <span className="pf-shell__idle">idle</span>}
+          {shown ? (
+            <span key={shown} className="pf-shell__cmd" style={{ "--n": shown.length } as CSSProperties}>
+              {shown}
+            </span>
+          ) : (
+            <span className="pf-shell__idle">idle</span>
+          )}
           <span className="pf-shell__cursor" />
         </div>
         {d.command && (
           <Disclosure label="Command">
-            <div className="pf-panelbox pf-mono nowheel" style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}>$ {d.command}</div>
+            <div
+              className="pf-panelbox pf-mono nowheel"
+              style={{ fontSize: 11, overflow: "auto", maxHeight: 90 }}
+            >
+              $ {d.command}
+            </div>
           </Disclosure>
         )}
       </>
@@ -266,14 +342,25 @@ export function OsNode({ data }: NodeProps) {
 // LLM
 // ---------------------------------------------------------------------------
 export function LlmNode({ data }: NodeProps) {
-  const d = data as { active: boolean; local: boolean; provider: string; model: string; think: string; answer: string };
+  const d = data as {
+    active: boolean;
+    local: boolean;
+    provider: string;
+    model: string;
+    think: string;
+    answer: string;
+  };
   return (
     <div className={`pf-card pf-llm${d.active ? " pf-card--active pf-llm--active" : ""}`}>
       <div className="pf-llm__halo" />
-      <div className="pf-llm__net"><NeuralNet active={d.active} /></div>
+      <div className="pf-llm__net">
+        <NeuralNet active={d.active} />
+      </div>
       <div className="pf-llm__name">LLM</div>
       <div className="pf-llm__model">{d.model || d.provider}</div>
-      <div className="pf-llm__loc"><b>{d.local ? "local" : "remote"}</b> · {d.provider}</div>
+      <div className="pf-llm__loc">
+        <b>{d.local ? "local" : "remote"}</b> · {d.provider}
+      </div>
       {(d.think || d.answer) && (
         <Disclosure label="Reasoning & answer">
           {d.think && (
@@ -325,9 +412,17 @@ export function ExtNode({ data }: NodeProps) {
 // ---------------------------------------------------------------------------
 export function SubagentNode({ data }: NodeProps) {
   const d = data as {
-    id: string; label: string | null; task: string; state: SubagentInfo["state"];
-    stateLabel: string; stateColor: string; lastStatus: string | null; activity: Activity;
-    focus: Focus; active: boolean; think: string;
+    id: string;
+    label: string | null;
+    task: string;
+    state: SubagentInfo["state"];
+    stateLabel: string;
+    stateColor: string;
+    lastStatus: string | null;
+    activity: Activity;
+    focus: Focus;
+    active: boolean;
+    think: string;
   };
   return (
     <div className={`pf-card pf-sub${d.active ? " pf-card--active" : ""}`}>
@@ -336,7 +431,9 @@ export function SubagentNode({ data }: NodeProps) {
           <span className="pf-sub__dot" style={{ background: d.stateColor }} />
           {d.label ? `${d.label} · ${d.id}` : d.id}
         </span>
-        <span className="pf-badge" style={{ color: d.stateColor }}>{d.stateLabel}</span>
+        <span className="pf-badge" style={{ color: d.stateColor }}>
+          {d.stateLabel}
+        </span>
       </div>
       <div className="pf-sub__task">{d.task}</div>
       <div className="pf-sub__status" style={{ color: d.activity.color }}>
@@ -349,7 +446,11 @@ export function SubagentNode({ data }: NodeProps) {
             <div className="pf-panelbox__label">Task</div>
             <div className="pf-prose nowheel">{d.task}</div>
           </div>
-          {d.lastStatus && <div className="pf-kv">Last status: <b>{d.lastStatus}</b></div>}
+          {d.lastStatus && (
+            <div className="pf-kv">
+              Last status: <b>{d.lastStatus}</b>
+            </div>
+          )}
         </Disclosure>
       )}
       <Handles />

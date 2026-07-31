@@ -37,6 +37,10 @@ export interface LegibleNode {
   spawnedBy: string | null;
   inTokens: number;
   outTokens: number;
+  /** Activity window: an agent's own first/last act; a group folds the span
+   *  across its members (min first, max last). Null when never stamped. */
+  firstTs: number | null;
+  lastTs: number | null;
 }
 
 export interface LegibleGraph {
@@ -59,20 +63,33 @@ export interface CollapseOpts {
 // A monitor must never hide a red behind a green: `failed` dominates the group
 // fold, then `working` (live), then `completed`, then `idle`.
 const STATE_RANK: Record<FleetGraphNode["state"], number> = {
-  failed: 3, working: 2, completed: 1, idle: 0,
+  failed: 3,
+  working: 2,
+  completed: 1,
+  idle: 0,
 };
 
-const higherState = (
-  a: FleetGraphNode["state"],
-  b: FleetGraphNode["state"],
-): FleetGraphNode["state"] => (STATE_RANK[b] > STATE_RANK[a] ? b : a);
+const higherState = (a: FleetGraphNode["state"], b: FleetGraphNode["state"]): FleetGraphNode["state"] =>
+  STATE_RANK[b] > STATE_RANK[a] ? b : a;
 
 function asAgent(n: FleetGraphNode): LegibleNode {
   return {
-    id: n.id, kind: "agent", role: n.role, cluster: n.role,
-    count: 1, members: [n.id], descendants: [],
-    connected: n.connected, epoch: n.epoch, state: n.state, pendingGate: n.pendingGate,
-    spawnedBy: n.spawnedBy, inTokens: n.inTokens, outTokens: n.outTokens,
+    id: n.id,
+    kind: "agent",
+    role: n.role,
+    cluster: n.role,
+    count: 1,
+    members: [n.id],
+    descendants: [],
+    connected: n.connected,
+    epoch: n.epoch,
+    state: n.state,
+    pendingGate: n.pendingGate,
+    spawnedBy: n.spawnedBy,
+    inTokens: n.inTokens,
+    outTokens: n.outTokens,
+    firstTs: n.firstTs,
+    lastTs: n.lastTs,
   };
 }
 
@@ -84,6 +101,8 @@ function absorbInto(group: LegibleNode, n: FleetGraphNode): void {
   group.pendingGate = group.pendingGate || n.pendingGate;
   group.inTokens += n.inTokens;
   group.outTokens += n.outTokens;
+  if (n.firstTs !== null && (group.firstTs === null || n.firstTs < group.firstTs)) group.firstTs = n.firstTs;
+  if (n.lastTs !== null && (group.lastTs === null || n.lastTs > group.lastTs)) group.lastTs = n.lastTs;
 }
 
 /** Reroute each edge through `rep` (original id -> representative id), dropping
@@ -154,10 +173,22 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
       continue;
     }
     const group: LegibleNode = {
-      id: gid, kind: "group", role: first.role, cluster: first.role,
-      count: members.length, members: members.map((m) => m.id), descendants: [],
-      connected: false, epoch: 0, state: "idle", pendingGate: false,
-      spawnedBy: first.spawnedBy, inTokens: 0, outTokens: 0,
+      id: gid,
+      kind: "group",
+      role: first.role,
+      cluster: first.role,
+      count: members.length,
+      members: members.map((m) => m.id),
+      descendants: [],
+      connected: false,
+      epoch: 0,
+      state: "idle",
+      pendingGate: false,
+      spawnedBy: first.spawnedBy,
+      inTokens: 0,
+      outTokens: 0,
+      firstTs: null,
+      lastTs: null,
     };
     for (const m of members) {
       absorbInto(group, m);
@@ -179,8 +210,7 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
         // Skip a child that is its own group, already taken, OR a member of an
         // EXPANDED group — the last case must surface individually, never be
         // swallowed as this (still-folded) ancestor's roll-up descendant.
-        if (grouped.has(child.id) || absorbed.has(child.id)
-            || expandedMemberGroup.has(child.id)) continue;
+        if (grouped.has(child.id) || absorbed.has(child.id) || expandedMemberGroup.has(child.id)) continue;
         absorbed.add(child.id);
         rep.set(child.id, group.id);
         group.descendants.push(child.id);

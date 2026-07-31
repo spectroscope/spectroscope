@@ -85,7 +85,7 @@ it, so unknown event types are visible too.</p>
 
 <h2 id="ch-tabs-text">The Text tab</h2>
 
-<p>The fourth lens on the same stream — where the trace shows frames, this shows the
+<p>Another lens on the same stream — where the trace shows frames, this shows the
 <em>text</em>. Two views behind a <em>Text | JSONL</em> toggle (sticky per browser), one
 copy button for the whole thing:</p>
 
@@ -107,6 +107,31 @@ copy button for the whole thing:</p>
       Socket-only UI frames (<code>provider_info</code>, <code>workspace_info</code>)
       are deliberately absent: they never enter the file, and this view IS the file.</li>
 </ul>
+
+<h3 id="ch-tabs-explain">Explain: have a model read the run</h3>
+
+<p>Above the feed sits an <strong>explain</strong> button. It does one thing: it sends a
+bounded digest of exactly what the Text view shows — the same prompts, reasoning runs, tool
+calls and gates, nothing hidden and nothing added — to your configured provider, and streams
+back a plain-prose reading of <em>why</em> the session went the way it did. What the agent was
+trying to do, why each step followed from the last, where it hesitated or was gated, where it
+recovered. Because the digest is built from the same feed you can read yourself, imported
+sessions explain just as well as live ones.</p>
+
+<p>The panel is labelled for what it is — <em>“model-generated reading of the recorded run
+— not model internals”</em>. That boundary is not just a caption: it is written into the
+instructions the explain call runs under. The model is told it is reading a recording, that it
+cannot see hidden state, and that it must ground every claim in the transcript and say so where
+the transcript is ambiguous. If you want the deterministic view — which gate asked and why,
+folded straight from the stream with no model in the loop — that is the gates panel in the
+<a href="#ch-tabs-trace">Trace tab</a>, and it stays exactly as it was.</p>
+
+<p>One honest caveat: the explain call spends your provider key, like any other model call. It
+carries the same local-origin fences as the key-writing endpoint (it is a loopback-only,
+same-origin request), and it needs a provider with a key set — otherwise the button reads
+“set a key in Settings” instead of running.</p>
+
+<!--SHOT:30-text-explain|The explain panel over the text feed: a model's reading of a real run, honestly labelled as an interpretation of the recording — not a window into the model's internals. The deterministic gates view lives in the Trace tab, untouched.-->
 
 <h2 id="ch-tabs-panel">The right panel</h2>
 <p>The header's panel button docks a resizable panel into the Chat tab with four tabs.</p>

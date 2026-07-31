@@ -66,6 +66,24 @@ class ProcessBusWireTest {
         }
     }
 
+    /**
+     * Proves a witness's subscription is live hub-side BEFORE a burst. The
+     * remote sub and the publishes ride different connections, so nothing
+     * orders them at the hub: the whole burst can be ingested first, and with
+     * a tiny ring the evicted frames never reach the witness — its frame
+     * latch then waits forever (the CI flake at the 10-second awaits).
+     * The returned latch opens once one frame reaches this bus: live if the
+     * sub won the race, from the ring if it lost (a single probed frame
+     * always survives a capacity-2 ring) — either way the sub is now
+     * registered under the hub lock, so every later publish fans out to the
+     * witness. Publish ONE frame after subscribing, await this, then burst.
+     */
+    private static CountDownLatch probeSubscription(ProcessBus witnessSide) {
+        CountDownLatch heard = new CountDownLatch(1);
+        witnessSide.subscribe(TOPIC, env -> heard.countDown());
+        return heard;
+    }
+
     @Test
     void envelopesCrossTheLoopbackWireInPerSenderOrder() throws Exception {
         try (ProcessBusHub hub = new ProcessBusHub(0);
@@ -172,8 +190,12 @@ class ProcessBusWireTest {
             CountDownLatch five = witness.expect(5);
             try (ProcessBus witnessSide = new ProcessBus("127.0.0.1", hub.port(), "witness")) {
                 witnessSide.subscribe(TOPIC, witness);
+                CountDownLatch subLive = probeSubscription(witnessSide);
                 BusPublisher nodeA = new BusPublisher(publisherSide, "node-a", CTX);
-                for (int i = 0; i < 5; i++) {
+                nodeA.onEvent(delta("a0"));
+                assertTrue(subLive.await(10, TimeUnit.SECONDS),
+                        "the probe frame proves the hub registered the witness's sub");
+                for (int i = 1; i < 5; i++) {
                     nodeA.onEvent(delta("a" + i));
                 }
                 assertTrue(five.await(10, TimeUnit.SECONDS));
@@ -213,7 +235,10 @@ class ProcessBusWireTest {
             CountDownLatch three = witness.expect(3);
             try (ProcessBus witnessSide = new ProcessBus("127.0.0.1", hub.port(), "witness")) {
                 witnessSide.subscribe(TOPIC, witness);
+                CountDownLatch subLive = probeSubscription(witnessSide);
                 nodeA.onEvent(delta("a0")); // ring cap 2: b0/b1 below evict this
+                assertTrue(subLive.await(10, TimeUnit.SECONDS),
+                        "the probe frame proves the hub registered the witness's sub");
                 nodeB.onEvent(delta("b0"));
                 nodeB.onEvent(delta("b1"));
                 assertTrue(three.await(10, TimeUnit.SECONDS), "the hub saw all three");
@@ -291,8 +316,12 @@ class ProcessBusWireTest {
             CountDownLatch five = witness.expect(5);
             try (ProcessBus witnessSide = new ProcessBus("127.0.0.1", hub.port(), "witness")) {
                 witnessSide.subscribe(TOPIC, witness);
+                CountDownLatch subLive = probeSubscription(witnessSide);
                 BusPublisher nodeA = new BusPublisher(publisherSide, "node-a", CTX);
-                for (int i = 0; i < 5; i++) {
+                nodeA.onEvent(delta("a0"));
+                assertTrue(subLive.await(10, TimeUnit.SECONDS),
+                        "the probe frame proves the hub registered the witness's sub");
+                for (int i = 1; i < 5; i++) {
                     nodeA.onEvent(delta("a" + i));
                 }
                 assertTrue(five.await(10, TimeUnit.SECONDS));
@@ -348,6 +377,84 @@ class ProcessBusWireTest {
             Collector late = new Collector();
             CountDownLatch replay = late.expect(2);
             subscriberSide.subscribe(TOPIC, late);
+            assertTrue(replay.await(10, TimeUnit.SECONDS),
+                    "the frames nobody consumed replay for the later consumer");
+            assertEquals(List.of("node-a#0#1", "node-a#0#2"), late.ids());
+        }
+    }
+
+    @Test
+    void theCursorNeverLeapfrogsAFrameNobodyConsumed() throws Exception {
+        // The schedule the sibling above cannot pin (S3c): with every TOPIC
+        // handle closed, a1 and a2 are IN FLIGHT to this client — closing a
+        // handle sends no wire op, so the hub-side subscription outlives it
+        // and keeps fanning out. a1 is processed (and dropped: nobody
+        // consumes) BEFORE the re-subscribe, a2 AFTER it. Accepting a2 must
+        // not jump the cursor over the never-delivered a1 — the replay the
+        // re-subscribe just requested would be rejected as redelivery, and
+        // a1 lost silently, with no gap announced. A parked probe consumer
+        // pins the interleaving: it blocks the reader thread (off the client
+        // lock) BETWEEN a1 and a2 — one publisher connection, so ingestion
+        // and fan-out preserve publish order — and the subscribe lands in
+        // that window. Latches only, no sleeps.
+        try (ProcessBusHub hub = new ProcessBusHub(0);
+             ProcessBus subscriberSide = new ProcessBus("127.0.0.1", hub.port(), "sub-1");
+             ProcessBus publisherSide = new ProcessBus("127.0.0.1", hub.port(), "pub-1")) {
+            Collector early = new Collector();
+            CountDownLatch first = early.expect(1);
+            AutoCloseable handle = subscriberSide.subscribe(TOPIC, early);
+            BusPublisher nodeA = new BusPublisher(publisherSide, "node-a", CTX);
+            nodeA.onEvent(delta("a0"));
+            assertTrue(first.await(10, TimeUnit.SECONDS));
+            handle.close();
+
+            String probeTopic = BusEnvelope.topicFor("ctx-probe");
+            CountDownLatch probeLive = new CountDownLatch(1);
+            CountDownLatch readerParked = new CountDownLatch(1);
+            CountDownLatch releaseReader = new CountDownLatch(1);
+            subscriberSide.subscribe(probeTopic, env -> {
+                if (delta("park").equals(env.payload())) {
+                    readerParked.countDown();
+                    try {
+                        releaseReader.await(10, TimeUnit.SECONDS);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                    }
+                } else {
+                    probeLive.countDown();
+                }
+            });
+            BusPublisher probe = new BusPublisher(publisherSide, "node-p", "ctx-probe");
+            probe.onEvent(delta("p0"));
+            assertTrue(probeLive.await(10, TimeUnit.SECONDS),
+                    "the probe frame proves the hub registered the probe sub");
+
+            // a1 → park → a2 ride ONE publisher connection: the hub ingests
+            // and fans them out to sub-1 in exactly this order. The witness
+            // on its own connection proves a2 reached the hub (three distinct
+            // node-a frames: the a0 ring replay plus a1 plus a2) BEFORE the
+            // re-subscribe below — so a2 sits in sub-1's queue ahead of it.
+            Collector witness = new Collector();
+            CountDownLatch hubHasAll = witness.expect(3);
+            try (ProcessBus witnessSide = new ProcessBus("127.0.0.1", hub.port(), "witness")) {
+                witnessSide.subscribe(TOPIC, witness);
+                nodeA.onEvent(delta("a1"));
+                probe.onEvent(delta("park"));
+                nodeA.onEvent(delta("a2"));
+                assertTrue(hubHasAll.await(10, TimeUnit.SECONDS), "the hub ingested a2");
+            }
+
+            // The reader is parked between a1 (dropped — nobody consumed it)
+            // and a2. The subscribe lands NOW: its cursor still names a0, so
+            // the hub replays a1+a2 — queued behind the in-flight a2. Then
+            // the reader resumes: a2 first, the replay after it.
+            Collector late = new Collector();
+            CountDownLatch replay = late.expect(2);
+            assertTrue(readerParked.await(10, TimeUnit.SECONDS),
+                    "sub-1's reader parked between the two in-flight frames");
+            subscriberSide.subscribe(TOPIC, late);
+            releaseReader.countDown();
+
             assertTrue(replay.await(10, TimeUnit.SECONDS),
                     "the frames nobody consumed replay for the later consumer");
             assertEquals(List.of("node-a#0#1", "node-a#0#2"), late.ids());

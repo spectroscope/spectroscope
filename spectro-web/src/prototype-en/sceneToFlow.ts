@@ -12,7 +12,11 @@ import type { RunEvent } from "../events";
 // ---------------------------------------------------------------------------
 // Derived detail — the raw bits the scene model deliberately doesn't carry.
 // ---------------------------------------------------------------------------
-export interface CtxPart { label: string; chars: number; estTokens: number; }
+export interface CtxPart {
+  label: string;
+  chars: number;
+  estTokens: number;
+}
 export interface Detail {
   prompt: string;
   ctxParts: CtxPart[] | null;
@@ -64,39 +68,76 @@ export function deriveDetail(applied: RunEvent[]): Detail {
 // Labels / colours (ported from the retired SVG System-Map so the wording matches the app).
 // ---------------------------------------------------------------------------
 export const GATE_NOTE: Record<GateState, string> = {
-  none: "ready", pending: "waiting for you …", allowed: "allowed", denied: "denied",
+  none: "ready",
+  pending: "waiting for you …",
+  allowed: "allowed",
+  denied: "denied",
 };
 export const GATE_COLOR: Record<GateState, string> = {
-  none: "var(--border-strong)", pending: "var(--warn)", allowed: "var(--ok)", denied: "var(--error)",
+  none: "var(--border-strong)",
+  pending: "var(--warn)",
+  allowed: "var(--ok)",
+  denied: "var(--error)",
 };
 export const LIFECYCLE: Record<SubagentInfo["state"], string> = {
-  submitted: "submitted", working: "working …", completed: "done", failed: "failed",
+  submitted: "submitted",
+  working: "working …",
+  completed: "done",
+  failed: "failed",
 };
 export const STATE_COLOR: Record<SubagentInfo["state"], string> = {
-  submitted: "var(--text-faint)", working: "var(--warn)", completed: "var(--ok)", failed: "var(--error)",
+  submitted: "var(--text-faint)",
+  working: "var(--warn)",
+  completed: "var(--ok)",
+  failed: "var(--error)",
 };
 
 const cut = (s: string, n: number) => (s.length <= n ? s : `${s.slice(0, n - 1)}…`);
 
-function activity(f: Focus, disk: DiskState, file: string | null, cmd: string | null, mcp: string | null, gate: GateState) {
+function activity(
+  f: Focus,
+  disk: DiskState,
+  file: string | null,
+  cmd: string | null,
+  mcp: string | null,
+  gate: GateState,
+) {
   switch (f) {
-    case "llm": return { text: "thinking …", color: "var(--accent)" };
-    case "disk": return disk === "write"
-      ? { text: `writing ${file ?? "file"}`, color: "var(--accent)" }
-      : { text: `reading ${file ?? "file"}`, color: "var(--ok)" };
-    case "cmd": return { text: `$ ${cut(cmd ?? "run_command", 26)}`, color: "var(--sand)" };
-    case "mcp": return { text: mcp ?? "mcp-server", color: "var(--sand)" };
-    case "gate": return { text: GATE_NOTE[gate], color: GATE_COLOR[gate] };
-    case "agent": return { text: "planning the next step", color: "var(--text-dim)" };
-    default: return { text: "idle", color: "var(--text-faint)" };
+    case "llm":
+      return { text: "thinking …", color: "var(--accent)" };
+    case "disk":
+      return disk === "write"
+        ? { text: `writing ${file ?? "file"}`, color: "var(--accent)" }
+        : { text: `reading ${file ?? "file"}`, color: "var(--ok)" };
+    case "cmd":
+      return { text: `$ ${cut(cmd ?? "run_command", 26)}`, color: "var(--sand)" };
+    case "mcp":
+      return { text: mcp ?? "mcp-server", color: "var(--sand)" };
+    case "gate":
+      return { text: GATE_NOTE[gate], color: GATE_COLOR[gate] };
+    case "agent":
+      return { text: "planning the next step", color: "var(--text-dim)" };
+    default:
+      return { text: "idle", color: "var(--text-faint)" };
   }
 }
 
 // ---------------------------------------------------------------------------
 // Layout — two hand-authored placements; the flip swaps the whole thing.
 // ---------------------------------------------------------------------------
-interface XY { x: number; y: number; }
-interface Zone { id: string; x: number; y: number; w: number; h: number; variant: "mac" | "os" | "outside"; label: string; }
+interface XY {
+  x: number;
+  y: number;
+}
+interface Zone {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  variant: "mac" | "os" | "outside";
+  label: string;
+}
 interface Layout {
   pos: Record<string, XY>;
   zones: Zone[];
@@ -126,9 +167,9 @@ const LAYOUTS: { remote: Layout; local: Layout } = {
     // sit lower and side by side (horizontally aligned) below the LLM.
     pos: { ...COMMON, llm: { x: 1174, y: 240 }, netz: { x: 1090, y: 660 }, mcpserver: { x: 1290, y: 660 } },
     zones: [
-      { id: "z-mac", x: 0, y: 24, w: 1000, h: 900, variant: "mac", label: "AGENT SYSTEM · YOUR MAC"},
-      { id: "z-os", x: 24, y: 668, w: 792, h: 236, variant: "os", label: "OPERATING SYSTEM"},
-      { id: "z-outside", x: 1052, y: 24, w: 420, h: 900, variant: "outside", label: "OUTSIDE"},
+      { id: "z-mac", x: 0, y: 24, w: 1000, h: 900, variant: "mac", label: "AGENT SYSTEM · YOUR MAC" },
+      { id: "z-os", x: 24, y: 668, w: 792, h: 236, variant: "os", label: "OPERATING SYSTEM" },
+      { id: "z-outside", x: 1052, y: 24, w: 420, h: 900, variant: "outside", label: "OUTSIDE" },
     ],
     boundary: { x: 1016, y: 24, h: 900 },
     subBase: { x: 685, y: 110 }, // centered in the free space right of the agent hub, started higher so the 3rd clears the OS band
@@ -137,9 +178,9 @@ const LAYOUTS: { remote: Layout; local: Layout } = {
   local: {
     pos: { ...COMMON, llm: { x: 884, y: 260 }, netz: { x: 1150, y: 660 }, mcpserver: { x: 1330, y: 660 } },
     zones: [
-      { id: "z-mac", x: 0, y: 24, w: 1100, h: 900, variant: "mac", label: "AGENT SYSTEM · YOUR MAC"},
-      { id: "z-os", x: 24, y: 668, w: 792, h: 236, variant: "os", label: "OPERATING SYSTEM"},
-      { id: "z-outside", x: 1132, y: 24, w: 380, h: 900, variant: "outside", label: "OUTSIDE"},
+      { id: "z-mac", x: 0, y: 24, w: 1100, h: 900, variant: "mac", label: "AGENT SYSTEM · YOUR MAC" },
+      { id: "z-os", x: 24, y: 668, w: 792, h: 236, variant: "os", label: "OPERATING SYSTEM" },
+      { id: "z-outside", x: 1132, y: 24, w: 380, h: 900, variant: "outside", label: "OUTSIDE" },
     ],
     boundary: null,
     subBase: { x: 627, y: 110 }, // centered between the agent hub and the inside LLM, started higher so the 3rd clears the OS band
@@ -149,7 +190,13 @@ const LAYOUTS: { remote: Layout; local: Layout } = {
 
 // focus → the node the packet rests on (gate stays at the agent).
 const FOCUS_NODE: Record<Focus, string> = {
-  user: "user", agent: "agent", gate: "agent", llm: "llm", disk: "os-disk", cmd: "os-shell", mcp: "os-mcp",
+  user: "user",
+  agent: "agent",
+  gate: "agent",
+  llm: "llm",
+  disk: "os-disk",
+  cmd: "os-shell",
+  mcp: "os-mcp",
 };
 
 const SUB_MAX = 3;
@@ -177,7 +224,10 @@ function subagentYs(count: number, bandTop: number, bandBottom: number, preferre
   return Array.from({ length: count }, (_, i) => Math.round(start + i * step));
 }
 
-export interface FlowResult { nodes: Node[]; edges: Edge[]; }
+export interface FlowResult {
+  nodes: Node[];
+  edges: Edge[];
+}
 
 export function sceneToFlow(
   scene: Scene,
@@ -224,7 +274,14 @@ export function sceneToFlow(
   N("user", "user", { active: scene.focus === "user", prompt: detail.prompt });
 
   // ----- agent hub -----
-  const mainAct = activity(scene.focus, scene.disk, scene.activeFile, scene.activeCommand, scene.activeMcp, scene.gate);
+  const mainAct = activity(
+    scene.focus,
+    scene.disk,
+    scene.activeFile,
+    scene.activeCommand,
+    scene.activeMcp,
+    scene.gate,
+  );
   N("agent", "agent", {
     active: scene.focus === "agent" || scene.focus === "gate",
     error: scene.isError,
@@ -243,10 +300,17 @@ export function sceneToFlow(
 
   // ----- OS band ----- (an MCP call lights the WHOLE chain: client → net → Netz → server)
   const mcpInUse = scene.activeMcp !== null;
-  N("os-disk", "os", { kind: "disk", active: scene.focus === "disk", disk: scene.disk, file: scene.activeFile });
+  N("os-disk", "os", {
+    kind: "disk",
+    active: scene.focus === "disk",
+    disk: scene.disk,
+    file: scene.activeFile,
+  });
   N("os-shell", "os", { kind: "shell", active: scene.focus === "cmd", command: scene.activeCommand });
   N("os-mcp", "os", {
-    kind: "mcp", active: mcpInUse, mcp: scene.activeMcp,
+    kind: "mcp",
+    active: mcpInUse,
+    mcp: scene.activeMcp,
     tool: detail.tool["main"]?.name?.startsWith("mcp__") ? detail.tool["main"] : null,
   });
   N("os-net", "os", { kind: "net", active: mcpInUse });
@@ -290,19 +354,37 @@ export function sceneToFlow(
   // ----- edges (the rails) -----
   const net = !opts.local; // LLM legs cross the boundary only when remote
   const E = (
-    id: string, source: string, target: string, sh: string, th: string,
-    active: boolean, opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean } = {},
+    id: string,
+    source: string,
+    target: string,
+    sh: string,
+    th: string,
+    active: boolean,
+    opt: { net?: boolean; err?: boolean; dim?: boolean; flow?: boolean } = {},
   ) => {
     edges.push({
-      id, source, target, sourceHandle: sh, targetHandle: th, type: "rail",
-      data: { active, net: opt.net ?? false, err: opt.err ?? false, dim: opt.dim ?? false, flow: opt.flow ?? active },
+      id,
+      source,
+      target,
+      sourceHandle: sh,
+      targetHandle: th,
+      type: "rail",
+      data: {
+        active,
+        net: opt.net ?? false,
+        err: opt.err ?? false,
+        dim: opt.dim ?? false,
+        flow: opt.flow ?? active,
+      },
       zIndex: active ? 1001 : 1,
     });
   };
 
   const mainLit = FOCUS_NODE[scene.focus];
   const litUserAgent = scene.focus === "agent" || scene.focus === "gate" || scene.focus === "user";
-  E("e-user-agent", "user", "agent", "rs", "lt", litUserAgent, { err: scene.isError && scene.focus === "user" });
+  E("e-user-agent", "user", "agent", "rs", "lt", litUserAgent, {
+    err: scene.isError && scene.focus === "user",
+  });
   E("e-agent-llm", "agent", "llm", "rs", "lt", mainLit === "llm", { net });
   E("e-agent-osdisk", "agent", "os-disk", "bs", "tt", mainLit === "os-disk");
   E("e-agent-osshell", "agent", "os-shell", "bs", "tt", mainLit === "os-shell");

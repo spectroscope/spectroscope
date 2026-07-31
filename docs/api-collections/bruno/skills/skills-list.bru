@@ -1,0 +1,19 @@
+meta {
+  name: list skills
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/skills
+  body: none
+  auth: none
+}
+
+docs {
+  All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

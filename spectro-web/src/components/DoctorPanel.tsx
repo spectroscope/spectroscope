@@ -9,6 +9,7 @@ import type { ConnectionStatus } from "../transport/ws";
 import type { ProviderInfo } from "../state/reducer";
 import { fetchSettings, type SettingsView } from "../state/serverSettings";
 import type { SessionMeta } from "../events";
+import { LogPane } from "./LogPane";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -31,10 +32,15 @@ export function DoctorPanel(props: {
   const [config, setConfig] = useState<{ provider?: string; model?: string } | null | "failed">(null);
   const [settings, setSettings] = useState<SettingsView | null | "failed">(null);
   const [sessions, setSessions] = useState<number | null | "failed">(null);
+  const [otlp, setOtlp] = useState<
+    { configured: boolean; ok?: boolean; endpoint?: string; message?: string } | null | "failed"
+  >(null);
+
+  const { open, onClose } = props;
 
   // Re-probe on every open — doctor measures, it never caches.
   useEffect(() => {
-    if (!props.open) return;
+    if (!open) return;
     setConfig(null);
     setSettings(null);
     setSessions(null);
@@ -49,21 +55,47 @@ export function DoctorPanel(props: {
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((list) => setSessions((list as SessionMeta[]).length))
       .catch(() => setSessions("failed"));
-  }, [props.open]);
+    setOtlp(null);
+    fetch("/api/otlp/probe")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((p) => setOtlp(p as { configured: boolean; ok?: boolean; endpoint?: string; message?: string }))
+      .catch(() => setOtlp("failed"));
+  }, [open]);
 
   useEffect(() => {
-    if (!props.open) return;
+    if (!open) return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") props.onClose();
+      if (e.key === "Escape") onClose();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [props.open, props.onClose]);
+  }, [open, onClose]);
 
   if (!props.open) return null;
 
   const pending = (v: unknown): boolean => v === null;
   const checks: Check[] = [
+    {
+      key: "doc.otlp",
+      verdict:
+        otlp === "failed"
+          ? "error"
+          : otlp === null || !otlp.configured
+            ? "warn"
+            : otlp.ok === true
+              ? "ok"
+              : "error",
+      value:
+        otlp === "failed"
+          ? t(lang, "doc.unreachable")
+          : otlp === null
+            ? "…"
+            : !otlp.configured
+              ? t(lang, "doc.otlpOff")
+              : otlp.ok === true
+                ? `${t(lang, "doc.otlpOk")} · ${otlp.endpoint ?? ""}`
+                : `${otlp.message ?? "?"} · ${otlp.endpoint ?? ""}`,
+    },
     {
       key: "doc.api",
       verdict: config === "failed" ? "error" : "ok",
@@ -112,10 +144,7 @@ export function DoctorPanel(props: {
     {
       key: "doc.logging",
       verdict: "ok",
-      value:
-        settings !== null && settings !== "failed"
-          ? String(settings.effective.logLevel ?? "info")
-          : "…",
+      value: settings !== null && settings !== "failed" ? String(settings.effective.logLevel ?? "info") : "…",
     },
     {
       key: "doc.mode",
@@ -141,8 +170,22 @@ export function DoctorPanel(props: {
           <span className="settings-hint mono" aria-live="polite">
             {loading ? "…" : healthy ? t(lang, "doc.healthy") : t(lang, "doc.unhealthy")}
           </span>
-          <button type="button" className="icon-button" aria-label={t(lang, "common.close")} onClick={props.onClose}>
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t(lang, "common.close")}
+            onClick={props.onClose}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>
@@ -155,10 +198,15 @@ export function DoctorPanel(props: {
               <li key={c.key} className="doctor-row">
                 <span className={`dot ${c.verdict}`} aria-hidden="true" />
                 <span className="doctor-label">{t(lang, c.key)}</span>
-                <span className="doctor-value mono" title={c.value}>{c.value}</span>
+                <span className="doctor-value mono" title={c.value}>
+                  {c.value}
+                </span>
               </li>
             ))}
           </ul>
+          {/* The live server log (card 85): tail + delta polls, WARN/ERROR
+              tinted, follow-bottom while tailing. */}
+          <LogPane />
           <p className="doctor-cli mono">$ spectro doctor</p>
           <p className="doctor-cli-hint">{t(lang, "doc.cliHint")}</p>
         </div>

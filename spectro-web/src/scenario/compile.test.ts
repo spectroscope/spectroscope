@@ -46,17 +46,37 @@ describe("compile core", () => {
   });
 
   it("emits only known RunEvent types", () => {
-    const known = new Set(["run_start","turn_start","text_delta","thinking_delta","tool_call","permission_request","permission_decision","tool_result","agent_spawn","compaction","usage","run_end","error","image_generated","context_info","agent_message"]);
+    const known = new Set([
+      "run_start",
+      "turn_start",
+      "text_delta",
+      "thinking_delta",
+      "tool_call",
+      "permission_request",
+      "permission_decision",
+      "tool_result",
+      "agent_spawn",
+      "compaction",
+      "usage",
+      "run_end",
+      "error",
+      "image_generated",
+      "context_info",
+      "agent_message",
+    ]);
     for (const e of compile(tiny, "en", BASE)) expect(known.has(e.type)).toBe(true);
   });
 });
 
 const toolsDsl: Dsl = {
-  id: "tools", name: "Tools", prompt: "do stuff", provider: "ollama",
+  id: "tools",
+  name: "Tools",
+  prompt: "do stuff",
+  provider: "ollama",
   steps: [
     { read: "src/Main.java", result: "class Main {}" },
-    { run: "./gradlew test" },                       // default gate allow
-    { run: "rm -rf x", gate: "deny" },               // denied
+    { run: "./gradlew test" }, // default gate allow
+    { run: "rm -rf x", gate: "deny" }, // denied
     { mcp: "notes__search_notes", input: { query: "q" }, gate: "deny" },
   ],
 };
@@ -74,7 +94,9 @@ describe("compile tools + gates", () => {
   });
 
   it("run_command default-gates allow: request + decision(true) + ok result", () => {
-    const call = byType("tool_call").find((e: any) => e.name === "run_command" && e.input.command === "./gradlew test") as any;
+    const call = byType("tool_call").find(
+      (e: any) => e.name === "run_command" && e.input.command === "./gradlew test",
+    ) as any;
     const dec = byType("permission_decision").find((e: any) => e.callId === call.callId) as any;
     expect(dec.allowed).toBe(true);
   });
@@ -96,21 +118,37 @@ describe("compile tools + gates", () => {
 });
 
 const spawnDsl: Dsl = {
-  id: "sp", name: "Spawn", prompt: "plan it", provider: "ollama",
+  id: "sp",
+  name: "Spawn",
+  prompt: "plan it",
+  provider: "ollama",
   steps: [
     { think: "delegate" },
-    { spawn: "worker-1", label: "build_plan", task: { en: "Plan the flag", de: "Plane das Flag" },
-      steps: [{ think: "load skill" }, { status: "drafting" }, { say: "# Plan" }] },
+    {
+      spawn: "worker-1",
+      label: "build_plan",
+      task: { en: "Plan the flag", de: "Plane das Flag" },
+      steps: [{ think: "load skill" }, { status: "drafting" }, { say: "# Plan" }],
+    },
     { say: "here is the plan" },
   ],
 };
 const fanoutDsl: Dsl = {
-  id: "fo", name: "Fan", prompt: "review", provider: "ollama",
+  id: "fo",
+  name: "Fan",
+  prompt: "review",
+  provider: "ollama",
   steps: [
-    { fanout: { label: "review", tool: "review", agents: [
-      { id: "bugs", task: "find bugs", steps: [{ think: "nulls" }, { say: "## Bugs" }] },
-      { id: "perf", task: "check perf", steps: [{ think: "n+1" }, { say: "## Perf" }] },
-    ] } },
+    {
+      fanout: {
+        label: "review",
+        tool: "review",
+        agents: [
+          { id: "bugs", task: "find bugs", steps: [{ think: "nulls" }, { say: "## Bugs" }] },
+          { id: "perf", task: "check perf", steps: [{ think: "n+1" }, { say: "## Perf" }] },
+        ],
+      },
+    },
     { say: "summary" },
   ],
 };
@@ -121,10 +159,16 @@ describe("compile subagents", () => {
     const parentCall = ev.find((e: any) => e.type === "tool_call" && e.name === "build_plan") as any;
     expect(parentCall).toBeTruthy();
     expect(ev.some((e: any) => e.type === "agent_spawn" && e.agentId === "worker-1")).toBe(true);
-    expect(ev.some((e: any) => e.type === "agent_message" && e.role === "task" && e.to === "worker-1")).toBe(true);
+    expect(ev.some((e: any) => e.type === "agent_message" && e.role === "task" && e.to === "worker-1")).toBe(
+      true,
+    );
     expect(ev.some((e: any) => e.type === "run_start" && e.agentId === "worker-1")).toBe(true);
-    expect(ev.some((e: any) => e.type === "agent_message" && e.role === "status" && e.from === "worker-1")).toBe(true);
-    expect(ev.some((e: any) => e.type === "agent_message" && e.role === "result" && e.from === "worker-1")).toBe(true);
+    expect(
+      ev.some((e: any) => e.type === "agent_message" && e.role === "status" && e.from === "worker-1"),
+    ).toBe(true);
+    expect(
+      ev.some((e: any) => e.type === "agent_message" && e.role === "result" && e.from === "worker-1"),
+    ).toBe(true);
     const parentResult = ev.filter((e: any) => e.type === "tool_result" && e.callId === parentCall.callId);
     expect(parentResult.length).toBe(1);
   });
@@ -160,16 +204,24 @@ describe("compile subagents", () => {
 // the same permission-gate semantics as the main agent.
 // ---------------------------------------------------------------------------
 const richChild: Dsl = {
-  id: "rc", name: "RichChild", prompt: "do it", provider: "ollama",
+  id: "rc",
+  name: "RichChild",
+  prompt: "do it",
+  provider: "ollama",
   steps: [
-    { spawn: "w1", label: "develop", task: "implement it", steps: [
-      { think: "plan the edit" },
-      { write: "src/App.tsx", result: "ok, wrote 1 file" },
-      { run: "npm test", gate: "allow", result: "12 passed" },
-      { run: "rm -rf /", gate: "deny" },
-      { mcp: "notes__search_notes", input: { query: "q" }, gate: "allow" },
-      { say: "done" },
-    ] },
+    {
+      spawn: "w1",
+      label: "develop",
+      task: "implement it",
+      steps: [
+        { think: "plan the edit" },
+        { write: "src/App.tsx", result: "ok, wrote 1 file" },
+        { run: "npm test", gate: "allow", result: "12 passed" },
+        { run: "rm -rf /", gate: "deny" },
+        { mcp: "notes__search_notes", input: { query: "q" }, gate: "allow" },
+        { say: "done" },
+      ],
+    },
     { say: "child finished" },
   ],
 };
@@ -178,15 +230,26 @@ describe("compile full child steps", () => {
   const ev = compile(richChild, "en");
 
   it("child write/run/mcp events carry the child agentId", () => {
-    expect(ev.some((e) => e.type === "tool_call" && e.name === "write_file" && e.agentId === "w1")).toBe(true);
-    expect(ev.some((e) => e.type === "tool_call" && e.name === "run_command" && e.agentId === "w1")).toBe(true);
-    expect(ev.some((e) => e.type === "tool_call" && e.name === "mcp__notes__search_notes" && e.agentId === "w1")).toBe(true);
+    expect(ev.some((e) => e.type === "tool_call" && e.name === "write_file" && e.agentId === "w1")).toBe(
+      true,
+    );
+    expect(ev.some((e) => e.type === "tool_call" && e.name === "run_command" && e.agentId === "w1")).toBe(
+      true,
+    );
+    expect(
+      ev.some((e) => e.type === "tool_call" && e.name === "mcp__notes__search_notes" && e.agentId === "w1"),
+    ).toBe(true);
   });
 
   it("child gates emit permission pairs owned by the child", () => {
     const req = ev.filter((e) => e.type === "permission_request" && e.agentId === "w1");
     expect(req.length).toBe(3); // 2x run + 1x mcp
-    const denied = ev.find((e) => e.type === "tool_call" && e.agentId === "w1" && (e.input as { command?: string }).command === "rm -rf /");
+    const denied = ev.find(
+      (e) =>
+        e.type === "tool_call" &&
+        e.agentId === "w1" &&
+        (e.input as { command?: string }).command === "rm -rf /",
+    );
     expect(denied).toBeTruthy();
     const callId = (denied as { callId: string }).callId;
     expect(ev.some((e) => e.type === "permission_decision" && e.callId === callId && !e.allowed)).toBe(true);
@@ -195,7 +258,12 @@ describe("compile full child steps", () => {
 
   it("mid-run the denied child gate reddens ONLY the child loop", async () => {
     const { advanceScene, initialScene } = await import("../lab/labScene");
-    const denied = ev.find((e) => e.type === "tool_call" && e.agentId === "w1" && (e.input as { command?: string }).command === "rm -rf /") as { callId: string };
+    const denied = ev.find(
+      (e) =>
+        e.type === "tool_call" &&
+        e.agentId === "w1" &&
+        (e.input as { command?: string }).command === "rm -rf /",
+    ) as { callId: string };
     const decIdx = ev.findIndex((e) => e.type === "permission_decision" && e.callId === denied.callId);
     const scene = ev.slice(0, decIdx + 1).reduce(advanceScene, initialScene());
     expect(scene.subagents[0].gate).toBe("denied");
@@ -217,7 +285,10 @@ describe("compile full child steps", () => {
 // ---------------------------------------------------------------------------
 describe("compile compact step", () => {
   const dsl: Dsl = {
-    id: "cp", name: "Compact", prompt: "long run", provider: "ollama",
+    id: "cp",
+    name: "Compact",
+    prompt: "long run",
+    provider: "ollama",
     steps: [
       { think: "a".repeat(4000) },
       { compact: { removedTurns: 6, summaryChars: 800 } },
@@ -227,7 +298,9 @@ describe("compile compact step", () => {
   const ev = compile(dsl, "en");
 
   it("emits a compaction event with the DSL numbers", () => {
-    expect(ev.some((e) => e.type === "compaction" && e.removedTurns === 6 && e.summaryChars === 800)).toBe(true);
+    expect(ev.some((e) => e.type === "compaction" && e.removedTurns === 6 && e.summaryChars === 800)).toBe(
+      true,
+    );
   });
 
   it("re-seeds context_info smaller after the compaction", () => {
@@ -240,5 +313,27 @@ describe("compile compact step", () => {
     const convo = (i: typeof before) => i.parts.find((p) => p.label === "conversation")!.chars;
     expect(convo(after)).toBe(800);
     expect(convo(after)).toBeLessThan(convo(before) + 4000);
+  });
+});
+
+describe("image step — bundled demo asset (owner: the beach cat)", () => {
+  it("uses the asset path as blobPath so the UI can render the real image", () => {
+    const events = compile(
+      {
+        id: "x",
+        name: "x",
+        prompt: "p",
+        steps: [{ image: "a beach cat", asset: "/demo/beach-cat.jpg" }],
+      },
+      "en",
+    );
+    const img = events.find((e) => e.type === "image_generated") as { blobPath: string };
+    expect(img.blobPath).toBe("/demo/beach-cat.jpg");
+  });
+
+  it("keeps the deterministic fake blobPath without an asset", () => {
+    const events = compile({ id: "x", name: "x", prompt: "p", steps: [{ image: "a coffee bean" }] }, "en");
+    const img = events.find((e) => e.type === "image_generated") as { blobPath: string };
+    expect(img.blobPath).toMatch(/^\.spectro\/images\/.+\.png$/);
   });
 });

@@ -1,0 +1,32 @@
+meta {
+  name: save an API key
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/onboarding/key
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "provider": "anthropic",
+    "key": "sk-ant-xxxxxxxx"
+  }
+}
+
+docs {
+  Save an API key to ~/.spectro/.env (0600). 200 {saved:true,provider}, 400 unknown provider/empty key, 404 fenced out. Value never echoed.
+  
+  Body: KeyBody(String provider, String key). Replace the placeholder key before sending.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

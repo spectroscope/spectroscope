@@ -67,7 +67,7 @@ every chapter.</p>
   <dt>Build</dt><dd>Gradle 9.6.1, Kotlin DSL, version catalog, five JVM modules + two npm toolchains (Vite/React web UI, Electron shell).</dd>
   <dt>LLM access</dt><dd>One narrow <code>LlmProvider</code> port; behind it Anthropic (official SDK, SSE), Ollama (NDJSON) and any OpenAI-compatible server (SSE) — switchable mid-session.</dd>
   <dt>Frameworks</dt><dd>Spring <em>Framework</em> as a library in the core (RestClient + declarative HTTP interfaces); Spring <em>Boot</em> 3.5.3 only in <code>spectro-server</code>; picocli in the CLI; React 19 + React Flow in the browser.</dd>
-  <dt>Tests</dt><dd>354 JUnit + 252 vitest, all key-free: fake providers, scripted HTTP servers, process seams. <code>./gradlew build</code> needs no API key and no network model.</dd>
+  <dt>Tests</dt><dd>678 JUnit + 383 vitest, all key-free: fake providers, scripted HTTP servers, process seams. <code>./gradlew build</code> needs no API key and no network model.</dd>
 </div>
 
 <!-- ============================== CH 2 ============================== -->
@@ -108,7 +108,8 @@ you never have to touch the Gradle task zoo.</p>
 ./spectro doctor
 
 # 3 — go
-./spectro web        # browser UI on http://localhost:8080
+./spectro web start  # browser UI on http://localhost:8080, in the background
+./spectro web        # what the group can do, and whether it is running
 ./spectro repl       # terminal REPL
 ./spectro run -p "Say OK."   # headless one-shot
 ./spectro desktop    # the Electron app</pre>
@@ -124,6 +125,37 @@ This is real output from the machine this guide was built on:</p>
 <p>Green checks fail the exit code when broken; the indented dim lines are information,
 not failures — a missing image-generation key, for example, is deliberately not unhealthy
 (the tool will return a readable error instead). Chapter 4 documents all twelve checks.</p>
+
+<h2 id="ch-quickstart-web-group">The web face is a command group</h2>
+
+<p>Typing <code>./spectro web</code> does not start anything. It shows what the
+group can do and whether a server is already up, because a face that fires a
+process the moment you name it is a face you cannot ask a question of.</p>
+
+<!--TERM:cli-web|$ ./spectro web-->
+
+<p>Two of those verbs start a server and they are not the same thing.
+<code>start</code> runs the packaged jar in the background, waits for health and
+opens the browser, which is what you want when you are using spectroscope.
+<code>dev</code> runs Gradle's <code>bootRun</code> in the foreground from
+source, which is what you want when you are changing it: the terminal stays
+attached and ctrl-c stops it. Everything else, <code>stop</code>,
+<code>restart</code>, <code>status</code>, <code>logs</code>, <code>open</code>
+and <code>doctor</code>, reaches <code>./spectro-serve</code>. That script owns
+the pid file, the port file and the log, and it stays the only implementation of
+the lifecycle so the two can never disagree about what is running.</p>
+
+<div class="callout"><div class="co-title">what changed, and what it costs you</div>
+<p>Before this, a bare <code>./spectro web</code> started the server in the
+foreground. That behaviour is now <code>./spectro web dev</code>. If you have
+the old form in a script, it fails with one line naming the fix rather than
+printing help and exiting cleanly, because a script that believes it started a
+server and did not is worse than a script that stops.</p></div>
+
+<p>Note that <code>./spectro doctor</code> and <code>./spectro web doctor</code>
+answer different questions. The first checks the agent: Java, the config layers,
+whether your provider replies, whether the sessions directory is writable. The
+second checks only what the server needs in order to boot at all.</p>
 
 <h2 id="ch-quickstart-providers">The provider matrix</h2>
 <table class="tbl">
@@ -167,7 +199,7 @@ chapter where the details live.</p>
   <tr><td><strong>Design system</strong></td><td>Three brand designs — spectro dark, spectro bright, spectro white — switchable in place, particle/scroll effects, one-step persistence.</td><td>9</td></tr>
   <tr><td><strong>Desktop app</strong></td><td>Electron shell that spawns and supervises the server JVM: health checks, tray, native cron notifications.</td><td>10</td></tr>
   <tr><td><strong>DE/EN chrome</strong></td><td>The whole UI chrome switches between German and English live; content keeps its language.</td><td>11</td></tr>
-  <tr><td><strong>Tool belt</strong></td><td>18 built-in tools — files, shell, search, web fetch, plan, skills, spawns — plus every connected MCP tool.</td><td>12</td></tr>
+  <tr><td><strong>Tool belt</strong></td><td>22 built-in tools — files, shell, grep/glob, web fetch + search, page browse, image + document view, plan, skills, spawns — plus every connected MCP tool.</td><td>12</td></tr>
   <tr><td><strong>Permission system</strong></td><td>ask/auto/readonly modes, a blocking broker, prefix-scoped allowlist, “always allow” with optional persistence.</td><td>13</td></tr>
   <tr><td><strong>Hooks</strong></td><td>Config-driven shell guards around every tool call: <code>pre_tool_use</code> can block before the gate, <code>post_tool_use</code> observes.</td><td>13</td></tr>
   <tr><td><strong>Subagents</strong></td><td>Explore/worker children with their own context, visible A2A task/status/result protocol, four development role tools.</td><td>14</td></tr>

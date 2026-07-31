@@ -1,0 +1,23 @@
+meta {
+  name: live model list
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/models
+  body: none
+  auth: none
+}
+
+params:query {
+  ~provider: ollama
+}
+
+docs {
+  Live model list for the picker (Anthropic Models API / /v1/models / ollama /api/tags), curated fallback; unknown provider answers [].
+  
+  Fence: none — No origin gating.
+  
+  Writes state: no
+}

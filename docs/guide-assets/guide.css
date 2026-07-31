@@ -84,6 +84,10 @@ table.pagewrap > tfoot td.page-spacer { height: 13mm; }
 
 /* on screen, keep a readable column */
 @media screen {
+  /* start at ~125% — readers were pressing Ctrl-+ twice for a comfortable size.
+     zoom scales everything uniformly (incl. the pt headings); print/PDF is
+     untouched because this is screen-only. */
+  html { zoom: 1.25; }
   body { font-size: 15px; }
   .content { max-width: 860px; margin: 0 auto; padding: 24px; }
 }

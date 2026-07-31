@@ -8,12 +8,14 @@ import dev.spectroscope.core.scheduler.JobState;
 import dev.spectroscope.core.session.SessionStore;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 
@@ -30,9 +32,17 @@ import java.util.regex.Pattern;
  * mutation: deleting a stored session (the socket carries every run-time
  * mutation). The endpoints read the SAME JSONL store the CLI writes, so
  * file, socket and REST all speak the one RunEvent format.
+ *
+ * <p>No {@code @CrossOrigin}: the production UI is served from this same jar
+ * (same origin) and {@code spectro-web/vite.config.ts} proxies {@code /api} to
+ * the boot server, so the dev server's browser requests are same-origin too. A
+ * wildcard read-CORS here let any page the operator visited harvest session
+ * content (prompts, tool output) and the content-addressed image names — the
+ * amplifier the 0.3.0 adversarial pass named. Dropped, matching the settings
+ * and probe controllers. The image byte serve additionally wears the
+ * loopback+Host read fence against DNS rebinding.</p>
  */
 @RestController
-@CrossOrigin(origins = "*")   // for the Vite dev server on :5173; one JAR needs no CORS
 public class SessionsController {
 
     /**
@@ -57,6 +67,46 @@ public class SessionsController {
             return ResponseEntity.ok(SessionStore.readSessionEvents(id));
         } catch (Exception missing) {
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * Export one stored session as its RAW JSONL — the mirror of the existing
+     * import, so a session can leave the machine and come back byte-identical.
+     * The file is served verbatim (no re-serialization), as a download.
+     *
+     * <p>Fenced like every local endpoint, and the id is shape-checked BEFORE
+     * it becomes a file name — it is the one piece of caller input that
+     * touches the path.
+     *
+     * @param id      the session to export
+     * @param request the servlet request, for the local fence
+     * @return 200 with the JSONL body; 404 for a foreign caller, a malformed
+     *         id or a session that is not there
+     */
+    @GetMapping("/api/sessions/{id}/export")
+    public ResponseEntity<String> exportSession(@PathVariable String id, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)
+                || !FleetController.originIsLoopbackOrAbsent(request)
+                || !SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.status(404).build();
+        }
+        java.nio.file.Path file =
+                dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.resolve(id + ".jsonl").normalize();
+        // Defense in depth: the resolved file must still be a direct child.
+        if (!file.getParent().equals(
+                dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.normalize())
+                || !java.nio.file.Files.isRegularFile(file)) {
+            return ResponseEntity.status(404).build();
+        }
+        try {
+            String jsonl = java.nio.file.Files.readString(file);
+            return ResponseEntity.ok()
+                    .header("Content-Type", "application/x-ndjson; charset=utf-8")
+                    .header("Content-Disposition", "attachment; filename=\"" + id + ".jsonl\"")
+                    .body(jsonl);
+        } catch (java.io.IOException unreadable) {
+            return ResponseEntity.status(404).build();
         }
     }
 
@@ -107,9 +157,9 @@ public class SessionsController {
      * @return provider and model as strings — empty (never null) when unset
      */
     @GetMapping("/api/config")
-    public Map<String, String> config() {
+    public Map<String, Object> config() {
         SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-        Map<String, String> out = new LinkedHashMap<>();
+        Map<String, Object> out = new LinkedHashMap<>();
         out.put("provider", c.provider() == null ? "" : c.provider());
         out.put("model", c.model() == null ? "" : c.model());
         // Settings page (additive): the boot log level, read-only in the UI —
@@ -120,16 +170,80 @@ public class SessionsController {
         // the keyless ones in the dropdown.
         out.put("geminiKey", String.valueOf(envKeySet("GEMINI_API_KEY")));
         out.put("openaiKey", String.valueOf(envKeySet("OPENAI_API_KEY")));
+        // Onboarding status per LLM provider (presence only, never values): the
+        // picker shows an honest "needs-key — add it to .env" line instead of a
+        // fake model list, and the first-run dialog points people at a backend
+        // that will actually answer. Local backends (ollama/lmstudio) report
+        // "local"; the client reads their reachability from the model list.
+        Map<String, String> providerStatus = new LinkedHashMap<>();
+        for (String p : List.of("anthropic", "openai", "openrouter", "gemini", "ollama", "lmstudio")) {
+            String keyEnv = SpectroConfig.keyEnvFor(p);
+            providerStatus.put(p, SpectroConfig.onboardingStatus(p, keyEnv != null && envKeySet(keyEnv)));
+        }
+        // The built-in local provider is its own picker entry: keyless, and
+        // "ready" once ANY catalogue model resolves (bundled or downloaded), else
+        // "needs-download" (the picker opens the chooser dialog). Never "needs-key".
+        providerStatus.put("spectro-local",
+                SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
+        out.put("providerStatus", providerStatus);
+        // Leveling's one server-established criterion: a configured provider that
+        // reports ready settles provider-ready. "local" is deliberately NOT enough —
+        // it says a backend is configured, not that it answers; the client reports
+        // reachability, and a completed run settles it either way.
+        if (providerStatus.containsValue("ready")) {
+            ServerLeveling.recorder().establish("provider-ready", System.currentTimeMillis());
+        }
         return out;
     }
+
+    /**
+     * Save an API key from the onboarding UI — LOCAL browsers only. Security:
+     * {@code consumes=json} makes a cross-origin POST a CORS preflight the policy
+     * rejects, and a non-local {@code Host} answers 404 ({@link FleetController#isLocalOrigin});
+     * both together block a malicious page from writing the key. It lands in
+     * {@code ~/.spectro/.env} at 0600, which the provider build reads on the next
+     * fresh chat — no restart. Presence-only: the value is never echoed back and
+     * never enters a log or a GET.
+     *
+     * @param body    the provider and its key
+     * @param request the servlet request, for the local-origin check
+     * @return 200 {@code {saved:true}} · 400 on an unknown provider or empty key · 404 when not local
+     */
+    @PostMapping(value = "/api/onboarding/key", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> saveKey(@RequestBody(required = false) KeyBody body,
+                                                       HttpServletRequest request) {
+        // Two fences: isLocalOrigin blocks a remote/rebinding caller, and the
+        // Origin check blocks CSRF from a real website. Both are kept belt-and-
+        // braces even though the controller-wide @CrossOrigin(*) is now gone: a
+        // same-origin page and the Vite dev proxy send a loopback Origin; a
+        // non-browser client sends none; a cross-site page is refused.
+        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        String keyEnv = body == null ? null : SpectroConfig.keyEnvFor(body.provider());
+        if (keyEnv == null) {
+            return ResponseEntity.badRequest().body(Map.of("error", "unknown provider, or it needs no key"));
+        }
+        if (body.key() == null || body.key().isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", "empty key"));
+        }
+        try {
+            SpectroConfig.writeApiKey(keyEnv, body.key().trim());
+        } catch (Exception writeFailed) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "could not save the key"));
+        }
+        return ResponseEntity.ok(Map.of("saved", true, "provider", body.provider()));
+    }
+
+    /** The save-key request body (never logged). */
+    public record KeyBody(String provider, String key) {}
 
     /** Whether an env-provided key is present and non-blank — presence only,
      *  the value never leaves the process.
      *  @param name the environment variable to probe
      *  @return true when set and non-blank */
     private static boolean envKeySet(String name) {
-        String v = System.getenv(name);
-        return v != null && !v.isBlank();
+        return SpectroConfig.hasApiKey(name); // env OR ~/.spectro/.env (keys saved from the UI)
     }
 
     /**
@@ -171,7 +285,7 @@ public class SessionsController {
     public List<String> models(@RequestParam(name = "provider", defaultValue = "") String provider) {
         return switch (provider) {
             case "anthropic" -> anthropicModels();
-            case "openai" -> openaiModels();
+            case "openai", "lmstudio", "openrouter", "gemini" -> openaiModels(provider);
             case "ollama" -> ollamaModels();
             default -> List.of();
         };
@@ -223,14 +337,20 @@ public class SessionsController {
      *
      * @return chat-capable model ids, newest first, or the curated fallback
      */
-    private List<String> openaiModels() {
+    private List<String> openaiModels(String provider) {
+        // Curated fallback ONLY for real OpenAI — gpt-4o etc. are its models. A
+        // local (lmstudio) or gateway (openrouter) backend that isn't answering
+        // returns EMPTY, so the picker says 'not reachable' instead of showing a
+        // misleading OpenAI list for a server that serves whatever you loaded.
+        List<String> fallback = "openai".equals(provider) ? OPENAI_MODELS : List.of();
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-            String key = System.getenv("OPENAI_API_KEY");
+            String key = SpectroConfig.resolveApiKey(SpectroConfig.keyEnvFor(provider));
             boolean hasKey = key != null && !key.isBlank();
-            String base = SpectroConfig.effectiveOpenAiBaseUrl(c.baseUrl(), hasKey);
+            String base = SpectroConfig.effectiveOpenAiBaseUrl(provider, c.baseUrl());
 
-            RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get().uri(base + "/v1/models");
+            RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get()
+                    .uri(base + dev.spectroscope.core.provider.OpenAiCompatProvider.compatPath(base, "/models"));
             if (hasKey) {
                 request = request.header("Authorization", "Bearer " + key);
             }
@@ -251,9 +371,9 @@ public class SessionsController {
                     .map(ModelRow::id)
                     .limit(60)
                     .toList();
-            return ids.isEmpty() ? OPENAI_MODELS : ids;
+            return ids.isEmpty() ? fallback : ids;
         } catch (Exception apiUnreachable) {
-            return OPENAI_MODELS;
+            return fallback;
         }
     }
 
@@ -266,7 +386,7 @@ public class SessionsController {
      * @return the model ids the API reports, newest first, or the curated list
      */
     private List<String> anthropicModels() {
-        String key = System.getenv("ANTHROPIC_API_KEY");
+        String key = SpectroConfig.resolveApiKey("ANTHROPIC_API_KEY");
         if (key == null || key.isBlank()) {
             return ANTHROPIC_MODELS;
         }
@@ -328,14 +448,22 @@ public class SessionsController {
 
     /**
      * Serves one generated image from the content-addressed store under
-     * {@code ~/.spectro/images}.
+     * {@code ~/.spectro/images}. Local-only: an image can carry sensitive
+     * visual content, and its name is discoverable from the session events, so
+     * the byte serve wears the loopback+Host fence (a rebound page fails the
+     * Host check) rather than resting on name-obscurity. The UI's {@code <img>}
+     * loads it same-origin and passes.
      *
      * @param file the bare file name — must match the 64-hex-plus-extension contract
+     * @param request the servlet request, for the local-origin fence
      * @return 200 with the image bytes and matching content type; 400 for a name
-     *         outside the contract, 404 when the file is missing or unreadable
+     *         outside the contract, 404 for a non-local caller or a missing file
      */
     @GetMapping("/api/images/{file}")
-    public ResponseEntity<byte[]> image(@PathVariable String file) {
+    public ResponseEntity<byte[]> image(@PathVariable String file, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build();
+        }
         if (!IMAGE_NAME.matcher(file).matches()) {
             return ResponseEntity.badRequest().build();
         }

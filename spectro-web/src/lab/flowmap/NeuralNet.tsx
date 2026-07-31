@@ -10,7 +10,12 @@ const H = 60;
 const PAD_X = 9;
 const PAD_Y = 8;
 
-interface NNNode { x: number; y: number; layer: number; out: boolean }
+interface NNNode {
+  x: number;
+  y: number;
+  layer: number;
+  out: boolean;
+}
 
 function layout(): NNNode[] {
   const nodes: NNNode[] = [];
@@ -31,13 +36,28 @@ export function NeuralNet({ active }: { active: boolean }) {
   for (let l = 0; l < LAYERS.length - 1; l++) {
     const a = nodes.filter((n) => n.layer === l);
     const b = nodes.filter((n) => n.layer === l + 1);
-    a.forEach((p, pi) => b.forEach((q, qi) => edges.push({ x1: p.x, y1: p.y, x2: q.x, y2: q.y, key: `${l}-${pi}-${qi}` })));
+    a.forEach((p, pi) =>
+      b.forEach((q, qi) => edges.push({ x1: p.x, y1: p.y, x2: q.x, y2: q.y, key: `${l}-${pi}-${qi}` })),
+    );
   }
   return (
-    <svg className={`pf-nn${active ? " pf-nn--active" : ""}`} viewBox={`0 0 ${W} ${H}`} width="100%" height="100%" aria-hidden="true">
+    <svg
+      className={`pf-nn${active ? " pf-nn--active" : ""}`}
+      viewBox={`0 0 ${W} ${H}`}
+      width="100%"
+      height="100%"
+      aria-hidden="true"
+    >
       <g className="pf-nn__edges">
         {edges.map((e, i) => (
-          <line key={e.key} x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} style={{ animationDelay: `${(i % 8) * 0.11}s` }} />
+          <line
+            key={e.key}
+            x1={e.x1}
+            y1={e.y1}
+            x2={e.x2}
+            y2={e.y2}
+            style={{ animationDelay: `${(i % 8) * 0.11}s` }}
+          />
         ))}
       </g>
       <g className="pf-nn__nodes">

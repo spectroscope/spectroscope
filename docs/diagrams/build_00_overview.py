@@ -36,7 +36,7 @@ def build():
     rows = [
         ("AnthropicProvider", "official SDK · SSE · prompt caching"),
         ("OllamaProvider", "RestClient · NDJSON · local, key-free"),
-        ("OpenAiCompatProvider", "SSE · any OpenAI-style server"),
+        ("OpenAiCompatProvider", "SSE · openai · lmstudio · openrouter · gemini"),
     ]
     ry = py + 66
     for name, sub in rows:
@@ -155,8 +155,8 @@ def build():
     # ---- stats strip -----------------------------------------------------
     n_y = st_y + st_h + 42
     stats = [("5 + 2", "Gradle modules + JS toolchains"), ("41,071", "lines of source"),
-             ("545 + 310", "JUnit + vitest, 0 failures"), ("18", "RunEvent types"),
-             ("19", "tools behind one gate"), ("3 + 2", "LLM + image providers"),
+             ("687 + 401", "JUnit + vitest, 0 failures"), ("18", "RunEvent types"),
+             ("22", "tools behind one gate"), ("6 + 2", "LLM + image providers"),
              ("3", "brand designs")]
     sw = (W - 2 * PAD) / len(stats)
     for i, (num, lab) in enumerate(stats):

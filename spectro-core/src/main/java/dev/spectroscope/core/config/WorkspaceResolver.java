@@ -70,6 +70,19 @@ public final class WorkspaceResolver {
     }
 
     /**
+     * The fixed, persistent default workspace ({@code ~/spectroscope-workspace}) —
+     * the "default" workspace choice's fallback when nothing is configured, so a
+     * session always has a stable folder to land in (created on first use like any
+     * other workspace). Distinct from the per-session throwaway temp folder.
+     *
+     * @return the absolute, normalized {@code ~/spectroscope-workspace} path
+     */
+    public static Path defaultDir() {
+        return Path.of(System.getProperty("user.home"), "spectroscope-workspace")
+                .toAbsolutePath().normalize();
+    }
+
+    /**
      * Expands a leading {@code ~} to the user home — the same convention the
      * MCP server configs use.
      *

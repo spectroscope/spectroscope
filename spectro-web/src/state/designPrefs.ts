@@ -9,7 +9,7 @@
 
 import { useSyncExternalStore } from "react";
 
-export type DesignId = "spectroscope" | "paper" | "still";
+export type DesignId = "spectroscope" | "paper" | "still" | "graphite";
 
 export interface DesignPrefs {
   design: DesignId;
@@ -18,13 +18,23 @@ export interface DesignPrefs {
   /** Trace view: the reasoning lens (card 13) — a view mode, persisted like
    *  every other preference so it survives reloads, live and replay alike. */
   reasoningLens: boolean;
+  /** Trace view: the timeline lens — proportional wait bars per row. */
+  timelineLens: boolean;
+  /** Trace view: show the otlp_export mirror frames (card 86) — default OFF;
+   *  the rows sit in the trace ring either way, the toggle only reveals them. */
+  otelRows: boolean;
 }
 
 /** Catalog for the picker: swatch colors + whether the design ships a particle
- *  signature. Exactly three ship (owner 2026-07-20): the two brand themes and
- *  the white minimal light. The retired extra skins (classic, nebula, nocturne,
- *  obsidian, staffwise, neon-riot, prisma) live on in git history only;
- *  parsePrefs folds their stored ids back to the default. */
+ *  signature. Four ship: the two brand themes, the white minimal light, and
+ *  the cool dark (owner 2026-07-27). The retired extra skins (classic, nebula,
+ *  nocturne, obsidian, staffwise, neon-riot, prisma) live on in git history
+ *  only; parsePrefs folds their stored ids back to the default.
+ *
+ *  This array is the catalog every surface reads — the settings picker, the
+ *  export dialog's chooser, and (through the tests) the export theme table and
+ *  the pre-paint guard in index.html. A design is an entry here, not an edit
+ *  in five files. */
 export const DESIGNS: ReadonlyArray<{
   id: DesignId;
   label: string;
@@ -33,14 +43,60 @@ export const DESIGNS: ReadonlyArray<{
   bg: string;
   accent: string;
 }> = [
-  { id: "spectroscope", label: "spectro dark", sub: "espresso · amber line", particles: true, bg: "#17120D", accent: "#CE9440" },
-  { id: "paper", label: "spectro bright", sub: "paper · logo blue", particles: true, bg: "#F6F4EE", accent: "#2E7EA6" },
-  { id: "still", label: "spectro white", sub: "minimal white · one blue", particles: false, bg: "#fbfbfd", accent: "#0071e3" },
+  {
+    id: "spectroscope",
+    label: "spectro espresso",
+    sub: "dark · amber line",
+    particles: true,
+    bg: "#17120D",
+    accent: "#CE9440",
+  },
+  {
+    id: "paper",
+    label: "spectro paper",
+    sub: "light · logo blue",
+    particles: true,
+    bg: "#F6F4EE",
+    accent: "#2E7EA6",
+  },
+  {
+    id: "still",
+    label: "spectro white",
+    sub: "minimal white · one blue",
+    particles: false,
+    bg: "#fbfbfd",
+    accent: "#0071e3",
+  },
+  {
+    id: "graphite",
+    label: "spectro graphite",
+    sub: "dark · one blue",
+    // A dark ground is where the dust signature reads; the canvas takes its
+    // colours from the live tokens, so it arrives already tuned to this skin.
+    particles: true,
+    bg: "#262624",
+    accent: "#0071e3",
+  },
 ];
 
-const DESIGN_IDS = DESIGNS.map((d) => d.id);
+/** The ids the store accepts. Exported because index.html cannot import — its
+ *  FOUC guard carries a literal copy, and a test holds the copy to this. */
+export const DESIGN_IDS: readonly DesignId[] = DESIGNS.map((d) => d.id);
 export const STORAGE_KEY = "spectroscope:design";
-export const DEFAULT_PREFS: DesignPrefs = { design: "spectroscope", scroll: true, particles: true, reasoningLens: false };
+export const DEFAULT_PREFS: DesignPrefs = {
+  // Owner 2026-07-28: spectro white leads. Its DESIGNS entry carries
+  // particles: false, so the particle default follows it — otherwise a first
+  // run lands on the settings note that says the toggle is on and the design
+  // has none, which is a contradiction to open the app with.
+  design: "still",
+  scroll: true,
+  particles: false,
+  reasoningLens: false,
+  // Card 69 (owner): timing bars are on out of the box — subtle enough to
+  // read well idle, and the trace-toolbar chip switches them off persistently.
+  timelineLens: false,
+  otelRows: false,
+};
 
 // Side-effect seams — real localStorage + DOM by default, swappable in tests
 // (the suite runs in plain Node with no jsdom, so it injects in-memory versions).
@@ -70,6 +126,8 @@ export function parsePrefs(raw: string | null): DesignPrefs {
       scroll: typeof p.scroll === "boolean" ? p.scroll : DEFAULT_PREFS.scroll,
       particles: typeof p.particles === "boolean" ? p.particles : DEFAULT_PREFS.particles,
       reasoningLens: typeof p.reasoningLens === "boolean" ? p.reasoningLens : DEFAULT_PREFS.reasoningLens,
+      timelineLens: typeof p.timelineLens === "boolean" ? p.timelineLens : DEFAULT_PREFS.timelineLens,
+      otelRows: typeof p.otelRows === "boolean" ? p.otelRows : DEFAULT_PREFS.otelRows,
     };
   } catch {
     return DEFAULT_PREFS;
@@ -134,7 +192,9 @@ export function isDirty(): boolean {
     draft.design !== saved.design ||
     draft.scroll !== saved.scroll ||
     draft.particles !== saved.particles ||
-    draft.reasoningLens !== saved.reasoningLens
+    draft.reasoningLens !== saved.reasoningLens ||
+    draft.timelineLens !== saved.timelineLens ||
+    draft.otelRows !== saved.otelRows
   );
 }
 

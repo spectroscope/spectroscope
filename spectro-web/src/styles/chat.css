@@ -5,6 +5,48 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  position: relative; /* anchors the floating disclosure menu (card 78 #4) */
+}
+/* The reading width, set in the disclosure menu (owner 2026-07-25). Raising
+   the local --content-max is enough: the history AND the composer both read
+   that token, so the column and its input stay one shape. */
+.chat--wide { --content-max: var(--content-max-wide); }
+
+/* Card 78 #4: the disclosure-level menu, floating top-right over the chat.
+   Quiet until hovered — it must not compete with the messages. */
+.chat-disc {
+  position: absolute;
+  top: var(--sp-2);
+  right: var(--sp-4);
+  z-index: var(--z-sticky);
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.chat-disc .attach-button { color: var(--text-faint); }
+.chat-disc .attach-button:hover { color: var(--text); }
+/* The translation's way back to the record, in the tab row (App.tsx) so it is
+   reachable from the trace and the text feed too. It takes the auto margin the
+   level pill would otherwise take; the pill then simply follows it. Lives in
+   this file because it is the chat's translate control wearing another hat. */
+.tab-nav__translate { margin-left: auto; display: inline-flex; align-items: center; }
+.tab-nav__translate + .tab-nav__level { margin-left: var(--sp-2); }
+/* The menu popover: compact. The composer twin sits at the FAR LEFT of its
+   row, so it left-aligns (the wsg-pop default right:0 would push it off the
+   window edge); the chat-corner instance opens DOWNWARD and right-aligned.
+   Compound selectors: workspace-gear.css loads after this file, so a bare
+   .disc-pop would lose the cascade to .wsg-pop — pinning BOTH top and bottom
+   and squeezing the popover to the anchor height (found live, card 78). */
+.wsg-pop.disc-pop {
+  width: 300px;
+  left: 0;
+  right: auto;
+}
+.wsg-pop.disc-pop--down {
+  bottom: auto;
+  top: calc(100% + 8px);
+  left: auto;
+  right: 0;
 }
 
 .chat-scroll {
@@ -71,38 +113,58 @@
 }
 .empty-hint svg { flex-shrink: 0; }
 
-/* User turn: compact raised card with eyebrow. */
+/* New-chat workspace chooser (random | default | set folder). */
+.ws-chooser { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
+.ws-chooser-label { font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+.ws-chooser-opts { display: inline-flex; gap: 3px; border: 1px solid var(--border); border-radius: var(--radius-chip); padding: 2px; }
+.ws-chooser-opt { background: none; border: 0; border-radius: var(--radius-chip); color: var(--text-faint); font: inherit; font-size: var(--fs-12); padding: 3px var(--sp-2); cursor: pointer; }
+.ws-chooser-opt:hover { color: var(--text); }
+.ws-chooser-opt--on { background: var(--accent-soft); color: var(--accent); }
+
+/* User turn: a flat bubble on the RIGHT (owner 2026-07-25). One solid mid
+   surface — no gradient, no border, no shadow: the side of the column is what
+   says who spoke, so the card weight can go. The "You" eyebrow stays for
+   screen readers and leaves the eye alone (sr-only below). */
 .user-turn {
   width: fit-content;
-  max-width: 100%;
-  background-color: var(--surface-2);
-  background-image: linear-gradient(var(--glint), transparent 70%);
-  border: 1px solid var(--border);
+  max-width: min(78%, 44rem);
+  margin: var(--sp-4) 0 var(--sp-3) auto; /* auto-left = pushed right */
+  background: var(--surface-3);
+  border: 0;
   border-radius: var(--radius-card);
-  box-shadow: var(--shadow-card);
-  padding: var(--sp-3) var(--sp-4);
-  margin: var(--sp-4) 0 var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
 }
-.user-turn .eyebrow { margin-bottom: var(--sp-1); }
+/* The label is redundant next to the position — kept for assistive tech only. */
+.user-turn .eyebrow {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 .user-text {
   white-space: pre-wrap;
   overflow-wrap: break-word;
 }
+/* Attachments ride along inside the bubble, right-aligned with it. */
+.user-turn .user-attachments { justify-content: flex-end; }
 
-/* Assistant turn: no bubble — document flow on the app background. */
+/* Assistant turn: the LEFT column — document flow on the app ground, no
+   bubble at all (owner: "wie im Screenshot"). */
 .assistant-turn { margin: 0 0 var(--sp-4); }
 .assistant-turn .agent-badge {
   display: inline-block;
   margin-bottom: var(--sp-1);
 }
-/* Assistant answer: its own quiet card, markdown-rendered (owner request).
-   Calmer than the user card — a surface, not a raised bubble. */
 .assistant-answer {
-  background-color: var(--surface);
-  background-image: linear-gradient(var(--glint), transparent 90px);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-card);
-  padding: var(--sp-3) var(--sp-4);
+  background: none;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
   line-height: 1.65;
   overflow-wrap: break-word;
 }
@@ -224,19 +286,24 @@
 }
 
 /* Thinking disclosure: the model's reasoning, collapsed above the answer. */
+/* Card 94 (owner: "filigraner"): thinking is a quiet left-ruled block, not a
+   bordered surface — same weight as the tool cards it sits between. */
 .thinking {
   margin: 0 0 var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-control);
-  background: var(--surface);
+  border: 0;
+  border-left: 2px solid var(--border);
+  border-radius: 0;
+  background: none;
   overflow: hidden;
+  transition: border-color var(--t-fast);
 }
+.thinking--active { border-left-color: var(--accent); }
 .thinking-head {
   display: flex;
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
-  padding: var(--sp-2) var(--sp-3);
+  padding: 3px var(--sp-3);
   background: none;
   border: none;
   color: var(--text-dim);
@@ -246,11 +313,18 @@
   cursor: pointer;
   transition: background var(--t-fast), color var(--t-fast);
 }
-.thinking-head:hover { background: var(--surface-2); color: var(--text); }
+.thinking-head:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); color: var(--text); }
 .thinking-glyph { flex: none; color: var(--text-faint); }
 .thinking--active .thinking-glyph { color: var(--accent); }
 .thinking-label { font-weight: 500; letter-spacing: var(--track-heading); }
 .thinking-meta { margin-left: auto; color: var(--text-faint); font-family: var(--font-mono); }
+/* Per-message token/duration footer — quiet, under the answer. */
+.assistant-meta {
+  margin-top: var(--sp-1);
+  font-size: var(--fs-11);
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
 .thinking-live {
   margin-left: auto;
   display: inline-flex;
@@ -373,6 +447,17 @@
 .error-text { font-size: var(--fs-13); }
 .error-card .link { font-size: var(--fs-13); }
 
+/* In-view search (state/search.ts). One hit is one TURN: the answer is markdown
+   rendered to React elements, so there is no rendered string left to slice —
+   chatSearch.ts carries the reasoning. Outline, not border: it draws outside the
+   box model, so marking a turn never reflows the column under the reader. */
+.chat-hit { outline: 1px solid var(--border-strong); outline-offset: 3px; border-radius: var(--radius-card); }
+.chat-hit--current { outline: 2px solid var(--accent); }
+/* Inside a user turn the text IS a plain string, so its occurrences mark too —
+   a refinement of the outline, never a second thing to step through. */
+.chat-mark { background: var(--accent-soft); border-radius: 2px; color: inherit; padding: 0 1px; }
+.chat-hit--current .chat-mark { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+
 /* Agent identity: pastel is decoration — border/badge tint, never text color. */
 .agent-badge {
   background: color-mix(in srgb, var(--agent-color, transparent) 10%, transparent);
@@ -386,3 +471,22 @@
   white-space: nowrap;
 }
 
+
+/* Jump rail — the trace's affordance, same shape, because an imported session
+   is hundreds of turns long and scrolling it by hand is not navigation. */
+.chat-rail { position: absolute; right: 10px; bottom: 96px; z-index: 3; display: flex; flex-direction: column; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; opacity: .55; transition: opacity var(--t-fast); }
+.chat-rail:hover { opacity: 1; }
+.chat-rail-btn { display: grid; place-items: center; width: 26px; height: 26px; border: 0; background: none; color: var(--text-dim); cursor: pointer; border-radius: 50%; }
+.chat-rail-btn:hover { color: var(--text); background: var(--surface-3); }
+.chat-rail-btn:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 1px; }
+
+
+/* Translation sheet: the reasoning choice with its price under it. Stacked, and
+   tight, so the checkbox and the two numbers it moves read as one thing — the
+   price is only useful while the control that changes it is still in view. */
+.tr-cost { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-4); }
+.tr-check { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text); font-size: var(--fs-13); cursor: pointer; }
+.tr-check input { accent-color: var(--accent); }
+/* Disabled mid-run. Dimmed as well as inert: an unexplained click that does
+   nothing reads as a broken control rather than a locked one. */
+.tr-check:has(input:disabled) { color: var(--text-faint); cursor: not-allowed; }

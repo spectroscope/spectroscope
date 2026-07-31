@@ -1,0 +1,31 @@
+meta {
+  name: switch leveling mode
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/leveling/mode
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "mode": "ladder"
+  }
+}
+
+docs {
+  Switch the leveling mode. 400 unknown mode.
+  
+  Body: ModeBody(String mode) — ladder | checklist | off, exact match; a typo is 400.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

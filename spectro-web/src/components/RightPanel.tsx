@@ -9,6 +9,9 @@ import type { AgentInfo, PlanStep } from "../state/reducer";
 import type { RightTab } from "../state/layout";
 import { AgentsTab } from "./AgentsTab";
 import { PlanTab } from "./PlanTab";
+import { WorkPanel } from "./WorkPanel";
+import type { WorkItem } from "../state/work";
+import type { RunEvent } from "../events";
 import { SystemContextTab } from "./SystemContextTab";
 import { WorkspaceTab } from "../workspace/WorkspaceTab";
 import type { WorkspaceInfo } from "../state/reducer";
@@ -27,6 +30,11 @@ export function RightPanel({
   workspace,
   onPickFolder,
   canPickFolder,
+  fsRefreshSignal,
+  work,
+  workHighlight,
+  onFocusEvent,
+  liveView,
 }: {
   agents: AgentInfo[];
   plan: PlanStep[] | null;
@@ -41,6 +49,16 @@ export function RightPanel({
   onPickFolder?: () => void;
   /** False once the agent ran — the workspace is baked in then. */
   canPickFolder?: boolean;
+  /** Bumped when the live run touched the disk — drills into the Files tab
+   *  so the tree refetches (card 89). */
+  fsRefreshSignal?: number;
+  /** The chat-v2 work fold. Undefined in v1, where the tab is not offered. */
+  work?: WorkItem[];
+  /** Which work item the transcript's chip is pointing at. */
+  workHighlight?: string | null;
+  /** The seam Spectrum and FleetCanvas already use (App.tsx:1261-1279). */
+  onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  liveView?: boolean;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const selected = agents.find((a) => a.id === selectedId) ?? null;
@@ -69,19 +87,45 @@ export function RightPanel({
     <aside className="right-panel" aria-label="Panel">
       <div className="right-panel-head">
         <div className="rp-tabs" role="tablist" aria-label="Panel-Tabs">
+          {/* chat-v2: the work tab exists only while v2 is the reading. In v1
+              the roster tab is the one the app has always had, untouched. */}
+          {work !== undefined && tabBtn("work", t(lang, "rp.work"), work.length)}
           {tabBtn("agents", t(lang, "rp.agents"), agents.length)}
           {tabBtn("plan", t(lang, "rp.plan"), plan?.length)}
           {tabBtn("context", t(lang, "rp.context"))}
           {tabBtn("files", t(lang, "rp.files"))}
         </div>
-        <button type="button" className="icon-button rp-close" aria-label={t(lang, "rp.close")} onClick={onClose}>
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+        <button
+          type="button"
+          className="icon-button rp-close"
+          aria-label={t(lang, "rp.close")}
+          onClick={onClose}
+        >
+          <svg
+            viewBox="0 0 16 16"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            aria-hidden="true"
+          >
             <path d="M4 4l8 8M12 4l-8 8" />
           </svg>
         </button>
       </div>
       <div className="right-panel-body">
-        {activeTab === "agents" ? (
+        {activeTab === "work" && work !== undefined ? (
+          <WorkPanel
+            items={work}
+            liveView={liveView === true}
+            highlight={workHighlight ?? null}
+            onFocusEvent={onFocusEvent}
+          />
+        ) : activeTab === "agents" || (activeTab === "work" && work === undefined) ? (
+          /* A layout saved while v2 was on must not leave a v1 reader staring
+             at a tab that is no longer offered: fall back to the roster. */
           <AgentsTab agents={agents} selectedId={selectedId} onSelect={selectAgent} />
         ) : activeTab === "plan" ? (
           <PlanTab plan={plan} />
@@ -90,6 +134,7 @@ export function RightPanel({
             workspace={workspace}
             onPickFolder={onPickFolder}
             canPickFolder={canPickFolder}
+            refreshSignal={fsRefreshSignal}
           />
         ) : (
           <SystemContextTab selected={selected} provider={provider} model={model} thinking={thinking} />

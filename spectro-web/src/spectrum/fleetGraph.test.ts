@@ -15,11 +15,27 @@ const model: FleetModel = {
     { type: "run_start", runId: "r0", agentId: "root", prompt: "orchestrate", ts: 1 },
     { type: "agent_spawn", agentId: "worker-1", parentId: "root", task: "scan", ts: 2 },
     { type: "run_start", runId: "r1", agentId: "worker-1", parentId: "root", prompt: "scan", ts: 3 },
-    { type: "agent_message", from: "root", to: "worker-1", role: "task", state: "submitted", text: "scan", ts: 4 },
+    {
+      type: "agent_message",
+      from: "root",
+      to: "worker-1",
+      role: "task",
+      state: "submitted",
+      text: "scan",
+      ts: 4,
+    },
     { type: "agent_spawn", agentId: "worker-2", parentId: "root", task: "build", ts: 5 },
     { type: "permission_request", agentId: "worker-2", callId: "c1", name: "run_command", input: {}, ts: 6 },
     { type: "usage", agentId: "worker-1", inputTokens: 100, outputTokens: 20, ts: 7 },
-    { type: "agent_message", from: "worker-1", to: "root", role: "result", state: "completed", text: "done", ts: 8 },
+    {
+      type: "agent_message",
+      from: "worker-1",
+      to: "root",
+      role: "result",
+      state: "completed",
+      text: "done",
+      ts: 8,
+    },
   ] as unknown as RunEvent[],
   epochBySender: { root: 0, "worker-1": 0, "worker-2": 1 },
 };
@@ -58,6 +74,30 @@ describe("buildFleetGraph", () => {
     expect(w1.outTokens).toBe(20);
     expect(w1.state).toBe("completed");
     expect(w1.spawnedBy).toBe("root");
+  });
+
+  it("stamps each agent's first/last activity from event timestamps", () => {
+    const g = buildFleetGraph(model);
+    // worker-1: spawned at 2, run_start 3, usage 7, result sent 8.
+    const w1 = g.nodes.find((n) => n.id === "worker-1")!;
+    expect(w1.firstTs).toBe(2);
+    expect(w1.lastTs).toBe(8);
+    // root acts at 1 (run_start) and 4 (the task it SENT); the result arriving
+    // at 8 is worker-1's act, not root's — a message stamps only its sender.
+    const root = g.nodes.find((n) => n.id === "root")!;
+    expect(root.firstTs).toBe(1);
+    expect(root.lastTs).toBe(4);
+  });
+
+  it("leaves a roster member with no events unstamped", () => {
+    const g = buildFleetGraph({
+      roster: [rnode("silent")],
+      events: [],
+      epochBySender: {},
+    });
+    const silent = g.nodes.find((n) => n.id === "silent")!;
+    expect(silent.firstTs).toBeNull();
+    expect(silent.lastTs).toBeNull();
   });
 
   it("clears the gate once a decision lands", () => {

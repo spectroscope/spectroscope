@@ -23,15 +23,41 @@ export type UserAttachment = { name: string; mediaType: string; dataBase64: stri
 
 export type Turn =
   | { kind: "user"; text: string; attachments?: UserAttachment[] }
-  | { kind: "assistant"; agentId: string; text: string; thinking: string }
+  | {
+      kind: "assistant";
+      agentId: string;
+      text: string;
+      thinking: string;
+      /** Set from this turn's `usage` event: the tokens the answer cost, and how
+       *  long the turn took (its first event → the usage). Undefined until it
+       *  arrives (a torn/streaming turn simply has no footer yet). The two cache
+       *  counts are additive on the wire and stay optional here: absent means the
+       *  provider reported no cache, which is not the same as a cache of zero. */
+      usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        cacheReadTokens?: number;
+        cacheCreationTokens?: number;
+      };
+      durationMs?: number;
+      /** The usage event's ts — the answer's END wall-clock; start derives as
+       *  endTs - durationMs (card 87). */
+      endTs?: number;
+      /** The model that produced this answer (run_start.model, card 87). */
+      model?: string;
+    }
   | { kind: "tool"; callId: string }
   /** agentId marks an info line that belongs to a subagent's thread (spawn). */
   | {
-      kind: "info"; text: string; tone: "neutral" | "warn"; agentId?: string;
+      kind: "info";
+      text: string;
+      tone: "neutral" | "warn";
+      agentId?: string;
       /** Optional i18n key + vars — set by the reducer for its own info lines so
        *  the chat can render them in the live chrome language; `text` stays the
        *  English fallback (and keeps old tests/callers working). */
-      infoKey?: string; infoVars?: Record<string, string | number>;
+      infoKey?: string;
+      infoVars?: Record<string, string | number>;
     }
   | { kind: "error"; text: string };
 
@@ -56,6 +82,9 @@ export interface TraceEntry {
   ts: number;
   type: string;
   agentId?: string;
+  /** The model serving the run this row belongs to (card 87) — from the last
+   *  run_start's additive model; blank outside runs and in old archives. */
+  model?: string;
   payload: unknown;
 }
 
@@ -66,7 +95,7 @@ export interface ContextSnapshot {
   messages: number;
   estimatedTokens: number;
   threshold: number;
-  parts: { label: string; chars: number; estTokens: number }[];
+  parts: { label: string; chars: number; estTokens: number; text?: string }[];
 }
 
 /** One generated image — everything the gallery card needs. */
@@ -145,7 +174,8 @@ export interface UiState {
   lastStopReason: string | null;
   /** Generated images in arrival order — the gallery panel. */
   images: GeneratedImage[];
-  /** Wire view (trace tab): every frame in arrival order, capped at 5000. */
+  /** Wire view (trace tab): every frame in arrival order. The fold keeps all of
+   *  them; only a live stream is bounded, by {@link windowTrace} at its seam. */
   trace: TraceEntry[];
   /** Latest context_info snapshot — latest wins, null until the first one. */
   context: ContextSnapshot | null;
@@ -168,11 +198,17 @@ export interface UiState {
   workspace: WorkspaceInfo | null;
   /** The active backend announcement — latest wins (connect + every switch). */
   providerInfo: ProviderInfo | null;
+  /** The current (or last) run's model id — run_start.model wins, provider_info
+   *  is the live fallback; the trace rows and answer footers read it (card 87). */
+  runModel: string | null;
   /** The active permission mode ("ask" | "auto" | "readonly") — from the
    *  socket-only permission_mode_info frame, sent on connect and after every
    *  switch. Defaults to "ask" so a state built without ever seeing the frame
    *  (e.g. a bare initialState in a test) still matches the server's default. */
   permissionMode: string;
+  /** ts of the current assistant turn's first event, per agent — so the `usage`
+   *  event can stamp each answer's duration. Transient bookkeeping, not shown. */
+  assistantTurnStart: Record<string, number>;
 }
 
 export const initialState: UiState = {
@@ -195,7 +231,9 @@ export const initialState: UiState = {
   plan: null,
   workspace: null,
   providerInfo: null,
+  runModel: null,
   permissionMode: "ask",
+  assistantTurnStart: {},
 };
 
 /** Upsert an agent by id; patch is a partial or a function of the current row. */
@@ -205,7 +243,16 @@ function upsertAgent(
   patch: Partial<AgentInfo> | ((a: AgentInfo) => Partial<AgentInfo>),
 ): AgentInfo[] {
   const at = agents.findIndex((a) => a.id === id);
-  const blank: AgentInfo = { id, parentId: null, label: null, task: "", state: "submitted", lastStatus: null, inTokens: 0, outTokens: 0 };
+  const blank: AgentInfo = {
+    id,
+    parentId: null,
+    label: null,
+    task: "",
+    state: "submitted",
+    lastStatus: null,
+    inTokens: 0,
+    outTokens: 0,
+  };
   if (at < 0) {
     const p = typeof patch === "function" ? patch(blank) : patch;
     return [...agents, { ...blank, ...p }];
@@ -220,22 +267,39 @@ function upsertAgent(
 function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | null): AgentInfo[] {
   switch (event.type) {
     case "run_start":
-      return upsertAgent(agents, event.agentId,
-        { parentId: event.parentId ?? null, state: "working", ...(event.parentId == null ? { label: null } : {}) });
+      return upsertAgent(agents, event.agentId, {
+        parentId: event.parentId ?? null,
+        state: "working",
+        ...(event.parentId == null ? { label: null } : {}),
+      });
     case "agent_spawn":
       return upsertAgent(agents, event.agentId, { parentId: event.parentId, task: event.task });
     case "agent_message":
-      if (event.role === "task") return upsertAgent(agents, event.to, { task: event.text, label: event.label ?? null, state: "submitted" });
-      if (event.role === "status") return upsertAgent(agents, event.from, { state: "working", lastStatus: event.text });
-      if (event.role === "result") return upsertAgent(agents, event.from, { state: event.state === "completed" ? "completed" : "failed" });
+      if (event.role === "task")
+        return upsertAgent(agents, event.to, {
+          task: event.text,
+          label: event.label ?? null,
+          state: "submitted",
+        });
+      if (event.role === "status")
+        return upsertAgent(agents, event.from, { state: "working", lastStatus: event.text });
+      if (event.role === "result")
+        return upsertAgent(agents, event.from, {
+          state: event.state === "completed" ? "completed" : "failed",
+        });
       return agents;
     case "usage":
-      return upsertAgent(agents, event.agentId, (a) => ({ inTokens: a.inTokens + event.inputTokens, outTokens: a.outTokens + event.outputTokens }));
+      return upsertAgent(agents, event.agentId, (a) => ({
+        inTokens: a.inTokens + event.inputTokens,
+        outTokens: a.outTokens + event.outputTokens,
+      }));
     case "run_end":
       // The ROOT run finished — mark the main agent done (subagents got their
       // own result message). A child's run_end has a different runId: ignore.
       if (rootRunId !== null && event.runId !== rootRunId) return agents;
-      return agents.map((a) => (a.parentId === null && a.state === "working" ? { ...a, state: "completed" } : a));
+      return agents.map((a) =>
+        a.parentId === null && a.state === "working" ? { ...a, state: "completed" } : a,
+      );
     default:
       return agents;
   }
@@ -243,15 +307,61 @@ function foldAgents(agents: AgentInfo[], event: RunEvent, rootRunId: string | nu
 
 const addTurn = (s: UiState, turn: Turn): UiState => ({ ...s, turns: [...s.turns, turn] });
 
-/** The trace is a window, not the archive — the JSONL file keeps everything. */
-const TRACE_CAP = 5000;
-
+// An append copies the trace, so a fold costs O(rows²): measured 6000 rows in
+// 16 ms / +5 MB, 50 000 in 2.7 s / +116 MB. A session's worth is cheap; anything
+// larger wants a batched append before it wants a bigger array.
 function appendTrace(s: UiState, entry: Omit<TraceEntry, "seq">): UiState {
   const last = s.trace[s.trace.length - 1];
-  const appended = [...s.trace, { seq: (last?.seq ?? 0) + 1, ...entry }];
-  const trace =
-    appended.length > TRACE_CAP ? appended.slice(appended.length - TRACE_CAP) : appended;
-  return { ...s, trace };
+  return { ...s, trace: [...s.trace, { seq: (last?.seq ?? 0) + 1, ...entry }] };
+}
+
+/** How many frames a LIVE trace keeps. Measured, not picked: because an append
+ *  copies the window, every live frame pays it — a 50 000-frame stream folds in
+ *  164 ms at 5000 and 1.9 s at 20 000. Raising this needs the batched append. */
+const LIVE_TRACE_WINDOW = 5000;
+
+/**
+ * Bound the trace of a state that is still growing — the live socket's, and only
+ * that one. A stream has no end, so the array it folds into needs one; the JSONL
+ * file keeps every frame either way. A finite fold (an import, an archive, a
+ * replay) is whole before it starts, and windowing it would drop the oldest rows
+ * of a record that fits, which for an imported transcript is where it began.
+ *
+ * Idempotent, and the newest row survives untouched, so `seq` keeps counting
+ * from there and no two rows inside a window can share a number.
+ */
+export function windowTrace(state: UiState): UiState {
+  const { trace } = state;
+  if (trace.length <= LIVE_TRACE_WINDOW) return state;
+  return { ...state, trace: trace.slice(trace.length - LIVE_TRACE_WINDOW) };
+}
+
+/** Stamp usage + duration onto the LAST assistant turn of an agent (the answer
+ *  the usage belongs to). No matching turn → the turns are returned unchanged. */
+function stampAssistantUsage(
+  turns: Turn[],
+  agentId: string,
+  patch: {
+    usage: {
+      inputTokens: number;
+      outputTokens: number;
+      cacheReadTokens?: number;
+      cacheCreationTokens?: number;
+    };
+    durationMs?: number;
+    endTs?: number;
+    model?: string;
+  },
+): Turn[] {
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const turn = turns[i];
+    if (turn.kind === "assistant" && turn.agentId === agentId) {
+      const next = turns.slice();
+      next[i] = { ...turn, ...patch };
+      return next;
+    }
+  }
+  return turns;
 }
 
 function patchCard(s: UiState, callId: string, patch: Partial<ToolCard>): UiState {
@@ -285,31 +395,43 @@ export function reduce(state: UiState, event: RunEvent): UiState {
   // alike. The switch below may ignore an event; the wire view must not,
   // that is its whole point.
   const raw = event as { type: string; ts?: unknown; agentId?: unknown };
+  // Card 87: rows inside a run wear the run's model; the run_start row itself
+  // uses its own stamp (the pre-apply state still holds the PREVIOUS run's).
+  const rowModel =
+    raw.type === "run_start"
+      ? ((event as { model?: string }).model ?? state.providerInfo?.model)
+      : (state.runModel ?? undefined);
   const traced = appendTrace(state, {
     dir: "in",
     ts: typeof raw.ts === "number" ? raw.ts : Date.now(),
     type: raw.type,
     agentId: typeof raw.agentId === "string" ? raw.agentId : undefined,
+    ...(rowModel !== undefined && rowModel !== "" ? { model: rowModel } : {}),
     payload: event,
   });
   // The socket-only workspace_info frame is handled HERE, at the socket
   // boundary — the pure RunEvent switch below stays sealed to wire events.
   if (raw.type === "workspace_info") {
     const w = event as unknown as WorkspaceInfo;
-    return { ...traced, workspace: { sessionId: w.sessionId, path: w.path, configured: w.configured === true } };
+    return {
+      ...traced,
+      workspace: { sessionId: w.sessionId, path: w.path, configured: w.configured === true },
+    };
   }
   // Same boundary rule for provider_info: connect + every switch announce the
   // active backend; the chip/map/host column follow wire truth, latest wins.
   if (raw.type === "provider_info") {
     const p = event as unknown as ProviderInfo;
+    const model = String(p.model ?? "");
     return {
       ...traced,
       provider: typeof p.provider === "string" ? p.provider : traced.provider,
-      providerInfo: {
-        provider: String(p.provider ?? ""),
-        model: String(p.model ?? ""),
-        host: String(p.host ?? ""),
-      },
+      providerInfo: { provider: String(p.provider ?? ""), model, host: String(p.host ?? "") },
+      // For a session that names its model per message (an imported transcript)
+      // run_start only ever carried the first one — every switch arrives here.
+      // Answers are stamped at their own usage event, so an announcement moves
+      // the model for what follows and never reaches back to what is stamped.
+      runModel: model !== "" ? model : traced.runModel,
     };
   }
   // Same boundary rule for permission_mode_info: connect + every switch
@@ -366,7 +488,10 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       const attachments = state.outboxAttachments ?? undefined;
       const placeholder =
         !attachments?.length && event.attachments?.length
-          ? "\n" + event.attachments.map((a) => `[image ${a.sha256.slice(0, ATTACHMENT_SHA_PREVIEW_CHARS)}]`).join(" ")
+          ? "\n" +
+            event.attachments
+              .map((a) => `[image ${a.sha256.slice(0, ATTACHMENT_SHA_PREVIEW_CHARS)}]`)
+              .join(" ")
           : "";
       return addTurn(
         {
@@ -375,6 +500,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           rootRunId: event.runId,
           runUsage: { inputTokens: 0, outputTokens: 0 },
           provider: event.provider ?? state.provider,
+          runModel: event.model ?? state.providerInfo?.model ?? state.runModel,
           lastStopReason: null,
           outboxAttachments: null,
         },
@@ -403,7 +529,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
       }
       return addTurn(
-        { ...state, thinkingActive: true },
+        {
+          ...state,
+          thinkingActive: true,
+          assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
+        },
         { kind: "assistant", agentId: event.agentId, text: "", thinking: event.text },
       );
     }
@@ -420,7 +550,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
       }
       return addTurn(
-        { ...state, thinkingActive: false },
+        {
+          ...state,
+          thinkingActive: false,
+          assistantTurnStart: { ...state.assistantTurnStart, [event.agentId]: event.ts },
+        },
         { kind: "assistant", agentId: event.agentId, text: event.text, thinking: "" },
       );
     }
@@ -489,9 +623,27 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         tone: "warn",
       });
 
-    case "usage":
+    case "usage": {
+      const start = state.assistantTurnStart[event.agentId];
       return {
         ...state,
+        // The per-message footer: this turn's token cost + how long it took.
+        // The cache counts are spread in only when the provider sent them —
+        // a synthesised zero would read as "nothing was cached", which is a
+        // claim about a provider that said nothing at all.
+        turns: stampAssistantUsage(state.turns, event.agentId, {
+          usage: {
+            inputTokens: event.inputTokens,
+            outputTokens: event.outputTokens,
+            ...(event.cacheReadTokens !== undefined ? { cacheReadTokens: event.cacheReadTokens } : {}),
+            ...(event.cacheCreationTokens !== undefined
+              ? { cacheCreationTokens: event.cacheCreationTokens }
+              : {}),
+          },
+          durationMs: start !== undefined ? Math.max(0, event.ts - start) : undefined,
+          endTs: event.ts,
+          ...(state.runModel !== null ? { model: state.runModel } : {}),
+        }),
         usage: {
           inputTokens: state.usage.inputTokens + event.inputTokens,
           outputTokens: state.usage.outputTokens + event.outputTokens,
@@ -509,6 +661,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
             ? event.inputTokens + (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0)
             : state.lastInputTokens,
       };
+    }
 
     case "run_end":
       // A subagent's run_end must not flip the UI to "ready" mid-run.
@@ -567,7 +720,9 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
   }
 }
 
-/** Replay and frame batches: whole event lists through the same reducer. */
+/** Replay and frame batches: whole event lists through the same reducer. The
+ *  fold is complete for both — a caller whose stream has no end windows the
+ *  result, so forgetting costs memory rather than the start of a record. */
 export const reduceAll = (s: UiState, events: RunEvent[]): UiState => events.reduce(reduce, s);
 
 /** Normalize a replayed archive: nothing runs and no question is open — even

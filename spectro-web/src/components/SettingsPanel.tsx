@@ -21,13 +21,14 @@
 import { useEffect, useState } from "react";
 import { DESIGNS, applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
 import { t, type Lang } from "../i18n/i18n";
+import { imageModelOptions } from "./imageModels";
+import { PROVIDERS } from "./providerPickerMode";
+import { ModelField, useProviderModels } from "./providerModelField";
+import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
-import {
-  fetchSettings,
-  putSettings,
-  originLabel,
-  type SettingsView,
-} from "../state/serverSettings";
+import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
+import type { Leveling } from "../state/useLeveling";
+import { fetchSettings, putSettings, originLabel, type SettingsView } from "../state/serverSettings";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
 
 function Switch({
@@ -91,13 +92,7 @@ function OriginRow({
  *  fire a PUT per key and risk two in-flight writes resolving out of order.
  *  Resyncs its draft whenever the server-resolved value changes under it
  *  (e.g. a reset elsewhere in the page refreshed the view). */
-function DraftInput({
-  value,
-  onCommit,
-}: {
-  value: string;
-  onCommit: (next: string) => void;
-}) {
+function DraftInput({ value, onCommit }: { value: string; onCommit: (next: string) => void }) {
   const [draft, setDraft] = useState(value);
   useEffect(() => setDraft(value), [value]);
   return (
@@ -119,11 +114,29 @@ function DraftInput({
 /** How long the "saved" confirmation flashes after any change. */
 const SAVED_FLASH_MS = 1400;
 
-const PROVIDERS = ["anthropic", "ollama", "openai"] as const;
 const IMAGE_PROVIDERS = ["gemini", "openai"] as const;
 const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
-export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function SettingsPanel({
+  open,
+  onClose,
+  providerStatus,
+  onKeySaved,
+  leveling,
+}: {
+  open: boolean;
+  onClose: () => void;
+  /** The app's one leveling state. Passed in rather than re-hooked here: a second
+   *  instance would have its own snapshot, and a mode switched in this panel would
+   *  leave the tabs behind it still locked until a reload. */
+  leveling?: Leveling;
+  /** Per-provider onboarding status from /api/config: ready | needs-key | local.
+   *  Drives the model chooser's honest needs-key affordance (same as the picker). */
+  providerStatus?: Record<string, string>;
+  /** After a key is saved to ~/.spectro/.env, re-read /api/config so the provider
+   *  flips needs-key → ready. */
+  onKeySaved?: () => void;
+}) {
   const { prefs } = useDesignPrefs();
   const lang = useLang();
   const [savedFlash, setSavedFlash] = useState(false);
@@ -156,6 +169,30 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Shared model list for the session-defaults chooser — the SAME real
+  // /api/models list, needs-key logic AND local-model snap as the header picker.
+  // autoPick snaps a non-installed model on a LOCAL backend to a real one (a
+  // cloud model like opus makes no sense as ollama's default), so picking ollama
+  // never leaves a stale opus behind; cloud providers are never second-guessed.
+  // Guarded on `open` so a closed panel makes no request. Must sit above the
+  // early return (hook order).
+  const settingsProvider = open && view ? String(view.effective.provider ?? "") : "";
+  const settingsModel = view ? String(view.effective.model ?? "") : "";
+  const { models: settingsModels, mode: settingsModelMode } = useProviderModels(
+    settingsProvider,
+    providerStatus,
+    {
+      model: settingsModel,
+      // Quiet background persist for the auto-snap (no "saved" flash) — and a
+      // self-contained writer, since saveUser is defined below the early return.
+      onModelChange: (m) =>
+        void putSettings("user", { model: m === "" ? null : m })
+          .then(setView)
+          .catch(() => {}),
+      autoPick: true,
+    },
+  );
 
   if (!open) return null;
 
@@ -230,8 +267,22 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
           <span className="settings-hint" aria-live="polite">
             {savedFlash ? t(lang, "set.saved") : ""}
           </span>
-          <button type="button" className="icon-button" aria-label={t(lang, "common.close")} onClick={onClose}>
-            <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden="true">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={t(lang, "common.close")}
+            onClick={onClose}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
               <path d="M4 4l8 8M12 4l-8 8" />
             </svg>
           </button>
@@ -253,7 +304,9 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
           )}
 
           {/* ---- Design — auto-saves on selection (owner decision) ---- */}
-          <div className="settings-label" id="skin-label">{t(lang, "set.secDesign")}</div>
+          <div className="settings-label" id="skin-label">
+            {t(lang, "set.secDesign")}
+          </div>
           <div className="design-picker" role="radiogroup" aria-labelledby="skin-label">
             {DESIGNS.map((d) => (
               <button
@@ -309,7 +362,10 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
               role="radio"
               aria-checked={lang === "de"}
               className={`settings-seg-option${lang === "de" ? " settings-seg-option--active" : ""}`}
-              onClick={() => { setLang("de"); flash(); }}
+              onClick={() => {
+                setLang("de");
+                flash();
+              }}
             >
               Deutsch
             </button>
@@ -318,14 +374,25 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
               role="radio"
               aria-checked={lang === "en"}
               className={`settings-seg-option${lang === "en" ? " settings-seg-option--active" : ""}`}
-              onClick={() => { setLang("en"); flash(); }}
+              onClick={() => {
+                setLang("en");
+                flash();
+              }}
             >
               English
             </button>
           </div>
 
-          {loadFailed && <p className="settings-note settings-error" aria-live="polite">{t(lang, "set.loadError")}</p>}
-          {saveError && <p className="settings-note settings-error" aria-live="polite">{saveError}</p>}
+          {loadFailed && (
+            <p className="settings-note settings-error" aria-live="polite">
+              {t(lang, "set.loadError")}
+            </p>
+          )}
+          {saveError && (
+            <p className="settings-note settings-error" aria-live="polite">
+              {saveError}
+            </p>
+          )}
 
           {view && (
             <>
@@ -336,25 +403,59 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                 <label className="settings-field">
                   <span>{t(lang, "set.provider")}</span>
                   <select
+                    className="provider-select"
                     value={String(view.effective.provider ?? "")}
-                    onChange={(e) => saveUser({ provider: e.target.value })}
+                    onChange={(e) => saveUser({ provider: e.target.value, model: null })}
                   >
                     {PROVIDERS.map((p) => (
-                      <option key={p} value={p}>{p}</option>
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
                     ))}
                   </select>
-                  <OriginRow view={view} field="provider" lang={lang}
-                    onReset={() => saveUser({ provider: null })} />
+                  <OriginRow
+                    view={view}
+                    field="provider"
+                    lang={lang}
+                    onReset={() => saveUser({ provider: null })}
+                  />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.model")}</span>
-                  <DraftInput
-                    value={String(view.effective.model ?? "")}
-                    onCommit={(v) => saveUser({ model: v === "" ? null : v })}
+                  <ModelField
+                    provider={String(view.effective.provider ?? "")}
+                    models={settingsModels}
+                    mode={settingsModelMode}
+                    model={settingsModel}
+                    onModelChange={(m) => saveUser({ model: m === "" ? null : m })}
+                    providerStatus={providerStatus}
+                    keyAffordance="inline"
+                    onKeySaved={onKeySaved}
                   />
-                  <OriginRow view={view} field="model" lang={lang}
-                    onReset={() => saveUser({ model: null })} />
+                  {settingsModelMode !== "needs-key" && (
+                    <OriginRow
+                      view={view}
+                      field="model"
+                      lang={lang}
+                      onReset={() => saveUser({ model: null })}
+                    />
+                  )}
                 </label>
+                {/* Card 88: the same capability-driven seg as the header
+                    picker — one shared component, one truth. Not a server
+                    settings field (the choice is per model, browser-kept),
+                    hence no OriginRow. */}
+                {settingsModel !== "" && (
+                  <div className="settings-field">
+                    <span>{t(lang, "rc.settingsLabel")}</span>
+                    <ReasoningControl
+                      provider={String(view.effective.provider ?? "")}
+                      model={settingsModel}
+                      showNone
+                    />
+                    <span className="provider-field-note">{t(lang, "rc.settingsNote")}</span>
+                  </div>
+                )}
                 <label className="settings-field">
                   <span>{t(lang, "set.thinking")}</span>
                   <select
@@ -364,21 +465,134 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                     <option value="on">{t(lang, "set.on")}</option>
                     <option value="off">{t(lang, "set.off")}</option>
                   </select>
-                  <OriginRow view={view} field="thinking" lang={lang}
-                    onReset={() => saveUser({ thinking: null })} />
+                  <OriginRow
+                    view={view}
+                    field="thinking"
+                    lang={lang}
+                    onReset={() => saveUser({ thinking: null })}
+                  />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.imageBackend")}</span>
                   <select
                     value={String(view.effective.imageProvider ?? "")}
-                    onChange={(e) => saveUser({ imageProvider: e.target.value })}
+                    onChange={(e) =>
+                      // switching backend drops a stale cross-provider model
+                      // (a gemini model would 404 against openai's endpoint).
+                      saveUser({ imageProvider: e.target.value, imageModel: null })
+                    }
                   >
                     {IMAGE_PROVIDERS.map((p) => (
-                      <option key={p} value={p}>{p}</option>
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
                     ))}
                   </select>
-                  <OriginRow view={view} field="imageProvider" lang={lang}
-                    onReset={() => saveUser({ imageProvider: null })} />
+                  <OriginRow
+                    view={view}
+                    field="imageProvider"
+                    lang={lang}
+                    onReset={() => saveUser({ imageProvider: null })}
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>{t(lang, "set.imageModel")}</span>
+                  <select
+                    value={String(view.effective.imageModel ?? "")}
+                    onChange={(e) => saveUser({ imageModel: e.target.value === "" ? null : e.target.value })}
+                  >
+                    <option value="">{t(lang, "set.imageModelAuto")}</option>
+                    {imageModelOptions(
+                      String(view.effective.imageProvider ?? "gemini"),
+                      String(view.effective.imageModel ?? ""),
+                    ).map((m) => (
+                      <option key={m} value={m}>
+                        {m}
+                      </option>
+                    ))}
+                  </select>
+                  <OriginRow
+                    view={view}
+                    field="imageModel"
+                    lang={lang}
+                    onReset={() => saveUser({ imageModel: null })}
+                  />
+                </label>
+              </div>
+
+              {/* ---- Leveling: how much of the ladder is doing work here ---- */}
+              {leveling?.snapshot && (
+                <>
+                  <div className="settings-label">{t(lang, "leveling.settings.title")}</div>
+                  <div className="settings-grid">
+                    <label className="settings-field">
+                      <span>{t(lang, "leveling.settings.mode")}</span>
+                      <select
+                        value={leveling.snapshot.mode}
+                        onChange={(e) =>
+                          void leveling.setMode(e.target.value as "ladder" | "checklist" | "off")
+                        }
+                      >
+                        <option value="ladder">{t(lang, "leveling.settings.mode.ladder")}</option>
+                        <option value="checklist">{t(lang, "leveling.settings.mode.checklist")}</option>
+                        <option value="off">{t(lang, "leveling.settings.mode.off")}</option>
+                      </select>
+                    </label>
+                    <label className="settings-field">
+                      <span>{t(lang, "leveling.settings.reset")}</span>
+                      <button
+                        type="button"
+                        className="lvl-open-all"
+                        onClick={() => {
+                          if (window.confirm(t(lang, "leveling.settings.reset.confirm"))) {
+                            void leveling.reset();
+                          }
+                        }}
+                      >
+                        {t(lang, "leveling.settings.reset")}
+                      </button>
+                    </label>
+                  </div>
+                </>
+              )}
+
+              {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
+              <div className="settings-label">{t(lang, "set.secObservability")}</div>
+              <p className="settings-note">{t(lang, "set.otlpHint")}</p>
+              <div className="settings-grid">
+                <label className="settings-field">
+                  <span>{t(lang, "set.otlpEndpoint")}</span>
+                  <input
+                    type="text"
+                    placeholder="http://localhost:3000/api/public/otel"
+                    defaultValue={String(view.effective.otlpEndpoint ?? "")}
+                    onBlur={(e) =>
+                      saveUser({ otlpEndpoint: e.target.value.trim() === "" ? null : e.target.value.trim() })
+                    }
+                  />
+                  <OriginRow
+                    view={view}
+                    field="otlpEndpoint"
+                    lang={lang}
+                    onReset={() => saveUser({ otlpEndpoint: null })}
+                  />
+                </label>
+                <label className="settings-field">
+                  <span>{t(lang, "set.otlpAuth")}</span>
+                  <input
+                    type="text"
+                    placeholder="pk-lf-… : sk-lf-…"
+                    defaultValue={String(view.effective.otlpBasicAuth ?? "")}
+                    onBlur={(e) =>
+                      saveUser({ otlpBasicAuth: e.target.value.trim() === "" ? null : e.target.value.trim() })
+                    }
+                  />
+                  <OriginRow
+                    view={view}
+                    field="otlpBasicAuth"
+                    lang={lang}
+                    onReset={() => saveUser({ otlpBasicAuth: null })}
+                  />
                 </label>
               </div>
 
@@ -394,10 +608,18 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                 <p className="settings-note">{t(lang, "set.wsNone")}</p>
               )}
               <div className="settings-ws">
-                <OriginRow view={view} field="workspace" lang={lang}
+                <OriginRow
+                  view={view}
+                  field="workspace"
+                  lang={lang}
                   onReset={() => saveUser({ workspace: null })}
-                  resetTitle={t(lang, "set.wsResetToEnv")} />
-                <button type="button" className="ghost settings-forget" onClick={() => void pickDefaultWorkspace()}>
+                  resetTitle={t(lang, "set.wsResetToEnv")}
+                />
+                <button
+                  type="button"
+                  className="ghost settings-forget"
+                  onClick={() => void pickDefaultWorkspace()}
+                >
                   {t(lang, "set.pick")}
                 </button>
               </div>
@@ -412,11 +634,17 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                   onChange={(e) => saveUser({ logLevel: e.target.value })}
                 >
                   {LOG_LEVELS.map((l) => (
-                    <option key={l} value={l}>{l}</option>
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
                   ))}
                 </select>
-                <OriginRow view={view} field="logLevel" lang={lang}
-                  onReset={() => saveUser({ logLevel: null })} />
+                <OriginRow
+                  view={view}
+                  field="logLevel"
+                  lang={lang}
+                  onReset={() => saveUser({ logLevel: null })}
+                />
               </label>
               <p className="settings-note">{t(lang, "set.logHint")}</p>
               <p className="settings-note">{t(lang, "set.logApplies")}</p>
@@ -431,17 +659,12 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                     value={String(view.effective.chromeBinary ?? "")}
                     onCommit={(v) => saveUser({ chromeBinary: v === "" ? null : v })}
                   />
-                  <OriginRow view={view} field="chromeBinary" lang={lang}
-                    onReset={() => saveUser({ chromeBinary: null })} />
-                </label>
-                <label className="settings-field">
-                  <span>{t(lang, "set.imageModel")}</span>
-                  <DraftInput
-                    value={String(view.effective.imageModel ?? "")}
-                    onCommit={(v) => saveUser({ imageModel: v === "" ? null : v })}
+                  <OriginRow
+                    view={view}
+                    field="chromeBinary"
+                    lang={lang}
+                    onReset={() => saveUser({ chromeBinary: null })}
                   />
-                  <OriginRow view={view} field="imageModel" lang={lang}
-                    onReset={() => saveUser({ imageModel: null })} />
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.sttModel")}</span>
@@ -449,12 +672,20 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                     value={String(view.effective.sttModel ?? "")}
                     onCommit={(v) => saveUser({ sttModel: v === "" ? null : v })}
                   />
-                  <OriginRow view={view} field="sttModel" lang={lang}
-                    onReset={() => saveUser({ sttModel: null })} />
+                  <OriginRow
+                    view={view}
+                    field="sttModel"
+                    lang={lang}
+                    onReset={() => saveUser({ sttModel: null })}
+                  />
                 </label>
               </div>
             </>
           )}
+
+          {/* ---- Skills + MCP managers (card 90) ---- */}
+          <SkillsSettings />
+          <McpSettings />
         </div>
       </section>
     </div>

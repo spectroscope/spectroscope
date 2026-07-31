@@ -1,8 +1,8 @@
 {
   "name": "spectro-desktop",
   "private": true,
-  "version": "0.0.1",
-  "description": "spectroscope Desktop — Electron shell: spawns and supervises the spectro-server JVM",
+  "version": "0.4.1",
+  "description": "spectroscope Desktop \u2014 Electron shell: spawns and supervises the spectro-server JVM",
   "author": "Christopher Ezell",
   "license": "MIT",
   "main": "dist/main.js",
@@ -21,10 +21,33 @@
   "build": {
     "appId": "dev.spectroscope.desktop",
     "productName": "spectroscope",
-    "directories": { "output": "release" },
-    "files": ["dist/**"],
+    "directories": {
+      "output": "release"
+    },
+    "icon": "icon.icns",
+    "files": [
+      "dist/**"
+    ],
     "extraResources": [
-      { "from": "../spectro-server/build/libs/spectro-server-0.0.1.jar", "to": "spectro-server.jar" }
-    ]
+      {
+        "from": "build/spectro-server.jar",
+        "to": "spectro-server.jar"
+      },
+      {
+        "from": "jre",
+        "to": "jre"
+      },
+      {
+        "from": "bin",
+        "to": "bin"
+      }
+    ],
+    "mac": {
+      "icon": "icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    }
   }
 }

@@ -21,6 +21,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.SubagentConfig;
@@ -62,7 +63,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * <p>Run with: {@code ./gradlew :spectro-cli:run -q --console=plain}</p>
  */
 @Command(name = "spectroscope", mixinStandardHelpOptions = true,
-        subcommands = {RunCommand.class, NodeCommand.class, CronCommand.class, DoctorCommand.class},
+        subcommands = {RunCommand.class, NodeCommand.class, CronCommand.class, DoctorCommand.class,
+                LevelCommand.class},
         description = "spectroscope — an agent harness.")
 public final class SpectroCli implements Runnable {
 
@@ -185,8 +187,13 @@ public final class SpectroCli implements Runnable {
             return;
         }
 
-        if (config.provider().equals("anthropic") && System.getenv("ANTHROPIC_API_KEY") == null) {
-            System.err.println("ANTHROPIC_API_KEY is not set (export ANTHROPIC_API_KEY=...).");
+        // First-run onboarding (the CLI twin of the web's first-run sheet): if the
+        // configured API provider has no key, don't fail with a terse line — tell a
+        // newcomer how to get a backend running. Local providers (ollama/lmstudio)
+        // are left to try; an unreachable one fails clearly on the first call.
+        if ("needs-key".equals(
+                SpectroConfig.onboardingStatus(config.provider(), providerKeyPresent(config.provider())))) {
+            System.err.print(firstRunHint(config.provider()));
             return;
         }
 
@@ -194,6 +201,9 @@ public final class SpectroCli implements Runnable {
         // resume lands in the SAME folder it worked in before.
         store = new SessionStore(resume);
         tracing = new TracingPorts().require(new JsonlSink(store));
+        // The OTel exporter rides as a REGISTERED port (isolated, warn-once):
+        // off unless the config names an OTLP endpoint.
+        OtlpSink.fromConfig(config, store.id()).ifPresent(tracing::register);
         workspace = WorkspaceResolver.resolve(config.workspace(), store.id());
         initializeSession();
 
@@ -248,6 +258,36 @@ public final class SpectroCli implements Runnable {
         replLoop(console, speech, currentSignal);
     }
 
+    /** Whether this provider's API key is present in the environment. A local
+     *  provider (ollama, lmstudio) carries no key requirement, so it counts as
+     *  present. */
+    private static boolean providerKeyPresent(String provider) {
+        String env = SpectroConfig.keyEnvFor(provider);
+        return env == null || SpectroConfig.hasApiKey(env); // local needs none; else env or ~/.spectro/.env
+    }
+
+    /** The first-run onboarding message for a keyless API provider — the CLI's
+     *  version of the web's first-run sheet: the two zero-cost local paths and how
+     *  to add a cloud key to .env. Package-private + static so it is unit-testable.
+     *  @param provider the configured provider whose key is missing
+     *  @return the multi-line hint to print on stderr */
+    static String firstRunHint(String provider) {
+        String keyEnv = SpectroConfig.keyEnvFor(provider);
+        return """
+
+                spectroscope needs an llm backend — none is ready. pick one:
+
+                  ollama    (local, free)  install https://ollama.com, run `ollama pull qwen3`,
+                                           then start with SPECTRO_PROVIDER=ollama
+                  lmstudio  (local, free)  run LM Studio's server on :1234,
+                                           then start with SPECTRO_PROVIDER=lmstudio
+                  %s  (needs a key)  add %s=... to a .env file next to spectroscope, then rerun
+
+                set the provider for good in ~/.spectro/settings.json; run `spectro doctor` to check.
+                """
+                .formatted(provider, keyEnv);
+    }
+
     /** Provider (plus the --verbose trace wrap), skills, system prompt,
      *  allowlist, hooks and thinking — the per-session state read from the
      *  config layers. Everything here lives in fields so /clear can rebuild. */
@@ -281,7 +321,7 @@ public final class SpectroCli implements Runnable {
      *  session means a new workspace). */
     private void composeSystemPrompt() {
         systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
-                + skills.systemPromptSection();
+                + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
     }
 
     /** Assembles the tool registry: standard tools, image generation, web

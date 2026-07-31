@@ -56,7 +56,7 @@ public final class SettingsWriter {
             "provider", "model", "baseUrl", "compactionThreshold", "permissionMode",
             "autoApprove", "imageProvider", "thinking", "mcpServers", "maxRetries",
             "promptCaching", "hooks", "workspace", "logLevel",
-            "imageModel", "sttModel", "chromeBinary");
+            "imageModel", "sttModel", "chromeBinary", "otlpEndpoint", "otlpBasicAuth");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting either is refused. This is the

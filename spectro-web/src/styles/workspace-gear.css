@@ -210,13 +210,74 @@
   border-color: var(--accent);
 }
 
-/* ---------- Local overrides (Task 17) — rows reuse .wsg-rules/.wsg-rule-row/
-   .wsg-rule-text/.wsg-rule-del from the always-allow list above; only the
-   add row (a field select alongside the value input) is new. ---------- */
+/* ---------- Local overrides — a set row carries its value AND what it
+   beats, so the two stack instead of sharing the single-line .wsg-rule-row.
+   The inner line keeps that row's chip look; the note hangs under it. ---- */
+
+.wsg-override-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+}
+
+.wsg-override-line {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+
+.wsg-override-note {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+
+/* The editor: field picker, then three lines that answer "what is this",
+   "what is it set to and who set it", "what may I type" — then the input.
+   Stacked, because a value plus its provenance never fits one popover row. */
+
+.wsg-local-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wsg-local-desc,
+.wsg-local-now,
+.wsg-local-note,
+.wsg-local-rule {
+  margin: 0;
+  font-size: var(--fs-11);
+  line-height: 1.45;
+}
+
+.wsg-local-desc {
+  color: var(--text-dim);
+}
+
+/* The one line the owner was missing — the value in force reads at full
+   text weight, unlike the advisory lines around it. */
+.wsg-local-now {
+  color: var(--text);
+}
+
+.wsg-local-note,
+.wsg-local-rule {
+  color: var(--text-faint);
+}
+
+.wsg-local-rule {
+  overflow-wrap: anywhere;
+}
 
 .wsg-local-add {
   display: flex;
   gap: var(--sp-2);
+  margin-top: var(--sp-1);
 }
 
 .wsg-local-field-select {

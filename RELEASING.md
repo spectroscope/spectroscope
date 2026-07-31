@@ -6,6 +6,12 @@ applications — they ship as GitHub release assets, never as Maven
 artifacts. Publishing runs through the Central Portal
 (central.sonatype.com); the old OSSRH/Nexus path is gone.
 
+> This file is the narrow "just Maven Central" reference. For the full
+> end-to-end ritual — libraries **and** the GitHub release assets (CLI, server,
+> mcp-notes, web, and the self-contained desktop run kit) **and** the website /
+> portal / docs flip — follow [`docs/RELEASE-PLAYBOOK.md`](docs/RELEASE-PLAYBOOK.md).
+> Asset builds: `scripts/build-release-assets.sh` and `scripts/build-desktop-runkit.sh`.
+
 ## One-time setup (owner)
 
 1. **Portal account** on central.sonatype.com (chris@spectroscope.ai).

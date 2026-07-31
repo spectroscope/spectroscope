@@ -3,32 +3,97 @@
 
 <p class="lead">Everything the loop needs from a model sits behind one narrow port:
 <code>Iterable&lt;ProviderEvent&gt; stream(request)</code>. Swap the implementation and
-the loop never notices — which is why spectroscope can switch between a cloud API and a local
+the loop never notices, which is why spectroscope can switch between a cloud API and a local
 model mid-session.</p>
 
-<h2 id="ch-providers-three">The three backends</h2>
+<!--SVG:03-provider-port|One port, many backends: the loop only ever sees stream(request). Anthropic, Ollama and the OpenAI-compatible family each implement it; the retry decorator wraps whichever one you picked.-->
+
+<h2 id="ch-providers-three">The backends</h2>
+<p>Five provider ids resolve to three implementations. The three OpenAI-compatible ids
+(<code>openai</code>, <code>lmstudio</code>, <code>openrouter</code>) share one wire
+protocol and differ only in which host they talk to and whether a key is attached.</p>
+
 <table class="tbl">
-  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai</th></tr>
+  <tr><th></th><th>anthropic</th><th>ollama</th><th>openai-compatible</th></tr>
+  <tr><td>provider id</td><td><code>anthropic</code></td><td><code>ollama</code></td><td><code>openai</code> · <code>lmstudio</code> · <code>openrouter</code></td></tr>
+  <tr><td>implementation</td><td><code>AnthropicProvider</code></td><td><code>OllamaProvider</code></td><td><code>OpenAiCompatProvider</code></td></tr>
   <tr><td>transport</td><td>official SDK, SSE</td><td>NDJSON over <code>POST /api/chat</code></td><td>SSE over <code>POST /v1/chat/completions</code></td></tr>
-  <tr><td>auth</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td>Bearer optional (LM Studio &amp; friends run keyless)</td></tr>
-  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td><code>local-model</code> (the loaded one)</td></tr>
-  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td>—</td></tr>
+  <tr><td>endpoint</td><td><code>api.anthropic.com</code> (fixed)</td><td><code>localhost:11434</code> (default)</td><td>openai → <code>api.openai.com</code>; lmstudio → <code>localhost:1234</code>; openrouter → <code>openrouter.ai/api</code> (a set <code>baseUrl</code> overrides the preset)</td></tr>
+  <tr><td>key</td><td><code>ANTHROPIC_API_KEY</code></td><td>none</td><td><code>OPENAI_API_KEY</code> (openai) · none (lmstudio) · <code>OPENROUTER_API_KEY</code> (openrouter)</td></tr>
+  <tr><td>default model</td><td><code>claude-opus-4-8</code></td><td><code>qwen3</code></td><td>name one for the cloud ids; a local server just serves the model it has loaded</td></tr>
+  <tr><td>thinking</td><td>extended thinking (2048-token budget)</td><td>native <code>message.thinking</code> + inline <code>&lt;think&gt;</code> tag splitting</td><td><code>reasoning_content</code> deltas split out (LM Studio, vLLM)</td></tr>
   <tr><td>quirks</td><td>usage + parsed tool inputs exist only after the stream ends</td><td>mints its own call ids; vision fail-fast for non-vision models</td><td>assembles fragmented tool-call deltas per index</td></tr>
 </table>
+
+<p><strong>One wire, three hosts, no guessing.</strong> spectroscope used to redirect a
+keyless <code>openai</code> to a local LM Studio endpoint on your behalf. That guess is
+gone: the provider id names the endpoint, the key only authenticates. <code>openai</code>
+now always means the cloud; for a local OpenAI-compatible server (LM Studio, llama.cpp,
+vLLM) pick <code>lmstudio</code> or set an explicit <code>baseUrl</code>. Same wire either
+way.</p>
+
+<h2 id="ch-providers-start">First run — choosing a backend</h2>
+<p>Out of the box the provider is <code>anthropic</code> with <code>claude-opus-4-8</code>,
+which needs a key. On its first boot every face (<code>spectro run</code>, the web chat,
+<code>spectro node</code>, <code>spectro doctor</code>, the server) checks whether a
+<code>~/.spectro/settings.json</code> exists yet; when none does, it writes one from your
+current environment base (whatever you exported, or put in <code>./.env</code>), so day one
+your settings file mirrors exactly what you already had and nothing changes behind your
+back. With nothing set at all you land on the Anthropic default, and a run without a key
+stops with a readable “no key” message instead of a mystery failure.</p>
+
+<p>No Anthropic key on hand? Three of the backends are keyless and local — and the
+first one needs no install either:</p>
+<ul>
+  <li><strong>built-in</strong> — pick a model in the app, it downloads once, done.
+      The first-run sheet leads here, and chapter 16b is all about it.</li>
+  <li><strong>ollama</strong> — install it, pull a model, and it serves
+      <code>localhost:11434</code>. Set <code>provider=ollama</code>; no key.</li>
+  <li><strong>lmstudio</strong> — run LM Studio in server mode with a model loaded, and it
+      serves <code>localhost:1234</code>. Set <code>provider=lmstudio</code>; no key.</li>
+</ul>
+<p>The two cloud OpenAI-compatible backends do need a key: <code>openai</code>
+(<code>OPENAI_API_KEY</code>) and <code>openrouter</code> (<code>OPENROUTER_API_KEY</code>).
+Set the provider in <code>~/.spectro/settings.json</code>, through
+<code>SPECTRO_PROVIDER</code>, with a <code>--provider</code> flag, or from the header
+picker. The CLI tour is the guided path: <code>spectro tour</code> → Settings
+<code>[s]</code> picks a provider, takes the key hidden, and can save it to
+<code>./.env</code> for you.</p>
+
+<h2 id="ch-providers-env-key">Putting a key in the .env</h2>
+<p>The simplest home for a secret is a <code>./.env</code> file in the repo root: it is
+gitignored, and spectroscope reads it as the environment base at startup. One
+<code>KEY=value</code> per line, no quotes:</p>
+<pre># ./.env — gitignored; the environment base layer
+ANTHROPIC_API_KEY=sk-ant-...        # anthropic
+OPENAI_API_KEY=sk-...               # openai (the cloud); also the image backend's key
+OPENROUTER_API_KEY=sk-or-...        # openrouter
+# ollama and lmstudio need no key</pre>
+<p>The <code>.env</code> is only the <em>base</em> layer: a value in
+<code>~/.spectro/settings.json</code> (or a flag) wins over it, and
+<code>spectro doctor</code> names any <code>SPECTRO_*</code> variable that is set <em>and</em>
+shadowed, so a value that isn't taking effect never fools you. Keys are secrets: they never
+enter a session file, the event stream, or the first-run settings seed. In the tour,
+<code>[w]</code> “save key to .env” writes the file for you (gitignored, mode 600). The
+image-generation keys (<code>GEMINI_API_KEY</code>, <code>OPENAI_API_KEY</code>) live in the
+same file — chapter 17.</p>
 
 <h2 id="ch-providers-switch">Switching mid-session</h2>
 
 <!--SHOT:17-provider-picker|The header picker: provider select plus a real model dropdown — Ollama's list is live from the server, cloud lists are curated, and a custom model is always typeable.-->
 
-<p>The header chip opens the picker. The model dropdown is honest: for Ollama it lists
-what is actually installed (live from <code>/api/tags</code>), for the cloud providers a
-curated set, with “Custom model …” always available; an empty list degrades to free
-text. Apply sends <code>set_provider</code> — and because the agent is built once per
-connection (it carries your history), the switch swaps a delegate <em>inside</em> the
-provider port instead of rebuilding anything. It takes effect on the next prompt,
-history intact. Selecting Anthropic without a key is refused with a readable error, and
-the map in the Lab re-places the LLM node inside or beyond the network boundary to
-match. </p>
+<p>The header chip opens the picker. It switches the headline backends (anthropic, ollama,
+openai) and the model; the two extra OpenAI-compatible ids (lmstudio, openrouter) are
+chosen in settings (<code>SPECTRO_PROVIDER</code> or <code>~/.spectro/settings.json</code>)
+or with a <code>--provider</code> flag. The model dropdown is honest: for Ollama it lists
+what is actually installed (live from <code>/api/tags</code>), for Anthropic what your key
+can use (its Models API), for an OpenAI-compatible endpoint whatever <code>/v1/models</code>
+returns, each with a curated fallback and “Custom model …” always available; an empty list
+degrades to free text. Apply sends <code>set_provider</code>, and because the agent is built
+once per connection (it carries your history), the switch swaps a delegate <em>inside</em>
+the provider port instead of rebuilding anything. It takes effect on the next prompt,
+history intact. Selecting Anthropic without a key is refused with a readable error, and the
+map in the Lab re-places the LLM node inside or beyond the network boundary to match.</p>
 
 <!--MERMAID:02-provider-switch|set_provider: validate, build the new backend (key check included), swap the delegate. The next run_start reports the new provider — no new event type needed.-->
 
@@ -59,7 +124,129 @@ window, so the threshold must see them (chapter 28).</p>
           └─ RetryingProvider (all faces, unless maxRetries=0)
               └─ AnthropicProvider | OllamaProvider | OpenAiCompatProvider</pre>
 <p>All wrapping happens at one chokepoint (<code>providerFromConfig()</code>), so the
-CLI, the server, headless runs and the scheduler behave identically.</p>
+CLI, the server, headless runs and the scheduler behave identically. The one
+OpenAiCompatProvider serves all three OpenAI-compatible ids — only its endpoint and key
+differ.</p>
+
+<!-- ============================== CH 16b ============================== -->
+<h1 data-ch="16b" id="ch-local-model"><span class="ch-num">Chapter 16b</span>The built-in models</h1>
+
+<p class="lead">Every backend in the previous chapter is something you install
+or pay for. <code>spectro-local</code> is the one that is already here: a small
+catalogue of open models, driven by a <code>llama-server</code> this process
+starts and supervises. It exists so a fresh install can produce a real run —
+including real tool calls — before anyone has decided whether to pay for a
+key.</p>
+
+<!--SVG:18-local-model|The keyless path end to end: where the file is found, how it arrives when it is missing, the runtime the JVM supervises, and the capability fact the loop is told.-->
+
+<h2 id="ch-local-choose">Choosing a model</h2>
+
+<p>The picker entry reads <b>built-in</b> and needs no key at all. Applying it
+opens a chooser rather than switching blindly, because which model runs is a
+real decision now. Five models ship in the catalogue, smallest first:</p>
+
+<!--SHOT:42-local-chooser|The chooser: what each model is good for, whether it can drive tools, how big the download is — and whether this machine can hold it.-->
+
+<table>
+<tr><th>model</th><th>download</th><th>tools</th><th>thinking</th><th>good for</th></tr>
+<tr><td>Qwen3 1.7B</td><td>1.8&thinsp;GB</td><td>yes</td><td>yes</td><td>quick answers on light machines</td></tr>
+<tr><td>Qwen3 4B <i>(default)</i></td><td>2.5&thinsp;GB</td><td>yes</td><td>yes</td><td>everyday chat and small agent tasks</td></tr>
+<tr><td>Qwen2.5 Coder 7B</td><td>4.7&thinsp;GB</td><td>yes</td><td>no</td><td>coding and tool-driven agent work</td></tr>
+<tr><td>Qwen3 8B</td><td>5.0&thinsp;GB</td><td>yes</td><td>yes</td><td>the deepest answers, on 16&thinsp;GB machines</td></tr>
+<tr><td>VibeThinker 3B</td><td>1.9&thinsp;GB</td><td>no</td><td>yes</td><td>watching a model think, without tools</td></tr>
+</table>
+
+<p>Under each row the dialog answers the question a spec sheet never does:
+<em>can this machine hold it?</em> The server reads total memory and the free
+space on the models volume, and the row says <b>fits this machine</b>,
+<b>fits, but it will be tight</b>, or names what is missing. A model that
+cannot fit cannot be chosen — the dialog disables the button rather than
+letting a five-gigabyte download start toward a full disk. (The REST endpoint
+underneath does not enforce it; the check is advice to the operator, not a
+lock on the API.) On a machine whose numbers the JVM cannot read, the check
+says so and steps aside instead of inventing a refusal.</p>
+
+<p>One more thing the dialog checks: whether a <code>llama-server</code> exists
+for this install at all. The desktop run kit bundles one, so there is nothing
+to install; the bare server jar and the CLI do not, and there the chooser says
+plainly that <code>brew install llama.cpp</code> is still needed — better than
+a spawn that fails after five gigabytes have already been fetched.</p>
+
+<h2 id="ch-local-where">Where a model comes from</h2>
+
+<p>Each catalogue entry is looked for in two places, in order: the app bundle
+(a desktop build that ships a model sets <code>spectro.bundle.models</code>)
+and then <code>~/.spectro/models/</code>. Missing means the chooser offers the
+download; nothing fails.</p>
+
+<p>Every download is pinned: one URL, one sha256, one expected size. The hash
+is checked <em>before</em> the file is moved into place, so a download that was
+cut short or came back as something else is discarded instead of becoming the
+model your next boot loads. Four of the five come from Qwen's own repository;
+VibeThinker's GGUF is a community requantization of WeiboAI's model rather than
+WeiboAI's own file, which is why its row carries a licence note. Each row links
+both the licence and the source it downloads from. On the server side two
+different models can download at the same time without disturbing each other;
+the dialog itself runs one at a time.</p>
+
+<h2 id="ch-local-runtime">The runtime underneath</h2>
+
+<p>Nothing runs until the built-in provider is actually used. On first use the
+server picks a free loopback port, execs <code>llama-server</code> against the
+chosen GGUF with that model's own context budget, and then polls
+<code>/v1/models</code> until it answers. The budget is a generous sixty
+seconds, because a cold multi-gigabyte load genuinely takes that long on a
+laptop.</p>
+
+<pre>llama-server -m ~/.spectro/models/Qwen3-1.7B-Q8_0.gguf \
+             --host 127.0.0.1 --port &lt;free&gt; -c 8192 --jinja</pre>
+
+<p>One runtime serves every session in the process, and the handle hangs off a
+JVM shutdown hook, so quitting spectroscope takes the child with it. Switching
+to a <em>different</em> catalogue model shuts the old subprocess down and
+starts a fresh one — a llama-server keeps serving the weights it was started
+with, so a live runtime is only ever reused for the same model. From there the
+ordinary OpenAI-compatible provider does the talking — the same class that
+serves LM Studio and OpenRouter, aimed at localhost with no key.</p>
+
+<p>The desktop app carries its own signed <code>llama-server</code> inside the
+bundle (llama.cpp's official macOS build, eleven Mach-O files that reference
+each other only through <code>@loader_path</code>, so nothing resolves out of a
+Homebrew prefix that a user's machine may not have). Running the bare server
+jar instead, you bring your own — <code>brew install llama.cpp</code> puts one
+on the PATH.</p>
+
+<h2 id="ch-local-profile">Honest capability flags, per model</h2>
+
+<p>This is the part worth knowing before you judge an answer. Whether a model
+speaks the OpenAI <code>tool_calls</code> protocol is a fact about the model,
+not about the provider, and the catalogue records it per entry. The four Qwen
+models speak it natively — the agent's file tools, shell and subagents all
+work. VibeThinker does not: that came out of testing it rather than reading
+its card — asked to use a tool, it writes the call out as prose, and it can
+keep going in the think channel for a while afterwards.</p>
+
+<p>So the loop is told the truth per model. A tool-capable entry is offered
+the full registry; VibeThinker is marked <code>reasoning</code> yes,
+<code>nativeTools</code> no, and tools are simply not advertised to it. The
+alternative — offering tools that come back as text — would have produced a
+stream of confusing half-failures and blamed them on the user's prompt. A
+stale selection resolves to the catalogue default the same way the runtime
+resolves it, so what runs and what is advertised never disagree.</p>
+
+<div class="callout"><div class="co-title">what to expect, honestly</div>
+<p>A local model in these sizes stays below the cloud models: simpler answers,
+a smaller context. But the default Qwen3 4B genuinely drives the file tools
+while showing its thinking, and the first-use sheet tells you the limits of
+whichever model you picked.
+When the work gets real, the picker is one click away — and the chapter before
+this one is about everything else in it.</p></div>
+
+<p>Everything downstream is unchanged by the choice. The events, the permission
+gate, the trace, the spectrum and the JSONL on disk are the same ones a cloud
+provider produces. That is exactly why the ladder in chapter 6c can be climbed
+from the dark frame to deep field without a paid key.</p>
 
 <!-- ============================== CH 17 ============================== -->
 <h1 data-ch="17" id="ch-senses"><span class="ch-num">Chapter 17</span>Seeing, hearing, speaking, painting</h1>

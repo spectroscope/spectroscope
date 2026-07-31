@@ -254,6 +254,28 @@ public final class SessionStore {
      * @param id the session id whose file is read
      * @return all parseable events in file order
      */
+    /**
+     * How many event lines a stored session already holds.
+     *
+     * <p>Counted through {@link #readSessionEvents} on purpose, even though the
+     * caller only wants a position: that reader skips blanks and discards a line
+     * torn by a crash, and any other counting rule would disagree with it by one
+     * on exactly those files. The client addresses events by their index in that
+     * same list, so the two must agree or a receipt points at the wrong line.
+     * A missing or unreadable file answers 0, because "start at the beginning"
+     * is the safe wrong answer.</p>
+     *
+     * @param id the session id
+     * @return the number of lines in that session's file, 0 when there is none
+     */
+    public static int eventCount(String id) {
+        try {
+            return readSessionEvents(id).size();
+        } catch (IOException | RuntimeException unreadable) {
+            return 0;
+        }
+    }
+
     public static List<RunEvent> readSessionEvents(String id) throws IOException {
         Path path = SESSIONS_DIR.resolve(id + ".jsonl");
         List<RunEvent> events = new ArrayList<>();
@@ -278,8 +300,23 @@ public final class SessionStore {
      * @param firstPrompt the prompt that opened the session
      * @param tokens      input plus output tokens summed over the whole file
      * @param provider    the recorded provider label, "-" when absent
+     * @param agentCount  distinct agents that ran (main + every subagent)
+     * @param turnCount   top-level, main-agent turns — the steppable conversation
+     * @param model       the model id the session opened with; null when the file
+     *                    predates card 87 or the provider never named one
+     * @param stopReason  how the LAST main run stopped, verbatim as the run_end
+     *                    recorded it ("end_turn", "error", "aborted", "max_turns",
+     *                    "max_tokens"); null when no run_end closed it. Deliberately
+     *                    not folded into a verdict here — the wire carries the fact,
+     *                    the reader decides what it means
+     * @param gateCount   how often a tool call stopped at the permission gate
+     * @param denyCount   how many of those stops ended in a refusal
+     * @param endedAt     the last event's timestamp — with startedAt this is the
+     *                    span the session covers, not the time it spent computing
      */
-    public record SessionInfo(String id, long startedAt, String firstPrompt, int tokens, String provider) {}
+    public record SessionInfo(String id, long startedAt, String firstPrompt, int tokens,
+            String provider, int agentCount, int turnCount,
+            String model, String stopReason, int gateCount, int denyCount, long endedAt) {}
 
     /**
      * Overview over all sessions — a fold over the event files.
@@ -326,7 +363,65 @@ public final class SessionStore {
                         start.ts(),
                         start.prompt(),
                         sumTokens(events),
-                        Optional.ofNullable(start.provider()).orElse("-")));
+                        Optional.ofNullable(start.provider()).orElse("-"),
+                        countAgents(events),
+                        countMainTurns(events),
+                        start.model(),
+                        lastMainStopReason(events),
+                        countGateStops(events),
+                        countDenials(events),
+                        events.isEmpty() ? start.ts() : events.getLast().ts()));
+    }
+
+    /**
+     * How the session ended: the stop reason of the LAST run the main agent
+     * started.
+     *
+     * <p>Two rules earn their keep here. It reads the LAST main run because one
+     * file holds one run_start per user prompt, and a session that failed on its
+     * fourth question did not end cleanly just because its first one did. And it
+     * matches run_ends by runId rather than taking the file's final one, because
+     * a subagent's run_end also lands in this file — a failing worker inside a
+     * finished fan-out is not the session failing.</p>
+     *
+     * @param events the session's full event list
+     * @return the recorded stop reason, or null when no run_end closed that run
+     *         (the process died mid-run, or the run is still going)
+     */
+    private static String lastMainStopReason(List<RunEvent> events) {
+        String mainRunId = events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .filter(start -> start.parentId() == null)
+                .reduce((first, second) -> second)
+                .map(RunEvent.RunStart::runId)
+                .orElse(null);
+        if (mainRunId == null) {
+            return null;
+        }
+        return events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(RunEvent.RunEnd.class::cast)
+                .filter(end -> mainRunId.equals(end.runId()))
+                .reduce((first, second) -> second)
+                .map(RunEvent.RunEnd::stopReason)
+                .orElse(null);
+    }
+
+    /** Tool calls that stopped at the permission gate — asked, not necessarily refused. */
+    private static int countGateStops(List<RunEvent> events) {
+        return (int) events.stream()
+                .filter(RunEvent.PermissionRequest.class::isInstance)
+                .count();
+    }
+
+    /** Of the gate stops, the ones the operator refused. */
+    private static int countDenials(List<RunEvent> events) {
+        return (int) events.stream()
+                .filter(RunEvent.PermissionDecision.class::isInstance)
+                .map(RunEvent.PermissionDecision.class::cast)
+                .filter(decision -> !decision.allowed())
+                .count();
     }
 
     /**
@@ -343,6 +438,40 @@ public final class SessionStore {
                 .sum();
     }
 
+    /** Distinct agents that ran in the file — one run_start per agent (the main
+     *  agent and every subagent write into the same session file). */
+    private static int countAgents(List<RunEvent> events) {
+        return (int) events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .map(RunEvent.RunStart::agentId)
+                .distinct()
+                .count();
+    }
+
+    /** Top-level turns: turn_start fires once per agent per turn, so restrict to
+     *  the main agent to count the STEPPABLE conversation turns, not subagent ones. */
+    private static int countMainTurns(List<RunEvent> events) {
+        String main = mainAgentId(events);
+        return (int) events.stream()
+                .filter(RunEvent.TurnStart.class::isInstance)
+                .map(RunEvent.TurnStart.class::cast)
+                .filter(turn -> main.equals(turn.agentId()))
+                .count();
+    }
+
+    /** The main agent, found STRUCTURALLY — the first run_start without a parentId
+     *  (JSONL-FORMAT.md §5.2), falling back to the conventional id. */
+    private static String mainAgentId(List<RunEvent> events) {
+        return events.stream()
+                .filter(RunEvent.RunStart.class::isInstance)
+                .map(RunEvent.RunStart.class::cast)
+                .filter(start -> start.parentId() == null)
+                .map(RunEvent.RunStart::agentId)
+                .findFirst()
+                .orElse(MAIN_AGENT_ID);
+    }
+
     /**
      * Resume: reconstruct the provider history from events. Hard rule — every
      * tool_call needs its tool_result; orphaned calls (crash mid tool round) are
@@ -355,17 +484,10 @@ public final class SessionStore {
      */
     public static List<ProviderMessage> loadSession(String id) throws IOException {
         List<RunEvent> events = readSessionEvents(id);
-        // Interop hardening: the main agent is found STRUCTURALLY — the first
-        // run_start without a parentId — not by its name. This edition writes
-        // "main", but the shared format only promises the structure, and the
-        // format doc's own compact example ids ("a0") replay just as well.
-        String mainAgentId = events.stream()
-                .filter(RunEvent.RunStart.class::isInstance)
-                .map(RunEvent.RunStart.class::cast)
-                .filter(start -> start.parentId() == null)
-                .map(RunEvent.RunStart::agentId)
-                .findFirst()
-                .orElse(MAIN_AGENT_ID);
+        // Interop hardening: the main agent is found STRUCTURALLY (first run_start
+        // without a parentId), not by its name — see mainAgentId(). This edition
+        // writes "main", but the shared format only promises the structure.
+        String mainAgentId = mainAgentId(events);
         Reconstruction state = new Reconstruction();
         events.stream()
                 .filter(event -> agentIdOf(event)

@@ -9,7 +9,6 @@ import dev.spectroscope.core.EventStream;
 import dev.spectroscope.core.PermissionBroker;
 import dev.spectroscope.core.RunOptions;
 import dev.spectroscope.core.config.SpectroConfig;
-import dev.spectroscope.core.config.ProviderFactory;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.WorkspaceResolver;
 import dev.spectroscope.core.events.RunEvent;
@@ -24,8 +23,10 @@ import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.SwitchableProvider;
+import dev.spectroscope.core.leveling.LevelingPort;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.SubagentConfig;
@@ -159,6 +160,13 @@ public final class SessionConnection {
      */
     private final AtomicBoolean thinking = new AtomicBoolean();
 
+    /** The picker's reasoning control (card 88): mode "on"|"off"|"default" or
+     *  null (untouched), plus the effort level or null. Kept next to the
+     *  thinking seed because the agent may not exist yet when the frame
+     *  arrives — {@link #buildAgentOnce} replays them onto the fresh agent. */
+    private final AtomicReference<String> reasoningMode = new AtomicReference<>();
+    private final AtomicReference<String> reasoningEffort = new AtomicReference<>();
+
     /**
      * The header provider picker swaps this mid-session. The agent is built once
      * with a {@link SwitchableProvider} whose delegate this config feeds; a switch
@@ -252,6 +260,12 @@ public final class SessionConnection {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
             tracing = new TracingPorts().require(new JsonlSink(store));
+            OtlpSink.fromConfig(activeConfig.get(), store.id())
+                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
+            // Resume appends to an existing file, so the ladder counts from its end —
+            // a receipt that names an event must name the right one.
+            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(),
+                    SessionStore.eventCount(resumeId)));
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
@@ -416,6 +430,8 @@ public final class SessionConnection {
     public void onSetThinking(boolean enabled) {
         thinking.set(enabled);
         thinkingTouched = true; // a live toggle must survive the session-moment reseed
+        reasoningMode.set(null);   // the plain toggle supersedes a picker choice
+        reasoningEffort.set(null);
         // The agent may already exist (built on the first prompt) — its options
         // are immutable, so the live override is the only way the toggle can
         // still act. Models that reason unconditionally (Ollama's gpt-oss) are
@@ -427,25 +443,97 @@ public final class SessionConnection {
     }
 
     /**
+     * The picker's full reasoning control (card 88): mode plus optional effort
+     * level. "off" reaches the provider WIRE in its own dialect (ollama
+     * think:false, the bundled engine's chat-template switch, anthropic
+     * thinking:disabled) — providers gate on their capability record, so an
+     * endpoint without an off switch honestly sends nothing. The effort value
+     * itself is validated by the provider against the same record; here only
+     * the shape is checked.
+     *
+     * @param mode   "on" | "off" | "default"
+     * @param effort a lowercase level token ("low".."max"), or blank for the
+     *               model's default
+     */
+    public void onSetReasoning(String mode, String effort) {
+        if (!Set.of("on", "off", "default").contains(mode)) {
+            sendError("Unknown reasoning mode: \"" + mode + "\" (allowed: on, off, default).");
+            return;
+        }
+        String level = effort == null || effort.isBlank() ? null : effort;
+        if (level != null && !level.matches("[a-z]{1,16}")) {
+            sendError("Unknown reasoning effort: \"" + effort + "\".");
+            return;
+        }
+        reasoningMode.set(mode);
+        reasoningEffort.set(level);
+        thinking.set(!"off".equals(mode)); // keep the visibility seed coherent
+        thinkingTouched = true;
+        Agent current = this.agent;
+        if (current != null) {
+            applyReasoning(current);
+        }
+    }
+
+    /** Replays the picker's reasoning choice onto an agent (live or fresh-built). */
+    private void applyReasoning(Agent target) {
+        String mode = reasoningMode.get();
+        if (mode == null) {
+            return;
+        }
+        target.setReasoning(switch (mode) {
+            case "on" -> LlmProvider.ProviderRequest.Reasoning.ON;
+            case "off" -> LlmProvider.ProviderRequest.Reasoning.OFF;
+            default -> LlmProvider.ProviderRequest.Reasoning.DEFAULT;
+        }, reasoningEffort.get());
+    }
+
+    /**
      * The header provider picker: switch the LLM backend (and optionally its model)
      * mid-session. Applies on the NEXT run, via the {@link SwitchableProvider} — the
      * agent and its history stay put. A missing key (anthropic) is reported and the
      * switch is refused, exactly like the CLI's provider construction.
      *
-     * @param providerName "anthropic" | "ollama" | "openai" — anything else is refused
-     * @param model the model to pair with the switch; blank keeps the current one
+     * @param providerName one of {@link SpectroConfig#KNOWN_PROVIDERS} (anthropic,
+     *        ollama, openai, lmstudio, openrouter, gemini) — anything else is refused
+     * @param model the model to pair with the switch; blank picks the new provider's
+     *        default, never the previous provider's model. A provider with no honest
+     *        default (gemini, openrouter) needs an explicit model.
      */
     public void onSetProvider(String providerName, String model) {
-        if (!Set.of("anthropic", "ollama", "openai").contains(providerName)) {
-            sendError("Unknown provider: \"" + providerName + "\" (allowed: anthropic, ollama, openai).");
+        if (!SpectroConfig.isKnownProvider(providerName)) {
+            sendError("Unknown provider: \"" + providerName + "\" (allowed: "
+                    + SpectroConfig.KNOWN_PROVIDERS_DISPLAY + ").");
+            return;
+        }
+        // Refuse a key-requiring cloud provider with no key AT SWITCH TIME, so the
+        // header chip never flips to a backend whose only failure mode is a deferred
+        // 401 on the next run (openai is exempt — the compat escape hatch, see
+        // SpectroConfig#switchRequiresKey).
+        if (SpectroConfig.switchRequiresKey(providerName)
+                && !SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(providerName))) {
+            sendError("\"" + providerName + "\" needs " + SpectroConfig.keyEnvFor(providerName)
+                    + " — set a key in Settings, then switch.");
             return;
         }
         SpectroConfig current = activeConfig.get();
-        String useModel = (model != null && !model.isBlank()) ? model.trim() : current.model();
+        String useModel;
+        if (model != null && !model.isBlank()) {
+            useModel = model.trim();
+        } else {
+            // A blank model on a switch must NOT carry the previous provider's model
+            // (that shoved the Claude id into ollama/lmstudio). Resolve the target's
+            // own default; a provider with no honest default needs an explicit model.
+            useModel = SpectroConfig.defaultModelFor(providerName);
+            if (useModel == null) {
+                sendError("\"" + providerName + "\" needs a model — pick one in the picker.");
+                return;
+            }
+        }
         SpectroConfig derived = current.withProvider(providerName, useModel);
         LlmProvider next;
         try {
-            next = ProviderFactory.providerFromConfig(derived); // validates + anthropic key check
+            next = ServerProviders.build(derived); // spectro-local -> local runtime; else factory + key check
         } catch (RuntimeException rejected) {
             sendError(rejected.getMessage());
             return;
@@ -462,29 +550,53 @@ public final class SessionConnection {
     }
 
     /**
-     * The Files tab's folder picker: pin THIS session's workspace to a chosen
-     * directory. Only possible before the agent exists — afterwards the file
-     * sandbox, glob/grep, run_command and every subagent are already anchored
-     * there, so a late switch is refused with a readable error.
+     * The new-chat workspace chooser: pin THIS session's workspace by MODE. Only
+     * possible before the agent exists — afterwards the file sandbox, glob/grep,
+     * run_command and every subagent are already anchored there, so a late switch
+     * is refused with a readable error.
+     * <ul>
+     *   <li>{@code random} — a throwaway per-session temp folder (the default,
+     *       even when a workspace is configured, so it can bypass one).</li>
+     *   <li>{@code default} — the configured workspace, or the fixed
+     *       {@code ~/spectroscope-workspace} when none is set.</li>
+     *   <li>{@code set} — a specific folder ({@code path}) the operator picked.</li>
+     * </ul>
      *
-     * @param path the absolute directory the native picker returned
+     * @param mode one of {@code random | default | set} (empty defaults to set)
+     * @param path the picked directory — required for {@code set}, ignored otherwise
      */
-    public void onSetWorkspace(String path) {
-        if (path == null || path.isBlank()) {
-            sendError("set_workspace needs a path.");
-            return;
-        }
+    public void onSetWorkspace(String mode, String path) {
         if (agent != null) {
             sendError("The workspace is fixed once the agent has run — start a new chat to change it.");
             return;
         }
         try {
             ensureStore(); // the announcement carries the session id
-            String picked = path.strip();
+            String picked;
+            switch (mode) {
+                case "random" -> picked = WorkspaceResolver.locate(null, store.id()).toString();
+                case "default" -> {
+                    String configured = activeConfig.get().workspace();
+                    picked = (configured != null && !configured.isBlank())
+                            ? configured.strip()
+                            : WorkspaceResolver.defaultDir().toString();
+                }
+                case "set" -> {
+                    if (path == null || path.isBlank()) {
+                        sendError("set_workspace 'set' needs a path.");
+                        return;
+                    }
+                    picked = path.strip();
+                }
+                default -> {
+                    sendError("Unknown workspace mode: \"" + mode + "\" (random | default | set).");
+                    return;
+                }
+            }
             workspace = WorkspaceResolver.resolve(picked, store.id());
             // The pin is SHARED state: the REST side (/api/files) must root the
             // Files tab at the same folder the sandbox uses, and a resume in
-            // this server process finds the picked folder again.
+            // this server process finds the folder again.
             SessionWorkspaces.pin(store.id(), picked);
             workspaceAnnounced = false; // re-announce: the Files tab re-roots live
             sendWorkspaceInfo();
@@ -493,11 +605,15 @@ public final class SessionConnection {
         }
     }
 
-    /** The stop button: cancel the run's signal — the same signal the loop checks. */
+    /** The stop button: cancel the run's signal — the same signal the loop checks.
+     *  Detached to a virtual thread: cancel listeners close provider streams (I/O),
+     *  and the WebSocket handler thread must neither block on that nor die on it —
+     *  a listener exception here used to ride up into Spring's decorator and CLOSE
+     *  the whole session (card 78). The frame handler stays instant either way. */
     public void onAbort() {
         CancelSignal current = this.signal;
         if (current != null) {
-            current.cancel();
+            Thread.ofVirtual().name("spectro-abort").start(current::cancel);
         }
     }
 
@@ -525,6 +641,11 @@ public final class SessionConnection {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
             tracing = new TracingPorts().require(new JsonlSink(store));
+            OtlpSink.fromConfig(activeConfig.get(), store.id())
+                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
+            // Registered, never required: the ladder watches the same stream the UI
+            // renders, and a leveling defect must never cost a run its life.
+            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder()));
         }
     }
 
@@ -624,12 +745,12 @@ public final class SessionConnection {
         // The provider is wrapped in a SwitchableProvider so the header picker can
         // swap the backend mid-session (activeConfig carries any pre-run switch).
         SpectroConfig active = activeConfig.get();
-        switchable = new SwitchableProvider(ProviderFactory.providerFromConfig(active), active.provider());
+        switchable = new SwitchableProvider(ServerProviders.build(active), active.provider());
         LlmProvider provider = switchable;
         // the skill catalog rides in the system prompt, bodies come via use_skill.
         SkillLibrary skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
         String systemPrompt = BASE_SYSTEM_PROMPT + workspace + SpectroConfig.loadProjectMd(projectDir)
-                + skills.systemPromptSection();
+                + SpectroConfig.loadAgentsMd(workspace) + skills.systemPromptSection();
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
@@ -637,7 +758,7 @@ public final class SessionConnection {
         // switch applies to the next generation, and a missing key errors readably.
         registry.register(new GenerateImageTool(
                 () -> ImageProviders.create(imageProviderName.get(),
-                        activeConfig.get().imageModel(), System.getenv()),
+                        activeConfig.get().imageModel(), SpectroConfig.imageEnv()),
                 ImageStore.inUserHome()));
         // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
         registry.register(new WebFetchTool(new DefaultHttpFetcher()));
@@ -697,6 +818,10 @@ public final class SessionConnection {
                 .thinking(thinking.get()) // reasoning visibility; the header toggle applies on the next run
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
                 .build());
+        // A picker reasoning choice made before the first prompt must survive
+        // the build — the boolean seed above cannot carry mode "off" or an
+        // effort level.
+        applyReasoning(agent);
     }
 
     /**
@@ -869,6 +994,68 @@ public final class SessionConnection {
         } catch (Exception ignored) {
             // A dead socket just misses the hint — the next frame retries nothing.
         }
+    }
+
+    /**
+     * Mirrors one OTLP export outcome as a socket-only UI frame (card 86) —
+     * never appended to the JSONL, never carrying auth. The trace tab shows
+     * the frame behind its default-off "otel" toggle; export failures also
+     * stay visible in the doctor line as before. Runs on the sink's export
+     * virtual thread and holds the connection monitor like every send.
+     */
+    /** Above this, the frame carries span names instead of the full payload —
+     *  a whole-session re-export can reach megabytes, the socket must not. */
+    private static final int OTLP_FRAME_BODY_CAP_BYTES = 64 * 1024;
+
+    private synchronized void sendOtlpExport(OtlpSink.ExportReport report) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("type", "otlp_export");
+            payload.put("endpoint", report.endpoint());
+            payload.put("spans", report.spans());
+            payload.put("bytes", report.bytes());
+            payload.put("ok", report.ok());
+            if (report.message() != null) {
+                payload.put("message", report.message());
+            }
+            // The content itself (owner): the full OTLP batch as a navigable
+            // tree while it fits, else the span names + an honest omission note.
+            if (report.body() != null) {
+                if (report.bytes() <= OTLP_FRAME_BODY_CAP_BYTES) {
+                    payload.put("export", mapper.readTree(report.body()));
+                } else {
+                    payload.put("exportOmitted",
+                            "payload " + report.bytes() + " bytes — span names only");
+                    payload.put("spanNames", spanNames(report.body()));
+                }
+            }
+            payload.put("ts", report.ts());
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+        } catch (Exception ignored) {
+            // A dead socket just misses the mirror — the export itself already ran.
+        }
+    }
+
+    /** The span names of an OTLP batch, bounded — the over-cap frame's summary. */
+    private List<String> spanNames(String body) {
+        List<String> names = new ArrayList<>();
+        try {
+            JsonNode spans = mapper.readTree(body).path("resourceSpans").path(0)
+                    .path("scopeSpans").path(0).path("spans");
+            for (JsonNode span : spans) {
+                if (names.size() >= 100) {
+                    names.add("… +" + (spans.size() - 100) + " more");
+                    break;
+                }
+                names.add(span.path("name").asText());
+            }
+        } catch (Exception unparsable) {
+            names.add("(unparsable payload)");
+        }
+        return names;
     }
 
     /**

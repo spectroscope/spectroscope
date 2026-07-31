@@ -7,11 +7,12 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { ContextSnapshot } from "../state/reducer";
 import { formatTokens } from "../format";
+import { contextWindowFor, formatWindow } from "./contextWindow";
+import { contextDenominator } from "./contextRingMath";
 
 const SIZE = 18;
 const R = 7;
 const CIRCUMFERENCE = 2 * Math.PI * R;
-const FALLBACK_THRESHOLD = 100000;
 // Gauge tones — deliberately mirrors the CLI gauge's thresholds.
 const WARM_AT_PCT = 70;
 const CRITICAL_AT_PCT = 90;
@@ -19,12 +20,15 @@ const CRITICAL_AT_PCT = 90;
 export function ContextRing(props: {
   lastInputTokens: number;
   context: ContextSnapshot | null;
+  model?: string;
 }) {
   const { lastInputTokens, context } = props;
+  const modelWindow = props.model ? contextWindowFor(props.model) : null;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLSpanElement>(null);
 
-  const threshold = context?.threshold ?? FALLBACK_THRESHOLD;
+  const denominator = contextDenominator(context?.threshold, modelWindow);
+  const threshold = denominator.value;
   const pct = threshold > 0 ? (lastInputTokens / threshold) * 100 : 0;
   const shownPct = Math.round(pct);
   const frac = Math.max(0, Math.min(1, pct / 100));
@@ -62,14 +66,7 @@ export function ContextRing(props: {
         onClick={() => setOpen((o) => !o)}
       >
         <svg viewBox={`0 0 ${SIZE} ${SIZE}`} width={SIZE} height={SIZE} aria-hidden="true">
-          <circle
-            cx={SIZE / 2}
-            cy={SIZE / 2}
-            r={R}
-            fill="none"
-            stroke="var(--border)"
-            strokeWidth="2.5"
-          />
+          <circle cx={SIZE / 2} cy={SIZE / 2} r={R} fill="none" stroke="var(--border)" strokeWidth="2.5" />
           <circle
             cx={SIZE / 2}
             cy={SIZE / 2}
@@ -89,8 +86,12 @@ export function ContextRing(props: {
         <div className="context-pop" role="dialog" aria-label="Context usage">
           <span className="eyebrow">Context</span>
           <p className="context-line tabular">
-            {formatTokens(lastInputTokens)} of {formatTokens(threshold)} tokens ({shownPct}%)
+            {formatTokens(lastInputTokens)} of {formatTokens(threshold)}{" "}
+            {denominator.of === "compaction" ? "before compaction" : "of the model window"} ({shownPct}%)
           </p>
+          {modelWindow !== null && denominator.of === "compaction" && (
+            <p className="context-window tabular">model window · {formatWindow(modelWindow)}</p>
+          )}
           {context !== null ? (
             <>
               <div className="context-parts">
@@ -112,8 +113,7 @@ export function ContextRing(props: {
             </>
           ) : (
             <p className="context-note">
-              Live introspection (context_info) is additive — the ring uses the last
-              usage event.
+              Live introspection (context_info) is additive — the ring uses the last usage event.
             </p>
           )}
         </div>

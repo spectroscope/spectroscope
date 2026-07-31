@@ -27,7 +27,7 @@
 <!-- ============================== CH 21 ============================== -->
 <h1 data-ch="21" id="ch-dossier"><span class="ch-num">Chapter 21</span>The architecture dossier</h1>
 
-<p class="lead">Fourteen generated diagrams cover the full build — every class name,
+<p class="lead">Nineteen generated diagrams cover the full build — every class name,
 wire string, endpoint and count in them was read from this repository, and each comes
 from a rerunnable Python generator (<code>docs/diagrams/build_NN_*.py</code>): change the
 system, rerun the script, the diagram is current again. The shared visual language:
@@ -40,7 +40,7 @@ boundary is crossed.</p>
 
 <h2 id="ch-dossier-00">The big picture</h2>
 <p>Chapter 1 already showed diagram 00 (one core, five faces). The build view below adds
-the honest module structure: four JVM modules, two JS toolchains, and the one deliberate
+the honest module structure: five JVM modules, two JS toolchains, and the one deliberate
 cross-dependency — the server reuses the CLI's Transcriber for <code>/api/transcribe</code>.</p>
 <!--SVG:01-gradle-modules|Diagram 01 — the Gradle build: module dependency edges, version catalog, and the two npm toolchains that live next to the JVM graph on purpose.-->
 
@@ -51,6 +51,8 @@ cross-dependency — the server reuses the CLI's Transcriber for <code>/api/tran
 <h2 id="ch-dossier-03">The model side</h2>
 <!--SVG:03-provider-port|Diagram 03 — the LlmProvider port: the sealed request/event vocabulary, the wrapper chain (Switchable → Retrying → backend), the three backends with their transports, the retry policy table, the ImageProvider port and the config precedence.-->
 
+<!--SVG:18-local-model|Diagram 18 — the built-in models: where a GGUF is looked for, the pinned download and the hash checked before the move, the llama-server the JVM supervises, and the capability flags the loop is told per model.-->
+
 <h2 id="ch-dossier-04">The loop and the belt</h2>
 <!--SVG:04-agent-loop|Diagram 04 — one turn as a swimlane: request build, streaming, the pre_tool_use hook, allowlist and human gate, sandboxed execution, the feedback loop into the next turn, compaction and run end.-->
 <!--SVG:05-tool-belt|Diagram 05 — the tool belt: every tool grouped by family with its gate class (free / gated / gated + prefix rule), the sandbox rules, the tool contract, and the allowlist's guardedField mapping.-->
@@ -58,13 +60,20 @@ cross-dependency — the server reuses the CLI's Transcriber for <code>/api/tran
 <h2 id="ch-dossier-06">Delegation</h2>
 <!--SVG:06-subagents-a2a|Diagram 06 — subagents: the manager's limits, the explore/worker role profiles, the dev-tool-to-skill table, and the A2A-lite lifecycle as a parent/child sequence.-->
 
+<!--SVG:14-orchestrator-fleet|Diagram 14 — the orchestrator: the panel facade, one full agent per lane, the bus transports, the aggregator, and the A2A-lite choreography that turns a fleet into one merged stream.-->
+
 <h2 id="ch-dossier-07">The web face</h2>
 <!--SVG:07-spectro-server|Diagram 07 — spectro-server: the WebSocket frame vocabulary in both directions, all REST endpoints with their guards, and SessionConnection's responsibilities.-->
 <!--SVG:08-spectro-web|Diagram 08 — spectro-web: the rAF-batched pure-reducer pipeline, the tabs as lenses over one UiState, the header and sidebar anatomy, the persistence stores and the design system.-->
 
 <h2 id="ch-dossier-09">Runtime and integration</h2>
 <!--SVG:09-launcher-desktop|Diagram 09 — runtime: the ./spectro command table and its pre-flight (JDK resolution, .env), the nine-step Electron supervision sequence, the twelve doctor checks and the voice setup scripts.-->
+<!--SVG:15-deployment|Diagram 15 — deployment: every process, every port and the protocol on each wire, from the browser socket to the TCP hub and the JSONL on disk.-->
+<!--SVG:19-store|Diagram 19 — the local store: what a used home holds, next to the seven settings layers and the rule for which of them wins.-->
 <!--SVG:10-mcp-integration|Diagram 10 — MCP: the config block, the registry's eager-connect/skip-on-failure policy, the at-most-once client, both transports, the McpTool adapter and the spectro-mcp-notes example server.-->
+
+<h2 id="ch-dossier-17">The ladder</h2>
+<!--SVG:17-leveling-ladder|Diagram 17 — the ladder as one picture, generated from the same levels.json the engine, the web face and spectro level all read, so the poster cannot drift from the product.-->
 
 <h2 id="ch-dossier-11">The codebase itself</h2>
 <!--SVG:11-code-inventory-treemap|Diagram 11 — the code inventory as a treemap: area proportional to lines of source per module and package, test code as dashed tiles, measured counts in the footer.-->
