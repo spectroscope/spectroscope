@@ -63,7 +63,14 @@ public final class SessionStore {
      */
     public SessionStore(String existingId) {
         this.id = existingId != null ? existingId : newSessionId();
-        this.file = SESSIONS_DIR.resolve(id + ".jsonl");
+        try {
+            this.file = sessionFile(this.id);
+        } catch (IOException outsideStore) {
+            // A resume id is caller input (CLI --resume, the socket's ?resume=):
+            // one that resolves outside the store is an argument error, not an
+            // I/O failure — refused before anything is created or appended to.
+            throw new IllegalArgumentException("Not a session id: " + id, outsideStore);
+        }
         try {
             Files.createDirectories(SESSIONS_DIR);
         } catch (IOException failure) {
@@ -86,6 +93,27 @@ public final class SessionStore {
      * @return the absolute session file path (it may not exist before the first append)
      */
     public Path file() {
+        return file;
+    }
+
+    /**
+     * Resolves a session id to its JSONL file — the ONE place an id becomes a
+     * path. The id is caller input on three surfaces (REST path variable, the
+     * websocket's {@code ?resume=}, the CLI's {@code --resume}), so the resolved
+     * path must stay inside the store: normalized, under the sessions directory,
+     * and a DIRECT child of it. Containment rather than an id-shape regex on
+     * purpose — any file that really lives in the store stays addressable; the
+     * strict shape check remains the HTTP edge's job.
+     *
+     * @param id the session id as the caller gave it — never trusted as a path
+     * @return the contained session file path (it may not exist)
+     * @throws IOException when the id resolves outside the sessions directory
+     */
+    public static Path sessionFile(String id) throws IOException {
+        Path file = SESSIONS_DIR.resolve(id + ".jsonl").normalize();
+        if (!file.startsWith(SESSIONS_DIR) || !SESSIONS_DIR.equals(file.getParent())) {
+            throw new IOException("Not a session id: " + id);
+        }
         return file;
     }
 
@@ -151,11 +179,14 @@ public final class SessionStore {
      *         or unknown sessions
      */
     public static boolean deleteSession(String id) throws IOException {
-        Path file = SESSIONS_DIR.resolve(id + ".jsonl").normalize();
+        Path file;
+        try {
+            file = sessionFile(id); // the shared jail: normalized, direct child
+        } catch (IOException outsideStore) {
+            return false;
+        }
         Path blobParent = SESSIONS_DIR.resolve(id).normalize();
-        boolean insideStore = SESSIONS_DIR.equals(file.getParent())
-                && SESSIONS_DIR.equals(blobParent.getParent());
-        if (!insideStore) {
+        if (!blobParent.startsWith(SESSIONS_DIR) || !SESSIONS_DIR.equals(blobParent.getParent())) {
             return false;
         }
         boolean existed = Files.deleteIfExists(file);
@@ -248,13 +279,6 @@ public final class SessionStore {
     }
 
     /**
-     * Reads a session's events. A truncated last line (crash mid-write) is
-     * discarded: each line is parsed in its own try/catch.
-     *
-     * @param id the session id whose file is read
-     * @return all parseable events in file order
-     */
-    /**
      * How many event lines a stored session already holds.
      *
      * <p>Counted through {@link #readSessionEvents} on purpose, even though the
@@ -276,8 +300,19 @@ public final class SessionStore {
         }
     }
 
+    /**
+     * Reads a session's events. A truncated last line (crash mid-write) is
+     * discarded: each line is parsed in its own try/catch. The id goes through
+     * {@link #sessionFile(String)} first — a traversal id never reaches the
+     * file system.
+     *
+     * @param id the session id whose file is read
+     * @return all parseable events in file order
+     * @throws IOException when the file cannot be read, or the id resolves
+     *         outside the sessions directory
+     */
     public static List<RunEvent> readSessionEvents(String id) throws IOException {
-        Path path = SESSIONS_DIR.resolve(id + ".jsonl");
+        Path path = sessionFile(id);
         List<RunEvent> events = new ArrayList<>();
         for (String line : Files.readString(path, StandardCharsets.UTF_8).split("\n")) {
             if (line.isBlank()) {

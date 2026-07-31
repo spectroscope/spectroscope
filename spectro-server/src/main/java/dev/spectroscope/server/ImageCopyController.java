@@ -74,7 +74,7 @@ public class ImageCopyController {
      * {@code POST /api/images/copy-to-workspace}: copies one stored image into
      * the session's workspace under the requested (or original) name.
      *
-     * @param body    the copy request
+     * @param req     the copy request
      * @param request the servlet request, for the local-origin write fence
      * @return 404 for a non-local caller, a rebound Host or a cross-site Origin;
      *         else 200 {@code {path}} on success, 400 for malformed inputs, 404

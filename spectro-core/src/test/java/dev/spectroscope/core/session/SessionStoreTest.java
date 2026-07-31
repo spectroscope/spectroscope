@@ -362,4 +362,33 @@ class SessionStoreTest {
             Files.deleteIfExists(decoy);
         }
     }
+
+    @Test
+    void readSessionEventsRefusesATraversalId() throws IOException {
+        // A perfectly valid session file OUTSIDE the store: a traversal id must
+        // not read it, however parseable it is. The read seam serves REST and
+        // the websocket resume, so the jail lives here, not only at the edges.
+        Path decoy = SessionStore.SESSIONS_DIR.getParent().resolve("decoy-read.jsonl");
+        // The sessions dir must exist, or the OS itself fails the ".."
+        // resolution and the test would pass without any jail in the code.
+        Files.createDirectories(SessionStore.SESSIONS_DIR);
+        Files.writeString(decoy, JSON.writeValueAsString(
+                new RunEvent.RunStart("r1", "main", null, "decoy", null, null, 1L)) + "\n");
+        try {
+            assertThrows(IOException.class,
+                    () -> SessionStore.readSessionEvents("../decoy-read"),
+                    "an id that resolves outside the store must be refused");
+        } finally {
+            Files.deleteIfExists(decoy);
+        }
+    }
+
+    @Test
+    void theResumeConstructorRefusesATraversalId() {
+        // The websocket's ?resume= and the CLI's --resume land here, and the
+        // constructor's file is the path every later append goes to — so an id
+        // that resolves outside the store is refused before any file contact.
+        assertThrows(IllegalArgumentException.class, () -> new SessionStore("../escape"));
+        assertThrows(IllegalArgumentException.class, () -> new SessionStore("a/b"));
+    }
 }

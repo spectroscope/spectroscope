@@ -57,12 +57,19 @@ public class SessionsController {
 
     /**
      * The events of one session as JSON — the graph tab replays exactly this.
+     * The id becomes a file name, so it wears the same shape check as export
+     * and delete (full-match: no separator, no dot can pass); the store's
+     * containment check backs it up underneath.
      *
      * @param id the session id whose JSONL file is read
-     * @return 200 with every parsed RunEvent; 404 when the session cannot be read
+     * @return 200 with every parsed RunEvent; 404 when the id is not a session
+     *         id or the session cannot be read
      */
     @GetMapping("/api/sessions/{id}/events")
     public ResponseEntity<List<RunEvent>> events(@PathVariable String id) {
+        if (!SESSION_ID.matcher(id).matches()) {
+            return ResponseEntity.notFound().build();
+        }
         try {
             return ResponseEntity.ok(SessionStore.readSessionEvents(id));
         } catch (Exception missing) {
@@ -91,18 +98,23 @@ public class SessionsController {
                 || !SESSION_ID.matcher(id).matches()) {
             return ResponseEntity.status(404).build();
         }
-        java.nio.file.Path file =
-                dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.resolve(id + ".jsonl").normalize();
-        // Defense in depth: the resolved file must still be a direct child.
-        if (!file.getParent().equals(
-                dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.normalize())
-                || !java.nio.file.Files.isRegularFile(file)) {
-            return ResponseEntity.status(404).build();
-        }
         try {
-            String jsonl = java.nio.file.Files.readString(file);
+            // Defense in depth: the store's ONE containment check (normalized,
+            // direct child of SESSIONS_DIR) — it throws for anything outside.
+            Path file = SessionStore.sessionFile(id);
+            if (!Files.isRegularFile(file)) {
+                return ResponseEntity.status(404).build();
+            }
+            String jsonl = Files.readString(file);
+            // The body is stored session content = caller-shaped text. Serve it
+            // as a download with a non-HTML type and nosniff, so it can never
+            // reach an HTML parsing context on this origin. The id in the
+            // filename is safe by the shape check above: [A-Za-z0-9-] carries
+            // no quote, CR or LF.
             return ResponseEntity.ok()
-                    .header("Content-Type", "application/x-ndjson; charset=utf-8")
+                    .contentType(new MediaType("application", "x-ndjson",
+                            java.nio.charset.StandardCharsets.UTF_8))
+                    .header("X-Content-Type-Options", "nosniff")
                     .header("Content-Disposition", "attachment; filename=\"" + id + ".jsonl\"")
                     .body(jsonl);
         } catch (java.io.IOException unreadable) {

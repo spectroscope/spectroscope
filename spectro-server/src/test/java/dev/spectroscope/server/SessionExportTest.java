@@ -73,6 +73,14 @@ class SessionExportTest {
         String disposition = res.getHeaders().getFirst("Content-Disposition");
         assertNotNull(disposition);
         assertTrue(disposition.contains(store.id() + ".jsonl"), "downloads with its session name");
+        assertTrue(disposition.contains("attachment"), "a download, never an inline render");
+
+        // The body is stored session content = caller-shaped text. It must never
+        // reach an HTML parsing context: a non-HTML content type via the modeled
+        // API, plus nosniff so a legacy sniffer cannot promote it to HTML either.
+        assertEquals(new org.springframework.http.MediaType("application", "x-ndjson",
+                java.nio.charset.StandardCharsets.UTF_8), res.getHeaders().getContentType());
+        assertEquals("nosniff", res.getHeaders().getFirst("X-Content-Type-Options"));
 
         java.nio.file.Files.deleteIfExists(
                 dev.spectroscope.core.session.SessionStore.SESSIONS_DIR.resolve(store.id() + ".jsonl"));
