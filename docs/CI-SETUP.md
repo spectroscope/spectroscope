@@ -219,15 +219,16 @@ git status                 # clean tree, detached at the tag
 ```
 
 Do **not** run `publishAndReleaseToMavenCentral` with the throwaway version.
-Then clean up:
+Then clean up — the bump never touched `main` (it lives on the release
+branch and its unmerged PR), so there is nothing to revert:
 
 ```bash
 git checkout main && git pull
+gh pr close <nr-of-"release: cut v0.0.999">   # close UNMERGED - the throwaway bump must not land
+git push origin --delete release/v0.0.999 v0.0.999
 git tag -d v0.0.999
-git push --delete origin v0.0.999
-git revert <sha-of-"release: cut v0.0.999">   # undo the version bump
-git rm release-notes/v0.0.999.md              # fold into the revert or a follow-up commit
-git push origin main
+git rm release-notes/v0.0.999.md && git commit -m "ritual cleanup" && git push origin main
+rm -rf ~/.m2/repository/dev/spectroscope/*/0.0.999   # the locally published throwaway artifacts
 ```
 
 One walk of this loop proves the whole handoff: CI produced a tag, the tag
