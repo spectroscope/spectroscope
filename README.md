@@ -9,6 +9,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/spectroscope/spectroscope/actions/workflows/gate.yml"><img src="https://img.shields.io/github/actions/workflow/status/spectroscope/spectroscope/gate.yml?branch=main&label=gate" alt="gate: the full test suites on every push"></a>
   <a href="https://central.sonatype.com/artifact/dev.spectroscope/spectro-core"><img src="https://img.shields.io/maven-central/v/dev.spectroscope/spectro-core?label=maven%20central&color=CE9440" alt="maven central"></a>
   <a href="https://github.com/spectroscope/spectroscope/releases"><img src="https://img.shields.io/github/v/release/spectroscope/spectroscope?label=release&color=2DD4A7" alt="github release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/code-MIT-2CB1C4" alt="code license MIT"></a>
