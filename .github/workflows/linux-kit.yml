@@ -57,8 +57,47 @@ jobs:
       # bootJar -> jlink -> pinned llama-server closure (the closure check
       # runs inside and FAILS the build on any out-of-bundle load path) ->
       # PTY helper -> electron-builder AppImage + deb.
+      # Version identity: a tag build IS the release the tree says it is, so it
+      # keeps the tree's version. Anything else is a development build and must
+      # not wear a released number - it gets 0.4.1+dev.<sha>, which dpkg sorts
+      # above that release and below the next one. Asserted, not assumed, in
+      # the step after the build.
+      - name: Decide the artifact version
+        run: |
+          REF="${{ github.event.inputs.ref }}"
+          if printf '%s' "$REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "tag build — keeping the tree's version"
+          else
+            TREE="$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)"
+            echo "KIT_VERSION=${TREE}+dev.$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+            echo "development build off ${REF} — stamping ${TREE}+dev.$(git rev-parse --short HEAD)"
+          fi
+
       - name: Build the Linux run kit
         run: ./scripts/build-linux-runkit.sh
+
+      # The identity claim, measured rather than trusted: whatever the build
+      # stamped, the deb's own Version field must sort above the released
+      # version in the tree and below the next patch. electron-builder rewrites
+      # semver pre-release and build metadata into deb form, so this is the
+      # only place the real answer exists.
+      - name: Assert the deb version sorts honestly
+        run: |
+          DEB="$(ls spectro-desktop/release/spectroscope_*_amd64.deb)"
+          V="$(dpkg-deb -f "$DEB" Version)"
+          TREE="$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)"
+          NEXT="$(echo "$TREE" | awk -F. '{printf "%s.%s.%d", $1, $2, $3 + 1}')"
+          echo "deb Version: $V (tree $TREE, next $NEXT)"
+          if [ -n "${KIT_VERSION:-}" ]; then
+            dpkg --compare-versions "$V" gt "$TREE" || { echo "::error::$V does not sort above the released $TREE"; exit 1; }
+            dpkg --compare-versions "$V" lt "$NEXT" || { echo "::error::$V does not sort below $NEXT"; exit 1; }
+            echo "ordering ok: $TREE < $V < $NEXT"
+          else
+            [ "$V" = "$TREE" ] || { echo "::error::a tag build must carry the tree version $TREE, got $V"; exit 1; }
+            echo "release build carries the tree version"
+          fi
+          dpkg-deb -f "$DEB" Package | grep -qx spectroscope || {
+            echo "::error::the deb must install as 'spectroscope' — the documented apt line depends on it"; exit 1; }
 
       # The check already gated the build; re-running it as its own step makes
       # the card-100 guarantee a visible green line in the run log.

@@ -32,6 +32,20 @@ ARCH="$(uname -m)"
 [ "$ARCH" = "x86_64" ] || { echo "!! only x86_64 is wired (asset pin + artifact names) — extend the pins for $ARCH"; exit 1; }
 
 VERSION="${VERSION:-$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)}"
+
+# KIT_VERSION stamps the artifacts with something other than the tree's release
+# version. A build off main is NOT the release whose number the tree carries:
+# pooling bytes labelled 0.4.1 next to the real 0.4.1 gives two different
+# artifacts the same identity, and apt would have to pick one by hash. The
+# caller passes a build-metadata form (0.4.1+dev.<sha>): npm accepts it after
+# the plus, and dpkg sorts it above 0.4.1 and below 0.4.2, so a later release
+# still upgrades over it. electron-builder names both artifacts from
+# package.json, so the version has to land there before it runs.
+if [ -n "${KIT_VERSION:-}" ]; then
+  ( cd "$D" && npm version --no-git-tag-version --allow-same-version "$KIT_VERSION" >/dev/null )
+  VERSION="$KIT_VERSION"
+  echo "==> stamped $D/package.json with KIT_VERSION $KIT_VERSION (not a release build)"
+fi
 echo "==> linux run kit for spectro-server ${VERSION} (host: $(uname -sm))"
 
 # 1) server fat jar -> the version-neutral path extraResources points at
