@@ -108,7 +108,7 @@ The following secrets do **not** exist, by design — do not add them:
 | deliberately absent | why |
 |---|---|
 | Maven Central portal token | Central is append-only; the irreversible publish (playbook step 6) is made by a person on the owner's machine, never by a workflow. Nothing in `tag.yml` references a publish credential or the `publishAndReleaseToMavenCentral` task. |
-| GPG signing key | The CI dry-run publishes to the local Maven repository with the signing task excluded, so it needs no key. CI verifies POM generation; GPG signing itself is confirmed on the owner's machine when step 6 runs there. |
+| GPG signing key | The CI cut generates and checks the publication POMs; it never publishes, so it needs no key (a keyless publishToMavenLocal fails artifact validation on the declared .asc files — measured on the first walk). GPG signing itself is confirmed on the owner's machine when step 6 runs there. |
 | Apple Developer ID certificate / notary credentials | Desktop signing and notarization (playbook step 7) stay on the owner's machine. A code-signing identity does not belong in a third party's secret store to save a step that runs a few times a month. |
 
 `agent.yml` needs one more thing that is not a secret: the **Claude GitHub

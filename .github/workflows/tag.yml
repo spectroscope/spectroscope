@@ -274,27 +274,26 @@ jobs:
             exit 1
           fi
 
-      # Playbook step 4 — dry-run the publish, minus the signatures.
-      # signAllPublications() is called unconditionally in both build files,
-      # so a keyless run dies inside signMavenPublication (and setting
-      # RELEASE_SIGNING_ENABLED=false does not override the explicit call —
-      # measured). Excluding the sign tasks is the working escape hatch: CI
-      # proves POM generation and the artifact set; GPG signing itself is
-      # confirmed on the owner's machine at playbook step 6, where the key
-      # lives. publishToMavenLocal writes to ~/.m2 on this runner and nowhere
-      # else.
-      - name: Dry-run the publish (Maven local, unsigned)
+      # Playbook step 4 — generate and check the POMs. Deliberately NOT
+      # publishToMavenLocal: signAllPublications() registers the .asc files
+      # as publication artifacts, so a keyless publish fails artifact
+      # validation even with the sign tasks excluded (walk 30616070894
+      # measured exactly that; a --dry-run proves the task graph, not the
+      # artifacts). The generate tasks need no key and produce the one thing
+      # this step must prove. GPG signing itself is confirmed on the owner's
+      # machine at playbook step 6, where the key lives.
+      - name: Generate the publication POMs (keyless)
         run: >
-          ./gradlew :spectro-core:publishToMavenLocal :spectro-orchestrator:publishToMavenLocal
-          -x :spectro-core:signMavenPublication -x :spectro-orchestrator:signMavenPublication
+          ./gradlew :spectro-core:generatePomFileForMavenPublication
+          :spectro-orchestrator:generatePomFileForMavenPublication
 
-      # The one cross-module fact the dry run must prove: the orchestrator POM
+      # The one cross-module fact this step must prove: the orchestrator POM
       # depends on spectro-core at exactly this version, not a stale one.
       - name: Check the orchestrator POM pins spectro-core
         run: |
-          pom="$HOME/.m2/repository/dev/spectroscope/spectro-orchestrator/${VERSION}/spectro-orchestrator-${VERSION}.pom"
+          pom="spectro-orchestrator/build/publications/maven/pom-default.xml"
           if [ ! -f "$pom" ]; then
-            echo "::error::the dry-run publish left no orchestrator POM at ${pom}"
+            echo "::error::POM generation left no orchestrator POM at ${pom}"
             exit 1
           fi
           if ! grep -A 2 '<artifactId>spectro-core</artifactId>' "$pom" | grep -q "<version>${VERSION}</version>"; then

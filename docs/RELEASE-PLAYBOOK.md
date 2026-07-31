@@ -96,10 +96,11 @@ that runs javadoc is this one.
 Confirms GPG signing + POM generation. Check `~/.m2/repository/dev/spectroscope/…`:
 every artifact has a `.asc`, and the orchestrator POM depends on `spectro-core:<v>`.
 
-When the tag was cut by CI (`.github/workflows/tag.yml`), its dry run excluded
-the signing tasks — no key lives in CI — so a CI-cut tag has proven POM
-generation only. The first `.asc` files appear when this command, or step 6
-itself, runs on the owner's machine.
+When the tag was cut by CI (`.github/workflows/tag.yml`), this step ran as
+POM generation and the pin check only — no key lives in CI, and a keyless
+publish would fail artifact validation on the declared `.asc` files. So a
+CI-cut tag has proven the POMs, nothing more; the first `.asc` files appear
+when this command, or step 6 itself, runs on the owner's machine.
 
 ### 5. Commit + tag
 ```bash
