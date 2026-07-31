@@ -156,6 +156,22 @@ The tag is the handoff artifact. A gate that ran in a clean environment from
 a clean checkout is a stronger claim than the same gate on a warm working
 machine — that is what moving steps 1–5 online buys.
 
+**Two manual acts the first real cut discovered.** The release pull request
+is opened by `github-actions[bot]`, and GitHub does not start workflows on a
+bot-opened pull request without a maintainer saying so: the two required
+checks sit at *Expected — waiting for status to be reported* until you
+approve the run (the yellow banner on the PR, or Actions → the run →
+Approve). Then merge it with a **merge commit or a rebase, never a squash**,
+so the tagged commit stays an ancestor of `main`.
+
+Until that merge lands, `main` still carries the previous version in its
+build files while the tag carries the new one. Everything published comes
+from the tag, so the release itself is correct — but anyone building from
+`main` gets artifacts wearing the old number. The v0.5.0 cut sat in exactly
+that state for two hours because the throwaway `0.0.999` walk in section 6d
+closes its PR instead of merging it, so nobody had ever seen the approval
+step.
+
 Then, on the owner's machine:
 
 ```bash
