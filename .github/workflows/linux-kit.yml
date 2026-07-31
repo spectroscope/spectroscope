@@ -68,9 +68,18 @@ jobs:
           if printf '%s' "$REF" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
             echo "tag build — keeping the tree's version"
           else
+            # A PRE-RELEASE of the next version, not build metadata on this one:
+            # electron-builder drops everything after a "+" on its way into the
+            # deb Version field (measured on run 30630986086 — the deb came out
+            # as a bare 0.4.1 and the assert below caught it), while a semver
+            # pre-release survives as deb's "~", which sorts below the release
+            # it precedes. So 0.4.2-dev.<sha> becomes 0.4.2~dev.<sha>: above the
+            # release this was built past, below the one it anticipates.
             TREE="$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/build.gradle.kts | head -1)"
-            echo "KIT_VERSION=${TREE}+dev.$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
-            echo "development build off ${REF} — stamping ${TREE}+dev.$(git rev-parse --short HEAD)"
+            NEXT="$(echo "$TREE" | awk -F. '{printf "%s.%s.%d", $1, $2, $3 + 1}')"
+            KIT="${NEXT}-dev.$(git rev-parse --short HEAD)"
+            echo "KIT_VERSION=${KIT}" >> "$GITHUB_ENV"
+            echo "development build off ${REF} — stamping ${KIT} (tree is ${TREE})"
           fi
 
       - name: Build the Linux run kit
