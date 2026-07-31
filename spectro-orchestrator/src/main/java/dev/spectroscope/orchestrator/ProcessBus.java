@@ -482,7 +482,11 @@ public final class ProcessBus implements BusTransport {
             if (targets.isEmpty()) {
                 // Nobody consumes this topic here (all handles closed): the
                 // cursor must NOT advance, or a later subscriber would start
-                // mid-stream although the ring still holds everything.
+                // mid-stream although the ring still holds everything. The
+                // core remembers the hole, too — a frame still in flight when
+                // the next subscribe lands must not leapfrog it, or the
+                // replay that fills it would be misread as redelivery.
+                core.noteUndelivered(frame);
                 return;
             }
             if (!core.accept(frame)) {

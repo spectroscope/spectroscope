@@ -4,6 +4,8 @@ import java.util.ArrayDeque;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.NavigableSet;
+import java.util.TreeSet;
 
 /**
  * The client's pure state machine (card 22): a bounded outbox that survives
@@ -24,6 +26,16 @@ final class ClientCore {
     private final ArrayDeque<BusEnvelope> outbox = new ArrayDeque<>();
     /** topic → sender → epoch → highest sequence handed to the consumer. */
     private final Map<String, Map<String, Map<Long, Long>>> consumed = new LinkedHashMap<>();
+    /** topic → sender → epoch → sequences the wire delivered while NOBODY
+     *  here consumed the topic (all handles closed): holes above the cursor.
+     *  {@link #accept} must never advance PAST one — the replay that fills
+     *  it would be misread as redelivery and the frame lost silently, with
+     *  no gap announced. Only that replay ({@link #accept}) or an announced
+     *  eviction ({@link #noteGap}) removes a hole. Growth is bounded by the
+     *  frames the hub fans out during one consumer-less window: a reconnect
+     *  only re-subscribes topics somebody still consumes. */
+    private final Map<String, Map<String, Map<Long, NavigableSet<Long>>>> undelivered =
+            new LinkedHashMap<>();
 
     /** @param outboxCapacity frames the outbox holds before refusing loudly */
     ClientCore(int outboxCapacity) {
@@ -34,7 +46,9 @@ final class ClientCore {
      * Decides whether an incoming frame reaches the consumer.
      *
      * @param env the frame as delivered (live or replay)
-     * @return true when the consumer must see it; false on redelivery
+     * @return true when the consumer must see it; false on redelivery, or
+     *         when the frame rides above a hole and its own redelivery is
+     *         already in flight behind that hole's replay
      */
     boolean accept(BusEnvelope env) {
         Map<Long, Long> epochs = consumed
@@ -44,8 +58,56 @@ final class ClientCore {
         if (known != null && env.sequence() <= known) {
             return false;
         }
+        NavigableSet<Long> holes = holes(env.topic(), env.sender(), env.epoch());
+        if (holes != null && !holes.isEmpty()) {
+            if (holes.first() < env.sequence()) {
+                // The frame rides ABOVE a frame nobody consumed: it was in
+                // flight while the topic had no consumer and arrives right
+                // after the re-subscribe. Advancing the high-water here would
+                // leapfrog the hole — its replay, already in flight (the
+                // re-subscribe sent a cursor below it, and the hub either
+                // replays the stretch or announces its eviction as a gap),
+                // would be rejected as redelivery: silent loss. Refuse this
+                // frame instead; the same replay redelivers it right after
+                // the hole, in publish order.
+                return false;
+            }
+            holes.remove(env.sequence());
+        }
         epochs.put(env.epoch(), env.sequence());
         return true;
+    }
+
+    /**
+     * Records a frame the shell dropped for want of a consumer (every handle
+     * on its topic closed): a hole above the cursor. The cursor rightly does
+     * not advance for it — and, just as load-bearing, {@link #accept} must
+     * never advance past it, or the replay a later subscribe requests would
+     * be rejected as redelivery and the frame lost for good, silently.
+     *
+     * @param env the frame that reached this client but nobody here saw
+     */
+    void noteUndelivered(BusEnvelope env) {
+        Long known = consumed
+                .getOrDefault(env.topic(), Map.of())
+                .getOrDefault(env.sender(), Map.of())
+                .get(env.epoch());
+        if (known != null && env.sequence() <= known) {
+            return; // redelivered consumed history — not a hole
+        }
+        undelivered
+                .computeIfAbsent(env.topic(), topic -> new LinkedHashMap<>())
+                .computeIfAbsent(env.sender(), sender -> new LinkedHashMap<>())
+                .computeIfAbsent(env.epoch(), epoch -> new TreeSet<>())
+                .add(env.sequence());
+    }
+
+    /** @return this incarnation's holes, or null when it never dropped any */
+    private NavigableSet<Long> holes(String topic, String sender, long epoch) {
+        return undelivered
+                .getOrDefault(topic, Map.of())
+                .getOrDefault(sender, Map.of())
+                .get(epoch);
     }
 
     /**
@@ -78,6 +140,14 @@ final class ClientCore {
         consumed.computeIfAbsent(topic, t -> new LinkedHashMap<>())
                 .computeIfAbsent(sender, s -> new LinkedHashMap<>())
                 .merge(epoch, toSeq, Long::max);
+        NavigableSet<Long> holes = holes(topic, sender, epoch);
+        if (holes != null) {
+            // Holes inside the evicted stretch can never replay — this very
+            // gap is their loud announcement. Keeping them would make accept
+            // refuse every later frame forever, waiting on a replay that
+            // cannot come.
+            holes.headSet(toSeq, true).clear();
+        }
     }
 
     /**

@@ -96,6 +96,56 @@ class ClientCoreTest {
     }
 
     @Test
+    void aLaterFrameNeverLeapfrogsAFrameNobodyConsumed() {
+        // Schedule S3c distilled: seq 1 was fanned out while every handle
+        // was closed (a hole), seq 2 arrives right after the re-subscribe.
+        // Accepting 2 would jump the high-water over 1 — the replay the
+        // re-subscribe requested (cursor 0) would then be rejected as
+        // redelivery and 1 lost silently, with no gap announced.
+        ClientCore core = new ClientCore(16);
+        assertTrue(core.accept(env("node-a", 0)));
+        core.noteUndelivered(env("node-a", 1));
+
+        assertFalse(core.accept(env("node-a", 2)),
+                "a frame above the hole waits for the replay already in flight");
+        assertEquals(Map.of("node-a", Map.of(0L, 0L)), core.cursor(TOPIC),
+                "the resume cursor still names the last frame a consumer SAW");
+        assertTrue(core.accept(env("node-a", 1)), "the replay fills the hole first");
+        assertTrue(core.accept(env("node-a", 2)),
+                "then the overtaken frame — in publish order");
+        assertFalse(core.accept(env("node-a", 2)), "exactly once, as always");
+        assertEquals(Map.of("node-a", Map.of(0L, 2L)), core.cursor(TOPIC));
+    }
+
+    @Test
+    void redeliveredConsumedHistoryLeavesNoHoleBehind() {
+        // The wire may redeliver a frame the consumer already saw while the
+        // handles happen to be closed — that is dedup territory, not a hole:
+        // it must not make accept refuse the frames after it.
+        ClientCore core = new ClientCore(16);
+        assertTrue(core.accept(env("node-a", 0)));
+        assertTrue(core.accept(env("node-a", 1)));
+        core.noteUndelivered(env("node-a", 1));
+
+        assertTrue(core.accept(env("node-a", 2)),
+                "consumed history casts no hole — the stream flows on");
+    }
+
+    @Test
+    void anAnnouncedGapClearsTheHolesInsideIt() {
+        // The hub evicted the stretch holding the hole: no replay can ever
+        // fill it, and this very gap is its loud announcement. A hole kept
+        // past its eviction would refuse every later frame forever.
+        ClientCore core = new ClientCore(16);
+        core.noteUndelivered(env("node-a", 1));
+        core.noteGap(TOPIC, "node-a", 0L, 2L);
+
+        assertTrue(core.accept(env("node-a", 3)),
+                "the loss was announced — frames after it reach the consumer");
+        assertEquals(Map.of("node-a", Map.of(0L, 3L)), core.cursor(TOPIC));
+    }
+
+    @Test
     void theOutboxSurvivesUntilTheCumulativeAck() {
         ClientCore core = new ClientCore(16);
         core.record(env("node-a", 0));
