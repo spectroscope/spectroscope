@@ -85,10 +85,14 @@ import java.util.function.Function;
  * @param otlpEndpoint        OTLP traces endpoint (e.g. a local Langfuse's
  *                            {@code http://localhost:3000/api/public/otel});
  *                            null keeps the exporter off. Env
- *                            {@code SPECTRO_OTLP_ENDPOINT}
+ *                            {@code SPECTRO_OTLP_ENDPOINT}, with
+ *                            {@code ~/.spectro/.env} underneath it
  * @param otlpBasicAuth       optional {@code pk:sk} pair sent as Basic auth
  *                            (Langfuse project keys); null sends no auth
- *                            header. Env {@code SPECTRO_OTLP_BASIC_AUTH}
+ *                            header. Env {@code SPECTRO_OTLP_BASIC_AUTH}, with
+ *                            {@code ~/.spectro/.env} underneath it. A
+ *                            credential belongs in that 0600 file, not in a
+ *                            settings document
  * @param chromeBinary        override for the system-Chrome binary used by
  *                            {@code browse_page}; {@code null} means the
  *                            built-in discovery — env {@code SPECTRO_CHROME}
@@ -337,7 +341,7 @@ public record SpectroConfig(
     static Resolved loadResolved(Overrides overrides, Path projectDir, Path workspace,
             Map<String, String> env) {
         List<Scope> scopes = new ArrayList<>();
-        scopes.add(new Scope("env", PartialConfig.fromEnv(env)));
+        scopes.add(new Scope("env", PartialConfig.envLayer(env)));
         scopes.add(new Scope("user", readFile(CONFIG_PATH).overriddenBy(readFile(USER_SETTINGS_PATH))));
         scopes.add(new Scope("launch-dir", readFile(projectDir.resolve(PROJECT_SETTINGS))));
         if (workspace != null) {
@@ -403,6 +407,12 @@ public record SpectroConfig(
      *  as a (caught, ignored) {@code FileAlreadyExistsException} instead of a
      *  clobbered file, closing the exists-then-write gap the earlier
      *  {@code Files.exists} check left open.
+     *  <p>Deliberately {@link PartialConfig#fromEnv} and NOT
+     *  {@link PartialConfig#envLayer}: the seed materializes the PROCESS
+     *  environment only. The {@code ~/.spectro/.env} fallback the env layer
+     *  gained for the OTLP pair must not reach this write, or a credential the
+     *  installer put in a 0600 file would be copied into a settings document
+     *  the UI, the settings API and every layer dump read back.
      *  @param env the environment layer — injectable so tests need no real env
      *  @return true when this call just wrote a fresh {@code settings.json};
      *          false when a user scope already existed, there was nothing in
@@ -1185,6 +1195,42 @@ public record SpectroConfig(
             out.imageModel = env.get("SPECTRO_IMAGE_MODEL");
             out.sttModel = env.get("SPECTRO_STT_MODEL");
             out.chromeBinary = env.get("SPECTRO_CHROME");
+            return out;
+        }
+
+        /**
+         * The environment layer as the loader actually builds it: {@link #fromEnv}
+         * with {@code ~/.spectro/.env} underneath it for the two OTLP fields.
+         *
+         * <p>Only those two, and for one reason: they are the pair an installer
+         * writes for a user who is not going through a launcher. The desktop shell
+         * spawns the jar with no {@code .env} loading at all, and a running JVM
+         * cannot change its own {@code System.getenv}, so without this a file the
+         * installer just wrote would be silently ignored until the next shell
+         * export. This is the same two-step {@link SpectroConfig#resolveApiKey}
+         * already performs for API keys, including treating a blank process var as
+         * absent, and it changes no precedence BETWEEN layers: this is still the
+         * env layer, still directly above the defaults, still outranked by every
+         * settings file.
+         *
+         * @param env the process environment (injectable for tests)
+         * @return the env layer, with the OTLP pair filled from the credential file
+         *         when the process environment leaves it unset
+         */
+        static PartialConfig envLayer(Map<String, String> env) {
+            PartialConfig out = fromEnv(env);
+            if (out.otlpEndpoint == null || out.otlpEndpoint.isBlank()) {
+                String fromFile = dotEnvValue("SPECTRO_OTLP_ENDPOINT");
+                if (fromFile != null) {
+                    out.otlpEndpoint = fromFile;
+                }
+            }
+            if (out.otlpBasicAuth == null || out.otlpBasicAuth.isBlank()) {
+                String fromFile = dotEnvValue("SPECTRO_OTLP_BASIC_AUTH");
+                if (fromFile != null) {
+                    out.otlpBasicAuth = fromFile;
+                }
+            }
             return out;
         }
 

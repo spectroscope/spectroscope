@@ -4,8 +4,15 @@
 // a dead daemon must never be described as a missing install, because that sends
 // the operator off to re-download software they already have.
 
+import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { LANGFUSE_COMPOSE_COMMAND, dockerOffer, type DockerStatus } from "./dockerOffer";
+import {
+  LANGFUSE_COMPOSE_COMMAND,
+  LANGFUSE_SAMPLE_PATH,
+  dockerOffer,
+  type DockerStatus,
+} from "./dockerOffer";
 
 const status = (over: Partial<DockerStatus>): DockerStatus => ({
   docker: "ready",
@@ -63,10 +70,25 @@ describe("dockerOffer", () => {
   it("the offered command starts the stack and nothing else", () => {
     // spectroscope never runs this. The whole point of handing over a string is
     // that the operator reads it before it executes.
-    expect(LANGFUSE_COMPOSE_COMMAND).toContain("docker compose up");
+    expect(LANGFUSE_COMPOSE_COMMAND).toContain(LANGFUSE_SAMPLE_PATH);
+    expect(LANGFUSE_COMPOSE_COMMAND).toContain("./install.sh");
     expect(LANGFUSE_COMPOSE_COMMAND).not.toContain("docker-compose ");
     expect(LANGFUSE_COMPOSE_COMMAND).not.toContain("sudo");
     expect(LANGFUSE_COMPOSE_COMMAND).not.toContain("curl ");
     expect(LANGFUSE_COMPOSE_COMMAND).not.toContain("| sh");
+  });
+
+  it("the command names a path this repository actually ships", () => {
+    // The drift gate, in the shape about.drift.test.ts uses for the licence
+    // files: a command is a promise about a file, so the file is read off the
+    // tree this bundle is built from. Move or delete the sample and this goes
+    // red here, rather than going wrong in someone's terminal.
+    const installer = fileURLToPath(new URL(`../../../${LANGFUSE_SAMPLE_PATH}/install.sh`, import.meta.url));
+    expect(existsSync(installer)).toBe(true);
+    const body = readFileSync(installer, "utf8");
+    expect(body.startsWith("#!")).toBe(true);
+    // The offer says "docker is running"; an installer that shipped its own
+    // daemon check for a different runtime would make that line a non sequitur.
+    expect(body).toContain("docker compose");
   });
 });

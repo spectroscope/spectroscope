@@ -382,7 +382,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.dockerRemote": { de: "DOCKER_HOST zeigt auf einen Daemon auf einem anderen Rechner. Der Stack würde dort laufen, nicht hier auf localhost.", en: "DOCKER_HOST points at a daemon on another machine. The stack would run there, not on localhost here." },
   "set.dockerReady": { de: "Docker läuft. Dieser Befehl startet einen lokalen Langfuse-Stack:", en: "Docker is running. This command starts a local Langfuse stack:" },
   "set.langfuseCommand": { de: "Befehl kopieren", en: "Copy command" },
-  "set.langfuseCost": { de: "Das startet mehrere Container und lädt einige Gigabyte an Images. spectroscope führt den Befehl nicht aus, du führst ihn aus. Danach die beiden Felder oben mit Endpoint und Key-Paar füllen.", en: "That starts several containers and downloads a few gigabytes of images. spectroscope does not run the command, you do. Afterwards fill the two fields above with the endpoint and the key pair." },
+  "set.langfuseCost": { de: "Das startet sechs Container und lädt einige Gigabyte an Images. spectroscope führt den Befehl nicht aus, du führst ihn aus. Das Skript legt Endpoint und Key-Paar selbst in ~/.spectro/.env ab; danach diesen Server einmal neu starten.", en: "That starts six containers and downloads a few gigabytes of images. spectroscope does not run the command, you do. The script writes the endpoint and the key pair into ~/.spectro/.env itself; restart this server once afterwards." },
   "doc.otlp": { de: "OTLP-Export", en: "OTLP export" },
   "doc.otlpOff": { de: "aus — kein Endpoint gesetzt (Settings)", en: "off — no endpoint set (Settings)" },
   "doc.otlpOk": { de: "erreichbar + authentifiziert", en: "reachable + authenticated" },

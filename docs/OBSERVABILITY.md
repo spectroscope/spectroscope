@@ -24,6 +24,19 @@ The auth pair is sent as a standard HTTP Basic header. It is Langfuse's
 `public-key:secret-key`; a backend that needs no auth (Jaeger, a bare Phoenix)
 leaves it blank.
 
+Both values are read from the process environment first and then from
+`~/.spectro/.env`, the same two-step an API key already takes. That file is the
+right home for the pair: it is created 0600, and unlike `settings.json` it is
+not read back by the settings API or printed in the layers view. A running JVM
+cannot change its own environment, so either source takes effect on the next
+start, not on the current one.
+
+If you have no Langfuse yet, `samples/06-langfuse/install.sh` starts one and
+writes both values into `~/.spectro/.env` for you. It generates its own secrets,
+pins every image by digest, and closes the two first-boot traps of the upstream
+compose file. Nothing in spectroscope runs it: Settings can show you the
+command, and starting containers stays your decision.
+
 ```bash
 # Land every run in a local Langfuse
 export SPECTRO_OTLP_ENDPOINT="http://localhost:3000/api/public/otel/v1/traces"
@@ -188,13 +201,16 @@ curl -s -u "pk-lf-...:sk-lf-..." \
 
 ## Backfilling old sessions
 
-The live exporter only sees runs made while it is configured. To push sessions
-recorded *before* you turned it on, the `LangFuse/bridge/export_session.py`
-tool in the product home replays a stored `session.jsonl` (or every stored
-session) through the same mapping — stdlib-only, same deterministic ids, so a
-backfilled session and a later live re-export land as one trace, not two.
+The live exporter only sees runs made while it is configured. Sessions recorded
+*before* you turned it on stay where they are.
 
-```bash
-python3 bridge/export_session.py --file ~/.spectro/sessions/<id>.jsonl
-python3 bridge/export_session.py --all     # every stored session
-```
+There is a backfill tool that replays a stored `session.jsonl` through the same
+mapping, with the same deterministic ids, so a backfilled session and a later
+live re-export land as one trace rather than two. **It is not published.** It
+lives in a private workspace and is not part of this repository, so there is
+nothing here to run today. This section exists so the capability is not
+mistaken for a missing feature, and so nobody looks for a path that was never
+shipped.
+
+Until it ships, the honest workaround is to configure the endpoint before the
+runs you care about.

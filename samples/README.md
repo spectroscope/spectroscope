@@ -26,7 +26,7 @@ Two ground rules:
 | [03-watch](03-watch/) | Recording an embedded run so `spectro web` shows it | yes |
 | [04-fleet-across-processes](04-fleet-across-processes/) | Hub in the server, `spectro node` processes, cockpit live; plus the `SPECTRO_HUB` mirror from code | build only (choreography in the README) |
 | [05-otel-export](05-otel-export/) | The shipped OTLP exporter — zero-code and embedded | yes (spans need a collector) |
-| [06-langfuse](06-langfuse/) | Endpoint variant: Langfuse (README only) | — |
+| [06-langfuse](06-langfuse/) | Endpoint variant: Langfuse, with the stack to point at (`install.sh` + pinned compose) | needs Docker; nothing is started for you |
 | [07-phoenix](07-phoenix/) | Endpoint variant: Phoenix via an OTel Collector (README only) | — |
 | [08-langchain4j-provider](08-langchain4j-provider/) | Any LangChain4j chat model as the agent's provider | build only (needs Ollama) |
 

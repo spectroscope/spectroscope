@@ -12,7 +12,13 @@ cd "$(dirname "$0")"
 GRADLE="${GRADLE:-gradle}"
 BUILD_ONLY=(01-five-lines 04-fleet-across-processes 08-langchain4j-provider)
 BUILD_AND_RUN=(02-fleet 03-watch 05-otel-export)
-README_ONLY=(06-langfuse 07-phoenix)
+# 06 ships a compose file and an installer rather than Java. Its shape is
+# asserted by LangfuseComposeDriftTest and LangfuseInstallScriptTest in the
+# Gradle suite, including a --configure-only run, so this pass only syntax
+# checks the script: starting six containers is not something a verify pass does
+# behind your back.
+SHELL_ONLY=(06-langfuse)
+README_ONLY=(07-phoenix)
 
 failures=0
 
@@ -43,6 +49,14 @@ done
 
 for dir in "${BUILD_AND_RUN[@]}"; do
     build "$dir" && run_offline "$dir"
+done
+
+for dir in "${SHELL_ONLY[@]}"; do
+    echo "== check $dir (shell only, no container is started)"
+    if ! bash -n "$dir/install.sh"; then
+        echo "!! SYNTAX FAILED: $dir/install.sh"
+        failures=$((failures + 1))
+    fi
 done
 
 for dir in "${README_ONLY[@]}"; do

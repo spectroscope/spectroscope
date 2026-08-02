@@ -248,6 +248,15 @@ public final class SettingsWriter {
      * same moment — can only ever observe the untouched old file or the fully
      * written new one, never a half-written partial file.
      *
+     * <p>The result is owner-only (0600) on POSIX. Measured 2026-08-02: it
+     * already was, because {@link Files#createTempFile} creates 0600 on the
+     * default UNIX provider and {@code ATOMIC_MOVE} is a rename that carries the
+     * mode across. That is an incidental property of two other decisions, so it
+     * is made explicit here and pinned by
+     * {@code SettingsWriterTest.settingsFileIsOwnerReadableOnly}. This file
+     * carries {@code otlpBasicAuth}, which is a {@code pk:sk} credential when the
+     * Settings UI's Observability field is used.
+     *
      * @param file    the settings file to replace (created if absent)
      * @param content the complete new file content
      * @throws IOException when the temp file cannot be written or the move fails
@@ -258,10 +267,30 @@ public final class SettingsWriter {
         Path temp = Files.createTempFile(dir, "." + file.getFileName() + ".", ".tmp");
         try {
             Files.writeString(temp, content, StandardCharsets.UTF_8);
+            restrictToOwner(temp);
             Files.move(temp, file, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException failure) {
             Files.deleteIfExists(temp);
             throw failure;
+        }
+    }
+
+    /** Best-effort 0600 on the file about to become the settings document. A
+     *  filesystem without POSIX views (Windows) has no mode to set and is left
+     *  alone; a filesystem that has one but refuses the change must not fail a
+     *  settings write, so the failure is swallowed and the pinning test is what
+     *  keeps the mode honest on the platforms we ship.
+     *  @param file the temp file, before the atomic move */
+    private static void restrictToOwner(Path file) {
+        if (!file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            return;
+        }
+        try {
+            Files.setPosixFilePermissions(file, java.util.Set.of(
+                    java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                    java.nio.file.attribute.PosixFilePermission.OWNER_WRITE));
+        } catch (IOException | UnsupportedOperationException notOurs) {
+            // The write matters more than the mode; the mode is asserted in tests.
         }
     }
 

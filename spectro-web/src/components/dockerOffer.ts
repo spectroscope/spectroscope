@@ -41,20 +41,26 @@ export type DockerOffer = {
 /** Where Docker Desktop is downloaded. Verified to resolve, 2026-08-02. */
 const DOCKER_DOWNLOAD = "https://www.docker.com/products/docker-desktop/";
 
+/** The shipped stack, relative to the repository root. Pinned here because the
+ *  command below is only true while this path exists; dockerOffer.test.ts reads
+ *  it off disk so a moved sample fails the suite instead of the user. */
+export const LANGFUSE_SAMPLE_PATH = "samples/06-langfuse";
+
 /**
  * The command handed to an operator whose daemon is ready.
  *
- * This points at Langfuse's own published compose file rather than one shipped
- * here, because this repo does not ship a compose file today: samples/06-langfuse
- * is a README only. When a shipped stack lands, this constant is the single
- * place that changes.
+ * It points at the stack this repository ships rather than at Langfuse's own
+ * compose file, because the shipped one closes both first-boot traps in the
+ * file itself and generates its own secrets. Upstream's example boots with the
+ * passwords printed in its documentation.
  *
  * Deliberately not a curl-pipe-shell one liner. The operator gets a repository
- * they can read before anything executes.
+ * they can read before anything executes, and the installer they run is the
+ * same file the drift tests here assert against.
  */
 export const LANGFUSE_COMPOSE_COMMAND = [
-  "git clone https://github.com/langfuse/langfuse.git",
-  "cd langfuse && docker compose up -d",
+  "git clone --depth 1 https://github.com/spectroscope/spectroscope.git",
+  `cd spectroscope/${LANGFUSE_SAMPLE_PATH} && ./install.sh`,
 ].join("\n");
 
 /**

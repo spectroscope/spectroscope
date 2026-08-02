@@ -132,4 +132,34 @@ class SettingsWriterTest {
                 .filter(l -> l.equals("settings.local.json")).count();
         assertEquals(1, count);
     }
+
+    @Test
+    void settingsFileIsOwnerReadableOnly(@TempDir Path dir) throws IOException {
+        // A settings file is not a good place for a credential, and one lands there
+        // anyway: otlpBasicAuth is a writable key, so the Settings UI's Observability
+        // field puts a Langfuse pk:sk into this document. Owner-only is the floor.
+        // The file is created fresh here AND overwritten below, because a mode that
+        // only holds for the create path is not a guarantee.
+        Path file = dir.resolve(".spectro/settings.json");
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("{ \"otlpBasicAuth\": \"pk-lf-x:sk-lf-y\" }"));
+        assertOwnerOnly(file);
+
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("{ \"provider\": \"ollama\" }"));
+        assertOwnerOnly(file);
+    }
+
+    private static void assertOwnerOnly(Path file) throws IOException {
+        if (!file.getFileSystem().supportedFileAttributeViews().contains("posix")) {
+            return;   // no POSIX modes to assert (Windows); the write itself is checked above
+        }
+        java.util.Set<java.nio.file.attribute.PosixFilePermission> perms =
+                Files.getPosixFilePermissions(file);
+        assertEquals(java.util.Set.of(
+                        java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                        java.nio.file.attribute.PosixFilePermission.OWNER_WRITE),
+                perms,
+                "settings.json carries a credential; group and world must not read it");
+    }
 }

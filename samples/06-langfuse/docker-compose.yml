@@ -1,0 +1,190 @@
+# The Langfuse stack spectroscope exports into, shipped so a first boot works
+# without editing anything. Derived from the upstream compose file, with four
+# deliberate differences (each one is a bug we hit, not a preference):
+#
+#   1. Every secret is a REQUIRED interpolation (${VAR:?...}). Upstream ships
+#      ${VAR:-example} defaults, so a missing value boots a stack whose password
+#      is published in its own documentation. Here compose refuses instead.
+#   2. DATABASE_URL interpolates POSTGRES_PASSWORD. Upstream hard-codes its own
+#      default password inside that URL (the same word as the user name), so
+#      setting only POSTGRES_PASSWORD crash-loops langfuse-web on Prisma P1000
+#      while every other service looks healthy.
+#   3. The three LANGFUSE_S3_*_SECRET_ACCESS_KEY values all read MINIO_ROOT_PASSWORD
+#      (and the three *_ACCESS_KEY_ID values all read MINIO_ROOT_USER). Splitting
+#      them 500s OTLP ingestion with "Failed to upload JSON to S3" while the
+#      health probe and the doctor line both stay green, because an empty batch
+#      never touches S3.
+#   4. Only two host ports are published, both configurable. Postgres, ClickHouse
+#      and Redis are reachable inside the compose network and nowhere else, so a
+#      second stack can run beside a first one and so a database is not listening
+#      on the host for the sake of debugging convenience.
+#
+# Images are pinned by digest, not by tag: langfuse/langfuse:3 is a floating
+# major, and "the version that worked yesterday" is not a version.
+#
+#   pinned 2026-08-02, linux/arm64, langfuse 3.224.1 (GET /api/public/health)
+#   langfuse-worker:3 -> d517aad5   langfuse:3        -> 576132f7
+#   clickhouse-server -> d7556a38   chainguard/minio  -> ee5be922
+#   redis:7           -> a8f08480   postgres:17       -> a426e44b
+#
+# Run ./install.sh; it generates the secrets and writes the .env this file reads.
+
+services:
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker@sha256:d517aad54f7030a104b6e32c52bbd998cae7e12777d23eb9cdbc9ed3f1a1fdf9
+    restart: always
+    depends_on: &langfuse-depends-on
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment: &langfuse-worker-env
+      NEXTAUTH_URL: ${LANGFUSE_URL:-http://localhost:3000}
+      # Trap 1. The password is hex, so it needs no URL escaping here.
+      DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?run ./install.sh first}@postgres:5432/postgres
+      SALT: ${SALT:?run ./install.sh first}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:?run ./install.sh first}
+      # Off by default: this file ships with spectroscope, and turning on a third
+      # party's usage reporting is not ours to decide for the person running it.
+      TELEMETRY_ENABLED: ${LANGFUSE_TELEMETRY_ENABLED:-false}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?run ./install.sh first}
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      # Trap 3: one user, one password, mirrored into all three S3 blocks.
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run ./install.sh first}
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run ./install.sh first}
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+      LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+      LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run ./install.sh first}
+      LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run ./install.sh first}
+      # The browser fetches media directly, so this one is the HOST address.
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:${MINIO_PORT:-9090}
+      LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+      LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+      LANGFUSE_S3_BATCH_EXPORT_ENABLED: "false"
+      LANGFUSE_S3_BATCH_EXPORT_BUCKET: langfuse
+      LANGFUSE_S3_BATCH_EXPORT_PREFIX: exports/
+      LANGFUSE_S3_BATCH_EXPORT_REGION: auto
+      LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://localhost:${MINIO_PORT:-9090}
+      LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run ./install.sh first}
+      LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run ./install.sh first}
+      LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_AUTH: ${REDIS_AUTH:?run ./install.sh first}
+      REDIS_TLS_ENABLED: "false"
+
+  langfuse-web:
+    image: docker.io/langfuse/langfuse@sha256:576132f792276d07380f46a6958877a38a51d20a94e42fa9b3cb096d76db1d9c
+    restart: always
+    depends_on: *langfuse-depends-on
+    ports:
+      - 127.0.0.1:${LANGFUSE_PORT:-3000}:3000
+    environment:
+      <<: *langfuse-worker-env
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:?run ./install.sh first}
+      # Headless bootstrap: org, project, keys and the first user are created on
+      # first boot, so nobody has to click through a signup form to get a pk:sk.
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-spectroscope}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-spectroscope}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-spectroscope}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-spectroscope}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?run ./install.sh first}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?run ./install.sh first}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:?run ./install.sh first}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-spectroscope}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?run ./install.sh first}
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server@sha256:d7556a3841027651307b5aa08d72b5c467d0241d3db5b67d9e158ef3975626f5
+    restart: always
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?run ./install.sh first}
+    volumes:
+      - langfuse_clickhouse_data:/var/lib/clickhouse
+      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1s
+
+  minio:
+    image: cgr.dev/chainguard/minio@sha256:ee5be92259ea459c3058985696ac5aa8c950e78869a7f0a71e47d4f36b33d32d
+    restart: always
+    entrypoint: sh
+    # Creates the 'langfuse' bucket before the server starts.
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?run ./install.sh first}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run ./install.sh first}
+    ports:
+      - 127.0.0.1:${MINIO_PORT:-9090}:9000
+    volumes:
+      - langfuse_minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 1s
+      timeout: 5s
+      retries: 5
+      start_period: 1s
+
+  redis:
+    image: docker.io/redis@sha256:a8f08480e1f88f2647fed492d1178c06abb0d0c1fbf02c682a61e2f483fb3954
+    restart: always
+    command: >
+      --requirepass ${REDIS_AUTH:?run ./install.sh first}
+      --maxmemory-policy noeviction
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: docker.io/postgres@sha256:a426e44bac0b759c95894d68e1a0ac03ecc20b619f498a91aae373bf06d8508d
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run ./install.sh first}
+      POSTGRES_DB: postgres
+      TZ: UTC
+      PGTZ: UTC
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  langfuse_postgres_data:
+    driver: local
+  langfuse_clickhouse_data:
+    driver: local
+  langfuse_clickhouse_logs:
+    driver: local
+  langfuse_minio_data:
+    driver: local
+  langfuse_redis_data:
+    driver: local
