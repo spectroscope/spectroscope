@@ -29,6 +29,8 @@ import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import type { Leveling } from "../state/useLeveling";
 import { fetchSettings, putSettings, originLabel, type SettingsView } from "../state/serverSettings";
+import { CopyButton } from "./CopyButton";
+import { dockerOffer, type DockerStatus } from "./dockerOffer";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
 
 function Switch({
@@ -111,6 +113,48 @@ function DraftInput({ value, onCommit }: { value: string; onCommit: (next: strin
   );
 }
 
+/**
+ * The Docker line under the OTLP fields (card 137). Renders one sentence for
+ * one state, and nothing at all until the probe has answered — an operator who
+ * never wanted Langfuse should not meet a greyed placeholder about containers.
+ *
+ * This does not belong in the doctor panel: the doctor answers "is spectroscope
+ * healthy", and Docker's absence is not a spectroscope fault.
+ */
+function DockerOfferBlock({ status, lang }: { status: DockerStatus | null; lang: Lang }) {
+  const offer = dockerOffer(status);
+  if (offer.kind === "unknown") return null;
+  return (
+    <div className="settings-docker">
+      <p className="settings-note">{t(lang, offer.messageKey)}</p>
+      {/* The one outbound idiom in this codebase. The desktop shell turns an
+          http(s) anchor into shell.openExternal, so this needs no desktop
+          change to open in the operator's real browser. */}
+      {offer.href ? (
+        <p className="settings-note">
+          <a href={offer.href} target="_blank" rel="noreferrer noopener">
+            {t(lang, "set.dockerInstall")}
+          </a>
+        </p>
+      ) : null}
+      {status?.detail && offer.kind === "start" ? (
+        <p className="settings-note settings-docker-detail">
+          <code>{status.detail}</code>
+        </p>
+      ) : null}
+      {offer.command ? (
+        <>
+          <pre className="settings-docker-cmd">
+            <code>{offer.command}</code>
+          </pre>
+          <CopyButton text={() => offer.command ?? ""} label={t(lang, "set.langfuseCommand")} />
+          <p className="settings-note">{t(lang, "set.langfuseCost")}</p>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
 /** How long the "saved" confirmation flashes after any change. */
 const SAVED_FLASH_MS = 1400;
 
@@ -147,6 +191,9 @@ export function SettingsPanel({
   // sessionDefaults/lastWorkspace localStorage state gets a chance to adopt
   // it into the user settings (or discard it) — checked fresh each open.
   const [legacy, setLegacy] = useState<LegacyDefaults | null>(null);
+  // Whether Docker is usable here (card 137) — null until the probe answers,
+  // and null forever on a server that does not carry the route.
+  const [docker, setDocker] = useState<DockerStatus | null>(null);
 
   // Re-fetch the resolved view each time the page opens (other surfaces — the
   // header picker, the Files tab's own folder pick — may have changed the
@@ -159,6 +206,26 @@ export function SettingsPanel({
     fetchSettings()
       .then(setView)
       .catch(() => setLoadFailed(true));
+  }, [open]);
+
+  // Docker detection (card 137). Read-only, once per open, and it must never
+  // be able to break the page: a server too old to know the route answers 404,
+  // which lands in the catch and leaves the block silent rather than shouting.
+  useEffect(() => {
+    if (!open) return;
+    let live = true;
+    setDocker(null);
+    fetch("/api/docker/status")
+      .then((res) => (res.ok ? (res.json() as Promise<DockerStatus>) : null))
+      .then((status) => {
+        if (live) setDocker(status);
+      })
+      .catch(() => {
+        if (live) setDocker(null);
+      });
+    return () => {
+      live = false;
+    };
   }, [open]);
 
   useEffect(() => {
@@ -595,6 +662,14 @@ export function SettingsPanel({
                   />
                 </label>
               </div>
+
+              {/* ---- Docker, read only (card 137) ----------------------------
+                  Where the endpoint above comes from, for an operator who has
+                  no Langfuse yet. Three states and a silent fourth: nothing is
+                  rendered until the probe answers, and a server without the
+                  route stays silent forever. spectroscope starts nothing here
+                  — it prints a command and the operator runs it. */}
+              <DockerOfferBlock status={docker} lang={lang} />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
               <div className="settings-label">{t(lang, "set.secWorkspace")}</div>
