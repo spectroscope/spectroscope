@@ -35,6 +35,13 @@ because the postgres password is baked into the volume on first boot; a fresh
 password on a second run would lock the stack out of its own database. To start
 over, `docker compose down -v` and delete `./.env` together.
 
+The one thing a re-run will not do is quietly change a port. `docker compose`
+reads your shell environment before `--env-file`, so a `LANGFUSE_PORT` that
+disagrees with the reused `./.env` would move the containers while the endpoint
+written into `~/.spectro/.env` still named the old port. The installer stops and
+says so instead. To change a port, edit `./.env`, or take the stack down with
+`-v` and start over.
+
 **spectroscope never runs this for you.** The Settings page can show you the
 command once it sees a Docker daemon, and that is where it stops. A process that
 can reach the Docker socket can bind-mount any host path into a container, which
@@ -47,7 +54,7 @@ is read and write access to the whole disk. That is not a power the app takes.
 | `LANGFUSE_PORT` | 3000 | host port for the web UI |
 | `MINIO_PORT` | 9090 | host port for object storage |
 | `COMPOSE_PROJECT_NAME` | `langfuse-spectro` | compose project, so a second stack can run beside a first |
-| `LANGFUSE_ADMIN_EMAIL` | `admin@spectroscope.local` | the first user's login |
+| `LANGFUSE_ADMIN_EMAIL` | `admin@spectroscope.local` | the first user's login; the domain must contain a dot, or langfuse-web refuses to boot (the installer checks and stops) |
 | `LANGFUSE_TELEMETRY_ENABLED` | `false` | Langfuse's own usage reporting, off by default here |
 
 `./install.sh --configure-only` does the configure and hand-over halves and
@@ -105,8 +112,11 @@ tool observation, gate decisions as spans. The session id rides along as
 The `pk:sk` pair is a credential. The installer puts it in `~/.spectro/.env`
 (0600) and nowhere else. It does not go into `~/.spectro/settings.json`: that
 document is read back by the settings API and dumped by the layers view, which
-is not where a credential belongs. Setting the same pair through the Settings UI
-field does write it there; prefer the installer's path.
+is not where a credential belongs. Typing a pair into the Settings UI field does
+write it there, so prefer the installer's path. Merely opening that field does
+not: it is prefilled with the resolved value, and a blur that changed nothing
+sends nothing, because a write there would also outrank the file it was read
+from and pin a key the next `./install.sh` could no longer rotate.
 
 `.env` is covered by the repository's `.gitignore`. Never commit either file.
 

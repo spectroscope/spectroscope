@@ -51,9 +51,30 @@ die() { echo "install.sh: $*" >&2; exit 1; }
 [ -f "$compose_file" ] || die "no docker-compose.yml next to this script ($compose_file)"
 command -v openssl >/dev/null 2>&1 || die "openssl is required to generate the secrets"
 
+# What the CALLER asked for, captured before the defaults below hide it. A
+# re-run reuses ./.env verbatim, but docker compose ranks the process
+# environment above --env-file, so a caller value that disagrees with the file
+# silently moves the containers while every path this script prints still comes
+# from the file. Measured 2026-08-02 with `docker compose config`.
+caller_langfuse_port="${LANGFUSE_PORT:-}"
+caller_minio_port="${MINIO_PORT:-}"
+
 LANGFUSE_PORT="${LANGFUSE_PORT:-3000}"
 MINIO_PORT="${MINIO_PORT:-9090}"
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-langfuse-spectro}"
+
+# Measured 2026-08-02: langfuse-web validates this address at boot and refuses
+# to start when the domain has no dot. Every other service stays healthy while
+# the web container crash-loops, so without this the failure arrives as a
+# four-minute timeout with nothing pointing at the cause. Checked here, before
+# a single file is written, so a refusal leaves nothing half configured.
+admin_email="${LANGFUSE_ADMIN_EMAIL:-admin@spectroscope.local}"
+email_shape='^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$'
+[[ "$admin_email" =~ $email_shape ]] || die \
+    "LANGFUSE_ADMIN_EMAIL=\"$admin_email\" has no dotted domain. langfuse-web validates
+this address when it boots and refuses to start without one, while every other
+container stays healthy. Use something like admin@example.com (nothing is ever
+sent to it)."
 
 # ---------------------------------------------------------------- 1. configure
 
@@ -88,8 +109,8 @@ LANGFUSE_INIT_PROJECT_SECRET_KEY=$sk
 # at all when the domain has no dot ("Invalid environment variables:
 # LANGFUSE_INIT_USER_EMAIL"). Every service stays healthy while the web
 # container crash-loops, so the address needs a real shape even though nothing
-# is ever sent to it.
-LANGFUSE_INIT_USER_EMAIL=${LANGFUSE_ADMIN_EMAIL:-admin@spectroscope.local}
+# is ever sent to it. The shape is checked before this file is written.
+LANGFUSE_INIT_USER_EMAIL=$admin_email
 LANGFUSE_INIT_USER_PASSWORD=$(openssl rand -hex 12)
 EOF
 fi
@@ -106,6 +127,25 @@ sk="$(env_value LANGFUSE_INIT_PROJECT_SECRET_KEY)"
 port="$(env_value LANGFUSE_PORT)"
 port="${port:-$LANGFUSE_PORT}"
 [ -n "$pk" ] && [ -n "$sk" ] || die "$env_file has no project keys; delete it and run again"
+
+# The file is the truth for this script; the environment is the truth for docker
+# compose. When they disagree the two halves describe different stacks: compose
+# publishes the caller's port while the endpoint written into ~/.spectro/.env,
+# the health check and every line printed here name the file's. That combination
+# ends as a dead OTLP endpoint in a 0600 credential file, announced as a success.
+# Refuse instead of picking one.
+split() {
+    die "$1=$2 is set in this shell, but $env_file says $1=$3.
+docker compose reads the environment before --env-file, so the containers would
+use $2 while everything this script writes and checks uses $3.
+Edit $env_file, or remove the stack (docker compose -f \"$compose_file\" --env-file \"$env_file\" down -v)
+and run again with the value you want."
+}
+minio_in_file="$(env_value MINIO_PORT)"
+[ -z "$caller_langfuse_port" ] || [ "$caller_langfuse_port" = "$port" ] \
+    || split LANGFUSE_PORT "$caller_langfuse_port" "$port"
+[ -z "$caller_minio_port" ] || [ -z "$minio_in_file" ] || [ "$caller_minio_port" = "$minio_in_file" ] \
+    || split MINIO_PORT "$caller_minio_port" "$minio_in_file"
 
 # ---------------------------------------------------------------- 2. hand over
 

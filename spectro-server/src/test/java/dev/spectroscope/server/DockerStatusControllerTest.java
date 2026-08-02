@@ -34,17 +34,55 @@ class DockerStatusControllerTest {
     }
 
     @Test
-    void absentWhenTheBinaryIsNotOnPath() {
+    void absentOnlyWhenNeitherTheBinaryNorTheDaemonIsThere() {
+        // This test used to assert that a missing binary short-circuits BEFORE
+        // the socket is asked. That premise was measured false on 2026-08-02: a
+        // GUI-launched desktop app inherits the launchd PATH and never sees
+        // /usr/local/bin/docker, so "not on PATH" is not evidence that Docker is
+        // not installed. The short-circuit is gone; "absent" now costs one
+        // socket read, and it has to, because it is the state that tells the
+        // operator to go and download something.
         AtomicBoolean probed = new AtomicBoolean(false);
         DockerStatusController controller = controller(false, false, null, socket -> {
+            probed.set(true);
+            throw new java.io.IOException("No such file or directory");
+        });
+        Map<String, Object> out = controller.status(local()).getBody();
+        assertNotNull(out);
+        assertEquals("absent", out.get("docker"));
+        assertTrue(probed.get(), "the daemon gets the last word before we call it absent");
+        assertEquals(false, out.get("remote"));
+    }
+
+    @Test
+    void aRunningDaemonOutranksAMissingBinary() {
+        // The false negative this closes, reproduced live against the shipped
+        // 0.5.0 jar: PATH=/usr/bin:/bin:/usr/sbin:/sbin answered
+        // docker:"absent" while `docker info` reported a running daemon, and
+        // Settings offered the Docker download to that operator. A daemon that
+        // answers is the end of the argument, whatever PATH holds.
+        DockerStatusController controller = controller(false, true, null, socket -> true);
+        Map<String, Object> out = controller.status(local()).getBody();
+        assertNotNull(out);
+        assertEquals("ready", out.get("docker"));
+        assertEquals(false, out.get("remote"));
+    }
+
+    @Test
+    void aMissingBinaryWithARemoteHostIsStillRemote() {
+        // DOCKER_HOST wins over the PATH walk in both directions: we never probe
+        // someone else's machine over a local socket, and we never call it
+        // absent either.
+        AtomicBoolean probed = new AtomicBoolean(false);
+        DockerStatusController controller = controller(false, true, "ssh://user@build-box", socket -> {
             probed.set(true);
             return true;
         });
         Map<String, Object> out = controller.status(local()).getBody();
         assertNotNull(out);
-        assertEquals("absent", out.get("docker"));
-        assertFalse(probed.get(), "no socket probe when there is nothing installed");
-        assertEquals(false, out.get("remote"));
+        assertEquals(true, out.get("remote"));
+        assertEquals("unreachable", out.get("docker"));
+        assertFalse(probed.get(), "a remote daemon is never probed over a local socket");
     }
 
     @Test

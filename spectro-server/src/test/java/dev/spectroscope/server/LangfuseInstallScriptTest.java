@@ -104,6 +104,87 @@ class LangfuseInstallScriptTest {
     }
 
     @Test
+    void aDotlessAdminAddressIsRefusedBeforeAnythingIsWritten(@TempDir Path home) throws Exception {
+        // The knob the test above never touched. LANGFUSE_ADMIN_EMAIL is
+        // documented at install.sh:29 and README.md:50, and admin@localhost is
+        // the realistic thing to type. Without this guard the address is written
+        // verbatim, five services come up healthy, langfuse-web crash-loops on
+        // "Invalid environment variables", and the health loop spins for four
+        // minutes before failing. The refusal has to come before the write, so
+        // there is no half-configured .env left behind either.
+        Path work = Files.createDirectory(home.resolve("work"));
+        Path fakeHome = Files.createDirectory(home.resolve("home"));
+
+        Result refused = run(work, List.of(SCRIPT.toString(), "--configure-only"),
+                java.util.Map.of("HOME", fakeHome.toString(),
+                        "LANGFUSE_ADMIN_EMAIL", "admin@localhost"));
+
+        assertNotEquals(0, refused.exit(), "a dotless domain must not configure a stack:\n" + refused.output());
+        assertTrue(refused.output().contains("LANGFUSE_ADMIN_EMAIL"),
+                "the message must name the variable the operator set:\n" + refused.output());
+        assertFalse(Files.exists(work.resolve(".env")),
+                "nothing may be written when the address cannot boot the stack");
+        assertFalse(Files.exists(fakeHome.resolve(".spectro/.env")),
+                "and no endpoint may be handed over either");
+    }
+
+    @Test
+    void aValidAdminAddressOverrideIsAccepted(@TempDir Path home) throws Exception {
+        // The guard must refuse a shape, not the knob itself.
+        Path work = Files.createDirectory(home.resolve("work"));
+        Path fakeHome = Files.createDirectory(home.resolve("home"));
+
+        Result ok = run(work, List.of(SCRIPT.toString(), "--configure-only"),
+                java.util.Map.of("HOME", fakeHome.toString(),
+                        "LANGFUSE_ADMIN_EMAIL", "ops@example.com"));
+
+        assertEquals(0, ok.exit(), ok.output());
+        assertTrue(Files.readString(work.resolve(".env")).contains("LANGFUSE_INIT_USER_EMAIL=ops@example.com"));
+    }
+
+    @Test
+    void aReRunWithADifferentPortIsRefusedRatherThanSplit(@TempDir Path home) throws Exception {
+        // Measured 2026-08-02 with `docker compose config`: the process
+        // environment outranks --env-file, so an exported LANGFUSE_PORT moves
+        // the published port while this script keeps reading the reused .env.
+        // The stack would come up on the caller's port and ~/.spectro/.env would
+        // be left holding a dead endpoint on the file's port, announced as a
+        // success. README.md:33 promises "Re-running is safe", and a port clash
+        // on 3000 is exactly what sends an operator back with this knob.
+        Path work = Files.createDirectory(home.resolve("work"));
+        Path fakeHome = Files.createDirectory(home.resolve("home"));
+
+        assertEquals(0, configureOnly(work, fakeHome).exit());
+        String handedOver = Files.readString(fakeHome.resolve(".spectro/.env"));
+        assertTrue(handedOver.contains("localhost:3000/api/public/otel"), handedOver);
+
+        Result second = run(work, List.of(SCRIPT.toString(), "--configure-only"),
+                java.util.Map.of("HOME", fakeHome.toString(), "LANGFUSE_PORT", "3100"));
+
+        assertNotEquals(0, second.exit(),
+                "a port the reused .env does not know must not report success:\n" + second.output());
+        assertTrue(second.output().contains("3100") && second.output().contains("3000"),
+                "the message must name both ports:\n" + second.output());
+        assertEquals(handedOver, Files.readString(fakeHome.resolve(".spectro/.env")),
+                "the credential file must not be left pointing at a port nothing will listen on");
+    }
+
+    @Test
+    void aReRunWithTheSamePortIsStillFine(@TempDir Path home) throws Exception {
+        // The guard is about disagreement, not about setting the variable.
+        Path work = Files.createDirectory(home.resolve("work"));
+        Path fakeHome = Files.createDirectory(home.resolve("home"));
+
+        assertEquals(0, run(work, List.of(SCRIPT.toString(), "--configure-only"),
+                java.util.Map.of("HOME", fakeHome.toString(), "LANGFUSE_PORT", "3100")).exit());
+        assertTrue(Files.readString(fakeHome.resolve(".spectro/.env")).contains("localhost:3100"));
+
+        Result again = run(work, List.of(SCRIPT.toString(), "--configure-only"),
+                java.util.Map.of("HOME", fakeHome.toString(), "LANGFUSE_PORT", "3100"));
+        assertEquals(0, again.exit(), again.output());
+    }
+
+    @Test
     void theScriptParses() throws IOException, InterruptedException {
         assertEquals(0, run(Path.of("/tmp"), List.of("bash", "-n", SCRIPT.toString()), null).exit(),
                 "bash -n rejected the installer");
@@ -198,9 +279,19 @@ class LangfuseInstallScriptTest {
 
     private record Result(int exit, String output) { }
 
+    /** Every knob the installer reads. Cleared before each run so a value
+     *  exported on the machine running the suite cannot decide the outcome:
+     *  ProcessBuilder inherits the parent environment, so without this a
+     *  developer with LANGFUSE_PORT set would see these tests pass or fail for
+     *  reasons that have nothing to do with the script. */
+    private static final List<String> INSTALLER_KNOBS =
+            List.of("LANGFUSE_PORT", "MINIO_PORT", "LANGFUSE_ADMIN_EMAIL", "COMPOSE_PROJECT_NAME",
+                    "DOCKER_HOST");
+
     private static Result run(Path cwd, List<String> command, java.util.Map<String, String> extraEnv)
             throws IOException, InterruptedException {
         ProcessBuilder builder = new ProcessBuilder(command).directory(cwd.toFile()).redirectErrorStream(true);
+        INSTALLER_KNOBS.forEach(builder.environment()::remove);
         if (extraEnv != null) {
             builder.environment().putAll(extraEnv);
         }

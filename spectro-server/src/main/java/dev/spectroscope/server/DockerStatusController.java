@@ -24,18 +24,26 @@ import org.springframework.web.bind.annotation.RestController;
  * would teach operators to turn the dangerous flag on just to see a status
  * line.
  *
- * <p>Three states, and the third is the one that earns the socket read:
+ * <p>Three states, and every one of them is read off the socket:
  * <ul>
- *   <li>{@code absent}: no {@code docker} executable anywhere on {@code PATH}.
- *   <li>{@code unreachable}: installed, but the daemon did not answer. A
- *       permission failure lands here too, never in {@code absent}: the install
- *       is fine, so telling that operator to download Docker again is a lie.
+ *   <li>{@code absent}: no {@code docker} executable found AND nothing
+ *       answering on the socket. Both halves, because either one alone is a
+ *       measured false negative.
+ *   <li>{@code unreachable}: the daemon did not answer, but something says
+ *       Docker is here anyway (an executable, or a remote {@code DOCKER_HOST}).
+ *       A permission failure lands here too, never in {@code absent}: the
+ *       install is fine, so telling that operator to download Docker again is a
+ *       lie.
  *   <li>{@code ready}: the daemon answered {@code 200}.
  * </ul>
  *
- * <p>A {@code PATH} hit alone is never {@code ready}. Docker Desktop leaves its
- * binary on {@code PATH} while quit, so presence-only detection reports a
- * working install to an operator whose next command will fail.
+ * <p>Neither half of the evidence is trusted on its own, and both directions
+ * were measured. A binary hit alone is never {@code ready}: Docker Desktop
+ * leaves its binary in place while quit, so presence-only detection reports a
+ * working install to an operator whose next command will fail. A binary miss
+ * alone is never {@code absent}: a GUI-launched app inherits the launchd
+ * {@code PATH} and cannot see {@code /usr/local/bin/docker}, so PATH-only
+ * detection told an operator with a running daemon to go and install Docker.
  *
  * <p>It wears the full local fence ({@link FleetController#isLocalOrigin} plus
  * the Origin check) and answers 404 with no body to anyone else, because the
@@ -53,9 +61,9 @@ public class DockerStatusController {
     /** Seam: ask a socket path whether a daemon answers there. */
     private final DockerPing.Probe ping;
 
-    /** Spring wiring: the real PATH walk, the real plugin walk, the real socket. */
+    /** Spring wiring: the real binary walk, the real plugin walk, the real socket. */
     public DockerStatusController() {
-        this(DockerPing::binaryOnPath,
+        this(DockerPing::binaryInstalled,
                 DockerPing::composePluginPresent,
                 () -> System.getenv("DOCKER_HOST"),
                 DockerPing::pingUnixSocket);
@@ -95,15 +103,7 @@ public class DockerStatusController {
         Map<String, Object> out = new LinkedHashMap<>();
         out.put("compose", composePresent.getAsBoolean());
 
-        if (!binaryPresent.getAsBoolean()) {
-            // Nothing installed: asking a socket would answer a question that
-            // cannot matter, so the probe seam is never touched on this path.
-            out.put("docker", "absent");
-            out.put("remote", false);
-            out.put("detail", "no docker executable on PATH.");
-            return ResponseEntity.ok(out);
-        }
-
+        boolean installed = binaryPresent.getAsBoolean();
         String host = dockerHost.get();
         if (DockerPing.isRemote(host)) {
             // Someone else's machine. We do not probe it, and we do not guess
@@ -123,6 +123,8 @@ public class DockerStatusController {
         }
         try {
             if (ping.ping(socket)) {
+                // A daemon that answers ends the argument. Whether we also found
+                // the CLI is a detail about our own PATH, not about the machine.
                 out.put("docker", "ready");
                 out.put("detail", "the docker daemon answered.");
             } else {
@@ -130,9 +132,18 @@ public class DockerStatusController {
                 out.put("detail", "something answered on " + socket + ", but not a docker daemon.");
             }
         } catch (Exception noAnswer) {
-            out.put("docker", "unreachable");
-            out.put("detail", "docker is installed, the daemon did not answer on " + socket
-                    + ": " + reason(noAnswer));
+            if (installed) {
+                out.put("docker", "unreachable");
+                out.put("detail", "docker is installed, the daemon did not answer on " + socket
+                        + ": " + reason(noAnswer));
+            } else {
+                // Both halves came up empty, which is the only evidence that
+                // earns the sentence "not installed" and the download link
+                // underneath it.
+                out.put("docker", "absent");
+                out.put("detail", "no docker executable found, and nothing answered on "
+                        + socket + ".");
+            }
         }
         return ResponseEntity.ok(out);
     }

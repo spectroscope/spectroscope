@@ -92,6 +92,37 @@ class DockerPingTest {
     }
 
     @Test
+    void looksForTheBinaryWhereDockerActuallyInstallsIt() {
+        // Measured 2026-08-02, the same false negative the compose lookup above
+        // already carries a list for. A GUI-launched macOS app inherits the
+        // launchd PATH (/usr/bin:/bin:/usr/sbin:/sbin) and the desktop shell
+        // spawns java with no env of its own, while Docker Desktop installs its
+        // binary at /usr/local/bin/docker. Walking PATH alone therefore reports
+        // "not installed" on a machine whose daemon is answering.
+        java.util.List<String> dirs = DockerPing.binaryDirs(
+                "/usr/bin:/bin:/usr/sbin:/sbin", "/real/home", "/tmp/isolated-home");
+        assertTrue(dirs.contains("/usr/bin"), dirs.toString());
+        assertTrue(dirs.contains("/usr/local/bin"), dirs.toString());
+        assertTrue(dirs.contains("/opt/homebrew/bin"), dirs.toString());
+        assertTrue(dirs.contains("/real/home/.docker/bin"), dirs.toString());
+        assertTrue(dirs.contains("/tmp/isolated-home/.docker/bin"), dirs.toString());
+    }
+
+    @Test
+    void theBinaryLookupSurvivesAnEmptyPath() {
+        java.util.List<String> dirs = DockerPing.binaryDirs(null, null, null);
+        assertTrue(dirs.contains("/usr/local/bin"), "the well-known locations do not depend on PATH");
+        assertFalse(dirs.contains(""), "no blank directory");
+        assertFalse(dirs.contains("null/.docker/bin"), "no path built from a null home");
+    }
+
+    @Test
+    void doesNotListTheSameBinaryDirectoryTwice() {
+        java.util.List<String> dirs = DockerPing.binaryDirs("/usr/local/bin:/usr/bin", null, null);
+        assertEquals(1, dirs.stream().filter(d -> d.equals("/usr/local/bin")).count(), dirs.toString());
+    }
+
+    @Test
     void stripsTheUnixSchemeFromTheSocketPath() {
         assertEquals("/var/run/docker.sock", DockerPing.socketPathIn("unix:///var/run/docker.sock"));
         assertEquals("/tmp/d.sock", DockerPing.socketPathIn("/tmp/d.sock"));

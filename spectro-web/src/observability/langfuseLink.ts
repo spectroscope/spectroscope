@@ -51,3 +51,45 @@ export function langfuseTraceUrl(otlpEndpoint: string | null | undefined, sessio
   const root = url.origin + url.pathname.slice(0, at);
   return `${root}/trace/${langfuseTraceId(sessionId)}`;
 }
+
+/** Where the rows currently on screen came from, which is what decides whether
+ *  a link can be honest at all. */
+export interface TraceLinkSource {
+  /** True only when the rows are this app's own live socket. */
+  live: boolean;
+  /** True while a fleet is entered, i.e. a member's wire is on screen. */
+  inFleet: boolean;
+  /** The session id the shown rows belong to. */
+  sessionId: string | null;
+  /** The endpoint of the last export that actually landed, if any. */
+  endpoint: string | null;
+}
+
+/**
+ * The URL the trace toolbar may offer, or null when no link would be honest.
+ *
+ * The arithmetic is the easy half and lives in {@link langfuseTraceUrl}. The
+ * two guards in front of it are the half that was missing, and each closes a
+ * measured way of pointing the operator somewhere the rows are not:
+ *
+ * <ul>
+ *   <li>Not the live wire, no link. `reduce` is not socket-only: an imported
+ *       file is folded by the same reducer, and `otlp_export` is not in the
+ *       importer's vocabulary, so a crafted line rides through verbatim and the
+ *       fold believes its endpoint. The href of a link in our own chrome would
+ *       then be attacker chosen. Recorded archives never carry the frame at
+ *       all, so refusing everything but the live socket takes away nothing that
+ *       ever worked.</li>
+ *   <li>Inside a fleet, no link. The trace tab shows the MEMBER's wire on a
+ *       drill-in, and that member exports under its own session id from its own
+ *       process. The live session's trace holds none of the rows being read.</li>
+ * </ul>
+ *
+ * @param source where the shown rows came from
+ * @return the Langfuse trace URL, or null
+ */
+export function traceLinkFor(source: TraceLinkSource): string | null {
+  if (!source.live || source.inFleet) return null;
+  if (!source.sessionId || !source.endpoint) return null;
+  return langfuseTraceUrl(source.endpoint, source.sessionId);
+}

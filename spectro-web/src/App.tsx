@@ -66,7 +66,7 @@ import {
 import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
-import { langfuseTraceUrl } from "./observability/langfuseLink";
+import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
 import type { PendingAttachment } from "./components/AttachmentPreview";
@@ -964,13 +964,17 @@ export function App() {
   // Card 137: the trace's own address in the configured backend. Derived, not
   // fetched — the id is sha256 over the session id, the same seed OtlpSink
   // stamped on the spans. null whenever no link could work, which is most of
-  // the time: nothing exported yet, or the backend is not Langfuse.
+  // the time: nothing exported yet, the backend is not Langfuse, a fleet member's
+  // wire is on screen, or the rows did not come off our own socket at all.
   const langfuseUrl = useMemo(
     () =>
-      shownSessionId && view.lastOtlpExport
-        ? langfuseTraceUrl(view.lastOtlpExport.endpoint, shownSessionId)
-        : null,
-    [shownSessionId, view.lastOtlpExport],
+      traceLinkFor({
+        live: viewingLive,
+        inFleet: enteredFleet !== null,
+        sessionId: shownSessionId,
+        endpoint: view.lastOtlpExport?.endpoint ?? null,
+      }),
+    [viewingLive, enteredFleet, shownSessionId, view.lastOtlpExport],
   );
   // The failure line only speaks while NOTHING has landed. Once an export has
   // succeeded the link stays, because the trace it wrote still exists.

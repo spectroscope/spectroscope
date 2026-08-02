@@ -28,7 +28,13 @@ import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import type { Leveling } from "../state/useLeveling";
-import { fetchSettings, putSettings, originLabel, type SettingsView } from "../state/serverSettings";
+import {
+  fetchSettings,
+  putSettings,
+  originLabel,
+  textFieldPatch,
+  type SettingsView,
+} from "../state/serverSettings";
 import { CopyButton } from "./CopyButton";
 import { dockerOffer, type DockerStatus } from "./dockerOffer";
 import { clearLegacyLocalStorage, readLegacyLocalStorage, type LegacyDefaults } from "../state/graduation";
@@ -633,9 +639,14 @@ export function SettingsPanel({
                     type="text"
                     placeholder="http://localhost:3000/api/public/otel"
                     defaultValue={String(view.effective.otlpEndpoint ?? "")}
-                    onBlur={(e) =>
-                      saveUser({ otlpEndpoint: e.target.value.trim() === "" ? null : e.target.value.trim() })
-                    }
+                    onBlur={(e) => {
+                      const patch = textFieldPatch(
+                        "otlpEndpoint",
+                        e.target.value,
+                        String(view.effective.otlpEndpoint ?? ""),
+                      );
+                      if (patch) saveUser(patch);
+                    }}
                   />
                   <OriginRow
                     view={view}
@@ -646,13 +657,24 @@ export function SettingsPanel({
                 </label>
                 <label className="settings-field">
                   <span>{t(lang, "set.otlpAuth")}</span>
+                  {/* Blur alone must not write. This field is prefilled from the
+                      env layer, which reads ~/.spectro/.env, the 0600 file
+                      install.sh puts the pk:sk pair in. An unconditional save
+                      would copy that credential into settings.json on a click
+                      through the field, and the user layer outranks env, so the
+                      next install.sh rotation could never take effect. */}
                   <input
                     type="text"
                     placeholder="pk-lf-… : sk-lf-…"
                     defaultValue={String(view.effective.otlpBasicAuth ?? "")}
-                    onBlur={(e) =>
-                      saveUser({ otlpBasicAuth: e.target.value.trim() === "" ? null : e.target.value.trim() })
-                    }
+                    onBlur={(e) => {
+                      const patch = textFieldPatch(
+                        "otlpBasicAuth",
+                        e.target.value,
+                        String(view.effective.otlpBasicAuth ?? ""),
+                      );
+                      if (patch) saveUser(patch);
+                    }}
                   />
                   <OriginRow
                     view={view}

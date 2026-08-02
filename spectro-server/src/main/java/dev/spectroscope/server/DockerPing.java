@@ -55,6 +55,16 @@ final class DockerPing {
             "/usr/libexec/docker/cli-plugins",
             "/opt/homebrew/lib/docker/cli-plugins");
 
+    /**
+     * Where a {@code docker} executable lives when it is not on our
+     * {@code PATH}. Docker Desktop symlinks into the first, Homebrew into the
+     * second. Not home dependent.
+     */
+    private static final List<String> SYSTEM_BINARY_DIRS = List.of(
+            "/usr/local/bin",
+            "/opt/homebrew/bin",
+            "/usr/bin");
+
     private DockerPing() {}
 
     /**
@@ -203,23 +213,60 @@ final class DockerPing {
     }
 
     /**
+     * Every directory worth searching for the {@code docker} executable, in
+     * order: {@code PATH} first, then the places Docker actually installs.
+     *
+     * <p>{@code PATH} alone is not enough, and this is the same false negative
+     * {@link #composePluginDirs} exists to avoid, one method up. It was
+     * measured on 2026-08-02 rather than reasoned about: a macOS app launched
+     * from the Finder inherits the launchd environment, which on a machine with
+     * no user override is {@code /usr/bin:/bin:/usr/sbin:/sbin}, and
+     * {@code spectro-desktop} spawns the JVM with no environment of its own.
+     * Docker Desktop meanwhile installs its binary at
+     * {@code /usr/local/bin/docker}. The shipped 0.5.0 jar, started with
+     * exactly that PATH, therefore answered {@code docker:"absent"} on a host
+     * whose daemon was up, and Settings offered that operator the download.
+     *
+     * @param path     the {@code PATH} value, may be null
+     * @param envHome  the {@code HOME} environment variable, may be null
+     * @param propHome the {@code user.home} property, may be null
+     * @return the distinct, non-blank directories to check
+     */
+    static List<String> binaryDirs(String path, String envHome, String propHome) {
+        List<String> dirs = new java.util.ArrayList<>();
+        for (String entry : (path == null ? "" : path).split(File.pathSeparator)) {
+            String trimmed = entry.strip();
+            if (!trimmed.isEmpty() && !dirs.contains(trimmed)) {
+                dirs.add(trimmed);
+            }
+        }
+        List<String> wellKnown = new java.util.ArrayList<>(SYSTEM_BINARY_DIRS);
+        for (String home : homesToSearch(envHome, propHome)) {
+            wellKnown.add(home + "/.docker/bin");
+        }
+        for (String dir : wellKnown) {
+            if (!dirs.contains(dir)) {
+                dirs.add(dir);
+            }
+        }
+        return List.copyOf(dirs);
+    }
+
+    /**
      * Whether a {@code docker} executable exists at all. Presence only, which is
      * precisely why it is not the whole answer: an installed binary with a dead
-     * daemon is the case this card exists to report honestly.
+     * daemon is the case this card exists to report honestly. The reverse is
+     * true too, which is why the caller no longer stops here on a miss: an
+     * absent binary is not evidence of an absent daemon.
      *
-     * @return true when {@code docker} is executable somewhere on {@code PATH}
+     * @return true when {@code docker} is executable in one of
+     *         {@link #binaryDirs}
      */
-    static boolean binaryOnPath() {
-        String path = System.getenv("PATH");
-        if (path == null || path.isBlank()) {
-            return false;
-        }
-        for (String entry : path.split(File.pathSeparator)) {
-            if (entry.isBlank()) {
-                continue;
-            }
+    static boolean binaryInstalled() {
+        for (String dir : binaryDirs(
+                System.getenv("PATH"), System.getenv("HOME"), System.getProperty("user.home"))) {
             try {
-                if (Files.isExecutable(Path.of(entry, "docker"))) {
+                if (Files.isExecutable(Path.of(dir, "docker"))) {
                     return true;
                 }
             } catch (RuntimeException malformedEntry) {
