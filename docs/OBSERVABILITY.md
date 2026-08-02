@@ -110,6 +110,71 @@ Resource attributes: `service.name = spectroscope`,
 The buffer is bounded (20 000 events); past that it warns once and stops
 growing rather than eat memory on a runaway session.
 
+## Jumping straight to the trace
+
+Once a session has exported at least one batch, the trace tab shows an
+`open in langfuse` link. It opens this session's trace in the configured
+Langfuse instance, in your normal browser.
+
+No lookup happens. The trace id is derived: `OtlpSink.traceIdFor` seeds it as
+`sha256("trace:" + sessionId)` truncated to 16 bytes, and the browser computes
+the same value from the session id it already holds. That determinism is the
+same property that makes a re-export upsert instead of duplicating.
+
+The link is deliberately quiet:
+
+* Nothing exported yet means no link, not a greyed one. A link that cannot
+  work is worse than no link.
+* An endpoint that is not Langfuse shaped (Jaeger, Phoenix, an OTLP collector)
+  never gets a link, successful export or not, because those backends have no
+  page of this shape.
+* An export that failed while none has ever succeeded shows a static
+  `otlp export failed` line instead. The wording names no vendor, because a
+  failing Jaeger export reads the same way.
+* Once an export has landed, a later failure does not remove the link. The
+  trace it already wrote still exists.
+
+One limitation worth stating plainly: the `otlp_export` frame is socket only
+and never reaches the session JSONL, so opening an archived session from the
+list shows no link even when its trace exists in Langfuse. The link is for the
+session this browser watched export.
+
+## Why there is no inline Langfuse tab
+
+Measured on 2026-08-02 against Langfuse 3.224.1 (`langfuse/langfuse:3`,
+`/api/public/health` reports the version), running locally on port 3000.
+
+An embedded Langfuse tab inside spectroscope would be convenient, and it is
+not possible without doing something we are not willing to do.
+
+The Langfuse web app answers every request with two framing refusals:
+
+```
+x-frame-options: SAMEORIGIN
+Content-Security-Policy: ... frame-ancestors 'none'; ...
+```
+
+`frame-ancestors 'none'` is a string literal in the image's own
+`next.config.mjs`. There is no environment variable, no setting and no admin
+toggle that relaxes it, so a browser iframe is refused by design and no amount
+of configuration on our side changes that.
+
+Electron is a different story and still a no. An Electron `WebContentsView`
+ignores those headers and would load the page. But `spectro-desktop/src/main.ts`
+already decided the opposite way for outbound links: they leave for the real
+browser, where the user has their session, their password manager and an
+address bar that tells them where they are. Embedding Langfuse would reverse
+that decision for one vendor, and the web app would still need the link, so we
+would ship two different answers to one button.
+
+A proxy that strips the headers is refused outright. It would present Langfuse
+as same origin with spectroscope, which hands our page scripted access to the
+Langfuse DOM and its session cookie. That is a real privilege boundary and it
+exists for a reason.
+
+So the answer is the deep link above: one click, the real Langfuse, in the
+browser the user already trusts.
+
 ## Reading it back without the UI
 
 Langfuse's public API confirms the spans server-side — handy for a smoke check

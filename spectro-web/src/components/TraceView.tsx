@@ -127,6 +127,24 @@ export function traceTableClass(cols: TraceColumns): string {
   return `trace-table${cols.host ? "" : " trace-table--no-host"}${cols.model ? "" : " trace-table--no-model"}`;
 }
 
+/**
+ * What the trace toolbar shows about this session's OTLP export (card 137).
+ *
+ * Three states, and one of them is silence. Before anything has been exported
+ * there is no chip at all: a greyed placeholder would turn the toolbar into a
+ * place where people learn what Langfuse is, and the Settings Observability
+ * block already carries that copy. "failed" is deliberately endpoint neutral,
+ * because a failing Jaeger export deserves the same sentence. A landed export
+ * outranks a later failure, because the trace it wrote still exists.
+ */
+export function traceLinkState(
+  langfuseUrl: string | null,
+  otlpFailure: string | null,
+): "link" | "failed" | "none" {
+  if (langfuseUrl) return "link";
+  return otlpFailure !== null ? "failed" : "none";
+}
+
 /** Reasoning lens (card 13): the row's role while the lens is active. */
 function lensRole(type: string): "hi" | "anchor" | "dim" {
   if (type === "thinking_delta") return "hi";
@@ -579,6 +597,13 @@ export function TraceView(props: {
   /** Called once the focus was consumed, so App can clear it (a repeat click on
    *  the same event re-focuses). */
   onFocusHandled?: () => void;
+  /** Card 137: this session's trace in the configured Langfuse, computed in the
+   *  browser from the session id. null whenever no link can work: nothing
+   *  exported yet, or the backend is not Langfuse. */
+  langfuseUrl?: string | null;
+  /** The message of a failed export, but only while NOTHING has landed yet.
+   *  null keeps the toolbar silent. */
+  otlpFailure?: string | null;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -598,6 +623,8 @@ export function TraceView(props: {
   // OTel mirror rows (card 86): default off — the exports sit in the ring
   // either way, the chip only reveals them.
   const otelOn = prefs.otelRows;
+  // Card 137: link, honest failure line, or nothing at all.
+  const linkState = traceLinkState(props.langfuseUrl ?? null, props.otlpFailure ?? null);
   // Optional columns (owner 2026-07-27): host and model, both on out of the
   // box. A hidden column takes nothing but itself — no row changes meaning.
   const chosenCols = useTraceColumns();
@@ -1118,6 +1145,28 @@ export function TraceView(props: {
         >
           {t(lang, "trace.otel")}
         </button>
+        {/* Card 137: the way out of the app and into the trace that the export
+            actually created. A plain anchor is the only outbound idiom here,
+            and it is also the whole desktop story: the shell turns a
+            target=_blank click into shell.openExternal. */}
+        {linkState === "link" && (
+          <a
+            className="trace-lens mono"
+            href={props.langfuseUrl ?? undefined}
+            target="_blank"
+            rel="noreferrer noopener"
+            title={t(lang, "trace.langfuseTitle")}
+          >
+            {t(lang, "trace.langfuse")}
+          </a>
+        )}
+        {linkState === "failed" && (
+          /* Static, not an anchor: there is nothing to open. Endpoint neutral,
+             because a failing Jaeger export reads the same way. */
+          <span className="trace-lens mono" title={props.otlpFailure ?? undefined}>
+            {t(lang, "trace.otlpFailed")}
+          </span>
+        )}
         {/* Optional columns: the two widest ones are a reading choice, so they
             sit with the lenses rather than in a window of their own. */}
         <div className="trace-seg" role="group" aria-label={t(lang, "trace.colsAria")}>

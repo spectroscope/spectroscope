@@ -245,7 +245,7 @@ public final class OtlpSink implements TracingPort {
         scopeSpans.putObject("scope").put("name", "spectroscope-otlp").put("version", "0.1");
         ArrayNode spans = scopeSpans.putArray("spans");
 
-        String traceId = id("trace:" + sessionId, 16);
+        String traceId = traceIdFor(sessionId);
 
         long t0 = Long.MAX_VALUE;
         long t1 = Long.MIN_VALUE;
@@ -511,6 +511,19 @@ public final class OtlpSink implements TracingPort {
             return "";
         }
         return text.length() <= max ? text : text.substring(0, max) + " …[cut]";
+    }
+
+    /**
+     * The trace id a session's exported spans share: the first 16 bytes of
+     * {@code sha256("trace:" + sessionId)}, as 32 lowercase hex characters.
+     *
+     * <p>Public because the browser recomputes it to build a deep link into
+     * the configured backend (card 137) instead of asking the server for a
+     * value it can derive. Deterministic by design: a re-export upserts the
+     * same trace rather than creating a second one.</p>
+     */
+    public static String traceIdFor(String sessionId) {
+        return id("trace:" + sessionId, 16);
     }
 
     private static String id(String seed, int bytes) {

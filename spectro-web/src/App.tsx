@@ -66,6 +66,7 @@ import {
 import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
+import { langfuseTraceUrl } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
 import type { PendingAttachment } from "./components/AttachmentPreview";
@@ -960,6 +961,24 @@ export function App() {
     [enteredFleet, shownEvents, view.trace],
   );
 
+  // Card 137: the trace's own address in the configured backend. Derived, not
+  // fetched — the id is sha256 over the session id, the same seed OtlpSink
+  // stamped on the spans. null whenever no link could work, which is most of
+  // the time: nothing exported yet, or the backend is not Langfuse.
+  const langfuseUrl = useMemo(
+    () =>
+      shownSessionId && view.lastOtlpExport
+        ? langfuseTraceUrl(view.lastOtlpExport.endpoint, shownSessionId)
+        : null,
+    [shownSessionId, view.lastOtlpExport],
+  );
+  // The failure line only speaks while NOTHING has landed. Once an export has
+  // succeeded the link stays, because the trace it wrote still exists.
+  const otlpFailure =
+    view.lastOtlpOutcome?.ok === false && view.lastOtlpExport === null
+      ? (view.lastOtlpOutcome.message ?? "")
+      : null;
+
   // The effective LLM backend for the header + the Lab map: the server's
   // provider_info frame is wire truth (sent on connect and after every
   // switch), then this view's run_start.provider, then the boot config.
@@ -1400,6 +1419,8 @@ export function App() {
             onAgentFilter={setTraceAgent}
             focusEvent={focusEvent}
             onFocusHandled={() => setFocusEvent(null)}
+            langfuseUrl={langfuseUrl}
+            otlpFailure={otlpFailure}
           />
         )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (

@@ -104,6 +104,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.timeline": { de: "timeline", en: "timeline" },
   "trace.otel": { de: "otel", en: "otel" },
   "trace.modelCol": { de: "modell", en: "model" },
+  // card 137: the deep link, shown only once spans actually landed
+  "trace.langfuse": { de: "open in langfuse", en: "open in langfuse" },
+  "trace.langfuseTitle": { de: "Diese Session als Trace in Langfuse öffnen. Die Trace-ID wird aus der Session-ID berechnet, genau wie beim Export.", en: "Open this session as a trace in Langfuse. The trace id is computed from the session id, the same way the export computes it." },
+  "trace.otlpFailed": { de: "otlp-export fehlgeschlagen", en: "otlp export failed" },
   "trace.otelTitle": { de: "OTel-Exporte zeigen — jedes Paket, das an den konfigurierten OTLP-Endpoint (z. B. Langfuse) geht", en: "Show OTel exports — every batch posted to the configured OTLP endpoint (e.g. Langfuse)" },
   "trace.timelineTitle": { de: "Jede Zeile trägt ihre Wartezeit als Balken (log-skaliert, damit ein Ausreißer den Rest nicht plättet) — wohin die Zeit ging, auf einen Blick. Δt bleibt die lineare Wahrheit.", en: "Each row wears its wait as a bar (log-scaled so one outlier cannot flatten the rest) — where the time went, at a glance. Δt stays the linear truth." },
   "trace.lensNote": { de: "Reasoning ist der Selbstbericht des Modells, aufgezeichnet neben dem, was es dann tat. Kein Fenster in die Gewichte.", en: "Reasoning is the model's self-report, recorded next to what it then did. Not a window into the weights." },
