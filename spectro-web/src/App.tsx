@@ -94,8 +94,8 @@ import {
 } from "./state/fleetStore";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
-import type { SourceStats } from "./state/traceSource";
 import { attachSources, sourceStats } from "./state/traceSource";
+import { shownImportBar, type ImportBarState } from "./components/importBar";
 import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
@@ -690,11 +690,11 @@ export function App() {
   // What the loaded file was, in its own numbers. Shown for EVERY import: until
   // now only a VS Code export said anything, so a Claude Code transcript was
   // labelled "Archive" and read as a session this machine had produced.
-  const [importBar, setImportBar] = useState<{
-    file: string;
-    stats: SourceStats;
-    note: string | null;
-  } | null>(null);
+  const [importBar, setImportBar] = useState<ImportBarState | null>(null);
+  // The bar belongs to the loaded file, so it goes when that file does. Found
+  // live: import a transcript, click a stored session, and the bar kept naming
+  // the import while the header already said archive.
+  const shownBar = shownImportBar(importBar, replay?.id ?? null);
 
   const openImport = (
     events: RunEvent[],
@@ -716,6 +716,7 @@ export function App() {
     // returned, and without saying so the empty tool bodies read as a broken
     // import.
     setImportBar({
+      sessionId: `import:${kind}:${label}`,
       file: label,
       stats: sourceStats(source),
       note: kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
@@ -1538,16 +1539,16 @@ export function App() {
         leveling={leveling}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
-      {importBar !== null && (
+      {shownBar !== null && (
         <div className="import-note-bar" role="status">
           <span>
             {t(lang, "imp.bar", {
-              file: importBar.file,
-              lines: importBar.stats.lines,
-              frames: importBar.stats.frames,
-              zero: importBar.stats.zeroLines,
+              file: shownBar.file,
+              lines: shownBar.stats.lines,
+              frames: shownBar.stats.frames,
+              zero: shownBar.stats.zeroLines,
             })}
-            {importBar.note !== null && ` ${importBar.note}`}
+            {shownBar.note !== null && ` ${shownBar.note}`}
           </span>
           <button type="button" className="ghost" onClick={() => setImportBar(null)}>
             {t(lang, "common.close")}

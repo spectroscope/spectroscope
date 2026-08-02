@@ -318,14 +318,26 @@ const TraceRow = memo(function TraceRow(props: {
               in somebody else's file and on no wire of ours. Nothing renders
               unless the line carried it. */}
           {props.notes?.map((note) => (
-            <span key={note.kind} className="trace-note" title={t(lang, `trace.note.${note.kind}Title`)}>
+            <span
+              key={note.kind}
+              className="trace-note"
+              /* The value rides in the tooltip too. A narrow window ellipsizes
+                 the chip, and a half-read model name would be its own small
+                 lie about what the file says. */
+              title={`${t(lang, `trace.note.${note.kind}`)} ${note.value}\n${t(lang, `trace.note.${note.kind}Title`)}`}
+            >
               {t(lang, `trace.note.${note.kind}`)} {note.value}
             </span>
           ))}
-          <SummaryLine
-            text={summarize(entry, lang)}
-            field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined}
-          />
+          {/* The text is the part that ellipsizes. A chip that clipped would be
+              worse than no chip: the reader would see half a fact and no sign
+              that the other half exists. */}
+          <span className="trace-summary-text">
+            <SummaryLine
+              text={summarize(entry, lang)}
+              field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined}
+            />
+          </span>
         </span>
       </button>
       {blockText !== undefined && blockText !== "" && (

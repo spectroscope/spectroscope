@@ -533,12 +533,18 @@
 .trace-row--sys .trace-type { color: var(--sand); }
 .trace-col--agent { overflow: hidden; }
 .trace-col--agent .agent-badge { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
-.trace-col--summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+/* Chips first, then the text. The text is what ellipsizes: a clipped chip would
+   show half a fact with no sign that the other half exists. */
+.trace-col--summary { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; color: var(--text-dim); }
+/* Base 0 so the text gives up its width first; the chips only start shrinking
+   once it has none left, and then they ellipsize VISIBLY rather than being cut
+   off at the cell edge with no sign that more was there. */
+.trace-summary-text { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* What the imported line says beyond its frame (effort, and the rest of that
    family). A quiet outline chip: it must read as a note ON the row, never as
    the row's own content, so it borrows the type pill's shape and stays a step
    fainter. Sand marks it as a reading of the file rather than a wire fact. */
-.trace-note { display: inline-block; margin-right: var(--sp-2); border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); vertical-align: bottom; white-space: nowrap; }
+.trace-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); white-space: nowrap; }
 
 .trace-type { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--text-dim); vertical-align: bottom; }
 
