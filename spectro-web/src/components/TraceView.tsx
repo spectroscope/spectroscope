@@ -28,6 +28,8 @@ import type { LlmDir } from "./eventSummary";
 import { detailLines, detailText } from "./traceDetail";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
+import { sourceNoteIndex, type SourceNote } from "../import/sourceNotes";
+import { noteAnchors } from "../state/traceSource";
 import { beacon } from "../state/levelingBeacon";
 import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
@@ -231,6 +233,11 @@ const TraceRow = memo(function TraceRow(props: {
   /** Lens: the block-ending thinking row carries the WHOLE block's reasoning
    *  text (every thinking_delta of the block joined), untruncated. */
   blockText?: string;
+  /** What the imported line behind this frame says beyond the frame itself
+   *  (card: the source line). Undefined on every row of a session produced
+   *  here, on a frame the importer built, and on the sibling rows of a line
+   *  whose notes another row already wears. */
+  notes?: readonly SourceNote[];
   /** The open row's causal chain (undefined while closed — keeps memo calm). */
   chain?: TraceEntry[];
   /** The open row's call index, same reason: a fresh Map on every append would
@@ -307,6 +314,14 @@ const TraceRow = memo(function TraceRow(props: {
           </span>
         </span>
         <span className="trace-col trace-col--summary">
+          {/* Read off the imported line, never off the frame: these fields are
+              in somebody else's file and on no wire of ours. Nothing renders
+              unless the line carried it. */}
+          {props.notes?.map((note) => (
+            <span key={note.kind} className="trace-note" title={t(lang, `trace.note.${note.kind}Title`)}>
+              {t(lang, `trace.note.${note.kind}`)} {note.value}
+            </span>
+          ))}
           <SummaryLine
             text={summarize(entry, lang)}
             field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined}
@@ -604,6 +619,11 @@ export function TraceView(props: {
   /** The message of a failed export, but only while NOTHING has landed yet.
    *  null keeps the toolbar silent. */
   otlpFailure?: string | null;
+  /** The imported file's own lines (card: the source line). null for a session
+   *  produced here, which has no separate source: its wire line IS the stored
+   *  line. A few fields live only in an imported transcript, and this is where
+   *  the trace reads them from. */
+  sourceLines?: readonly string[] | null;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -625,6 +645,12 @@ export function TraceView(props: {
   const otelOn = prefs.otelRows;
   // Card 137: link, honest failure line, or nothing at all.
   const linkState = traceLinkState(props.langfuseUrl ?? null, props.otlpFailure ?? null);
+  // What the imported lines say beyond their frames. Built once per import and
+  // sparse: a session produced here yields an empty map and every lookup below
+  // misses, which is exactly the "renders nothing" case.
+  const noteIndex = useMemo(() => sourceNoteIndex(props.sourceLines), [props.sourceLines]);
+  // One record fans out to several frames; its notes ride on ONE of them.
+  const anchors = useMemo(() => (noteIndex.size === 0 ? null : noteAnchors(entries)), [noteIndex, entries]);
   // Optional columns (owner 2026-07-27): host and model, both on out of the
   // box. A hidden column takes nothing but itself — no row changes meaning.
   const chosenCols = useTraceColumns();
@@ -1302,6 +1328,11 @@ export function TraceView(props: {
                         : undefined
                     }
                     blockText={lensOn ? blockTexts.get(e.seq) : undefined}
+                    notes={
+                      e.sourceLine !== undefined && anchors?.get(e.sourceLine) === e.seq
+                        ? noteIndex.get(e.sourceLine)
+                        : undefined
+                    }
                     chain={openSeq === e.seq ? openChain : undefined}
                     calls={openSeq === e.seq ? openCalls : undefined}
                     onJump={jumpTo}

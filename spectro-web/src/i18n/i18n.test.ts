@@ -3,6 +3,7 @@
 import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
 import { LAB_FACES } from "../state/labFace";
+import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 
@@ -50,6 +51,13 @@ describe("i18n dict", () => {
     }
     for (const k of ["lab.face", "lab.faceAria", "lab.faceHint"]) {
       expect(dict[k], k).toBeDefined();
+    }
+    // What an imported line says beyond its frames: the chip carries a word and
+    // the tooltip carries the sentence that keeps the word from being a riddle.
+    // Both are reached only as `trace.note.${kind}`.
+    for (const k of SOURCE_NOTE_KINDS) {
+      expect(dict[`trace.note.${k}`], `trace.note.${k}`).toBeDefined();
+      expect(dict[`trace.note.${k}Title`], `trace.note.${k}Title`).toBeDefined();
     }
     // The reasoning seg (card 88): every string the shared control renders.
     // A missing key ships as its bare name — it happened twice this week.

@@ -534,6 +534,11 @@
 .trace-col--agent { overflow: hidden; }
 .trace-col--agent .agent-badge { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: bottom; }
 .trace-col--summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+/* What the imported line says beyond its frame (effort, and the rest of that
+   family). A quiet outline chip: it must read as a note ON the row, never as
+   the row's own content, so it borrows the type pill's shape and stays a step
+   fainter. Sand marks it as a reading of the file rather than a wire fact. */
+.trace-note { display: inline-block; margin-right: var(--sp-2); border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); vertical-align: bottom; white-space: nowrap; }
 
 .trace-type { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--text-dim); vertical-align: bottom; }
 

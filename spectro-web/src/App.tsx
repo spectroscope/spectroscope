@@ -1456,6 +1456,7 @@ export function App() {
             onFocusHandled={() => setFocusEvent(null)}
             langfuseUrl={langfuseUrl}
             otlpFailure={otlpFailure}
+            sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
           />
         )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (

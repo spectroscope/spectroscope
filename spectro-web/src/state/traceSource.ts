@@ -76,3 +76,36 @@ export function attachSources<Row extends { payload: unknown }>(
     return at === undefined ? row : { ...row, sourceLine: at };
   });
 }
+
+/**
+ * Which row wears each line's notes.
+ *
+ * A record fans out: an assistant line produces a turn_start, whatever blocks
+ * it carried, a usage, and a provider_info in front of them whenever the model
+ * changed. All of those rows carry the same line index, and a chip on every one
+ * of them would read as decoration rather than as a fact about the turn.
+ *
+ * The turn_start wins where there is one, because that row IS the turn the note
+ * is about; otherwise the line's first frame takes it, which is where a user
+ * record's reading belongs (a run_start, a tool_result, an agent_message).
+ *
+ * @param rows the trace rows, in the order the view holds them
+ * @return line index -> the seq of the row that shows that line's notes; empty
+ *         for a session with no imported source
+ */
+export function noteAnchors(
+  rows: readonly { seq: number; type: string; sourceLine?: number }[],
+): ReadonlyMap<number, number> {
+  const anchor = new Map<number, number>();
+  const isTurn = new Set<number>();
+  for (const row of rows) {
+    if (row.sourceLine === undefined) continue;
+    if (row.type === "turn_start" && !isTurn.has(row.sourceLine)) {
+      anchor.set(row.sourceLine, row.seq);
+      isTurn.add(row.sourceLine);
+    } else if (!anchor.has(row.sourceLine)) {
+      anchor.set(row.sourceLine, row.seq);
+    }
+  }
+  return anchor;
+}

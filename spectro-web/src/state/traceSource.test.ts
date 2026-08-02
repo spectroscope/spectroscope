@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { attachSources, sourceStats } from "./traceSource";
+import { attachSources, noteAnchors, sourceStats } from "./traceSource";
 import { swapTracePayloads } from "./translate";
 
 const ev = (text: string): RunEvent => ({ type: "text_delta", agentId: "main", text, ts: 1 });
@@ -106,5 +106,49 @@ describe("sourceStats", () => {
     const stats = sourceStats({ lines: ["a", "b"], origin: Int32Array.from([-1]) });
     expect(stats.zeroLines).toBe(2);
     expect(stats.frames).toBe(1);
+  });
+});
+
+// One record fans out to several frames all the time: an assistant line
+// produces a turn_start, a text and a usage, sometimes a provider_info in front
+// of them. Its notes belong on ONE of those rows, not on four, so the chip
+// reads as a fact about the turn instead of as a repeated decoration.
+describe("which row wears a line's notes", () => {
+  const row = (seq: number, type: string, sourceLine?: number) => ({
+    seq,
+    dir: "in" as const,
+    ts: 1,
+    type,
+    payload: {},
+    ...(sourceLine === undefined ? {} : { sourceLine }),
+  });
+
+  it("puts them on the turn_start the line produced", () => {
+    const anchors = noteAnchors([
+      row(1, "provider_info", 7),
+      row(2, "turn_start", 7),
+      row(3, "text_delta", 7),
+      row(4, "usage", 7),
+    ]);
+    expect(anchors.get(7)).toBe(2);
+  });
+
+  // A user line produces no turn_start at all: its first frame is a run_start,
+  // a tool_result or an agent_message, whichever the record turned into.
+  it("falls back to the line's first frame when there is no turn_start", () => {
+    const anchors = noteAnchors([row(1, "tool_result", 4), row(2, "text_delta", 4)]);
+    expect(anchors.get(4)).toBe(1);
+  });
+
+  it("keeps each line's anchor apart", () => {
+    const anchors = noteAnchors([row(1, "turn_start", 1), row(2, "usage", 1), row(3, "turn_start", 2)]);
+    expect([...anchors.entries()]).toEqual([
+      [1, 1],
+      [2, 3],
+    ]);
+  });
+
+  it("has nothing to anchor on a session with no source at all", () => {
+    expect(noteAnchors([row(1, "turn_start"), row(2, "usage")]).size).toBe(0);
   });
 });
