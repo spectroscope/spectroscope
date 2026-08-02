@@ -5,8 +5,8 @@
 // Ported from the LLM_Simulator; keep the two in sync.
 
 import type { RunEvent } from "../events";
-import { claudeCodeToRunEvents } from "./claudeCode";
-import { vscodeAgentToRunEvents } from "./vscodeAgent";
+import { claudeCodeWithOrigin } from "./claudeCode";
+import { vscodeAgentWithOrigin } from "./vscodeAgent";
 
 const SPECTRO_TYPES = new Set([
   "run_start",
@@ -64,9 +64,26 @@ function safeTypeName(raw: string): string {
   return flat.length > MAX_TYPE_CHARS ? `${flat.slice(0, MAX_TYPE_CHARS)}…` : flat;
 }
 
+/**
+ * The file's own lines, and which of them produced each frame.
+ *
+ * Carried whole and verbatim, every format, every field: a pane that shows a
+ * FILTERED line and calls it the source is the defect this exists to remove.
+ * The lines are one shared array per import, so the file is held once however
+ * many frames point into it.
+ */
+export interface ImportSource {
+  /** The file's non-blank lines, byte for byte as they arrived. */
+  lines: string[];
+  /** Parallel to the events: an index into `lines`, or -1 for a frame the
+   *  importer built rather than read. */
+  origin: Int32Array;
+}
+
 export function detectAndLoad(text: string): {
   events: RunEvent[];
   kind: "spectroscope" | "claude-code" | "vscode-agent";
+  source: ImportSource;
 } {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
   if (lines.length === 0) throw new Error("empty file");
@@ -85,13 +102,20 @@ export function detectAndLoad(text: string): {
     const r = rec as { type?: unknown; message?: unknown; data?: unknown } | null;
     if (!r || typeof r.type !== "string") continue;
     if (SPECTRO_TYPES.has(r.type)) {
-      return { events: records as RunEvent[], kind: "spectroscope" };
+      // Replayed verbatim, so line and frame are the same thing. Carrying it
+      // anyway is what makes the byte identity checkable rather than asserted:
+      // a hand-edited or foreign-written file is not what our writer produced.
+      const identity = new Int32Array(records.length);
+      for (let i = 0; i < records.length; i++) identity[i] = i;
+      return { events: records as RunEvent[], kind: "spectroscope", source: { lines, origin: identity } };
     }
     if (VSCODE_AGENT_TYPES.has(r.type) && hasDataObject(r)) {
-      return { events: vscodeAgentToRunEvents(records), kind: "vscode-agent" };
+      const { events, origin } = vscodeAgentWithOrigin(records);
+      return { events, kind: "vscode-agent", source: { lines, origin } };
     }
     if (r.message !== undefined) {
-      return { events: claudeCodeToRunEvents(records), kind: "claude-code" };
+      const { events, origin } = claudeCodeWithOrigin(records);
+      return { events, kind: "claude-code", source: { lines, origin } };
     }
   }
   // Nothing matched. Say what arrived and what is accepted — "unrecognized

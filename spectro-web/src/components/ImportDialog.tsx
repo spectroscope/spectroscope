@@ -11,6 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ChangeEvent } from "react";
 import type { RunEvent } from "../events";
+import type { ImportSource } from "../import/detect";
 import { detectAndLoad } from "../import/detect";
 import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
@@ -31,7 +32,12 @@ function formatKb(bytes: number): string {
 }
 
 export function ImportDialog(props: {
-  onLoad: (events: RunEvent[], label: string, kind: "spectroscope" | "claude-code" | "vscode-agent") => void;
+  onLoad: (
+    events: RunEvent[],
+    label: string,
+    kind: "spectroscope" | "claude-code" | "vscode-agent",
+    source: ImportSource,
+  ) => void;
   onClose: () => void;
 }) {
   const [text, setText] = useState("");
@@ -70,12 +76,12 @@ export function ImportDialog(props: {
   const load = (raw: string, label: string): void => {
     setError(null);
     try {
-      const { events, kind } = detectAndLoad(raw);
+      const { events, kind, source } = detectAndLoad(raw);
       // The VS Code export records that a tool ran and whether it succeeded,
       // never what it returned. Say that once, here, rather than leaving the
       // reader to infer it from a screen of empty tool bodies.
       setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(events, label, kind);
+      props.onLoad(events, label, kind, source);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);

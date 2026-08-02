@@ -19,6 +19,7 @@
 // detectAndLoad returns.
 
 import type { RunEvent } from "../events";
+import type { ImportedEvents } from "./claudeCode";
 
 interface VsToolRequest {
   toolCallId?: string;
@@ -73,8 +74,26 @@ function decodeArguments(value: unknown): unknown {
 }
 
 export function vscodeAgentToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
-  const recs = records.map(asRecord).filter((r): r is VsRecord => r !== null);
+  return vscodeAgentWithOrigin(records, base).events;
+}
+
+/** The stream plus the line each frame came from; see {@link ImportedEvents}. */
+export function vscodeAgentWithOrigin(records: unknown[], base = 1_783_500_000_000): ImportedEvents {
+  // As in the Claude Code adapter: a dropped record still occupies a line.
+  const recs: VsRecord[] = [];
+  const recLine: number[] = [];
+  records.forEach((r, i) => {
+    const v = asRecord(r);
+    if (v !== null) {
+      recs.push(v);
+      recLine.push(i);
+    }
+  });
   const out: RunEvent[] = [];
+  const origin: number[] = [];
+  const chargeTo = (line: number): void => {
+    while (origin.length < out.length) origin.push(line);
+  };
   const runId = "vscode-import";
   const agentId = "main";
 
@@ -109,7 +128,7 @@ export function vscodeAgentToRunEvents(records: unknown[], base = 1_783_500_000_
     out.push({ type: "run_start", runId, agentId, prompt, ts });
   };
 
-  recs.forEach((r, i) => {
+  const handleRecord = (r: VsRecord, i: number): void => {
     const ts = tsOf(r, i, base);
     lastTs = ts;
     const d = r.data;
@@ -181,10 +200,16 @@ export function vscodeAgentToRunEvents(records: unknown[], base = 1_783_500_000_
       default:
         break;
     }
+  };
+
+  recs.forEach((r, i) => {
+    handleRecord(r, i);
+    chargeTo(recLine[i]);
   });
 
   if (started) out.push({ type: "run_end", runId, stopReason: "end_turn", ts: lastTs });
-  return out;
+  chargeTo(-1); // the closing run_end is the importer's own
+  return { events: out, origin: Int32Array.from(origin) };
 }
 
 export function parseVscodeAgentExport(text: string): RunEvent[] {

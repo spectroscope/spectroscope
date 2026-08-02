@@ -80,6 +80,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.err.read": { de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?", en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?" },
   "imp.err.fetch": { de: "Der Server gab {status} zurück, als er die Datei holen sollte.", en: "The server answered {status} when asked for that file." },
   "imp.load": { de: "Laden", en: "Load" },
+  // Shown for EVERY import, not only the VS Code one. The counts are the file's
+  // own: how many lines arrived, how many frames this view is built from, and
+  // how many lines produced nothing at all (queue operations, attachments, hook
+  // records). The last sentence is the plain truth about where the file lives:
+  // an import is never written to disk, and cannot be resumed or deleted.
+  "imp.bar": {
+    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen haben keinen Frame erzeugt. Nichts wurde auf die Platte geschrieben.",
+    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines produced no frame. Nothing was written to disk.",
+  },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },
@@ -1083,6 +1092,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "arch.resume": { de: "Session fortsetzen", en: "Resume session" },
   "arch.resumeTitle": { de: "Diese Session wieder aufnehmen: der ganze Verlauf wird beim nächsten Prompt wieder ans LLM hochgeladen", en: "Pick this session back up: the whole history is re-uploaded to the LLM with your next prompt" },
   "hdr.resumed": { de: "Fortgesetzt", en: "Resumed" },
+  // An import is not an archive. It came from another tool's file and lives
+  // only in this tab; calling it "Archive" made it indistinguishable from a
+  // session this machine produced and stored.
+  "hdr.imported": { de: "Importiert", en: "Imported" },
   "trace.resumeSummary": { de: "{e} Events geladen · ~{t} Tokens Verlauf gehen mit dem nächsten Request wieder hoch (plus System-Prompt & Tool-Schemas obendrauf)", en: "{e} events loaded · ~{t} tokens of history ride along with the next request (plus system prompt & tool schemas on top)" },
   "trace.resumeRowTitle": { de: "an die LLM · der Verlauf wird beim nächsten Request wieder hochgeladen (UI-Marker, kein Wire-Event)", en: "to the LLM · the history is re-uploaded with the next request (UI marker, not a wire event)" },
   "trace.resumeNote": { de: "UI-Marker, kein Wire-Event: Session fortgesetzt. Alles oberhalb ist der alte Verlauf; er wird beim NÄCHSTEN Request als messages[] wieder mit hochgeladen (siehe danach context_info/usage).", en: "UI marker, not a wire event: session resumed. Everything above is the old history; it is re-uploaded as messages[] with the NEXT request (watch context_info/usage right after)." },

@@ -193,9 +193,49 @@ const asText = (content: unknown): string => {
   return "";
 };
 
+/**
+ * An adapted stream, with the line each frame came from.
+ *
+ * `origin[i]` is the index, in the file's own non-blank lines, of the record
+ * that produced `events[i]`, or -1 when the importer built the frame itself
+ * (the up-front provider_info, the closing run_end, the unsettled receipts).
+ * The relation is frame to zero-or-one records, never frame to many: every
+ * push happens inside the handling of exactly one record.
+ */
+export interface ImportedEvents {
+  events: RunEvent[];
+  origin: Int32Array;
+}
+
 export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
-  const recs = records.filter((r): r is CCRecord => !!r && typeof r === "object");
+  return claudeCodeWithOrigin(records, base).events;
+}
+
+export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_000): ImportedEvents {
+  // The line index, not the position in `recs`: a line that parsed to a
+  // non-object is dropped from `recs` but still occupies a line in the file,
+  // and an origin that ignored that would name the wrong line on screen.
+  const recs: CCRecord[] = [];
+  const recLine: number[] = [];
+  records.forEach((r, i) => {
+    if (!!r && typeof r === "object") {
+      recs.push(r as CCRecord);
+      recLine.push(i);
+    }
+  });
   const out: RunEvent[] = [];
+  const origin: number[] = [];
+  /**
+   * Charge every frame pushed since the last call to `line`.
+   *
+   * Measured from `out.length` rather than from a start index captured before
+   * the record ran, because the record handler returns early in several places
+   * (an orphaned sidechain, above all). A captured index skips the tail on
+   * those paths and every later frame is charged to the wrong line.
+   */
+  const chargeTo = (line: number): void => {
+    while (origin.length < out.length) origin.push(line);
+  };
   const runId = "cc-import";
   let started = false;
 
@@ -397,8 +437,9 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
   };
 
   announce(firstModel, stamps[0] ?? base);
+  chargeTo(-1); // the opening announcement is the importer's, not a line's
 
-  recs.forEach((r, i) => {
+  const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
     const content = r.message?.content;
     const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
@@ -461,6 +502,11 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
           ts,
         });
     }
+  };
+
+  recs.forEach((r, i) => {
+    handleRecord(r, i);
+    chargeTo(recLine[i]);
   });
 
   if (started) {
@@ -489,7 +535,9 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
     }
     out.push({ type: "run_end", runId, stopReason: "end_turn", ts: last });
   }
-  return out;
+  // The closing frames belong to the file as a whole, not to its last line.
+  chargeTo(-1);
+  return { events: out, origin: Int32Array.from(origin) };
 }
 
 export function parseTranscript(text: string): RunEvent[] {

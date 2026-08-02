@@ -93,6 +93,9 @@ import {
   removeFleet,
 } from "./state/fleetStore";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
+import type { ImportSource } from "./import/detect";
+import type { SourceStats } from "./state/traceSource";
+import { attachSources, sourceStats } from "./state/traceSource";
 import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
@@ -110,6 +113,11 @@ interface Replay {
   state: UiState;
   /** Raw events too: the graph tab replays exactly what the reducer consumed. */
   events: RunEvent[];
+  /** An import also carries the file it came from, so the trace can point at
+   *  the line behind each frame. It lives here and nowhere else: an import is
+   *  never written to disk (see `canResume`), and saying so is more honest than
+   *  inventing a store for it. */
+  source?: ImportSource;
 }
 
 // Right-panel resize clamps: the panel never shrinks below its minimum and
@@ -679,25 +687,39 @@ export function App() {
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
   const [importOpen, setImportOpen] = useState(false);
-  const [importNote, setImportNote] = useState<string | null>(null);
+  // What the loaded file was, in its own numbers. Shown for EVERY import: until
+  // now only a VS Code export said anything, so a Claude Code transcript was
+  // labelled "Archive" and read as a session this machine had produced.
+  const [importBar, setImportBar] = useState<{
+    file: string;
+    stats: SourceStats;
+    note: string | null;
+  } | null>(null);
 
   const openImport = (
     events: RunEvent[],
     label: string,
     kind: "spectroscope" | "claude-code" | "vscode-agent",
+    source: ImportSource,
   ): void => {
     setReplay({
       id: `import:${kind}:${label}`,
       state: foldArchive(events),
       events,
+      source,
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setImportOpen(false);
-    // The dialog is gone by the time this note matters, so it belongs to the
-    // session, not to the dialog. A VS Code export records that each tool ran
-    // and whether it succeeded, never what it returned; without this line the
-    // empty tool bodies read as a broken import.
-    setImportNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
+    // The dialog is gone by the time this bar matters, so it belongs to the
+    // session, not to the dialog. The VS Code note keeps its own sentence: that
+    // export records that each tool ran and whether it succeeded, never what it
+    // returned, and without saying so the empty tool bodies read as a broken
+    // import.
+    setImportBar({
+      file: label,
+      stats: sourceStats(source),
+      note: kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
+    });
   };
 
   // Scenario playback: compile the bilingual DSL in the current chrome
@@ -829,6 +851,15 @@ export function App() {
     if (tab !== "chat" && openRef.current) beaconRef.current(tab, shownRef.current);
   }, [tab]);
   const recordedView = replay === null ? live : replay.state;
+  // An import's trace rows learn which line of the file they came from. This
+  // runs against the ORIGINAL stream and BEFORE the translation swap below:
+  // swapTracePayloads spreads the row and replaces only its payload, so a field
+  // on the row survives it. The other order attaches to payloads that are no
+  // longer in the rows, and every frame silently loses its line.
+  const sourcedView = useMemo(() => {
+    if (replay === null || replay.source === undefined || enteredFleet !== null) return recordedView;
+    return { ...recordedView, trace: attachSources(recordedView.trace, replay.events, replay.source.origin) };
+  }, [recordedView, replay, enteredFleet]);
 
   // The tabs' flat event source, third-source duality: an entered fleet's events
   // win over the own live/replay session. The fold-tabs (spectrum/graph/text)
@@ -862,13 +893,13 @@ export function App() {
   // socket's provider — keeps reading `live`. A fleet is excluded because its
   // events are not this view's session at all.
   const view = useMemo(() => {
-    if (!showingTranslation || enteredFleet !== null) return recordedView;
+    if (!showingTranslation || enteredFleet !== null) return sourcedView;
     const folded = reduceAll(initialState, shownEvents);
     return {
       ...(replay === null ? folded : normalizeReplay(folded)),
-      trace: swapTracePayloads(recordedView.trace, tabEvents, shownEvents),
+      trace: swapTracePayloads(sourcedView.trace, tabEvents, shownEvents),
     };
-  }, [showingTranslation, enteredFleet, recordedView, replay, shownEvents, tabEvents]);
+  }, [showingTranslation, enteredFleet, sourcedView, replay, shownEvents, tabEvents]);
   // The lab is the one tab that does not fold on render: it STEPS a stream out
   // of a dam this app seeded. So it is handed the translated stream as the
   // stream it steps, which restarts its scrub. An archive re-seeds itself off
@@ -1506,10 +1537,18 @@ export function App() {
         leveling={leveling}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
-      {importNote !== null && (
+      {importBar !== null && (
         <div className="import-note-bar" role="status">
-          <span>{importNote}</span>
-          <button type="button" className="ghost" onClick={() => setImportNote(null)}>
+          <span>
+            {t(lang, "imp.bar", {
+              file: importBar.file,
+              lines: importBar.stats.lines,
+              frames: importBar.stats.frames,
+              zero: importBar.stats.zeroLines,
+            })}
+            {importBar.note !== null && ` ${importBar.note}`}
+          </span>
+          <button type="button" className="ghost" onClick={() => setImportBar(null)}>
             {t(lang, "common.close")}
           </button>
         </div>
