@@ -25,19 +25,33 @@
  * translated label and the file's own token beside it.
  */
 export type SourceNote = {
-  /** effort: how hard the model was told to think on this turn ("xhigh", "max").
-   *  origin: who wrote a user turn when it was NOT a person. */
-  kind: "effort" | "origin";
+  /** effort:    how hard the model was told to think on this turn ("xhigh").
+   *  origin:    who wrote a user turn when it was NOT a person.
+   *  truncated: the answer stopped on a limit, not on its own ending.
+   *  fallback:  the model was swapped under the run, from one to another. */
+  kind: "effort" | "origin" | "truncated" | "fallback";
   value: string;
 };
 
 /** Every note kind, for the dictionary's coverage test. */
-export const SOURCE_NOTE_KINDS = ["effort", "origin"] as const;
+export const SOURCE_NOTE_KINDS = ["effort", "origin", "truncated", "fallback"] as const;
 
 /** Cheap prefilter: a line that names none of these cannot produce a note, and
  *  a real transcript is mostly such lines. Parsing all of them would mean a
  *  second full parse of a file that can run to 80 MB. */
-const CANDIDATE = ['"effort"', '"origin"'];
+const CANDIDATE = ['"effort"', '"origin"', '"max_tokens"', '"stop_sequence"', '"fallback"'];
+
+/** The endings that mean the answer was CUT OFF rather than finished: a token
+ *  ceiling and a configured stop sequence. "end_turn" and "tool_use" are the
+ *  model finishing, and a null is a message that reported no ending at all. */
+const TRUNCATING = new Set(["max_tokens", "stop_sequence"]);
+
+/** A fallback block names the models as objects, not as strings. */
+const modelOf = (v: unknown): string | null => {
+  if (v === null || typeof v !== "object") return null;
+  const m = (v as { model?: unknown }).model;
+  return typeof m === "string" && m !== "" ? m : null;
+};
 
 /**
  * What one line of an imported transcript says beyond its frames.
@@ -66,6 +80,22 @@ export function readSourceNotes(line: string): SourceNote[] {
     const who = (origin as { kind?: unknown }).kind;
     if (typeof who === "string" && who !== "" && who !== "human") notes.push({ kind: "origin", value: who });
   }
+  const message = (rec as { message?: unknown }).message;
+  if (message === null || typeof message !== "object") return notes;
+  // The message's OWN field, never the words wherever they appear: a tool
+  // result quoting "max_tokens" is not an ending.
+  const stop = (message as { stop_reason?: unknown }).stop_reason;
+  if (typeof stop === "string" && TRUNCATING.has(stop)) notes.push({ kind: "truncated", value: stop });
+  const content = (message as { content?: unknown }).content;
+  if (Array.isArray(content))
+    for (const block of content as { type?: unknown; from?: unknown; to?: unknown }[]) {
+      if (block === null || typeof block !== "object" || block.type !== "fallback") continue;
+      const from = modelOf(block.from);
+      const to = modelOf(block.to);
+      // Half a swap is not a swap: with one side missing there is nothing to
+      // say that the announced model does not already say.
+      if (from !== null && to !== null) notes.push({ kind: "fallback", value: `${from} → ${to}` });
+    }
   return notes;
 }
 

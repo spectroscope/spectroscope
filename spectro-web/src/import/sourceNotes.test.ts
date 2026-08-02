@@ -103,3 +103,69 @@ describe("who wrote a user turn", () => {
     expect(readSourceNotes('{"origin":null}')).toEqual([]);
   });
 });
+
+// run_end now reports the file's own stop reason, but that is one frame at the
+// very end of a session. A reader looking at turn 214 still cannot see that
+// THIS answer was cut off mid-sentence, and there is no other sign of it: the
+// text simply stops.
+describe("a turn the model did not finish", () => {
+  it("says nothing about a turn that ended on its own terms", () => {
+    for (const stop of ['"end_turn"', '"tool_use"', "null"]) {
+      expect(readSourceNotes(`{"type":"assistant","message":{"stop_reason":${stop}}}`)).toEqual([]);
+    }
+  });
+
+  it("says nothing about a transcript that records no stop reason at all", () => {
+    expect(readSourceNotes('{"type":"assistant","message":{"role":"assistant"}}')).toEqual([]);
+  });
+
+  // 13 messages in the corpus end on max_tokens and 322 on stop_sequence. Both
+  // mean the answer stopped for a reason outside the model's own ending.
+  it("marks the turn when the answer ran into a limit", () => {
+    expect(readSourceNotes('{"type":"assistant","message":{"stop_reason":"max_tokens"}}')).toEqual([
+      { kind: "truncated", value: "max_tokens" },
+    ]);
+    expect(readSourceNotes('{"type":"assistant","message":{"stop_reason":"stop_sequence"}}')).toEqual([
+      { kind: "truncated", value: "stop_sequence" },
+    ]);
+  });
+
+  // A tool result quoting the words is not a stop reason.
+  it("reads the message's own field, not the words wherever they appear", () => {
+    expect(
+      readSourceNotes(
+        '{"type":"user","message":{"content":[{"type":"tool_result","content":"max_tokens"}]}}',
+      ),
+    ).toEqual([]);
+  });
+});
+
+// 18 records in the corpus swap the model mid-message. The importer announces
+// the NEW model (the record's own message.model already names it), so the
+// change shows; what is lost is that it was a fallback and which model it left.
+// The record's only content block is the fallback itself, so the turn otherwise
+// renders empty.
+describe("a model swapped under the run", () => {
+  it("says nothing about an ordinary assistant line", () => {
+    expect(
+      readSourceNotes('{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}'),
+    ).toEqual([]);
+  });
+
+  it("names the model it left and the model it landed on", () => {
+    expect(
+      readSourceNotes(
+        '{"type":"assistant","message":{"content":[{"type":"fallback","from":{"model":"claude-fable-5"},"to":{"model":"claude-opus-5"}}]}}',
+      ),
+    ).toEqual([{ kind: "fallback", value: "claude-fable-5 → claude-opus-5" }]);
+  });
+
+  it("stays quiet on a fallback block that does not name both models", () => {
+    expect(
+      readSourceNotes('{"type":"assistant","message":{"content":[{"type":"fallback","to":{"model":"x"}}]}}'),
+    ).toEqual([]);
+    expect(
+      readSourceNotes('{"type":"assistant","message":{"content":[{"type":"fallback","from":"a","to":"b"}]}}'),
+    ).toEqual([]);
+  });
+});
