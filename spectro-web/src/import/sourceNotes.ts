@@ -16,22 +16,28 @@
 // Nothing here touches events.ts: these are readings of somebody else's file,
 // not events on our wire.
 
-/** One thing a line says about the turn it produced. */
+/**
+ * One thing a line says about the turn it produced.
+ *
+ * `value` always travels VERBATIM from the file. Every one of these fields is a
+ * small open vocabulary that its writer extends without asking us, so a lookup
+ * table would silently drop the next word it learns. The chip carries a
+ * translated label and the file's own token beside it.
+ */
 export type SourceNote = {
-  /** How hard the model was told to think on this turn ("xhigh", "max", …). */
-  kind: "effort";
-  /** The level verbatim. Five are in the corpus and the next one is not ours
-   *  to predict, so an unknown word travels rather than being dropped. */
+  /** effort: how hard the model was told to think on this turn ("xhigh", "max").
+   *  origin: who wrote a user turn when it was NOT a person. */
+  kind: "effort" | "origin";
   value: string;
 };
 
 /** Every note kind, for the dictionary's coverage test. */
-export const SOURCE_NOTE_KINDS = ["effort"] as const;
+export const SOURCE_NOTE_KINDS = ["effort", "origin"] as const;
 
 /** Cheap prefilter: a line that names none of these cannot produce a note, and
  *  a real transcript is mostly such lines. Parsing all of them would mean a
  *  second full parse of a file that can run to 80 MB. */
-const CANDIDATE = ['"effort"'];
+const CANDIDATE = ['"effort"', '"origin"'];
 
 /**
  * What one line of an imported transcript says beyond its frames.
@@ -52,6 +58,14 @@ export function readSourceNotes(line: string): SourceNote[] {
   const notes: SourceNote[] = [];
   const effort = (rec as { effort?: unknown }).effort;
   if (typeof effort === "string" && effort !== "") notes.push({ kind: "effort", value: effort });
+  // "human" is deliberately silent. Half the corpus predates the field, so an
+  // absent origin and a human one have to look the same on screen: a "human"
+  // chip would claim, on every older file, something the file never said.
+  const origin = (rec as { origin?: unknown }).origin;
+  if (origin !== null && typeof origin === "object") {
+    const who = (origin as { kind?: unknown }).kind;
+    if (typeof who === "string" && who !== "" && who !== "human") notes.push({ kind: "origin", value: who });
+  }
   return notes;
 }
 

@@ -62,3 +62,44 @@ describe("the index over a whole file", () => {
     expect(index.get(0)).toBe(index.get(0));
   });
 });
+
+// Roughly one in four "user" turns that carry the field was not written by the
+// user (of 1342 in the corpus: human 914, task-notification 385, coordinator
+// 43). Labelling a machine injection as a person is a factual error, which is
+// this card's whole subject.
+describe("who wrote a user turn", () => {
+  it("says nothing about a transcript that predates the field", () => {
+    expect(readSourceNotes('{"type":"user","message":{"role":"user","content":"hi"}}')).toEqual([]);
+  });
+
+  // The absent case and the human case must look the SAME on screen. Half the
+  // corpus records no origin at all, so a "human" chip would claim, on every
+  // older file, something the file never said.
+  it("says nothing when the file says a person wrote it", () => {
+    expect(readSourceNotes('{"type":"user","origin":{"kind":"human"}}')).toEqual([]);
+  });
+
+  it("names the machine when the file names one", () => {
+    expect(readSourceNotes('{"type":"user","origin":{"kind":"task-notification"}}')).toEqual([
+      { kind: "origin", value: "task-notification" },
+    ]);
+    expect(readSourceNotes('{"type":"user","origin":{"kind":"coordinator"}}')).toEqual([
+      { kind: "origin", value: "coordinator" },
+    ]);
+  });
+
+  // Same reason as the effort level: the next writer is not ours to predict,
+  // and a table would silently drop it.
+  it("carries a kind it has never seen verbatim", () => {
+    expect(readSourceNotes('{"origin":{"kind":"scheduler"}}')).toEqual([
+      { kind: "origin", value: "scheduler" },
+    ]);
+  });
+
+  it("refuses an origin that is not the shape the file uses", () => {
+    expect(readSourceNotes('{"origin":"task-notification"}')).toEqual([]);
+    expect(readSourceNotes('{"origin":{}}')).toEqual([]);
+    expect(readSourceNotes('{"origin":{"kind":7}}')).toEqual([]);
+    expect(readSourceNotes('{"origin":null}')).toEqual([]);
+  });
+});
