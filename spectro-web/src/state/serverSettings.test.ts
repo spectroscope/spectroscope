@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { fetchSettings, putSettings, originLabel, __setTestHooks } from "./serverSettings";
+import { fetchSettings, putSettings, originLabel, textFieldPatch, __setTestHooks } from "./serverSettings";
 
 const view = {
   effective: { provider: "ollama" },
@@ -55,5 +55,51 @@ describe("serverSettings", () => {
         }) as Response) as typeof fetch,
     });
     await expect(putSettings("user", { providr: "x" })).rejects.toThrow(/providr/);
+  });
+});
+
+describe("textFieldPatch", () => {
+  const CRED = "pk-lf-PUBLIC:sk-lf-SECRET";
+
+  it("writes nothing when the field is left exactly as it was found", () => {
+    // The one that matters: install.sh puts the pk:sk pair in ~/.spectro/.env
+    // (0600), the env layer resolves it into `effective`, and the panel
+    // prefills the input with it. An operator who clicks in to read the pair
+    // and clicks away must not thereby copy that credential into
+    // settings.json, where it would also outrank the file it came from.
+    expect(textFieldPatch("otlpBasicAuth", CRED, CRED)).toBeNull();
+  });
+
+  it("ignores surrounding whitespace on an otherwise unchanged field", () => {
+    expect(
+      textFieldPatch(
+        "otlpEndpoint",
+        "  http://localhost:3000/api/public/otel  ",
+        "http://localhost:3000/api/public/otel",
+      ),
+    ).toBeNull();
+  });
+
+  it("writes a deliberate edit", () => {
+    expect(textFieldPatch("otlpBasicAuth", "pk-lf-NEW:sk-lf-NEW", CRED)).toEqual({
+      otlpBasicAuth: "pk-lf-NEW:sk-lf-NEW",
+    });
+  });
+
+  it("trims what it writes", () => {
+    expect(textFieldPatch("otlpEndpoint", "  http://localhost:3100/api/public/otel ", "")).toEqual({
+      otlpEndpoint: "http://localhost:3100/api/public/otel",
+    });
+  });
+
+  it("clearing a set field removes the key", () => {
+    expect(textFieldPatch("otlpEndpoint", "   ", "http://localhost:3000/api/public/otel")).toEqual({
+      otlpEndpoint: null,
+    });
+  });
+
+  it("clearing an already empty field writes nothing", () => {
+    expect(textFieldPatch("otlpEndpoint", "", "")).toBeNull();
+    expect(textFieldPatch("otlpEndpoint", "   ", "")).toBeNull();
   });
 });

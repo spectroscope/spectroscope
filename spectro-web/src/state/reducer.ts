@@ -198,6 +198,14 @@ export interface UiState {
   workspace: WorkspaceInfo | null;
   /** The active backend announcement — latest wins (connect + every switch). */
   providerInfo: ProviderInfo | null;
+  /** The last SUCCESSFUL otlp export (card 137): wire truth for the deep link.
+   *  A later failure does not clear it, because the trace it created still
+   *  exists in the backend. The endpoint is the one that actually received the
+   *  spans, taken from the frame, never from Settings (which can be edited
+   *  after the fact). */
+  lastOtlpExport: { endpoint: string; ts: number } | null;
+  /** The last export outcome, successful or not, for the honest failure line. */
+  lastOtlpOutcome: { ok: boolean; message?: string } | null;
   /** The current (or last) run's model id — run_start.model wins, provider_info
    *  is the live fallback; the trace rows and answer footers read it (card 87). */
   runModel: string | null;
@@ -231,6 +239,8 @@ export const initialState: UiState = {
   plan: null,
   workspace: null,
   providerInfo: null,
+  lastOtlpExport: null,
+  lastOtlpOutcome: null,
   runModel: null,
   permissionMode: "ask",
   assistantTurnStart: {},
@@ -432,6 +442,27 @@ export function reduce(state: UiState, event: RunEvent): UiState {
       // Answers are stamped at their own usage event, so an announcement moves
       // the model for what follows and never reaches back to what is stamped.
       runModel: model !== "" ? model : traced.runModel,
+    };
+  }
+  // Same boundary rule for otlp_export (card 137): the mirror frame is the
+  // only place the browser learns that spans reached a backend, and which one.
+  // Folded here rather than scanned back out of state.trace, because
+  // windowTrace drops everything past LIVE_TRACE_WINDOW and a long session
+  // would silently lose its link.
+  if (raw.type === "otlp_export") {
+    const x = event as unknown as { endpoint?: unknown; ok?: unknown; message?: unknown; ts?: unknown };
+    const ok = x.ok === true;
+    const endpoint = typeof x.endpoint === "string" ? x.endpoint : "";
+    const ts = typeof x.ts === "number" ? x.ts : Date.now();
+    return {
+      ...traced,
+      // Only a landed export moves this; a failure leaves the last good one
+      // standing, link and all.
+      lastOtlpExport: ok && endpoint !== "" ? { endpoint, ts } : traced.lastOtlpExport,
+      lastOtlpOutcome: {
+        ok,
+        ...(typeof x.message === "string" ? { message: x.message } : {}),
+      },
     };
   }
   // Same boundary rule for permission_mode_info: connect + every switch

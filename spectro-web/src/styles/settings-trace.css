@@ -337,6 +337,52 @@
   color: var(--text-faint);
 }
 
+/* ---- docker offer (card 137) ----
+   A quiet block under the OTLP fields: one sentence, and for a ready daemon a
+   command the operator copies and runs. Tokens only, no new colour value. */
+.settings-docker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.settings-docker-detail code {
+  font-size: var(--fs-12);
+  color: var(--text-faint);
+}
+/* The house link idiom (.about-terms dt a): colour lives on the line, never on
+   the text. A bare anchor renders in the browser's default blue, which is not
+   a brand value and appears in no palette. */
+.settings-docker a {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-strong);
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.settings-docker a:hover {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.settings-docker-cmd {
+  margin: 0;
+  padding: var(--sp-2);
+  overflow-x: auto;
+  font-size: var(--fs-12);
+  white-space: pre;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+}
+/* The shared .copy chip is a hover-reveal affordance: absolutely positioned
+   inside .output-wrap and opacity 0 until that parent is hovered. Reused here
+   it would be an invisible button pinned to the panel corner — measured, not
+   assumed. Same correction .graph-detail__events-head already applies. */
+.settings-docker .copy {
+  position: static;
+  opacity: 1;
+  align-self: flex-start;
+}
+
 /* ---- footer ---- */
 .settings-foot {
   display: flex;

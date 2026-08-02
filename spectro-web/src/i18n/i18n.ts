@@ -104,6 +104,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.timeline": { de: "timeline", en: "timeline" },
   "trace.otel": { de: "otel", en: "otel" },
   "trace.modelCol": { de: "modell", en: "model" },
+  // card 137: the deep link, shown only once spans actually landed
+  "trace.langfuse": { de: "open in langfuse", en: "open in langfuse" },
+  "trace.langfuseTitle": { de: "Diese Session als Trace in Langfuse öffnen. Die Trace-ID wird aus der Session-ID berechnet, genau wie beim Export.", en: "Open this session as a trace in Langfuse. The trace id is computed from the session id, the same way the export computes it." },
+  "trace.otlpFailed": { de: "otlp-export fehlgeschlagen", en: "otlp export failed" },
   "trace.otelTitle": { de: "OTel-Exporte zeigen — jedes Paket, das an den konfigurierten OTLP-Endpoint (z. B. Langfuse) geht", en: "Show OTel exports — every batch posted to the configured OTLP endpoint (e.g. Langfuse)" },
   "trace.timelineTitle": { de: "Jede Zeile trägt ihre Wartezeit als Balken (log-skaliert, damit ein Ausreißer den Rest nicht plättet) — wohin die Zeit ging, auf einen Blick. Δt bleibt die lineare Wahrheit.", en: "Each row wears its wait as a bar (log-scaled so one outlier cannot flatten the rest) — where the time went, at a glance. Δt stays the linear truth." },
   "trace.lensNote": { de: "Reasoning ist der Selbstbericht des Modells, aufgezeichnet neben dem, was es dann tat. Kein Fenster in die Gewichte.", en: "Reasoning is the model's self-report, recorded next to what it then did. Not a window into the weights." },
@@ -366,6 +370,19 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.otlpHint": { de: "Jeder Run streamt seine Spans zusätzlich an einen OTLP-Endpoint (Langfuse, Jaeger, …) — die JSONL-Datei bleibt der Anker; ein toter Endpoint bremst nie einen Run.", en: "Every run also streams its spans to an OTLP endpoint (Langfuse, Jaeger, …) — the JSONL file stays the anchor; a dead endpoint never slows a run." },
   "set.otlpEndpoint": { de: "OTLP-Endpoint", en: "OTLP endpoint" },
   "set.otlpAuth": { de: "Basic-Auth (pk:sk, optional)", en: "Basic auth (pk:sk, optional)" },
+  // Docker detection (card 137). spectroscope reads whether Docker is usable
+  // and offers the next step. It never starts anything; the operator runs the
+  // command. Each state gets its own sentence, because telling someone with a
+  // stopped daemon to install Docker is the failure this block exists to avoid.
+  "set.dockerUnknown": { de: "Docker-Status wird gelesen …", en: "Reading Docker status …" },
+  "set.dockerAbsent": { de: "Docker ist auf diesem Rechner nicht installiert. Langfuse läuft als Container-Stack, also brauchst du Docker zuerst.", en: "Docker is not installed on this machine. Langfuse runs as a container stack, so Docker comes first." },
+  "set.dockerInstall": { de: "Docker Desktop laden", en: "Get Docker Desktop" },
+  "set.dockerDown": { de: "Docker ist installiert, der Daemon antwortet nicht. Starte Docker Desktop und öffne die Settings erneut.", en: "Docker is installed and the daemon is not answering. Start Docker Desktop, then reopen Settings." },
+  "set.dockerNoCompose": { de: "Der Docker-Daemon läuft, das compose-Plugin fehlt. Ohne compose lässt sich der Stack nicht starten.", en: "The Docker daemon is running and the compose plugin is missing. Without compose the stack cannot start." },
+  "set.dockerRemote": { de: "DOCKER_HOST zeigt auf einen Daemon auf einem anderen Rechner. Der Stack würde dort laufen, nicht hier auf localhost.", en: "DOCKER_HOST points at a daemon on another machine. The stack would run there, not on localhost here." },
+  "set.dockerReady": { de: "Docker läuft. Dieser Befehl startet einen lokalen Langfuse-Stack:", en: "Docker is running. This command starts a local Langfuse stack:" },
+  "set.langfuseCommand": { de: "Befehl kopieren", en: "Copy command" },
+  "set.langfuseCost": { de: "Das startet sechs Container und lädt einige Gigabyte an Images. spectroscope führt den Befehl nicht aus, du führst ihn aus. Das Skript legt Endpoint und Key-Paar selbst in ~/.spectro/.env ab; danach diesen Server einmal neu starten.", en: "That starts six containers and downloads a few gigabytes of images. spectroscope does not run the command, you do. The script writes the endpoint and the key pair into ~/.spectro/.env itself; restart this server once afterwards." },
   "doc.otlp": { de: "OTLP-Export", en: "OTLP export" },
   "doc.otlpOff": { de: "aus — kein Endpoint gesetzt (Settings)", en: "off — no endpoint set (Settings)" },
   "doc.otlpOk": { de: "erreichbar + authentifiziert", en: "reachable + authenticated" },

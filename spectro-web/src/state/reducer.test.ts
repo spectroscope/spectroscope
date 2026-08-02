@@ -1141,3 +1141,63 @@ describe("the answer footer — the model of a session that announces through pr
     expect(last.kind === "assistant" && last.model).toBe("vibethinker-3b");
   });
 });
+
+describe("reduce — otlp export (card 137)", () => {
+  const ENDPOINT = "http://localhost:3000/api/public/otel";
+  const exportFrame = (ok: boolean, ts: number, message?: string) =>
+    ({
+      type: "otlp_export",
+      endpoint: ENDPOINT,
+      spans: 3,
+      bytes: 100,
+      ok,
+      ...(message !== undefined ? { message } : {}),
+      ts,
+    }) as unknown as RunEvent;
+
+  it("initialState has no export", () => {
+    expect(initialState.lastOtlpExport).toBeNull();
+    expect(initialState.lastOtlpOutcome).toBeNull();
+  });
+
+  it("folds a successful export into lastOtlpExport", () => {
+    const s = reduce(initialState, exportFrame(true, 1));
+    expect(s.lastOtlpExport?.endpoint).toBe(ENDPOINT);
+    expect(s.lastOtlpExport?.ts).toBe(1);
+    expect(s.lastOtlpOutcome).toEqual({ ok: true });
+  });
+
+  it("a later failure does not erase a landed export", () => {
+    // The trace that export created still exists in the backend, so the link
+    // must keep working. Only the outcome moves.
+    const s = reduceAll(initialState, [exportFrame(true, 1), exportFrame(false, 2, "HTTP 500")]);
+    expect(s.lastOtlpExport?.endpoint).toBe(ENDPOINT);
+    expect(s.lastOtlpOutcome).toEqual({ ok: false, message: "HTTP 500" });
+  });
+
+  it("a failure alone leaves lastOtlpExport null", () => {
+    const s = reduce(initialState, exportFrame(false, 1, "HTTP 401"));
+    expect(s.lastOtlpExport).toBeNull();
+    expect(s.lastOtlpOutcome).toEqual({ ok: false, message: "HTTP 401" });
+  });
+
+  it("the frame still lands in the trace", () => {
+    const s = reduce(initialState, exportFrame(true, 1));
+    expect(s.trace[s.trace.length - 1].type).toBe("otlp_export");
+    expect(s.turns).toHaveLength(0);
+  });
+
+  it("takes the endpoint from the frame, not from a later one that failed", () => {
+    // Wire truth: the endpoint that actually received the spans.
+    const moved = {
+      type: "otlp_export",
+      endpoint: "http://localhost:4318/v1/traces",
+      spans: 1,
+      bytes: 10,
+      ok: false,
+      ts: 2,
+    } as unknown as RunEvent;
+    const s = reduceAll(initialState, [exportFrame(true, 1), moved]);
+    expect(s.lastOtlpExport?.endpoint).toBe(ENDPOINT);
+  });
+});

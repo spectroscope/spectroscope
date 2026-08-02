@@ -24,6 +24,19 @@ The auth pair is sent as a standard HTTP Basic header. It is Langfuse's
 `public-key:secret-key`; a backend that needs no auth (Jaeger, a bare Phoenix)
 leaves it blank.
 
+Both values are read from the process environment first and then from
+`~/.spectro/.env`, the same two-step an API key already takes. That file is the
+right home for the pair: it is created 0600, and unlike `settings.json` it is
+not read back by the settings API or printed in the layers view. A running JVM
+cannot change its own environment, so either source takes effect on the next
+start, not on the current one.
+
+If you have no Langfuse yet, `samples/06-langfuse/install.sh` starts one and
+writes both values into `~/.spectro/.env` for you. It generates its own secrets,
+pins every image by digest, and closes the two first-boot traps of the upstream
+compose file. Nothing in spectroscope runs it: Settings can show you the
+command, and starting containers stays your decision.
+
 ```bash
 # Land every run in a local Langfuse
 export SPECTRO_OTLP_ENDPOINT="http://localhost:3000/api/public/otel/v1/traces"
@@ -110,6 +123,71 @@ Resource attributes: `service.name = spectroscope`,
 The buffer is bounded (20 000 events); past that it warns once and stops
 growing rather than eat memory on a runaway session.
 
+## Jumping straight to the trace
+
+Once a session has exported at least one batch, the trace tab shows an
+`open in langfuse` link. It opens this session's trace in the configured
+Langfuse instance, in your normal browser.
+
+No lookup happens. The trace id is derived: `OtlpSink.traceIdFor` seeds it as
+`sha256("trace:" + sessionId)` truncated to 16 bytes, and the browser computes
+the same value from the session id it already holds. That determinism is the
+same property that makes a re-export upsert instead of duplicating.
+
+The link is deliberately quiet:
+
+* Nothing exported yet means no link, not a greyed one. A link that cannot
+  work is worse than no link.
+* An endpoint that is not Langfuse shaped (Jaeger, Phoenix, an OTLP collector)
+  never gets a link, successful export or not, because those backends have no
+  page of this shape.
+* An export that failed while none has ever succeeded shows a static
+  `otlp export failed` line instead. The wording names no vendor, because a
+  failing Jaeger export reads the same way.
+* Once an export has landed, a later failure does not remove the link. The
+  trace it already wrote still exists.
+
+One limitation worth stating plainly: the `otlp_export` frame is socket only
+and never reaches the session JSONL, so opening an archived session from the
+list shows no link even when its trace exists in Langfuse. The link is for the
+session this browser watched export.
+
+## Why there is no inline Langfuse tab
+
+Measured on 2026-08-02 against Langfuse 3.224.1 (`langfuse/langfuse:3`,
+`/api/public/health` reports the version), running locally on port 3000.
+
+An embedded Langfuse tab inside spectroscope would be convenient, and it is
+not possible without doing something we are not willing to do.
+
+The Langfuse web app answers every request with two framing refusals:
+
+```
+x-frame-options: SAMEORIGIN
+Content-Security-Policy: ... frame-ancestors 'none'; ...
+```
+
+`frame-ancestors 'none'` is a string literal in the image's own
+`next.config.mjs`. There is no environment variable, no setting and no admin
+toggle that relaxes it, so a browser iframe is refused by design and no amount
+of configuration on our side changes that.
+
+Electron is a different story and still a no. An Electron `WebContentsView`
+ignores those headers and would load the page. But `spectro-desktop/src/main.ts`
+already decided the opposite way for outbound links: they leave for the real
+browser, where the user has their session, their password manager and an
+address bar that tells them where they are. Embedding Langfuse would reverse
+that decision for one vendor, and the web app would still need the link, so we
+would ship two different answers to one button.
+
+A proxy that strips the headers is refused outright. It would present Langfuse
+as same origin with spectroscope, which hands our page scripted access to the
+Langfuse DOM and its session cookie. That is a real privilege boundary and it
+exists for a reason.
+
+So the answer is the deep link above: one click, the real Langfuse, in the
+browser the user already trusts.
+
 ## Reading it back without the UI
 
 Langfuse's public API confirms the spans server-side — handy for a smoke check
@@ -123,13 +201,16 @@ curl -s -u "pk-lf-...:sk-lf-..." \
 
 ## Backfilling old sessions
 
-The live exporter only sees runs made while it is configured. To push sessions
-recorded *before* you turned it on, the `LangFuse/bridge/export_session.py`
-tool in the product home replays a stored `session.jsonl` (or every stored
-session) through the same mapping — stdlib-only, same deterministic ids, so a
-backfilled session and a later live re-export land as one trace, not two.
+The live exporter only sees runs made while it is configured. Sessions recorded
+*before* you turned it on stay where they are.
 
-```bash
-python3 bridge/export_session.py --file ~/.spectro/sessions/<id>.jsonl
-python3 bridge/export_session.py --all     # every stored session
-```
+There is a backfill tool that replays a stored `session.jsonl` through the same
+mapping, with the same deterministic ids, so a backfilled session and a later
+live re-export land as one trace rather than two. **It is not published.** It
+lives in a private workspace and is not part of this repository, so there is
+nothing here to run today. This section exists so the capability is not
+mistaken for a missing feature, and so nobody looks for a path that was never
+shipped.
+
+Until it ships, the honest workaround is to configure the endpoint before the
+runs you care about.

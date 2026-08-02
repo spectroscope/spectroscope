@@ -90,6 +90,34 @@ export async function putSettings(
   return (await res.json()) as SettingsView;
 }
 
+/**
+ * The patch a free-text settings field should send when it loses focus, or
+ * `null` when it must send nothing at all.
+ *
+ * Blur is not an edit. The Observability inputs are prefilled from
+ * `effective`, and `effective` resolves the env layer, which since card 137
+ * includes `~/.spectro/.env`, the 0600 file install.sh writes the Langfuse
+ * pk:sk pair into. An unconditional write on blur therefore copies that
+ * credential into settings.json the moment an operator clicks into the field
+ * to read it and clicks away again, with no keystroke involved. Worse than the
+ * copy is what it pins: the user layer outranks env, so a later `./install.sh`
+ * against a rebuilt stack rotates a key that can never take effect again.
+ *
+ * Comparison is on the trimmed forms, because the trimmed form is what would
+ * be written: re-saving a value that differs from the stored one only by
+ * whitespace is the same non-edit.
+ *
+ * @param field the settings key
+ * @param raw   what the input currently holds
+ * @param current the resolved value the input was prefilled with
+ * @return a one-key patch (`null` value clears the key), or null to write nothing
+ */
+export function textFieldPatch(field: string, raw: string, current: string): Record<string, unknown> | null {
+  const next = raw.trim();
+  if (next === current.trim()) return null;
+  return { [field]: next === "" ? null : next };
+}
+
 /** Layer names as they appear in an Origin's `winner`/`shadowed`, mapped to
  *  their bilingual dict key — mirrors SpectroConfig's own scope names exactly
  *  (env, user, launch-dir, project, local, flags). */

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
 import { LAB_FACES } from "../state/labFace";
 import { TRACE_FACES } from "../state/traceFace";
+import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -68,6 +69,24 @@ describe("i18n dict", () => {
       "rc.settingsLabel",
       "rc.settingsNote",
     ]) {
+      expect(dict[k], k).toBeDefined();
+    }
+    // Docker detection (card 137): the message key is DERIVED from the offer,
+    // so a new Docker state that nobody wrote copy for goes red here instead of
+    // shipping its own key name as the sentence the operator reads.
+    const dockerStates: (DockerStatus | null)[] = [null];
+    for (const docker of ["absent", "unreachable", "ready"] as const) {
+      for (const compose of [true, false]) {
+        for (const remote of [true, false]) {
+          dockerStates.push({ docker, compose, remote });
+        }
+      }
+    }
+    for (const state of dockerStates) {
+      const key = dockerOffer(state).messageKey;
+      expect(dict[key], key).toBeDefined();
+    }
+    for (const k of ["set.dockerInstall", "set.langfuseCommand", "set.langfuseCost"]) {
       expect(dict[k], k).toBeDefined();
     }
   });
