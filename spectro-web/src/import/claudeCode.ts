@@ -20,6 +20,10 @@ interface CCRecord {
     /** Assistant records name the model that produced them; it can change
      *  mid-file (a /model switch, or a subagent on another model). */
     model?: string;
+    /** How THIS message stopped ("end_turn", "tool_use", "max_tokens",
+     *  "stop_sequence"), or null on a message that never reported an ending.
+     *  Absent on user records and on transcripts old enough not to carry it. */
+    stop_reason?: string | null;
     usage?: {
       input_tokens?: number;
       output_tokens?: number;
@@ -141,6 +145,17 @@ function outcomeSection(n: TaskNotification): string {
     .map((f) => `${f.label}: ${f.value}`);
   return [head, ...body].join("\n");
 }
+
+/**
+ * What a run_end says when the file recorded no stop_reason at all.
+ *
+ * Measured over 4496 real transcripts: 248 carry no assistant record at all and
+ * 28 more carry nothing but nulls. "end_turn" there would be an invention about
+ * somebody else's session, and this importer's whole job is to say only what the
+ * file says. The word is ours the same way "aborted" and "max_turns" are ours;
+ * no provider emits it, and it reads in the footer as what it is.
+ */
+const UNRECORDED_STOP = "unrecorded";
 
 /** A launch that promised a notification and never got one. */
 const UNFINISHED = (taskId: string): string =>
@@ -280,6 +295,17 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   const results = new Map<string, { ts: number; text: string; agentId: string }>();
   const promised = new Map<string, { taskId: string; settled: boolean }>(); // receipt-bearing calls only
 
+  // How each run's last assistant message stopped, keyed by agent ("main" or a
+  // Task id). Latest recorded wins; a null is NOT a recording (87567 of the
+  // corpus's assistant records carry one, a partial message that never reported
+  // an ending), so it leaves the previous answer standing.
+  const lastStop = new Map<string, string>();
+  const noteStop = (agentId: string, r: CCRecord): void => {
+    const s = r.message?.stop_reason;
+    if (typeof s === "string" && s !== "") lastStop.set(agentId, s);
+  };
+  const stopOf = (agentId: string): string => lastStop.get(agentId) ?? UNRECORDED_STOP;
+
   // Turns are per agent: the main run and every subagent count their own.
   const turns = new Map<string, number>();
   const nextTurn = (agentId: string): number => {
@@ -347,7 +373,9 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       if (taskIds.has(b.tool_use_id)) {
         // A Task's result: close the child before the parent resumes.
         if (childStarted.has(b.tool_use_id)) {
-          out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: "end_turn", ts });
+          // The child closes on the child's OWN last message. Every sidechain
+          // record has been read by now, so the answer is complete here.
+          out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: stopOf(b.tool_use_id), ts });
         }
         out.push({
           type: "agent_message",
@@ -459,6 +487,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       }
       if (r.type === "assistant") {
         announce(modelOf(r), ts);
+        noteStop(owner, r);
         out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
       for (const b of blocks) emitBlock(owner, b, ts);
@@ -486,6 +515,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       // One assistant message is one turn. A long session is hundreds of them,
       // and the graph draws a node per turn_start.
       announce(modelOf(r), ts);
+      noteStop("main", r);
       out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
       for (const b of blocks) emitBlock("main", b, ts);
       const u = r.message?.usage;
@@ -533,7 +563,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         ts: last,
       });
     }
-    out.push({ type: "run_end", runId, stopReason: "end_turn", ts: last });
+    out.push({ type: "run_end", runId, stopReason: stopOf("main"), ts: last });
   }
   // The closing frames belong to the file as a whole, not to its last line.
   chargeTo(-1);

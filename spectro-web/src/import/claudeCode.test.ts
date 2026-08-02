@@ -619,3 +619,85 @@ describe("claudeCode adapter (a launch replayed after its outcome)", () => {
     expect(state.cards["toolu_wf"].durationMs).toBe(19 * 60 * 1000);
   });
 });
+
+// A transcript records how every assistant message stopped. The importer threw
+// that away and stamped "end_turn" on both run_ends it emits, which is a false
+// statement about somebody else's session — and the one class of defect this
+// card exists to remove. Measured over 4496 real transcripts: 2113 of them end
+// on tool_use, 219 on stop_sequence, 13 assistant messages in the corpus end on
+// max_tokens. Only 1248 really ended on end_turn.
+const STAMP = "2026-08-01T09:00:00.000Z";
+const assistantSaying = (stop: string | null, uuid: string, parent: string, text: string) => ({
+  type: "assistant",
+  message: {
+    role: "assistant",
+    model: "claude-opus-5",
+    content: [{ type: "text", text }],
+    stop_reason: stop,
+  },
+  uuid,
+  parentUuid: parent,
+  timestamp: STAMP,
+});
+
+describe("how the run_end says the file stopped", () => {
+  it("reports the last recorded stop_reason, not a hardcoded end_turn", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "write the whole book" }, uuid: "u1" },
+      assistantSaying("max_tokens", "a1", "u1", "Chapter one. It was a"),
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", stopReason: "max_tokens" });
+  });
+
+  // 87567 assistant records in the corpus carry stop_reason null: a partial
+  // message that never reported an ending. Reading it as the answer would hand
+  // the reader "null" where the file has an answer one record earlier.
+  it("skips a null stop_reason and keeps the last one the file recorded", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      assistantSaying("stop_sequence", "a1", "u1", "here it is"),
+      assistantSaying(null, "a2", "a1", "and then"),
+    ]);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", stopReason: "stop_sequence" });
+  });
+
+  // 248 files carry no assistant record at all and 28 more record nothing but
+  // nulls. "end_turn" there is an invention, so the frame says what is true:
+  // the file never recorded one.
+  it("says the file recorded none rather than inventing end_turn", () => {
+    const events = parseTranscript(ccLinear);
+    expect(events.at(-1)).toMatchObject({ type: "run_end", stopReason: "unrecorded" });
+  });
+
+  // A subagent closes on its OWN last message, not on whatever the main run
+  // said before or after it.
+  it("closes a subagent on the subagent's own last stop_reason", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "delegate" }, uuid: "u1" },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "task1", name: "Task", input: { description: "Review" } }],
+          stop_reason: "tool_use",
+        },
+        uuid: "a1",
+        parentUuid: "u1",
+      },
+      { ...assistantSaying("max_tokens", "s1", "task1", "I ran out of room"), isSidechain: true },
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "task1", content: "done" }],
+        },
+        uuid: "u2",
+        parentUuid: "a1",
+      },
+      assistantSaying("end_turn", "a2", "u2", "the reviewer is back"),
+    ]);
+    const child = events.find((e) => e.type === "run_end" && e.runId === "cc-task1");
+    expect(child).toMatchObject({ stopReason: "max_tokens" });
+    expect(events.at(-1)).toMatchObject({ runId: "cc-import", stopReason: "end_turn" });
+  });
+});
