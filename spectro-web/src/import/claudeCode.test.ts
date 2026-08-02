@@ -622,7 +622,7 @@ describe("claudeCode adapter (a launch replayed after its outcome)", () => {
 
 // A transcript records how every assistant message stopped. The importer threw
 // that away and stamped "end_turn" on both run_ends it emits, which is a false
-// statement about somebody else's session — and the one class of defect this
+// statement about somebody else's session, and the one class of defect this
 // card exists to remove. Measured over 4496 real transcripts: 2113 of them end
 // on tool_use, 219 on stop_sequence, 13 assistant messages in the corpus end on
 // max_tokens. Only 1248 really ended on end_turn.

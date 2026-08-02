@@ -2,7 +2,7 @@
 //
 // Stage 1 made every imported line reachable. Most of what it exposed belongs
 // in the source pane and nowhere else: identifiers, plumbing, constants. A
-// small set of fields is different — each one is something a person goes
+// small set of fields is different. Each one is something a person goes
 // looking for and cannot find anywhere in the app today. Those get read out of
 // the line here and worn as a chip on the frame the line produced.
 //
@@ -104,8 +104,8 @@ export function readSourceNotes(line: string): SourceNote[] {
  *
  * Sparse on purpose: only lines that carry something appear, so a row's lookup
  * misses in the common case and costs nothing. Built once per import, and each
- * entry is a stable array — the trace rows are memoized and a fresh array per
- * render would re-render the whole list during a delta flood.
+ * entry is a stable array, because the trace rows are memoized and a fresh
+ * array per render would re-render the whole list during a delta flood.
  *
  * @param lines the import's own lines, or null/undefined for a session that was
  *              produced here and has no separate source
