@@ -3,7 +3,7 @@
 // funnels through one normalize and every invariant it owes is pinned here.
 
 import { describe, expect, it } from "vitest";
-import { fit, fromScreen, minWidthFor, normalize, panBy, toScreen, zoomAt } from "./viewport";
+import { fit, fromScreen, minWidthFor, normalize, panBy, rebase, toScreen, zoomAt } from "./viewport";
 
 /** A 100x floor: most cases below do not care about the number, only that the
  *  window can never fall through it. */
@@ -147,5 +147,59 @@ describe("minWidthFor", () => {
     expect(minWidthFor(0, 1_000)).toBe(1);
     expect(minWidthFor(-5, 1_000)).toBe(1);
     expect(minWidthFor(NaN, 1_000)).toBe(1);
+  });
+});
+
+describe("rebase", () => {
+  // A live stream grows t1 under a zoomed reader. Every x in the model is
+  // renormalized against the new span, so a window left alone would silently
+  // drag off the content it was pointed at. Neither recon caught this one.
+  const HOUR = 3_600_000;
+
+  it("holds the window on the same absolute instants when the span grows", () => {
+    // Watching the second hour of a two hour stream, which then runs to four.
+    const win = { a: 0.5, b: 1 };
+    const next = rebase(win, 0, 2 * HOUR, 0, 4 * HOUR);
+    expect(next.a).toBeCloseTo(0.25, 12);
+    expect(next.b).toBeCloseTo(0.5, 12);
+  });
+
+  it("holds them when the stream grows at the FRONT as well", () => {
+    // An import can prepend history: t0 moves too, and both edges must follow.
+    const next = rebase({ a: 0, b: 0.5 }, HOUR, 3 * HOUR, 0, 4 * HOUR);
+    expect(next.a).toBeCloseTo(0.25, 12);
+    expect(next.b).toBeCloseTo(0.5, 12);
+  });
+
+  it("does NOT hold a full window at full extent, which is why following is a null window", () => {
+    // Rebasing means absolute instants, and the old whole is not the new whole.
+    // The view keeps "follow the live edge" as a null window instead of trying
+    // to express it as a pair of fractions that a growing span keeps rewriting.
+    const next = rebase(fit(), 0, 2 * HOUR, 0, 4 * HOUR);
+    expect(next.b).toBeCloseTo(0.5, 12);
+  });
+
+  it("is identity when the domain did not move", () => {
+    expect(rebase({ a: 0.25, b: 0.75 }, 0, HOUR, 0, HOUR)).toEqual({ a: 0.25, b: 0.75 });
+  });
+
+  it("clamps a window the new domain can no longer contain", () => {
+    // The stream was rewound: the old window sits past the new end.
+    const next = rebase({ a: 0.8, b: 1 }, 0, 4 * HOUR, 0, HOUR);
+    expect(next.b).toBeLessThanOrEqual(1);
+    expect(next.a).toBeGreaterThanOrEqual(0);
+    expect(next.a).toBeLessThan(next.b);
+  });
+
+  it("stays calm on a degenerate domain", () => {
+    for (const w of [
+      rebase({ a: 0.2, b: 0.8 }, 0, 0, 0, HOUR),
+      rebase({ a: 0.2, b: 0.8 }, 0, HOUR, 5, 5),
+      rebase({ a: 0.2, b: 0.8 }, NaN, HOUR, 0, HOUR),
+    ]) {
+      expect(Number.isFinite(w.a)).toBe(true);
+      expect(Number.isFinite(w.b)).toBe(true);
+      expect(w.a).toBeLessThan(w.b);
+    }
   });
 });

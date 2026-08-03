@@ -187,9 +187,16 @@ describe("buildSpectrum", () => {
   });
 
   it("pins what the band draws at full extent: the fold and the slice agree", () => {
-    // The safety net for everything the viewport grows into. On a normal lane
-    // with room on screen, slicing at full extent is the identity, so the view
-    // keeps rendering exactly what it renders today.
+    // Read this for what it says. This fixture's five marks sit at 0, 0.1, 0.2,
+    // 0.3 and 1 of the axis, so at 1000 columns no two of them can meet: the
+    // slice is the identity here because the arithmetic leaves it no choice.
+    //
+    // It is NOT a promise that the band renders what it rendered before marks
+    // were thinned per column. It does not: on a real store that changed for 55
+    // of 147 sessions, and the busiest lane went from 826 rects to 39. What this
+    // pins is the sparse case, that a lane with room on screen is left alone.
+    // The rule itself is pinned by exact counts in laneSlice.test.ts, and that
+    // nothing became unreachable is pinned in bandScrub.test.ts.
     const m = buildSpectrum(fleet);
     for (const lane of m.lanes) {
       const { marks, hidden } = sliceLane(lane.ticks, fit(), 1000);

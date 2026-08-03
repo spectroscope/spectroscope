@@ -94,3 +94,16 @@ export function pageNext(ticks: readonly LaneTick[], win: Window): Window {
   if (next >= ticks.length) return win;
   return normalize(ticks[next].x, ticks[next].x + w, w);
 }
+
+/** The mirror. One window back, and if that is empty axis, snap so the previous
+ *  mark sits at the RIGHT edge: going back you want to land where the earlier
+ *  work ENDED, and read forward from there. */
+export function pagePrev(ticks: readonly LaneTick[], win: Window): Window {
+  const w = win.b - win.a;
+  // The last mark strictly before the window: what "back" is even about.
+  const prev = lowerBound(ticks, win.a) - 1;
+  if (prev < 0) return win;
+  const candidate = normalize(win.a - w, win.b - w, w);
+  if (ticks[prev].x >= candidate.a) return candidate;
+  return normalize(ticks[prev].x - w, ticks[prev].x, w);
+}

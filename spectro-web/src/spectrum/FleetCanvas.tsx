@@ -22,7 +22,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatDuration, formatTokens } from "../format";
 import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
-import { nearestTick } from "./SpectrumBand";
+import { nearestTick } from "./bandScrub";
 import { eventPreview } from "./eventPreview";
 import { buildFleetGraph, type FleetEdgeKind, type FleetGraphNode } from "./fleetGraph";
 import { collapseFleetGraph, type LegibleGraph, type LegibleNode } from "./fleetLegibility";

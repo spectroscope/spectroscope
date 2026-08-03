@@ -9,6 +9,7 @@ import { formatDuration } from "../format";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { eventPreview } from "./eventPreview";
+import { seqAtFrac, stepSeq } from "./bandScrub";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
 
 export const BAND_W = 1000;
@@ -36,25 +37,6 @@ export const TICK_COLOR: Record<TickKind, string> = {
   lifecycle: "var(--ev-lifecycle)",
   error: "var(--error)",
 };
-
-/** The index of the tick whose x-fraction is closest to `frac` (0..1), or null
- *  when there are none. Pure — the band's hit-test math, unit-tested apart from
- *  the DOM. Ties resolve to the earlier tick (strict `<`). */
-export function nearestTick(ticks: readonly { x: number }[], frac: number): number | null {
-  if (ticks.length === 0) {
-    return null;
-  }
-  let best = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i < ticks.length; i++) {
-    const dist = Math.abs(ticks[i].x - frac);
-    if (dist < bestDist) {
-      bestDist = dist;
-      best = i;
-    }
-  }
-  return best;
-}
 
 function TickMark({ tick, highlighted }: { tick: LaneTick; highlighted: boolean }) {
   const shape = TICK_SHAPE[tick.kind];
@@ -84,9 +66,12 @@ export function SpectrumBand({
   tipBelow,
 }: {
   lane: Lane;
-  /** The marks this band actually draws: the lane's ticks already sliced to the
-   *  window and the pixel budget. The band is dumb about how that was decided;
-   *  it draws them, hit-tests them, and hands one to the trace. */
+  /** The marks this band actually DRAWS: the lane's ticks already sliced to the
+   *  window and the pixel budget. The band is dumb about how that was decided.
+   *
+   *  It does not hit-test these. Scrubbing, the keyboard walk and the trace
+   *  hand-off all run over `lane.ticks`, so thinning the ink never costs a
+   *  reader access to an event. See bandScrub.ts. */
   marks: LaneTick[];
   /** Open the tick preview BELOW the band — the top row would clip it. */
   tipBelow?: boolean;
@@ -119,20 +104,23 @@ export function SpectrumBand({
     return () => ro.disconnect();
   }, [onWidth]);
 
-  const nearest = useCallback(
+  // Hit-testing runs over lane.ticks, NOT over the marks that got drawn. The
+  // slice is a decision about ink; making it a decision about reach would take a
+  // busy lane's 826 events down to 39 openable ones with no way to get the rest
+  // back. What is drawn got denser; what can be reached did not change.
+  const seqAtX = useCallback(
     (clientX: number): number | null => {
       const rect = bandRef.current?.getBoundingClientRect();
       if (!rect || rect.width === 0) {
         return null;
       }
       const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      return nearestTick(marks, frac);
+      return seqAtFrac(lane.ticks, frac);
     },
-    [marks],
+    [lane.ticks],
   );
 
-  const seqAt = (index: number | null): number | null => (index == null ? null : (marks[index]?.seq ?? null));
-  const onMove = (e: MouseEvent<HTMLDivElement>) => setHoverSeq(seqAt(nearest(e.clientX)));
+  const onMove = (e: MouseEvent<HTMLDivElement>) => setHoverSeq(seqAtX(e.clientX));
   const onLeave = () => setHoverSeq(null);
 
   const open = (seq: number | null) => {
@@ -146,16 +134,12 @@ export function SpectrumBand({
   };
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (marks.length === 0) {
+    if (lane.ticks.length === 0) {
       return;
     }
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       e.preventDefault();
-      const step = e.key === "ArrowRight" ? 1 : -1;
-      const curIdx = hoverSeq === null ? -1 : marks.findIndex((t) => t.seq === hoverSeq);
-      const from = curIdx < 0 ? (step > 0 ? -1 : marks.length) : curIdx;
-      const nextIdx = Math.min(marks.length - 1, Math.max(0, from + step));
-      setHoverSeq(marks[nextIdx].seq);
+      setHoverSeq(stepSeq(lane.ticks, hoverSeq, e.key === "ArrowRight" ? 1 : -1));
     } else if (e.key === "Enter" && hoverSeq !== null) {
       e.preventDefault();
       open(hoverSeq);
@@ -164,7 +148,10 @@ export function SpectrumBand({
     }
   };
 
-  const tick = hoverSeq !== null ? (marks.find((t) => t.seq === hoverSeq) ?? null) : null;
+  // Also from the lane, so the popup and the scrub line can sit on an event that
+  // has no rect of its own. The line marks the true instant; the rect nearest it
+  // is at most one pixel away and is the same colour.
+  const tick = hoverSeq !== null ? (lane.ticks.find((t) => t.seq === hoverSeq) ?? null) : null;
   const event = tick ? events[tick.seq] : undefined;
   const preview = event ? eventPreview(event) : null;
   const ts =

@@ -109,3 +109,29 @@ export function minWidthFor(spanMs: number, floorMs: number): number {
   if (!(span > 0) || !(floor > 0)) return 1;
   return Math.min(1, floor / span);
 }
+
+/** Carry a window across a change of domain, holding the same ABSOLUTE instants.
+ *
+ *  A window is a pair of fractions OF THE SPAN, so an arriving event that
+ *  extends t1 renormalizes every mark and would silently drag a zoomed reader
+ *  off the thing they were looking at. This converts out to instants and back.
+ *
+ *  Note what it does NOT do: rebasing the whole domain does not give the whole
+ *  domain back, because the old whole is not the new whole. "Follow the live
+ *  edge" is therefore a NULL window at the call site, never a pair of fractions
+ *  that a growing span keeps having to rewrite. */
+export function rebase(win: Window, oldT0: number, oldT1: number, newT0: number, newT1: number): Window {
+  const o0 = finite(oldT0, 0);
+  const o1 = finite(oldT1, 0);
+  const n0 = finite(newT0, 0);
+  const n1 = finite(newT1, 0);
+  const oldSpan = o1 - o0;
+  const newSpan = n1 - n0;
+  if (!(oldSpan > 0) || !(newSpan > 0)) return normalize(win.a, win.b, 0);
+  const at = (f: number): number => (o0 + f * oldSpan - n0) / newSpan;
+  const a = at(win.a);
+  const b = at(win.b);
+  // The floor is the rebased width itself: a domain that merely grew must not
+  // widen the window as a side effect of passing through normalize.
+  return normalize(a, b, Math.min(1, Math.max(0, b - a)));
+}

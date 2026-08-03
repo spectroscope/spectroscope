@@ -5,7 +5,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { LaneTick, TickKind } from "./spectrumModel";
-import { pageNext, sliceLane, visibleRange } from "./laneSlice";
+import { pageNext, pagePrev, sliceLane, visibleRange } from "./laneSlice";
 import { fit } from "./viewport";
 
 const tick = (x: number, kind: TickKind, seq: number): LaneTick => ({ x, kind, seq });
@@ -112,9 +112,52 @@ describe("sliceLane", () => {
     }
   });
 
-  it("pins the full-extent slice: with room for every mark, slicing is identity", () => {
-    // The safety net. Whatever the viewport grows into, the view at full extent
-    // on a normal lane must keep rendering exactly what it renders today.
+  it("pins the exact density rule: one column per kind, counted", () => {
+    // The real safety net, and the reason the identity test below is not one.
+    //
+    // Identity on a sparse lane is arithmetic, not evidence: nine marks a tenth
+    // of the axis apart cannot collide at 1000 px whatever the rule underneath
+    // is, so that test passes even if the column rule is made fifty times
+    // coarser. This one fixes the numbers. 200 evenly spread marks across 100
+    // columns is exactly 100 drawn and exactly 100 hidden, and any change to
+    // how a column is computed moves one of those two numbers.
+    // Exactly two marks in each of 128 columns. The width is a power of two and
+    // the offsets are quarters on purpose: c/100 is not a binary fraction, so a
+    // fixture built on hundredths puts its own marks in the wrong column and
+    // then blames the code. (c + 0.25) / 128 is exact.
+    const COLS = 128;
+    const pairs = (kindOf: (i: number) => TickKind): LaneTick[] =>
+      Array.from({ length: 2 * COLS }, (_, i) =>
+        tick((Math.floor(i / 2) + (i % 2 === 0 ? 0.25 : 0.75)) / COLS, kindOf(i), i),
+      );
+
+    const same = sliceLane(
+      pairs(() => "token"),
+      fit(),
+      COLS,
+    );
+    expect(same.marks).toHaveLength(128);
+    expect(same.hidden).toBe(128);
+
+    // Per KIND, not per column: give the second mark of every column a different
+    // kind and the whole lane survives, because a tool never hides behind a
+    // token. Same instants, same width, twice the ink.
+    const mixed = sliceLane(
+      pairs((i) => (i % 2 === 0 ? "token" : "tool")),
+      fit(),
+      COLS,
+    );
+    expect(mixed.marks).toHaveLength(256);
+    expect(mixed.hidden).toBe(0);
+  });
+
+  it("pins the full-extent slice on a SPARSE lane: nothing collides, nothing drops", () => {
+    // True, and much weaker than it looks: this says a lane with room on screen
+    // is untouched. It does NOT say the view renders what it rendered before the
+    // per-column rule arrived. On a real store that claim is false for 55 of 147
+    // sessions, where the old fold drew every mark and this one dedupes the
+    // pile. The count under the band is what reports that, and the test above is
+    // what pins it.
     const ticks = [
       tick(0, "lifecycle", 0),
       tick(0.1, "reasoning", 1),
@@ -166,5 +209,44 @@ describe("pageNext", () => {
   it("does nothing on an empty lane", () => {
     const win = { a: 0.2, b: 0.4 };
     expect(pageNext([], win)).toEqual(win);
+  });
+});
+
+describe("pagePrev", () => {
+  it("pans one window width back when that page has marks on it", () => {
+    const ticks = [tick(0.05, "token", 0), tick(0.15, "token", 1), tick(0.25, "token", 2)];
+    const w = pagePrev(ticks, { a: 0.2, b: 0.3 });
+    expect(w.a).toBeCloseTo(0.1, 12);
+    expect(w.b).toBeCloseTo(0.2, 12);
+  });
+
+  it("pages back across dead air by snapping the previous mark to the RIGHT edge", () => {
+    // Going back, you want to land where the earlier work ENDED, so the mark
+    // arrives at the trailing edge and its run reads forward from there.
+    const ticks = [tick(0.3, "token", 0), tick(0.9, "token", 1)];
+    const w = pagePrev(ticks, { a: 0.9, b: 1 });
+    expect(w.b).toBeCloseTo(0.3, 12);
+    expect(w.a).toBeCloseTo(0.2, 12);
+  });
+
+  it("does nothing at the first mark", () => {
+    const ticks = [tick(0.5, "token", 0), tick(0.9, "token", 1)];
+    const win = { a: 0.45, b: 0.55 };
+    expect(pagePrev(ticks, win)).toEqual(win);
+  });
+
+  it("does nothing on an empty lane", () => {
+    const win = { a: 0.2, b: 0.4 };
+    expect(pagePrev([], win)).toEqual(win);
+  });
+
+  it("undoes a page forward across the same dead air", () => {
+    const ticks = [tick(0.3, "token", 0), tick(0.9, "token", 1)];
+    const start = { a: 0.25, b: 0.35 };
+    const there = pageNext(ticks, start);
+    const back = pagePrev(ticks, there);
+    // Not byte-identical to where it started, but back on the same mark.
+    expect(back.a).toBeLessThanOrEqual(0.3);
+    expect(back.b).toBeGreaterThanOrEqual(0.3);
   });
 });
