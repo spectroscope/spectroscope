@@ -365,6 +365,7 @@ export function WorkspaceTab({
 
   const pane = paneState(workspace, outcome, lang);
   if (pane.kind === "unreachable") return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
+  if (pane.kind === "loading") return <p className="ctx-empty">{pane.message}</p>;
   if (pane.kind === "pending") {
     // Before the first run there is no folder and no session. Saying what will
     // happen beats both a tree of somebody else's directory and a bare

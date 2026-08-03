@@ -34,6 +34,8 @@ export type FetchOutcome = { kind: "ok" } | { kind: "status"; status: number } |
 
 export type PaneState =
   | { kind: "tree" }
+  /** Resolved, asked, no answer back yet. The folder exists; nothing is claimed about it. */
+  | { kind: "loading"; message: string }
   | { kind: "pending"; message: string; path: string | null }
   | { kind: "unreachable"; message: string };
 
@@ -66,12 +68,35 @@ export function paneState(
     return pending(announcement, lang);
   }
 
+  // Resolved and still waiting for /api/files. The run has already made this
+  // folder, so the prospective wording below would be a false claim, and this
+  // is the normal path: WorkspaceTab remounts on every return to the tab and
+  // starts again from no outcome.
   if (outcome === null) {
-    return pending(announcement, lang);
+    return { kind: "loading", message: de ? "lädt …" : "loading …" };
   }
   if (outcome.kind === "status") {
-    if (outcome.status === NO_FOLDER || outcome.status === NO_WORKSPACE) {
-      return pending(announcement, lang);
+    if (outcome.status === NO_FOLDER) {
+      // The server has the record and the folder is not a directory: deleted,
+      // renamed, or on a volume that went away. Nothing here is about a run
+      // that has not happened yet.
+      return {
+        kind: "pending",
+        path: announcement.path ?? null,
+        message: de ? "diesen ordner gibt es nicht mehr" : "this folder is gone",
+      };
+    }
+    if (outcome.status === NO_WORKSPACE) {
+      // A different fact: the folder may well be fine, the server just no
+      // longer knows which one belongs to this chat. Its record is in memory
+      // and a restart drops it.
+      return {
+        kind: "pending",
+        path: announcement.path ?? null,
+        message: de
+          ? "der server kennt den ordner dieses chats nicht mehr"
+          : "the server no longer knows this chat's folder",
+      };
     }
     if (outcome.status < 200 || outcome.status >= 300) {
       return {
@@ -97,6 +122,16 @@ function pending(announcement: WorkspaceAnnouncement | null, lang: Lang): PaneSt
         : "no workspace yet, the first run creates it",
     };
   }
+  // Exists first. This branch used to sit below the mode test, which made it
+  // unreachable for the default install: its mode is "random", so a folder that
+  // was already on disk was still described as one the first run would create.
+  if (announcement.exists === true) {
+    return {
+      kind: "pending",
+      path,
+      message: de ? "in diesem ordner arbeitet der erste lauf" : "the first run works in this folder",
+    };
+  }
   if (announcement.mode === "random") {
     return {
       kind: "pending",
@@ -104,13 +139,6 @@ function pending(announcement: WorkspaceAnnouncement | null, lang: Lang): PaneSt
       message: de
         ? "ein frischer ordner für diesen chat, angelegt beim ersten lauf"
         : "a fresh folder for this chat, created when the first run starts",
-    };
-  }
-  if (announcement.exists === true) {
-    return {
-      kind: "pending",
-      path,
-      message: de ? "in diesem ordner arbeitet der erste lauf" : "the first run works in this folder",
     };
   }
   return {

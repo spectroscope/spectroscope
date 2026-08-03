@@ -85,6 +85,52 @@ describe("paneState", () => {
     }
   });
 
+  it("aResolvedWorkspaceWithNoAnswerYetIsLoadingNotAPromiseOfAFolder", () => {
+    // WorkspaceTab remounts on every return to the Files tab, so outcome is
+    // null again each time while /api/files is in flight. The run has already
+    // made this folder; saying it will be created when the first run starts is
+    // a false claim, and the state before this one showed an honest "loading".
+    const en = paneState(running, null, "en");
+    const de = paneState(running, null, "de");
+    expect(en.kind).toBe("loading");
+    expect(de.kind).toBe("loading");
+    if (en.kind !== "loading" || de.kind !== "loading") throw new Error("expected loading");
+    expect(en.message).not.toBe(de.message);
+    expect(en.message).not.toContain("first run");
+  });
+
+  it("aRandomFolderThatAlreadyExistsIsNotCalledUnborn", () => {
+    // pending() branched on mode before it looked at exists, so the exists
+    // guard below it was unreachable for the default install, whose mode is
+    // "random". A folder that is on disk is not one the first run creates.
+    const there = { ...random, path: "/tmp/spectroscope-ws/20260803-120000", exists: true };
+    const en = paneState(there, null, "en");
+    if (en.kind !== "pending") throw new Error("expected pending");
+    expect(en.message).not.toContain("created");
+    expect(en.message).toContain("this folder");
+  });
+
+  it("aFolderTheServerCannotFindAnyMoreDoesNotPromiseToCreateIt", () => {
+    // 404 means the recorded workspace is not a directory right now: deleted,
+    // or on an unmounted volume. This state is not time-boxed the way the
+    // in-flight one is, so a wrong sentence here stands forever.
+    for (const lang of ["en", "de"] as const) {
+      const gone = paneState(running, { kind: "status", status: 404 }, lang);
+      if (gone.kind !== "pending") throw new Error("expected pending");
+      expect(gone.message).not.toContain("first run");
+      expect(gone.message).not.toContain("erste");
+      expect(gone.path).toBe(running.path);
+    }
+    // 409 is a different fact: the server does not know this chat's folder, not
+    // that the folder is missing. A restarted server loses the in-memory record.
+    const forgotten = paneState(running, { kind: "status", status: 409 }, "en");
+    const vanished = paneState(running, { kind: "status", status: 404 }, "en");
+    if (forgotten.kind !== "pending" || vanished.kind !== "pending") {
+      throw new Error("expected pending");
+    }
+    expect(forgotten.message).not.toBe(vanished.message);
+  });
+
   it("thePendingStateCarriesThePathOnlyWhenOneIsKnown", () => {
     const withPath = paneState(configured, null, "en");
     const withoutPath = paneState(random, null, "en");
