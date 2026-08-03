@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.ResponseEntity;
 
+import java.io.RandomAccessFile;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileTime;
@@ -104,5 +105,55 @@ class ClaudeTranscriptsControllerTest {
         ResponseEntity<String> res =
                 new ClaudeTranscriptsController(projects()).content("-proj/missing.jsonl");
         assertThat(res.getStatusCode().value()).isEqualTo(404);
+    }
+
+    /**
+     * The size cap is the only thing bounding this server's transient heap.
+     * {@code content()} answers with {@link Files#readString}, so one request
+     * holds the WHOLE file as a String and the response copy on top of it. The
+     * cap is therefore not a politeness limit, it is the heap budget.
+     *
+     * <p>Measured 2026-08-03 against the 0.5.0 jar, importing a real 47 MB
+     * transcript: a single import needs between 256 MB and 384 MB of heap
+     * (256 MB answers 500 with OutOfMemoryError), and three concurrent imports
+     * need between 768 MB and 1 GB. The JVM's default max heap is a quarter of
+     * physical RAM, so a 4 GB machine gets 1 GB and clears that bar; nothing
+     * smaller does.
+     *
+     * <p>Raising this constant moves that floor proportionally and silently.
+     * This test exists so the number cannot move without someone reading the
+     * paragraph above and redoing the arithmetic.
+     */
+    @Test
+    void contentSizeCapStaysAt64MbBecauseTheWholeFileIsHeldInHeap() throws Exception {
+        long cap = 64L * 1024 * 1024;
+        Path base = projects();
+        Path proj = Files.createDirectories(base.resolve("-proj"));
+
+        // Sparse files: setLength reserves the size without writing bytes, and
+        // Files.size (what the guard reads) reports it. Two 64 MB temp files
+        // would otherwise make this test cost more than the thing it guards.
+        Path atCap = proj.resolve("at-cap.jsonl");
+        try (RandomAccessFile f = new RandomAccessFile(atCap.toFile(), "rw")) {
+            f.setLength(cap);
+        }
+        Path overCap = proj.resolve("over-cap.jsonl");
+        try (RandomAccessFile f = new RandomAccessFile(overCap.toFile(), "rw")) {
+            f.setLength(cap + 1);
+        }
+
+        ClaudeTranscriptsController c = new ClaudeTranscriptsController(base);
+
+        // One byte over the cap is refused, which is what keeps the heap demand
+        // bounded. 413 rather than a stack trace: the dialog can say why.
+        assertThat(c.content("-proj/over-cap.jsonl").getStatusCode().value())
+                .as("a file one byte over the cap must be refused with 413")
+                .isEqualTo(413);
+
+        // Exactly at the cap is still allowed, pinning the boundary from both
+        // sides so the comparison cannot drift from > to >= unnoticed.
+        assertThat(c.content("-proj/at-cap.jsonl").getStatusCode().value())
+                .as("a file exactly at the cap must still be served")
+                .isNotEqualTo(413);
     }
 }
