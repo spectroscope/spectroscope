@@ -98,4 +98,16 @@ tasks.processResources {
     from(rootProject.layout.projectDirectory.dir(".spectro/skills")) {
         into("bundled-skills")
     }
+    // Card 143: the release pipeline bumps *.kts and *.json — a Java literal is
+    // invisible to it, and StarterBundles carried "0.4.1" straight through the
+    // 0.5.0 cut. So the version travels with the build instead: this module's
+    // version is expanded into ONE resource (scoped by filesMatching — never
+    // expand the static/ web bundle, it is full of ${…} lookalikes) and
+    // StarterBundles reads it at class-init. StarterVersionDriftTest holds the
+    // chain to the build files on disk.
+    val moduleVersion = version.toString()
+    inputs.property("moduleVersion", moduleVersion)
+    filesMatching("starter/spectro-version.properties") {
+        expand("version" to moduleVersion)
+    }
 }

@@ -156,6 +156,18 @@ jobs:
             echo "::error::${OLD_VERSION} is still referenced outside build files, lockfiles and test fixtures — fix the stragglers before cutting"
             exit 1
           fi
+          # Shipped Java may not carry a version string literal either — that
+          # blind spot is exactly how StarterBundles served 0.4.1 out of a
+          # 0.5.0 build (card 143; the constant is build-stamped now, so a hit
+          # here means someone wrote a version by hand again). Quoted matches
+          # only: javadoc prose legitimately records which version a
+          # measurement ran against, but a version inside string quotes is
+          # code. Test sources keep the fixture exemption.
+          if hits="$(git grep -n "\"${old_re}\"" -- '*.java' ':(exclude)*/src/test/*')"; then
+            echo "$hits"
+            echo "::error::${OLD_VERSION} survives as a Java string literal — versions must travel with the build, never by hand (card 143)"
+            exit 1
+          fi
           echo "no stray ${OLD_VERSION} literals"
 
       - uses: actions/setup-java@v4
