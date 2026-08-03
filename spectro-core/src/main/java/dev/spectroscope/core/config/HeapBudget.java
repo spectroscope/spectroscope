@@ -61,10 +61,28 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
      * is a function of it. The mirror is not on trust: {@code HeapFlagDriftTest}
      * reads the controller's source and fails when the two drift apart.
      */
-    public static final long TRANSCRIPT_IMPORT_CAP_BYTES = 64L * 1024 * 1024;
+    public static final long TRANSCRIPT_IMPORT_CAP_BYTES = 128L * 1024 * 1024;
 
-    /** Measured heap per byte of transcript: UTF-16 blowup plus the response copy. */
-    private static final int IMPORT_EXPANSION = 8;
+    /**
+     * The smallest heap on which the server's import path still works, measured
+     * rather than derived from the cap.
+     *
+     * <p>It used to be the cap times eight, because {@code content()} answered
+     * with {@code Files.readString}: the whole transcript as a UTF-16 String plus
+     * the response copy. A unit test now measures that doubling directly, at
+     * 50,334,944 bytes of thread allocation for a 25,165,818 byte file, and the
+     * endpoint no longer does it. It streams the file to the socket, so its heap
+     * cost is a buffer and no longer scales with the file at all.
+     *
+     * <p>Measured 2026-08-03 against the 0.5.0 jar with {@code -Xmx128m} over the
+     * real store: the 73.6 MiB transcript served byte-identically in 126 ms, the
+     * 82.9 MiB one in 175 ms, and three concurrent reads of the 82.9 MiB one each
+     * returned all 86,913,996 bytes with no OutOfMemoryError. 256 MiB is that
+     * proven-working ceiling doubled, because the experiment exercised the import
+     * path alone and a real server also holds sessions, sockets and the fleet
+     * aggregator.
+     */
+    private static final long FLOOR_BYTES = 256L * 1024 * 1024;
 
     private static final long MIB = 1L << 20;
     private static final long GIB = 1L << 30;
@@ -117,12 +135,16 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
     }
 
     /**
-     * The smallest heap on which one worst-case import can still complete.
+     * The smallest heap on which the server's import path still works.
      *
-     * @return the cap times the measured expansion factor
+     * <p>Independent of {@link #importCapBytes} on purpose: the read is streamed,
+     * so raising the cap raises what the BROWSER must survive, not what this
+     * process must hold.
+     *
+     * @return the measured floor
      */
     public long floorBytes() {
-        return importCapBytes * IMPORT_EXPANSION;
+        return FLOOR_BYTES;
     }
 
     /**

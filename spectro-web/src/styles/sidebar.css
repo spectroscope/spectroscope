@@ -120,6 +120,16 @@
   transition: background var(--t-fast), border-color var(--t-fast);
 }
 .import-store-row:hover { background: var(--surface-2); border-left-color: var(--accent); }
+/* A row the server will refuse. Dimmed and not clickable, with the reason ON the
+   row: the point of the whole change is that the verdict arrives before the
+   click, so it cannot live in a tooltip. Hover is cancelled too, or the row
+   would still feel pressable. */
+.import-store-row.is-refused {
+  cursor: not-allowed;
+  color: var(--text-dim);
+}
+.import-store-row.is-refused:hover { background: none; border-left-color: transparent; }
+.import-store-refused { font-size: var(--fs-11); color: var(--warn); }
 .import-store-file { font-size: var(--fs-12); }
 .import-store-meta { display: flex; gap: var(--sp-2); font-size: var(--fs-11); color: var(--text-dim); }
 .import-store-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }

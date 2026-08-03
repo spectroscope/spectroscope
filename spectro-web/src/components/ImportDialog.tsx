@@ -17,19 +17,8 @@ import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
-
-interface TranscriptInfo {
-  path: string;
-  project: string;
-  file: string;
-  size: number;
-  modifiedAt: number;
-}
-
-function formatKb(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${Math.max(1, Math.round(bytes / 1024))} kB`;
-}
+import { rowState, formatBytes } from "../import/rowState";
+import type { TranscriptRow, StoreLimits } from "../import/rowState";
 
 export function ImportDialog(props: {
   onLoad: (
@@ -43,16 +32,31 @@ export function ImportDialog(props: {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [transcripts, setTranscripts] = useState<TranscriptInfo[]>([]);
+  const [transcripts, setTranscripts] = useState<TranscriptRow[]>([]);
+  // What the SAME listing published about its own ceiling. Null until it
+  // answers, and null forever against a server too old to say, in which case
+  // rowState refuses nothing rather than guessing a number.
+  const [limits, setLimits] = useState<StoreLimits | null>(null);
   const lang = useLang();
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let alive = true;
     fetch("/api/claude/transcripts")
-      .then((r) => (r.ok ? r.json() : []))
-      .then((list) => {
-        if (alive && Array.isArray(list)) setTranscripts(list as TranscriptInfo[]);
+      .then((r) => (r.ok ? r.json() : null))
+      .then((body: unknown) => {
+        if (!alive || body === null || typeof body !== "object") return;
+        // One answer carries both, so there is no window in which the dialog has
+        // rows but no limit and has to either guess or render them all clickable.
+        const listing = body as { limitBytes?: unknown; transcripts?: unknown };
+        if (Array.isArray(listing.transcripts)) {
+          setTranscripts(listing.transcripts as TranscriptRow[]);
+        } else if (Array.isArray(body)) {
+          setTranscripts(body as TranscriptRow[]);
+        }
+        if (typeof listing.limitBytes === "number") {
+          setLimits({ limitBytes: listing.limitBytes });
+        }
       })
       .catch(() => {});
     return () => {
@@ -91,12 +95,26 @@ export function ImportDialog(props: {
     }
   };
 
-  const loadFromStore = (tr: TranscriptInfo): void => {
+  const loadFromStore = (tr: TranscriptRow): void => {
     setError(null);
     fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(tr.path)}`)
-      .then((r) =>
-        r.ok ? r.text() : Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status }))),
-      )
+      .then((r) => {
+        if (r.ok) return r.text();
+        // The rows are disabled before the click now, so a refusal here means
+        // the listing went stale: the store is live and a transcript can grow
+        // past the ceiling between the render and the click. The server names
+        // both numbers, so show what it said rather than a bare status.
+        if (r.status === 413) {
+          return r
+            .text()
+            .then((why) =>
+              Promise.reject(
+                new Error(why.trim() === "" ? t(lang, "imp.err.fetch", { status: 413 }) : why.trim()),
+              ),
+            );
+        }
+        return Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status })));
+      })
       .then((raw) => load(raw, tr.file))
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
@@ -126,24 +144,30 @@ export function ImportDialog(props: {
           <>
             <p className="import-store-label">{t(lang, "imp.store")}</p>
             <div className="import-store" role="list">
-              {transcripts.map((tr) => (
-                <button
-                  key={tr.path}
-                  type="button"
-                  className="import-store-row"
-                  role="listitem"
-                  title={tr.path}
-                  onClick={() => loadFromStore(tr)}
-                >
-                  <span className="import-store-file mono">{tr.file}</span>
-                  <span className="import-store-meta">
-                    <span className="import-store-project">{tr.project}</span>
-                    <span className="tabular">
-                      {relativeTime(tr.modifiedAt, Date.now(), lang)} · {formatKb(tr.size)}
+              {transcripts.map((tr) => {
+                const state = rowState(tr, limits, lang);
+                return (
+                  <button
+                    key={tr.path}
+                    type="button"
+                    className={state.enabled ? "import-store-row" : "import-store-row is-refused"}
+                    role="listitem"
+                    title={tr.path}
+                    disabled={!state.enabled}
+                    aria-disabled={!state.enabled}
+                    onClick={() => loadFromStore(tr)}
+                  >
+                    <span className="import-store-file mono">{tr.file}</span>
+                    <span className="import-store-meta">
+                      <span className="import-store-project">{tr.project}</span>
+                      <span className="tabular">
+                        {relativeTime(tr.modifiedAt, Date.now(), lang)} · {formatBytes(tr.size)}
+                      </span>
                     </span>
-                  </span>
-                </button>
-              ))}
+                    {!state.enabled && <span className="import-store-refused">{state.reason}</span>}
+                  </button>
+                );
+              })}
             </div>
           </>
         )}

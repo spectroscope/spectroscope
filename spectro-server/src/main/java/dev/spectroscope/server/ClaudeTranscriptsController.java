@@ -1,5 +1,8 @@
 package dev.spectroscope.server;
 
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -36,10 +39,39 @@ public class ClaudeTranscriptsController {
      * @param size file size in bytes (0 when the file vanished mid-listing)
      * @param modifiedAt last-modified epoch millis — the listing sorts by this
      */
-    public record TranscriptInfo(String path, String project, String file, long size, long modifiedAt) {}
+    public record TranscriptInfo(
+            String path, String project, String file, long size, long modifiedAt, boolean loadable) {}
+
+    /**
+     * The listing and the limit that governs it, in one answer.
+     *
+     * @param limitBytes the largest transcript {@link #content} will serve
+     * @param transcripts the rows, newest first
+     */
+    public record TranscriptListing(long limitBytes, List<TranscriptInfo> transcripts) {}
 
     private static final int MAX_LISTED = 300;
-    private static final long MAX_CONTENT_BYTES = 64L * 1024 * 1024;
+
+    /**
+     * The largest transcript this server hands over, published by the listing and
+     * enforced by {@link #content} from this one constant. Two literals would
+     * drift, and the drift reads as the dialog offering the one file the server
+     * refuses, which is the bug this whole change is about.
+     *
+     * <p>Raised from 64 MB once {@link #content} stopped reading the file into
+     * heap. The old number was the server's heap budget: {@code Files.readString}
+     * held the whole file as a UTF-16 String, measured at exactly 2.00x the file
+     * in thread allocation, and Spring encoded it back to UTF-8 for the wire. A
+     * streamed read makes the server's cost a buffer, so the ceiling is now a
+     * statement about the browser instead, which holds the response text and the
+     * folded rows.
+     *
+     * <p>128 MiB covers the whole real store with headroom: the largest
+     * transcript on this machine is 82.9 MiB and the owner's is 73.6 MiB and
+     * growing. It is not unbounded, because the client cost is real: 82.9 MiB
+     * folds to 9931 rows and about 278 MB retained in the tab.
+     */
+    private static final long MAX_CONTENT_BYTES = 128L * 1024 * 1024;
 
     private final Path base;
 
@@ -64,20 +96,20 @@ public class ClaudeTranscriptsController {
      *         an empty list, never an error (browsing must not break the dialog)
      */
     @GetMapping("/api/claude/transcripts")
-    public List<TranscriptInfo> transcripts() {
+    public TranscriptListing transcripts() {
         if (!Files.isDirectory(base)) {
-            return List.of();
+            return new TranscriptListing(MAX_CONTENT_BYTES, List.of());
         }
         try (Stream<Path> walk = Files.walk(base, 4)) {
-            return walk
+            return new TranscriptListing(MAX_CONTENT_BYTES, walk
                     .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
                     .map(this::describe)
                     .sorted(Comparator.comparingLong(TranscriptInfo::modifiedAt).reversed())
                     .limit(MAX_LISTED)
-                    .toList();
+                    .toList());
         } catch (IOException unreadable) {
-            return List.of();
+            return new TranscriptListing(MAX_CONTENT_BYTES, List.of());
         }
     }
 
@@ -86,11 +118,13 @@ public class ClaudeTranscriptsController {
      *
      * @param rel the base-relative path from the listing — canonicalized and
      *            checked against the real base before any read
-     * @return 200 with the UTF-8 body; 400 for a non-.jsonl name, 404 for
-     *         anything outside the base or missing, 413 above the 64 MB cap
+     * @return 200 streaming the UTF-8 body; 400 for a non-.jsonl name, 404 for
+     *         anything outside the base or missing, 413 above
+     *         {@link #MAX_CONTENT_BYTES} with a body naming the file's size and
+     *         that cap, so the dialog can say why rather than print a number
      */
     @GetMapping("/api/claude/transcripts/content")
-    public ResponseEntity<String> content(@RequestParam("path") String rel) {
+    public ResponseEntity<Resource> content(@RequestParam("path") String rel) {
         if (!rel.endsWith(".jsonl")) {
             return ResponseEntity.badRequest().build();
         }
@@ -101,12 +135,21 @@ public class ClaudeTranscriptsController {
             if (!real.startsWith(base.toRealPath()) || !Files.isRegularFile(real)) {
                 return ResponseEntity.notFound().build();
             }
-            if (Files.size(real) > MAX_CONTENT_BYTES) {
-                return ResponseEntity.status(413).build();
+            long size = Files.size(real);
+            if (size > MAX_CONTENT_BYTES) {
+                return ResponseEntity.status(413)
+                        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+                        .body(new ByteArrayResource(("transcript is " + size
+                                + " bytes, this server reads at most " + MAX_CONTENT_BYTES)
+                                .getBytes(StandardCharsets.UTF_8)));
             }
+            // A resource, not a String. Spring copies it to the socket in
+            // chunks, so a 128 MB transcript costs this server a buffer instead
+            // of 256 MB of UTF-16 plus the re-encoded copy.
             return ResponseEntity.ok()
                     .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
-                    .body(Files.readString(real, StandardCharsets.UTF_8));
+                    .contentLength(size)
+                    .body(new FileSystemResource(real));
         } catch (IOException missing) {
             return ResponseEntity.notFound().build();
         }
@@ -132,6 +175,7 @@ public class ClaudeTranscriptsController {
             modified = 0;
         }
         return new TranscriptInfo(
-                rel.toString(), project, file.getFileName().toString(), size, modified);
+                rel.toString(), project, file.getFileName().toString(), size, modified,
+                size <= MAX_CONTENT_BYTES);
     }
 }
