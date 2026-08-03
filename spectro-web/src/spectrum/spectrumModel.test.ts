@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
-import { buildSpectrum, MAX_LANE_TICKS, MAX_LANE_THINKING } from "./spectrumModel";
+import { buildSpectrum, MAX_LANE_THINKING } from "./spectrumModel";
+import { sliceLane } from "./laneSlice";
+import { fit } from "./viewport";
 
 // A small fleet run: main spawns a worker, the worker hits a gate, reports
 // back, the run ends. Timestamps rise in steps of 100ms from t=1000.
@@ -134,18 +136,81 @@ describe("buildSpectrum", () => {
     expect(m.running).toBe(true); // root run never ended in this slice
   });
 
-  it("thins dense token streams but never structural marks, and reports the drop", () => {
+  it("keeps every mark: density is a question for the viewport, not for the fold", () => {
+    // The old fold deleted the dense channels wholesale past a fixed budget, so
+    // a long imported session lost its whole reasoning channel while the legend
+    // kept drawing a swatch for it. Memory was never the constraint here (a few
+    // thousand small objects); render cost was, and that belongs to whatever is
+    // actually on screen.
     const flood: RunEvent[] = [{ type: "run_start", runId: "r1", agentId: "main", prompt: "p", ts: 1000 }];
-    for (let i = 0; i < MAX_LANE_TICKS + 800; i++) {
+    for (let i = 0; i < 2000; i++) {
       flood.push({ type: "text_delta", agentId: "main", text: "x", ts: 1001 + i });
     }
+    for (let i = 0; i < 2000; i++) {
+      flood.push({ type: "thinking_delta", agentId: "main", text: "y", ts: 3001 + i });
+    }
     flood.push({ type: "tool_call", agentId: "main", callId: "c9", name: "read_file", input: {}, ts: 99000 });
-    const m = buildSpectrum(flood);
-    const lane = m.lanes[0];
-    expect(lane.ticks.length).toBeLessThanOrEqual(MAX_LANE_TICKS);
-    expect(lane.dropped).toBeGreaterThan(0);
-    expect(lane.ticks.some((t) => t.kind === "tool")).toBe(true); // structural survived
-    expect(m.totalEvents).toBe(flood.length);
+    const lane = buildSpectrum(flood).lanes[0];
+    expect(lane.ticks.filter((t) => t.kind === "token")).toHaveLength(2000);
+    expect(lane.ticks.filter((t) => t.kind === "reasoning")).toHaveLength(2000);
+    expect(lane.ticks.some((t) => t.kind === "tool")).toBe(true);
+    expect("dropped" in lane).toBe(false); // the fold no longer has an opinion
+  });
+
+  it("emits ticks sorted by x, with seq breaking a tie", () => {
+    // Imported transcripts are not always monotonic, and the slicer reaches for
+    // the visible range with a binary search, so sorted is a precondition and
+    // not a happy accident of event order.
+    const outOfOrder: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "p", ts: 1000 },
+      { type: "text_delta", agentId: "main", text: "late", ts: 3000 },
+      { type: "text_delta", agentId: "main", text: "early", ts: 2000 },
+      { type: "text_delta", agentId: "main", text: "tied", ts: 2000 },
+    ];
+    const ticks = buildSpectrum(outOfOrder).lanes[0].ticks;
+    const xs = ticks.map((t) => t.x);
+    expect(xs).toEqual([...xs].sort((p, q) => p - q));
+    const tied = ticks.filter((t) => t.x === 0.5).map((t) => t.seq);
+    expect(tied).toEqual([2, 3]); // same instant: the earlier event still leads
+  });
+
+  it("clamps a frame with no timestamp into the domain instead of off the band", () => {
+    const m = buildSpectrum([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "go", ts: 1000 },
+      { type: "text_delta", agentId: "main", text: "x" } as unknown as RunEvent,
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 2000 },
+    ]);
+    for (const t of m.lanes[0].ticks) {
+      expect(t.x).toBeGreaterThanOrEqual(0);
+      expect(t.x).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("pins what the band draws at full extent: the fold and the slice agree", () => {
+    // Read this for what it says. This fixture's five marks sit at 0, 0.1, 0.2,
+    // 0.3 and 1 of the axis, so at 1000 columns no two of them can meet: the
+    // slice is the identity here because the arithmetic leaves it no choice.
+    //
+    // It is NOT a promise that the band renders what it rendered before marks
+    // were thinned per column. It does not: on a real store that changed for 55
+    // of 147 sessions, and the busiest lane went from 826 rects to 39. What this
+    // pins is the sparse case, that a lane with room on screen is left alone.
+    // The rule itself is pinned by exact counts in laneSlice.test.ts, and that
+    // nothing became unreachable is pinned in bandScrub.test.ts.
+    const m = buildSpectrum(fleet);
+    for (const lane of m.lanes) {
+      const { marks, hidden } = sliceLane(lane.ticks, fit(), 1000);
+      expect(marks).toEqual(lane.ticks);
+      expect(hidden).toBe(0);
+    }
+    expect(m.lanes[0].ticks.map((t) => t.kind)).toEqual([
+      "lifecycle", // run_start
+      "reasoning", // thinking_delta
+      "token", // text_delta
+      "subagent", // the spawn, marked on the PARENT
+      "lifecycle", // run_end
+    ]);
+    expect(m.lanes[0].ticks.map((t) => t.x)).toEqual([0, 0.1, 0.2, 0.3, 1]);
   });
 
   it("stays calm on an empty stream", () => {

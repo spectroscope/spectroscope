@@ -21,8 +21,11 @@ configured cloud provider.
 The hub is off by default; `SPECTRO_HUB_PORT` opts in (loopback only):
 
 ```bash
-SPECTRO_HUB_PORT=7700 java -jar spectro-server-0.4.1.jar
+SPECTRO_HUB_PORT=7700 java -XX:MaxRAMPercentage=33 -jar spectro-server-0.4.1.jar
 ```
+
+The heap flag is the one every shipped launcher passes for you; a bare
+`java -jar` is assembled by no script of ours, so here you pass it yourself.
 
 Open http://localhost:8080 and switch the sidebar to **fleets**.
 

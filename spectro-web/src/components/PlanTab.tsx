@@ -5,14 +5,14 @@
 // status values stay English; the chrome labels localize.
 
 import type { PlanStep } from "../state/reducer";
-import { dict, t, type Lang } from "../i18n/i18n";
+import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { statusLabel } from "./todoList";
 
-/** Chrome label for a wire status; unknown statuses pass through unchanged
- *  (forward compatibility — the wire stays English either way). */
-export function statusLabel(status: string, lang: Lang = "en"): string {
-  return dict[`plan.${status}`] !== undefined ? t(lang, `plan.${status}`) : status;
-}
+// The status vocabulary moved to todoList.ts when the trace grew a second list
+// with the same three wire statuses (card 141). One definition, two readers;
+// re-exported here because this is where it was published from.
+export { statusLabel };
 
 export function PlanTab({ plan }: { plan: PlanStep[] | null }) {
   const lang = useLang();

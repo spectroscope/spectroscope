@@ -399,7 +399,7 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
                 ) : (
                   <button
                     type="button"
-                    className="primary"
+                    className="soft-primary"
                     disabled={!armed}
                     onClick={() => void startTranslation(viewKey, props.events)}
                   >

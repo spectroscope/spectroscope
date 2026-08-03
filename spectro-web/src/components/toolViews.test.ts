@@ -1347,3 +1347,49 @@ describe("runStats — the scannable row", () => {
     expect(stats.map((s) => s.key)).toEqual(["agents"]);
   });
 });
+
+describe("splitInput — a one-line program is a block too", () => {
+  // The MCP browser tool sends its whole script as ONE string with no newline
+  // in it, so the "has a \n" rule left a 900-character program sitting in the
+  // JSON shape as a scalar. The language was already known (the tool NAMES
+  // itself javascript and `text` is an operand key); only the lifting rule was
+  // wrong.
+  const MCP = "mcp__Claude_Browser__javascript_tool";
+
+  it("lifts a long one-line script out of the shape", () => {
+    const text =
+      "(async()=>{const slider=document.querySelector('input');" +
+      "setter.call(slider,'33');await new Promise(r=>setTimeout(r,200));" +
+      "return JSON.stringify({ok:true})})()";
+    const split = splitInput(MCP, { action: "javascript_exec", text });
+    expect(split.blocks.map((b) => b.key)).toEqual(["text"]);
+    expect(split.blocks[0].lang).toBe("javascript");
+    expect(split.shape).toEqual({ action: "javascript_exec", text: "... (1 line below)" });
+  });
+
+  it("breaks the lifted line after a statement, so it can be read", () => {
+    const text = "const a=1;const b=2;return a+b";
+    const split = splitInput(MCP, { text: text + ";".repeat(0) + " ".repeat(0) + "x".repeat(200) });
+    expect(split.blocks[0].text.split("\n").length).toBeGreaterThan(1);
+  });
+
+  it("never breaks inside a string literal", () => {
+    // The whole hazard in one line: a semicolon the program MEANS as data.
+    const text = "const s='a;b;c';fn(s);" + "y".repeat(200);
+    const split = splitInput(MCP, { text });
+    expect(split.blocks[0].text).toContain("'a;b;c'");
+  });
+
+  it("leaves a short one-liner in the shape where it reads fine", () => {
+    const split = splitInput(MCP, { text: "return 1" });
+    expect(split.blocks).toEqual([]);
+    expect(split.shape).toEqual({ text: "return 1" });
+  });
+
+  it("leaves a long one-liner alone when nothing says it is code", () => {
+    const prose = "w".repeat(400);
+    const split = splitInput("some_tool", { note: prose });
+    expect(split.blocks).toEqual([]);
+    expect(split.shape).toEqual({ note: prose });
+  });
+});

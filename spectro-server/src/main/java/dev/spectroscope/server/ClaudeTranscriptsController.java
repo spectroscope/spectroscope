@@ -1,5 +1,9 @@
 package dev.spectroscope.server;
 
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.FileSystemResource;
+import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,6 +27,11 @@ import java.util.stream.Stream;
  * Strictly sandboxed: only files inside the base directory, only .jsonl, the
  * requested path is resolved canonically before it is read (no traversal, no
  * symlink escape — request parameters are untrusted input).
+ *
+ * <p>Both endpoints wear the local-origin fence (card 74). What they answer
+ * with is every prompt the operator ever typed and every tool result that came
+ * back, and a DNS-rebound page arrives on loopback like the real UI does, so
+ * the Host header is the only part of the request that tells them apart.</p>
  */
 @RestController
 public class ClaudeTranscriptsController {
@@ -36,10 +45,60 @@ public class ClaudeTranscriptsController {
      * @param size file size in bytes (0 when the file vanished mid-listing)
      * @param modifiedAt last-modified epoch millis — the listing sorts by this
      */
-    public record TranscriptInfo(String path, String project, String file, long size, long modifiedAt) {}
+    public record TranscriptInfo(
+            String path, String project, String file, long size, long modifiedAt, boolean loadable) {}
 
+    /**
+     * The listing and BOTH limits that govern it, in one answer.
+     *
+     * <p>There are two, and this record used to publish one. The byte ceiling
+     * refuses a named file the caller can see; the row cap drops files the
+     * caller never learns about, which is the worse of the pair to keep quiet.
+     * The sibling {@link WorkspaceController.FilesResponse} has carried the same
+     * flag for the same reason since it was written.</p>
+     *
+     * @param limitBytes the largest transcript {@link #content} will serve
+     * @param truncated {@code true} when the row cap dropped transcripts the
+     *                  store really holds — the listing is incomplete
+     * @param transcripts the rows, newest first
+     */
+    public record TranscriptListing(
+            long limitBytes, boolean truncated, List<TranscriptInfo> transcripts) {}
+
+    /**
+     * The most rows one listing returns.
+     *
+     * <p>Counted on this machine's store 2026-08-03: the walk descends four
+     * levels and so reaches {@code <project>/<session>/subagents/agent-*.jsonl}
+     * as well as the session transcripts themselves, which put 853 candidates in
+     * front of this cap. 181 of the 300 served slots went to subagent files and
+     * 36 ordinary session transcripts fell off the end, all of them far under
+     * the byte ceiling. The store is live, so those are a reading and not a
+     * constant. Whether the split is right is a product question; whether the
+     * caller is told the cap fired is not.</p>
+     */
     private static final int MAX_LISTED = 300;
-    private static final long MAX_CONTENT_BYTES = 64L * 1024 * 1024;
+
+    /**
+     * The largest transcript this server hands over, published by the listing and
+     * enforced by {@link #content} from this one constant. Two literals would
+     * drift, and the drift reads as the dialog offering the one file the server
+     * refuses, which is the bug this whole change is about.
+     *
+     * <p>Raised from 64 MB once {@link #content} stopped reading the file into
+     * heap. The old number was the server's heap budget: {@code Files.readString}
+     * held the whole file as a UTF-16 String, measured at exactly 2.00x the file
+     * in thread allocation, and Spring encoded it back to UTF-8 for the wire. A
+     * streamed read makes the server's cost a buffer, so the ceiling is now a
+     * statement about the browser instead, which holds the response text and the
+     * folded rows.
+     *
+     * <p>128 MiB covers the whole real store with headroom: the largest
+     * transcript on this machine is 82.9 MiB and the owner's is 73.6 MiB and
+     * growing. It is not unbounded, because the client cost is real: 82.9 MiB
+     * folds to 9931 rows and about 278 MB retained in the tab.
+     */
+    private static final long MAX_CONTENT_BYTES = 128L * 1024 * 1024;
 
     private final Path base;
 
@@ -60,24 +119,43 @@ public class ClaudeTranscriptsController {
     /**
      * All *.jsonl transcripts under the base, newest first, capped.
      *
-     * @return the transcript descriptors — an absent or unreadable store answers
-     *         an empty list, never an error (browsing must not break the dialog)
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host; else the transcript
+     *         descriptors — an absent or unreadable store answers an empty list,
+     *         never an error (browsing must not break the dialog)
      */
     @GetMapping("/api/claude/transcripts")
-    public List<TranscriptInfo> transcripts() {
+    public ResponseEntity<TranscriptListing> transcripts(HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
+        return ResponseEntity.ok(listing());
+    }
+
+    /**
+     * The listing itself, fence already passed.
+     *
+     * <p>Counted before the cap is applied, not after: {@code limit} on the
+     * stream cannot tell a store of exactly 300 from one of 900.</p>
+     *
+     * @return the rows plus both limits that govern them
+     */
+    private TranscriptListing listing() {
         if (!Files.isDirectory(base)) {
-            return List.of();
+            return new TranscriptListing(MAX_CONTENT_BYTES, false, List.of());
         }
         try (Stream<Path> walk = Files.walk(base, 4)) {
-            return walk
+            List<TranscriptInfo> found = walk
                     .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
                     .map(this::describe)
                     .sorted(Comparator.comparingLong(TranscriptInfo::modifiedAt).reversed())
-                    .limit(MAX_LISTED)
                     .toList();
+            boolean capped = found.size() > MAX_LISTED;
+            return new TranscriptListing(MAX_CONTENT_BYTES, capped,
+                    capped ? List.copyOf(found.subList(0, MAX_LISTED)) : found);
         } catch (IOException unreadable) {
-            return List.of();
+            return new TranscriptListing(MAX_CONTENT_BYTES, false, List.of());
         }
     }
 
@@ -86,11 +164,19 @@ public class ClaudeTranscriptsController {
      *
      * @param rel the base-relative path from the listing — canonicalized and
      *            checked against the real base before any read
-     * @return 200 with the UTF-8 body; 400 for a non-.jsonl name, 404 for
-     *         anything outside the base or missing, 413 above the 64 MB cap
+     * @param request the servlet request, for the local-origin fence
+     * @return 200 streaming the UTF-8 body; 404 for a non-local caller or a
+     *         rebound Host; 400 for a non-.jsonl name, 404 for anything outside
+     *         the base or missing, 413 above {@link #MAX_CONTENT_BYTES} with a
+     *         body naming the file's size and that cap, so the dialog can say
+     *         why rather than print a number
      */
     @GetMapping("/api/claude/transcripts/content")
-    public ResponseEntity<String> content(@RequestParam("path") String rel) {
+    public ResponseEntity<Resource> content(@RequestParam("path") String rel,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
         if (!rel.endsWith(".jsonl")) {
             return ResponseEntity.badRequest().build();
         }
@@ -101,12 +187,21 @@ public class ClaudeTranscriptsController {
             if (!real.startsWith(base.toRealPath()) || !Files.isRegularFile(real)) {
                 return ResponseEntity.notFound().build();
             }
-            if (Files.size(real) > MAX_CONTENT_BYTES) {
-                return ResponseEntity.status(413).build();
+            long size = Files.size(real);
+            if (size > MAX_CONTENT_BYTES) {
+                return ResponseEntity.status(413)
+                        .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
+                        .body(new ByteArrayResource(("transcript is " + size
+                                + " bytes, this server reads at most " + MAX_CONTENT_BYTES)
+                                .getBytes(StandardCharsets.UTF_8)));
             }
+            // A resource, not a String. Spring copies it to the socket in
+            // chunks, so a 128 MB transcript costs this server a buffer instead
+            // of 256 MB of UTF-16 plus the re-encoded copy.
             return ResponseEntity.ok()
                     .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
-                    .body(Files.readString(real, StandardCharsets.UTF_8));
+                    .contentLength(size)
+                    .body(new FileSystemResource(real));
         } catch (IOException missing) {
             return ResponseEntity.notFound().build();
         }
@@ -132,6 +227,7 @@ public class ClaudeTranscriptsController {
             modified = 0;
         }
         return new TranscriptInfo(
-                rel.toString(), project, file.getFileName().toString(), size, modified);
+                rel.toString(), project, file.getFileName().toString(), size, modified,
+                size <= MAX_CONTENT_BYTES);
     }
 }

@@ -4,6 +4,7 @@
 // same mental figure as buildGraph.
 
 import type { ClientMessage, RunEvent } from "../events";
+import type { WorkspaceMode } from "../workspace/paneState";
 
 export interface ToolCard {
   callId: string;
@@ -85,6 +86,11 @@ export interface TraceEntry {
   /** The model serving the run this row belongs to (card 87) — from the last
    *  run_start's additive model; blank outside runs and in old archives. */
   model?: string;
+  /** For an imported session: the index, counted from zero, of the FILE's line
+   *  this frame came from. Absent on a frame the importer built itself, and on
+   *  every row of a session that was produced here, where the wire line IS the
+   *  stored line and there is no separate source to point at. */
+  sourceLine?: number;
   payload: unknown;
 }
 
@@ -138,11 +144,23 @@ export interface PlanStep {
 /** Where THIS session's agent works — from the socket-only workspace_info
  *  frame (never in the JSONL; archives replay without it). */
 export interface WorkspaceInfo {
-  sessionId: string;
-  path: string;
+  /** Present only once a session exists, the connect-time frame has none,
+   *  because announcing a folder must not mint a session. */
+  sessionId?: string;
+  /** Absent for the "random" mode before a run: that folder is keyed by a
+   *  session id that does not exist yet. */
+  path?: string;
   /** true when the workspace comes from the config, false for the
    *  per-session temp folder. */
   configured: boolean;
+  /** false on the PROSPECTIVE frame sent at connect: what a run started right
+   *  now would use, with nothing created and no session minted. The Files pane
+   *  shows a waiting state for it rather than a tree. */
+  resolved: boolean;
+  /** Which of the chooser's modes is actually in effect. */
+  mode: WorkspaceMode;
+  /** Whether the named folder is already on disk. */
+  exists?: boolean;
 }
 
 /** The ACTIVE LLM backend — from the socket-only provider_info frame, sent on
@@ -425,7 +443,16 @@ export function reduce(state: UiState, event: RunEvent): UiState {
     const w = event as unknown as WorkspaceInfo;
     return {
       ...traced,
-      workspace: { sessionId: w.sessionId, path: w.path, configured: w.configured === true },
+      workspace: {
+        sessionId: w.sessionId,
+        path: w.path,
+        configured: w.configured === true,
+        // An older server sends neither field; treating that frame as resolved
+        // keeps the pane behaving as it always did against one.
+        resolved: w.resolved !== false,
+        mode: w.mode ?? (w.configured === true ? "default" : "random"),
+        exists: w.exists,
+      },
     };
   }
   // Same boundary rule for provider_info: connect + every switch announce the
@@ -464,6 +491,23 @@ export function reduce(state: UiState, event: RunEvent): UiState {
         ...(typeof x.message === "string" ? { message: x.message } : {}),
       },
     };
+  }
+  // Same boundary rule for user_message, and for the same reason: it is not in
+  // the RunEvent union, so the sealed switch below must not learn it.
+  //
+  // Inbound, this frame only ever comes from an import. What a person types
+  // HERE goes out through recordOutgoing and never comes back — the bubble for
+  // it is built by the run_start that answers it (see sendNow, which parks its
+  // attachments rather than echoing a turn). So there is no path on which this
+  // can double the live bubble.
+  //
+  // It adds a turn and nothing else. A transcript's later prompts are not run
+  // boundaries: measured over 151 files, most of the 1,985 of them are slash
+  // commands, their stdout, or an "[Image: …]" note the client wrote. Closing a
+  // run or resetting the usage on one would be a claim the file never made.
+  if (raw.type === "user_message") {
+    const text = (event as unknown as { text?: unknown }).text;
+    return typeof text === "string" && text !== "" ? addTurn(traced, { kind: "user", text }) : traced;
   }
   // Same boundary rule for permission_mode_info: connect + every switch
   // announce the active mode; the composer gear follows wire truth.

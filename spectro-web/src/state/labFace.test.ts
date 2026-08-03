@@ -46,15 +46,29 @@ describe("labFace", () => {
     expect(parseLabFace("insight")).toBe("insight");
   });
 
-  // "raw"/"compact" belong to the trace's store, "json" to the chat's — the
-  // lab's two-value space must reject all foreign vocabulary.
+  // "wire"/"compact"/"source" belong to the trace's store, "json" to the
+  // chat's, and "raw" belonged to the trace's store until the rename. The lab's
+  // two-value space must reject all of it, the retired word included.
   it("falls back to the default for absent, malformed or foreign storage", () => {
     expect(parseLabFace(null)).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("Insight")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("json")).toBe(DEFAULT_LAB_FACE);
+    expect(parseLabFace("wire")).toBe(DEFAULT_LAB_FACE);
+    expect(parseLabFace("source")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("raw")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("compact")).toBe(DEFAULT_LAB_FACE);
+  });
+
+  // This store has no rename map at all, so nothing here should be reachable,
+  // and a prototype lookup made it reachable anyway. The header's promise that
+  // no other store's word "may leak in here through storage" covers the words
+  // every object carries just as much as it covers "wire".
+  it("falls back for a word that only Object.prototype knows", () => {
+    for (const word of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(typeof parseLabFace(word), word).toBe("string");
+      expect(parseLabFace(word), word).toBe(DEFAULT_LAB_FACE);
+    }
   });
 });
 
@@ -117,7 +131,7 @@ describe("the lab store next to the trace store", () => {
   it("moves independently of the trace master", () => {
     setLabFace("structured");
     expect(currentTraceFace().face).toBe("structured");
-    setTraceFace("raw");
+    setTraceFace("wire");
     expect(currentLabFace().face).toBe("structured");
   });
 

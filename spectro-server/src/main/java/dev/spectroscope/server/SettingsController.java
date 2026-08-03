@@ -74,24 +74,45 @@ public class SettingsController {
      *  map, tests inject a fake so no real pin state is needed. */
     private final Function<String, String> workspacePin;
 
+    /** session id -> the folder that session's run actually resolved, or
+     *  {@code null} before the first run; the same record {@code /api/files}
+     *  reads, so the Files tree and a settings write cannot disagree. */
+    private final Function<String, String> workspaceResolved;
+
     /** Spring wiring: the launch dir is the server process's working directory;
-     *  session pins read the shared {@link SessionWorkspaces} map. */
+     *  session pins and resolutions read the shared {@link SessionWorkspaces} map. */
     public SettingsController() {
-        this(Path.of(System.getProperty("user.dir")), SessionWorkspaces::pinned);
+        this(Path.of(System.getProperty("user.dir")),
+                SessionWorkspaces::pinned, SessionWorkspaces::resolvedPath);
     }
 
     /**
-     * Seam for tests: both the launch-dir layer's root and the pin lookup are
-     * injectable, so a test needs no real {@code SessionWorkspaces} state and
-     * no real working directory.
+     * Seam for tests, for a session that has not resolved a workspace yet.
      *
      * @param launchDir    the directory whose {@code .spectro/settings.json} forms
      *                     the launch-dir layer
      * @param workspacePin supplies a session's pinned workspace path, or {@code null}
      */
     SettingsController(Path launchDir, Function<String, String> workspacePin) {
+        this(launchDir, workspacePin, session -> null);
+    }
+
+    /**
+     * Seam for tests: the launch-dir layer's root and both workspace lookups are
+     * injectable, so a test needs no real {@code SessionWorkspaces} state and
+     * no real working directory.
+     *
+     * @param launchDir         the directory whose {@code .spectro/settings.json}
+     *                          forms the launch-dir layer
+     * @param workspacePin      supplies a session's pinned workspace path, or {@code null}
+     * @param workspaceResolved supplies the folder that session's run resolved,
+     *                          or {@code null} when no run has resolved one
+     */
+    SettingsController(Path launchDir, Function<String, String> workspacePin,
+            Function<String, String> workspaceResolved) {
         this.launchDir = launchDir;
         this.workspacePin = workspacePin;
+        this.workspaceResolved = workspaceResolved;
     }
 
     /**
@@ -234,8 +255,16 @@ public class SettingsController {
      * Resolves the session's workspace, read-only. A {@code null}/blank
      * session is the process moment ({@code null} back, no workspace scopes
      * join the chain). Otherwise the id's shape is checked first — a malformed
-     * id never reaches the pin lookup or the filesystem — then a picked pin
-     * wins over the configured/env workspace; neither existing answers 404.
+     * id never reaches any lookup or the filesystem — then the folder the run
+     * actually resolved wins, and before any run a picked pin wins over the
+     * configured/env workspace; none of the three existing answers 404.
+     *
+     * <p>Consequence worth naming: a session running in an auto folder used to
+     * answer 404 here, because nothing was pinned and nothing configured. It
+     * now resolves, so a project-scope write lands in that per-session folder.
+     * That is more consistent and arguably less useful, since nothing reads it
+     * back after the session ends. It is not reachable from the gear, which
+     * gates the project sections on the connect-time {@code configured} flag.</p>
      *
      * @param session the session id from the query, or {@code null}/blank
      * @return the resolved workspace directory, or {@code null} for the
@@ -248,6 +277,14 @@ public class SettingsController {
         }
         if (!SESSION_ID.matcher(session).matches()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "malformed session id");
+        }
+        // The folder the run actually resolved wins, because that is the one the
+        // agent reads its settings from and the one the Files tree shows. This
+        // used to recompute pinned-or-configured from a config read fresh, so a
+        // write could land in a directory the running session has never seen.
+        String ran = workspaceResolved.apply(session);
+        if (ran != null && !ran.isBlank()) {
+            return Path.of(ran).toAbsolutePath().normalize();
         }
         String pinned = workspacePin.apply(session);
         String configured = pinned != null ? pinned

@@ -19,9 +19,13 @@ describe("detectAndLoad", () => {
   it("detects a modern Claude Code transcript with leading metadata records", () => {
     // Real 2026 transcripts open with queue-operation / attachment / ai-title
     // lines BEFORE the first message record — detection must scan past them.
+    // Detection still scans past them; the adapter no longer throws them away
+    // (card 141), so the run_start is somewhere in the stream rather than at
+    // the front of it. What matters here is that the format was recognised
+    // from a line that is not line one.
     const { kind, events } = detectAndLoad(ccModern);
     expect(kind).toBe("claude-code");
-    expect(events[0].type).toBe("run_start");
+    expect(events.filter((e) => e.type === "run_start").length).toBe(1);
   });
 
   it("detects a raw spectroscope RunEvent JSONL and replays it verbatim", () => {

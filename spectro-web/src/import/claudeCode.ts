@@ -20,6 +20,10 @@ interface CCRecord {
     /** Assistant records name the model that produced them; it can change
      *  mid-file (a /model switch, or a subagent on another model). */
     model?: string;
+    /** How THIS message stopped ("end_turn", "tool_use", "max_tokens",
+     *  "stop_sequence"), or null on a message that never reported an ending.
+     *  Absent on user records and on transcripts old enough not to carry it. */
+    stop_reason?: string | null;
     usage?: {
       input_tokens?: number;
       output_tokens?: number;
@@ -33,6 +37,40 @@ interface CCRecord {
   parentUuid?: string;
   isSidechain?: boolean;
   timestamp?: string;
+  /** `attachment` records: what the client recorded around the conversation. */
+  attachment?: CCAttachment;
+  /** `queue-operation` records: enqueue, dequeue or remove. */
+  operation?: string;
+  /** The queued text, on a queue-operation that kept it. */
+  content?: unknown;
+}
+
+/**
+ * The body of an `attachment` record.
+ *
+ * One record type with a discriminated body, and 25 bodies in the corpus. Four
+ * are read here; the rest stay on the no-conversation pile until somebody can
+ * say what a reader would do with them.
+ */
+interface CCAttachment {
+  type?: string;
+  /** task_reminder: the todo items, each `{id, subject, description, status,
+   *  blocks, blockedBy, activeForm?, owner?}`. */
+  content?: unknown;
+  /** task_reminder: the client's own count of them. */
+  itemCount?: number;
+  /** edited_text_file: the path that was edited, and what changed. */
+  filename?: string;
+  snippet?: string;
+  /** queued_command: what was typed, as a string or as content blocks. */
+  prompt?: unknown;
+  /** queued_command: "prompt" for something a person queued, "task-notification"
+   *  for a background task reporting in. */
+  commandMode?: string;
+  /** queued_command: the client's own stamp on the queued command. */
+  timestamp?: string;
+  /** queued_command: `{kind: "human"}` on 648 of 1,213, absent on the rest. */
+  origin?: unknown;
 }
 
 interface CCBlock {
@@ -142,6 +180,17 @@ function outcomeSection(n: TaskNotification): string {
   return [head, ...body].join("\n");
 }
 
+/**
+ * What a run_end says when the file recorded no stop_reason at all.
+ *
+ * Measured over 4496 real transcripts: 248 carry no assistant record at all and
+ * 28 more carry nothing but nulls. "end_turn" there would be an invention about
+ * somebody else's session, and this importer's whole job is to say only what the
+ * file says. The word is ours the same way "aborted" and "max_turns" are ours;
+ * no provider emits it, and it reads in the footer as what it is.
+ */
+const UNRECORDED_STOP = "unrecorded";
+
 /** A launch that promised a notification and never got one. */
 const UNFINISHED = (taskId: string): string =>
   `--- task ${taskId} · no result by the end of the transcript ---`;
@@ -193,9 +242,49 @@ const asText = (content: unknown): string => {
   return "";
 };
 
+/**
+ * An adapted stream, with the line each frame came from.
+ *
+ * `origin[i]` is the index, in the file's own non-blank lines, of the record
+ * that produced `events[i]`, or -1 when the importer built the frame itself
+ * (the up-front provider_info, the closing run_end, the unsettled receipts).
+ * The relation is frame to zero-or-one records, never frame to many: every
+ * push happens inside the handling of exactly one record.
+ */
+export interface ImportedEvents {
+  events: RunEvent[];
+  origin: Int32Array;
+}
+
 export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
-  const recs = records.filter((r): r is CCRecord => !!r && typeof r === "object");
+  return claudeCodeWithOrigin(records, base).events;
+}
+
+export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_000): ImportedEvents {
+  // The line index, not the position in `recs`: a line that parsed to a
+  // non-object is dropped from `recs` but still occupies a line in the file,
+  // and an origin that ignored that would name the wrong line on screen.
+  const recs: CCRecord[] = [];
+  const recLine: number[] = [];
+  records.forEach((r, i) => {
+    if (!!r && typeof r === "object") {
+      recs.push(r as CCRecord);
+      recLine.push(i);
+    }
+  });
   const out: RunEvent[] = [];
+  const origin: number[] = [];
+  /**
+   * Charge every frame pushed since the last call to `line`.
+   *
+   * Measured from `out.length` rather than from a start index captured before
+   * the record ran, because the record handler returns early in several places
+   * (an orphaned sidechain, above all). A captured index skips the tail on
+   * those paths and every later frame is charged to the wrong line.
+   */
+  const chargeTo = (line: number): void => {
+    while (origin.length < out.length) origin.push(line);
+  };
   const runId = "cc-import";
   let started = false;
 
@@ -239,6 +328,17 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
   // a background task too, and the outcome belongs to the launcher.
   const results = new Map<string, { ts: number; text: string; agentId: string }>();
   const promised = new Map<string, { taskId: string; settled: boolean }>(); // receipt-bearing calls only
+
+  // How each run's last assistant message stopped, keyed by agent ("main" or a
+  // Task id). Latest recorded wins; a null is NOT a recording (87567 of the
+  // corpus's assistant records carry one, a partial message that never reported
+  // an ending), so it leaves the previous answer standing.
+  const lastStop = new Map<string, string>();
+  const noteStop = (agentId: string, r: CCRecord): void => {
+    const s = r.message?.stop_reason;
+    if (typeof s === "string" && s !== "") lastStop.set(agentId, s);
+  };
+  const stopOf = (agentId: string): string => lastStop.get(agentId) ?? UNRECORDED_STOP;
 
   // Turns are per agent: the main run and every subagent count their own.
   const turns = new Map<string, number>();
@@ -307,7 +407,9 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
       if (taskIds.has(b.tool_use_id)) {
         // A Task's result: close the child before the parent resumes.
         if (childStarted.has(b.tool_use_id)) {
-          out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: "end_turn", ts });
+          // The child closes on the child's OWN last message. Every sidechain
+          // record has been read by now, so the answer is complete here.
+          out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: stopOf(b.tool_use_id), ts });
         }
         out.push({
           type: "agent_message",
@@ -397,9 +499,115 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
   };
 
   announce(firstModel, stamps[0] ?? base);
+  chargeTo(-1); // the opening announcement is the importer's, not a line's
 
-  recs.forEach((r, i) => {
+  /**
+   * The kinds a transcript records AROUND the conversation (card 141).
+   *
+   * These are not wire events and never become any: nothing in the Java core
+   * would emit a todo list, and putting one in the union would ship a record
+   * no code path constructs. They are readings of somebody else's file, the
+   * idiom import/sourceNotes.ts already uses, and wire/nonWire.ts keeps them
+   * out of everything this app writes.
+   *
+   * A frame is built only where the data is there. Every optional field is
+   * spread in conditionally rather than defaulted, because a row rendering a
+   * blank for a field the file never carried says something the file did not.
+   *
+   * Read before the sidechain branch: an attachment is never sidechain in the
+   * corpus, and a stray flag would otherwise drop it into a path that emits
+   * nothing. These frames name no agent, so there is no claim to get wrong.
+   *
+   * @return true when the record was one of these kinds and is fully handled
+   */
+  const emitNoConversation = (r: CCRecord, ts: number): boolean => {
+    if (r.type === "queue-operation") {
+      // 7,610 records: enqueue 3,810 / dequeue 2,248 / remove 1,552. The
+      // client's own `timestamp` travels with the frame because `ts` is not
+      // always it: stampRecords fills in a synthetic ladder for undated
+      // records and clamps a stray early date, so the string is the file's
+      // answer and `ts` is the stream's.
+      if (typeof r.operation === "string" && r.operation !== "") {
+        out.push({
+          type: "queue_operation",
+          operation: r.operation,
+          ...(typeof r.timestamp === "string" ? { timestamp: r.timestamp } : {}),
+          ...(typeof r.content === "string" && r.content !== "" ? { content: r.content } : {}),
+          ts,
+        } as unknown as RunEvent);
+      }
+      return true;
+    }
+    if (r.type !== "attachment") return false;
+    const a = r.attachment;
+    switch (a?.type) {
+      case "task_reminder": {
+        // 4,544 records, but 2,087 of them (45.9%) carry an empty list. The
+        // items are carried whole: measured over 30,690 of them they hold
+        // {id, subject, description, status, blocks, blockedBy} always,
+        // activeForm on 29,087 and owner on 350, and the existing `plan` shape
+        // reads only `text`, which would drop five fields of seven.
+        const items = Array.isArray(a.content)
+          ? a.content.filter((it) => !!it && typeof it === "object")
+          : [];
+        if (items.length === 0) return true;
+        out.push({
+          type: "task_reminder",
+          items,
+          // The file's own number, not a recount. It agrees with the list on
+          // all 4,544 records today; a file where it does not gets to say so
+          // rather than being quietly reconciled.
+          ...(typeof a.itemCount === "number" ? { itemCount: a.itemCount } : {}),
+          ts,
+        } as unknown as RunEvent);
+        return true;
+      }
+      case "edited_text_file": {
+        // 940 records. The snippet runs to 8,223 characters and down to 0, so
+        // an empty one is a real state and the frame simply does not carry it.
+        if (typeof a.filename !== "string" || a.filename === "") return true;
+        out.push({
+          type: "edited_text_file",
+          filename: a.filename,
+          ...(typeof a.snippet === "string" && a.snippet !== "" ? { snippet: a.snippet } : {}),
+          ts,
+        } as unknown as RunEvent);
+        return true;
+      }
+      case "queued_command": {
+        // 1,213 records: 658 typed by a person, 555 a background task
+        // reporting in. Both are framed. The design here said to drop the
+        // notifications as already joined by emitNotification, and the corpus
+        // says otherwise: 0 of the 555 appear as a user record with the same
+        // text and only 21 share a task id with any user record in their own
+        // file, so dropping them would lose the report entirely.
+        const prompt = asText(a.prompt);
+        out.push({
+          type: "queued_command",
+          ...(prompt !== "" ? { prompt } : {}),
+          ...(typeof a.commandMode === "string" && a.commandMode !== ""
+            ? { commandMode: a.commandMode }
+            : {}),
+          ...(typeof a.timestamp === "string" ? { timestamp: a.timestamp } : {}),
+          ...(a.origin !== undefined && a.origin !== null ? { origin: a.origin } : {}),
+          ts,
+        } as unknown as RunEvent);
+        return true;
+      }
+      default:
+        // The other 21 attachment bodies. They are read and passed over on
+        // purpose, the same way `mode` is: all 3,581 mode records in the
+        // corpus say "normal" and carry no uuid and no clock, so a frame for
+        // one would repeat a single word on every line of every file. What
+        // carries nothing stays on the no-conversation pile, where the import
+        // bar counts it honestly.
+        return true;
+    }
+  };
+
+  const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
+    if (emitNoConversation(r, ts)) return;
     const content = r.message?.content;
     const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
     if (r.isSidechain) {
@@ -418,6 +626,7 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
       }
       if (r.type === "assistant") {
         announce(modelOf(r), ts);
+        noteStop(owner, r);
         out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
       for (const b of blocks) emitBlock(owner, b, ts);
@@ -439,12 +648,42 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
         // before the blocks — a body that is not one falls through untouched.
         const n = typeof content === "string" ? parseTaskNotification(content) : null;
         if (n !== null) emitNotification(n, ts);
-        else for (const b of blocks) emitBlock("main", b, ts);
+        // A user record stores its body EITHER as blocks or as a plain string,
+        // and the choice says nothing about the record: the first prompt and
+        // every later one are both strings. Only the first was ever read (into
+        // run_start.prompt); every later one fell into the block loop, where a
+        // string yields an empty array and the turn vanished. Measured over the
+        // 151 transcripts in ~/.claude/projects: 1,985 records in 120 files.
+        // See the test file for why this is a user_message and not a run_start.
+        else if (typeof content === "string") {
+          if (content !== "") out.push({ type: "user_message", text: content, ts } as unknown as RunEvent);
+        } else
+          // The same silence, one layer in, and the worse half of it: an array
+          // body sent EVERY block through emitBlock, where a `text` block became
+          // a text_delta under "main" — an assistant turn in the reducer, an
+          // `answer` in the feed. The person's own words were read back as the
+          // model's. It survived the string fix because these records do produce
+          // a frame, so they never counted as a line carrying no conversation.
+          //
+          // Measured over the 4,571 transcripts in ~/.claude/projects: 776 such
+          // blocks in 122 files. The split is per BLOCK, not per record, because
+          // that is the grain the rule lives at — a body is a bag of blocks, and
+          // `text` is the person while a `tool_result` is the machine answering
+          // the machine. (In this corpus the two never share a record: text
+          // appears alone in 509 and beside an `image` in 263. The per-block
+          // form costs nothing and does not depend on that staying true.)
+          for (const b of blocks) {
+            if (b?.type === "text") {
+              if ((b.text ?? "") !== "")
+                out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
+            } else emitBlock("main", b, ts);
+          }
       }
     } else if (r.type === "assistant") {
       // One assistant message is one turn. A long session is hundreds of them,
       // and the graph draws a node per turn_start.
       announce(modelOf(r), ts);
+      noteStop("main", r);
       out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
       for (const b of blocks) emitBlock("main", b, ts);
       const u = r.message?.usage;
@@ -461,6 +700,11 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
           ts,
         });
     }
+  };
+
+  recs.forEach((r, i) => {
+    handleRecord(r, i);
+    chargeTo(recLine[i]);
   });
 
   if (started) {
@@ -487,9 +731,11 @@ export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_0
         ts: last,
       });
     }
-    out.push({ type: "run_end", runId, stopReason: "end_turn", ts: last });
+    out.push({ type: "run_end", runId, stopReason: stopOf("main"), ts: last });
   }
-  return out;
+  // The closing frames belong to the file as a whole, not to its last line.
+  chargeTo(-1);
+  return { events: out, origin: Int32Array.from(origin) };
 }
 
 export function parseTranscript(text: string): RunEvent[] {

@@ -10,6 +10,7 @@ import type { ConnectionStatus } from "../transport/ws";
 import type { UiState } from "../state/reducer";
 import { t } from "../i18n/i18n";
 import { toggleLang, useLang } from "../state/lang";
+import { replayEyebrow } from "./replayEyebrow";
 
 /** Shown as the provider chip until a real provider name is known. */
 const FALLBACK_PROVIDER_LABEL = "spectroscope";
@@ -78,9 +79,7 @@ export function AppHeader(props: {
       </button>
 
       {props.replayId !== null && (
-        <span className="eyebrow sand">
-          {t(lang, props.replayId.startsWith("scenario:") ? "hdr.scenario" : "hdr.archive")}
-        </span>
+        <span className="eyebrow sand">{t(lang, replayEyebrow(props.replayId))}</span>
       )}
       {props.replayId === null && props.resumed === true && (
         <span className="eyebrow sand">{t(lang, "hdr.resumed")}</span>

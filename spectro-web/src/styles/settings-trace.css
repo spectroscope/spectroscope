@@ -396,7 +396,7 @@
   font-size: var(--fs-12);
   color: var(--text-dim);
 }
-.settings-foot .primary,
+.settings-foot .soft-primary,
 .settings-foot .ghost {
   padding: var(--sp-2) var(--sp-3);
   font-size: var(--fs-13);
@@ -519,7 +519,7 @@
   display: flex;
   justify-content: flex-end;
 }
-.provider-pop-foot .primary {
+.provider-pop-foot .soft-primary {
   padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-13);
 }

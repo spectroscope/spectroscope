@@ -75,11 +75,27 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.hint": { de: "Rohes spectroscope-JSONL wird wortwörtlich abgespielt; ein Claude-Code-Transkript ({path}) wird adaptiert — Subagenten-Sidechains werden Kind-Agenten.", en: "Raw spectroscope JSONL replays verbatim; a Claude Code transcript ({path}) is adapted — subagent sidechains become child agents." },
   "imp.placeholder": { de: ".jsonl-Inhalt hier einfügen …", en: "Paste .jsonl content here …" },
   "imp.store": { de: "Direkt aus ~/.claude/projects (im Finder unsichtbar) — ein Klick lädt:", en: "Straight from ~/.claude/projects (invisible in Finder) — one click loads:" },
+  "imp.truncated": { de: "… nur die {n} neuesten. Ältere Transkripte liegen im Store, stehen aber nicht in dieser Liste.", en: "… the {n} newest only. Older transcripts are in the store but not in this list." },
   "imp.pick": { de: "Datei wählen …", en: "Pick a file …" },
   "imp.vscodeNote": { de: "Dieser VS-Code-Export hält fest, welche Tools liefen und ob sie erfolgreich waren, aber nicht, was sie zurückgaben. Die Tool-Inhalte bleiben deshalb leer.", en: "This VS Code export records which tools ran and whether they succeeded, but not what they returned. The tool bodies are empty for that reason." },
   "imp.err.read": { de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?", en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?" },
   "imp.err.fetch": { de: "Der Server gab {status} zurück, als er die Datei holen sollte.", en: "The server answered {status} when asked for that file." },
   "imp.load": { de: "Laden", en: "Load" },
+  // Shown for EVERY import, not only the VS Code one. The counts are the file's
+  // own: how many lines arrived, how many frames this view is built from, and
+  // how many lines hold no part of the conversation (the pointer records a
+  // client keeps, the session name, the editing mode). The last sentence is the
+  // plain truth about where the file lives: an import is never written to disk,
+  // and cannot be resumed or deleted.
+  //
+  // The sentence used to end "produced no frame", which reads as loss and sent
+  // the owner looking for a parsing bug that was not there (card 141). The
+  // number is smaller now as well, because four of the kinds it counted became
+  // frames; what is left really does carry nothing.
+  "imp.bar": {
+    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen tragen kein Gespräch. Nichts wurde auf die Platte geschrieben.",
+    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines carry no conversation. Nothing was written to disk.",
+  },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },
@@ -206,9 +222,23 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sp.openTrace": { de: "Lane {id} im Trace öffnen", en: "Open lane {id} in the trace" },
   "sp.gateOpen": { de: "gate offen", en: "gate open" },
   "sp.noTask": { de: "(kein Task angekündigt)", en: "(no task announced)" },
-  "sp.dropped": { de: "{n} Marken für die Darstellung ausgedünnt — die JSONL-Datei behält alles.", en: "{n} marks thinned for display — the JSONL file keeps everything." },
+  // What THIS view hides, counted against what is visible rather than against
+  // the whole stream: on a sparse stretch the number falls to zero and the line
+  // stops rendering; on a pile of marks that share one instant it stays put,
+  // because no magnification can separate them.
+  "sp.hiddenMark": { de: "{n} Marke passt hier nicht neben die anderen: die JSONL-Datei behält alles.", en: "{n} mark does not fit beside the others here: the JSONL file keeps everything." },
+  "sp.hiddenMarks": { de: "{n} Marken passen hier nicht neben die anderen: die JSONL-Datei behält alles.", en: "{n} marks do not fit beside the others here: the JSONL file keeps everything." },
   "sp.legendAria": { de: "Legende der Event-Typen", en: "Event type legend" },
   "sp.lanesAria": { de: "Agenten-Lanes", en: "Agent lanes" },
+  "sp.bandAria": { de: "Events von {id}: Pfeiltasten zum Scrubben, Enter öffnet im Trace", en: "{id} events: arrow keys to scrub, Enter to open in the trace" },
+  // The viewport. These only ever render for a stream that cannot be drawn whole,
+  // which is a small minority of sessions, so they explain the keys rather than
+  // assuming a reader has met them before.
+  "sp.stripAria": { de: "Überblick über die gesamte Zeitachse; Ziehen verschiebt das Fenster", en: "Overview of the whole time axis; drag to move the window" },
+  "sp.axisAria": { de: "Zeitachse des sichtbaren Fensters", en: "Time axis of the visible window" },
+  "sp.ofSpan": { de: "im Fenster", en: "in view" },
+  "sp.overview": { de: "überblick", en: "overview" },
+  "sp.zoomHint": { de: "Zoomen: ctrl + Mausrad oder + und −. Verschieben: Umschalt + Pfeiltasten, [ und ] springen über leere Achse. 0 zeigt wieder alles.", en: "Zoom: ctrl + wheel, or + and −. Pan: shift + arrows, and [ and ] page across empty axis. 0 shows everything again." },
 
   // fleet roster (Spectrum LIVE)
   "fleet.title": { de: "Flotte", en: "Fleet" },
@@ -318,6 +348,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tool.deniedByUser": { de: "vom Nutzer abgelehnt", en: "denied by user" },
   "common.copy": { de: "Kopieren", en: "Copy" },
   "common.copied": { de: "Kopiert", en: "Copied" },
+  "common.copyReadable": { de: "Lesbares kopieren", en: "Copy readable" },
 
   // lab toolbar
   "lab.blocks": { de: "Blöcke", en: "Blocks" },
@@ -455,9 +486,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.toEnd": { de: "Zum Ende springen", en: "Jump to the end" },
   "trace.protoTitle": { de: "Auf welchem Draht die Payload fährt: SSE (Claude/OpenAI-Stream), NDJSON (Ollama), JSON-RPC (MCP/stdio), HTTP (web_fetch/web_search/browse_page, Bilder), local (Datei-Tools), — (harness-intern)", en: "The wire the payload rides: SSE (Claude/OpenAI stream), NDJSON (Ollama), JSON-RPC (MCP/stdio), HTTP (web_fetch/web_search/browse_page, images), local (file tools), — (harness-internal)" },
   "trace.hostTitle": { de: "Die Gegenstelle im Netz: api.anthropic.com, localhost:11434 (Ollama), der MCP-Server, der web_fetch/browse_page-Host — live aus dem provider_info-Frame; Replays kennen nur den Provider", en: "The network counterpart: api.anthropic.com, localhost:11434 (Ollama), the MCP server, the web_fetch/browse_page host — live from the provider_info frame; replays only know the provider" },
+  "trace.note.effort": { de: "Aufwand", en: "effort" },
+  "trace.note.effortTitle": { de: "Wie stark dieser Turn denken sollte, wie die importierte Datei es aufgezeichnet hat. Die Stufe steht wörtlich da; spectroscope deutet sie nicht. Zeilen ohne dieses Feld tragen den Chip nicht.", en: "How hard this turn was told to think, as the imported file recorded it. The level is verbatim; spectroscope does not interpret it. A line without the field wears no chip." },
+  "trace.note.origin": { de: "geschrieben von", en: "written by" },
+  "trace.note.originTitle": { de: "Diesen Nutzer-Turn hat keine Person geschrieben, sondern das, was hier steht (eine Task-Meldung, ein Koordinator). Die Datei nennt es; steht nichts da, sagt die Datei nichts dazu, und das heißt NICHT automatisch Mensch.", en: "No person wrote this user turn: the file names what did (a task notification, a coordinator). No chip means the file says nothing about it, which does NOT mean a person wrote it." },
+  "trace.note.truncated": { de: "abgeschnitten", en: "cut off" },
+  "trace.note.truncatedTitle": { de: "Diese Antwort hörte an einer Grenze auf, nicht von selbst: max_tokens ist die Token-Decke, stop_sequence eine gesetzte Abbruch-Folge. Der Text bricht ab, ohne es zu sagen; die Datei sagt es hier.", en: "This answer stopped at a limit rather than on its own: max_tokens is the token ceiling, stop_sequence a configured cut. The text just stops without saying so; the file says it here." },
+  "trace.note.fallback": { de: "Modell getauscht", en: "model swapped" },
+  "trace.note.fallbackTitle": { de: "Mitten im Lauf wurde das Modell ausgetauscht. Der Wechsel selbst steht als provider_info im Trace; die Datei nennt hier auch das Modell, das verlassen wurde.", en: "The model was swapped mid-run. The change itself stands in the trace as provider_info; the file also names the model that was left behind, which is what this says." },
   "tf.modeAria": { de: "Text-Ansicht", en: "Text view" },
   "tf.modeTextTitle": { de: "ALLER Text in Leserichtung — das Protokoll als sichtbare Marker: <think>/</think> um jede Denkphase, [tool_call …]-Indikatoren mit vollem Input und Output, Gate, Lauf-Grenzen", en: "ALL text in reading order — the protocol as visible markers: <think>/</think> around each reasoning run, [tool_call …] indicators with full input and output, the gate, run boundaries" },
-  "tf.modeJsonlTitle": { de: "Die Session als JSONL — eine Zeile pro Wire-Event, exakt wie die Datei auf der Platte (Socket-Frames stehen nie in der Datei)", en: "The session as JSONL — one line per wire event, exactly like the file on disk (socket-only frames never enter the file)" },
+  "tf.modeJsonlTitle": { de: "Die Session als JSONL, eine Zeile pro Wire-Event, exakt wie die Datei auf der Platte (Socket-Frames und importierte Frames stehen nie in der Datei)", en: "The session as JSONL, one line per wire event, exactly like the file on disk (socket frames and imported frames never enter the file)" },
   "tf.textNote": { de: "Text-Feed: <think>-Marker, Tool-Indikatoren, voller Output", en: "Text feed: <think> markers, tool indicators, full output" },
   "tf.jsonlNote": { de: "{n} JSONL-Zeilen — exakt das Dateiformat", en: "{n} JSONL lines — exactly the file format" },
   "tf.empty": { de: "Noch keine Events — schicke eine Nachricht oder öffne eine Session.", en: "No events yet — send a message or open a session." },
@@ -472,6 +511,31 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tf.explainFailed": { de: "Deutung fehlgeschlagen: {msg}", en: "The reading failed: {msg}" },
   "ws.perSession": { de: "Session-Workspace", en: "session workspace" },
   "ws.pinned": { de: "fester Workspace", en: "pinned workspace" },
+  // The type chips. The nine that predate card 141 kept the exact lowercase
+  // word they rendered before, in both languages, because that word is the
+  // wire's own vocabulary and translating it would break the link between the
+  // chip and the type column beside it (trace.lens and trace.timeline are
+  // spelled the same way for the same reason). "client" is the tenth: what a
+  // transcript recorded around the conversation, which is the todo list, the
+  // prompt queue and the file that was edited.
+  "trace.cat.run": { de: "run", en: "run" },
+  "trace.cat.turn": { de: "turn", en: "turn" },
+  "trace.cat.text": { de: "text", en: "text" },
+  "trace.cat.thinking": { de: "thinking", en: "thinking" },
+  "trace.cat.tool": { de: "tool", en: "tool" },
+  "trace.cat.permission": { de: "permission", en: "permission" },
+  "trace.cat.usage": { de: "usage", en: "usage" },
+  "trace.cat.image": { de: "image", en: "image" },
+  "trace.cat.context": { de: "context", en: "context" },
+  "trace.cat.client": { de: "client", en: "client" },
+  "trace.cat.other": { de: "other", en: "other" },
+  // Counting words for a todo list's statuses (card 141). Separate from the
+  // plan badge's plan.* labels on purpose: "läuft …" is right on ONE running
+  // step and is not a German sentence after a number, which the live pass
+  // caught as "2 läuft …". These count, those label.
+  "trace.todo.pending": { de: "offen", en: "open" },
+  "trace.todo.in_progress": { de: "in Arbeit", en: "running" },
+  "trace.todo.completed": { de: "fertig", en: "done" },
   "trace.typesAria": { de: "Event-Typen", en: "Event types" },
   "trace.all": { de: "alle", en: "all" },
   "trace.none": { de: "keine", en: "none" },
@@ -481,7 +545,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.modeAria": { de: "Detail-Ansicht", en: "Detail view" },
   "trace.mode.insight": { de: "Insight", en: "Insight" },
   "trace.mode.compact": { de: "Compact", en: "Compact" },
-  "trace.mode.raw": { de: "Raw", en: "Raw" },
+  "trace.mode.wire": { de: "Draht", en: "Wire" },
+  "trace.mode.source": { de: "Quelle", en: "Source" },
 
   // system-context tab
   "ctx.unavailable": { de: "System-Kontext nicht verfügbar (Server offline?).", en: "System context unavailable (server offline?)." },
@@ -689,8 +754,46 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.faceHint": { de: "Legt fest, in welcher Ansicht Frames aufklappen. Umschalten holt alle Zeilen auf diese Ansicht zurück; einzelne Zeilen kannst du danach weiter umschalten.", en: "Sets which view frames open in. Switching it brings every row back to that view; a single row can still be switched afterwards." },
   "trace.faceTitle.structured": { de: "Frames als das aufklappen, was sie sind — ein Aufruf als seine Tool-Karte, eine Antwort als ihr Text.", en: "Open frames as the thing they are — a call as its tool card, an answer as its text." },
   "trace.faceTitle.insight": { de: "Frames als aufgeklappten Baum aufklappen.", en: "Open frames as an expanded tree." },
-  "trace.faceTitle.compact": { de: "Frames als eine hervorgehobene Zeile je Wire-Line aufklappen.", en: "Open frames as one highlighted row per wire line." },
-  "trace.faceTitle.raw": { de: "Frames als reinen Text aufklappen — genau die Zeilen, die über den Draht gingen.", en: "Open frames as plain text — exactly the lines that crossed the wire." },
+  "trace.faceTitle.compact": { de: "Frames hervorgehoben und umgebrochen aufklappen: der ganze Inhalt im Bild, ohne seitliches Scrollen.", en: "Open frames highlighted and wrapped: the whole content on screen, no sideways scrolling." },
+  "trace.faceTitle.wire": { de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen, je eine Zeile.", en: "Open frames as plain text: exactly the lines that crossed the wire, one row each." },
+  "trace.faceTitle.source": { de: "Frames mit der Zeile der importierten Datei aufklappen, aus der sie gelesen wurden.", en: "Open frames with the line of the imported file they were read from." },
+
+  // The source pane (card: the source line). One sentence per case and never a
+  // shared one: this card exists because one label meant two things. "There is
+  // no file" alone is four different statements, and the byte-for-byte promise
+  // is only the one about a frame this app wrote down itself.
+  "trace.source.none": { de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile ist die gespeicherte Zeile, Byte für Byte.", en: "This session was produced here, so there is no separate source. The wire line is the stored line, byte for byte." },
+  // The same session, while a translation is on screen. The first half still
+  // holds; the second one cannot, because the wire face is rendering a payload
+  // the translator rebuilt and the stored line still has the original words.
+  "trace.source.noneTranslated": { de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile zeigt gerade die Übersetzung, nicht die gespeicherte Zeile.", en: "This session was produced here, so there is no separate source. The wire line is showing the translation right now, not the stored line." },
+  "trace.source.unstored": { de: "Die gespeicherte Sitzung enthält diesen Frame nicht. Die App hat ihn für das Bild gebaut oder über den Socket geschickt, und beides wird nicht in die Datei geschrieben.", en: "The stored session does not contain this frame. The app built it for the screen or sent it over the socket, and neither of those is written to the file." },
+  "trace.source.scenario": { de: "Das ist ein kompiliertes Szenario. Der Browser hat diese Frames aus dem Skript gebaut, es gibt also weder eine Datei noch eine Draht-Zeile dahinter.", en: "This is a compiled scenario. The browser built these frames from its script, so there is no file and no wire line behind them." },
+  "trace.source.fleet": { de: "Diesen Frame hat ein anderer Prozess erzeugt. Diese App schaut nur zu: was dieser Node gespeichert hat, bleibt bei ihm.", en: "Another process produced this frame. This app is only watching: whatever that node wrote down stays with the node." },
+  "trace.source.built": { de: "Diesen Frame hat der Import gebaut. Keine einzelne Zeile der Datei hat ihn erzeugt.", en: "The importer built this frame. No single line of the file produced it." },
+  "trace.source.missing": { de: "Dieser Frame zeigt auf Zeile {n}, die diese Datei nicht hat. Sie zählt {total} Zeilen.", en: "This frame points at line {n}, which this file does not have. It counts {total} lines." },
+  "trace.source.line": { de: "Zeile {n} von {total}.", en: "Line {n} of {total}." },
+  "trace.source.shared": { de: "Zeile {n} von {total}. Sie hat {k} Frames erzeugt; dies ist Frame {i}.", en: "Line {n} of {total}. It produced {k} frames; this is frame {i}." },
+  "trace.source.notJson": { de: "Diese Zeile ist kein JSON. Sie steht unverändert da.", en: "This line is not JSON. It stands here unchanged." },
+  "trace.source.capped": { de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.", en: "Showing {shown} of {total} characters. Copying always takes the whole line." },
+  "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
+  // A signature or a base64 body: carried whole, collapsed on screen, and never
+  // dropped without saying so.
+  // The two collapsed kinds (readable.ts HIDDEN_KINDS), which are two claims
+  // and not one. `hidden` is a signature or a base64 body: bytes, at any
+  // length. `long` is one run of characters too long to read where it stands,
+  // and measured over 4639 transcripts most of those are language, so the byte
+  // sentence over one of them was the pane saying something the value flatly
+  // was not. Both open on request and neither is ever dropped.
+  "trace.source.hidden": { de: "{n} Zeichen, die kein Text sind", en: "{n} characters that are not text" },
+  "trace.source.long": { de: "{n} Zeichen, eingeklappt", en: "{n} characters, collapsed" },
+  "trace.source.show": { de: "Zeigen", en: "Show" },
+  "trace.source.hide": { de: "Wieder einklappen", en: "Collapse again" },
+  "trace.readingAria": { de: "Lesart", en: "Reading" },
+  "trace.reading.verbatim": { de: "Wörtlich", en: "Verbatim" },
+  "trace.reading.readable": { de: "Lesbar", en: "Readable" },
+  "trace.readingTitle.verbatim": { de: "Die Bytes zeigen, wie sie in der Datei stehen. Das ist die Voreinstellung und wird nicht gespeichert.", en: "Show the bytes as they stand in the file. This is the default and it is not remembered." },
+  "trace.readingTitle.readable": { de: "Verschachtelte Dokumente aufschlagen und echte Zeilenumbrüche zeigen. Das ist eine Deutung der Zeile, nicht die Zeile.", en: "Open embedded documents and show real line breaks. This is a reading of the line, not the line." },
   "search.regexTitle": { de: "Als regulären Ausdruck lesen", en: "Read as a regular expression" },
   "tr.applied": { de: "Die Übersetzung landet gleichzeitig in allen Ansichten dieser Session — Chat, Trace, Text-Feed und Lab lesen denselben Stream.", en: "The translation lands in every view of this session at once — chat, trace, text feed and lab all read the same stream." },
   "tr.plan": { de: "{u} Textstellen, zerlegt in {n} Aufrufe, die ins Modell passen.", en: "{u} passages of text, cut into {n} calls that fit the model." },
@@ -1083,6 +1186,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "arch.resume": { de: "Session fortsetzen", en: "Resume session" },
   "arch.resumeTitle": { de: "Diese Session wieder aufnehmen: der ganze Verlauf wird beim nächsten Prompt wieder ans LLM hochgeladen", en: "Pick this session back up: the whole history is re-uploaded to the LLM with your next prompt" },
   "hdr.resumed": { de: "Fortgesetzt", en: "Resumed" },
+  // An import is not an archive. It came from another tool's file and lives
+  // only in this tab; calling it "Archive" made it indistinguishable from a
+  // session this machine produced and stored.
+  "hdr.imported": { de: "Importiert", en: "Imported" },
   "trace.resumeSummary": { de: "{e} Events geladen · ~{t} Tokens Verlauf gehen mit dem nächsten Request wieder hoch (plus System-Prompt & Tool-Schemas obendrauf)", en: "{e} events loaded · ~{t} tokens of history ride along with the next request (plus system prompt & tool schemas on top)" },
   "trace.resumeRowTitle": { de: "an die LLM · der Verlauf wird beim nächsten Request wieder hochgeladen (UI-Marker, kein Wire-Event)", en: "to the LLM · the history is re-uploaded with the next request (UI marker, not a wire event)" },
   "trace.resumeNote": { de: "UI-Marker, kein Wire-Event: Session fortgesetzt. Alles oberhalb ist der alte Verlauf; er wird beim NÄCHSTEN Request als messages[] wieder mit hochgeladen (siehe danach context_info/usage).", en: "UI marker, not a wire event: session resumed. Everything above is the old history; it is re-uploaded as messages[] with the NEXT request (watch context_info/usage right after)." },

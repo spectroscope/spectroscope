@@ -657,10 +657,11 @@ export function textFeedBody(events: readonly RunEvent[], opts: ExportOptions = 
  * The text tab's JSON view: the stream as the tab prints it, one compact line
  * per event.
  *
- * NOT the .jsonl download. That one writes every event verbatim; this one is a
- * fold that drops socket-only frames, exactly as the tab does. Two artifacts
- * called "json" that differ by a filter is a trap for anyone comparing them, so
- * the section that carries this is labelled with the difference.
+ * NOT the .jsonl download, though the two now leave out the same frames: both
+ * writers filter through nonWire.ts, so what differs is the fold and not the
+ * filter. Two artifacts called "json" are a trap for anyone comparing them
+ * either way, so the section that carries this is labelled with what neither of
+ * them holds.
  */
 export function jsonBody(events: readonly RunEvent[], opts: ExportOptions = {}): string {
   const lang: Lang = opts.lang ?? "en";

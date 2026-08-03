@@ -245,7 +245,7 @@ export function KeyInput({ provider, onSaved }: { provider: string; onSaved?: ()
         />
         <button
           type="button"
-          className="primary pp-keysave"
+          className="soft-primary pp-keysave"
           disabled={state === "saving" || key.trim() === ""}
           onClick={() => void save()}
         >

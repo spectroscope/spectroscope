@@ -107,6 +107,25 @@ class SettingsControllerTest {
     }
 
     @Test
+    void theProjectScopeWritesIntoTheFolderTheRunResolved(
+            @TempDir Path launchDir, @TempDir Path resolved, @TempDir Path configuredLater)
+            throws Exception {
+        // Third surface, same folder, third rule. /api/files reads the folder
+        // the socket recorded; this recomputed pinned-or-configured from a
+        // config read fresh, so a settings write could land in a directory the
+        // running agent has never seen.
+        SettingsController controller = new SettingsController(
+                launchDir, session -> null, session -> resolved.toString());
+        controller.putProject("abc-123", JSON.readTree("""
+                { "autoApprove": ["run_command:git status*"] }
+                """), local());
+
+        assertTrue(Files.exists(resolved.resolve(".spectro/settings.json")),
+                "the write missed the folder the run resolved");
+        assertTrue(Files.notExists(configuredLater.resolve(".spectro/settings.json")));
+    }
+
+    @Test
     void putLocalWritesTheLocalFilePlusGitignore(@TempDir Path launchDir, @TempDir Path ws) throws Exception {
         SettingsController controller = new SettingsController(launchDir, session -> ws.toString());
         controller.putLocal("abc-123", JSON.readTree("""

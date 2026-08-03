@@ -1,0 +1,19 @@
+meta {
+  name: docker state on this machine
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/docker/status
+  body: none
+  auth: none
+}
+
+docs {
+  Whether Docker and the compose v2 plugin are usable here: {docker, compose, remote, detail}. docker is ready/absent/stopped/unreachable, detail is one honest sentence. A DOCKER_HOST naming a remote daemon answers unreachable rather than a guess.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: no
+}

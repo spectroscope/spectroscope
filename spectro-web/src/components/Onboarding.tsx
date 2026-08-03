@@ -173,7 +173,7 @@ export function Onboarding(props: {
               ? "du kannst das jederzeit oben am Anbieter-Chip ändern."
               : "you can change this any time from the provider chip in the header."}
           </p>
-          <button type="button" className="primary" onClick={props.onClose}>
+          <button type="button" className="soft-primary" onClick={props.onClose}>
             {de ? "los geht's" : "got it"}
           </button>
         </div>

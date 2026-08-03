@@ -7,6 +7,7 @@
 // gate, errors. A pure fold over RunEvent[] — no React, fully unit-tested.
 
 import type { RunEvent } from "../events";
+import { isWireEvent } from "../wire/nonWire";
 
 /** One block of the feed. `kind` drives the styling only — `text` is complete. */
 export interface FeedSegment {
@@ -65,6 +66,26 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
   };
 
   for (const e of events) {
+    // Read before the switch, which is sealed to the RunEvent union: an
+    // imported transcript's later prompts arrive as user_message, because
+    // run_start carries exactly one prompt and a session has many. It is a
+    // prompt in the reading feed, not behind `extended` — the feed's job is
+    // every piece of text the protocol carried, and this is the text that
+    // explains why the next answer changes subject. Every open reasoning run
+    // closes first, exactly as run_end does it: the frame names no agent, and
+    // a prompt landing inside a <think> block would leave the tags unbalanced
+    // and turn the whole rest of the feed into reasoning.
+    if ((e as { type: string }).type === "user_message") {
+      const text = (e as unknown as { text?: unknown }).text;
+      if (typeof text === "string" && text !== "") {
+        for (const [agentId] of mode) {
+          closeThinking(agentId);
+          mode.set(agentId, null);
+        }
+        push("prompt", "main", text);
+      }
+      continue;
+    }
     switch (e.type) {
       case "run_start":
         // Only the root prompt is user text; a child's run_start repeats the
@@ -191,16 +212,15 @@ export function feedToPlainText(segments: readonly FeedSegment[]): string {
     .join("\n");
 }
 
-/** The wire types that are SOCKET-ONLY UI frames — never in the JSONL file. */
-const SOCKET_ONLY_TYPES = new Set(["workspace_info", "provider_info", "permission_mode_info"]);
-
 /**
  * The session as JSONL lines — one compact JSON object per wire event,
- * exactly the shape the session file stores. Socket-only UI frames are
- * filtered out: they never enter the file, and this view IS the file.
+ * exactly the shape the session file stores. Frames that are not wire events
+ * are filtered out: they never enter the file, and this view IS the file.
+ *
+ * The list used to live here, and only here, which is how the download came to
+ * write lines this view did not show. It lives in wire/nonWire.ts now so the
+ * view and every writer read the same one.
  */
 export function eventsToJsonl(events: readonly RunEvent[]): string[] {
-  return events
-    .filter((e) => !SOCKET_ONLY_TYPES.has((e as { type: string }).type))
-    .map((e) => JSON.stringify(e));
+  return events.filter(isWireEvent).map((e) => JSON.stringify(e));
 }

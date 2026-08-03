@@ -104,7 +104,7 @@ export function LocalModelNotice(props: {
 
         <div className="ob-foot">
           <span className="ob-foot-note">{t(lang, "lmn.real")}</span>
-          <button type="button" className="primary" onClick={props.onGotIt}>
+          <button type="button" className="soft-primary" onClick={props.onGotIt}>
             {t(lang, "lmn.gotIt")}
           </button>
         </div>

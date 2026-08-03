@@ -1,0 +1,160 @@
+// The door between an imported stream and a written file.
+//
+// An import carries frames that are NOT wire events: the socket-only UI frames
+// the reducer has always known, and now the four import-only kinds card 141
+// adds. Those frames are honest on screen and unreadable in a file. Measured
+// against the Java reader: `RunEvent` is a sealed interface with @JsonSubTypes
+// and no defaultImpl, so an unknown type raises InvalidTypeIdException, which
+// SessionStore.readSessionEvents catches as a torn line and drops in silence.
+// The Python edition pins the same behaviour (test_wire.py
+// test_unknown_type_is_dropped). So a written line the readers cannot name is
+// not an extension, it is a line that quietly disappears.
+//
+// The file is the reason this is one shared constant rather than a filter per
+// writer: the Text tab's JSONL view already dropped them and the download did
+// not, so the two disagreed about what the session was.
+
+import { describe, expect, it } from "vitest";
+import ccHeavy from "../import/fixtures/cc-heavy.jsonl?raw";
+import ccNoConvo from "../import/fixtures/cc-noconvo.jsonl?raw";
+import ccFollowup from "../import/fixtures/cc-followup.jsonl?raw";
+import { detectAndLoad } from "../import/detect";
+import { eventsToJsonl } from "../state/textFeed";
+import { toJsonl } from "./jsonl";
+import { toClaudeCodeJsonl } from "./claudeCode";
+import { toVscodeAgentJsonl } from "./vscodeAgent";
+import { NON_WIRE_TYPES } from "../wire/nonWire";
+
+const imported = (text: string): ReturnType<typeof detectAndLoad>["events"] => detectAndLoad(text).events;
+
+/** The wire type as a plain string: a stream carrying import-only frames is
+ *  wider than the RunEvent union, which is the whole reason this file exists. */
+const typeOf = (event: unknown): string => (event as { type: string }).type;
+
+describe("what a written jsonl may contain", () => {
+  it("names every frame that is ours rather than the wire's", () => {
+    // The seven the app builds for its own screen, plus the five an import
+    // reads. Written out by hand on purpose, so removing one goes red here;
+    // ADDING one is what wireOnly.drift.test.ts catches, by reading
+    // SessionConnection and the RunEvent union off disk. This list alone missed
+    // otlp_export and the two fleet frames for exactly as long as it was the
+    // only check.
+    for (const type of [
+      "provider_info",
+      "workspace_info",
+      "permission_mode_info",
+      "session_resume",
+      "otlp_export",
+      "fleet_roster",
+      "fleet_event",
+      "user_message",
+      "task_reminder",
+      "queue_operation",
+      "queued_command",
+      "edited_text_file",
+    ]) {
+      expect(NON_WIRE_TYPES.has(type), type).toBe(true);
+    }
+    expect(NON_WIRE_TYPES.size).toBe(12);
+  });
+
+  it("keeps a user turn read out of a transcript out of the download", () => {
+    // user_message is a ClientMessage, never a RunEvent — the browser's own
+    // outbound frame. The importer emits it inbound for every prompt of a
+    // transcript after the first, because run_start has room for exactly one.
+    //
+    // It is honest on screen and unwritable in a file, exactly like the four
+    // card-141 kinds: the Java reader would raise InvalidTypeIdException on the
+    // line and SessionStore would drop it as torn, without a word. The wire
+    // contract has no slot for user text mid-run — run_start.prompt is the only
+    // place a prompt lives — and events.ts is shared with the Java core and the
+    // Python edition, so inventing one here is not ours to do.
+    const events = imported(ccFollowup);
+    expect(events.some((e) => typeOf(e) === "user_message")).toBe(true);
+    expect(toJsonl(events)).not.toContain("user_message");
+    expect(NON_WIRE_TYPES.has("user_message")).toBe(true);
+  });
+
+  it("leaves the three frames a live socket adds out of the download", () => {
+    // The gate was written for an IMPORT and missed the live case entirely.
+    // With an OTLP endpoint configured (card 137) the server mirrors every
+    // export back to the UI, and with a hub attached it mirrors the roster and
+    // every fleet frame; ws.ts buffers whatever parses and App appends the
+    // whole batch, so all three sit in the array the export menu is handed.
+    // Written out, each is a line the Java reader takes for torn and discards.
+    // wireOnly.drift.test.ts holds the list against SessionConnection itself.
+    const live = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 1 },
+      {
+        type: "otlp_export",
+        sessionId: "s",
+        endpoint: "http://localhost:3000/api/public/otel",
+        spans: 4,
+        ok: true,
+        ts: 2,
+      },
+      { type: "fleet_roster", nodes: [{ id: "a", topic: "t", alive: true }], ts: 3 },
+      { type: "fleet_event", frame: { seq: 1, topic: "t" }, ts: 4 },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 5 },
+    ] as unknown as Parameters<typeof toJsonl>[0];
+    const written = toJsonl(live);
+    for (const type of ["otlp_export", "fleet_roster", "fleet_event"]) {
+      expect(written, type).not.toContain(`"type":"${type}"`);
+    }
+    expect(written.trimEnd().split("\n")).toHaveLength(2);
+    // The text tab has to call the same file the same thing.
+    expect(eventsToJsonl(live)).toHaveLength(2);
+  });
+
+  it("leaves an imported provider_info out of the download", () => {
+    // The importer announces the model it read off the first assistant record
+    // (claudeCode.ts announce()). Before this, the very first line of an
+    // exported import was that announcement.
+    const events = imported(ccHeavy);
+    expect(events.some((e) => typeOf(e) === "provider_info")).toBe(true);
+    expect(toJsonl(events)).not.toContain("provider_info");
+  });
+
+  it("writes the same lines the text tab calls the file", () => {
+    const events = imported(ccHeavy);
+    expect(toJsonl(events).trimEnd().split("\n")).toEqual(eventsToJsonl(events));
+  });
+
+  it("keeps the four import-only kinds out of the download", () => {
+    const events = imported(ccNoConvo);
+    // They are really in the stream: this is a filter, not an absence.
+    for (const type of ["task_reminder", "queue_operation", "queued_command", "edited_text_file"]) {
+      expect(
+        events.some((e) => typeOf(e) === type),
+        type,
+      ).toBe(true);
+    }
+    const written = toJsonl(events);
+    for (const type of ["task_reminder", "queue_operation", "queued_command", "edited_text_file"]) {
+      expect(written, type).not.toContain(`"type":"${type}"`);
+    }
+  });
+
+  it("still writes every wire frame it was handed", () => {
+    // The filter must remove exactly the named types and nothing else, or an
+    // export silently shortens a real session.
+    const events = imported(ccNoConvo);
+    const kept = toJsonl(events).trimEnd().split("\n");
+    const expected = events.filter((e) => !NON_WIRE_TYPES.has(typeOf(e)));
+    expect(kept.length).toBe(expected.length);
+    expect(kept[0]).toBe(JSON.stringify(expected[0]));
+  });
+
+  it("derives no foreign record from a frame that is not a wire event", () => {
+    // A REGRESSION PIN, not a red test: both foreign writers switch on a closed
+    // list of wire types and fall through everything else, so they are clean
+    // today. They are pinned because the next kind added to the importer is one
+    // `default:` away from arriving in somebody else's format.
+    const events = imported(ccNoConvo);
+    for (const written of [toClaudeCodeJsonl(events), toVscodeAgentJsonl(events)]) {
+      for (const type of NON_WIRE_TYPES) {
+        expect(written, type).not.toContain(type);
+      }
+    }
+  });
+});

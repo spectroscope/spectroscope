@@ -280,7 +280,7 @@
 /* Reduced motion: the token switch shortens every transition/animation;
    hover transforms are stilled here so nothing shifts under the pointer. */
 @media (prefers-reduced-motion: reduce) {
-  .primary:hover:not(:disabled),
+  .soft-primary:hover:not(:disabled),
   .session-row:hover,
   .icon-button:active {
     transform: none;

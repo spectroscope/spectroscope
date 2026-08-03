@@ -43,16 +43,35 @@ export interface FaceStore<F extends string> {
   subscribe(cb: () => void): () => void;
 }
 
+/**
+ * @param key         where the master is persisted
+ * @param faces       this store's whole vocabulary
+ * @param defaultFace what an absent, malformed or foreign value falls back to
+ * @param legacy      words this store used to write, mapped to what they are
+ *                    called now. A renamed face would otherwise reset every
+ *                    reader who had chosen it, because the stored word is no
+ *                    longer in the vocabulary and parse() falls through to the
+ *                    default. Only for a name that changed with the CONTENT
+ *                    unchanged; a word that came to mean something else has to
+ *                    fall back, not carry a reader across.
+ */
 export function createFaceStore<F extends string>(
   key: string,
   faces: readonly F[],
   defaultFace: F,
+  legacy: Readonly<Record<string, F>> = {},
 ): FaceStore<F> {
   function isFace(raw: string | null): raw is F {
     return raw !== null && (faces as readonly string[]).includes(raw);
   }
   function parse(raw: string | null): F {
-    return isFace(raw) ? raw : defaultFace;
+    if (isFace(raw)) return raw;
+    // hasOwn and not `in`: `in` also asks Object.prototype, so a stored
+    // "constructor" or "toString" would come back as a FUNCTION from a
+    // function whose whole job is to return one of the faces. Storage is an
+    // arbitrary string on a shared origin, and the fallback above is the
+    // promise this line has to keep.
+    return raw !== null && Object.hasOwn(legacy, raw) ? legacy[raw] : defaultFace;
   }
   function readSaved(): FacePref<F> {
     try {

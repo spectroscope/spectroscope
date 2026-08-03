@@ -15,9 +15,10 @@
 import type { RunEvent } from "../events";
 import type { DesignId } from "../state/designPrefs";
 import type { ExportKind } from "./kinds";
+import { IMPORT_ONLY_TYPES, SOCKET_ONLY_TYPES } from "../wire/nonWire";
 
 /** A section an exported document can carry. `json` is the TEXT TAB's json
- *  view, not the .jsonl download — see JSON_VIEW_CAVEAT. */
+ *  view, not the .jsonl download. See JSON_VIEW_CAVEAT. */
 export type ViewId = "chat" | "text" | "json";
 
 /** Whether reasoning and tool cards arrive folded or unfolded in the file. */
@@ -28,12 +29,27 @@ export type JsonlFormat = "spectroscope" | "claude-code" | "vscode";
 export const JSONL_FORMATS: readonly JsonlFormat[] = ["spectroscope", "claude-code", "vscode"];
 
 /** The two artifacts this app calls "json" are not the same bytes: the text
- *  tab's view filters socket-only frames, the .jsonl download writes every
- *  event verbatim. Naming both "json" without saying so is a trap, so the
- *  section header says which one the reader is looking at. */
+ *  tab's view is a fold of the stream, the .jsonl download is the file. They
+ *  now leave out the same frames (both writers share nonWire.ts), so the
+ *  difference is the fold and not the filter, and the header still has to say
+ *  what neither of them carries.
+ *
+ *  It says both groups because both are real. This sentence used to name only
+ *  the socket frames, which was true when the view filtered three types; it
+ *  filters the whole non-wire set now, and on a real transcript the imported
+ *  frames are the bulk of it. Naming the smaller group and stopping reads as a
+ *  complete answer, which is worse than saying nothing. */
+export const JSON_VIEW_OMITS: Record<"en" | "de", string> = {
+  en: "as the text tab shows it: socket frames and imported frames omitted",
+  de: "wie im Text-Tab: Socket-Frames und importierte Frames fehlen",
+};
+
+/** The same sentence with the view named, for a section header that stands on
+ *  its own. Built from {@link JSON_VIEW_OMITS} rather than repeated, because
+ *  the repetition is what went stale. */
 export const JSON_VIEW_CAVEAT: Record<"en" | "de", string> = {
-  en: "json view (as the text tab shows it — socket-only frames omitted)",
-  de: "JSON-Ansicht (wie im Text-Tab — reine Socket-Frames fehlen)",
+  en: `json view (${JSON_VIEW_OMITS.en})`,
+  de: `JSON-Ansicht (${JSON_VIEW_OMITS.de})`,
 };
 
 /** Everything the dialog decided, in one value. */
@@ -78,6 +94,12 @@ export interface StreamFacts {
   permissionDecisions: number;
   usage: number;
   images: number;
+  /** Frames the app announced over the socket. No writer may put one in a file,
+   *  so the file is shorter than the header's event count by this much. */
+  socketFrames: number;
+  /** Frames an import read around the conversation. Same rule, different
+   *  sentence: these carry something the reader saw on screen. */
+  importedFrames: number;
 }
 
 /**
@@ -97,8 +119,15 @@ export function streamFacts(events: readonly RunEvent[]): StreamFacts {
     permissionDecisions: 0,
     usage: 0,
     images: 0,
+    socketFrames: 0,
+    importedFrames: 0,
   };
   for (const event of events) {
+    // Read before the switch, because these types are not in the RunEvent union
+    // the switch is written against. Counted here rather than in a writer,
+    // because the sheet has to say the cost BEFORE anybody clicks save.
+    if (SOCKET_ONLY_TYPES.has(event.type)) facts.socketFrames += 1;
+    else if (IMPORT_ONLY_TYPES.has(event.type)) facts.importedFrames += 1;
     switch (event.type) {
       case "agent_spawn":
         agents.add(event.agentId);
@@ -150,8 +179,32 @@ const LOSSES: Record<
     de: (n: number) => string;
   }>
 > = {
-  // The app's own wire format, byte-identical on the round trip. Nothing to say.
-  spectroscope: [],
+  // The app's own wire format. Byte-identical on the round trip for every line
+  // it writes, and it no longer writes all of them: toJsonl filters the frames
+  // the Java reader cannot name, because such a line is one SessionStore drops
+  // as torn (nonWire.ts has the measurement). This row is what that filter costs
+  // the reader, counted, and it is the reason the sheet stopped saying "nothing
+  // is lost" over a file with fewer lines than the header's event count.
+  spectroscope: [
+    {
+      code: "socket-frames",
+      of: (f) => f.socketFrames,
+      en: (n) =>
+        `${n} socket ${n === 1 ? "frame" : "frames"} the app built for its own screen: no session file has a line for them`,
+      de: (n) =>
+        `${n} Socket-${n === 1 ? "Frame" : "Frames"}, die die App für ihr eigenes Bild gebaut hat: keine Sitzungsdatei hat dafür eine Zeile`,
+    },
+    {
+      code: "imported-frames",
+      of: (f) => f.importedFrames,
+      // Named as a group and never by kind: a sentence listing the todo list
+      // and the prompt queue would name them for a stream that carries neither.
+      en: (n) =>
+        `${n} imported ${n === 1 ? "frame" : "frames"} read around the conversation: the wire format has no line for them either`,
+      de: (n) =>
+        `${n} importierte ${n === 1 ? "Frame" : "Frames"}, die rund um das Gespräch gelesen wurden: auch dafür hat das Draht-Format keine Zeile`,
+    },
+  ],
   "claude-code": [
     {
       code: "permissions",

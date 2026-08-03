@@ -1,14 +1,12 @@
 package dev.spectroscope.server;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
-import dev.spectroscope.core.config.SpectroConfig;
-import dev.spectroscope.core.config.WorkspaceResolver;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -20,9 +18,11 @@ import java.util.Set;
 
 /**
  * Phase 5: the workspace panel's backend — a read-only, sandboxed view of the
- * agent's working directory. {@code GET /api/files} returns the cwd tree
- * (hidden files and build/dependency directories skipped, capped);
- * {@code GET /api/file} serves one file for the preview pane.
+ * agent's working directory. {@code GET /api/files} returns the tree of the
+ * requesting SESSION's workspace (hidden files and build/dependency
+ * directories skipped, capped); {@code GET /api/file} serves one file for the
+ * preview pane. Both require a session that has actually resolved a workspace
+ * and answer 409 otherwise, see {@link #rootFor}.
  *
  * <p>Sandbox rules, same maxim as the tools ("tool inputs are model output and
  * therefore untrusted" — and URL parameters are user/model input too): the
@@ -30,6 +30,16 @@ import java.util.Set;
  * or ignored segments are refused, and every served document carries a CSP
  * sandbox header, so an HTML file previews in an opaque origin — its scripts
  * run isolated and can never reach the spectroscope UI or its socket.</p>
+ *
+ * <p>Canonically means through {@code toRealPath} on both sides, not
+ * {@code normalize}. Normalizing is a string operation that never touches the
+ * filesystem, so a symlink named like an ordinary file used to walk straight
+ * out of the workspace and the read followed it. Both endpoints now compare the
+ * REAL location against the REAL root, the way the transcript store does.</p>
+ *
+ * <p>Both endpoints wear the local-origin fence (card 74). They answer with the
+ * operator's own files, and a DNS-rebound page reaches loopback with the
+ * attacker's Host, which is the half JavaScript cannot forge.</p>
  */
 @RestController
 public class WorkspaceController {
@@ -63,37 +73,17 @@ public class WorkspaceController {
     /** Every preview document renders in an opaque origin; scripts run isolated. */
     private static final String CSP_SANDBOX = "sandbox allow-scripts";
 
-    private final Path root;
-
-    /** Supplies the configured workspace (or null) — a fresh config read per
-     *  request in production, injectable for tests. */
-    private final java.util.function.Supplier<String> configuredWorkspace;
-
-    /** Spring wiring: the parameterless root is the server process's working
-     *  directory; session lookups read the live config's workspace key. */
-    public WorkspaceController() {
-        this(Path.of(System.getProperty("user.dir")),
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).workspace());
-    }
-
-    /**
-     * Seam for tests: sandbox the controller into a throwaway root.
+    /** The 409 body: the pane must tell "no folder yet" apart from a dead server.
      *
-     * @param root the directory to serve as workspace root — normalized to absolute
+     * @param reason a stable machine-readable token, never a sentence to render
      */
-    WorkspaceController(Path root) {
-        this(root, () -> null);
-    }
+    public record NoWorkspace(String reason) {}
 
-    /**
-     * Full seam: root AND the configured-workspace supplier.
-     *
-     * @param root the parameterless root
-     * @param configuredWorkspace supplies the config's workspace key (nullable)
-     */
-    WorkspaceController(Path root, java.util.function.Supplier<String> configuredWorkspace) {
-        this.root = root.toAbsolutePath().normalize();
-        this.configuredWorkspace = configuredWorkspace;
+    /** Signals "this request has no workspace behind it", answered as 409. */
+    private static final class NoWorkspaceResolved extends RuntimeException {
+        NoWorkspaceResolved(String reason) {
+            super(reason);
+        }
     }
 
     // ---- the tree -------------------------------------------------------------
@@ -102,48 +92,77 @@ public class WorkspaceController {
      * {@code GET /api/files}: the whole workspace tree in one response — hidden
      * and ignored directories skipped, capped by depth and entry budget.
      *
-     * @return the tree under the root plus the honest truncated flag
+     * @param session the session whose workspace is asked for
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host; else the tree under
+     *         the root plus the honest truncated flag
      */
     @GetMapping("/api/files")
-    public ResponseEntity<FilesResponse> files(
-            @RequestParam(value = "session", required = false) String session) {
+    public ResponseEntity<?> files(
+            @RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
         Path base;
         try {
             base = rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
+        } catch (NoWorkspaceResolved none) {
+            return ResponseEntity.status(409).body(new NoWorkspace(none.getMessage()));
         }
         if (!Files.isDirectory(base)) {
             return ResponseEntity.notFound().build(); // no workspace folder (yet)
         }
+        Path realBase;
+        try {
+            realBase = base.toRealPath();
+        } catch (IOException gone) {
+            return ResponseEntity.notFound().build();
+        }
         int[] budget = {MAX_ENTRIES};
-        List<FileNode> entries = list(base, "", 0, budget);
+        List<FileNode> entries = list(base, "", 0, budget, realBase);
         return ResponseEntity.ok(new FilesResponse(
                 base.getFileName() == null ? base.toString() : base.getFileName().toString(),
                 budget[0] <= 0, entries));
     }
 
     /**
-     * The tree/content root for a request: without a session parameter, the
-     * boot root (unchanged behaviour); with one, THAT session's workspace —
-     * a per-session pin (the folder the user picked, shared state with the
-     * socket side) wins, else the config/auto rules via
-     * {@link WorkspaceResolver#locate} (no directory is ever created by a
-     * GET). The id shape is guarded exactly like the sessions DELETE.
+     * The tree/content root for a request: THAT session's resolved workspace,
+     * and nothing else. The id shape is guarded exactly like the sessions
+     * DELETE.
      *
-     * @param session the session id from the query, or null/blank for the boot root
+     * <p>There is deliberately no fallback. A sessionless request used to be
+     * answered with {@code System.getProperty("user.dir")}, which on a
+     * developer machine is the product's own checkout: an unfenced listing of
+     * the server's working directory that nobody designed and the UI only ever
+     * reached by accident, before the first run, when it had no session id yet.
+     * A request with no session behind it has no workspace, and says so.</p>
+     *
+     * <p>Nor is the configured workspace consulted directly. {@code locate()}
+     * short-circuits on a configured path and never looks at the session id, so
+     * ANY id, including one that never existed, used to come back with the
+     * configured folder as though it were that session's. The socket records
+     * every workspace it resolves; this reads that record.</p>
+     *
+     * @param session the session id from the query
      * @return the directory to serve
      * @throws IllegalArgumentException for a malformed session id (answered as 400)
+     * @throws NoWorkspaceResolved when no workspace belongs to this request (409)
      */
     private Path rootFor(String session) {
         if (session == null || session.isBlank()) {
-            return root;
+            throw new NoWorkspaceResolved("no-workspace-for-request");
         }
         if (!session.matches("[A-Za-z0-9][A-Za-z0-9-]*")) {
             throw new IllegalArgumentException("malformed session id");
         }
-        String pinned = SessionWorkspaces.pinned(session);
-        return WorkspaceResolver.locate(pinned != null ? pinned : configuredWorkspace.get(), session);
+        String resolved = SessionWorkspaces.resolvedPath(session);
+        if (resolved == null) {
+            throw new NoWorkspaceResolved("no-workspace-for-session");
+        }
+        return Path.of(resolved).toAbsolutePath().normalize();
     }
 
     /**
@@ -155,9 +174,12 @@ public class WorkspaceController {
      * @param depth current recursion depth — beyond MAX_DEPTH the walk stops
      * @param budget single-element countdown shared across the whole walk — once
      *               spent, every remaining branch is cut
+     * @param realBase the canonical workspace root, so a link out of the tree is
+     *                 left out of the listing instead of naming files the
+     *                 content endpoint then refuses
      * @return the child nodes of {@code dir}, possibly cut short by the caps
      */
-    private List<FileNode> list(Path dir, String relPrefix, int depth, int[] budget) {
+    private List<FileNode> list(Path dir, String relPrefix, int depth, int[] budget, Path realBase) {
         if (depth > MAX_DEPTH || budget[0] <= 0) {
             return List.of();
         }
@@ -176,12 +198,15 @@ public class WorkspaceController {
             if (skipped(name)) {
                 continue;
             }
+            if (Files.isSymbolicLink(child) && !insideRealBase(child, realBase)) {
+                continue; // a link out of the workspace is not part of the workspace
+            }
             if (budget[0]-- <= 0) {
                 break;
             }
             String rel = relPrefix.isEmpty() ? name : relPrefix + "/" + name;
             if (Files.isDirectory(child)) {
-                out.add(new FileNode(name, rel, true, 0, list(child, rel, depth + 1, budget)));
+                out.add(new FileNode(name, rel, true, 0, list(child, rel, depth + 1, budget, realBase)));
             } else {
                 long size;
                 try {
@@ -214,26 +239,37 @@ public class WorkspaceController {
      *
      * @param rel the root-relative path from the tree — resolved and checked
      *            against the sandbox before any read
-     * @return 200 with typed bytes; 404 for anything outside, hidden, ignored or
-     *         missing; 413 over the size caps; 415 for binary content
+     * @param session the session whose workspace is asked for
+     * @param request the servlet request, for the local-origin fence
+     * @return 200 with typed bytes; 404 for a non-local caller or a rebound
+     *         Host, and for anything outside, hidden, ignored or missing; 413
+     *         over the size caps; 415 for binary content
      */
     @GetMapping("/api/file")
     public ResponseEntity<byte[]> file(@RequestParam("path") String rel,
-            @RequestParam(value = "session", required = false) String session) {
+            @RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
         Path base;
         try {
             base = rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
+        } catch (NoWorkspaceResolved none) {
+            return ResponseEntity.status(409).body(none.getMessage().getBytes(StandardCharsets.UTF_8));
         }
+        Path realBase;
         Path requested;
         try {
-            requested = resolveInside(base, rel);
+            realBase = base.toRealPath();
+            requested = resolveInside(realBase, rel);
         } catch (IOException outside) {
             return ResponseEntity.notFound().build();
         }
         // Defense in depth: what the tree hides, the content endpoint refuses.
-        for (Path segment : base.relativize(requested)) {
+        for (Path segment : realBase.relativize(requested)) {
             if (skipped(segment.toString())) {
                 return ResponseEntity.notFound().build();
             }
@@ -276,16 +312,43 @@ public class WorkspaceController {
     /**
      * The tools' sandbox rule, applied to a URL parameter.
      *
+     * <p>The comparison is between REAL paths. It used to be
+     * {@code normalize()} plus a {@code startsWith} on the string, which is
+     * lexical: {@code normalize} resolves {@code ..} in the text and never asks
+     * the filesystem anything, while every read below follows links. A file
+     * named {@code notes.txt} pointing at {@code ~/.spectro/.env} therefore
+     * passed the check and was served, which is exactly what the hide rule
+     * exists to prevent. Both sides are canonicalized because the root itself is
+     * often a link (a macOS temp folder lives under {@code /var}, which is a
+     * link to {@code /private/var}), so real against normalized would refuse
+     * every ordinary read instead.</p>
+     *
+     * @param realBase the canonical workspace root
      * @param relative the untrusted root-relative path from the request
-     * @return the normalized absolute path, proven inside the workspace root —
-     *         an escape attempt throws instead of returning
+     * @return the canonical absolute path, proven inside the workspace root —
+     *         an escape attempt or a missing file throws instead of returning
      */
-    private static Path resolveInside(Path base, String relative) throws IOException {
-        Path resolved = base.resolve(relative).normalize();
-        if (!resolved.equals(base) && !resolved.startsWith(base + File.separator)) {
+    private static Path resolveInside(Path realBase, String relative) throws IOException {
+        Path real = realBase.resolve(relative).normalize().toRealPath();
+        if (!real.equals(realBase) && !real.startsWith(realBase)) {
             throw new IOException("path is outside the working directory: " + relative);
         }
-        return resolved;
+        return real;
+    }
+
+    /**
+     * Whether a symlink in the tree still points inside the workspace.
+     *
+     * @param link the child entry to test
+     * @param realBase the canonical workspace root
+     * @return {@code false} for a link that leaves the root and for a broken one
+     */
+    private static boolean insideRealBase(Path link, Path realBase) {
+        try {
+            return link.toRealPath().startsWith(realBase);
+        } catch (IOException brokenOrUnreadable) {
+            return false;
+        }
     }
 
     /**

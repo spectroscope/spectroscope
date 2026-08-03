@@ -52,6 +52,12 @@ tasks.test {
 application {
     mainClass = "dev.spectroscope.cli.SpectroCli"
     applicationName = "spectro"
+    // Heap: baked into DEFAULT_JVM_OPTS of the generated start scripts, so the
+    // CLI zip in every release carries it without the user knowing. A third of
+    // the machine rather than the JVM's 25%, and a share rather than a literal
+    // so the same zip suits a workstation and a laptop. The number is
+    // HeapBudget.MAX_RAM_PERCENT; HeapFlagDriftTest holds this file to it.
+    applicationDefaultJvmArgs = listOf("-XX:MaxRAMPercentage=33")
 }
 
 tasks.named<JavaExec>("run") {

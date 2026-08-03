@@ -3,7 +3,15 @@
 // the grid that header and rows share, so the two never fall out of step.
 
 import { describe, expect, it } from "vitest";
-import { traceLinkState, traceTableClass } from "./TraceView";
+import type { TraceEntry } from "../state/reducer";
+import {
+  CATEGORIES,
+  categoryOf,
+  inCategories,
+  summarize,
+  traceLinkState,
+  traceTableClass,
+} from "./TraceView";
 
 describe("traceTableClass", () => {
   it("is the plain table while both optional columns show", () => {
@@ -47,5 +55,99 @@ describe("traceLinkState", () => {
   it("stays silent for an export that landed on a non-langfuse backend", () => {
     // A successful Jaeger export yields no url, and that is not a failure.
     expect(traceLinkState(null, null)).toBe("none");
+  });
+});
+
+// The chip that brings in what the client recorded (card 141).
+//
+// The trace groups frames by category and gives each group a chip. The four
+// import-only kinds are not run, turn, text, thinking, tool, permission,
+// usage, image or context, and dropping them into `other` would scatter them
+// among agent_spawn, compaction and error, where a reader cannot put them away
+// or bring them back in one click. They get their own.
+describe("the client category", () => {
+  it("groups the four import-only kinds, and takes nothing that was already placed", () => {
+    for (const type of ["task_reminder", "queue_operation", "queued_command", "edited_text_file"]) {
+      expect(categoryOf(type), type).toBe("client");
+    }
+    // The neighbours it must not have swallowed: `other` is still the home of
+    // everything unclassified, and every named category still answers.
+    expect(categoryOf("agent_spawn")).toBe("other");
+    expect(categoryOf("compaction")).toBe("other");
+    expect(categoryOf("run_start")).toBe("run");
+    expect(categoryOf("tool_call")).toBe("tool");
+  });
+
+  it("is one of the chips, so it can be switched off", () => {
+    expect(CATEGORIES).toContain("client");
+  });
+
+  it("drops exactly those four rows when the chip is off", () => {
+    const rows = [
+      "run_start",
+      "turn_start",
+      "task_reminder",
+      "text_delta",
+      "queue_operation",
+      "tool_call",
+      "queued_command",
+      "agent_spawn",
+      "edited_text_file",
+      "run_end",
+    ];
+    const off = new Set(CATEGORIES.filter((c) => c !== "client"));
+    expect(rows.filter((t) => inCategories(t, off))).toEqual([
+      "run_start",
+      "turn_start",
+      "text_delta",
+      "tool_call",
+      "agent_spawn",
+      "run_end",
+    ]);
+    // And with every chip on, nothing is dropped: the filter is the only thing
+    // that decides, and an unknown type must not fall out of the trace.
+    expect(rows.filter((t) => inCategories(t, new Set(CATEGORIES)))).toEqual(rows);
+  });
+});
+
+// The collapsed row for a todo list (card 141).
+//
+// A row whose summary is compactJson(payload) shows `{"items":[{"id":"1",...`
+// and then ellipsizes, which is the json blob the card refused. The counts are
+// what a reader scanning the trace can use, and they are the same three words
+// the plan panel already says in both languages.
+describe("the todo row's summary", () => {
+  const row = (payload: unknown): TraceEntry => ({
+    seq: 1,
+    dir: "in",
+    ts: 0,
+    type: "task_reminder",
+    payload,
+  });
+  const it3 = [
+    { id: "1", subject: "a", description: "a1", status: "completed", blocks: [], blockedBy: [] },
+    { id: "2", subject: "b", description: "b1", status: "in_progress", blocks: [], blockedBy: [] },
+    { id: "3", subject: "c", description: "c1", status: "pending", blocks: [], blockedBy: [] },
+  ];
+
+  it("counts the list instead of printing it", () => {
+    expect(summarize(row({ items: it3, itemCount: 3 }), "en")).toBe("1 open · 1 running · 1 done");
+    expect(summarize(row({ items: it3, itemCount: 3 }), "de")).toBe("1 offen · 1 in Arbeit · 1 fertig");
+  });
+
+  it("shows the raw frame when the list is not one it can read", () => {
+    const broken = { items: [{ id: "1", status: "pending" }] };
+    expect(summarize(row(broken), "en")).toBe('{"items":[{"id":"1","status":"pending"}]}');
+  });
+
+  it("leaves the other three import-only kinds as they were", () => {
+    const q: TraceEntry = {
+      seq: 2,
+      dir: "in",
+      ts: 0,
+      type: "queue_operation",
+      payload: { operation: "enqueue" },
+    };
+    expect(summarize(q, "en")).toBe('{"operation":"enqueue"}');
   });
 });

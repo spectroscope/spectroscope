@@ -1,0 +1,5 @@
+{"type":"user","uuid":"u1","timestamp":"2026-08-03T09:00:00.000Z","message":{"role":"user","content":"count the whitespace"}}
+  {"type":"assistant","uuid":"a1","parentUuid":"u1","timestamp":"2026-08-03T09:00:01.000Z","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"two spaces in front of this record's line"}],"usage":{"input_tokens":11,"output_tokens":7}}}
+
+   
+{"type":"assistant","uuid":"a2","parentUuid":"u1","timestamp":"2026-08-03T09:00:02.000Z","message":{"role":"assistant","model":"claude-opus-5","content":[{"type":"text","text":"and a tab behind this one"}],"usage":{"input_tokens":3,"output_tokens":4}}}	 

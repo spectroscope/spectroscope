@@ -50,13 +50,15 @@ function projectRules(view: SettingsView | null): string[] {
 
 export function buildGearModel(
   view: SettingsView | null,
-  workspaceInfo: { sessionId: string; path: string; configured: boolean } | null,
+  // Both fields are absent on the connect-time announcement, which names a
+  // prospective folder without minting a session or creating anything.
+  workspaceInfo: { sessionId?: string; path?: string; configured: boolean } | null,
   liveMode: string,
 ): GearModel {
   const pinned = workspaceInfo?.configured === true;
   return {
     pinned,
-    workspaceName: workspaceInfo !== null ? workspaceBasename(workspaceInfo.path) : "",
+    workspaceName: workspaceInfo?.path !== undefined ? workspaceBasename(workspaceInfo.path) : "",
     mode: liveMode,
     rules: pinned ? projectRules(view) : [],
     view,

@@ -32,6 +32,7 @@ import type { DisclosureChoice, ExportRequest, JsonlFormat, ViewId } from "../ex
 import {
   DEFAULT_REQUEST,
   JSONL_FORMATS,
+  JSON_VIEW_OMITS,
   formatLosses,
   offeredViews,
   printWouldHide,
@@ -241,13 +242,10 @@ export function ExportDialog(props: ExportDialogProps) {
                     />
                     <span>
                       <span className="xd-name">{VIEW_LABEL[view][lang]}</span>
-                      {view === "json" && (
-                        <span className="xd-hint">
-                          {de
-                            ? "wie im Text-Tab — reine Socket-Frames fehlen"
-                            : "as the text tab shows it — socket-only frames omitted"}
-                        </span>
-                      )}
+                      {/* The one sentence, read from the module that owns it.
+                          A second copy here went stale when the view's filter
+                          widened and the two then disagreed on the sheet. */}
+                      {view === "json" && <span className="xd-hint">{JSON_VIEW_OMITS[lang]}</span>}
                       {locked && (
                         <span className="xd-hint">
                           {de ? "die Ansicht, aus der du exportierst" : "the view you are exporting from"}

@@ -270,7 +270,12 @@ export function InputRegions(props: {
       </Region>
       {split.blocks.map((block) => (
         <Region key={block.key} label={block.key}>
-          <pre className="tv-well mono">{highlight(fit(block.text), block.lang)}</pre>
+          {/* A lifted block with a language is a program, and it gets the room
+              a program needs. A lifted block without one is prose or data, and
+              the ordinary well is the right size for it. */}
+          <pre className={`tv-well mono${block.lang === null ? "" : " tv-well--script"}`}>
+            {highlight(fit(block.text), block.lang)}
+          </pre>
         </Region>
       ))}
     </>
@@ -645,7 +650,7 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
           )}
           {view.script !== null && (
             <Region label={t(lang, "tv.script")}>
-              <pre className="tv-well mono">{highlight(cut(view.script), "javascript")}</pre>
+              <pre className="tv-well tv-well--script mono">{highlight(cut(view.script), "javascript")}</pre>
             </Region>
           )}
           {view.args !== undefined && (

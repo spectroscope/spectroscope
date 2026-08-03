@@ -214,13 +214,13 @@ export function LocalModelDialog({
             {t(lang, "lm.close")}
           </button>
           {selected && selected.state === "ready" ? (
-            <button type="button" className="primary" onClick={() => onUse(selected.id)}>
+            <button type="button" className="soft-primary" onClick={() => onUse(selected.id)}>
               {t(lang, "lm.use", { model: selected.label })}
             </button>
           ) : (
             <button
               type="button"
-              className="primary"
+              className="soft-primary"
               disabled={!selected || busy || rowFit(selected).blocked}
               onClick={() => selected && void download(selected.id)}
             >

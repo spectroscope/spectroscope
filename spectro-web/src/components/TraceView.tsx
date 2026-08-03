@@ -25,9 +25,25 @@ import {
   wireProtocol,
 } from "./eventSummary";
 import type { LlmDir } from "./eventSummary";
-import { detailLines, detailText } from "./traceDetail";
+import {
+  READINGS,
+  SOURCE_DISPLAY_CHARS,
+  copyLabel,
+  detailLines,
+  detailText,
+  sourcePane,
+  sourceSentence,
+  withinBudget,
+  type Reading,
+  type SourcePane,
+  type TraceProvenance,
+} from "./traceDetail";
+import { readable, type ReadableBlock } from "./readable";
+import { readTodoItems, statusLabel, todoSummary } from "./todoList";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
+import { sourceNoteIndex, type SourceNote } from "../import/sourceNotes";
+import { noteAnchors } from "../state/traceSource";
 import { beacon } from "../state/levelingBeacon";
 import { ExplainPanel } from "./ExplainPanel";
 import { t, type Lang } from "../i18n/i18n";
@@ -51,7 +67,10 @@ const AGENT_MESSAGE_PREVIEW_CHARS = 60;
 /** This close to the bottom counts as "pinned" (auto-follow stays on). */
 const SCROLL_PIN_THRESHOLD_PX = 80;
 
-const CATEGORIES = [
+/** The chip row's groups, in the order they are shown. Exported because the
+ *  words are in the dict now and a category without one would ship as a bare
+ *  key, and because the filter below is tested against the whole list. */
+export const CATEGORIES = [
   "run",
   "turn",
   "text",
@@ -61,11 +80,13 @@ const CATEGORIES = [
   "usage",
   "image",
   "context",
+  "client",
   "other",
 ] as const;
-type Category = (typeof CATEGORIES)[number];
+export type Category = (typeof CATEGORIES)[number];
 
-function categoryOf(type: string): Category {
+/** Which chip a frame answers to. */
+export function categoryOf(type: string): Category {
   switch (type) {
     case "run_start":
     case "run_end":
@@ -94,10 +115,33 @@ function categoryOf(type: string): Category {
     case "context_info":
     case "system_context":
       return "context";
+    // What an imported transcript recorded around the conversation: the todo
+    // list, the prompt queue, the file somebody edited (card 141). Their own
+    // group rather than `other`, so a reader can bring them in or put them
+    // away in one click instead of hunting them among agent_spawn and error.
+    case "task_reminder":
+    case "queue_operation":
+    case "queued_command":
+    case "edited_text_file":
+      return "client";
     default:
       // agent_spawn, compaction, error — and every future type.
       return "other";
   }
+}
+
+/**
+ * Whether a frame survives the chip row.
+ *
+ * A function rather than an expression inside the view's filter: it is the one
+ * rule that decides what a reader can see, and it was untestable while it sat
+ * in a closure over component state.
+ *
+ * @param type   the frame's wire type
+ * @param active the categories whose chips are pressed
+ */
+export function inCategories(type: string, active: ReadonlySet<string>): boolean {
+  return active.has(categoryOf(type));
 }
 
 /** Event-type color (fixed brand vocabulary, tokens.css --ev-*). The bar in
@@ -161,8 +205,10 @@ function clock(ts: number): string {
   ).padStart(3, "0")}`;
 }
 
-/** One dense line per frame — type-specific where a summary beats raw JSON. */
-function summarize(entry: TraceEntry, lang: Lang): string {
+/** One dense line per frame — type-specific where a summary beats raw JSON.
+ *  Exported for the tests: a summary that quietly stopped being called would
+ *  look exactly like one that was never wired up. */
+export function summarize(entry: TraceEntry, lang: Lang): string {
   const p = entry.payload as Record<string, unknown>;
   switch (entry.type) {
     case "system_context": {
@@ -197,6 +243,14 @@ function summarize(entry: TraceEntry, lang: Lang): string {
       return `${String(p["from"] ?? "")} → ${String(p["to"] ?? "")} · ${String(p["state"] ?? "")} · ${JSON.stringify(
         String(p["text"] ?? "").slice(0, AGENT_MESSAGE_PREVIEW_CHARS),
       )}`;
+    case "task_reminder": {
+      // The todo list an imported transcript carried (card 141). compactJson
+      // of a ten-item list is a wall of braces that ellipsizes after the first
+      // one, so the collapsed row shows the counts and the open row shows the
+      // list. A list this cannot read falls back to the raw frame.
+      const items = readTodoItems(p["items"]);
+      return items === null ? compactJson(entry.payload) : todoSummary(items, lang);
+    }
     default:
       return compactJson(entry.payload);
   }
@@ -231,11 +285,28 @@ const TraceRow = memo(function TraceRow(props: {
   /** Lens: the block-ending thinking row carries the WHOLE block's reasoning
    *  text (every thinking_delta of the block joined), untruncated. */
   blockText?: string;
+  /** What the imported line behind this frame says beyond the frame itself
+   *  (card: the source line). Undefined on every row of a session produced
+   *  here, on a frame the importer built, and on the sibling rows of a line
+   *  whose notes another row already wears. */
+  notes?: readonly SourceNote[];
   /** The open row's causal chain (undefined while closed — keeps memo calm). */
   chain?: TraceEntry[];
   /** The open row's call index, same reason: a fresh Map on every append would
    *  re-render every closed row during a delta flood. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** The source face's two inputs, and the same rule a third time: only the open
+   *  row is handed the stream it stands in and the file it was read from. */
+  source?: { rows: readonly TraceEntry[]; lines: readonly string[] | null };
+  /** Where this trace's frames came from when no file is loaded. A session-wide
+   *  fact and one stable string, so every row carries it: it decides a sentence
+   *  the pane must not get wrong, and an optional prop would decide it by
+   *  falling back. */
+  provenance: TraceProvenance;
+  /** Whether the rows are carrying translated payloads. Session-wide like
+   *  `provenance`, and required for the same reason: it decides whether the
+   *  pane may promise the wire line beside it is the stored line. */
+  translated: boolean;
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -307,10 +378,30 @@ const TraceRow = memo(function TraceRow(props: {
           </span>
         </span>
         <span className="trace-col trace-col--summary">
-          <SummaryLine
-            text={summarize(entry, lang)}
-            field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined}
-          />
+          {/* Read off the imported line, never off the frame: these fields are
+              in somebody else's file and on no wire of ours. Nothing renders
+              unless the line carried it. */}
+          {props.notes?.map((note) => (
+            <span
+              key={note.kind}
+              className="trace-note"
+              /* The value rides in the tooltip too. A narrow window ellipsizes
+                 the chip, and a half-read model name would be its own small
+                 lie about what the file says. */
+              title={`${t(lang, `trace.note.${note.kind}`)} ${note.value}\n${t(lang, `trace.note.${note.kind}Title`)}`}
+            >
+              {t(lang, `trace.note.${note.kind}`)} {note.value}
+            </span>
+          ))}
+          {/* The text is the part that ellipsizes. A chip that clipped would be
+              worse than no chip: the reader would see half a fact and no sign
+              that the other half exists. */}
+          <span className="trace-summary-text">
+            <SummaryLine
+              text={summarize(entry, lang)}
+              field={TEXT_FIELD_EVENTS.has(entry.type) ? "text" : undefined}
+            />
+          </span>
         </span>
       </button>
       {blockText !== undefined && blockText !== "" && (
@@ -336,6 +427,10 @@ const TraceRow = memo(function TraceRow(props: {
           lang={lang}
           chain={props.chain ?? [entry]}
           calls={props.calls}
+          rows={props.source?.rows ?? [entry]}
+          sourceLines={props.source?.lines ?? null}
+          provenance={props.provenance}
+          translated={props.translated}
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
@@ -450,6 +545,48 @@ function DetailSectionView({ section, lang }: { section: DetailSection; lang: La
         </div>
       );
 
+    case "todo":
+      // The agent's own todo list, as a list (card 141). Status carries the
+      // dot and the badge from the agents/plan vocabulary, so it reskins with
+      // every design and adds no colour value: --ok for done, --accent for
+      // running, the base faint dot for open and for any status a later client
+      // invents. Every line under an item is there only because the item
+      // carried it.
+      return (
+        <div className="ed-sec">
+          <SectionLabel field={section.field} />
+          <ol className="ed-todo">
+            {/* The file's id is the item's own ordinal and repeats across
+                lists, so the row's key is its position, which cannot. */}
+            {section.items.map((item, i) => (
+              <li key={i} className="ed-todo-item">
+                <span className="ed-todo-head">
+                  <span className={`agent-dot agent-dot--${item.status}`} aria-hidden="true" />
+                  <span className="ed-todo-id mono">{item.id}</span>
+                  <span className="ed-todo-subject">{item.subject}</span>
+                  <span className={`agent-badge agent-badge--${item.status}`}>
+                    {statusLabel(item.status, lang)}
+                  </span>
+                </span>
+                {item.description !== undefined && <p className="ed-todo-desc">{item.description}</p>}
+                {item.activeForm !== undefined && <p className="ed-todo-now">{item.activeForm}</p>}
+                {(item.blockedBy !== undefined || item.blocks !== undefined || item.owner !== undefined) && (
+                  <p className="ed-todo-meta mono">
+                    {/* Wire field names, the way every other label in this view
+                        prints them: the trace is the wire view, and `blockedBy`
+                        is the field, not a word we chose. */}
+                    {item.blockedBy !== undefined && <span>blockedBy {item.blockedBy.join(", ")}</span>}
+                    {item.blocks !== undefined && <span>blocks {item.blocks.join(", ")}</span>}
+                    {item.owner !== undefined && <span>owner {item.owner}</span>}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
+          {section.more > 0 && <p className="ed-more">{t(lang, "ed.more", { n: section.more })}</p>}
+        </div>
+      );
+
     case "image":
       return <ImageSection section={section} />;
 
@@ -490,10 +627,153 @@ export function EventStructured(props: {
   );
 }
 
-/** The expanded frame, in one of four honest views: Structured (the frame as
- *  the thing it is), Insight (the collapsible tree), Compact (highlighted, ONE
- *  row per wire line, x-scroll instead of artificial wrapping) and Raw (plain
- *  text, newlines only between real lines). session_resume expands to the whole
+/** A count as a reader counts it, in their own grouping. Line 4127 of 6431 is
+ *  a number somebody scrolls a file to; 4127 unspaced is a token. */
+const counted = (n: number, lang: Lang): string => n.toLocaleString(lang === "de" ? "de-DE" : "en-US");
+
+/**
+ * Text in a pane that stops at a ceiling and SAYS it stopped.
+ *
+ * Single lines in the owner's corpus reach 769295 characters and a 4.7 MB image
+ * block is an ordinary record, so a pane without a ceiling is a pane that
+ * freezes. Truncation that names itself is a display limit; truncation that
+ * stays quiet is this card's own defect. The clipboard never sees the ceiling.
+ */
+function Budgeted({ text, lang, wrap }: { text: string; lang: Lang; wrap?: boolean }) {
+  const [all, setAll] = useState(false);
+  const cut = withinBudget(text, all ? text.length : SOURCE_DISPLAY_CHARS);
+  return (
+    <>
+      <pre className={wrap === true ? "trace-detail-raw trace-detail-raw--wrap" : "trace-detail-raw"}>
+        {cut.text}
+      </pre>
+      {cut.capped && (
+        <p className="trace-source-cap">
+          {t(lang, "trace.source.capped", {
+            shown: counted(cut.shown, lang),
+            total: counted(cut.total, lang),
+          })}{" "}
+          <button type="button" className="trace-source-more" onClick={() => setAll(true)}>
+            {t(lang, "trace.source.showAll")}
+          </button>
+        </p>
+      )}
+    </>
+  );
+}
+
+/** One piece of an opened line. A document prints as a document; a string with
+ *  real line breaks prints with them; a collapsed value prints as what it is,
+ *  how many characters, and a way in.
+ *
+ *  Two collapsed kinds and two sentences, because the reasons are not the same
+ *  claim: `hidden` is a signature or a base64 body, `long` is one run of
+ *  characters too long to read where it stands, and most of those are prose.
+ *  They shared the byte sentence until a dictated prompt met it. */
+function ReadableBlockView({ block, lang }: { block: ReadableBlock; lang: Lang }) {
+  const [open, setOpen] = useState(false);
+  const collapsed = block.kind === "hidden" || block.kind === "long";
+  return (
+    <div className="trace-source-block">
+      {block.path !== "" && <p className="trace-source-path mono">{block.path}</p>}
+      {collapsed ? (
+        <>
+          <p className="trace-source-cap">
+            {t(lang, `trace.source.${block.kind}`, { n: counted(block.text.length, lang) })}{" "}
+            <button type="button" className="trace-source-more" onClick={() => setOpen(!open)}>
+              {t(lang, open ? "trace.source.hide" : "trace.source.show")}
+            </button>
+          </p>
+          {open && <Budgeted text={block.text} lang={lang} wrap />}
+        </>
+      ) : (
+        <Budgeted text={block.text} lang={lang} wrap={block.kind === "text"} />
+      )}
+    </div>
+  );
+}
+
+/** One line, opened out. Openly a reading of the line and never the default:
+ *  see readable.ts for the escape rule that keeps it from rewriting anybody's
+ *  shell command. */
+function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
+  const { parsed, blocks } = useMemo(() => readable(line), [line]);
+  return (
+    <div className="trace-source-blocks">
+      {!parsed && <p className="trace-source-note">{t(lang, "trace.source.notJson")}</p>}
+      {blocks.map((b, i) => (
+        <ReadableBlockView key={`${b.path}#${i}`} block={b} lang={lang} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The source face of one frame: the line of the imported file it was read from.
+ *
+ * One sentence per case, and the sentence comes FIRST in every one of them,
+ * including the five that have no line to show. A pane that went blank for a
+ * session produced here would be the same silence this card exists to end, and
+ * a pane that promised a stored line for a frame nothing stored would be the
+ * defect itself.
+ */
+function SourceBody({
+  pane,
+  reading,
+  lang,
+  translated,
+}: {
+  pane: SourcePane;
+  reading: Reading;
+  lang: Lang;
+  /** Whether the rows are carrying translated payloads. The "none" sentence
+   *  promises the wire line beside it is the stored line byte for byte, and a
+   *  translation is exactly when that stops being true. */
+  translated: boolean;
+}) {
+  if (pane.kind !== "missing" && pane.kind !== "line") {
+    return <p className="trace-source-note">{t(lang, sourceSentence(pane, translated))}</p>;
+  }
+  if (pane.kind === "missing") {
+    return (
+      <p className="trace-source-note">
+        {t(lang, "trace.source.missing", {
+          n: counted(pane.lineNumber, lang),
+          total: counted(pane.total, lang),
+        })}
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="trace-source-note">
+        {pane.siblings > 1
+          ? t(lang, "trace.source.shared", {
+              n: counted(pane.lineNumber, lang),
+              total: counted(pane.total, lang),
+              k: counted(pane.siblings, lang),
+              i: counted(pane.ordinal, lang),
+            })
+          : t(lang, "trace.source.line", {
+              n: counted(pane.lineNumber, lang),
+              total: counted(pane.total, lang),
+            })}
+      </p>
+      {reading === "readable" ? (
+        <ReadableLine line={pane.text} lang={lang} />
+      ) : (
+        <Budgeted key={pane.lineNumber} text={pane.text} lang={lang} />
+      )}
+    </>
+  );
+}
+
+/** The expanded frame, in one of five honest views: Structured (the frame as
+ *  the thing it is), Insight (the collapsible tree), Compact (highlighted and
+ *  WRAPPED, so the whole record is on screen without a horizontal scroll), Wire
+ *  (plain text, one row per real wire line, byte faithful and scrolling
+ *  sideways) and Source (the line of the imported file this frame was read
+ *  from). session_resume expands to the whole
  *  re-uploaded history: one JSONL line per event, exactly what rides back to
  *  the LLM. Above the views: the causal chain (spectro-explain feature 2),
  *  walked back to the prompt. The face a frame lands on comes from the
@@ -504,6 +784,10 @@ function TraceDetail({
   lang,
   chain,
   calls,
+  rows,
+  sourceLines,
+  provenance,
+  translated,
   onJump,
 }: {
   entry: TraceEntry;
@@ -513,6 +797,15 @@ function TraceDetail({
   chain: TraceEntry[];
   /** Same rule as the chain: only the open row gets the call index. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** The frames this one stands among, read only to count the ones that share
+   *  its source line. Same rule again: only the open row gets them. */
+  rows: readonly TraceEntry[];
+  /** The imported file's lines, or null when no file is loaded. */
+  sourceLines?: readonly string[] | null;
+  /** Which of the three fileless cases this trace is, for the pane's sentence. */
+  provenance: TraceProvenance;
+  /** Whether the payload on the wire face is a translated one. */
+  translated: boolean;
   onJump: (seq: number) => void;
 }) {
   // The row subscribes to the master itself: only the OPEN row renders a
@@ -521,7 +814,29 @@ function TraceDetail({
   const master = useTraceFace();
   const [override, setOverride] = useState<RowFace | null>(null);
   const mode = rowFace(master, override);
+  // How the pane reads what it was given. Readable opens first (owner call,
+  // 2026-08-03): a source line is escaped JSON inside escaped JSON, and the
+  // verbatim form is unreadable at a glance, so opening on it makes the pane
+  // look broken rather than faithful. The honesty this card was built for does
+  // not live in which reading opens: it lives in the strip saying which one is
+  // showing, in verbatim being one click away, and in the copy button handing
+  // over what the pane claims to show. Session state, never persisted, so the
+  // choice cannot follow a reader into a file they have not looked at yet.
+  const [chosen, setChosen] = useState<Reading>("readable");
+  // Only two panes have two readings to choose between. Structured and Insight
+  // already render the parsed payload, and Compact's whole job is the wire line
+  // with its escapes highlighted.
+  const hasReading = mode === "source" || mode === "wire";
+  const reading: Reading = hasReading ? chosen : "verbatim";
   const lines = detailLines(entry.type, entry.payload);
+  // The line this frame was read from, or nothing. Only the source pane's copy
+  // button hands it over, and only when there is one to hand over.
+  // Walked once: the sibling count reads every row, and the pane is needed both
+  // for the body and for whether there is anything to copy.
+  const pane = mode === "source" ? sourcePane(entry, rows, sourceLines, provenance) : null;
+  const sourceText = pane?.kind === "line" ? pane.text : undefined;
+  const copyMode = mode === "structured" ? "insight" : mode;
+  const copyable = mode !== "source" || sourceText !== undefined;
   return (
     <div className="trace-detail">
       {chain.length > 1 && (
@@ -557,11 +872,38 @@ function TraceDetail({
           </button>
         ))}
       </div>
+      {/* Which of the two readings the pane is showing. Inside the pane and not
+          a face: the byte faithful one is the default and cannot be talked out
+          of being the default. */}
+      {hasReading && (
+        <div
+          className="trace-detail-modes trace-reading"
+          role="group"
+          aria-label={t(lang, "trace.readingAria")}
+        >
+          {READINGS.map((r) => (
+            <button
+              key={r}
+              type="button"
+              aria-pressed={reading === r}
+              title={t(lang, `trace.readingTitle.${r}`)}
+              onClick={() => setChosen(r)}
+            >
+              {t(lang, `trace.reading.${r}`)}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Structured has no text of its own: what it renders IS the payload, so
-          the copy button hands over the payload, pretty-printed. */}
-      <CopyButton
-        text={() => detailText(mode === "structured" ? "insight" : mode, entry.type, entry.payload)}
-      />
+          the copy button hands over the payload, pretty-printed. A source pane
+          with no line behind it has nothing to copy, so it offers no button
+          rather than a button that hands over an empty string. */}
+      {copyable && (
+        <CopyButton
+          text={() => detailText(copyMode, entry.type, entry.payload, { line: sourceText, reading })}
+          label={t(lang, `common.${copyLabel(copyMode, reading)}`)}
+        />
+      )}
       {mode === "structured" ? (
         <EventStructured type={entry.type} payload={entry.payload} calls={calls} />
       ) : mode === "insight" ? (
@@ -570,11 +912,22 @@ function TraceDetail({
         // never nest anywhere near this deep, so 99 reads as "all".
         <JsonTree value={entry.payload} defaultDepth={99} />
       ) : mode === "compact" ? (
+        // WRAPPED (owner 2026-08-03): the whole record on screen, no sideways
+        // scrolling. Wire below is the same text and does NOT wrap, which is
+        // what finally makes the two names mean two different things.
         <div className="trace-detail-lines">
           {lines.map((ln, i) => (
             <div key={i} className="trace-detail-line">
               <SummaryLine text={ln} />
             </div>
+          ))}
+        </div>
+      ) : pane !== null ? (
+        <SourceBody pane={pane} reading={reading} lang={lang} translated={translated} />
+      ) : reading === "readable" ? (
+        <div className="trace-source-blocks">
+          {lines.map((ln, i) => (
+            <ReadableLine key={i} line={ln} lang={lang} />
           ))}
         </div>
       ) : (
@@ -604,6 +957,20 @@ export function TraceView(props: {
   /** The message of a failed export, but only while NOTHING has landed yet.
    *  null keeps the toolbar silent. */
   otlpFailure?: string | null;
+  /** The imported file's own lines (card: the source line). null when no file
+   *  is loaded, which is the case `provenance` then has to tell apart. A few
+   *  fields live only in an imported transcript, and this is where the trace
+   *  reads them from. */
+  sourceLines?: readonly string[] | null;
+  /** Where these frames came from when no file is loaded: produced and stored
+   *  here, compiled from a scenario, or another process's. The source pane says
+   *  a different sentence for each, and only the first one may promise a stored
+   *  line. Absent means the plain case, which is what a live socket is. */
+  provenance?: TraceProvenance;
+  /** Whether these rows are showing translated payloads. App swaps every row's
+   *  payload when a translation is applied, so the wire face is then a rebuilt
+   *  record and the source pane may not call it the stored line. */
+  translated?: boolean;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -625,6 +992,12 @@ export function TraceView(props: {
   const otelOn = prefs.otelRows;
   // Card 137: link, honest failure line, or nothing at all.
   const linkState = traceLinkState(props.langfuseUrl ?? null, props.otlpFailure ?? null);
+  // What the imported lines say beyond their frames. Built once per import and
+  // sparse: a session produced here yields an empty map and every lookup below
+  // misses, which is exactly the "renders nothing" case.
+  const noteIndex = useMemo(() => sourceNoteIndex(props.sourceLines), [props.sourceLines]);
+  // One record fans out to several frames; its notes ride on ONE of them.
+  const anchors = useMemo(() => (noteIndex.size === 0 ? null : noteAnchors(entries)), [noteIndex, entries]);
   // Optional columns (owner 2026-07-27): host and model, both on out of the
   // box. A hidden column takes nothing but itself — no row changes meaning.
   const chosenCols = useTraceColumns();
@@ -715,7 +1088,7 @@ export function TraceView(props: {
       if (e.type === "otlp_export" && !otelOn) return false;
       if (agentFilter !== null && e.agentId !== undefined && e.agentId !== agentFilter) return false;
       if (llmDir !== "all" && llmDirection(e.type) !== llmDir) return false;
-      if (!active.has(categoryOf(e.type))) return false;
+      if (!inCategories(e.type, active)) return false;
       if (q === "") return true;
       return `${e.type} ${e.agentId ?? ""} ${compactJson(e.payload)}`.toLowerCase().includes(q);
     });
@@ -758,6 +1131,19 @@ export function TraceView(props: {
     if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
     return toolCallsById(allEntries.map((e) => e.payload));
   }, [openSeq, bySeq, allEntries]);
+
+  // What the source face reads: the file's lines, and the frames the open row
+  // stands among so it can count the ones that share its line. Counted over the
+  // WHOLE stream and never over the filtered view. A sibling count that shrank
+  // when somebody typed in the filter box would be a number meaning two things,
+  // which is the defect this face exists to remove.
+  const openSource = useMemo(
+    () => ({ rows: allEntries, lines: props.sourceLines ?? null }),
+    [allEntries, props.sourceLines],
+  );
+  // Which of the three fileless cases this trace is. One string for the whole
+  // view: it says nothing about a single frame, so it cannot vary by row.
+  const provenance = props.provenance ?? "stored";
 
   // Jump: open the frame and bring its row into view (it may sit outside the
   // current scroll window; if a filter hides it, the row simply is not there).
@@ -1074,7 +1460,7 @@ export function TraceView(props: {
               aria-pressed={active.has(c)}
               onClick={() => toggleCat(c)}
             >
-              {c}
+              {t(lang, `trace.cat.${c}`)}
             </button>
           ))}
         </div>
@@ -1302,8 +1688,16 @@ export function TraceView(props: {
                         : undefined
                     }
                     blockText={lensOn ? blockTexts.get(e.seq) : undefined}
+                    notes={
+                      e.sourceLine !== undefined && anchors?.get(e.sourceLine) === e.seq
+                        ? noteIndex.get(e.sourceLine)
+                        : undefined
+                    }
                     chain={openSeq === e.seq ? openChain : undefined}
                     calls={openSeq === e.seq ? openCalls : undefined}
+                    source={openSeq === e.seq ? openSource : undefined}
+                    provenance={provenance}
+                    translated={props.translated ?? false}
                     onJump={jumpTo}
                     onToggle={onToggle}
                   />

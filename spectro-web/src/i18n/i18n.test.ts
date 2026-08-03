@@ -3,6 +3,12 @@
 import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
 import { LAB_FACES } from "../state/labFace";
+import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
+import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
+import type { SourcePane } from "../components/traceDetail";
+import { HIDDEN_KINDS } from "../components/readable";
+import { CATEGORIES } from "../components/TraceView";
+import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 
@@ -28,6 +34,14 @@ describe("i18n dict", () => {
     for (const p of ["pending", "in_progress", "completed"]) {
       expect(dict[`plan.${p}`], `plan.${p}`).toBeDefined();
     }
+    // The same three statuses again, in their counting form (card 141). Two
+    // families rather than one because a badge labels a single item and a
+    // count follows a number: German says "läuft …" for the first and needs
+    // "in Arbeit" for the second, and one family would have shipped the wrong
+    // half of that. Reached only as `trace.todo.${status}`.
+    for (const p of TODO_STATUSES) {
+      expect(dict[`trace.todo.${p}`], `trace.todo.${p}`).toBeDefined();
+    }
     // A workflow run's headline row: the labels are reached only as
     // `tv.run.${RunStat["key"]}`, so a stat added without its word would ship as
     // the bare key in the one place a reader counts dead agents.
@@ -50,6 +64,68 @@ describe("i18n dict", () => {
     }
     for (const k of ["lab.face", "lab.faceAria", "lab.faceHint"]) {
       expect(dict[k], k).toBeDefined();
+    }
+    // The trace's type chips. They render from the dict now rather than from
+    // the enum's own spelling, so a category added without its word would show
+    // up as the bare key in the one row a reader filters with. The nine that
+    // were there before carry the same lowercase word in both languages,
+    // because that word IS the wire vocabulary (trace.lens and trace.timeline
+    // are spelled the same way for the same reason).
+    for (const c of CATEGORIES) {
+      expect(dict[`trace.cat.${c}`], `trace.cat.${c}`).toBeDefined();
+    }
+    // What an imported line says beyond its frames: the chip carries a word and
+    // the tooltip carries the sentence that keeps the word from being a riddle.
+    // Both are reached only as `trace.note.${kind}`.
+    for (const k of SOURCE_NOTE_KINDS) {
+      expect(dict[`trace.note.${k}`], `trace.note.${k}`).toBeDefined();
+      expect(dict[`trace.note.${k}Title`], `trace.note.${k}Title`).toBeDefined();
+    }
+    // The source pane's cases. Each one is a whole sentence, because each is a
+    // different statement about where the frame came from, and a pane that fell
+    // back to a shared word for two of them would be this card's own defect.
+    // Walked through the CHOOSER rather than over the kinds alone, because the
+    // sentence is not one per kind: a translation gives the "none" case a second
+    // one, since the byte-for-byte half of the first stops being true. Anything
+    // the chooser can return has to exist, or the pane prints the key.
+    for (const k of SOURCE_PANE_KINDS) {
+      for (const translated of [false, true]) {
+        const key = sourceSentence({ kind: k } as SourcePane, translated);
+        expect(dict[key], key).toBeDefined();
+      }
+    }
+    // Both reasons the readable pane collapses a value. They render the same
+    // control and say different things, and one sentence for both is how a
+    // 3424 character dictated prompt came to be called "characters that are not
+    // text". A kind added to HIDDEN_KINDS with no sentence of its own would
+    // fall back to the other one's claim, which is the defect, not a gap.
+    for (const k of HIDDEN_KINDS) {
+      expect(dict[`trace.source.${k}`], `trace.source.${k}`).toBeDefined();
+    }
+    for (const k of [
+      "trace.source.shared",
+      "trace.source.notJson",
+      "trace.source.capped",
+      "trace.source.showAll",
+      // What it is and how much of it there is, plus the two words that open and
+      // close it. Dropping a collapsed value silently would be a hole the reader
+      // cannot see, so it is always three visible strings.
+      "trace.source.show",
+      "trace.source.hide",
+    ]) {
+      expect(dict[k], k).toBeDefined();
+    }
+    // The verbatim/readable strip inside the source and wire panes: a label and
+    // the tooltip that says which of the two is the file's own bytes.
+    for (const r of READINGS) {
+      expect(dict[`trace.reading.${r}`], `trace.reading.${r}`).toBeDefined();
+      expect(dict[`trace.readingTitle.${r}`], `trace.readingTitle.${r}`).toBeDefined();
+    }
+    expect(dict["trace.readingAria"], "trace.readingAria").toBeDefined();
+    // The copy button names which of the two it took, reached as
+    // `common.${copyLabel(...)}`.
+    for (const k of COPY_LABELS) {
+      expect(dict[`common.${k}`], `common.${k}`).toBeDefined();
     }
     // The reasoning seg (card 88): every string the shared control renders.
     // A missing key ships as its bare name — it happened twice this week.
@@ -88,6 +164,26 @@ describe("i18n dict", () => {
     }
     for (const k of ["set.dockerInstall", "set.langfuseCommand", "set.langfuseCost"]) {
       expect(dict[k], k).toBeDefined();
+    }
+  });
+});
+
+// The import bar's own sentence. Card 141 opened on the owner reading it and
+// asking whether the importer had a parsing bug: "21 lines produced no frame"
+// describes deliberate behaviour in the vocabulary of failure. The bar was
+// right and the importer was right; only the wording was wrong.
+describe("the import bar says what it means", () => {
+  it("no longer reports design as a defect, in either language", () => {
+    expect(dict["imp.bar"].en).not.toMatch(/produced no frame/);
+    expect(dict["imp.bar"].en).toMatch(/carry no conversation/);
+    expect(dict["imp.bar"].de).not.toMatch(/keinen Frame erzeugt/);
+  });
+
+  it("still names all three counts, so the sentence stays checkable", () => {
+    for (const lang of ["de", "en"] as const) {
+      for (const slot of ["{file}", "{lines}", "{frames}", "{zero}"]) {
+        expect(dict["imp.bar"][lang], `${lang} ${slot}`).toContain(slot);
+      }
     }
   });
 });

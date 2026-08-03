@@ -305,6 +305,78 @@ describe("describeEvent — the honest fallback", () => {
   });
 });
 
+// The todo list an imported transcript carries (card 141). It is the most
+// frequent thing the importer used to drop and the most interesting one: 26% of
+// all attachments, 30,780 items measured, each with its own status. Rendered as
+// a json blob it is a wall of braces in a column that ellipsizes; rendered as
+// what it is, it is a list somebody can read.
+describe("describeEvent, the todo list", () => {
+  const items = [
+    {
+      id: "1",
+      subject: "Read the census",
+      description: "Count the fields on every item",
+      activeForm: "Reading the census",
+      status: "completed",
+      blocks: [],
+      blockedBy: [],
+    },
+    {
+      id: "2",
+      subject: "Decide the shape",
+      description: "Pick what the row shows",
+      activeForm: "Deciding the shape",
+      status: "in_progress",
+      blocks: [],
+      blockedBy: ["1"],
+    },
+  ];
+
+  it("renders a task_reminder as its list, not as one json blob", () => {
+    const s = describeEvent("task_reminder", { type: "task_reminder", items, itemCount: 2, ts: 1 });
+    const todo = s.find((x) => x.kind === "todo");
+    expect(todo).toBeDefined();
+    if (todo?.kind !== "todo") throw new Error("kind");
+    expect(todo.field).toBe("items");
+    expect(todo.items.map((i) => [i.subject, i.status])).toEqual([
+      ["Read the census", "completed"],
+      ["Decide the shape", "in_progress"],
+    ]);
+    // and the items are NOT also dumped as raw json underneath
+    expect(s.some((x) => x.kind === "json" && x.field === "items")).toBe(false);
+  });
+
+  it("keeps itemCount, which is the file's own number and not a recount", () => {
+    const s = describeEvent("task_reminder", { type: "task_reminder", items, itemCount: 2, ts: 1 });
+    const rows = s.find((x) => x.kind === "rows");
+    if (rows?.kind !== "rows") throw new Error("kind");
+    expect(rows.rows).toEqual([{ key: "itemCount", value: "2" }]);
+  });
+
+  it("hands back the raw items when the list cannot be rendered whole", () => {
+    const broken = [items[0], { id: "2", status: "pending" }];
+    const s = describeEvent("task_reminder", { type: "task_reminder", items: broken, ts: 1 });
+    expect(s.some((x) => x.kind === "todo")).toBe(false);
+    expect(s.some((x) => x.kind === "json" && x.field === "items")).toBe(true);
+  });
+
+  it("stops at the list ceiling and says how many stayed behind", () => {
+    const many = Array.from({ length: 205 }, (_, i) => ({
+      id: String(i + 1),
+      subject: `item ${i + 1}`,
+      description: `item ${i + 1}`,
+      status: "pending",
+      blocks: [],
+      blockedBy: [],
+    }));
+    const s = describeEvent("task_reminder", { type: "task_reminder", items: many, ts: 1 });
+    const todo = s.find((x) => x.kind === "todo");
+    if (todo?.kind !== "todo") throw new Error("kind");
+    expect(todo.items).toHaveLength(200);
+    expect(todo.more).toBe(5);
+  });
+});
+
 describe("describeEvent — nothing is dropped", () => {
   const samples: { type: string; payload: Record<string, unknown> }[] = [
     { type: "run_start", payload: { runId: "r", agentId: "main", prompt: "p", provider: "x", ts: 1 } },
@@ -328,6 +400,24 @@ describe("describeEvent — nothing is dropped", () => {
     },
     { type: "plan", payload: { agentId: "main", steps: [{ text: "t", status: "done" }], ts: 1 } },
     { type: "user_message", payload: { type: "user_message", text: "hi" } },
+    {
+      type: "task_reminder",
+      payload: {
+        type: "task_reminder",
+        items: [
+          {
+            id: "1",
+            subject: "s",
+            description: "d",
+            status: "pending",
+            blocks: [],
+            blockedBy: [],
+          },
+        ],
+        itemCount: 1,
+        ts: 1,
+      },
+    },
     { type: "set_provider", payload: { type: "set_provider", provider: "ollama", model: "qwen3" } },
   ];
 

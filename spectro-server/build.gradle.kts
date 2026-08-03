@@ -84,6 +84,14 @@ tasks.withType<JavaExec>().configureEach {
     workingDir = rootProject.projectDir
 }
 
+// Heap: bootRun is the development face of the same server the DMG ships, so it
+// gets the same ceiling. Without this a developer measures a 12 GiB heap on a
+// 48 GiB machine while every shipped launch path hands out a third. The number
+// is HeapBudget.MAX_RAM_PERCENT and HeapFlagDriftTest holds this file to it.
+tasks.named<JavaExec>("bootRun") {
+    jvmArgs("-XX:MaxRAMPercentage=33")
+}
+
 // Card 90: the repo's own skills ride every artifact (jar, DMG) — seeded into
 // ~/.spectro/skills on first start by BundledSkills, absent-only + ledgered.
 tasks.processResources {

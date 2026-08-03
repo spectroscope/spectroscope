@@ -193,7 +193,7 @@ export function PermissionDialog(props: {
           <button type="button" className="ghost" autoFocus onClick={() => decide(false)}>
             {t(lang, "perm.deny")}
           </button>
-          <button type="button" className="primary" onClick={() => decide(true)}>
+          <button type="button" className="soft-primary" onClick={() => decide(true)}>
             {t(lang, "perm.allow")}
           </button>
         </div>

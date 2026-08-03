@@ -906,10 +906,38 @@ describe("workspace_info (socket-only frame)", () => {
       ts: 1,
     } as unknown as RunEvent;
     const s = reduce(initialState, frame);
-    expect(s.workspace).toEqual({ sessionId: "s-1", path: "/tmp/spectroscope-ws/s-1", configured: false });
+    expect(s.workspace).toEqual({
+      sessionId: "s-1",
+      path: "/tmp/spectroscope-ws/s-1",
+      configured: false,
+      // An older server sends neither field; the pane must go on behaving as
+      // it always did against one rather than waiting forever.
+      resolved: true,
+      mode: "random",
+      exists: undefined,
+    });
     expect(s.turns).toHaveLength(0);
     // the trace still shows the frame — that is the didactic point
     expect(s.trace[s.trace.length - 1].type).toBe("workspace_info");
+  });
+
+  it("keeps the prospective connect frame apart from a resolved one", () => {
+    // Sent before any run: it names where a run started right now would work,
+    // and carries no session id because none has been minted.
+    const prospective = {
+      type: "workspace_info",
+      resolved: false,
+      mode: "default",
+      configured: true,
+      path: "/Users/you/spectroscope-workspace",
+      exists: true,
+      ts: 1,
+    } as unknown as RunEvent;
+
+    const s = reduce(initialState, prospective);
+    expect(s.workspace?.resolved).toBe(false);
+    expect(s.workspace?.mode).toBe("default");
+    expect(s.workspace?.sessionId).toBeUndefined();
   });
 });
 
@@ -1199,5 +1227,59 @@ describe("reduce — otlp export (card 137)", () => {
     } as unknown as RunEvent;
     const s = reduceAll(initialState, [exportFrame(true, 1), moved]);
     expect(s.lastOtlpExport?.endpoint).toBe(ENDPOINT);
+  });
+});
+
+// A user turn that arrives IN the stream (imported transcripts).
+//
+// A live session never sends one of these inbound: the browser's own prompt
+// goes out through recordOutgoing (trace only) and the bubble is built by the
+// run_start that answers it, which is why sendNow parks its attachments instead
+// of echoing a turn. An imported Claude Code transcript is the other case — the
+// file records every prompt of the session, and only the first can be a
+// run_start. The rest arrive here, and before this they were folded by the
+// `default` branch, which is to say they were not folded at all.
+describe("reduce (a user turn from the stream)", () => {
+  const said = (text: string, ts = 1): RunEvent =>
+    ({ type: "user_message", text, ts }) as unknown as RunEvent;
+
+  it("adds the bubble for a prompt that is not the run's first", () => {
+    const state = reduceAll(initialState, [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "first", ts: 0 },
+      { type: "text_delta", agentId: "main", text: "answer", ts: 1 },
+      said("and now the second", 2),
+    ]);
+    expect(state.turns.map((t) => t.kind)).toEqual(["user", "assistant", "user"]);
+    expect(state.turns.at(-1)).toMatchObject({ kind: "user", text: "and now the second" });
+  });
+
+  it("leaves the run alone — a prompt in the file is not a run boundary", () => {
+    // The importer reads roughly two thousand of these out of 151 transcripts
+    // and most are not new runs at all (slash commands, their stdout, image
+    // notes). Nothing here may close a run, reset the usage or move the model.
+    const before = reduceAll(initialState, [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "first", model: "m1", ts: 0 },
+      { type: "usage", agentId: "main", inputTokens: 10, outputTokens: 2, ts: 1 },
+    ]);
+    const after = reduce(before, said("more", 2));
+    expect(after.running).toBe(true);
+    expect(after.rootRunId).toBe("r1");
+    expect(after.runUsage).toEqual(before.runUsage);
+    expect(after.runModel).toBe(before.runModel);
+  });
+
+  it("puts it in the trace like every other frame", () => {
+    const state = reduce(initialState, said("hello", 7));
+    expect(state.trace.at(-1)).toMatchObject({ dir: "in", type: "user_message", ts: 7 });
+  });
+
+  it("does not touch the agent roster", () => {
+    // It names no agent, so there is no row to create and none to move.
+    const state = reduceAll(initialState, [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "first", ts: 0 },
+      said("more", 1),
+    ]);
+    expect(state.agents.map((a) => a.id)).toEqual(["main"]);
+    expect(state.agents[0].state).toBe("working");
   });
 });

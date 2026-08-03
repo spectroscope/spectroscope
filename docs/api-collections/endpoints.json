@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-07-30",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8199, fresh throwaway home",
-    "endpointCount": 47,
+    "endpointCount": 48,
     "wsEndpoints": ["/ws", "/ws/shell"],
     "wsNote": "The chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.",
     "fenceSemantics": {
@@ -379,12 +379,12 @@
       "path": "/api/files",
       "area": "workspace-files",
       "name": "workspace tree",
-      "description": "The workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag). 400 malformed session id, 404 no workspace folder.",
-      "fence": "none",
+      "description": "That session's resolved workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag; a link out of the workspace is left out). 400 malformed session id, 404 no workspace folder, 409 no workspace resolved for this session.",
+      "fence": "host",
       "writes": false,
       "pathVars": [],
       "query": [
-        {"name": "session", "required": false, "example": "{{sessionId}}", "note": "absent = server's boot cwd; present = that session's workspace"}
+        {"name": "session", "required": false, "example": "{{sessionId}}", "note": "the session whose resolved workspace to serve; absent = 409, there is no fallback"}
       ],
       "body": null
     },
@@ -394,8 +394,8 @@
       "path": "/api/file",
       "area": "workspace-files",
       "name": "one file (preview)",
-      "description": "One file for the preview pane, CSP-sandboxed. 404 outside/hidden/missing, 413 over caps (2 MB text / 25 MB image), 415 binary.",
-      "fence": "none",
+      "description": "One file for the preview pane, CSP-sandboxed. Real-path sandbox: no traversal and no symlink escape. 404 outside/hidden/missing, 413 over caps (2 MB text / 25 MB image), 415 binary.",
+      "fence": "host",
       "writes": false,
       "pathVars": [],
       "query": [
@@ -446,13 +446,26 @@
       "bodyNote": "CopyRequest(String file, String session, String name) — name optional (keeps store name; extension inherited)."
     },
     {
+      "id": "docker-status",
+      "method": "GET",
+      "path": "/api/docker/status",
+      "area": "health-doctor",
+      "name": "docker state on this machine",
+      "description": "Whether Docker and the compose v2 plugin are usable here: {docker, compose, remote, detail}. docker is ready/absent/stopped/unreachable, detail is one honest sentence. A DOCKER_HOST naming a remote daemon answers unreachable rather than a guess.",
+      "fence": "host+origin",
+      "writes": false,
+      "pathVars": [],
+      "query": [],
+      "body": null
+    },
+    {
       "id": "claude-transcripts",
       "method": "GET",
       "path": "/api/claude/transcripts",
       "area": "import",
       "name": "list Claude Code transcripts",
-      "description": "List *.jsonl Claude Code transcripts under ~/.claude/projects, newest first, capped at 300. Absent store = empty list.",
-      "fence": "none",
+      "description": "List *.jsonl Claude Code transcripts under ~/.claude/projects, newest first, capped at 300 rows. Answers {limitBytes, truncated, transcripts: [...]} — truncated says the row cap fired, limitBytes is the ceiling the content endpoint enforces. Absent store = empty list.",
+      "fence": "host",
       "writes": false,
       "pathVars": [],
       "query": [],
@@ -464,8 +477,8 @@
       "path": "/api/claude/transcripts/content",
       "area": "import",
       "name": "one transcript's JSONL",
-      "description": "One transcript's raw JSONL for the import path. 400 non-.jsonl, 404 outside base/missing, 413 over 64 MB.",
-      "fence": "none",
+      "description": "One transcript's raw JSONL for the import path, streamed. 400 non-.jsonl, 404 outside base/missing, 413 over 128 MiB.",
+      "fence": "host",
       "writes": false,
       "pathVars": [],
       "query": [

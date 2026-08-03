@@ -13,6 +13,7 @@
 //      The raw face remains the evidence either way.
 
 import { imageUrl } from "../lab/flowmap/imageUrl";
+import { readTodoItems, type TodoItem } from "./todoList";
 
 /** A key/value pair of a frame, in wire names — this is the wire view. */
 export interface DetailRow {
@@ -33,6 +34,10 @@ export type DetailSection =
   | { kind: "prose"; field: string; text: string; markdown: boolean }
   | { kind: "rows"; field: string; rows: DetailRow[] }
   | { kind: "list"; field: string; items: DetailItem[]; more: number }
+  /** A todo list with a status on every item (card 141). Its own shape rather
+   *  than a `list` with the status as a note: the status is what the eye looks
+   *  for, and it is the one field that gets a mark of its own. */
+  | { kind: "todo"; field: string; items: TodoItem[]; more: number }
   | { kind: "image"; field: string; src: string; alt: string; path: string }
   | { kind: "json"; field: string; value: unknown };
 
@@ -286,6 +291,24 @@ export function describeEvent(
             }),
           ),
         );
+      }
+      break;
+    }
+
+    case "task_reminder": {
+      // The todo list an imported transcript recorded (card 141). Read whole
+      // or not at all: readTodoItems returns null for a list with an item it
+      // cannot draw, and then `items` stays unused and falls through to the
+      // raw json below, where nothing is hidden.
+      const items = readTodoItems(p["items"]);
+      if (items !== null) {
+        used.add("items");
+        named.push({
+          kind: "todo",
+          field: "items",
+          items: items.slice(0, LIST_MAX_ITEMS),
+          more: Math.max(0, items.length - LIST_MAX_ITEMS),
+        });
       }
       break;
     }

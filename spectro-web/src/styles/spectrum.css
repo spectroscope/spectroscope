@@ -237,3 +237,76 @@
   font-size: var(--fs-11);
   color: var(--text-faint);
 }
+
+/* The viewport surfaces: the overview strip above the lanes, the time axis
+   below them. Both sit in the LANE GRID rather than beside it — the rail column
+   is flexible, so anything aligned to the bands by a fixed margin would drift as
+   soon as the window resized. The padding replays the lane card's own inset
+   (its 1px border plus its horizontal padding). */
+.spectrum-viewport-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 300px) 1fr;
+  gap: var(--sp-4);
+  align-items: center;
+  padding: 0 calc(var(--sp-4) + 1px);
+}
+.spectrum-viewport-label {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  letter-spacing: 0.04em;
+}
+
+/* The strip is the orientation surface: the WHOLE axis, always. Grab, because
+   dragging it is the whole gesture. */
+.spectrum-strip {
+  position: relative;
+  min-width: 0;
+  cursor: grab;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  touch-action: none;
+}
+.spectrum-strip:active {
+  cursor: grabbing;
+}
+.spectrum-strip svg {
+  display: block;
+  width: 100%;
+  height: 30px;
+}
+
+/* The window: an OUTLINE, never a fill, and the axis outside it is never
+   dimmed. This is a viewport over a record, not a trim on a clip — dimming
+   would say "this will be discarded" and nothing here discards anything.
+   No minimum width: at the zoom floor it degenerates into a hairline, which is
+   the truth about how wide the window is. */
+.spectrum-strip-win {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1;
+}
+
+/* The axis: graduations as lines, labels as HTML. Separation is a line. */
+.spectrum-axis {
+  position: relative;
+  min-width: 0;
+  height: 30px;
+  border-top: 1px solid var(--border);
+}
+.spectrum-axis svg {
+  display: block;
+  width: 100%;
+  height: 6px;
+}
+.spectrum-axis-tick {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+}
+.spectrum-axis-label {
+  position: absolute;
+  top: 8px;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  white-space: nowrap;
+  pointer-events: none;
+}
