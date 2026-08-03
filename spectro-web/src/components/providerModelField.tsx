@@ -11,6 +11,7 @@ import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { modelFieldMode, pickModel, type ModelFieldMode } from "./providerPickerMode";
+import { modelAbsentFromList } from "./settingsModelPolicy";
 
 /** Sentinel option that reveals the free-text "custom model" input. */
 const CUSTOM = "__custom__";
@@ -19,8 +20,10 @@ const CUSTOM = "__custom__";
  * Fetch a provider's model list from /api/models and derive the field mode.
  * A LOCAL backend's list is authoritative, so `autoPick` snaps a stale
  * cross-provider selection (e.g. opus carried over to ollama) to the first real
- * model — the header picker wants that; Settings does not (it must never write a
- * default the operator didn't choose). Refetches whenever the provider changes.
+ * model — the header picker wants that always (it is a chooser); Settings only
+ * after the operator changed the provider in the panel, never on open (card
+ * 121: settingsMayAutoPick — opening the page must not write a default the
+ * operator didn't choose). Refetches whenever the provider changes.
  */
 export function useProviderModels(
   provider: string,
@@ -91,6 +94,7 @@ export function ModelField({
   onKeySaved,
   onOpenSettings,
   onEnter,
+  markAbsent,
 }: {
   provider: string;
   models: string[];
@@ -102,6 +106,11 @@ export function ModelField({
   onKeySaved?: () => void;
   onOpenSettings?: () => void;
   onEnter?: () => void;
+  /** Card 121, Settings only: a configured model the fetched list does not
+   *  carry stays configured — say so under the select instead of replacing or
+   *  hiding it. The header picker never sets this: its authoritative snap
+   *  already resolves the mismatch. */
+  markAbsent?: boolean;
 }) {
   const lang = useLang();
   const [custom, setCustom] = useState(false);
@@ -158,6 +167,9 @@ export function ModelField({
               if (e.key === "Enter") onEnter?.();
             }}
           />
+        )}
+        {markAbsent && !custom && modelAbsentFromList(model, models) && (
+          <span className="provider-field-note">{t(lang, "pp.notOffered")}</span>
         )}
       </>
     );

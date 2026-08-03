@@ -24,6 +24,7 @@ import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
+import { settingsMayAutoPick } from "./settingsModelPolicy";
 import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
@@ -200,6 +201,11 @@ export function SettingsPanel({
   // Whether Docker is usable here (card 137) — null until the probe answers,
   // and null forever on a server that does not carry the route.
   const [docker, setDocker] = useState<DockerStatus | null>(null);
+  // Card 121: whether the operator changed the provider in THIS panel session.
+  // The model auto-pick persists through putSettings, so it may only follow a
+  // real gesture — opening the panel (click or deep link) rearms to "looking",
+  // under which the chooser must write nothing.
+  const [providerTouched, setProviderTouched] = useState(false);
 
   // Re-fetch the resolved view each time the page opens (other surfaces — the
   // header picker, the Files tab's own folder pick — may have changed the
@@ -208,6 +214,7 @@ export function SettingsPanel({
     if (!open) return;
     setLoadFailed(false);
     setSaveError(null);
+    setProviderTouched(false);
     setLegacy(readLegacyLocalStorage());
     fetchSettings()
       .then(setView)
@@ -244,12 +251,13 @@ export function SettingsPanel({
   }, [open, onClose]);
 
   // Shared model list for the session-defaults chooser — the SAME real
-  // /api/models list, needs-key logic AND local-model snap as the header picker.
-  // autoPick snaps a non-installed model on a LOCAL backend to a real one (a
-  // cloud model like opus makes no sense as ollama's default), so picking ollama
-  // never leaves a stale opus behind; cloud providers are never second-guessed.
-  // Guarded on `open` so a closed panel makes no request. Must sit above the
-  // early return (hook order).
+  // /api/models list and needs-key logic as the header picker. The local-model
+  // snap (a cloud model like opus makes no sense as ollama's default) persists,
+  // so it is gated on a gesture: only after the operator changed the provider
+  // in this panel may the resolve write — opening the page writes nothing
+  // (card 121; the panel used to flip a configured model on open). Guarded on
+  // `open` so a closed panel makes no request. Must sit above the early return
+  // (hook order).
   const settingsProvider = open && view ? String(view.effective.provider ?? "") : "";
   const settingsModel = view ? String(view.effective.model ?? "") : "";
   const { models: settingsModels, mode: settingsModelMode } = useProviderModels(
@@ -263,7 +271,7 @@ export function SettingsPanel({
         void putSettings("user", { model: m === "" ? null : m })
           .then(setView)
           .catch(() => {}),
-      autoPick: true,
+      autoPick: settingsMayAutoPick(providerTouched ? "gesture" : "open"),
     },
   );
 
@@ -478,7 +486,13 @@ export function SettingsPanel({
                   <select
                     className="provider-select"
                     value={String(view.effective.provider ?? "")}
-                    onChange={(e) => saveUser({ provider: e.target.value, model: null })}
+                    onChange={(e) => {
+                      // The gesture that unlocks the model auto-snap (card 121):
+                      // the operator chose a provider, so filling its model is
+                      // completing their choice, not overriding their config.
+                      setProviderTouched(true);
+                      saveUser({ provider: e.target.value, model: null });
+                    }}
                   >
                     {PROVIDERS.map((p) => (
                       <option key={p} value={p}>
@@ -504,6 +518,7 @@ export function SettingsPanel({
                     providerStatus={providerStatus}
                     keyAffordance="inline"
                     onKeySaved={onKeySaved}
+                    markAbsent
                   />
                   {settingsModelMode !== "needs-key" && (
                     <OriginRow
