@@ -873,11 +873,11 @@
    workspace-gear.css loads AFTER this file (app.css), so a bare .export-pop
    would lose the cascade to .wsg-pop — the same trap .disc-pop documents. */
 .export-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-/* The text bar is a flex row and spaces its own children; the chat corner is a
-   plain block, where the two inline anchors would otherwise touch. */
-.chat-disc .export-anchor { margin-right: var(--sp-1); vertical-align: middle; }
-/* Opens DOWNWARD: both mounts sit at the TOP of their surface (the chat corner,
-   the text tab's bar), where wsg-pop's upward default would open off-screen. */
+/* NOTE (2026-08-03): these .export-pop rules match nothing. The export opens a
+   centred modal (ExportDialog, .xd-backdrop), not a popover, and no TSX carries
+   this class. Left in place rather than deleted in the same pass that moved the
+   chat's trigger into the composer bar, because they are older than that move
+   and belong to whoever retires the popover shape for good. */
 .wsg-pop.export-pop { bottom: auto; top: calc(100% + 8px); left: auto; right: 0; width: 268px; }
 /* The rows are buttons here, not divs — undo what the UA paints on a button. */
 .export-pop .wsg-mode-row { width: 100%; background: none; border: 0; font: inherit; text-align: left; }

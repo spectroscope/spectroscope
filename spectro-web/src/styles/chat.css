@@ -5,56 +5,48 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  position: relative; /* anchors the floating disclosure menu (card 78 #4) */
+  position: relative; /* anchors .chat-rail, which is absolute inside it */
 }
 /* The reading width, set in the disclosure menu (owner 2026-07-25). Raising
    the local --content-max is enough: the history AND the composer both read
    that token, so the column and its input stay one shape. */
 .chat--wide { --content-max: var(--content-max-wide); }
 
-/* Card 78 #4: the disclosure-level menu, floating top-right over the chat.
-   Quiet until hovered — it must not compete with the messages. */
-.chat-disc {
-  position: absolute;
-  top: var(--sp-2);
-  right: var(--sp-4);
-  z-index: var(--z-sticky);
+/* The session tools (export, translate), in the bottom bar above the input.
+   They used to float top-right over the scroll area, which meant giving them a
+   surface and a hairline so the transcript did not run through them; the owner
+   called that ugly and he was right, because the fill was treating a symptom.
+   Inside the bar there is nothing to float over: the bar already carries its
+   own border-top, so this row needs no ground, no line and no shadow.
+
+   Right-aligned, so the eye meets Send first and finds the tools where the
+   other end-of-row controls are. It wraps rather than clips: the lab's chat
+   column goes down to 220px, and a clipped control is an unreachable one. */
+.composer-tools {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   align-items: center;
   gap: var(--sp-2);
-  /* The row floats over the scroll area, so without a ground of its own the
-     transcript runs straight through it and both become unreadable. A surface
-     and a hairline, not a shadow: the house draws separation with a line. The
-     padding is what keeps the buttons off that line. */
-  padding: var(--sp-1) var(--sp-2);
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-chip);
+  padding-bottom: var(--sp-1);
 }
-.chat-disc .attach-button { color: var(--text-faint); }
-.chat-disc .attach-button:hover { color: var(--text); }
 /* The translation's way back to the record, in the tab row (App.tsx) so it is
    reachable from the trace and the text feed too. It takes the auto margin the
    level pill would otherwise take; the pill then simply follows it. Lives in
    this file because it is the chat's translate control wearing another hat. */
 .tab-nav__translate { margin-left: auto; display: inline-flex; align-items: center; }
 .tab-nav__translate + .tab-nav__level { margin-left: var(--sp-2); }
-/* The menu popover: compact. The composer twin sits at the FAR LEFT of its
-   row, so it left-aligns (the wsg-pop default right:0 would push it off the
-   window edge); the chat-corner instance opens DOWNWARD and right-aligned.
-   Compound selectors: workspace-gear.css loads after this file, so a bare
+/* The menu popover: compact. It sits at the FAR LEFT of the composer row, so
+   it left-aligns (the wsg-pop default right:0 would push it off the window
+   edge) and opens upward, which is the only direction left now that the
+   chat-corner copy is gone.
+   Compound selector: workspace-gear.css loads after this file, so a bare
    .disc-pop would lose the cascade to .wsg-pop — pinning BOTH top and bottom
    and squeezing the popover to the anchor height (found live, card 78). */
 .wsg-pop.disc-pop {
   width: 300px;
   left: 0;
   right: auto;
-}
-.wsg-pop.disc-pop--down {
-  bottom: auto;
-  top: calc(100% + 8px);
-  left: auto;
-  right: 0;
 }
 
 .chat-scroll {

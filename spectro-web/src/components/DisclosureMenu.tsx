@@ -1,9 +1,13 @@
 // The three-dots disclosure-level menu (card 78 #4): normal | extended |
-// thinking, one radio-style row each. Lives twice — top-right corner of the
-// chat (opens downward) and left of the composer toolbox (opens upward).
-// Both instances drive the same persisted store (state/disclosure.ts), so
-// they can never disagree. Popover mechanics (outside click, Escape, arrow
-// keys) mirror ComposerGear; the wsg-* classes carry the look.
+// thinking, one radio-style row each. It lives ONCE, left of the composer
+// toolbox, and opens upward. It used to live twice; the second copy sat in a
+// row floating over the first chat message, and that row is gone (owner,
+// 2026-08-03: "das ist haesslich"). With it went the downward placement, so
+// the popover no longer needs to be told which way to open.
+//
+// Popover mechanics (outside click, Escape, arrow keys) mirror ComposerGear;
+// the wsg-* classes carry the look. State is the persisted store in
+// state/disclosure.ts, so the composer twin of any future copy cannot disagree.
 
 import { useEffect, useRef, useState } from "react";
 import type { KeyboardEventHandler } from "react";
@@ -13,7 +17,7 @@ import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-export function DisclosureMenu({ placement }: { placement: "up" | "down" }) {
+export function DisclosureMenu() {
   const lang = useLang();
   const level = useDisclosure();
   const width = useChatWidth();
@@ -89,11 +93,7 @@ export function DisclosureMenu({ placement }: { placement: "up" | "down" }) {
       </button>
 
       {open && (
-        <div
-          className={`wsg-pop disc-pop${placement === "down" ? " disc-pop--down" : ""}`}
-          role="dialog"
-          aria-label={t(lang, "disc.title")}
-        >
+        <div className="wsg-pop disc-pop" role="dialog" aria-label={t(lang, "disc.title")}>
           <div className="wsg-section">
             <div className="wsg-section-head">
               <span>{t(lang, "disc.title")}</span>

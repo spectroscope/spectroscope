@@ -252,11 +252,16 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
       >
         {t(lang, "tr.button")}
       </button>
-      <TranslateToggle viewKey={viewKey} />
+
+      {/* No TranslateToggle beside the trigger. The tab row already carries one
+          (App.tsx), deliberately, so the way back to the record is reachable
+          from the trace and the text feed too. That copy also reads App.tsx's
+          viewKey, while a copy here would fall back to "live" and address the
+          live session while the reader is looking at an archive. */}
 
       {/* Portalled to the body like ParticleField: the trigger can then live
-          anywhere, including inside a positioned corner box, without that box's
-          stacking context deciding whether the sheet is visible. */}
+          anywhere, including inside a bar with its own stacking context,
+          without that context deciding whether the sheet is visible. */}
       {open &&
         createPortal(
           <div className="km-backdrop" onClick={() => setOpen(false)} role="presentation">
