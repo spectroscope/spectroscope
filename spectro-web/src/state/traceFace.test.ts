@@ -69,7 +69,7 @@ describe("traceFace", () => {
   // The rename map is a plain object, so a lookup that asks whether a word is
   // "in" it also asks Object.prototype. Storage is an arbitrary string from a
   // shared origin, and the store's whole promise is that anything foreign falls
-  // back — a face that came back as a Function would keep that promise on paper
+  // back, and a face that came back as a Function would keep that promise on paper
   // and break it in the type.
   it("falls back for a word that only Object.prototype knows", () => {
     for (const word of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {

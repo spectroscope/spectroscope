@@ -60,7 +60,7 @@ describe("labFace", () => {
     expect(parseLabFace("compact")).toBe(DEFAULT_LAB_FACE);
   });
 
-  // This store has no rename map at all, so nothing here should be reachable —
+  // This store has no rename map at all, so nothing here should be reachable,
   // and a prototype lookup made it reachable anyway. The header's promise that
   // no other store's word "may leak in here through storage" covers the words
   // every object carries just as much as it covers "wire".

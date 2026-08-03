@@ -310,7 +310,7 @@ describe("describeEvent — the honest fallback", () => {
 // all attachments, 30,780 items measured, each with its own status. Rendered as
 // a json blob it is a wall of braces in a column that ellipsizes; rendered as
 // what it is, it is a list somebody can read.
-describe("describeEvent — the todo list", () => {
+describe("describeEvent, the todo list", () => {
   const items = [
     {
       id: "1",
