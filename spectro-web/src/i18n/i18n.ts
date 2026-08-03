@@ -230,6 +230,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sp.legendAria": { de: "Legende der Event-Typen", en: "Event type legend" },
   "sp.lanesAria": { de: "Agenten-Lanes", en: "Agent lanes" },
   "sp.bandAria": { de: "Events von {id}: Pfeiltasten zum Scrubben, Enter öffnet im Trace", en: "{id} events: arrow keys to scrub, Enter to open in the trace" },
+  // The viewport. These only ever render for a stream that cannot be drawn whole,
+  // which is a small minority of sessions, so they explain the keys rather than
+  // assuming a reader has met them before.
+  "sp.stripAria": { de: "Überblick über die gesamte Zeitachse; Ziehen verschiebt das Fenster", en: "Overview of the whole time axis; drag to move the window" },
+  "sp.axisAria": { de: "Zeitachse des sichtbaren Fensters", en: "Time axis of the visible window" },
+  "sp.ofSpan": { de: "im Fenster", en: "in view" },
+  "sp.overview": { de: "überblick", en: "overview" },
+  "sp.zoomHint": { de: "Zoomen: ctrl + Mausrad oder + und −. Verschieben: Umschalt + Pfeiltasten, [ und ] springen über leere Achse. 0 zeigt wieder alles.", en: "Zoom: ctrl + wheel, or + and −. Pan: shift + arrows, and [ and ] page across empty axis. 0 shows everything again." },
 
   // fleet roster (Spectrum LIVE)
   "fleet.title": { de: "Flotte", en: "Fleet" },

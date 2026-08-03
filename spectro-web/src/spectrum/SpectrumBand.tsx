@@ -9,12 +9,17 @@ import { formatDuration } from "../format";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { eventPreview } from "./eventPreview";
-import { seqAtFrac, stepSeq } from "./bandScrub";
+import { stepSeq } from "./bandScrub";
+import { markX, seqAt, viewBoxX } from "./bandGeometry";
+import { applyIntent, followMark, keyToIntent, wheelToIntent } from "./gestures";
+import type { Window } from "./viewport";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
 
 export const BAND_W = 1000;
 const BAND_H = 32;
 const BAND_PAD_X = 4;
+/** The drawable span between the pads: the width every mapping measures against. */
+const BAND_INNER = BAND_W - 2 * BAND_PAD_X;
 
 /** Discrete mark shapes per kind: crisp vertical bars, brand widths 1-3. */
 const TICK_SHAPE: Record<TickKind, { w: number; h: number }> = {
@@ -38,10 +43,10 @@ export const TICK_COLOR: Record<TickKind, string> = {
   error: "var(--error)",
 };
 
-function TickMark({ tick, highlighted }: { tick: LaneTick; highlighted: boolean }) {
+function TickMark({ tick, win, highlighted }: { tick: LaneTick; win: Window; highlighted: boolean }) {
   const shape = TICK_SHAPE[tick.kind];
   const pending = tick.pending === true;
-  const x = BAND_PAD_X + tick.x * (BAND_W - 2 * BAND_PAD_X) - shape.w / 2;
+  const x = markX(tick.x, win, BAND_W, BAND_PAD_X) - shape.w / 2;
   return (
     <rect
       className={pending ? "pulse" : undefined}
@@ -59,13 +64,25 @@ function TickMark({ tick, highlighted }: { tick: LaneTick; highlighted: boolean 
 export function SpectrumBand({
   lane,
   marks,
+  win,
+  minW,
   events,
   t0,
   onFocusEvent,
   onWidth,
+  onWindow,
   tipBelow,
 }: {
   lane: Lane;
+  /** The slice of the axis on screen. Every band in the view is handed the same
+   *  one, so the lanes stay comparable: two marks at the same height are two
+   *  events at the same instant, at every zoom. */
+  win: Window;
+  /** The zoom floor for this stream, so a gesture cannot go past one second. */
+  minW: number;
+  /** Move the shared window. Absent when the whole stream already fits, which is
+   *  most sessions: no viewport, no gestures, nothing to explain. */
+  onWindow?: (next: Window) => void;
   /** The marks this band actually DRAWS: the lane's ticks already sliced to the
    *  window and the pixel budget. The band is dumb about how that was decided.
    *
@@ -104,24 +121,69 @@ export function SpectrumBand({
     return () => ro.disconnect();
   }, [onWidth]);
 
+  // The wheel handler reads these rather than closing over them, so the listener
+  // is bound once. Re-binding a non-passive listener on every window change
+  // would drop wheel events mid-gesture, which reads as the zoom stuttering.
+  const latest = useRef({ win, minW, ticks: lane.ticks, onWindow });
+  latest.current = { win, minW, ticks: lane.ticks, onWindow };
+
+  // React's onWheel cannot promise a non-passive listener, and a passive one
+  // cannot preventDefault, so ctrl+wheel would zoom the band AND the browser at
+  // once. This has to be a manual registration.
+  useEffect(() => {
+    const el = bandRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const now = latest.current;
+      if (!now.onWindow) return;
+      const rect = el.getBoundingClientRect();
+      const px = viewBoxX(e.clientX - rect.left, rect.width, BAND_W);
+      const dx = viewBoxX(e.deltaX, rect.width, BAND_W);
+      if (px === null || dx === null) return;
+      // A trackpad pinch arrives as a wheel with a synthetic ctrlKey; meta is
+      // the same intent on a mouse. A plain vertical wheel is left alone so the
+      // page can still scroll past twenty lanes.
+      const intent = wheelToIntent(dx, e.deltaY, e.ctrlKey || e.metaKey, BAND_INNER);
+      if (intent === null) return;
+      e.preventDefault();
+      now.onWindow(
+        applyIntent(now.win, intent, {
+          anchorPx: px - BAND_PAD_X,
+          widthPx: BAND_INNER,
+          minW: now.minW,
+          ticks: now.ticks,
+        }),
+      );
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   // Hit-testing runs over lane.ticks, NOT over the marks that got drawn. The
   // slice is a decision about ink; making it a decision about reach would take a
   // busy lane's 826 events down to 39 openable ones with no way to get the rest
   // back. What is drawn got denser; what can be reached did not change.
+  //
+  // Bounded by the WINDOW though, which the arithmetic in bandGeometry does: a
+  // pointer can only ask for something the band is showing it.
   const seqAtX = useCallback(
     (clientX: number): number | null => {
       const rect = bandRef.current?.getBoundingClientRect();
-      if (!rect || rect.width === 0) {
-        return null;
-      }
-      const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      return seqAtFrac(lane.ticks, frac);
+      if (!rect) return null;
+      const px = viewBoxX(clientX - rect.left, rect.width, BAND_W);
+      if (px === null) return null;
+      return seqAt(lane.ticks, px, BAND_W, BAND_PAD_X, win);
     },
-    [lane.ticks],
+    [lane.ticks, win],
   );
 
   const onMove = (e: MouseEvent<HTMLDivElement>) => setHoverSeq(seqAtX(e.clientX));
   const onLeave = () => setHoverSeq(null);
+
+  // Read from the LANE, so the popup and the scrub line can sit on an event that
+  // has no rect of its own. The line marks the true instant; the rect nearest it
+  // is at most one pixel away and is the same colour.
+  const tick = hoverSeq !== null ? (lane.ticks.find((k) => k.seq === hoverSeq) ?? null) : null;
 
   const open = (seq: number | null) => {
     if (seq == null || !onFocusEvent) {
@@ -137,9 +199,26 @@ export function SpectrumBand({
     if (lane.ticks.length === 0) {
       return;
     }
+    // The viewport keys first. keyToIntent hands back null for a BARE arrow, so
+    // the scrub below keeps the keys it already owned; only shift+arrow pans.
+    const intent = onWindow ? keyToIntent(e.key, e.shiftKey) : null;
+    if (intent !== null && onWindow) {
+      e.preventDefault();
+      // No pointer means no deixis, so the reader's declared focus is the mark
+      // they are hovering, and the middle of the window when there is none.
+      const anchorPx =
+        tick === null ? BAND_INNER / 2 : markX(tick.x, win, BAND_W, BAND_PAD_X) - BAND_PAD_X;
+      onWindow(applyIntent(win, intent, { anchorPx, widthPx: BAND_INNER, minW, ticks: lane.ticks }));
+      return;
+    }
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       e.preventDefault();
-      setHoverSeq(stepSeq(lane.ticks, hoverSeq, e.key === "ArrowRight" ? 1 : -1));
+      const next = stepSeq(lane.ticks, hoverSeq, e.key === "ArrowRight" ? 1 : -1);
+      setHoverSeq(next);
+      // The walk reaches every event, so a zoomed window has to follow it out
+      // rather than let the scrub line leave the band.
+      const landed = next === null ? null : (lane.ticks.find((k) => k.seq === next) ?? null);
+      if (landed !== null && onWindow) onWindow(followMark(win, landed.x, minW));
     } else if (e.key === "Enter" && hoverSeq !== null) {
       e.preventDefault();
       open(hoverSeq);
@@ -148,10 +227,6 @@ export function SpectrumBand({
     }
   };
 
-  // Also from the lane, so the popup and the scrub line can sit on an event that
-  // has no rect of its own. The line marks the true instant; the rect nearest it
-  // is at most one pixel away and is the same colour.
-  const tick = hoverSeq !== null ? (lane.ticks.find((t) => t.seq === hoverSeq) ?? null) : null;
   const event = tick ? events[tick.seq] : undefined;
   const preview = event ? eventPreview(event) : null;
   const ts =
@@ -159,8 +234,9 @@ export function SpectrumBand({
   const rel = ts !== null && ts >= t0 ? formatDuration(ts - t0) : null;
   // The mark's true center anchors both the scrub line and the popup; near the
   // band edges the popup flips its growth direction (left/right aligned instead
-  // of centered) so a long preview never spills off the band.
-  const rawLeft = tick ? ((BAND_PAD_X + tick.x * (BAND_W - 2 * BAND_PAD_X)) / BAND_W) * 100 : 0;
+  // of centered) so a long preview never spills off the band. Through the same
+  // mapping the marks are drawn with, so the line cannot drift off its own mark.
+  const rawLeft = tick ? (markX(tick.x, win, BAND_W, BAND_PAD_X) / BAND_W) * 100 : 0;
   const anchorPos = `${rawLeft}%`;
   const tipTransform =
     rawLeft < 15 ? "translateX(0)" : rawLeft > 85 ? "translateX(-100%)" : "translateX(-50%)";
@@ -179,8 +255,8 @@ export function SpectrumBand({
     >
       <svg viewBox={`0 0 ${BAND_W} ${BAND_H}`} preserveAspectRatio="none">
         <line x1="0" y1={BAND_H / 2} x2={BAND_W} y2={BAND_H / 2} className="spectrum-baseline" />
-        {marks.map((t) => (
-          <TickMark key={`${t.seq}-${t.kind}`} tick={t} highlighted={t.seq === hoverSeq} />
+        {marks.map((m) => (
+          <TickMark key={`${m.seq}-${m.kind}`} tick={m} win={win} highlighted={m.seq === hoverSeq} />
         ))}
       </svg>
       {tick && preview && (

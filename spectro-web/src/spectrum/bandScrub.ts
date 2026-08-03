@@ -30,7 +30,14 @@ export function nearestTick(ticks: readonly { x: number }[], frac: number): numb
   return best;
 }
 
-/** The seq the scrubber lands on for a pointer at `frac` across the band. */
+/** The seq the scrubber lands on for a pointer at `frac` across the band.
+ *
+ *  The band no longer calls this. Once there is a window over the axis, a hit
+ *  test that scans the WHOLE lane can return a mark that is off screen, so
+ *  pointing goes through `seqAt` in bandGeometry, which is bounded by the
+ *  window. This survives as the unwindowed reference that the geometry is
+ *  pinned against at full extent: the two must agree when the window is the
+ *  whole, and that agreement is what says zoom did not move anything. */
 export function seqAtFrac(ticks: readonly LaneTick[], frac: number): number | null {
   const i = nearestTick(ticks, frac);
   return i === null ? null : (ticks[i]?.seq ?? null);

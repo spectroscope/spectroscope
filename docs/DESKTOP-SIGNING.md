@@ -67,6 +67,66 @@ security find-identity -v -p codesigning
 ```
 Keep that exact string; it is your signing identity.
 
+### This certificate dies on 2027-02-01, and renewing early will not help
+
+Read the dates, not just the name:
+
+```bash
+security find-certificate -c "Developer ID Application: Christopher Ezell (N7KX5K4T3Q)" -p \
+  | openssl x509 -noout -dates
+#   notBefore=Jul 22 11:27:43 2026 GMT
+#   notAfter=Feb  1 22:12:15 2027 GMT
+```
+
+That is 194 days of life on a certificate that normally carries a multi-year
+term. The short life is not an enrollment problem and not a mistake in the CSR.
+The issuing intermediate expires at the same instant:
+
+```bash
+security find-certificate -c "Developer ID Certification Authority" -p \
+  /System/Library/Keychains/SystemRootCertificates.keychain \
+  | openssl x509 -noout -subject -dates -serial
+#   subject=CN=Developer ID Certification Authority, O=Apple Inc., C=US
+#   notBefore=Feb  1 22:12:15 2012 GMT
+#   notAfter=Feb  1 22:12:15 2027 GMT
+#   serial=187AA9A8C296210C
+```
+
+Same second, `22:12:15`. A CA cannot issue a leaf that outlives itself, so every
+leaf under this intermediate is clamped to 2027-02-01, and reissuing the leaf
+today just produces another clamped one. The chain is provable rather than
+assumed: the leaf's Authority Key Identifier equals that intermediate's Subject
+Key Identifier (`57:17:ED:A2:CF:DC:7C:98:A1:10:E0:FC:BE:87:2D:2C:F2:E3:17:54`,
+readable with `openssl x509 -noout -ext authorityKeyIdentifier`). The root is
+not the constraint; Apple Root CA runs to 2035-02-09. Apple's successor
+intermediate carries the suffix `- G2` in its common name, and it is not in this
+machine's keychain today, so a renewal near the deadline will move the build
+onto a chain nobody here has signed against yet. Budget a test build for that,
+not just a certificate download.
+
+**What breaks on that date is new signing, not shipped releases.** Every
+`codesign` call in `scripts/build-desktop-runkit.sh` passes `--timestamp`
+(lines 97, 100, 137, 156), so each signature carries an Apple timestamp proving
+it was made while the certificate was valid, and the notarization ticket is
+stapled into the dmg. Both effects outlive the certificate. Confirm it on any
+artifact already out the door:
+
+```bash
+codesign -dvv --verbose=4 spectro-desktop/release/spectroscope-0.5.0-arm64.dmg 2>&1 \
+  | grep -E "Authority|Timestamp"
+#   Authority=Developer ID Application: Christopher Ezell (N7KX5K4T3Q)
+#   Authority=Developer ID Certification Authority
+#   Authority=Apple Root CA
+#   Timestamp=31. Jul 2026 at 17:53:08
+```
+
+A `Timestamp=` line means that build keeps validating on user machines after
+2027-02-01. A build signed without `--timestamp` would start failing Gatekeeper
+the moment the certificate expires, which is the reason that flag is not
+optional here. If a cut is planned for early 2027, renew before the cut and
+verify the new chain end to end, because after 2027-02-01 there is no signing
+identity at all until the replacement is installed.
+
 ## 3. Store notarization credentials
 
 Notarization uploads the build to Apple. Authenticate with an **app-specific
@@ -442,6 +502,10 @@ Keep the credentials in the keychain / env, **never** in the repo.
 - **`CSC_NAME` takes the common name without the `Developer ID Application: `
   prefix**; `codesign --sign` takes the full string. Mixing them up makes
   electron-builder report no certificate found.
+- **The signing certificate expires 2027-02-01 and cannot be extended past it.**
+  The issuing intermediate expires the same second, so every reissue is clamped
+  to the same date. New signing stops; already-shipped dmgs keep validating
+  because they are timestamped and stapled. See the subsection in step 2.
 - **Never commit certificates, private keys, or the app-specific password.**
 - **Universal / Intel:** this signs the host arch. For an Intel or universal
   build, build and sign on/for that arch too, then notarize each dmg. Note that

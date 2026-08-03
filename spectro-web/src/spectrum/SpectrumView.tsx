@@ -5,7 +5,7 @@
 // Pure presentation: the folding lives in spectrumModel.ts, live and replay
 // render through the same path.
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { RunEvent } from "../events";
 import { formatDuration, formatTokens } from "../format";
 import { t } from "../i18n/i18n";
@@ -14,18 +14,25 @@ import { ThinkingDisclosure } from "../components/ThinkingDisclosure";
 import { buildSpectrum } from "./spectrumModel";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
 import { BAND_W, SpectrumBand, TICK_COLOR } from "./SpectrumBand";
+import { SpectrumAxis } from "./SpectrumAxis";
+import { SpectrumStrip } from "./SpectrumStrip";
 import { sliceLane } from "./laneSlice";
-import { fit } from "./viewport";
+import { needsViewport } from "./overview";
+import { fit, minWidthFor, rebase, type Window } from "./viewport";
 import { useEffect } from "react";
 import { beacon } from "../state/levelingBeacon";
 
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
 const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
 
-/** This view reads a WINDOW over the time axis rather than assuming the whole.
- *  Today that window is always the whole; when zoom and pan arrive they move
- *  this one value and nothing below it has to learn a new shape. */
+/** The whole domain: what a view with no window of its own is looking at. */
 const FULL = fit();
+
+/** The zoom floor, as a duration. One second of wall clock is the finest slice
+ *  this view will open, whatever the stream spans. Fixed rather than derived
+ *  from the content, so the limit cannot move under the reader's hand as they
+ *  pan between a dense minute and an empty hour. */
+const FLOOR_MS = 1_000;
 
 /** How a lane names itself. The id is the addressable truth (Trace filters by
  *  it), but an imported Claude Code session hands us a 26-char toolu_* id next
@@ -44,22 +51,28 @@ export function laneNames(lane: { id: string; label: string | null }): {
 function LaneRow({
   lane,
   marks,
+  win,
+  minW,
   running,
   events,
   t0,
   onOpen,
   onFocusEvent,
   onWidth,
+  onWindow,
   tipBelow,
 }: {
   lane: Lane;
   marks: LaneTick[];
+  win: Window;
+  minW: number;
   running: boolean;
   events: RunEvent[];
   t0: number;
   onOpen: (id: string) => void;
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
   onWidth?: (px: number) => void;
+  onWindow?: (next: Window) => void;
   /** The TOP row has no room above it — its tick preview opens downward
    *  instead of being clipped by the toolbar (owner 2026-07-26). */
   tipBelow?: boolean;
@@ -100,10 +113,13 @@ function LaneRow({
       <SpectrumBand
         lane={lane}
         marks={marks}
+        win={win}
+        minW={minW}
         events={events}
         t0={t0}
         onFocusEvent={onFocusEvent}
         onWidth={onWidth}
+        onWindow={onWindow}
         tipBelow={tipBelow}
       />
     </div>
@@ -134,9 +150,39 @@ export function SpectrumView(props: {
   // column, so the first to report settles it, and the slice the view counts is
   // the slice the bands draw. Until a band has measured, BAND_W stands in.
   const [bandW, setBandW] = useState(BAND_W);
-  const slices = useMemo(() => model.lanes.map((l) => sliceLane(l.ticks, FULL, bandW)), [model.lanes, bandW]);
-  const hidden = slices.reduce((n, s) => n + s.hidden, 0);
+
+  // NULL means "the whole", and it is not the same value as {0,1}. A live stream
+  // keeps moving t1, so a stored pair of fractions would have to be rewritten on
+  // every arriving event just to keep meaning "everything". Null needs no
+  // rewriting and cannot drift.
+  const [winState, setWinState] = useState<Window | null>(null);
   const span = model.t1 - model.t0;
+  const minW = minWidthFor(span, FLOOR_MS);
+
+  // A window is a pair of fractions OF THE SPAN. When an arriving event extends
+  // the stream, every mark renormalizes underneath it, and a reader zoomed into
+  // something twenty minutes ago would be dragged off it without touching
+  // anything. So the window is carried across the change by absolute instants.
+  const domain = useRef({ t0: model.t0, t1: model.t1 });
+  if (domain.current.t0 !== model.t0 || domain.current.t1 !== model.t1) {
+    const was = domain.current;
+    domain.current = { t0: model.t0, t1: model.t1 };
+    if (winState !== null) {
+      setWinState(rebase(winState, was.t0, was.t1, model.t0, model.t1));
+    }
+  }
+
+  const win = winState ?? FULL;
+  const slices = useMemo(() => model.lanes.map((l) => sliceLane(l.ticks, win, bandW)), [model.lanes, win, bandW]);
+  const hidden = slices.reduce((n, s) => n + s.hidden, 0);
+
+  // Does this stream need a viewport at all? Asked of the WHOLE, never of the
+  // current window: asked of the window it would answer false the moment a
+  // reader zoomed into a sparse minute, the strip would vanish, and they would
+  // be stranded deep in the axis with no orientation and no way back.
+  const zoomable = useMemo(() => needsViewport(model.lanes, bandW), [model.lanes, bandW]);
+  const allTicks = useMemo(() => (zoomable ? model.lanes.flatMap((l) => l.ticks) : []), [model.lanes, zoomable]);
+  const onWindow = zoomable ? setWinState : undefined;
 
   return (
     <div className="spectrum-view" data-reveal>
@@ -153,8 +199,21 @@ export function SpectrumView(props: {
           {t(lang, "sp.count", { n: model.totalEvents, lanes: model.lanes.length })}
           {span > 0 && ` · ${formatDuration(span)}`}
           {running && ` · ${t(lang, "sp.live")}`}
+          {/* Only once a reader has actually left the whole. On a view that is
+              showing everything there is nothing to report and nothing to undo. */}
+          {winState !== null && ` · ${formatDuration(span * (win.b - win.a))} ${t(lang, "sp.ofSpan")}`}
         </span>
       </div>
+
+      {/* The strip and the axis sit in the lane grid, not beside it: the rail
+          column is flexible, so anything aligned to the bands by a fixed margin
+          would drift the moment the window resized. */}
+      {zoomable && model.lanes.length > 0 && (
+        <div className="spectrum-viewport-row">
+          <span className="spectrum-viewport-label mono">{t(lang, "sp.overview")}</span>
+          <SpectrumStrip ticks={allTicks} win={win} minW={minW} cols={bandW} onWindow={setWinState} />
+        </div>
+      )}
 
       {model.lanes.length === 0 ? (
         <div className="spectrum-empty">
@@ -168,12 +227,15 @@ export function SpectrumView(props: {
               <LaneRow
                 lane={lane}
                 marks={slices[laneIndex].marks}
+                win={win}
+                minW={minW}
                 running={running}
                 events={props.events}
                 t0={model.t0}
                 onOpen={props.onOpenTrace}
                 onFocusEvent={props.onFocusEvent}
                 onWidth={laneIndex === 0 ? setBandW : undefined}
+                onWindow={onWindow}
                 tipBelow={laneIndex === 0}
               />
               {lane.thinking !== "" && (
@@ -184,11 +246,19 @@ export function SpectrumView(props: {
         </div>
       )}
 
+      {zoomable && model.lanes.length > 0 && (
+        <div className="spectrum-viewport-row">
+          <span />
+          <SpectrumAxis win={win} t0={model.t0} t1={model.t1} cols={bandW} />
+        </div>
+      )}
+
       {hidden > 0 && (
         <p className="spectrum-note mono">
           {t(lang, hidden === 1 ? "sp.hiddenMark" : "sp.hiddenMarks", { n: hidden })}
         </p>
       )}
+      {zoomable && model.lanes.length > 0 && <p className="spectrum-note mono">{t(lang, "sp.zoomHint")}</p>}
     </div>
   );
 }

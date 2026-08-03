@@ -127,6 +127,23 @@ export function applyIntent(win: Window, intent: Intent, ctx: IntentContext): Wi
   }
 }
 
+/** Keep a mark on screen, moving the window as little as possible.
+ *
+ *  The band's bare arrow keys walk EVERY tick, which is right: thinning the ink
+ *  never costs a reader an event. But a walk that steps outside a zoomed window
+ *  would anchor the scrub line and its tooltip off the band, naming an event at
+ *  a place where nothing is drawn. So the axis follows the reader.
+ *
+ *  Least movement rather than re-centring: a scrubber running along should read
+ *  as the axis trailing the cursor, not as a jump on every step. Width never
+ *  changes, so the walk cannot quietly undo a zoom. */
+export function followMark(win: Window, x: number, minW: number): Window {
+  if (!Number.isFinite(x)) return win;
+  if (x >= win.a && x <= win.b) return win;
+  const w = win.b - win.a;
+  return x < win.a ? normalize(x, x + w, minW) : normalize(x - w, x, minW);
+}
+
 /** Drag on the overview strip: put the current window over the pointer.
  *
  *  Width never changes, so the strip pans and never zooms. Edge handles would be

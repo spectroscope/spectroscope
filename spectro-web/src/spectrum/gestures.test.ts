@@ -7,7 +7,7 @@
 // may only have them with a modifier.
 
 import { describe, expect, it } from "vitest";
-import { applyIntent, keyToIntent, stripWindowFromPointer, wheelToIntent } from "./gestures";
+import { applyIntent, followMark, keyToIntent, stripWindowFromPointer, wheelToIntent } from "./gestures";
 import type { LaneTick, TickKind } from "./spectrumModel";
 import { fit } from "./viewport";
 
@@ -184,5 +184,36 @@ describe("stripWindowFromPointer", () => {
   it("holds the window when the strip has not been measured", () => {
     const win = { a: 0.5, b: 0.6 };
     expect(stripWindowFromPointer(win, 40, 0, M)).toEqual(win);
+  });
+});
+
+describe("followMark", () => {
+  it("leaves the window untouched while the walk stays inside it", () => {
+    const win = { a: 0.4, b: 0.5 };
+    expect(followMark(win, 0.45, 0.01)).toEqual(win);
+    // The edges count as inside: a mark drawn exactly on the pad is on screen.
+    expect(followMark(win, 0.4, 0.01)).toEqual(win);
+    expect(followMark(win, 0.5, 0.01)).toEqual(win);
+  });
+
+  it("shifts by the least it can when the walk steps off an edge, and keeps the zoom", () => {
+    // Arrowing past the edge of a zoomed window must bring the event on screen.
+    // Otherwise the scrub line and its tooltip anchor outside the band, naming an
+    // event at a place where nothing is drawn. Least movement, because a scrubber
+    // running along should read as the axis following the reader, not jumping.
+    const win = { a: 0.4, b: 0.5 };
+    const back = followMark(win, 0.35, 0.01);
+    expect(back.a).toBeCloseTo(0.35, 9);
+    expect(back.b - back.a).toBeCloseTo(0.1, 9);
+    const on = followMark(win, 0.62, 0.01);
+    expect(on.b).toBeCloseTo(0.62, 9);
+    expect(on.b - on.a).toBeCloseTo(0.1, 9);
+  });
+
+  it("stops at the domain edge instead of walking the window out of the domain", () => {
+    expect(followMark({ a: 0, b: 0.1 }, 0, 0.01)).toEqual({ a: 0, b: 0.1 });
+    const end = followMark({ a: 0.9, b: 1 }, 1, 0.01);
+    expect(end.b).toBeLessThanOrEqual(1);
+    expect(end.a).toBeGreaterThanOrEqual(0);
   });
 });
