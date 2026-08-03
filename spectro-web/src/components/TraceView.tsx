@@ -32,6 +32,7 @@ import {
   detailLines,
   detailText,
   sourcePane,
+  sourceSentence,
   withinBudget,
   type Reading,
   type SourcePane,
@@ -302,6 +303,10 @@ const TraceRow = memo(function TraceRow(props: {
    *  the pane must not get wrong, and an optional prop would decide it by
    *  falling back. */
   provenance: TraceProvenance;
+  /** Whether the rows are carrying translated payloads. Session-wide like
+   *  `provenance`, and required for the same reason: it decides whether the
+   *  pane may promise the wire line beside it is the stored line. */
+  translated: boolean;
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -425,6 +430,7 @@ const TraceRow = memo(function TraceRow(props: {
           rows={props.source?.rows ?? [entry]}
           sourceLines={props.source?.lines ?? null}
           provenance={props.provenance}
+          translated={props.translated}
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
@@ -657,17 +663,23 @@ function Budgeted({ text, lang, wrap }: { text: string; lang: Lang; wrap?: boole
 }
 
 /** One piece of an opened line. A document prints as a document; a string with
- *  real line breaks prints with them; bytes that are not language print as what
- *  they are, how many, and a way in. */
+ *  real line breaks prints with them; a collapsed value prints as what it is,
+ *  how many characters, and a way in.
+ *
+ *  Two collapsed kinds and two sentences, because the reasons are not the same
+ *  claim: `hidden` is a signature or a base64 body, `long` is one run of
+ *  characters too long to read where it stands, and most of those are prose.
+ *  They shared the byte sentence until a dictated prompt met it. */
 function ReadableBlockView({ block, lang }: { block: ReadableBlock; lang: Lang }) {
   const [open, setOpen] = useState(false);
+  const collapsed = block.kind === "hidden" || block.kind === "long";
   return (
     <div className="trace-source-block">
       {block.path !== "" && <p className="trace-source-path mono">{block.path}</p>}
-      {block.kind === "hidden" ? (
+      {collapsed ? (
         <>
           <p className="trace-source-cap">
-            {t(lang, "trace.source.hidden", { n: counted(block.text.length, lang) })}{" "}
+            {t(lang, `trace.source.${block.kind}`, { n: counted(block.text.length, lang) })}{" "}
             <button type="button" className="trace-source-more" onClick={() => setOpen(!open)}>
               {t(lang, open ? "trace.source.hide" : "trace.source.show")}
             </button>
@@ -705,9 +717,22 @@ function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
  * a pane that promised a stored line for a frame nothing stored would be the
  * defect itself.
  */
-function SourceBody({ pane, reading, lang }: { pane: SourcePane; reading: Reading; lang: Lang }) {
+function SourceBody({
+  pane,
+  reading,
+  lang,
+  translated,
+}: {
+  pane: SourcePane;
+  reading: Reading;
+  lang: Lang;
+  /** Whether the rows are carrying translated payloads. The "none" sentence
+   *  promises the wire line beside it is the stored line byte for byte, and a
+   *  translation is exactly when that stops being true. */
+  translated: boolean;
+}) {
   if (pane.kind !== "missing" && pane.kind !== "line") {
-    return <p className="trace-source-note">{t(lang, `trace.source.${pane.kind}`)}</p>;
+    return <p className="trace-source-note">{t(lang, sourceSentence(pane, translated))}</p>;
   }
   if (pane.kind === "missing") {
     return (
@@ -762,6 +787,7 @@ function TraceDetail({
   rows,
   sourceLines,
   provenance,
+  translated,
   onJump,
 }: {
   entry: TraceEntry;
@@ -778,6 +804,8 @@ function TraceDetail({
   sourceLines?: readonly string[] | null;
   /** Which of the three fileless cases this trace is, for the pane's sentence. */
   provenance: TraceProvenance;
+  /** Whether the payload on the wire face is a translated one. */
+  translated: boolean;
   onJump: (seq: number) => void;
 }) {
   // The row subscribes to the master itself: only the OPEN row renders a
@@ -786,9 +814,15 @@ function TraceDetail({
   const master = useTraceFace();
   const [override, setOverride] = useState<RowFace | null>(null);
   const mode = rowFace(master, override);
-  // How the pane reads what it was given. Session state on purpose: a saved
-  // default of readable would make every reader's source view an interpretation.
-  const [chosen, setChosen] = useState<Reading>("verbatim");
+  // How the pane reads what it was given. Readable opens first (owner call,
+  // 2026-08-03): a source line is escaped JSON inside escaped JSON, and the
+  // verbatim form is unreadable at a glance, so opening on it makes the pane
+  // look broken rather than faithful. The honesty this card was built for does
+  // not live in which reading opens: it lives in the strip saying which one is
+  // showing, in verbatim being one click away, and in the copy button handing
+  // over what the pane claims to show. Session state, never persisted, so the
+  // choice cannot follow a reader into a file they have not looked at yet.
+  const [chosen, setChosen] = useState<Reading>("readable");
   // Only two panes have two readings to choose between. Structured and Insight
   // already render the parsed payload, and Compact's whole job is the wire line
   // with its escapes highlighted.
@@ -889,7 +923,7 @@ function TraceDetail({
           ))}
         </div>
       ) : pane !== null ? (
-        <SourceBody pane={pane} reading={reading} lang={lang} />
+        <SourceBody pane={pane} reading={reading} lang={lang} translated={translated} />
       ) : reading === "readable" ? (
         <div className="trace-source-blocks">
           {lines.map((ln, i) => (
@@ -933,6 +967,10 @@ export function TraceView(props: {
    *  a different sentence for each, and only the first one may promise a stored
    *  line. Absent means the plain case, which is what a live socket is. */
   provenance?: TraceProvenance;
+  /** Whether these rows are showing translated payloads. App swaps every row's
+   *  payload when a translation is applied, so the wire face is then a rebuilt
+   *  record and the source pane may not call it the stored line. */
+  translated?: boolean;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -1659,6 +1697,7 @@ export function TraceView(props: {
                     calls={openSeq === e.seq ? openCalls : undefined}
                     source={openSeq === e.seq ? openSource : undefined}
                     provenance={provenance}
+                    translated={props.translated ?? false}
                     onJump={jumpTo}
                     onToggle={onToggle}
                   />

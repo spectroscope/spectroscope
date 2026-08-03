@@ -40,6 +40,32 @@ export const HEAD_CHARS = 48;
  *  for. */
 export const HEAVY_CHARS = 2048;
 
+/** How many STRUCTURAL levels the walk descends before it hands the rest of the
+ *  document to JSON.stringify untouched.
+ *
+ *  Not a reading rule, a stack rule. This walk spends two JS frames per array
+ *  level, the recursive call and the .map callback on top of it, where
+ *  JSON.stringify is native and spends almost none. So there is a band where a
+ *  line parses, every other face renders it, and this one throws RangeError,
+ *  which inside a useMemo during render takes the whole app down with it: react
+ *  unmounts, the screen goes white and a live session's state is gone, on one
+ *  click of "readable".
+ *
+ *  Measured: the deepest structural nesting in the corpus is 9, so nothing
+ *  written by either format comes near this. It bites on a hand-edited or
+ *  foreign file, which is exactly what the import dialog accepts. Past the cap
+ *  the document is still PRINTED whole; what stops is the opening of strings
+ *  inside it. */
+export const STRUCTURE_DEPTH = 64;
+
+/** The two kinds of collapsed block, which are two different statements about
+ *  what is underneath: `hidden` is bytes that are not language, `long` is one
+ *  run of characters too long to read where it stands. They rendered as one
+ *  kind and therefore said one sentence, and the sentence was the byte one, so
+ *  the pane called a 3424 character dictated prompt "characters that are not
+ *  text". Read by i18n.test.ts, which holds a sentence open for each. */
+export const HIDDEN_KINDS = ["hidden", "long"] as const;
+
 /**
  * Whether a field holds bytes rather than language.
  *
@@ -63,10 +89,12 @@ export function opaqueField(path: string): boolean {
  *  `json` is a document, pretty printed two spaces deep, with every string this
  *  module opened shortened to its head where it stood.
  *  `text` is one string value, its real line breaks intact.
- *  `hidden` is a value the pane collapses: carried whole, printed on request,
- *  and never dropped. */
+ *  `hidden` is bytes rather than language, and `long` is one run too long to
+ *  read where it stands. Both are collapsed by the pane: carried whole, printed
+ *  on request, never dropped. They are two kinds because they are two
+ *  sentences, see HIDDEN_KINDS. */
 export interface ReadableBlock {
-  kind: "json" | "text" | "hidden";
+  kind: "json" | "text" | "hidden" | "long";
   /** Where the piece sits in the record, dotted, array indices in brackets.
    *  Empty for the line itself. An embedded document keeps the path of the
    *  string it was parsed out of, so the path never carries a marker of ours. */
@@ -92,8 +120,9 @@ interface Opened {
   doc: unknown;
   text: string;
   depth: number;
-  /** True when the block is collapsed rather than printed: bytes, not language. */
-  hidden?: boolean;
+  /** Set when the block is collapsed rather than printed, and which of the two
+   *  reasons collapsed it. */
+  collapsed?: "hidden" | "long";
 }
 
 const isDocument = (v: unknown): boolean => v !== null && typeof v === "object";
@@ -129,9 +158,13 @@ function shorten(s: string): string {
  * @param path  where this value sits, dotted
  * @param depth how many parses deep the DOCUMENT is
  * @param out   collects the strings that get their own block, in document order
+ * @param level how many structural levels down this value sits, for the stack
+ *              bound. Past {@link STRUCTURE_DEPTH} the value is handed back
+ *              untouched and printed by JSON.stringify, which is native
  * @return the value as it should be printed in this document's skeleton
  */
-function skeleton(value: unknown, path: string, depth: number, out: Opened[]): unknown {
+function skeleton(value: unknown, path: string, depth: number, out: Opened[], level = 0): unknown {
+  if (level > STRUCTURE_DEPTH) return value;
   if (typeof value === "string") {
     if (depth < MAX_EMBED_DEPTH) {
       const doc = embedded(value);
@@ -147,19 +180,31 @@ function skeleton(value: unknown, path: string, depth: number, out: Opened[]): u
       out.push({ path, doc: null, text: value, depth });
       return shorten(value);
     }
-    // Bytes rather than language: named as such, or one run long past anything
-    // a person wrote. Collapsed where it stood, carried whole underneath.
-    if (opaqueField(path) || value.length > HEAVY_CHARS) {
-      out.push({ path, doc: null, text: value, depth, hidden: true });
+    // Bytes rather than language: named as such, at any length, because 356
+    // characters of base64 read no better than 428956. An EMPTY one is the
+    // exception the length rule handles for free and the name rule did not: it
+    // is already whole in the skeleton, so a block underneath would be a
+    // placeholder promising something it does not have.
+    if (opaqueField(path) && value !== "") {
+      out.push({ path, doc: null, text: value, depth, collapsed: "hidden" });
+      return shorten(value);
+    }
+    // One run of characters long past anything a person types in one breath.
+    // A separate kind from the one above, not a second way of reaching it: most
+    // of what lands here is language (measured over 4639 transcripts, 526 such
+    // strings, in content, text, reason, reasoning, summary and thinking), and
+    // it was being called bytes.
+    if (value.length > HEAVY_CHARS) {
+      out.push({ path, doc: null, text: value, depth, collapsed: "long" });
       return shorten(value);
     }
     return value;
   }
-  if (Array.isArray(value)) return value.map((v, i) => skeleton(v, `${path}[${i}]`, depth, out));
+  if (Array.isArray(value)) return value.map((v, i) => skeleton(v, `${path}[${i}]`, depth, out, level + 1));
   if (isDocument(value)) {
     const clone: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      clone[k] = skeleton(v, path === "" ? k : `${path}.${k}`, depth, out);
+      clone[k] = skeleton(v, path === "" ? k : `${path}.${k}`, depth, out, level + 1);
     }
     return clone;
   }
@@ -176,7 +221,7 @@ function emit(value: unknown, path: string, depth: number, blocks: ReadableBlock
   });
   for (const o of out) {
     if (o.doc === null) {
-      blocks.push({ kind: o.hidden ? "hidden" : "text", path: o.path, depth: o.depth, text: o.text });
+      blocks.push({ kind: o.collapsed ?? "text", path: o.path, depth: o.depth, text: o.text });
     } else emit(o.doc, o.path, o.depth, blocks);
   }
 }

@@ -19,6 +19,7 @@ import { readableText } from "./readable";
 import { replayEyebrow } from "./replayEyebrow";
 import type { RunEvent } from "../events";
 import type { WithSource } from "../state/traceSource";
+import { NON_WIRE_TYPES } from "../wire/nonWire";
 
 export type DetailMode = "insight" | "compact" | "wire" | "source";
 
@@ -68,24 +69,17 @@ export function traceProvenance(replayId: string | null, fleetId: string | null)
 /** Frame types no session file ever holds. Two groups, one rule: a session's
  *  JSONL holds the engine's run events and nothing else.
  *
- *  Built in the browser for the screen: the synthetic system_context TraceView
- *  prepends to every trace, and the session_resume marker (reducer.ts: "never a
- *  wire event"). Sent by the server over the socket and never appended, each
- *  one saying so in SessionConnection's own javadoc: workspace_info,
- *  provider_info, permission_mode_info, otlp_export and the two fleet frames.
+ *  Taken from the writers' own gate, plus the one name that gate cannot know:
+ *  system_context is built in this browser for this screen, so it is neither a
+ *  wire event nor a socket frame and nothing on the Java side has ever heard of
+ *  it. Everything else the pane calls unstored is exactly what no writer may put
+ *  in a file, and the two used to be hand-kept lists that disagreed: this one
+ *  named otlp_export and the two fleet frames while the writers' one did not,
+ *  and the export wrote them.
  *
  *  Everything this app SENDS is unstored too, whatever its type, which is the
  *  direction check rather than a list. */
-const UNSTORED_TYPES = new Set([
-  "system_context",
-  "session_resume",
-  "workspace_info",
-  "provider_info",
-  "permission_mode_info",
-  "otlp_export",
-  "fleet_roster",
-  "fleet_event",
-]);
+const UNSTORED_TYPES = new Set(["system_context", ...NON_WIRE_TYPES]);
 
 /** What the pane reads off the open row: the line it names, if it names one,
  *  and enough of the frame to know whether any file holds it. */
@@ -197,6 +191,29 @@ export function sourcePane(
     siblings,
     ordinal,
   };
+}
+
+/**
+ * Which sentence the pane says, once the screen has its say too.
+ *
+ * Only the "none" case needs asking. Its second half is a claim about the face
+ * NEXT to this one, "The wire line is the stored line, byte for byte", and a
+ * translation makes that false: App.tsx swaps every row's payload for the
+ * translated event and the wire face renders exactly that. Nothing else here
+ * says anything about the wire line, so nothing else changes. A note pinned to
+ * all seven cases would be noise on six of them.
+ *
+ * Kept out of {@link sourcePane} because the two facts have different owners:
+ * which bytes a file holds belongs to the file, and whether a translation is on
+ * screen belongs to the screen.
+ *
+ * @param pane       what the pane found
+ * @param translated whether the rows are carrying translated payloads
+ * @return the dictionary key for the sentence
+ */
+export function sourceSentence(pane: SourcePane, translated: boolean): string {
+  if (pane.kind === "none" && translated) return "trace.source.noneTranslated";
+  return `trace.source.${pane.kind}`;
 }
 
 /** How much of one line the pane paints before it stops and says so. Single

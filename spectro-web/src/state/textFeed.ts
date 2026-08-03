@@ -66,6 +66,26 @@ export function buildTextFeed(events: readonly RunEvent[], extended = false): Fe
   };
 
   for (const e of events) {
+    // Read before the switch, which is sealed to the RunEvent union: an
+    // imported transcript's later prompts arrive as user_message, because
+    // run_start carries exactly one prompt and a session has many. It is a
+    // prompt in the reading feed, not behind `extended` — the feed's job is
+    // every piece of text the protocol carried, and this is the text that
+    // explains why the next answer changes subject. Every open reasoning run
+    // closes first, exactly as run_end does it: the frame names no agent, and
+    // a prompt landing inside a <think> block would leave the tags unbalanced
+    // and turn the whole rest of the feed into reasoning.
+    if ((e as { type: string }).type === "user_message") {
+      const text = (e as unknown as { text?: unknown }).text;
+      if (typeof text === "string" && text !== "") {
+        for (const [agentId] of mode) {
+          closeThinking(agentId);
+          mode.set(agentId, null);
+        }
+        push("prompt", "main", text);
+      }
+      continue;
+    }
     switch (e.type) {
       case "run_start":
         // Only the root prompt is user text; a child's run_start repeats the

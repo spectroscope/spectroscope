@@ -8,6 +8,7 @@ import {
   detailLines,
   detailText,
   sourcePane,
+  sourceSentence,
   traceProvenance,
   withinBudget,
 } from "./traceDetail";
@@ -177,6 +178,47 @@ describe("what the source pane says when no file is loaded", () => {
   it("still says the wire line is the stored line for a stored frame", () => {
     const r = row("a");
     expect(sourcePane(r, [r], null, "stored").kind).toBe("none");
+  });
+});
+
+// The "none" sentence has a second half that is not about the source at all:
+// "The wire line is the stored line, byte for byte." That is a claim about the
+// face NEXT to this one, and applying a translation makes it false.
+//
+// App.tsx swaps every trace row's payload for the translated event
+// (swapTracePayloads) and the wire face renders JSON.stringify of that. There
+// is no import, so `lines` is null, provenance is "stored", the frame is one a
+// file holds, and the pane says byte for byte over a payload the translator
+// rebuilt. The pane exists to stop exactly this claim being made where it is
+// not true, and it was the one making it.
+//
+// Kept out of sourcePane on purpose: which bytes a file holds is a fact about
+// the file, and whether a translation is on screen is a fact about the screen.
+// Two facts, one sentence, so the sentence is chosen where they meet.
+describe("the sentence the pane says", () => {
+  it("drops the byte-for-byte half while a translation is showing", () => {
+    const r = row("a");
+    const pane = sourcePane(r, [r], null, "stored");
+
+    expect(pane.kind).toBe("none");
+    expect(sourceSentence(pane, false)).toBe("trace.source.none");
+    expect(sourceSentence(pane, true)).toBe("trace.source.noneTranslated");
+  });
+
+  it("leaves every other case saying what it always said", () => {
+    // None of them claims the wire line is anything, so a translation changes
+    // nothing about them. A blanket "a translation is showing" note on all of
+    // them would be noise attached to sentences it does not touch.
+    const built = row("b", undefined, "text_delta");
+    const unstored = row("c", undefined, "workspace_info");
+    for (const pane of [
+      sourcePane(unstored, [unstored], null, "stored"),
+      sourcePane(built, [built], null, "scenario"),
+      sourcePane(built, [built], null, "fleet"),
+      sourcePane(built, [built], FILE, "stored"),
+    ]) {
+      expect(sourceSentence(pane, true), pane.kind).toBe(`trace.source.${pane.kind}`);
+    }
   });
 });
 

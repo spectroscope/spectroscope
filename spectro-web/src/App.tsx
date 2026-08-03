@@ -1463,6 +1463,11 @@ export function App() {
                taken away above. The sentence the pane then says is not "there
                is no file" three times over: this is which of the three. */
             provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
+            /* The same condition the payload swap above runs under. With a
+               translation applied the wire face renders the rebuilt record, so
+               the source pane's "byte for byte" sentence would be describing a
+               line nobody stored. */
+            translated={showingTranslation && enteredFleet === null}
           />
         )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (

@@ -9,10 +9,13 @@ import ccLinear from "./fixtures/cc-linear.jsonl?raw";
 import ccSubagent from "./fixtures/cc-subagent.jsonl?raw";
 import ccModern from "./fixtures/cc-modern.jsonl?raw";
 import ccWorkflow from "./fixtures/cc-workflow.jsonl?raw";
+import ccFollowup from "./fixtures/cc-followup.jsonl?raw";
+import ccUserBlocks from "./fixtures/cc-user-blocks.jsonl?raw";
 import { claudeCodeToRunEvents, parseTaskNotification, parseTranscript } from "./claudeCode";
 import { detectAndLoad } from "./detect";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
+import { buildTextFeed } from "../state/textFeed";
 
 describe("claudeCode adapter (linear)", () => {
   const events = parseTranscript(ccLinear);
@@ -412,8 +415,19 @@ describe("claudeCode adapter (background tasks)", () => {
     expect((msgs[0] as { text: string }).text).toContain("codesign");
   });
 
-  it("emits nothing at all for a block it could not parse", () => {
-    expect(events.some((e) => JSON.stringify(e).includes("btruncat1"))).toBe(false);
+  it("joins nothing from a block it could not parse, and loses nothing either", () => {
+    // This test used to read "emits nothing at all", and the fix to the
+    // follow-up user turn replaced its premise rather than its threshold. What
+    // it was really guarding is the PARSER's defensiveness: an unterminated
+    // block must not be half-read into a join — no task, no card, no outcome.
+    // That still holds. What it also pinned, by accident, was the record
+    // disappearing, which is the silence card 141 set out to end. The block
+    // never closes, so it is not a notification; it is text in the user
+    // channel, and it now reads as exactly that.
+    const joined = events.filter((e) => e.type === "agent_message" || e.type === "tool_result");
+    expect(joined.some((e) => JSON.stringify(e).includes("btruncat1"))).toBe(false);
+    const said = events.filter((e) => (e as unknown as { type: string }).type === "user_message");
+    expect(said.some((e) => (e as unknown as { text: string }).text.includes("btruncat1"))).toBe(true);
   });
 
   it("shows the outcome on the launch's own card", () => {
@@ -974,5 +988,193 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
     expect(lineOf("queue_operation")).toBe(0);
     expect(lineOf("run_start")).toBe(2);
     expect(lineOf("edited_text_file")).toBe(3);
+  });
+});
+
+// The user turns that are not the first one (card 141, stage 1 follow-up).
+//
+// A Claude Code transcript stores a user record's body EITHER as content blocks
+// or as a plain string, and which one it uses says nothing about the record: the
+// first prompt of a session and every later one are both strings. The importer
+// read the first through `asText` into run_start.prompt and sent every later one
+// down the block loop, where a string yields an empty array — so a follow-up
+// prompt produced no frame at all and reached neither the chat nor the trace.
+//
+// Measured over the 151 transcripts in ~/.claude/projects: 1,985 user records
+// are lost this way, in 120 of the 151 files. What they carry is NOT one kind of
+// thing — 532 are marked `isMeta` (an "[Image: …]" note, a local-command
+// caveat), and of the rest the commonest are slash commands, their
+// `<local-command-stdout>`, and a compaction's "This session is being
+// continued…", with typed prompts ("weiter") the long tail. That mix is the
+// reason this is a `user_message` and not a second `run_start`: run_start opens
+// a RUN, and buildGraph gives every one of them its own user node and restarts
+// the t+ clock. Two thousand invented runs would be a larger untruth than the
+// silence being fixed. `user_message` says only what the file says — the user
+// channel carried this text — and the reducer renders it as the bubble it is.
+describe("claudeCode adapter (a follow-up user turn)", () => {
+  const events = parseTranscript(ccFollowup);
+  const texts = (type: string): string[] =>
+    events.filter((e) => e.type === type).map((e) => (e as unknown as { text: string }).text);
+
+  it("carries a follow-up prompt stored as a plain string", () => {
+    expect(texts("user_message")).toContain(
+      "mache einen neuen order mit nummerierung, schreibe eine CLAUDE.md in dieses verzechniss und update die root CLAUDE.md und packe alle dokumente da rein die du bisher gemacht hast",
+    );
+    expect(texts("user_message")).toContain("die svg ist super");
+  });
+
+  it("does not repeat the first prompt, which run_start already carries", () => {
+    // The two would double up in the chat: run_start builds the user bubble.
+    const first = (events.find((e) => e.type === "run_start") as { prompt: string }).prompt;
+    expect(first).toMatch(/^idee: claude code feature liste/);
+    expect(texts("user_message")).not.toContain(first);
+  });
+
+  it("reads what the client wrote into the channel, not only what was typed", () => {
+    // 532 of the 1,985 are `isMeta`. They are dropped today just as silently,
+    // and they are why the model suddenly talks about a picture. The file put
+    // them in the user channel; so does this.
+    expect(texts("user_message").some((t) => t.startsWith("[Image: original 1200x2286"))).toBe(true);
+  });
+
+  it("leaves a task notification on the path that joins it to its launch", () => {
+    // The notification branch is read FIRST and must keep winning: a
+    // notification is an outcome to patch onto a card, not a thing the person
+    // said. 507 of them in the corpus.
+    const notification = [
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content:
+            "<task-notification>\n<task-id>t9</task-id>\n<status>completed</status>\n</task-notification>",
+        },
+        uuid: "u2",
+      },
+    ];
+    const out = claudeCodeToRunEvents(notification);
+    expect(out.some((e) => (e as unknown as { type: string }).type === "user_message")).toBe(false);
+    expect(out.some((e) => e.type === "agent_message" && e.from === "t9")).toBe(true);
+  });
+
+  it("builds nothing for a body the file left empty", () => {
+    const out = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      { type: "user", message: { role: "user", content: "" }, uuid: "u2" },
+    ]);
+    expect(out.some((e) => (e as unknown as { type: string }).type === "user_message")).toBe(false);
+  });
+
+  it("charges the frame to the line it was read from", () => {
+    const { events: loaded, source } = detectAndLoad(ccFollowup);
+    const at = loaded.findIndex((e) => (e as unknown as { type: string }).type === "user_message");
+    expect(source.origin[at]).toBe(2); // the third line of the file, counted from zero
+  });
+
+  it("stops calling those lines silent", () => {
+    // The bar's sentence is the point of the fix: three of these six lines
+    // carried conversation and were counted as carrying none.
+    const { source } = detectAndLoad(ccFollowup);
+    const used = new Set([...source.origin].filter((i) => i >= 0));
+    expect(source.lines.length - used.size).toBe(0);
+  });
+});
+
+// The other half of the same silence, and the worse half: these records DID
+// produce a frame, so they never counted toward the import bar's "carry no
+// conversation" line and the fix to the string case left them alone. A user
+// record whose body is an ARRAY sent every block through emitBlock("main", …),
+// where a `text` block became a text_delta under agentId "main" — which the
+// chat reducer folds into an ASSISTANT turn and the feed renders as `answer`.
+// Text the person typed appeared on screen as if the model had said it.
+//
+// Measured over the 4,571 transcripts in ~/.claude/projects: 776 such blocks in
+// 122 files, 509 records carrying nothing but text and 263 carrying an image
+// beside it. NOT ONE of them mixes text with a tool_result — in the whole
+// corpus `text` co-occurs only with `image` — but the split is still per block
+// rather than per record, because a record is a bag of blocks and the rule
+// "text is the person, a result is the machine" is a fact about each block.
+describe("claudeCode adapter (text blocks in a user record)", () => {
+  const events = parseTranscript(ccUserBlocks);
+  const texts = (type: string): string[] =>
+    events
+      .filter((e) => (e as unknown as { type: string }).type === type)
+      .map((e) => (e as unknown as { text: string }).text);
+
+  it("reads a text block in a user record as the person talking", () => {
+    expect(texts("user_message")).toContain("[Request interrupted by user]");
+  });
+
+  it("never lets that text reach the stream as an answer", () => {
+    // The bug in one line: this is what put it in the assistant's mouth.
+    expect(texts("text_delta").join("\n")).not.toContain("[Request interrupted by user]");
+    expect(texts("text_delta").some((t) => t.startsWith("gibt es in kapitel sieben"))).toBe(false);
+  });
+
+  it("reads the text beside an image, which is how 263 of them arrive", () => {
+    expect(texts("user_message").some((t) => t.startsWith("gibt es in kapitel sieben"))).toBe(true);
+  });
+
+  it("leaves a tool_result in the same record on the path that builds its card", () => {
+    // Constructed, not measured: the corpus never mixes these two. It pins the
+    // per-block split anyway, so a record that did carry both would not lose
+    // the result to the prompt or the prompt to the result.
+    const out = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "t1", name: "Bash", input: { command: "ls" } }],
+        },
+        uuid: "a1",
+        parentUuid: "u1",
+      },
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [
+            { type: "tool_result", tool_use_id: "t1", content: "hello.txt" },
+            { type: "text", text: "[Request interrupted by user]" },
+          ],
+        },
+        uuid: "u2",
+        parentUuid: "a1",
+      },
+    ]);
+    expect(out.some((e) => e.type === "tool_result" && e.callId === "t1")).toBe(true);
+    expect(
+      out.some(
+        (e) =>
+          (e as unknown as { type: string }).type === "user_message" &&
+          (e as unknown as { text: string }).text === "[Request interrupted by user]",
+      ),
+    ).toBe(true);
+  });
+
+  it("puts the words in the person's bubble, not the model's", () => {
+    const state = reduceAll(initialState, events);
+    const said = state.turns.filter((t) => t.kind === "user").map((t) => t.text);
+    const answered = state.turns.filter((t) => t.kind === "assistant").map((t) => t.text);
+    expect(said).toContain("[Request interrupted by user]");
+    expect(answered.join("\n")).not.toContain("[Request interrupted by user]");
+  });
+
+  it("reads as a prompt in the text feed, not as an answer", () => {
+    const feed = buildTextFeed(events);
+    const row = feed.find((s) => s.text === "[Request interrupted by user]");
+    expect(row?.kind).toBe("prompt");
+  });
+
+  it("charges the frame to the line it was read from", () => {
+    const { events: loaded, source } = detectAndLoad(ccUserBlocks);
+    const at = loaded.findIndex(
+      (e) =>
+        (e as unknown as { type: string }).type === "user_message" &&
+        (e as unknown as { text: string }).text === "[Request interrupted by user]",
+    );
+    expect(source.origin[at]).toBe(3); // the fourth line of the file, counted from zero
   });
 });

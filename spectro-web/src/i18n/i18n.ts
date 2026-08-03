@@ -481,7 +481,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.note.fallbackTitle": { de: "Mitten im Lauf wurde das Modell ausgetauscht. Der Wechsel selbst steht als provider_info im Trace; die Datei nennt hier auch das Modell, das verlassen wurde.", en: "The model was swapped mid-run. The change itself stands in the trace as provider_info; the file also names the model that was left behind, which is what this says." },
   "tf.modeAria": { de: "Text-Ansicht", en: "Text view" },
   "tf.modeTextTitle": { de: "ALLER Text in Leserichtung — das Protokoll als sichtbare Marker: <think>/</think> um jede Denkphase, [tool_call …]-Indikatoren mit vollem Input und Output, Gate, Lauf-Grenzen", en: "ALL text in reading order — the protocol as visible markers: <think>/</think> around each reasoning run, [tool_call …] indicators with full input and output, the gate, run boundaries" },
-  "tf.modeJsonlTitle": { de: "Die Session als JSONL — eine Zeile pro Wire-Event, exakt wie die Datei auf der Platte (Socket-Frames stehen nie in der Datei)", en: "The session as JSONL — one line per wire event, exactly like the file on disk (socket-only frames never enter the file)" },
+  "tf.modeJsonlTitle": { de: "Die Session als JSONL, eine Zeile pro Wire-Event, exakt wie die Datei auf der Platte (Socket-Frames und importierte Frames stehen nie in der Datei)", en: "The session as JSONL, one line per wire event, exactly like the file on disk (socket frames and imported frames never enter the file)" },
   "tf.textNote": { de: "Text-Feed: <think>-Marker, Tool-Indikatoren, voller Output", en: "Text feed: <think> markers, tool indicators, full output" },
   "tf.jsonlNote": { de: "{n} JSONL-Zeilen — exakt das Dateiformat", en: "{n} JSONL lines — exactly the file format" },
   "tf.empty": { de: "Noch keine Events — schicke eine Nachricht oder öffne eine Session.", en: "No events yet — send a message or open a session." },
@@ -748,6 +748,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   // no file" alone is four different statements, and the byte-for-byte promise
   // is only the one about a frame this app wrote down itself.
   "trace.source.none": { de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile ist die gespeicherte Zeile, Byte für Byte.", en: "This session was produced here, so there is no separate source. The wire line is the stored line, byte for byte." },
+  // The same session, while a translation is on screen. The first half still
+  // holds; the second one cannot, because the wire face is rendering a payload
+  // the translator rebuilt and the stored line still has the original words.
+  "trace.source.noneTranslated": { de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile zeigt gerade die Übersetzung, nicht die gespeicherte Zeile.", en: "This session was produced here, so there is no separate source. The wire line is showing the translation right now, not the stored line." },
   "trace.source.unstored": { de: "Die gespeicherte Sitzung enthält diesen Frame nicht. Die App hat ihn für das Bild gebaut oder über den Socket geschickt, und beides wird nicht in die Datei geschrieben.", en: "The stored session does not contain this frame. The app built it for the screen or sent it over the socket, and neither of those is written to the file." },
   "trace.source.scenario": { de: "Das ist ein kompiliertes Szenario. Der Browser hat diese Frames aus dem Skript gebaut, es gibt also weder eine Datei noch eine Draht-Zeile dahinter.", en: "This is a compiled scenario. The browser built these frames from its script, so there is no file and no wire line behind them." },
   "trace.source.fleet": { de: "Diesen Frame hat ein anderer Prozess erzeugt. Diese App schaut nur zu: was dieser Node gespeichert hat, bleibt bei ihm.", en: "Another process produced this frame. This app is only watching: whatever that node wrote down stays with the node." },
@@ -760,7 +764,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
   // A signature or a base64 body: carried whole, collapsed on screen, and never
   // dropped without saying so.
+  // The two collapsed kinds (readable.ts HIDDEN_KINDS), which are two claims
+  // and not one. `hidden` is a signature or a base64 body: bytes, at any
+  // length. `long` is one run of characters too long to read where it stands,
+  // and measured over 4639 transcripts most of those are language, so the byte
+  // sentence over one of them was the pane saying something the value flatly
+  // was not. Both open on request and neither is ever dropped.
   "trace.source.hidden": { de: "{n} Zeichen, die kein Text sind", en: "{n} characters that are not text" },
+  "trace.source.long": { de: "{n} Zeichen, eingeklappt", en: "{n} characters, collapsed" },
   "trace.source.show": { de: "Zeigen", en: "Show" },
   "trace.source.hide": { de: "Wieder einklappen", en: "Collapse again" },
   "trace.readingAria": { de: "Lesart", en: "Reading" },

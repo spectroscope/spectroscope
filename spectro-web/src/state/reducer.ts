@@ -470,6 +470,23 @@ export function reduce(state: UiState, event: RunEvent): UiState {
       },
     };
   }
+  // Same boundary rule for user_message, and for the same reason: it is not in
+  // the RunEvent union, so the sealed switch below must not learn it.
+  //
+  // Inbound, this frame only ever comes from an import. What a person types
+  // HERE goes out through recordOutgoing and never comes back — the bubble for
+  // it is built by the run_start that answers it (see sendNow, which parks its
+  // attachments rather than echoing a turn). So there is no path on which this
+  // can double the live bubble.
+  //
+  // It adds a turn and nothing else. A transcript's later prompts are not run
+  // boundaries: measured over 151 files, most of the 1,985 of them are slash
+  // commands, their stdout, or an "[Image: …]" note the client wrote. Closing a
+  // run or resetting the usage on one would be a claim the file never made.
+  if (raw.type === "user_message") {
+    const text = (event as unknown as { text?: unknown }).text;
+    return typeof text === "string" && text !== "" ? addTurn(traced, { kind: "user", text }) : traced;
+  }
   // Same boundary rule for permission_mode_info: connect + every switch
   // announce the active mode; the composer gear follows wire truth.
   if (raw.type === "permission_mode_info") {

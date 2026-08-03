@@ -648,7 +648,36 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         // before the blocks — a body that is not one falls through untouched.
         const n = typeof content === "string" ? parseTaskNotification(content) : null;
         if (n !== null) emitNotification(n, ts);
-        else for (const b of blocks) emitBlock("main", b, ts);
+        // A user record stores its body EITHER as blocks or as a plain string,
+        // and the choice says nothing about the record: the first prompt and
+        // every later one are both strings. Only the first was ever read (into
+        // run_start.prompt); every later one fell into the block loop, where a
+        // string yields an empty array and the turn vanished. Measured over the
+        // 151 transcripts in ~/.claude/projects: 1,985 records in 120 files.
+        // See the test file for why this is a user_message and not a run_start.
+        else if (typeof content === "string") {
+          if (content !== "") out.push({ type: "user_message", text: content, ts } as unknown as RunEvent);
+        } else
+          // The same silence, one layer in, and the worse half of it: an array
+          // body sent EVERY block through emitBlock, where a `text` block became
+          // a text_delta under "main" — an assistant turn in the reducer, an
+          // `answer` in the feed. The person's own words were read back as the
+          // model's. It survived the string fix because these records do produce
+          // a frame, so they never counted as a line carrying no conversation.
+          //
+          // Measured over the 4,571 transcripts in ~/.claude/projects: 776 such
+          // blocks in 122 files. The split is per BLOCK, not per record, because
+          // that is the grain the rule lives at — a body is a bag of blocks, and
+          // `text` is the person while a `tool_result` is the machine answering
+          // the machine. (In this corpus the two never share a record: text
+          // appears alone in 509 and beside an `image` in 263. The per-block
+          // form costs nothing and does not depend on that staying true.)
+          for (const b of blocks) {
+            if (b?.type === "text") {
+              if ((b.text ?? "") !== "")
+                out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
+            } else emitBlock("main", b, ts);
+          }
       }
     } else if (r.type === "assistant") {
       // One assistant message is one turn. A long session is hundreds of them,

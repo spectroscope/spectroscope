@@ -220,3 +220,41 @@ describe("buildTextFeed — the extended feed (owner 2026-07-26)", () => {
     }
   });
 });
+
+// A user turn read out of a transcript (the follow-up prompt).
+//
+// The reading feed is "every piece of text the protocol carries, in wire
+// order". A session's second prompt is text the protocol carried, and it is the
+// reason the answer after it changes subject; without it the feed reads as one
+// unbroken monologue. It goes in the READING feed, not behind `extended`: the
+// extended flag is for the frames a reader does not need (usage, turn
+// boundaries, the assembled request), and a prompt is not one of those.
+describe("buildTextFeed (a user turn from the stream)", () => {
+  const said = (text: string, ts = 2): RunEvent =>
+    ({ type: "user_message", text, ts }) as unknown as RunEvent;
+
+  it("reads a follow-up prompt as a prompt, in wire order", () => {
+    const feed = buildTextFeed([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "first", ts: 0 },
+      { type: "text_delta", agentId: "main", text: "answer", ts: 1 },
+      said("second"),
+    ]);
+    expect(feed.map((s) => [s.kind, s.text])).toEqual([
+      ["marker", "[run_start]"],
+      ["prompt", "first"],
+      ["answer", "answer"],
+      ["prompt", "second"],
+    ]);
+  });
+
+  it("closes an open reasoning run before it, like every other boundary", () => {
+    // A prompt cannot land inside a <think> block: the tags would not balance
+    // and the whole rest of the feed would read as reasoning.
+    const feed = buildTextFeed([
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "first", ts: 0 },
+      { type: "thinking_delta", agentId: "main", text: "hmm", ts: 1 },
+      said("stop"),
+    ]);
+    expect(feed.map((s) => s.text)).toEqual(["[run_start]", "first", "<think>", "hmm", "</think>", "stop"]);
+  });
+});

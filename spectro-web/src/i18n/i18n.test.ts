@@ -4,7 +4,9 @@ import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
 import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
-import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS } from "../components/traceDetail";
+import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
+import type { SourcePane } from "../components/traceDetail";
+import { HIDDEN_KINDS } from "../components/readable";
 import { CATEGORIES } from "../components/TraceView";
 import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
@@ -79,12 +81,25 @@ describe("i18n dict", () => {
       expect(dict[`trace.note.${k}`], `trace.note.${k}`).toBeDefined();
       expect(dict[`trace.note.${k}Title`], `trace.note.${k}Title`).toBeDefined();
     }
-    // The source pane's four cases. Each one is a whole sentence, because each
-    // is a different statement about where the frame came from, and a pane that
-    // fell back to a shared word for two of them would be this card's own
-    // defect. The shared-line sentence is the fifth string: it is the "line"
-    // case when one line produced several frames.
+    // The source pane's cases. Each one is a whole sentence, because each is a
+    // different statement about where the frame came from, and a pane that fell
+    // back to a shared word for two of them would be this card's own defect.
+    // Walked through the CHOOSER rather than over the kinds alone, because the
+    // sentence is not one per kind: a translation gives the "none" case a second
+    // one, since the byte-for-byte half of the first stops being true. Anything
+    // the chooser can return has to exist, or the pane prints the key.
     for (const k of SOURCE_PANE_KINDS) {
+      for (const translated of [false, true]) {
+        const key = sourceSentence({ kind: k } as SourcePane, translated);
+        expect(dict[key], key).toBeDefined();
+      }
+    }
+    // Both reasons the readable pane collapses a value. They render the same
+    // control and say different things, and one sentence for both is how a
+    // 3424 character dictated prompt came to be called "characters that are not
+    // text". A kind added to HIDDEN_KINDS with no sentence of its own would
+    // fall back to the other one's claim, which is the defect, not a gap.
+    for (const k of HIDDEN_KINDS) {
       expect(dict[`trace.source.${k}`], `trace.source.${k}`).toBeDefined();
     }
     for (const k of [
@@ -92,11 +107,9 @@ describe("i18n dict", () => {
       "trace.source.notJson",
       "trace.source.capped",
       "trace.source.showAll",
-      // A value the readable pane collapses because it is bytes and not
-      // language: what it is, how much of it there is, and the two words that
-      // open and close it. Dropping it silently would be a hole the reader
+      // What it is and how much of it there is, plus the two words that open and
+      // close it. Dropping a collapsed value silently would be a hole the reader
       // cannot see, so it is always three visible strings.
-      "trace.source.hidden",
       "trace.source.show",
       "trace.source.hide",
     ]) {

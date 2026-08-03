@@ -10,7 +10,16 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { HEAD_CHARS, HEAVY_CHARS, MAX_EMBED_DEPTH, opaqueField, readable, readableText } from "./readable";
+import {
+  HEAD_CHARS,
+  HEAVY_CHARS,
+  HIDDEN_KINDS,
+  MAX_EMBED_DEPTH,
+  STRUCTURE_DEPTH,
+  opaqueField,
+  readable,
+  readableText,
+} from "./readable";
 
 const fixture = (name: string): string[] =>
   readFileSync(fileURLToPath(new URL(`../import/fixtures/${name}`, import.meta.url)), "utf8")
@@ -200,9 +209,55 @@ describe("readable, on bytes nobody reads", () => {
 
     const blocks = readable(line).blocks;
 
-    expect(blocks[1]?.kind).toBe("hidden");
+    expect(blocks[1]?.kind).toBe("long");
     expect(blocks[1]?.path).toBe("note");
     expect(blocks[1]?.text).toHaveLength(HEAVY_CHARS + 1);
+  });
+
+  // The size rule and the name rule shared one kind, so they shared one
+  // sentence, and the sentence belongs to the name rule: "characters that are
+  // not text" was written for a signature and a base64 body.
+  //
+  // Dictation broke the premise the size rule was measured on. The module's own
+  // header says the longest run anybody WROTE is a 1237 character shell
+  // command; a dictated prompt has no line breaks in it at all and runs to
+  // thousands. Card 141 turned those records into frames, so the row is now
+  // reachable, and the pane printed "3.424 Zeichen, die kein Text sind" over
+  // the owner's own German prompt. Measured over 4639 transcripts: 526 strings
+  // are collapsed by size alone, and the fields they sit in are content (175),
+  // text (61), reason (60), reasoning (55), summary (24) and thinking (10).
+  // Language, nearly all of it.
+  //
+  // Collapsing them stays right. Calling them bytes does not, so the two rules
+  // now carry two kinds and the pane has a sentence for each.
+  it("keeps the two reasons for collapsing apart", () => {
+    const dictated = "Okay, noch mal als Einordnung hier. Die Präsentation ist viel zu technisch. ";
+    const prompt = dictated.repeat(50);
+    expect(prompt.includes("\n")).toBe(false);
+    expect(prompt.length).toBeGreaterThan(HEAVY_CHARS);
+
+    const long = readable(JSON.stringify({ content: prompt })).blocks[1];
+    const bytes = readable(heavy[1]).blocks.find((b) => b.path === "message.content[0].signature");
+
+    // Both are carried whole and both are collapsed, and they are not the same
+    // statement about what is underneath.
+    expect(long.kind).toBe("long");
+    expect(long.text).toBe(prompt);
+    expect(bytes?.kind).toBe("hidden");
+    expect(HIDDEN_KINDS).toEqual(["hidden", "long"]);
+  });
+
+  // opaqueField answers on the field NAME, at any length, which is what makes
+  // it right for a 356 character signature. At length zero it produced a
+  // collapsed block with nothing in it: "0 characters that are not text" over a
+  // Show button that opened an empty pane, while the value stood complete in
+  // the skeleton one line above. Measured over 4639 transcripts: 20 records in
+  // 13 files carry an empty signature, against 73787 that carry a real one.
+  it("collapses nothing when the opaque field is empty", () => {
+    const blocks = readable(JSON.stringify({ signature: "", note: "ok" })).blocks;
+
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0].text).toContain('"signature": ""');
   });
 
   it("leaves long readable prose open, however big it gets", () => {
@@ -216,6 +271,60 @@ describe("readable, on bytes nobody reads", () => {
 
     expect(block.kind).toBe("text");
     expect(block.text).toBe(prose);
+  });
+});
+
+// A line the walk cannot finish.
+//
+// skeleton recurses once per structural level and costs more stack than
+// JSON.stringify does, because the array branch adds a .map callback frame on
+// top of the call. So there is a band where the line parses, every other face
+// renders it, and this one throws RangeError. The throw happens inside a
+// useMemo during render, react has no error boundary anywhere in this app and
+// main.tsx mounts <App /> bare, so it takes the whole tree down: white screen,
+// live session gone, one click on "readable".
+//
+// Real transcripts top out at structural depth 9, so this needs a hand-edited
+// or foreign file. That is precisely what the import dialog accepts, and
+// detect.ts's own comments say so.
+describe("readable, on a line nested deeper than anything real", () => {
+  const nest = (n: number): string => {
+    let v: unknown = { deep: "value" };
+    for (let i = 0; i < n; i++) v = [v];
+    return JSON.stringify({ type: "text_delta", agentId: "main", payload: v });
+  };
+
+  it("comes back instead of taking the tab with it", () => {
+    const line = nest(3000);
+    // The line itself is fine: every other face renders it.
+    expect(() => JSON.parse(line)).not.toThrow();
+    expect(() => JSON.stringify(JSON.parse(line), null, 2)).not.toThrow();
+
+    expect(() => readable(line)).not.toThrow();
+    expect(() => readableText(line)).not.toThrow();
+  });
+
+  it("still says it parsed, and still carries the value", () => {
+    // A fallback that claimed "this line is not JSON" would answer a crash with
+    // a false sentence. The walk stops descending; the document is printed
+    // whole by JSON.stringify, which is native and does not run out of stack.
+    const { parsed, blocks } = readable(nest(3000));
+
+    expect(parsed).toBe(true);
+    expect(blocks[0].text).toContain('"deep": "value"');
+  });
+
+  it("opens everything a real record has, well past the deepest measured one", () => {
+    // The deepest structural nesting in the corpus is 9. The cap has to sit far
+    // enough above that for the rule to be theoretical, or it becomes a second
+    // silent truncation.
+    expect(STRUCTURE_DEPTH).toBeGreaterThan(32);
+    let v: unknown = { signature: "s".repeat(400) };
+    for (let i = 0; i < 12; i++) v = { down: [v] };
+
+    const blocks = readable(JSON.stringify(v)).blocks;
+
+    expect(blocks.some((b) => b.kind === "hidden")).toBe(true);
   });
 });
 

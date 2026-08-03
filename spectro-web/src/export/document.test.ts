@@ -69,11 +69,14 @@ describe("several views in one file", () => {
 });
 
 describe("the json view is labelled as the view, not as the download", () => {
-  it("says which frames the text tab omits", () => {
-    // eventsToJsonl drops socket-only frames; toJsonl writes every event. Two
-    // artifacts called "json" that differ is a trap, so the label closes it.
+  it("says which frames the text tab omits, in both groups", () => {
+    // Both writers filter through nonWire.ts, so the view and the download hold
+    // the same lines; what neither holds is a socket frame or a frame an import
+    // read around the conversation. This assertion used to read "socket-only",
+    // and it kept the label green after the filter widened past it.
     const html = composeDocument({ ...base, views: ["json"], primary: "json" }, { original: events });
-    expect(html.toLowerCase()).toContain("socket-only");
+    expect(html.toLowerCase()).toContain("socket frames");
+    expect(html.toLowerCase()).toContain("imported frames");
   });
 });
 

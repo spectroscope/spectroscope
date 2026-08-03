@@ -204,10 +204,17 @@ describe("the number the pane puts on screen", () => {
     expect(pane.kind === "line" ? pane.text : "").toBe(text.split("\n")[4]);
   });
 
-  it("holds a real transcript's numbers against the file's own bytes", () => {
-    // The indented fixture is the one file here with blank lines in the middle,
-    // which is why it was built: parts 2 and 3 are blank, so the third carried
-    // record is physical line 5.
+  it("holds the pane's numbers against the file's own bytes, blank lines included", () => {
+    // Named for what it proves. It used to say "a real transcript's numbers",
+    // and it reads cc-indented.jsonl, which the test above describes as built
+    // BECAUSE no real transcript indents its records. "Real transcript" is a
+    // provenance word in this repo (cc-heavy.jsonl is harvested, and says so),
+    // so the name was claiming the one thing this fixture is not.
+    //
+    // The comparison is worth keeping exactly as it is: the indented fixture is
+    // the one file here with blank lines in the middle, parts 2 and 3 are blank,
+    // so the third carried record is physical line 5, and the bytes are checked
+    // against byte slices rather than against the importer's own expression.
     const text = fixture("cc-indented.jsonl");
     const parts = rawLines("cc-indented.jsonl");
     const { events, source } = detectAndLoad(text);
