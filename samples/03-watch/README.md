@@ -43,8 +43,14 @@ Start the web cockpit — the server jar from the GitHub release, or
 `spectro web` from a source checkout:
 
 ```bash
-java -jar spectro-server-0.4.1.jar     # cockpit on http://localhost:8080
+java -XX:MaxRAMPercentage=33 -jar spectro-server-0.4.1.jar   # cockpit on http://localhost:8080
 ```
+
+Every launcher we ship passes that flag; a bare `java -jar` is the one path no
+script of ours assembles, so it is the one place you pass it yourself. It gives
+the server a third of the machine instead of the JVM's default quarter, and
+stays a share, so the same line suits a workstation and a laptop. The server
+logs the ceiling it ended up with at boot.
 
 The recorded session is in the sidebar. Open it: the chat shows the
 scripted answer, the trace shows the `write_file` call with its input and

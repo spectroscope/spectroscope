@@ -68,10 +68,11 @@ WRAPPER_PID=$!
 # forever on a server that bound long ago - the desktop shell itself never did
 # that, it polls health.
 PORT=""
+JVM_CMDLINE=""
 for _ in $(seq 1 "$BOOT_BUDGET_S"); do
   for pid in $(pgrep -f 'spectro-server\.jar' || true); do
     PORT="$(tr '\0' '\n' < "/proc/$pid/cmdline" 2>/dev/null | sed -nE 's/^--server\.port=([0-9]+)$/\1/p' | head -1)"
-    [ -n "$PORT" ] && break
+    [ -n "$PORT" ] && { JVM_CMDLINE="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null)"; break; }
   done
   [ -n "$PORT" ] && break
   kill -0 "$WRAPPER_PID" 2>/dev/null || { echo "!! shell exited before the server started — log tail:"; tail -30 "$LOG"; exit 1; }
@@ -79,6 +80,19 @@ for _ in $(seq 1 "$BOOT_BUDGET_S"); do
 done
 [ -n "$PORT" ] || { echo "!! no JVM child with a --server.port within ${BOOT_BUDGET_S}s — log tail:"; tail -30 "$LOG"; exit 1; }
 echo "    server process up, port $PORT"
+
+# The heap ceiling rides the same oracle. Without a flag the JVM sizes its heap at
+# 25% of whatever the container grants, and nothing anywhere says so; the shell is
+# the only launch path we ship, so if IT stops passing the ceiling, users get the
+# default and no test elsewhere would notice. The number is
+# HeapBudget.MAX_RAM_PERCENT, held on the source side by HeapFlagDriftTest.
+case "$JVM_CMDLINE" in
+  *-XX:MaxRAMPercentage=33*) echo "    heap ceiling passed by the shell: -XX:MaxRAMPercentage=33" ;;
+  *) echo "!! the shell handed the JVM no -XX:MaxRAMPercentage=33, so the server silently"
+     echo "   runs on the JVM default of 25% (spectro-desktop/src/main.ts spawnServer):"
+     echo "   $JVM_CMDLINE"
+     exit 1 ;;
+esac
 
 echo "==> [3/4] /api/health"
 HEALTH=""

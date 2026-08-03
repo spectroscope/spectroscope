@@ -91,6 +91,14 @@ function spawnServer(port: number): ChildProcess {
   const jarPath = resolveJarPath();
   const binDir = resolveBundledBinDir();
   const args = [
+    // Heap. This is the ONLY launch path we ship, so it is the one that decides how
+    // much room a user's server actually gets. The JVM's own default is 25% of the
+    // machine; a third is more room everywhere and still a share, so a 48 GiB
+    // workstation gets 15.8 GiB while an 8 GiB laptop gets 2.6 rather than a fixed
+    // number neither machine fits. Inside the deb and the AppImage it reads the
+    // cgroup limit, not the host. The same number lives in spectro-serve and both
+    // build files, and HeapFlagDriftTest holds all four to it.
+    "-XX:MaxRAMPercentage=33",
     ...(binDir ? ["-Dspectro.bundle.bin=" + binDir] : []),
     "-jar",
     jarPath,

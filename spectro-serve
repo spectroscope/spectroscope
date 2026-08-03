@@ -20,7 +20,17 @@ HEALTH_PATH="/api/health"                    # DB-free liveness (200 = up)
 URL_PATHS=(/ /api/health /api/config)        # shown in start AND status
 # START_CMD runs the server in the foreground and MUST listen on $PORT. The
 # packaged boot jar is preferred (fast); ensure_built builds it once if missing.
-start_cmd() { exec java -jar "$(server_jar)" --server.port="$PORT"; }
+# Heap: the JVM sizes its own at 25% of the machine, which is 12 GiB on a 48 GiB
+# workstation and 2 GiB on an 8 GiB laptop. A third is more room on every machine
+# and still a share, so it scales down instead of overcommitting a small one and
+# reads the cgroup limit instead of the host inside a container. The same number
+# lives in spectro-desktop/src/main.ts and both build files; HeapFlagDriftTest
+# holds all four to it. SPECTRO_JVM_OPTS replaces it wholesale when you know
+# better, and an EMPTY SPECTRO_JVM_OPTS hands the JVM nothing at all (no colon in
+# the expansion below) so the default is reachable without editing this file.
+JVM_OPTS=${SPECTRO_JVM_OPTS--XX:MaxRAMPercentage=33}
+# Unquoted on purpose: SPECTRO_JVM_OPTS may carry several flags and must split.
+start_cmd() { exec java $JVM_OPTS -jar "$(server_jar)" --server.port="$PORT"; }
 # Kept as function NAMES: the checks' own || and | would otherwise collide with
 # the |-delimited "name|test|fix" parsing in cmd_doctor.
 DOCTOR_CHECKS=(
