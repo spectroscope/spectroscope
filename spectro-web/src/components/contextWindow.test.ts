@@ -8,6 +8,15 @@ describe("contextWindowFor", () => {
     expect(contextWindowFor("claude-haiku-4-5")).toBe(200_000);
     expect(contextWindowFor("claude-3-5-sonnet")).toBe(200_000); // older naming → legacy 200k
   });
+  it("claude-fable-5 gets the same window as the other Claude 5 flagships", () => {
+    // The ring showed 379% on an imported session because this name fell
+    // through to the legacy 200k row: it starts with "claude" but with
+    // neither "claude-opus" nor "claude-sonnet". Same session, same load,
+    // green or red depending only on which model spoke last.
+    expect(contextWindowFor("claude-fable-5")).toBe(contextWindowFor("claude-opus-5"));
+    expect(contextWindowFor("claude-fable-5")).toBe(1_000_000);
+    expect(contextWindowFor("claude-mythos-5")).toBe(1_000_000);
+  });
   it("gpt-4o is 128k; gpt-4.1 and gpt-5.x are ~1M", () => {
     expect(contextWindowFor("gpt-4o")).toBe(128_000);
     expect(contextWindowFor("gpt-4o-mini")).toBe(128_000);
