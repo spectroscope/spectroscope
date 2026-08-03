@@ -38,6 +38,7 @@ import {
   type TraceProvenance,
 } from "./traceDetail";
 import { readable, type ReadableBlock } from "./readable";
+import { readTodoItems, statusLabel, todoSummary } from "./todoList";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
 import { sourceNoteIndex, type SourceNote } from "../import/sourceNotes";
@@ -203,8 +204,10 @@ function clock(ts: number): string {
   ).padStart(3, "0")}`;
 }
 
-/** One dense line per frame — type-specific where a summary beats raw JSON. */
-function summarize(entry: TraceEntry, lang: Lang): string {
+/** One dense line per frame — type-specific where a summary beats raw JSON.
+ *  Exported for the tests: a summary that quietly stopped being called would
+ *  look exactly like one that was never wired up. */
+export function summarize(entry: TraceEntry, lang: Lang): string {
   const p = entry.payload as Record<string, unknown>;
   switch (entry.type) {
     case "system_context": {
@@ -239,6 +242,14 @@ function summarize(entry: TraceEntry, lang: Lang): string {
       return `${String(p["from"] ?? "")} → ${String(p["to"] ?? "")} · ${String(p["state"] ?? "")} · ${JSON.stringify(
         String(p["text"] ?? "").slice(0, AGENT_MESSAGE_PREVIEW_CHARS),
       )}`;
+    case "task_reminder": {
+      // The todo list an imported transcript carried (card 141). compactJson
+      // of a ten-item list is a wall of braces that ellipsizes after the first
+      // one, so the collapsed row shows the counts and the open row shows the
+      // list. A list this cannot read falls back to the raw frame.
+      const items = readTodoItems(p["items"]);
+      return items === null ? compactJson(entry.payload) : todoSummary(items, lang);
+    }
     default:
       return compactJson(entry.payload);
   }
@@ -524,6 +535,48 @@ function DetailSectionView({ section, lang }: { section: DetailSection; lang: La
               </li>
             ))}
           </ul>
+          {section.more > 0 && <p className="ed-more">{t(lang, "ed.more", { n: section.more })}</p>}
+        </div>
+      );
+
+    case "todo":
+      // The agent's own todo list, as a list (card 141). Status carries the
+      // dot and the badge from the agents/plan vocabulary, so it reskins with
+      // every design and adds no colour value: --ok for done, --accent for
+      // running, the base faint dot for open and for any status a later client
+      // invents. Every line under an item is there only because the item
+      // carried it.
+      return (
+        <div className="ed-sec">
+          <SectionLabel field={section.field} />
+          <ol className="ed-todo">
+            {/* The file's id is the item's own ordinal and repeats across
+                lists, so the row's key is its position, which cannot. */}
+            {section.items.map((item, i) => (
+              <li key={i} className="ed-todo-item">
+                <span className="ed-todo-head">
+                  <span className={`agent-dot agent-dot--${item.status}`} aria-hidden="true" />
+                  <span className="ed-todo-id mono">{item.id}</span>
+                  <span className="ed-todo-subject">{item.subject}</span>
+                  <span className={`agent-badge agent-badge--${item.status}`}>
+                    {statusLabel(item.status, lang)}
+                  </span>
+                </span>
+                {item.description !== undefined && <p className="ed-todo-desc">{item.description}</p>}
+                {item.activeForm !== undefined && <p className="ed-todo-now">{item.activeForm}</p>}
+                {(item.blockedBy !== undefined || item.blocks !== undefined || item.owner !== undefined) && (
+                  <p className="ed-todo-meta mono">
+                    {/* Wire field names, the way every other label in this view
+                        prints them: the trace is the wire view, and `blockedBy`
+                        is the field, not a word we chose. */}
+                    {item.blockedBy !== undefined && <span>blockedBy {item.blockedBy.join(", ")}</span>}
+                    {item.blocks !== undefined && <span>blocks {item.blocks.join(", ")}</span>}
+                    {item.owner !== undefined && <span>owner {item.owner}</span>}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ol>
           {section.more > 0 && <p className="ed-more">{t(lang, "ed.more", { n: section.more })}</p>}
         </div>
       );

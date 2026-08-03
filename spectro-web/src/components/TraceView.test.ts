@@ -3,7 +3,15 @@
 // the grid that header and rows share, so the two never fall out of step.
 
 import { describe, expect, it } from "vitest";
-import { CATEGORIES, categoryOf, inCategories, traceLinkState, traceTableClass } from "./TraceView";
+import type { TraceEntry } from "../state/reducer";
+import {
+  CATEGORIES,
+  categoryOf,
+  inCategories,
+  summarize,
+  traceLinkState,
+  traceTableClass,
+} from "./TraceView";
 
 describe("traceTableClass", () => {
   it("is the plain table while both optional columns show", () => {
@@ -99,5 +107,47 @@ describe("the client category", () => {
     // And with every chip on, nothing is dropped: the filter is the only thing
     // that decides, and an unknown type must not fall out of the trace.
     expect(rows.filter((t) => inCategories(t, new Set(CATEGORIES)))).toEqual(rows);
+  });
+});
+
+// The collapsed row for a todo list (card 141).
+//
+// A row whose summary is compactJson(payload) shows `{"items":[{"id":"1",...`
+// and then ellipsizes, which is the json blob the card refused. The counts are
+// what a reader scanning the trace can use, and they are the same three words
+// the plan panel already says in both languages.
+describe("the todo row's summary", () => {
+  const row = (payload: unknown): TraceEntry => ({
+    seq: 1,
+    dir: "in",
+    ts: 0,
+    type: "task_reminder",
+    payload,
+  });
+  const it3 = [
+    { id: "1", subject: "a", description: "a1", status: "completed", blocks: [], blockedBy: [] },
+    { id: "2", subject: "b", description: "b1", status: "in_progress", blocks: [], blockedBy: [] },
+    { id: "3", subject: "c", description: "c1", status: "pending", blocks: [], blockedBy: [] },
+  ];
+
+  it("counts the list instead of printing it", () => {
+    expect(summarize(row({ items: it3, itemCount: 3 }), "en")).toBe("1 open · 1 running · 1 done");
+    expect(summarize(row({ items: it3, itemCount: 3 }), "de")).toBe("1 offen · 1 in Arbeit · 1 fertig");
+  });
+
+  it("shows the raw frame when the list is not one it can read", () => {
+    const broken = { items: [{ id: "1", status: "pending" }] };
+    expect(summarize(row(broken), "en")).toBe('{"items":[{"id":"1","status":"pending"}]}');
+  });
+
+  it("leaves the other three import-only kinds as they were", () => {
+    const q: TraceEntry = {
+      seq: 2,
+      dir: "in",
+      ts: 0,
+      type: "queue_operation",
+      payload: { operation: "enqueue" },
+    };
+    expect(summarize(q, "en")).toBe('{"operation":"enqueue"}');
   });
 });

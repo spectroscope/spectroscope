@@ -514,6 +514,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.cat.context": { de: "context", en: "context" },
   "trace.cat.client": { de: "client", en: "client" },
   "trace.cat.other": { de: "other", en: "other" },
+  // Counting words for a todo list's statuses (card 141). Separate from the
+  // plan badge's plan.* labels on purpose: "läuft …" is right on ONE running
+  // step and is not a German sentence after a number, which the live pass
+  // caught as "2 läuft …". These count, those label.
+  "trace.todo.pending": { de: "offen", en: "open" },
+  "trace.todo.in_progress": { de: "in Arbeit", en: "running" },
+  "trace.todo.completed": { de: "fertig", en: "done" },
   "trace.typesAria": { de: "Event-Typen", en: "Event types" },
   "trace.all": { de: "alle", en: "all" },
   "trace.none": { de: "keine", en: "none" },

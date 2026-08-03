@@ -617,6 +617,22 @@
 .ed-md .md > :last-child { margin-bottom: 0; }
 .ed-img { display: block; max-width: min(100%, 320px); max-height: 240px; border-radius: var(--radius-chip); border: 1px solid var(--border); }
 .ed-path { font-size: var(--fs-11); color: var(--text-faint); overflow-wrap: anywhere; }
+/* An imported todo list (card 141): the agent's own items with their statuses.
+   The dot and the badge are the agents/plan vocabulary, so the status colours
+   are the ones already in the palette (--ok done, --accent running, the base
+   faint dot open) and this list adds no colour value of its own. */
+.ed-todo { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.ed-todo-item { display: flex; flex-direction: column; gap: 1px; padding-left: var(--sp-2); border-left: 1px solid var(--border); }
+.ed-todo-head { display: flex; align-items: baseline; gap: var(--sp-2); font-size: var(--fs-12); }
+/* The dot sits on the text baseline, and it never pulses here: the item was
+   running at the moment the file recorded it, and a blinking dot in a replay
+   would claim a present tense the row does not have. */
+.ed-todo-head .agent-dot { align-self: center; animation: none; }
+.ed-todo-id { flex: none; color: var(--text-faint); font-size: var(--fs-11); min-width: 1.2em; text-align: right; }
+.ed-todo-subject { color: var(--text); overflow-wrap: anywhere; }
+.ed-todo-desc { margin: 0 0 0 calc(7px + var(--sp-2)); font-size: var(--fs-12); color: var(--text-dim); overflow-wrap: anywhere; }
+.ed-todo-now { margin: 0 0 0 calc(7px + var(--sp-2)); font-size: var(--fs-11); color: var(--accent); }
+.ed-todo-meta { margin: 1px 0 0 calc(7px + var(--sp-2)); font-size: var(--fs-11); color: var(--text-faint); display: flex; flex-wrap: wrap; gap: var(--sp-3); }
 /* The Lab's JSONL strip is half as wide as the trace: same regions, less room. */
 .lab-line-body .ed { gap: var(--sp-2); }
 .lab-line-body .ed-rows dt { min-width: 0; }

@@ -6,6 +6,7 @@ import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
 import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS } from "../components/traceDetail";
 import { CATEGORIES } from "../components/TraceView";
+import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 
@@ -30,6 +31,14 @@ describe("i18n dict", () => {
     }
     for (const p of ["pending", "in_progress", "completed"]) {
       expect(dict[`plan.${p}`], `plan.${p}`).toBeDefined();
+    }
+    // The same three statuses again, in their counting form (card 141). Two
+    // families rather than one because a badge labels a single item and a
+    // count follows a number: German says "läuft …" for the first and needs
+    // "in Arbeit" for the second, and one family would have shipped the wrong
+    // half of that. Reached only as `trace.todo.${status}`.
+    for (const p of TODO_STATUSES) {
+      expect(dict[`trace.todo.${p}`], `trace.todo.${p}`).toBeDefined();
     }
     // A workflow run's headline row: the labels are reached only as
     // `tv.run.${RunStat["key"]}`, so a stat added without its word would ship as
