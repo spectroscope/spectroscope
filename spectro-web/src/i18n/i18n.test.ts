@@ -5,6 +5,7 @@ import { dict, t } from "./i18n";
 import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
 import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS } from "../components/traceDetail";
+import { CATEGORIES } from "../components/TraceView";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 
@@ -52,6 +53,15 @@ describe("i18n dict", () => {
     }
     for (const k of ["lab.face", "lab.faceAria", "lab.faceHint"]) {
       expect(dict[k], k).toBeDefined();
+    }
+    // The trace's type chips. They render from the dict now rather than from
+    // the enum's own spelling, so a category added without its word would show
+    // up as the bare key in the one row a reader filters with. The nine that
+    // were there before carry the same lowercase word in both languages,
+    // because that word IS the wire vocabulary (trace.lens and trace.timeline
+    // are spelled the same way for the same reason).
+    for (const c of CATEGORIES) {
+      expect(dict[`trace.cat.${c}`], `trace.cat.${c}`).toBeDefined();
     }
     // What an imported line says beyond its frames: the chip carries a word and
     // the tooltip carries the sentence that keeps the word from being a riddle.
@@ -132,6 +142,26 @@ describe("i18n dict", () => {
     }
     for (const k of ["set.dockerInstall", "set.langfuseCommand", "set.langfuseCost"]) {
       expect(dict[k], k).toBeDefined();
+    }
+  });
+});
+
+// The import bar's own sentence. Card 141 opened on the owner reading it and
+// asking whether the importer had a parsing bug: "21 lines produced no frame"
+// describes deliberate behaviour in the vocabulary of failure. The bar was
+// right and the importer was right; only the wording was wrong.
+describe("the import bar says what it means", () => {
+  it("no longer reports design as a defect, in either language", () => {
+    expect(dict["imp.bar"].en).not.toMatch(/produced no frame/);
+    expect(dict["imp.bar"].en).toMatch(/carry no conversation/);
+    expect(dict["imp.bar"].de).not.toMatch(/keinen Frame erzeugt/);
+  });
+
+  it("still names all three counts, so the sentence stays checkable", () => {
+    for (const lang of ["de", "en"] as const) {
+      for (const slot of ["{file}", "{lines}", "{frames}", "{zero}"]) {
+        expect(dict["imp.bar"][lang], `${lang} ${slot}`).toContain(slot);
+      }
     }
   });
 });

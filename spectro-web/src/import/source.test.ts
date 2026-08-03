@@ -136,9 +136,11 @@ describe("the origin of each frame", () => {
   });
 
   it("does not desynchronise on a record that emits nothing", () => {
-    // cc-modern opens on queue-operation records, and cc-heavy carries an
-    // orphaned-sidechain style early return. Both leave `out` untouched for a
-    // record, which is exactly where a captured start index would drift.
+    // cc-modern carries a last-prompt record, and cc-heavy an orphaned
+    // sidechain that returns early. Both leave `out` untouched for a record,
+    // which is exactly where a captured start index would drift. (cc-modern's
+    // leading queue-operations used to be the example here; card 141 turned
+    // them into frames, and the last-prompt took over the job.)
     for (const name of ["cc-modern.jsonl", "cc-heavy.jsonl"]) {
       const { events, source } = detectAndLoad(fixture(name));
       expect(source.origin.length).toBe(events.length);

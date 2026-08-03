@@ -65,7 +65,10 @@ const AGENT_MESSAGE_PREVIEW_CHARS = 60;
 /** This close to the bottom counts as "pinned" (auto-follow stays on). */
 const SCROLL_PIN_THRESHOLD_PX = 80;
 
-const CATEGORIES = [
+/** The chip row's groups, in the order they are shown. Exported because the
+ *  words are in the dict now and a category without one would ship as a bare
+ *  key, and because the filter below is tested against the whole list. */
+export const CATEGORIES = [
   "run",
   "turn",
   "text",
@@ -75,11 +78,13 @@ const CATEGORIES = [
   "usage",
   "image",
   "context",
+  "client",
   "other",
 ] as const;
-type Category = (typeof CATEGORIES)[number];
+export type Category = (typeof CATEGORIES)[number];
 
-function categoryOf(type: string): Category {
+/** Which chip a frame answers to. */
+export function categoryOf(type: string): Category {
   switch (type) {
     case "run_start":
     case "run_end":
@@ -108,10 +113,33 @@ function categoryOf(type: string): Category {
     case "context_info":
     case "system_context":
       return "context";
+    // What an imported transcript recorded around the conversation: the todo
+    // list, the prompt queue, the file somebody edited (card 141). Their own
+    // group rather than `other`, so a reader can bring them in or put them
+    // away in one click instead of hunting them among agent_spawn and error.
+    case "task_reminder":
+    case "queue_operation":
+    case "queued_command":
+    case "edited_text_file":
+      return "client";
     default:
       // agent_spawn, compaction, error — and every future type.
       return "other";
   }
+}
+
+/**
+ * Whether a frame survives the chip row.
+ *
+ * A function rather than an expression inside the view's filter: it is the one
+ * rule that decides what a reader can see, and it was untestable while it sat
+ * in a closure over component state.
+ *
+ * @param type   the frame's wire type
+ * @param active the categories whose chips are pressed
+ */
+export function inCategories(type: string, active: ReadonlySet<string>): boolean {
+  return active.has(categoryOf(type));
 }
 
 /** Event-type color (fixed brand vocabulary, tokens.css --ev-*). The bar in
@@ -969,7 +997,7 @@ export function TraceView(props: {
       if (e.type === "otlp_export" && !otelOn) return false;
       if (agentFilter !== null && e.agentId !== undefined && e.agentId !== agentFilter) return false;
       if (llmDir !== "all" && llmDirection(e.type) !== llmDir) return false;
-      if (!active.has(categoryOf(e.type))) return false;
+      if (!inCategories(e.type, active)) return false;
       if (q === "") return true;
       return `${e.type} ${e.agentId ?? ""} ${compactJson(e.payload)}`.toLowerCase().includes(q);
     });
@@ -1341,7 +1369,7 @@ export function TraceView(props: {
               aria-pressed={active.has(c)}
               onClick={() => toggleCat(c)}
             >
-              {c}
+              {t(lang, `trace.cat.${c}`)}
             </button>
           ))}
         </div>

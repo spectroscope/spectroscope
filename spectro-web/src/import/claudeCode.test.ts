@@ -10,6 +10,7 @@ import ccSubagent from "./fixtures/cc-subagent.jsonl?raw";
 import ccModern from "./fixtures/cc-modern.jsonl?raw";
 import ccWorkflow from "./fixtures/cc-workflow.jsonl?raw";
 import { claudeCodeToRunEvents, parseTaskNotification, parseTranscript } from "./claudeCode";
+import { detectAndLoad } from "./detect";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
 
@@ -46,9 +47,16 @@ describe("claudeCode adapter (linear)", () => {
 describe("claudeCode adapter (modern format)", () => {
   const events = parseTranscript(ccModern);
 
-  it("skips leading metadata records and opens with the real user prompt", () => {
-    expect(events[0]).toMatchObject({ type: "run_start", agentId: "main" });
-    expect((events[0] as { prompt: string }).prompt).toMatch(/check the tests/);
+  // This used to read "skips leading metadata records and opens with the real
+  // user prompt", and the skipping was the point of it. Card 141 removed the
+  // premise rather than the assertion: the leading records are read now, so
+  // the stream opens on the queue the user typed into and the run still starts
+  // where it always did, on the first message record.
+  it("reads the leading metadata records and still starts the run on the user prompt", () => {
+    expect(events[0]).toMatchObject({ type: "queue_operation", operation: "enqueue" });
+    const start = events.find((e) => e.type === "run_start");
+    expect(start).toMatchObject({ type: "run_start", agentId: "main" });
+    expect((start as { prompt: string }).prompt).toMatch(/check the tests/);
   });
 
   it("maps the Agent tool (the modern Task) to agent_spawn + result close", () => {
@@ -699,5 +707,272 @@ describe("how the run_end says the file stopped", () => {
     const child = events.find((e) => e.type === "run_end" && e.runId === "cc-task1");
     expect(child).toMatchObject({ stopReason: "max_tokens" });
     expect(events.at(-1)).toMatchObject({ runId: "cc-import", stopReason: "end_turn" });
+  });
+});
+
+// The lines that carry no conversation (card 141).
+//
+// A real Claude Code transcript is not only messages. Around them it records
+// the agent's todo list, the queue a user typed into while the model was
+// working, and the file somebody edited. The importer built frames from
+// `assistant` and `user` and from nothing else, so all of that arrived and
+// went nowhere. These are import-only frames: they are not wire events, they
+// are readings of another format, and wire/nonWire.ts keeps them out of every
+// file this app writes.
+//
+// The counts in the comments below were measured over the 4,545 transcripts in
+// ~/.claude/projects, not estimated.
+describe("claudeCode adapter (the lines that carry no conversation)", () => {
+  const attachment = (payload: Record<string, unknown>, i = 1): Record<string, unknown> => ({
+    parentUuid: "u1",
+    isSidechain: false,
+    type: "attachment",
+    attachment: payload,
+    uuid: `att-${i}`,
+    timestamp: "2026-07-23T12:15:24.919Z",
+  });
+
+  const framesOfType = (records: unknown[], type: string): Record<string, unknown>[] =>
+    claudeCodeToRunEvents(records).filter(
+      (e) => (e as unknown as { type: string }).type === type,
+    ) as unknown as Record<string, unknown>[];
+
+  it("frames a todo list as one frame carrying every item", () => {
+    // 30,690 items across 4,544 records; statuses completed 24,711 / pending
+    // 4,336 / in_progress 1,643.
+    const frames = framesOfType(
+      [
+        attachment({
+          type: "task_reminder",
+          content: [
+            {
+              id: "1",
+              subject: "read the card",
+              description: "read the card in full",
+              status: "completed",
+              blocks: [],
+              blockedBy: [],
+            },
+            {
+              id: "2",
+              subject: "write the test",
+              description: "write the failing test first",
+              status: "in_progress",
+              blocks: [],
+              blockedBy: [],
+              activeForm: "Writing the test",
+            },
+            {
+              id: "3",
+              subject: "run the gate",
+              description: "run the gate and report the numbers",
+              status: "pending",
+              blocks: [],
+              blockedBy: ["2"],
+            },
+          ],
+          itemCount: 3,
+        }),
+      ],
+      "task_reminder",
+    );
+    expect(frames.length).toBe(1);
+    expect(frames[0].itemCount).toBe(3);
+    const items = frames[0].items as { status: string }[];
+    expect(items.map((i) => i.status)).toEqual(["completed", "in_progress", "pending"]);
+  });
+
+  it("keeps each item's description, which is the whole substance of it", () => {
+    // This is the assertion that pins why the existing `plan` type was refused
+    // for this: planRow reads only `text`, so a todo list arriving as a plan
+    // would be stripped of five of its seven fields, the description first.
+    const frames = framesOfType(
+      [
+        attachment({
+          type: "task_reminder",
+          content: [
+            {
+              id: "1",
+              subject: "write the test",
+              description: "write the failing test and see it fail",
+              status: "pending",
+              blocks: [],
+              blockedBy: [],
+            },
+          ],
+          itemCount: 1,
+        }),
+      ],
+      "task_reminder",
+    );
+    const items = frames[0].items as { description: string; subject: string }[];
+    expect(items[0].description).toBe("write the failing test and see it fail");
+    expect(items[0].subject).toBe("write the test");
+  });
+
+  it("builds no frame for an empty todo list", () => {
+    // 2,087 of the 4,544 task_reminder records (45.9%) carry content: [] and
+    // itemCount: 0. A frame for one of those is a row saying nothing, which is
+    // the blank the model column was turned down for in card 139.
+    const events = claudeCodeToRunEvents([attachment({ type: "task_reminder", content: [], itemCount: 0 })]);
+    expect(events.filter((e) => (e as unknown as { type: string }).type === "task_reminder").length).toBe(0);
+  });
+
+  it("names an edited file, and carries its snippet only when there is one", () => {
+    // 940 records, filename and snippet always both present; the snippet runs
+    // to 8,223 characters at the top and to 0 at the bottom.
+    const withText = framesOfType(
+      [
+        attachment({
+          type: "edited_text_file",
+          filename: "/tmp/notes.md",
+          snippet: "1\tthe first line\n2\tthe second",
+        }),
+      ],
+      "edited_text_file",
+    );
+    expect(withText.length).toBe(1);
+    expect(withText[0].filename).toBe("/tmp/notes.md");
+    expect(withText[0].snippet).toBe("1\tthe first line\n2\tthe second");
+
+    const bare = framesOfType(
+      [attachment({ type: "edited_text_file", filename: "/tmp/notes.md", snippet: "" })],
+      "edited_text_file",
+    );
+    expect(bare.length).toBe(1);
+    expect(bare[0].filename).toBe("/tmp/notes.md");
+    expect("snippet" in bare[0]).toBe(false);
+  });
+
+  it("frames a queued command whatever mode it was queued in", () => {
+    // The design said to drop the 555 task-notification ones as already joined
+    // by emitNotification. MEASURED AND WRONG: of those 555, exactly 0 appear
+    // anywhere in the corpus as a user record with the same text, and only 21
+    // share a task id with any user record in their own file. Dropping them
+    // would put 534 real notifications on the floor, which is the loss this
+    // card exists to end. Both are framed; commandMode says which is which.
+    const frames = framesOfType(
+      [
+        attachment(
+          {
+            type: "queued_command",
+            prompt: "run the gate",
+            commandMode: "prompt",
+            timestamp: "2026-07-23T12:15:24.919Z",
+            origin: { kind: "human" },
+          },
+          1,
+        ),
+        attachment(
+          {
+            type: "queued_command",
+            prompt: "<task-notification>\n<task-id>abc</task-id>\n</task-notification>",
+            commandMode: "task-notification",
+            timestamp: "2026-07-23T12:16:00.000Z",
+          },
+          2,
+        ),
+      ],
+      "queued_command",
+    );
+    expect(frames.length).toBe(2);
+    expect(frames[0]).toMatchObject({
+      prompt: "run the gate",
+      commandMode: "prompt",
+      origin: { kind: "human" },
+    });
+    expect(frames[1].commandMode).toBe("task-notification");
+    expect("origin" in frames[1]).toBe(false);
+  });
+
+  it("reads a queued command whose prompt is a block array", () => {
+    // 159 of the 1,213 prompts are arrays, 142 of them with a text block; the
+    // rest is a pasted image. String concatenation would render "[object
+    // Object]" into the trace.
+    const frames = framesOfType(
+      [
+        attachment({
+          type: "queued_command",
+          prompt: [
+            { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBOR" } },
+            { type: "text", text: "hold on" },
+          ],
+          commandMode: "prompt",
+        }),
+      ],
+      "queued_command",
+    );
+    expect(frames.length).toBe(1);
+    expect(frames[0].prompt).toBe("hold on");
+  });
+
+  it("says less about a queue operation that carries no content", () => {
+    // 3,088 of 7,610 queue-operation records (40.6%) have no content field.
+    const frames = framesOfType(
+      [
+        {
+          type: "queue-operation",
+          operation: "dequeue",
+          timestamp: "2026-07-27T20:50:43.606Z",
+          sessionId: "s1",
+        },
+      ],
+      "queue_operation",
+    );
+    expect(frames.length).toBe(1);
+    expect(frames[0].operation).toBe("dequeue");
+    expect(frames[0].timestamp).toBe("2026-07-27T20:50:43.606Z");
+    expect("content" in frames[0]).toBe(false);
+  });
+
+  it("puts a queue operation that ran before the first message ahead of run_start", () => {
+    // 298 of the 7,610 (3.9%) sit before their file's first message record,
+    // which is where cc-modern opens too. The run still starts exactly once,
+    // and the user record is still what starts it.
+    const events = parseTranscript(ccModern);
+    const types = events.map((e) => (e as unknown as { type: string }).type);
+    expect(types.filter((t) => t === "run_start").length).toBe(1);
+    expect(types.indexOf("queue_operation")).toBeLessThan(types.indexOf("run_start"));
+    expect(types.filter((t) => t === "queue_operation").length).toBe(2);
+    const start = events.find((e) => e.type === "run_start") as { prompt: string };
+    expect(start.prompt).toMatch(/check the tests/);
+  });
+
+  it("builds nothing for a mode record, because there is nothing in it", () => {
+    // A PIN, not a red test: this passes today and must keep passing. All
+    // 3,581 mode records in the corpus carry the value "normal", and the record
+    // has no uuid and no timestamp. A frame repeating one word on every line of
+    // every file is decoration, so `mode` stays on the no-conversation pile.
+    const events = claudeCodeToRunEvents([{ type: "mode", mode: "normal", sessionId: "s1" }]);
+    expect(events.filter((e) => (e as unknown as { type: string }).type === "mode").length).toBe(0);
+    expect(events.length).toBe(0);
+  });
+
+  it("charges every new frame to the line it was read from", () => {
+    const text = [
+      JSON.stringify({
+        type: "queue-operation",
+        operation: "enqueue",
+        timestamp: "2026-07-27T20:48:05.750Z",
+        content: "wait",
+      }),
+      "",
+      JSON.stringify({
+        type: "user",
+        message: { role: "user", content: "go" },
+        uuid: "u1",
+        timestamp: "2026-07-27T20:48:06.000Z",
+      }),
+      JSON.stringify({
+        ...attachment({ type: "edited_text_file", filename: "/tmp/a.txt", snippet: "1\tx" }),
+        timestamp: "2026-07-27T20:48:07.000Z",
+      }),
+    ].join("\n");
+    const { events, source } = detectAndLoad(text);
+    const lineOf = (type: string): number =>
+      source.origin[events.findIndex((e) => (e as unknown as { type: string }).type === type)];
+    expect(lineOf("queue_operation")).toBe(0);
+    expect(lineOf("run_start")).toBe(2);
+    expect(lineOf("edited_text_file")).toBe(3);
   });
 });

@@ -32,6 +32,7 @@
 // contract, and a translated stream is still plain RunEvents.
 
 import type { RunEvent } from "../events";
+import { isWireEvent } from "../wire/nonWire";
 
 /** The type the server's own export sends, so both save the same kind of file. */
 const NDJSON = "application/x-ndjson;charset=utf-8";
@@ -46,13 +47,22 @@ const MAX_LANG_CHARS = 12;
  * One event per line, terminated — the exact shape SessionStore writes and
  * detectAndLoad reads.
  *
+ * Frames that are not wire events are left out. The stream a tab holds is
+ * wider than the file format: the app's own socket-only announcements ride in
+ * it, and an import adds the kinds it read out of somebody else's transcript.
+ * Writing one of those produces a line the Java reader drops in silence
+ * (nonWire.ts has the measurement), so the file would arrive one line shorter
+ * than it looks and never say which line went missing.
+ *
  * @param events the stream to serialize, in wire order
- * @return the file contents, or "" for no events (an empty file, not a blank line)
+ * @return the file contents, or "" when nothing wire-shaped survives the filter
+ *         (an empty file, not a blank line)
  * @throws TypeError when a value cannot survive JSON (a non-finite number above all)
  */
 export function toJsonl(events: readonly RunEvent[]): string {
-  if (events.length === 0) return "";
-  return `${events.map((event) => JSON.stringify(event, refuseNonFinite)).join("\n")}\n`;
+  const wire = events.filter(isWireEvent);
+  if (wire.length === 0) return "";
+  return `${wire.map((event) => JSON.stringify(event, refuseNonFinite)).join("\n")}\n`;
 }
 
 /**
@@ -93,11 +103,15 @@ export function jsonlFilename(opts: {
  *
  * @param events   the stream to write
  * @param filename the download name, from {@link jsonlFilename}
- * @return how many events were written, for the caller's status line
+ * @return how many LINES were written, which is the count of wire events in
+ *         the stream rather than its length: a status line that counted the
+ *         frames on screen would over-report an imported session by exactly
+ *         the frames the file cannot carry
  */
 export function downloadJsonl(events: readonly RunEvent[], filename: string): number {
-  save(toJsonl(events), filename);
-  return events.length;
+  const text = toJsonl(events);
+  save(text, filename);
+  return text === "" ? 0 : text.trimEnd().split("\n").length;
 }
 
 /** A JSON.stringify replacer that fails loudly instead of writing `null`.

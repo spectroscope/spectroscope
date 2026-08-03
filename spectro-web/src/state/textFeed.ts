@@ -7,6 +7,7 @@
 // gate, errors. A pure fold over RunEvent[] — no React, fully unit-tested.
 
 import type { RunEvent } from "../events";
+import { isWireEvent } from "../wire/nonWire";
 
 /** One block of the feed. `kind` drives the styling only — `text` is complete. */
 export interface FeedSegment {
@@ -191,16 +192,15 @@ export function feedToPlainText(segments: readonly FeedSegment[]): string {
     .join("\n");
 }
 
-/** The wire types that are SOCKET-ONLY UI frames — never in the JSONL file. */
-const SOCKET_ONLY_TYPES = new Set(["workspace_info", "provider_info", "permission_mode_info"]);
-
 /**
  * The session as JSONL lines — one compact JSON object per wire event,
- * exactly the shape the session file stores. Socket-only UI frames are
- * filtered out: they never enter the file, and this view IS the file.
+ * exactly the shape the session file stores. Frames that are not wire events
+ * are filtered out: they never enter the file, and this view IS the file.
+ *
+ * The list used to live here, and only here, which is how the download came to
+ * write lines this view did not show. It lives in wire/nonWire.ts now so the
+ * view and every writer read the same one.
  */
 export function eventsToJsonl(events: readonly RunEvent[]): string[] {
-  return events
-    .filter((e) => !SOCKET_ONLY_TYPES.has((e as { type: string }).type))
-    .map((e) => JSON.stringify(e));
+  return events.filter(isWireEvent).map((e) => JSON.stringify(e));
 }

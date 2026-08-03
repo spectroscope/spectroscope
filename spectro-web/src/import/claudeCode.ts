@@ -37,6 +37,40 @@ interface CCRecord {
   parentUuid?: string;
   isSidechain?: boolean;
   timestamp?: string;
+  /** `attachment` records: what the client recorded around the conversation. */
+  attachment?: CCAttachment;
+  /** `queue-operation` records: enqueue, dequeue or remove. */
+  operation?: string;
+  /** The queued text, on a queue-operation that kept it. */
+  content?: unknown;
+}
+
+/**
+ * The body of an `attachment` record.
+ *
+ * One record type with a discriminated body, and 25 bodies in the corpus. Four
+ * are read here; the rest stay on the no-conversation pile until somebody can
+ * say what a reader would do with them.
+ */
+interface CCAttachment {
+  type?: string;
+  /** task_reminder: the todo items, each `{id, subject, description, status,
+   *  blocks, blockedBy, activeForm?, owner?}`. */
+  content?: unknown;
+  /** task_reminder: the client's own count of them. */
+  itemCount?: number;
+  /** edited_text_file: the path that was edited, and what changed. */
+  filename?: string;
+  snippet?: string;
+  /** queued_command: what was typed, as a string or as content blocks. */
+  prompt?: unknown;
+  /** queued_command: "prompt" for something a person queued, "task-notification"
+   *  for a background task reporting in. */
+  commandMode?: string;
+  /** queued_command: the client's own stamp on the queued command. */
+  timestamp?: string;
+  /** queued_command: `{kind: "human"}` on 648 of 1,213, absent on the rest. */
+  origin?: unknown;
 }
 
 interface CCBlock {
@@ -467,8 +501,113 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   announce(firstModel, stamps[0] ?? base);
   chargeTo(-1); // the opening announcement is the importer's, not a line's
 
+  /**
+   * The kinds a transcript records AROUND the conversation (card 141).
+   *
+   * These are not wire events and never become any: nothing in the Java core
+   * would emit a todo list, and putting one in the union would ship a record
+   * no code path constructs. They are readings of somebody else's file, the
+   * idiom import/sourceNotes.ts already uses, and wire/nonWire.ts keeps them
+   * out of everything this app writes.
+   *
+   * A frame is built only where the data is there. Every optional field is
+   * spread in conditionally rather than defaulted, because a row rendering a
+   * blank for a field the file never carried says something the file did not.
+   *
+   * Read before the sidechain branch: an attachment is never sidechain in the
+   * corpus, and a stray flag would otherwise drop it into a path that emits
+   * nothing. These frames name no agent, so there is no claim to get wrong.
+   *
+   * @return true when the record was one of these kinds and is fully handled
+   */
+  const emitNoConversation = (r: CCRecord, ts: number): boolean => {
+    if (r.type === "queue-operation") {
+      // 7,610 records: enqueue 3,810 / dequeue 2,248 / remove 1,552. The
+      // client's own `timestamp` travels with the frame because `ts` is not
+      // always it: stampRecords fills in a synthetic ladder for undated
+      // records and clamps a stray early date, so the string is the file's
+      // answer and `ts` is the stream's.
+      if (typeof r.operation === "string" && r.operation !== "") {
+        out.push({
+          type: "queue_operation",
+          operation: r.operation,
+          ...(typeof r.timestamp === "string" ? { timestamp: r.timestamp } : {}),
+          ...(typeof r.content === "string" && r.content !== "" ? { content: r.content } : {}),
+          ts,
+        } as unknown as RunEvent);
+      }
+      return true;
+    }
+    if (r.type !== "attachment") return false;
+    const a = r.attachment;
+    switch (a?.type) {
+      case "task_reminder": {
+        // 4,544 records, but 2,087 of them (45.9%) carry an empty list. The
+        // items are carried whole: measured over 30,690 of them they hold
+        // {id, subject, description, status, blocks, blockedBy} always,
+        // activeForm on 29,087 and owner on 350, and the existing `plan` shape
+        // reads only `text`, which would drop five fields of seven.
+        const items = Array.isArray(a.content)
+          ? a.content.filter((it) => !!it && typeof it === "object")
+          : [];
+        if (items.length === 0) return true;
+        out.push({
+          type: "task_reminder",
+          items,
+          // The file's own number, not a recount. It agrees with the list on
+          // all 4,544 records today; a file where it does not gets to say so
+          // rather than being quietly reconciled.
+          ...(typeof a.itemCount === "number" ? { itemCount: a.itemCount } : {}),
+          ts,
+        } as unknown as RunEvent);
+        return true;
+      }
+      case "edited_text_file": {
+        // 940 records. The snippet runs to 8,223 characters and down to 0, so
+        // an empty one is a real state and the frame simply does not carry it.
+        if (typeof a.filename !== "string" || a.filename === "") return true;
+        out.push({
+          type: "edited_text_file",
+          filename: a.filename,
+          ...(typeof a.snippet === "string" && a.snippet !== "" ? { snippet: a.snippet } : {}),
+          ts,
+        } as unknown as RunEvent);
+        return true;
+      }
+      case "queued_command": {
+        // 1,213 records: 658 typed by a person, 555 a background task
+        // reporting in. Both are framed. The design here said to drop the
+        // notifications as already joined by emitNotification, and the corpus
+        // says otherwise: 0 of the 555 appear as a user record with the same
+        // text and only 21 share a task id with any user record in their own
+        // file, so dropping them would lose the report entirely.
+        const prompt = asText(a.prompt);
+        out.push({
+          type: "queued_command",
+          ...(prompt !== "" ? { prompt } : {}),
+          ...(typeof a.commandMode === "string" && a.commandMode !== ""
+            ? { commandMode: a.commandMode }
+            : {}),
+          ...(typeof a.timestamp === "string" ? { timestamp: a.timestamp } : {}),
+          ...(a.origin !== undefined && a.origin !== null ? { origin: a.origin } : {}),
+          ts,
+        } as unknown as RunEvent);
+        return true;
+      }
+      default:
+        // The other 21 attachment bodies. They are read and passed over on
+        // purpose, the same way `mode` is: all 3,581 mode records in the
+        // corpus say "normal" and carry no uuid and no clock, so a frame for
+        // one would repeat a single word on every line of every file. What
+        // carries nothing stays on the no-conversation pile, where the import
+        // bar counts it honestly.
+        return true;
+    }
+  };
+
   const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
+    if (emitNoConversation(r, ts)) return;
     const content = r.message?.content;
     const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
     if (r.isSidechain) {

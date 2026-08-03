@@ -10,6 +10,8 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../events";
 import { attachSources, noteAnchors, sourceStats } from "./traceSource";
+import { detectAndLoad } from "../import/detect";
+import ccNoConvo from "../import/fixtures/cc-noconvo.jsonl?raw";
 import { swapTracePayloads } from "./translate";
 
 const ev = (text: string): RunEvent => ({ type: "text_delta", agentId: "main", text, ts: 1 });
@@ -106,6 +108,29 @@ describe("sourceStats", () => {
     const stats = sourceStats({ lines: ["a", "b"], origin: Int32Array.from([-1]) });
     expect(stats.zeroLines).toBe(2);
     expect(stats.frames).toBe(1);
+  });
+
+  it("counts only what really carries no conversation, on a real file", () => {
+    // cc-noconvo.jsonl is nine records lifted verbatim out of real transcripts
+    // in ~/.claude/projects: a queue operation with its content, a user turn,
+    // a todo list of four items, an edited file with its snippet, a queued
+    // command, a mode, a last-prompt, a custom-title and an assistant turn.
+    //
+    // Before card 141 this file reported seven silent lines out of nine, which
+    // is what made the owner ask whether the importer was broken. Four of the
+    // seven produce frames now. What is left is the three the census really
+    // puts on the pile: mode says "normal" on every line of every file,
+    // last-prompt is a pointer into the file, custom-title is its name.
+    const { source } = detectAndLoad(ccNoConvo);
+    const stats = sourceStats(source);
+    expect(stats.lines).toBe(9);
+    expect(stats.zeroLines).toBe(3);
+    const silent = source.lines.filter((_, i) => ![...source.origin].includes(i));
+    expect(silent.map((l) => (JSON.parse(l) as { type: string }).type)).toEqual([
+      "mode",
+      "last-prompt",
+      "custom-title",
+    ]);
   });
 });
 

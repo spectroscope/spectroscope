@@ -82,12 +82,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.load": { de: "Laden", en: "Load" },
   // Shown for EVERY import, not only the VS Code one. The counts are the file's
   // own: how many lines arrived, how many frames this view is built from, and
-  // how many lines produced nothing at all (queue operations, attachments, hook
-  // records). The last sentence is the plain truth about where the file lives:
-  // an import is never written to disk, and cannot be resumed or deleted.
+  // how many lines hold no part of the conversation (the pointer records a
+  // client keeps, the session name, the editing mode). The last sentence is the
+  // plain truth about where the file lives: an import is never written to disk,
+  // and cannot be resumed or deleted.
+  //
+  // The sentence used to end "produced no frame", which reads as loss and sent
+  // the owner looking for a parsing bug that was not there (card 141). The
+  // number is smaller now as well, because four of the kinds it counted became
+  // frames; what is left really does carry nothing.
   "imp.bar": {
-    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen haben keinen Frame erzeugt. Nichts wurde auf die Platte geschrieben.",
-    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines produced no frame. Nothing was written to disk.",
+    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen tragen kein Gespräch. Nichts wurde auf die Platte geschrieben.",
+    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines carry no conversation. Nothing was written to disk.",
   },
 
   // common
@@ -490,6 +496,24 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tf.explainFailed": { de: "Deutung fehlgeschlagen: {msg}", en: "The reading failed: {msg}" },
   "ws.perSession": { de: "Session-Workspace", en: "session workspace" },
   "ws.pinned": { de: "fester Workspace", en: "pinned workspace" },
+  // The type chips. The nine that predate card 141 kept the exact lowercase
+  // word they rendered before, in both languages, because that word is the
+  // wire's own vocabulary and translating it would break the link between the
+  // chip and the type column beside it (trace.lens and trace.timeline are
+  // spelled the same way for the same reason). "client" is the tenth: what a
+  // transcript recorded around the conversation, which is the todo list, the
+  // prompt queue and the file that was edited.
+  "trace.cat.run": { de: "run", en: "run" },
+  "trace.cat.turn": { de: "turn", en: "turn" },
+  "trace.cat.text": { de: "text", en: "text" },
+  "trace.cat.thinking": { de: "thinking", en: "thinking" },
+  "trace.cat.tool": { de: "tool", en: "tool" },
+  "trace.cat.permission": { de: "permission", en: "permission" },
+  "trace.cat.usage": { de: "usage", en: "usage" },
+  "trace.cat.image": { de: "image", en: "image" },
+  "trace.cat.context": { de: "context", en: "context" },
+  "trace.cat.client": { de: "client", en: "client" },
+  "trace.cat.other": { de: "other", en: "other" },
   "trace.typesAria": { de: "Event-Typen", en: "Event types" },
   "trace.all": { de: "alle", en: "all" },
   "trace.none": { de: "keine", en: "none" },

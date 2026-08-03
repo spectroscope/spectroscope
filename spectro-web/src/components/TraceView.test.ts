@@ -3,7 +3,7 @@
 // the grid that header and rows share, so the two never fall out of step.
 
 import { describe, expect, it } from "vitest";
-import { traceLinkState, traceTableClass } from "./TraceView";
+import { CATEGORIES, categoryOf, inCategories, traceLinkState, traceTableClass } from "./TraceView";
 
 describe("traceTableClass", () => {
   it("is the plain table while both optional columns show", () => {
@@ -47,5 +47,57 @@ describe("traceLinkState", () => {
   it("stays silent for an export that landed on a non-langfuse backend", () => {
     // A successful Jaeger export yields no url, and that is not a failure.
     expect(traceLinkState(null, null)).toBe("none");
+  });
+});
+
+// The chip that brings in what the client recorded (card 141).
+//
+// The trace groups frames by category and gives each group a chip. The four
+// import-only kinds are not run, turn, text, thinking, tool, permission,
+// usage, image or context, and dropping them into `other` would scatter them
+// among agent_spawn, compaction and error, where a reader cannot put them away
+// or bring them back in one click. They get their own.
+describe("the client category", () => {
+  it("groups the four import-only kinds, and takes nothing that was already placed", () => {
+    for (const type of ["task_reminder", "queue_operation", "queued_command", "edited_text_file"]) {
+      expect(categoryOf(type), type).toBe("client");
+    }
+    // The neighbours it must not have swallowed: `other` is still the home of
+    // everything unclassified, and every named category still answers.
+    expect(categoryOf("agent_spawn")).toBe("other");
+    expect(categoryOf("compaction")).toBe("other");
+    expect(categoryOf("run_start")).toBe("run");
+    expect(categoryOf("tool_call")).toBe("tool");
+  });
+
+  it("is one of the chips, so it can be switched off", () => {
+    expect(CATEGORIES).toContain("client");
+  });
+
+  it("drops exactly those four rows when the chip is off", () => {
+    const rows = [
+      "run_start",
+      "turn_start",
+      "task_reminder",
+      "text_delta",
+      "queue_operation",
+      "tool_call",
+      "queued_command",
+      "agent_spawn",
+      "edited_text_file",
+      "run_end",
+    ];
+    const off = new Set(CATEGORIES.filter((c) => c !== "client"));
+    expect(rows.filter((t) => inCategories(t, off))).toEqual([
+      "run_start",
+      "turn_start",
+      "text_delta",
+      "tool_call",
+      "agent_spawn",
+      "run_end",
+    ]);
+    // And with every chip on, nothing is dropped: the filter is the only thing
+    // that decides, and an unknown type must not fall out of the trace.
+    expect(rows.filter((t) => inCategories(t, new Set(CATEGORIES)))).toEqual(rows);
   });
 });
