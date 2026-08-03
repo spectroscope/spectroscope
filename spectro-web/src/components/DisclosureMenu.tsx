@@ -1,7 +1,9 @@
 // The three-dots disclosure-level menu (card 78 #4): normal | extended |
-// thinking, one radio-style row each. It lives ONCE, left of the composer
-// toolbox, and opens upward. It used to live twice; the second copy sat in a
-// row floating over the first chat message, and that row is gone (owner,
+// thinking, one radio-style row each. It is mounted ONCE (Chat.tsx builds it
+// above the composer branch) and rendered at the left of whichever bar is on
+// screen, the live one or the archive one, because a stored session is read
+// with these settings too. It used to be mounted twice; the second copy sat in
+// a row floating over the first chat message, and that row is gone (owner,
 // 2026-08-03: "das ist haesslich"). With it went the downward placement, so
 // the popover no longer needs to be told which way to open.
 //

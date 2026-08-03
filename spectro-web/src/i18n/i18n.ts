@@ -936,8 +936,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "local.model.vibethinker-3b.blurb": { de: "Ein kleiner Reasoning-Spezialist. Zeigt sein Denken schön, kann aber keine Tools aufrufen; der Agent antwortet nur mit Worten.", en: "A small reasoning specialist. Shows its thinking beautifully but cannot call tools, so the agent answers with words only." },
   "local.model.vibethinker-3b.licenceCaveat": { de: "Die Lizenz des Basismodells (Qwen2.5-Coder-3B) erlaubt Forschungs- und Evaluationsnutzung. Die GGUF-Datei ist eine Community-Requantisierung (mradermacher), nicht von WeiboAI selbst — du lädst sie eigenhändig, sha256-gepinnt.", en: "Its base model's licence (Qwen2.5-Coder-3B) allows research and evaluation use. The GGUF is a community requantization (mradermacher) rather than WeiboAI's own file — you fetch it yourself, sha256-pinned." },
 
-  "arch.export": { de: "Exportieren", en: "Export" },
-  "arch.exportTitle": { de: "Diese Session als .jsonl herunterladen — der Import liest sie wieder ein", en: "Download this session as .jsonl — the import reads it back" },
+  // Named after the file it hands over, not after the act: the tools row one
+  // line above carries "exportieren" / "export", which opens the format dialog
+  // and writes the view on screen. Two neighbours reading "Export" would have
+  // been one word for two different things (owner report, 2026-08-03).
+  "arch.export": { de: ".jsonl herunterladen", en: "download .jsonl" },
+  "arch.exportTitle": { de: "Die aufgezeichnete Datei, unverändert; der Import liest sie wieder ein", en: "The recorded file, unchanged; the import reads it back" },
 
   // tool card views (card 94)
   "tv.modeAria": { de: "Darstellung des Tool-Aufrufs", en: "Tool call view" },

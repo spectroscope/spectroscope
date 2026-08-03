@@ -42,12 +42,18 @@ describe("the composer's session tools", () => {
     });
   });
 
-  it("says the same thing for an archive as for a live session", () => {
-    // No liveView input on purpose: an archive is exactly what people export
-    // and translate, so the answer cannot depend on which branch renders it.
-    expect(chatTools({ events: 7, translatedUnits: 0 })).toEqual(
-      chatTools({ events: 7, translatedUnits: 0 }),
-    );
-    expect(chatTools({ events: 7, translatedUnits: 0 }).row).toBe(true);
+  it("carries them from the first recorded event, not from a comfortable number", () => {
+    // The boundary, stated once. What stood here was
+    // `expect(chatTools(x)).toEqual(chatTools(x))`, the same pure function
+    // compared to itself, which passes for every implementation including one
+    // that ignores its input. It was named for the archive-equals-live rule,
+    // which has no runtime shape to assert: it is the ABSENCE of a liveView
+    // input. That guarantee is now read off the signature in
+    // chatToolsPlacement.drift.test.ts, where source text is visible.
+    expect(chatTools({ events: 1, translatedUnits: 0 })).toEqual({
+      row: true,
+      exportControl: true,
+      translateControl: true,
+    });
   });
 });

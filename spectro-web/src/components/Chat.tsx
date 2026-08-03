@@ -392,6 +392,16 @@ export function Chat(props: {
     </div>
   );
 
+  // The disclosure menu, built once here for the same reason the tools row is:
+  // it belongs to BOTH bars. It is the only route to the disclosure level, the
+  // reading width and the chat reading, and those three say how a session is
+  // read, not what it does. Reading someone else's stored session is what the
+  // archive branch is for, so a menu that appears only while a run is live is
+  // absent from the screen that needs it most. Not folded into the tools row:
+  // that row withholds itself on an empty chat, and this control still applies
+  // there. One mount, two places to render it.
+  const discMenu = <DisclosureMenu />;
+
   return (
     <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>
       {/* Jump rail, the trace's affordance: an imported session runs to hundreds
@@ -586,9 +596,8 @@ export function Chat(props: {
                 onChange={attachments.onFilePicked}
               />
               {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
-                  button, per the owner's placement. The only copy since the
-                  floating row it also lived in was removed. */}
-              <DisclosureMenu />
+                  button, per the owner's placement. */}
+              {discMenu}
               <button
                 type="button"
                 className="icon-button attach-button"
@@ -702,6 +711,9 @@ export function Chat(props: {
           <div className="composer-column">
             {toolsRow}
             <div className="composer-inner">
+              {/* Leftmost, as in the live bar: same control, same end of the
+                  row, so the hand goes to the same place on both screens. */}
+              {discMenu}
               <span className="archive-note">{t(lang, "lab.viewingArchive")}</span>
               {props.onResume !== undefined && (
                 <button

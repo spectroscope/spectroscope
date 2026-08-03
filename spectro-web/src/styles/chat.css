@@ -30,6 +30,13 @@
   gap: var(--sp-2);
   padding-bottom: var(--sp-1);
 }
+/* The archive bar has no Send to meet, and modal-composer.css centres its row.
+   The rationale above does not survive that branch: right-aligned above centred
+   puts one control cluster on two axes, a few pixels apart, and reads as two.
+   So the row follows the bar it belongs to. */
+.archive-bar .composer-tools {
+  justify-content: center;
+}
 /* The translation's way back to the record, in the tab row (App.tsx) so it is
    reachable from the trace and the text feed too. It takes the auto margin the
    level pill would otherwise take; the pill then simply follows it. Lives in
