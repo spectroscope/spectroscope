@@ -17,6 +17,7 @@
 // actual fact, and govern nothing else.
 
 import type { Lang } from "../i18n/i18n";
+import { t } from "../i18n/i18n";
 
 /** One row of GET /api/claude/transcripts. */
 export interface TranscriptRow {
@@ -35,6 +36,9 @@ export interface TranscriptRow {
 export interface StoreLimits {
   /** The largest transcript the content endpoint will serve. */
   limitBytes: number;
+  /** Whether the row cap dropped transcripts the store really holds. Absent from
+   *  a server older than this field, which means "did not say" rather than "no". */
+  truncated?: boolean;
 }
 
 /**
@@ -97,4 +101,24 @@ export function rowState(row: TranscriptRow, limits: StoreLimits | null, lang: L
         : `${size}, this server reads at most ${formatBytes(limits.limitBytes)}`;
 
   return { enabled: false, kind: "too-large", reason };
+}
+
+/**
+ * What to say when the listing is not all of the store.
+ *
+ * The dialog rendered whatever rows arrived, so a transcript dropped by the row
+ * cap was simply absent and nothing said it had been cut. A refused row at
+ * least explains itself; a missing one reads as "the file is not in the store",
+ * which sends the reader looking in the wrong place. The Files tree next door
+ * has said this out loud since it was written.
+ *
+ * @param limits what the listing published about its limits, or null when the
+ *        server did not answer at all
+ * @param shown how many rows the dialog actually has
+ * @param lang the UI-chrome language
+ * @returns the notice, or null when the listing is complete or says nothing
+ */
+export function listingNotice(limits: StoreLimits | null, shown: number, lang: Lang): string | null {
+  if (limits === null || limits.truncated !== true) return null;
+  return t(lang, "imp.truncated", { n: shown });
 }

@@ -53,6 +53,33 @@ class ClaudeTranscriptsControllerTest {
     }
 
     @Test
+    void aCappedListingSaysSo() throws Exception {
+        // The walk reaches subagent files too, so the row cap fires long before
+        // a store looks large: counted on this machine on 2026-08-03 it hid 553
+        // of 853 files, 36 of them ordinary session transcripts. The envelope
+        // published the byte ceiling and stayed silent about this one.
+        Path proj = Files.createDirectories(projects().resolve("-proj"));
+        for (int i = 0; i < 301; i++) {
+            Files.writeString(proj.resolve("s" + i + ".jsonl"), "{}\n");
+        }
+        var listing = new ClaudeTranscriptsController(projects()).transcripts(local()).getBody();
+
+        assertThat(listing.transcripts()).hasSize(300);
+        assertThat(listing.truncated()).isTrue();
+    }
+
+    @Test
+    void anUncappedListingSaysSoToo() throws Exception {
+        Path proj = Files.createDirectories(projects().resolve("-proj"));
+        Files.writeString(proj.resolve("only.jsonl"), "{}\n");
+
+        var listing = new ClaudeTranscriptsController(projects()).transcripts(local()).getBody();
+
+        assertThat(listing.transcripts()).hasSize(1);
+        assertThat(listing.truncated()).isFalse();
+    }
+
+    @Test
     void listsSubagentTranscriptsInSubfolders() throws Exception {
         Path base = projects();
         Path sub = Files.createDirectories(base.resolve("-proj/subagents"));

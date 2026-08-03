@@ -75,6 +75,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.hint": { de: "Rohes spectroscope-JSONL wird wortwörtlich abgespielt; ein Claude-Code-Transkript ({path}) wird adaptiert — Subagenten-Sidechains werden Kind-Agenten.", en: "Raw spectroscope JSONL replays verbatim; a Claude Code transcript ({path}) is adapted — subagent sidechains become child agents." },
   "imp.placeholder": { de: ".jsonl-Inhalt hier einfügen …", en: "Paste .jsonl content here …" },
   "imp.store": { de: "Direkt aus ~/.claude/projects (im Finder unsichtbar) — ein Klick lädt:", en: "Straight from ~/.claude/projects (invisible in Finder) — one click loads:" },
+  "imp.truncated": { de: "… nur die {n} neuesten. Ältere Transkripte liegen im Store, stehen aber nicht in dieser Liste.", en: "… the {n} newest only. Older transcripts are in the store but not in this list." },
   "imp.pick": { de: "Datei wählen …", en: "Pick a file …" },
   "imp.vscodeNote": { de: "Dieser VS-Code-Export hält fest, welche Tools liefen und ob sie erfolgreich waren, aber nicht, was sie zurückgaben. Die Tool-Inhalte bleiben deshalb leer.", en: "This VS Code export records which tools ran and whether they succeeded, but not what they returned. The tool bodies are empty for that reason." },
   "imp.err.read": { de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?", en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?" },

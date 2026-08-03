@@ -90,6 +90,8 @@
 
 /* One-click transcripts from the (Finder-invisible) ~/.claude/projects store. */
 .import-store-label { font-size: var(--fs-12); color: var(--text-dim); margin: 0 0 var(--sp-1); }
+/* The listing is capped by rows as well as by bytes; this is the row half. */
+.import-store-note { font-size: var(--fs-12); color: var(--text-dim); margin: var(--sp-1) 0 0; }
 .import-store {
   display: flex;
   flex-direction: column;

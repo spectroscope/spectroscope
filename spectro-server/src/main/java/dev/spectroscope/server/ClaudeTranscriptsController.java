@@ -49,13 +49,34 @@ public class ClaudeTranscriptsController {
             String path, String project, String file, long size, long modifiedAt, boolean loadable) {}
 
     /**
-     * The listing and the limit that governs it, in one answer.
+     * The listing and BOTH limits that govern it, in one answer.
+     *
+     * <p>There are two, and this record used to publish one. The byte ceiling
+     * refuses a named file the caller can see; the row cap drops files the
+     * caller never learns about, which is the worse of the pair to keep quiet.
+     * The sibling {@link WorkspaceController.FilesResponse} has carried the same
+     * flag for the same reason since it was written.</p>
      *
      * @param limitBytes the largest transcript {@link #content} will serve
+     * @param truncated {@code true} when the row cap dropped transcripts the
+     *                  store really holds — the listing is incomplete
      * @param transcripts the rows, newest first
      */
-    public record TranscriptListing(long limitBytes, List<TranscriptInfo> transcripts) {}
+    public record TranscriptListing(
+            long limitBytes, boolean truncated, List<TranscriptInfo> transcripts) {}
 
+    /**
+     * The most rows one listing returns.
+     *
+     * <p>Counted on this machine's store 2026-08-03: the walk descends four
+     * levels and so reaches {@code <project>/<session>/subagents/agent-*.jsonl}
+     * as well as the session transcripts themselves, which put 853 candidates in
+     * front of this cap. 181 of the 300 served slots went to subagent files and
+     * 36 ordinary session transcripts fell off the end, all of them far under
+     * the byte ceiling. The store is live, so those are a reading and not a
+     * constant. Whether the split is right is a product question; whether the
+     * caller is told the cap fired is not.</p>
+     */
     private static final int MAX_LISTED = 300;
 
     /**
@@ -114,22 +135,27 @@ public class ClaudeTranscriptsController {
     /**
      * The listing itself, fence already passed.
      *
-     * @return the rows plus the limit that governs them
+     * <p>Counted before the cap is applied, not after: {@code limit} on the
+     * stream cannot tell a store of exactly 300 from one of 900.</p>
+     *
+     * @return the rows plus both limits that govern them
      */
     private TranscriptListing listing() {
         if (!Files.isDirectory(base)) {
-            return new TranscriptListing(MAX_CONTENT_BYTES, List.of());
+            return new TranscriptListing(MAX_CONTENT_BYTES, false, List.of());
         }
         try (Stream<Path> walk = Files.walk(base, 4)) {
-            return new TranscriptListing(MAX_CONTENT_BYTES, walk
+            List<TranscriptInfo> found = walk
                     .filter(Files::isRegularFile)
                     .filter(p -> p.getFileName().toString().endsWith(".jsonl"))
                     .map(this::describe)
                     .sorted(Comparator.comparingLong(TranscriptInfo::modifiedAt).reversed())
-                    .limit(MAX_LISTED)
-                    .toList());
+                    .toList();
+            boolean capped = found.size() > MAX_LISTED;
+            return new TranscriptListing(MAX_CONTENT_BYTES, capped,
+                    capped ? List.copyOf(found.subList(0, MAX_LISTED)) : found);
         } catch (IOException unreadable) {
-            return new TranscriptListing(MAX_CONTENT_BYTES, List.of());
+            return new TranscriptListing(MAX_CONTENT_BYTES, false, List.of());
         }
     }
 

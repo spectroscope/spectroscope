@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { rowState, formatBytes } from "./rowState";
+import { rowState, formatBytes, listingNotice } from "./rowState";
 import type { TranscriptRow, StoreLimits } from "./rowState";
 
 // The owner's own file, as the listing described it on 2026-08-03. It sat in the
@@ -75,6 +75,29 @@ describe("rowState", () => {
     if (state.enabled) throw new Error("expected a refusal");
     expect(state.reason).toContain("73.6 MB");
     expect(state.reason.trim()).not.toEqual("");
+  });
+
+  it("aCappedListingIsAnnouncedInBothLanguages", () => {
+    // The listing keeps the 300 newest and drops the rest. Counted on this
+    // machine on 2026-08-03 that hid 553 files, 36 of them ordinary session
+    // transcripts far under the byte ceiling, and the dialog said nothing: the
+    // wanted transcript was simply absent. The sibling Files tree already ships
+    // the honest pattern, a truncated flag rendered as a notice.
+    const capped: StoreLimits = { limitBytes: 128 * 1024 * 1024, truncated: true };
+    const en = listingNotice(capped, 300, "en");
+    const de = listingNotice(capped, 300, "de");
+    expect(en).not.toBeNull();
+    expect(de).not.toBeNull();
+    expect(en).not.toBe(de);
+    expect(en).toContain("300");
+    expect(de).toContain("300");
+  });
+
+  it("anUncappedListingSaysNothing", () => {
+    expect(listingNotice({ limitBytes: 1, truncated: false }, 12, "en")).toBeNull();
+    // A server too old to say does not get a guess put in its mouth.
+    expect(listingNotice({ limitBytes: 1 }, 12, "en")).toBeNull();
+    expect(listingNotice(null, 12, "en")).toBeNull();
   });
 
   it("sizesReadTheSameWayTheRowAlreadyPrintsThem", () => {

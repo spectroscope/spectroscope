@@ -17,7 +17,7 @@ import { reportBrowserError } from "../state/browserLog";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
-import { rowState, formatBytes } from "../import/rowState";
+import { rowState, formatBytes, listingNotice } from "../import/rowState";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
 
 export function ImportDialog(props: {
@@ -48,14 +48,19 @@ export function ImportDialog(props: {
         if (!alive || body === null || typeof body !== "object") return;
         // One answer carries both, so there is no window in which the dialog has
         // rows but no limit and has to either guess or render them all clickable.
-        const listing = body as { limitBytes?: unknown; transcripts?: unknown };
+        const listing = body as { limitBytes?: unknown; truncated?: unknown; transcripts?: unknown };
         if (Array.isArray(listing.transcripts)) {
           setTranscripts(listing.transcripts as TranscriptRow[]);
         } else if (Array.isArray(body)) {
           setTranscripts(body as TranscriptRow[]);
         }
         if (typeof listing.limitBytes === "number") {
-          setLimits({ limitBytes: listing.limitBytes });
+          setLimits({
+            limitBytes: listing.limitBytes,
+            // Two limits govern this listing. Read both, or the dialog can only
+            // explain the rows it shows and never the ones it does not.
+            truncated: listing.truncated === true,
+          });
         }
       })
       .catch(() => {});
@@ -169,6 +174,9 @@ export function ImportDialog(props: {
                 );
               })}
             </div>
+            {listingNotice(limits, transcripts.length, lang) !== null && (
+              <p className="import-store-note">{listingNotice(limits, transcripts.length, lang)}</p>
+            )}
           </>
         )}
 

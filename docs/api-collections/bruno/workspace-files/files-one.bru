@@ -16,9 +16,9 @@ params:query {
 }
 
 docs {
-  One file for the preview pane, CSP-sandboxed. 404 outside/hidden/missing, 413 over caps (2 MB text / 25 MB image), 415 binary.
+  One file for the preview pane, CSP-sandboxed. Real-path sandbox: no traversal and no symlink escape. 404 outside/hidden/missing, 413 over caps (2 MB text / 25 MB image), 415 binary.
   
-  Fence: none — No origin gating.
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
   
   Writes state: no
 }

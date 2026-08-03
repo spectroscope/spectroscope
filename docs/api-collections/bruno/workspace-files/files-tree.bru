@@ -15,9 +15,9 @@ params:query {
 }
 
 docs {
-  The workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag). 400 malformed session id, 404 no workspace folder.
+  That session's resolved workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag; a link out of the workspace is left out). 400 malformed session id, 404 no workspace folder, 409 no workspace resolved for this session.
   
-  Fence: none — No origin gating.
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
   
   Writes state: no
 }
