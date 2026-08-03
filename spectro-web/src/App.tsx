@@ -95,6 +95,7 @@ import {
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
 import { attachSources, sourceStats } from "./state/traceSource";
+import { traceProvenance } from "./components/traceDetail";
 import { shownImportBar, type ImportBarState } from "./components/importBar";
 import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
@@ -1458,6 +1459,10 @@ export function App() {
             langfuseUrl={langfuseUrl}
             otlpFailure={otlpFailure}
             sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
+            /* An entered fleet's rows are not the replay's rows, so its file is
+               taken away above. The sentence the pane then says is not "there
+               is no file" three times over: this is which of the three. */
+            provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
           />
         )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (

@@ -85,7 +85,7 @@ export interface TraceEntry {
   /** The model serving the run this row belongs to (card 87) — from the last
    *  run_start's additive model; blank outside runs and in old archives. */
   model?: string;
-  /** For an imported session: the index, in the import's own lines, of the line
+  /** For an imported session: the index, counted from zero, of the FILE's line
    *  this frame came from. Absent on a frame the importer built itself, and on
    *  every row of a session that was produced here, where the wire line IS the
    *  stored line and there is no separate source to point at. */

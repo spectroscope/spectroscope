@@ -16,6 +16,7 @@
 // called "wire" for the same reason, see state/traceFace.ts.
 
 import { readableText } from "./readable";
+import { replayEyebrow } from "./replayEyebrow";
 import type { RunEvent } from "../events";
 import type { WithSource } from "../state/traceSource";
 
@@ -40,12 +41,81 @@ export function detailLines(type: string, payload: unknown): string[] {
   return [JSON.stringify(payload)];
 }
 
-/** What the source pane has to say about one frame. Four cases, each a
- *  statement the app can stand behind, and no fifth one for "unknown". */
+/**
+ * Where the frames on screen came from, when no file was imported.
+ *
+ * "No file" is not one situation. A live session and a stored archive were
+ * produced by this app and written down by it; a scenario was compiled in the
+ * browser out of its script and never written anywhere; an entered fleet's
+ * frames were produced by other processes. Read off the ids the app already
+ * carries, through replayEyebrow, so the word in the header and the sentence in
+ * the pane cannot drift apart.
+ */
+export type TraceProvenance = "stored" | "scenario" | "fleet";
+
+/**
+ * @param replayId the replay on screen, or null while the live session is
+ * @param fleetId  the entered fleet's context id, or null when none is entered
+ */
+export function traceProvenance(replayId: string | null, fleetId: string | null): TraceProvenance {
+  // A fleet scenario is entered like a live fleet and is still a scenario, so
+  // the id decides before the fleet flag does.
+  const id = fleetId ?? replayId;
+  if (id !== null && replayEyebrow(id) === "hdr.scenario") return "scenario";
+  return fleetId !== null ? "fleet" : "stored";
+}
+
+/** Frame types no session file ever holds. Two groups, one rule: a session's
+ *  JSONL holds the engine's run events and nothing else.
+ *
+ *  Built in the browser for the screen: the synthetic system_context TraceView
+ *  prepends to every trace, and the session_resume marker (reducer.ts: "never a
+ *  wire event"). Sent by the server over the socket and never appended, each
+ *  one saying so in SessionConnection's own javadoc: workspace_info,
+ *  provider_info, permission_mode_info, otlp_export and the two fleet frames.
+ *
+ *  Everything this app SENDS is unstored too, whatever its type, which is the
+ *  direction check rather than a list. */
+const UNSTORED_TYPES = new Set([
+  "system_context",
+  "session_resume",
+  "workspace_info",
+  "provider_info",
+  "permission_mode_info",
+  "otlp_export",
+  "fleet_roster",
+  "fleet_event",
+]);
+
+/** What the pane reads off the open row: the line it names, if it names one,
+ *  and enough of the frame to know whether any file holds it. */
+export interface PaneRow extends WithSource {
+  type: string;
+  dir: "in" | "out";
+}
+
+/** Whether a stored session would contain this frame at all. */
+function fileHolds(row: PaneRow): boolean {
+  return row.dir !== "out" && !UNSTORED_TYPES.has(row.type);
+}
+
+/** What the source pane has to say about one frame. Every case is a statement
+ *  the app can stand behind, and there is no case for "unknown". */
 export type SourcePane =
-  /** No file was imported: this session was produced here and HAS no separate
-   *  source, which is not the same as having one we cannot show. */
+  /** No file was imported, this session was produced here, and this frame is
+   *  one of the lines it wrote: it HAS no separate source, which is not the
+   *  same as having one we cannot show. */
   | { kind: "none" }
+  /** No file holds this frame: the app built it for the screen, or sent it over
+   *  the socket. Said whatever the session is, because it is a fact about the
+   *  frame and not about where the session came from. */
+  | { kind: "unstored" }
+  /** The frames were compiled in this browser out of a scenario script: no
+   *  file, and no wire line either. */
+  | { kind: "scenario" }
+  /** The frames were produced by other processes and are only being watched
+   *  here, so "produced here" is the one thing they are not. */
+  | { kind: "fleet" }
   /** Imported, but the importer built this frame rather than reading it off one
    *  line: the synthetic system_context, the provider_info before the first
    *  record, the run_end after the last. */
@@ -69,24 +139,43 @@ export type SourcePane =
     };
 
 /** Every pane case, for the dictionary's coverage test. */
-export const SOURCE_PANE_KINDS = ["none", "built", "missing", "line"] as const;
+export const SOURCE_PANE_KINDS = [
+  "none",
+  "unstored",
+  "scenario",
+  "fleet",
+  "built",
+  "missing",
+  "line",
+] as const;
 
 /**
  * What the source pane says about one row.
  *
- * @param row   the open row
- * @param rows  the rows it stands among, read only to count the frames that
- *              share its line. A row that is not among them is still counted as
- *              one of that line's frames and placed last, so the count can fall
- *              short of the file's truth but never below what is on screen
- * @param lines the imported file's lines, or null for a session produced here
+ * @param row        the open row
+ * @param rows       the rows it stands among, read only to count the frames
+ *                   that share its line. A row that is not among them is still
+ *                   counted as one of that line's frames and placed last, so
+ *                   the count can fall short of the file's truth but never
+ *                   below what is on screen
+ * @param lines      the imported file's lines, or null when no file is loaded
+ * @param provenance where the rows came from, for the three different ways of
+ *                   having no file. Required and not defaulted: the default
+ *                   would be the byte-for-byte promise, and a caller that
+ *                   forgot to answer would make it on their behalf
  */
 export function sourcePane(
-  row: WithSource,
+  row: PaneRow,
   rows: readonly WithSource[],
   lines: readonly string[] | null | undefined,
+  provenance: TraceProvenance,
 ): SourcePane {
-  if (!lines) return { kind: "none" };
+  if (!lines) {
+    // The frame's own answer first: a system_context inside a scenario was
+    // built by this app for this screen, not compiled out of the script.
+    if (!fileHolds(row)) return { kind: "unstored" };
+    return provenance === "stored" ? { kind: "none" } : { kind: provenance };
+  }
   const at = row.sourceLine;
   if (at === undefined) return { kind: "built" };
   if (at < 0 || at >= lines.length) {

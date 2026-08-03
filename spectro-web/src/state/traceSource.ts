@@ -20,9 +20,10 @@ export interface SourceStats {
   lines: number;
   frames: number;
   /** Lines that produced no frame at all. A real and sizeable part of a
-   *  transcript (queue operations, attachments, hook records), and a
-   *  session-level fact: it is said once, in the bar, not repeated on every
-   *  frame that happens to have a line behind it. */
+   *  transcript (queue operations, attachments, hook records, and the blank
+   *  lines a hand-edited or concatenated file carries), and a session-level
+   *  fact: it is said once, in the bar, not repeated on every frame that
+   *  happens to have a line behind it. */
   zeroLines: number;
 }
 
@@ -41,8 +42,9 @@ export function sourceStats(source: ImportSource): SourceStats {
 
 /** A row that knows which line of the imported file produced it. */
 export interface WithSource {
-  /** Index into the import's `lines`; absent when the importer built the frame
-   *  itself, and absent for every row of a session that was produced here. */
+  /** Index into the import's `lines`, which is the file's own line counted
+   *  from zero; absent when the importer built the frame itself, and absent
+   *  for every row of a session that was produced here. */
   sourceLine?: number;
 }
 

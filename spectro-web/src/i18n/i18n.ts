@@ -712,10 +712,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.faceTitle.wire": { de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen, je eine Zeile.", en: "Open frames as plain text: exactly the lines that crossed the wire, one row each." },
   "trace.faceTitle.source": { de: "Frames mit der Zeile der importierten Datei aufklappen, aus der sie gelesen wurden.", en: "Open frames with the line of the imported file they were read from." },
 
-  // The source pane (card: the source line). Four cases, four sentences: this
-  // card exists because one label meant two things, so none of these falls back
-  // to another's words.
+  // The source pane (card: the source line). One sentence per case and never a
+  // shared one: this card exists because one label meant two things. "There is
+  // no file" alone is four different statements, and the byte-for-byte promise
+  // is only the one about a frame this app wrote down itself.
   "trace.source.none": { de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile ist die gespeicherte Zeile, Byte für Byte.", en: "This session was produced here, so there is no separate source. The wire line is the stored line, byte for byte." },
+  "trace.source.unstored": { de: "Die gespeicherte Sitzung enthält diesen Frame nicht. Die App hat ihn für das Bild gebaut oder über den Socket geschickt, und beides wird nicht in die Datei geschrieben.", en: "The stored session does not contain this frame. The app built it for the screen or sent it over the socket, and neither of those is written to the file." },
+  "trace.source.scenario": { de: "Das ist ein kompiliertes Szenario. Der Browser hat diese Frames aus dem Skript gebaut, es gibt also weder eine Datei noch eine Draht-Zeile dahinter.", en: "This is a compiled scenario. The browser built these frames from its script, so there is no file and no wire line behind them." },
+  "trace.source.fleet": { de: "Diesen Frame hat ein anderer Prozess erzeugt. Diese App schaut nur zu: was dieser Node gespeichert hat, bleibt bei ihm.", en: "Another process produced this frame. This app is only watching: whatever that node wrote down stays with the node." },
   "trace.source.built": { de: "Diesen Frame hat der Import gebaut. Keine einzelne Zeile der Datei hat ihn erzeugt.", en: "The importer built this frame. No single line of the file produced it." },
   "trace.source.missing": { de: "Dieser Frame zeigt auf Zeile {n}, die diese Datei nicht hat. Sie zählt {total} Zeilen.", en: "This frame points at line {n}, which this file does not have. It counts {total} lines." },
   "trace.source.line": { de: "Zeile {n} von {total}.", en: "Line {n} of {total}." },

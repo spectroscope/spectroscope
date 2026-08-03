@@ -73,11 +73,30 @@ function safeTypeName(raw: string): string {
  * many frames point into it.
  */
 export interface ImportSource {
-  /** The file's non-blank lines, byte for byte as they arrived. */
+  /** The file's lines, byte for byte as they arrived, blank ones INCLUDED and
+   *  in place. A blank line produces no frame, but dropping it would shift
+   *  every line after it: the pane reports `origin + 1` as "the number a
+   *  reader counts to when opening the file", and there is only one such
+   *  number. Holding one array in one numbering is what keeps it true. */
   lines: string[];
-  /** Parallel to the events: an index into `lines`, or -1 for a frame the
-   *  importer built rather than read. */
+  /** Parallel to the events: an index into `lines` (which is the file's own
+   *  line, counted from zero), or -1 for a frame the importer built rather
+   *  than read. */
   origin: Int32Array;
+}
+
+/** The file, cut into lines, and which of them carry a record.
+ *
+ *  A file that ends with a newline has one empty piece after its last record.
+ *  An editor does not count that piece as a line and neither does this, so a
+ *  file with no blank lines in it reports exactly the line count its writer
+ *  wrote. */
+function cut(text: string): { lines: string[]; at: number[] } {
+  const lines = text.split(/\r?\n/);
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  const at: number[] = [];
+  for (let i = 0; i < lines.length; i++) if (lines[i].trim()) at.push(i);
+  return { lines, at };
 }
 
 export function detectAndLoad(text: string): {
@@ -85,15 +104,27 @@ export function detectAndLoad(text: string): {
   kind: "spectroscope" | "claude-code" | "vscode-agent";
   source: ImportSource;
 } {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length === 0) throw new Error("empty file");
+  const { lines, at } = cut(text);
+  if (at.length === 0) throw new Error("empty file");
 
   let records: unknown[];
   try {
-    records = lines.map((l) => JSON.parse(l));
+    records = at.map((i) => JSON.parse(lines[i]));
   } catch {
     throw new Error("invalid JSONL");
   }
+
+  /** The adapters count in records; the file counts in lines. This is the one
+   *  place the two meet, and it is a translation rather than a second
+   *  numbering: a frame that named record 2 names the line record 2 was on. */
+  const inFile = (recordOrigin: Int32Array): Int32Array => {
+    const out = new Int32Array(recordOrigin.length);
+    for (let i = 0; i < recordOrigin.length; i++) {
+      const r = recordOrigin[i];
+      out[i] = r < 0 || r >= at.length ? -1 : at[r];
+    }
+    return out;
+  };
 
   // Real Claude Code transcripts open with metadata records (queue-operation,
   // attachment, ai-title, …) before the first message — scan for the first
@@ -102,20 +133,21 @@ export function detectAndLoad(text: string): {
     const r = rec as { type?: unknown; message?: unknown; data?: unknown } | null;
     if (!r || typeof r.type !== "string") continue;
     if (SPECTRO_TYPES.has(r.type)) {
-      // Replayed verbatim, so line and frame are the same thing. Carrying it
-      // anyway is what makes the byte identity checkable rather than asserted:
-      // a hand-edited or foreign-written file is not what our writer produced.
+      // Replayed verbatim, so record and frame are the same thing. Carrying the
+      // line anyway is what makes the byte identity checkable rather than
+      // asserted: a hand-edited or foreign-written file is not what our writer
+      // produced, and a blank line in it moves every number after it.
       const identity = new Int32Array(records.length);
-      for (let i = 0; i < records.length; i++) identity[i] = i;
+      for (let i = 0; i < records.length; i++) identity[i] = at[i];
       return { events: records as RunEvent[], kind: "spectroscope", source: { lines, origin: identity } };
     }
     if (VSCODE_AGENT_TYPES.has(r.type) && hasDataObject(r)) {
       const { events, origin } = vscodeAgentWithOrigin(records);
-      return { events, kind: "vscode-agent", source: { lines, origin } };
+      return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin) } };
     }
     if (r.message !== undefined) {
       const { events, origin } = claudeCodeWithOrigin(records);
-      return { events, kind: "claude-code", source: { lines, origin } };
+      return { events, kind: "claude-code", source: { lines, origin: inFile(origin) } };
     }
   }
   // Nothing matched. Say what arrived and what is accepted — "unrecognized

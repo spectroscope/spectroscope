@@ -65,6 +65,24 @@ describe("traceFace", () => {
     expect(parseTraceFace("Insight")).toBe(DEFAULT_TRACE_FACE);
     expect(parseTraceFace("json")).toBe(DEFAULT_TRACE_FACE);
   });
+
+  // The rename map is a plain object, so a lookup that asks whether a word is
+  // "in" it also asks Object.prototype. Storage is an arbitrary string from a
+  // shared origin, and the store's whole promise is that anything foreign falls
+  // back — a face that came back as a Function would keep that promise on paper
+  // and break it in the type.
+  it("falls back for a word that only Object.prototype knows", () => {
+    for (const word of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(typeof parseTraceFace(word), word).toBe("string");
+      expect(parseTraceFace(word), word).toBe(DEFAULT_TRACE_FACE);
+    }
+  });
+
+  // The one word this store really did write stays a carry-across, which is
+  // what the prototype guard must not cost.
+  it("still carries the renamed word across", () => {
+    expect(parseTraceFace("raw")).toBe("wire");
+  });
 });
 
 describe("a row on top of the master", () => {

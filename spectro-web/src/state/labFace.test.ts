@@ -59,6 +59,17 @@ describe("labFace", () => {
     expect(parseLabFace("raw")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("compact")).toBe(DEFAULT_LAB_FACE);
   });
+
+  // This store has no rename map at all, so nothing here should be reachable —
+  // and a prototype lookup made it reachable anyway. The header's promise that
+  // no other store's word "may leak in here through storage" covers the words
+  // every object carries just as much as it covers "wire".
+  it("falls back for a word that only Object.prototype knows", () => {
+    for (const word of ["constructor", "toString", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(typeof parseLabFace(word), word).toBe("string");
+      expect(parseLabFace(word), word).toBe(DEFAULT_LAB_FACE);
+    }
+  });
 });
 
 describe("a panel on top of the lab master", () => {

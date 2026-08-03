@@ -66,7 +66,12 @@ export function createFaceStore<F extends string>(
   }
   function parse(raw: string | null): F {
     if (isFace(raw)) return raw;
-    return raw !== null && raw in legacy ? legacy[raw] : defaultFace;
+    // hasOwn and not `in`: `in` also asks Object.prototype, so a stored
+    // "constructor" or "toString" would come back as a FUNCTION from a
+    // function whose whole job is to return one of the faces. Storage is an
+    // arbitrary string on a shared origin, and the fallback above is the
+    // promise this line has to keep.
+    return raw !== null && Object.hasOwn(legacy, raw) ? legacy[raw] : defaultFace;
   }
   function readSaved(): FacePref<F> {
     try {

@@ -35,6 +35,7 @@ import {
   withinBudget,
   type Reading,
   type SourcePane,
+  type TraceProvenance,
 } from "./traceDetail";
 import { readable, type ReadableBlock } from "./readable";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
@@ -257,6 +258,11 @@ const TraceRow = memo(function TraceRow(props: {
   /** The source face's two inputs, and the same rule a third time: only the open
    *  row is handed the stream it stands in and the file it was read from. */
   source?: { rows: readonly TraceEntry[]; lines: readonly string[] | null };
+  /** Where this trace's frames came from when no file is loaded. A session-wide
+   *  fact and one stable string, so every row carries it: it decides a sentence
+   *  the pane must not get wrong, and an optional prop would decide it by
+   *  falling back. */
+  provenance: TraceProvenance;
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -379,6 +385,7 @@ const TraceRow = memo(function TraceRow(props: {
           calls={props.calls}
           rows={props.source?.rows ?? [entry]}
           sourceLines={props.source?.lines ?? null}
+          provenance={props.provenance}
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
@@ -611,12 +618,14 @@ function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
 /**
  * The source face of one frame: the line of the imported file it was read from.
  *
- * Four cases, four sentences, and the sentence comes FIRST in every one of them,
- * including the three that have no line to show. A pane that went blank for a
- * session produced here would be the same silence this card exists to end.
+ * One sentence per case, and the sentence comes FIRST in every one of them,
+ * including the five that have no line to show. A pane that went blank for a
+ * session produced here would be the same silence this card exists to end, and
+ * a pane that promised a stored line for a frame nothing stored would be the
+ * defect itself.
  */
 function SourceBody({ pane, reading, lang }: { pane: SourcePane; reading: Reading; lang: Lang }) {
-  if (pane.kind === "none" || pane.kind === "built") {
+  if (pane.kind !== "missing" && pane.kind !== "line") {
     return <p className="trace-source-note">{t(lang, `trace.source.${pane.kind}`)}</p>;
   }
   if (pane.kind === "missing") {
@@ -671,6 +680,7 @@ function TraceDetail({
   calls,
   rows,
   sourceLines,
+  provenance,
   onJump,
 }: {
   entry: TraceEntry;
@@ -683,8 +693,10 @@ function TraceDetail({
   /** The frames this one stands among, read only to count the ones that share
    *  its source line. Same rule again: only the open row gets them. */
   rows: readonly TraceEntry[];
-  /** The imported file's lines, or null for a session produced here. */
+  /** The imported file's lines, or null when no file is loaded. */
   sourceLines?: readonly string[] | null;
+  /** Which of the three fileless cases this trace is, for the pane's sentence. */
+  provenance: TraceProvenance;
   onJump: (seq: number) => void;
 }) {
   // The row subscribes to the master itself: only the OPEN row renders a
@@ -706,7 +718,7 @@ function TraceDetail({
   // button hands it over, and only when there is one to hand over.
   // Walked once: the sibling count reads every row, and the pane is needed both
   // for the body and for whether there is anything to copy.
-  const pane = mode === "source" ? sourcePane(entry, rows, sourceLines) : null;
+  const pane = mode === "source" ? sourcePane(entry, rows, sourceLines, provenance) : null;
   const sourceText = pane?.kind === "line" ? pane.text : undefined;
   const copyMode = mode === "structured" ? "insight" : mode;
   const copyable = mode !== "source" || sourceText !== undefined;
@@ -830,11 +842,16 @@ export function TraceView(props: {
   /** The message of a failed export, but only while NOTHING has landed yet.
    *  null keeps the toolbar silent. */
   otlpFailure?: string | null;
-  /** The imported file's own lines (card: the source line). null for a session
-   *  produced here, which has no separate source: its wire line IS the stored
-   *  line. A few fields live only in an imported transcript, and this is where
-   *  the trace reads them from. */
+  /** The imported file's own lines (card: the source line). null when no file
+   *  is loaded, which is the case `provenance` then has to tell apart. A few
+   *  fields live only in an imported transcript, and this is where the trace
+   *  reads them from. */
   sourceLines?: readonly string[] | null;
+  /** Where these frames came from when no file is loaded: produced and stored
+   *  here, compiled from a scenario, or another process's. The source pane says
+   *  a different sentence for each, and only the first one may promise a stored
+   *  line. Absent means the plain case, which is what a live socket is. */
+  provenance?: TraceProvenance;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -1005,6 +1022,9 @@ export function TraceView(props: {
     () => ({ rows: allEntries, lines: props.sourceLines ?? null }),
     [allEntries, props.sourceLines],
   );
+  // Which of the three fileless cases this trace is. One string for the whole
+  // view: it says nothing about a single frame, so it cannot vary by row.
+  const provenance = props.provenance ?? "stored";
 
   // Jump: open the frame and bring its row into view (it may sit outside the
   // current scroll window; if a filter hides it, the row simply is not there).
@@ -1557,6 +1577,7 @@ export function TraceView(props: {
                     chain={openSeq === e.seq ? openChain : undefined}
                     calls={openSeq === e.seq ? openCalls : undefined}
                     source={openSeq === e.seq ? openSource : undefined}
+                    provenance={provenance}
                     onJump={jumpTo}
                     onToggle={onToggle}
                   />

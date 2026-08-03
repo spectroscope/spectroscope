@@ -9,6 +9,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { sourcePane } from "../components/traceDetail";
+import { attachSources } from "../state/traceSource";
+import type { RunEvent } from "../events";
 import { detectAndLoad } from "./detect";
 
 const path = (name: string): string => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
@@ -32,9 +35,15 @@ const rawLines = (name: string): Buffer[] => {
   return parts;
 };
 
-/** The lines the importer is supposed to have carried: the file's own, blank
- *  ones dropped, nothing else touched. */
-const nonBlankLines = (text: string): string[] => text.split(/\r?\n/).filter((l) => l.trim());
+/** The lines the importer is supposed to have carried: the file's own, in
+ *  place, nothing touched. Blank ones included, because a line the reader
+ *  scrolls past is still a line, and a file that ends with a newline has one
+ *  empty piece after its last record which is not one. */
+const fileLines = (text: string): string[] => {
+  const parts = text.split(/\r?\n/);
+  if (parts.length > 1 && parts[parts.length - 1] === "") parts.pop();
+  return parts;
+};
 
 describe("the carried source", () => {
   it("carries every source line byte-identical to the input", () => {
@@ -43,7 +52,7 @@ describe("the carried source", () => {
     // whose content is a literal backslash-n, and a record that produces no
     // event at all.
     const text = fixture("cc-heavy.jsonl");
-    const expected = nonBlankLines(text);
+    const expected = fileLines(text);
 
     const { source } = detectAndLoad(text);
 
@@ -61,7 +70,7 @@ describe("the carried source", () => {
     for (const name of ["cc-linear.jsonl", "cc-modern.jsonl", "cc-workflow.jsonl", "vscode-agent.jsonl"]) {
       const text = fixture(name);
       const { source } = detectAndLoad(text);
-      expect(source.lines).toEqual(nonBlankLines(text));
+      expect(source.lines).toEqual(fileLines(text));
     }
   });
 
@@ -79,15 +88,17 @@ describe("the carried source", () => {
 
     const { source } = detectAndLoad(fixture("cc-indented.jsonl"));
 
-    expect(source.lines).toHaveLength(3);
-    const carried = [0, 1, 4];
-    for (let i = 0; i < carried.length; i++) {
-      expect(Buffer.from(source.lines[i], "utf8").equals(parts[carried[i]])).toBe(true);
+    // Five lines and not three: the two blank ones are held in place. Dropping
+    // them would carry the same bytes under different numbers, and the number
+    // is half of what the pane says.
+    expect(source.lines).toHaveLength(5);
+    for (let i = 0; i < 5; i++) {
+      expect(Buffer.from(source.lines[i], "utf8").equals(parts[i])).toBe(true);
     }
     // Said out loud as well, so a failure reads as the defect rather than as a
     // buffer mismatch: the whitespace is part of the line, not noise around it.
     expect(source.lines[1].startsWith("  ")).toBe(true);
-    expect(source.lines[2].endsWith("\t ")).toBe(true);
+    expect(source.lines[4].endsWith("\t ")).toBe(true);
   });
 
   it("carries a spectroscope session's own lines too", () => {
@@ -99,7 +110,7 @@ describe("the carried source", () => {
       JSON.stringify({ type: "run_end", runId: "r1", stopReason: "end_turn", ts: 3 }),
     ].join("\n");
     const { source } = detectAndLoad(text);
-    expect(source.lines).toEqual(nonBlankLines(text));
+    expect(source.lines).toEqual(fileLines(text));
   });
 });
 
@@ -158,5 +169,52 @@ describe("the origin of each frame", () => {
     const { events, source } = detectAndLoad(fixture("vscode-agent.jsonl"));
     expect(source.origin.length).toBe(events.length);
     expect(source.origin[events.length - 1]).toBe(-1); // its run_end is built too
+  });
+});
+
+// The pane says "Line n of total" and its own doc calls n "the number a reader
+// counts to when opening the file". A blank line carries no frame, but it still
+// costs the reader a line when they scroll to it, so an index that skipped it
+// would name a line the file does not have there.
+describe("the number the pane puts on screen", () => {
+  const paneRows = (events: readonly RunEvent[], origin: ArrayLike<number>) =>
+    attachSources(
+      events.map((e) => ({ payload: e as unknown, type: (e as { type: string }).type, dir: "in" as const })),
+      events,
+      origin,
+    );
+
+  it("counts the blank lines the file has", () => {
+    const text = [
+      JSON.stringify({ type: "run_start", runId: "r1", agentId: "main", prompt: "hi", ts: 1 }),
+      "",
+      JSON.stringify({ type: "text_delta", agentId: "main", text: "hello", ts: 2 }),
+      "   ",
+      JSON.stringify({ type: "run_end", runId: "r1", stopReason: "end_turn", ts: 3 }),
+    ].join("\n");
+
+    const { events, source } = detectAndLoad(text);
+    const rows = paneRows(events, source.origin);
+    const pane = sourcePane(rows[2], rows, source.lines, "stored");
+
+    // The run_end record sits on line 5 of a file that has 5 lines.
+    expect(pane).toMatchObject({ kind: "line", lineNumber: 5, total: 5 });
+    expect(pane.kind === "line" ? pane.text : "").toBe(text.split("\n")[4]);
+  });
+
+  it("holds a real transcript's numbers against the file's own bytes", () => {
+    // The indented fixture is the one file here with blank lines in the middle,
+    // which is why it was built: parts 2 and 3 are blank, so the third carried
+    // record is physical line 5.
+    const text = fixture("cc-indented.jsonl");
+    const parts = rawLines("cc-indented.jsonl");
+    const { events, source } = detectAndLoad(text);
+    const rows = paneRows(events, source.origin);
+
+    const last = rows.filter((r) => r.sourceLine !== undefined).at(-1)!;
+    const pane = sourcePane(last, rows, source.lines, "stored");
+
+    expect(pane).toMatchObject({ kind: "line", lineNumber: 5, total: 5 });
+    expect(Buffer.from(pane.kind === "line" ? pane.text : "", "utf8").equals(parts[4])).toBe(true);
   });
 });
