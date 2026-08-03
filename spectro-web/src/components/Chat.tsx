@@ -668,7 +668,12 @@ export function Chat(props: {
                   {buttons.stopLabel}
                 </button>
               )}
-              <button type="button" className="soft-primary send" disabled={buttons.sendDisabled} onClick={submit}>
+              <button
+                type="button"
+                className="soft-primary send"
+                disabled={buttons.sendDisabled}
+                onClick={submit}
+              >
                 {buttons.sendLabel}
               </button>
             </div>
