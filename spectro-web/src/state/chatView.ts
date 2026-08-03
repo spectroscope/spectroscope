@@ -2,14 +2,19 @@
 // external store à la toolView.ts / disclosure.ts, persisted to localStorage.
 //
 //   v1 — the transcript as recorded: subagent turns nested inline, in stream
-//        order. The daily driver, and the default.
+//        order.
 //   v2 — the main agent's own line of thought on the left, concurrent work in
-//        a panel on the right.
+//        a panel on the right. The default since 2026-08-03.
 //
 // It is a reading MODE, not a tab: the tab bar's entries are different FOLDS of
-// the stream, and v2 is a different reading of one of them. Default stays v1 —
-// a mode that changes what the daily driver looks like is not a default until
-// the owner says it is.
+// the stream, and v2 is a different reading of one of them.
+//
+// This comment used to say the default stays v1 until the owner says otherwise.
+// They said otherwise, and gave the reason: the Work panel only exists in v2
+// (App.tsx folds work there, RightPanel offers the tab only when it is present),
+// so a session driving twelve agents through a workflow looked, in v1, like one
+// agent making a long list of tool calls. Neither reading is merged into the
+// other and v1 is one click away, because the two answer different questions.
 
 import { useSyncExternalStore } from "react";
 
@@ -26,7 +31,7 @@ function readSaved(): ChatViewMode {
   } catch {
     /* no localStorage (tests) — default */
   }
-  return "v1";
+  return "v2";
 }
 
 let mode: ChatViewMode = readSaved();
@@ -50,7 +55,7 @@ export function currentChatView(): ChatViewMode {
 
 /** Test-only: forget the saved choice. */
 export function __resetForTests(): void {
-  mode = "v1";
+  mode = readSaved();
   listeners.clear();
 }
 

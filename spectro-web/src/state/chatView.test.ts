@@ -4,8 +4,11 @@ import { CHAT_VIEW_MODES, currentChatView, setChatView, __resetForTests } from "
 describe("chatView", () => {
   beforeEach(() => __resetForTests());
 
-  it("defaults to v1 — v2 is a mode you choose, never one you land in", () => {
-    expect(currentChatView()).toBe("v1");
+  // Owner call, 2026-08-03. The Work panel lives only in v2, so v1 showed a
+  // twelve-agent workflow as one agent with a long list of tool calls. v1 stays
+  // a mode you can choose; it is no longer the one you land in.
+  it("defaults to v2, where concurrent work is visible at all", () => {
+    expect(currentChatView()).toBe("v2");
   });
 
   it("round trips both modes", () => {

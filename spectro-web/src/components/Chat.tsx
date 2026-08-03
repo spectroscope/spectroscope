@@ -668,7 +668,7 @@ export function Chat(props: {
                   {buttons.stopLabel}
                 </button>
               )}
-              <button type="button" className="primary send" disabled={buttons.sendDisabled} onClick={submit}>
+              <button type="button" className="soft-primary send" disabled={buttons.sendDisabled} onClick={submit}>
                 {buttons.sendLabel}
               </button>
             </div>
@@ -681,7 +681,7 @@ export function Chat(props: {
             {props.onResume !== undefined && (
               <button
                 type="button"
-                className="primary resume-btn"
+                className="soft-primary resume-btn"
                 title={t(lang, "arch.resumeTitle")}
                 onClick={props.onResume}
               >

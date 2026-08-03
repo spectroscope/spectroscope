@@ -22,6 +22,14 @@
   display: flex;
   align-items: center;
   gap: var(--sp-2);
+  /* The row floats over the scroll area, so without a ground of its own the
+     transcript runs straight through it and both become unreadable. A surface
+     and a hairline, not a shadow: the house draws separation with a line. The
+     padding is what keeps the buttons off that line. */
+  padding: var(--sp-1) var(--sp-2);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
 }
 .chat-disc .attach-button { color: var(--text-faint); }
 .chat-disc .attach-button:hover { color: var(--text); }

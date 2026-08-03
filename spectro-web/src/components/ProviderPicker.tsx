@@ -164,7 +164,7 @@ export function ProviderPicker({
               flip on a pending switch rides along once the switch confirms. */}
           {model.trim() !== "" && <ReasoningControl provider={sel} model={model.trim()} />}
           <div className="provider-pop-foot">
-            <button type="button" className="primary" onClick={apply}>
+            <button type="button" className="soft-primary" onClick={apply}>
               {isLocal ? t(lang, "pp.chooseLocal") : t(lang, "pp.switch")}
             </button>
           </div>

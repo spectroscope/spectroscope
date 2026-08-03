@@ -171,7 +171,7 @@ export function ImportDialog(props: {
           </button>
           <button
             type="button"
-            className="primary"
+            className="soft-primary"
             disabled={text.trim() === ""}
             onClick={() => load(text, t(lang, "imp.pasted"))}
           >

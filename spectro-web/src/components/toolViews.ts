@@ -8,7 +8,7 @@
 // falls back to `generic` (the raw pair). We never render an empty pretty card
 // over a payload we did not understand — the model can send anything.
 
-import { hlLangForFence, hlLangForPath, type HlLang } from "../workspace/highlight";
+import { hlLangForFence, hlLangForPath, tokenize, type HlLang } from "../workspace/highlight";
 import { formatDuration, formatTokens } from "../format";
 
 /** One tool call, described as what it actually is. */
@@ -563,6 +563,66 @@ function blockLang(name: string, key: string, input: unknown): HlLang | null {
  * @param input the call's input, of any shape
  * @return the shape to print as JSON and the blocks to render as text
  */
+/**
+ * A one-line program, given the line breaks it never had.
+ *
+ * Minified code and code typed straight into a tool argument arrive as a single
+ * line, so the well renders one endless string that wraps wherever the box ends.
+ * This breaks it where a reader would: after a statement, after an opening
+ * brace, before a closing one, with the depth carried as indentation.
+ *
+ * THE HAZARD, and why this reads tokens rather than characters: a semicolon or
+ * a brace inside a string literal is DATA, and breaking there rewrites the
+ * program. `tokenize` already tells strings and comments apart from code for
+ * the highlighter, so only `plain` tokens are ever cut, and everything else is
+ * copied through untouched. That is the same rule the source pane learned the
+ * hard way: prettifying is allowed to change what a thing LOOKS like, never
+ * what it says.
+ *
+ * Returns the input unchanged when the language is unknown, because a break
+ * placed by guesswork is worse than a long line.
+ */
+export function breakOneLiner(src: string, lang: HlLang | null): string {
+  if (lang === null || src.includes("\n")) return src;
+  const out: string[] = [];
+  let depth = 0;
+  const pad = (): string => "  ".repeat(Math.max(0, depth));
+  for (const tok of tokenize(src, lang)) {
+    if (tok.cls !== "plain") {
+      out.push(tok.text);
+      continue;
+    }
+    for (const ch of tok.text) {
+      if (ch === "}") {
+        depth -= 1;
+        out.push("\n" + pad() + ch);
+      } else if (ch === "{") {
+        depth += 1;
+        out.push(ch + "\n" + pad());
+      } else if (ch === ";") {
+        out.push(ch + "\n" + pad());
+      } else {
+        out.push(ch);
+      }
+    }
+  }
+  // The breaks above leave a run of spaces wherever the source already had one,
+  // and a trailing pad on the last line. Neither is part of the program.
+  return out
+    .join("")
+    .split("\n")
+    .map((l) => l.replace(/\s+$/, ""))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Beyond this a single line stops being a value a reader scans and starts
+ *  being a body they read. Measured against the shapes that prompted it: an
+ *  MCP browser script runs 300 to 900 characters, a real one-line argument
+ *  ("ls -la", a path, a query) is well under a hundred. */
+const ONE_LINE_BODY_CHARS = 120;
+
 export function splitInput(name: string, input: unknown): InputSplit {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
     return { shape: input, blocks: [] };
@@ -570,13 +630,23 @@ export function splitInput(name: string, input: unknown): InputSplit {
   const shape: Record<string, unknown> = {};
   const blocks: TextBlock[] = [];
   for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
-    if (typeof value === "string" && value.includes("\n")) {
-      const n = lineCount(value);
-      shape[key] = `... (${n} line${n === 1 ? "" : "s"} below)`;
-      blocks.push({ key, text: value, lang: blockLang(name, key, input) });
-    } else {
+    if (typeof value !== "string") {
       shape[key] = value;
+      continue;
     }
+    const lang = blockLang(name, key, input);
+    // Two ways to earn a well: real line breaks, or enough code on one line
+    // that leaving it in the shape hides it. The second needs a language,
+    // because "long" alone would lift prose and a base64 blob as well.
+    const lifted = value.includes("\n") || (lang !== null && value.length > ONE_LINE_BODY_CHARS);
+    if (!lifted) {
+      shape[key] = value;
+      continue;
+    }
+    const text = breakOneLiner(value, lang);
+    const n = lineCount(value);
+    shape[key] = `... (${n} line${n === 1 ? "" : "s"} below)`;
+    blocks.push({ key, text, lang });
   }
   return { shape, blocks };
 }
