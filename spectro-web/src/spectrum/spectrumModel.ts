@@ -16,7 +16,8 @@ export type TickKind =
   | "error"; // error / failed result — red, full height
 
 export interface LaneTick {
-  /** Position on the shared time axis, normalized 0..1. */
+  /** Position on the shared time axis, normalized 0..1 and clamped: a frame
+   *  that carries no timestamp lands on the edge, never off the band. */
   x: number;
   kind: TickKind;
   /** Index of the source event (stable render key, trace hand-off). */
@@ -38,6 +39,10 @@ export interface Lane {
   lastStatus: string | null;
   /** True while a permission request on this lane awaits its decision. */
   pendingGate: boolean;
+  /** Every mark the stream produced, sorted by x with seq breaking a tie.
+   *  Sorted is a PRECONDITION: the slicer reaches for the visible range with a
+   *  binary search. How many of these reach the screen is a question for the
+   *  viewport (see laneSlice.ts), not for this fold. */
   ticks: LaneTick[];
   inTokens: number;
   outTokens: number;
@@ -45,8 +50,6 @@ export interface Lane {
    *  Spectrum peek shows current thinking, not a growing transcript. Empty
    *  until the agent emits a thinking_delta. */
   thinking: string;
-  /** Marks dropped by density thinning — reported, never silent. */
-  dropped: number;
 }
 
 export interface SpectrumModel {
@@ -59,9 +62,6 @@ export interface SpectrumModel {
   /** Events consumed (all types, including the ones that leave no mark). */
   totalEvents: number;
 }
-
-/** Per lane: marks beyond this are thinned (token/reasoning first). */
-export const MAX_LANE_TICKS = 1200;
 
 /** Per lane: the reasoning buffer keeps at most this many trailing characters
  *  (latest wins), so a long chain of thought stays a peek, not a memory leak. */
@@ -83,7 +83,7 @@ interface RawTick {
 }
 
 interface LaneAcc {
-  lane: Omit<Lane, "ticks" | "dropped" | "x">;
+  lane: Omit<Lane, "ticks">;
   ticks: RawTick[];
 }
 
@@ -266,43 +266,23 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
       if (t.isRequest === true) t.pending = t.callId !== undefined && undecided.has(t.callId);
     }
     const pendingGate = ticks.some((t) => t.pending === true);
-    const { kept, dropped } = thin(ticks);
-    return {
-      ...lane,
-      pendingGate,
-      dropped,
-      ticks: kept.map((t) => ({
-        x: (t.ts - t0) / span,
+    const marks: LaneTick[] = ticks.map((t) => {
+      const raw = (t.ts - t0) / span;
+      return {
+        x: raw < 0 ? 0 : raw > 1 ? 1 : raw,
         kind: t.kind,
         seq: t.seq,
         ...(t.pending !== undefined ? { pending: t.pending } : {}),
         ...(t.allowed !== undefined ? { allowed: t.allowed } : {}),
-      })),
-    };
+      };
+    });
+    // Event order is USUALLY time order, but an imported transcript can arrive
+    // out of step, and the slicer binary-searches this array. Seq breaks a tie,
+    // which the importer manufactures by the thousand: it stamps every content
+    // block of one transcript record with that record's single timestamp.
+    marks.sort((p, q) => p.x - q.x || p.seq - q.seq);
+    return { ...lane, pendingGate, ticks: marks };
   });
 
   return { lanes, t0, t1, running, totalEvents: events.length };
-}
-
-/** Density thinning: structural marks (tool/gate/lifecycle/subagent/error)
- *  always survive; token/reasoning marks are evenly sampled into whatever
- *  room MAX_LANE_TICKS leaves. The dropped count is reported, never silent. */
-function thin(ticks: RawTick[]): { kept: RawTick[]; dropped: number } {
-  if (ticks.length <= MAX_LANE_TICKS) return { kept: ticks, dropped: 0 };
-  const structural: RawTick[] = [];
-  const dense: RawTick[] = [];
-  for (const t of ticks) {
-    if (t.kind === "token" || t.kind === "reasoning") dense.push(t);
-    else structural.push(t);
-  }
-  const room = Math.max(0, MAX_LANE_TICKS - structural.length);
-  const sampled: RawTick[] = [];
-  if (room > 0 && dense.length > 0) {
-    const stride = dense.length / room;
-    for (let i = 0; i < room && Math.floor(i * stride) < dense.length; i++) {
-      sampled.push(dense[Math.floor(i * stride)]);
-    }
-  }
-  const kept = [...structural, ...sampled].sort((a, b) => a.seq - b.seq);
-  return { kept, dropped: ticks.length - kept.length };
 }

@@ -5,20 +5,27 @@
 // Pure presentation: the folding lives in spectrumModel.ts, live and replay
 // render through the same path.
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { RunEvent } from "../events";
 import { formatDuration, formatTokens } from "../format";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { ThinkingDisclosure } from "../components/ThinkingDisclosure";
 import { buildSpectrum } from "./spectrumModel";
-import type { Lane, TickKind } from "./spectrumModel";
-import { SpectrumBand, TICK_COLOR } from "./SpectrumBand";
+import type { Lane, LaneTick, TickKind } from "./spectrumModel";
+import { BAND_W, SpectrumBand, TICK_COLOR } from "./SpectrumBand";
+import { sliceLane } from "./laneSlice";
+import { fit } from "./viewport";
 import { useEffect } from "react";
 import { beacon } from "../state/levelingBeacon";
 
 /** The legend mirrors the wire vocabulary — protocol terms, not translated. */
 const LEGEND: TickKind[] = ["token", "reasoning", "tool", "gate", "subagent", "lifecycle"];
+
+/** This view reads a WINDOW over the time axis rather than assuming the whole.
+ *  Today that window is always the whole; when zoom and pan arrive they move
+ *  this one value and nothing below it has to learn a new shape. */
+const FULL = fit();
 
 /** How a lane names itself. The id is the addressable truth (Trace filters by
  *  it), but an imported Claude Code session hands us a 26-char toolu_* id next
@@ -36,19 +43,23 @@ export function laneNames(lane: { id: string; label: string | null }): {
 
 function LaneRow({
   lane,
+  marks,
   running,
   events,
   t0,
   onOpen,
   onFocusEvent,
+  onWidth,
   tipBelow,
 }: {
   lane: Lane;
+  marks: LaneTick[];
   running: boolean;
   events: RunEvent[];
   t0: number;
   onOpen: (id: string) => void;
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  onWidth?: (px: number) => void;
   /** The TOP row has no room above it — its tick preview opens downward
    *  instead of being clipped by the toolbar (owner 2026-07-26). */
   tipBelow?: boolean;
@@ -86,7 +97,15 @@ function LaneRow({
             ` · ${formatTokens(lane.inTokens)} in / ${formatTokens(lane.outTokens)} out`}
         </span>
       </button>
-      <SpectrumBand lane={lane} events={events} t0={t0} onFocusEvent={onFocusEvent} tipBelow={tipBelow} />
+      <SpectrumBand
+        lane={lane}
+        marks={marks}
+        events={events}
+        t0={t0}
+        onFocusEvent={onFocusEvent}
+        onWidth={onWidth}
+        tipBelow={tipBelow}
+      />
     </div>
   );
 }
@@ -111,7 +130,12 @@ export function SpectrumView(props: {
   useEffect(() => {
     if (model.lanes.length >= 2) beacon("spectrum", null, model.lanes.length);
   }, [model.lanes.length]);
-  const dropped = model.lanes.reduce((n, l) => n + l.dropped, 0);
+  // One measured width for the whole tab. Every band sits in the same grid
+  // column, so the first to report settles it, and the slice the view counts is
+  // the slice the bands draw. Until a band has measured, BAND_W stands in.
+  const [bandW, setBandW] = useState(BAND_W);
+  const slices = useMemo(() => model.lanes.map((l) => sliceLane(l.ticks, FULL, bandW)), [model.lanes, bandW]);
+  const hidden = slices.reduce((n, s) => n + s.hidden, 0);
   const span = model.t1 - model.t0;
 
   return (
@@ -143,11 +167,13 @@ export function SpectrumView(props: {
             <div key={lane.id} className="spectrum-lane-group">
               <LaneRow
                 lane={lane}
+                marks={slices[laneIndex].marks}
                 running={running}
                 events={props.events}
                 t0={model.t0}
                 onOpen={props.onOpenTrace}
                 onFocusEvent={props.onFocusEvent}
+                onWidth={laneIndex === 0 ? setBandW : undefined}
                 tipBelow={laneIndex === 0}
               />
               {lane.thinking !== "" && (
@@ -158,7 +184,11 @@ export function SpectrumView(props: {
         </div>
       )}
 
-      {dropped > 0 && <p className="spectrum-note mono">{t(lang, "sp.dropped", { n: dropped })}</p>}
+      {hidden > 0 && (
+        <p className="spectrum-note mono">
+          {t(lang, hidden === 1 ? "sp.hiddenMark" : "sp.hiddenMarks", { n: hidden })}
+        </p>
+      )}
     </div>
   );
 }

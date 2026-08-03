@@ -221,9 +221,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sp.openTrace": { de: "Lane {id} im Trace öffnen", en: "Open lane {id} in the trace" },
   "sp.gateOpen": { de: "gate offen", en: "gate open" },
   "sp.noTask": { de: "(kein Task angekündigt)", en: "(no task announced)" },
-  "sp.dropped": { de: "{n} Marken für die Darstellung ausgedünnt — die JSONL-Datei behält alles.", en: "{n} marks thinned for display — the JSONL file keeps everything." },
+  // What THIS view hides, counted against what is visible rather than against
+  // the whole stream: on a sparse stretch the number falls to zero and the line
+  // stops rendering; on a pile of marks that share one instant it stays put,
+  // because no magnification can separate them.
+  "sp.hiddenMark": { de: "{n} Marke passt hier nicht neben die anderen: die JSONL-Datei behält alles.", en: "{n} mark does not fit beside the others here: the JSONL file keeps everything." },
+  "sp.hiddenMarks": { de: "{n} Marken passen hier nicht neben die anderen: die JSONL-Datei behält alles.", en: "{n} marks do not fit beside the others here: the JSONL file keeps everything." },
   "sp.legendAria": { de: "Legende der Event-Typen", en: "Event type legend" },
   "sp.lanesAria": { de: "Agenten-Lanes", en: "Agent lanes" },
+  "sp.bandAria": { de: "Events von {id}: Pfeiltasten zum Scrubben, Enter öffnet im Trace", en: "{id} events: arrow keys to scrub, Enter to open in the trace" },
 
   // fleet roster (Spectrum LIVE)
   "fleet.title": { de: "Flotte", en: "Fleet" },

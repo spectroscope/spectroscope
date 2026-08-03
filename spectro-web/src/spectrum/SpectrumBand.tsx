@@ -3,13 +3,15 @@
 // shows its type + a mini preview, and a click hands that exact event to the
 // Trace. Keyboard: focus the band, arrow-scrub event to event, Enter opens.
 
-import { useCallback, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import type { RunEvent } from "../events";
 import { formatDuration } from "../format";
+import { t } from "../i18n/i18n";
+import { useLang } from "../state/lang";
 import { eventPreview } from "./eventPreview";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
 
-const BAND_W = 1000;
+export const BAND_W = 1000;
 const BAND_H = 32;
 const BAND_PAD_X = 4;
 
@@ -74,12 +76,18 @@ function TickMark({ tick, highlighted }: { tick: LaneTick; highlighted: boolean 
 
 export function SpectrumBand({
   lane,
+  marks,
   events,
   t0,
   onFocusEvent,
+  onWidth,
   tipBelow,
 }: {
   lane: Lane;
+  /** The marks this band actually draws: the lane's ticks already sliced to the
+   *  window and the pixel budget. The band is dumb about how that was decided;
+   *  it draws them, hit-tests them, and hands one to the trace. */
+  marks: LaneTick[];
   /** Open the tick preview BELOW the band — the top row would clip it. */
   tipBelow?: boolean;
   /** The FULL event stream — a tick's `seq` indexes into it. */
@@ -88,13 +96,28 @@ export function SpectrumBand({
   t0: number;
   /** Open the trace focused on one event; absent = no drill-in wired. */
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  /** Report the band's real pixel width upward. Every lane is the same width
+   *  (one grid), and the view slices with the SAME number it draws with, so the
+   *  count under the lanes can never disagree with what is on screen. */
+  onWidth?: (px: number) => void;
 }) {
+  const lang = useLang();
   const bandRef = useRef<HTMLDivElement>(null);
   // The scrubbed event's SEQ (= its index into `events`), or null when the
-  // cursor is away. Keying on seq (not the tick's array index) survives a live
-  // re-fold: thinning re-samples which token/reasoning ticks are kept, so an
-  // array index can point at a different event between renders — a seq cannot.
+  // cursor is away. Keying on seq (not the mark's array index) survives a live
+  // re-fold: which marks survive the slice shifts as the stream grows, so an
+  // array index can point at a different event between renders. A seq cannot.
   const [hoverSeq, setHoverSeq] = useState<number | null>(null);
+
+  useEffect(() => {
+    const el = bandRef.current;
+    if (!el || !onWidth) return;
+    const measure = () => onWidth(el.clientWidth || BAND_W);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [onWidth]);
 
   const nearest = useCallback(
     (clientX: number): number | null => {
@@ -103,13 +126,12 @@ export function SpectrumBand({
         return null;
       }
       const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-      return nearestTick(lane.ticks, frac);
+      return nearestTick(marks, frac);
     },
-    [lane.ticks],
+    [marks],
   );
 
-  const seqAt = (index: number | null): number | null =>
-    index == null ? null : (lane.ticks[index]?.seq ?? null);
+  const seqAt = (index: number | null): number | null => (index == null ? null : (marks[index]?.seq ?? null));
   const onMove = (e: MouseEvent<HTMLDivElement>) => setHoverSeq(seqAt(nearest(e.clientX)));
   const onLeave = () => setHoverSeq(null);
 
@@ -124,16 +146,16 @@ export function SpectrumBand({
   };
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (lane.ticks.length === 0) {
+    if (marks.length === 0) {
       return;
     }
     if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
       e.preventDefault();
       const step = e.key === "ArrowRight" ? 1 : -1;
-      const curIdx = hoverSeq === null ? -1 : lane.ticks.findIndex((t) => t.seq === hoverSeq);
-      const from = curIdx < 0 ? (step > 0 ? -1 : lane.ticks.length) : curIdx;
-      const nextIdx = Math.min(lane.ticks.length - 1, Math.max(0, from + step));
-      setHoverSeq(lane.ticks[nextIdx].seq);
+      const curIdx = hoverSeq === null ? -1 : marks.findIndex((t) => t.seq === hoverSeq);
+      const from = curIdx < 0 ? (step > 0 ? -1 : marks.length) : curIdx;
+      const nextIdx = Math.min(marks.length - 1, Math.max(0, from + step));
+      setHoverSeq(marks[nextIdx].seq);
     } else if (e.key === "Enter" && hoverSeq !== null) {
       e.preventDefault();
       open(hoverSeq);
@@ -142,7 +164,7 @@ export function SpectrumBand({
     }
   };
 
-  const tick = hoverSeq !== null ? (lane.ticks.find((t) => t.seq === hoverSeq) ?? null) : null;
+  const tick = hoverSeq !== null ? (marks.find((t) => t.seq === hoverSeq) ?? null) : null;
   const event = tick ? events[tick.seq] : undefined;
   const preview = event ? eventPreview(event) : null;
   const ts =
@@ -162,7 +184,7 @@ export function SpectrumBand({
       ref={bandRef}
       tabIndex={0}
       role="group"
-      aria-label={`${lane.id} events — arrow keys to scrub, Enter to open in trace`}
+      aria-label={t(lang, "sp.bandAria", { id: lane.id })}
       onMouseMove={onMove}
       onMouseLeave={onLeave}
       onKeyDown={onKey}
@@ -170,7 +192,7 @@ export function SpectrumBand({
     >
       <svg viewBox={`0 0 ${BAND_W} ${BAND_H}`} preserveAspectRatio="none">
         <line x1="0" y1={BAND_H / 2} x2={BAND_W} y2={BAND_H / 2} className="spectrum-baseline" />
-        {lane.ticks.map((t) => (
+        {marks.map((t) => (
           <TickMark key={`${t.seq}-${t.kind}`} tick={t} highlighted={t.seq === hoverSeq} />
         ))}
       </svg>
