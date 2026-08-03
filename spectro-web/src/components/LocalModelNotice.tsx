@@ -2,9 +2,10 @@
 // the moment spectro-local becomes the active backend. Since the catalogue the
 // claims are PER MODEL — a tool-capable Qwen must not be introduced with the
 // old "no tools" line, and the reasoning specialist must not promise tools.
-// Reuses the onboarding sheet's km-/ob- vocabulary. Escape and the backdrop
-// dismiss WITHOUT setting the flag (only "got it" does — an accidental Escape
-// must not eat the one-time tutorial moment).
+// Reuses the onboarding sheet's km-/ob- vocabulary. Card 144: all four ways
+// out (the button, the ×, the backdrop, Escape) are the SAME dismissal — the
+// earlier rule persisted only the button, so every other exit resurrected the
+// sheet on the next boot. Settings keeps the deliberate way back.
 
 import { useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
@@ -14,11 +15,11 @@ import { fetchLocalCatalog, localModelLede, type CatalogModel } from "../state/l
 export function LocalModelNotice(props: {
   /** The active model id from provider_info — decides which claims are true. */
   model?: string;
-  onGotIt: () => void;
-  onClose: () => void;
+  /** The one exit — every way out of the sheet lands here (card 144). */
+  onDismiss: () => void;
 }) {
   const lang = useLang();
-  const { onClose } = props;
+  const { onDismiss } = props;
   const [entry, setEntry] = useState<CatalogModel | null>(null);
 
   // One catalogue fetch names the model and its capabilities. Until it lands
@@ -41,11 +42,11 @@ export function LocalModelNotice(props: {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") onClose();
+      if (e.key === "Escape") onDismiss();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onDismiss]);
 
   const label = entry?.label ?? props.model ?? "";
   // Without a catalogue entry we do not know whether this model calls tools, and
@@ -58,7 +59,7 @@ export function LocalModelNotice(props: {
       : "lmn.limits.noTools";
 
   return (
-    <div className="km-backdrop" onClick={props.onClose} role="presentation">
+    <div className="km-backdrop" onClick={props.onDismiss} role="presentation">
       <div
         className="km-panel ob-panel"
         role="dialog"
@@ -71,7 +72,7 @@ export function LocalModelNotice(props: {
           <button
             type="button"
             className="km-close"
-            onClick={props.onClose}
+            onClick={props.onDismiss}
             aria-label={t(lang, "common.close")}
           >
             ×
@@ -104,7 +105,7 @@ export function LocalModelNotice(props: {
 
         <div className="ob-foot">
           <span className="ob-foot-note">{t(lang, "lmn.real")}</span>
-          <button type="button" className="soft-primary" onClick={props.onGotIt}>
+          <button type="button" className="soft-primary" onClick={props.onDismiss}>
             {t(lang, "lmn.gotIt")}
           </button>
         </div>

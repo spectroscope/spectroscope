@@ -173,9 +173,14 @@ export function SettingsPanel({
   providerStatus,
   onKeySaved,
   leveling,
+  onShowLocalNotice,
 }: {
   open: boolean;
   onClose: () => void;
+  /** The deliberate way back to the built-in model's one-time notice (card
+   *  144): every exit of that sheet dismisses it for good, so this is the only
+   *  door left. Opens the sheet over the app (settings folds away first). */
+  onShowLocalNotice?: () => void;
   /** The app's one leveling state. Passed in rather than re-hooked here: a second
    *  instance would have its own snapshot, and a mode switched in this panel would
    *  leave the tabs behind it still locked until a reload. */
@@ -776,6 +781,21 @@ export function SettingsPanel({
                     onReset={() => saveUser({ sttModel: null })}
                   />
                 </label>
+              </div>
+            </>
+          )}
+
+          {/* ---- The built-in model's one-time notice (card 144) ----
+              Every way out of that sheet dismisses it for good, so a reader
+              who wants it back must be able to ask for it deliberately. */}
+          {onShowLocalNotice && (
+            <>
+              <div className="settings-label">{t(lang, "set.secLocalNotice")}</div>
+              <p className="settings-note">{t(lang, "set.localNoticeHint")}</p>
+              <div className="settings-ws">
+                <button type="button" className="ghost" onClick={onShowLocalNotice}>
+                  {t(lang, "set.localNoticeShow")}
+                </button>
               </div>
             </>
           )}
