@@ -239,6 +239,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sp.ofSpan": { de: "im Fenster", en: "in view" },
   "sp.overview": { de: "überblick", en: "overview" },
   "sp.zoomHint": { de: "Zoomen: ctrl + Mausrad oder + und −. Verschieben: Umschalt + Pfeiltasten, [ und ] springen über leere Achse. 0 zeigt wieder alles.", en: "Zoom: ctrl + wheel, or + and −. Pan: shift + arrows, and [ and ] page across empty axis. 0 shows everything again." },
+  // The zoom controls. Every one of them carries words, not just a glyph: a bare
+  // "+" is unreadable to a screen reader and ambiguous next to a token count.
+  "sp.zoomControlsAria": { de: "Zoom", en: "Zoom" },
+  "sp.zoomIn": { de: "Näher heran (Taste +)", en: "Zoom in (key +)" },
+  "sp.zoomOut": { de: "Weiter weg (Taste −)", en: "Zoom out (key −)" },
+  "sp.zoomFit": { de: "Alles zeigen (Taste 0)", en: "Show everything (key 0)" },
+  "sp.zoomFitShort": { de: "alles", en: "all" },
+  // Why a control is off. A disabled button with no reason is the same dead end
+  // as a live one that does nothing; these say which limit was reached.
+  "sp.zoomAtFloor": { de: "Feinste Stufe erreicht: eine Sekunde", en: "Finest step reached: one second" },
+  "sp.zoomAtWhole": { de: "Es ist bereits alles zu sehen", en: "Everything is already in view" },
 
   // fleet roster (Spectrum LIVE)
   "fleet.title": { de: "Flotte", en: "Fleet" },

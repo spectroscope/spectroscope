@@ -18,6 +18,7 @@ import { SpectrumAxis } from "./SpectrumAxis";
 import { SpectrumStrip } from "./SpectrumStrip";
 import { sliceLane } from "./laneSlice";
 import { needsViewport } from "./overview";
+import { applyIntent, buttonToIntent, zoomEnabled, type ZoomButton } from "./gestures";
 import { fit, minWidthFor, rebase, type Window } from "./viewport";
 import { useEffect } from "react";
 import { beacon } from "../state/levelingBeacon";
@@ -46,6 +47,70 @@ export function laneNames(lane: { id: string; label: string | null }): {
   const label = lane.label === null ? "" : lane.label.trim();
   if (label === "" || label === lane.id) return { title: lane.id, chip: null };
   return { title: label, chip: lane.id };
+}
+
+/** A button press has no pointer behind it, so the only honest anchor is the
+ *  middle of the current window: it is the one place that does not claim the
+ *  reader was looking somewhere they were not. Only the RATIO of these two ever
+ *  reaches `zoomAt`, so the units are free and the halves say what they mean. */
+const CENTRE = { anchorPx: 0.5, widthPx: 1 };
+
+/** The zoom, made visible.
+ *
+ *  ctrl + wheel worked before this existed and could not be found: a wheel with
+ *  no modifier is the page's, correctly, so a reader who turns it over the band
+ *  sees the page scroll and concludes the zoom is broken (owner, 2026-08-03).
+ *  These are the same intents the wheel and the keys produce, which is why they
+ *  route through `buttonToIntent` rather than carrying their own steps.
+ *
+ *  It sits beside the count because the count is its readout: the window width
+ *  this changes is printed one element to the left. */
+function ZoomControls({
+  win,
+  minW,
+  onWindow,
+}: {
+  win: Window;
+  minW: number;
+  onWindow: (next: Window) => void;
+}) {
+  const lang = useLang();
+  const enabled = zoomEnabled(win, minW);
+  const press = (button: ZoomButton) =>
+    // No ticks: `buttonToIntent` never returns a "page", which is the only
+    // intent that reads them. Handing over a lane's worth would be decoration.
+    onWindow(applyIntent(win, buttonToIntent(button), { ...CENTRE, minW, ticks: [] }));
+
+  // A disabled control still has to say WHY, or it is the same dead end as one
+  // that stays lit and quietly does nothing.
+  const buttons: { key: ZoomButton; glyph: string; label: string; blocked: string }[] = [
+    { key: "out", glyph: "−", label: t(lang, "sp.zoomOut"), blocked: t(lang, "sp.zoomAtWhole") },
+    { key: "in", glyph: "+", label: t(lang, "sp.zoomIn"), blocked: t(lang, "sp.zoomAtFloor") },
+    {
+      key: "fit",
+      glyph: t(lang, "sp.zoomFitShort"),
+      label: t(lang, "sp.zoomFit"),
+      blocked: t(lang, "sp.zoomAtWhole"),
+    },
+  ];
+
+  return (
+    <span className="spectrum-zoom" role="group" aria-label={t(lang, "sp.zoomControlsAria")}>
+      {buttons.map((b) => (
+        <button
+          key={b.key}
+          type="button"
+          className={`spectrum-zoom-btn${b.key === "fit" ? " spectrum-zoom-btn--word" : ""}`}
+          onClick={() => press(b.key)}
+          disabled={!enabled[b.key]}
+          aria-label={b.label}
+          title={enabled[b.key] ? b.label : b.blocked}
+        >
+          <span aria-hidden="true">{b.glyph}</span>
+        </button>
+      ))}
+    </span>
+  );
 }
 
 function LaneRow({
@@ -201,13 +266,26 @@ export function SpectrumView(props: {
             </span>
           ))}
         </span>
-        <span className="spectrum-count mono tabular">
-          {t(lang, "sp.count", { n: model.totalEvents, lanes: model.lanes.length })}
-          {span > 0 && ` · ${formatDuration(span)}`}
-          {running && ` · ${t(lang, "sp.live")}`}
-          {/* Only once a reader has actually left the whole. On a view that is
-              showing everything there is nothing to report and nothing to undo. */}
-          {winState !== null && ` · ${formatDuration(span * (win.b - win.a))} ${t(lang, "sp.ofSpan")}`}
+        {/* The readout and the controls that change it wrap as ONE unit. Left
+            as two children of the toolbar they wrapped separately: the first
+            press lengthens the count by "38 m 53 s in view", the buttons fall
+            to the next line, and a control that moves the instant you use it
+            is a control you stop trusting. */}
+        <span className="spectrum-toolbar-end">
+          <span className="spectrum-count mono tabular">
+            {t(lang, "sp.count", { n: model.totalEvents, lanes: model.lanes.length })}
+            {span > 0 && ` · ${formatDuration(span)}`}
+            {running && ` · ${t(lang, "sp.live")}`}
+            {/* Only once a reader has actually left the whole. On a view that is
+                showing everything there is nothing to report and nothing to undo. */}
+            {winState !== null && ` · ${formatDuration(span * (win.b - win.a))} ${t(lang, "sp.ofSpan")}`}
+          </span>
+          {/* Same condition as the strip and the axis: one rule decides whether
+              this stream has a viewport at all, and every surface of it appears
+              and disappears together. */}
+          {zoomable && model.lanes.length > 0 && (
+            <ZoomControls win={win} minW={minW} onWindow={setWinState} />
+          )}
         </span>
       </div>
 

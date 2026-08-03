@@ -7,7 +7,15 @@
 // may only have them with a modifier.
 
 import { describe, expect, it } from "vitest";
-import { applyIntent, followMark, keyToIntent, stripWindowFromPointer, wheelToIntent } from "./gestures";
+import {
+  applyIntent,
+  buttonToIntent,
+  followMark,
+  keyToIntent,
+  stripWindowFromPointer,
+  wheelToIntent,
+  zoomEnabled,
+} from "./gestures";
 import type { LaneTick, TickKind } from "./spectrumModel";
 import { fit } from "./viewport";
 
@@ -215,5 +223,74 @@ describe("followMark", () => {
     const end = followMark({ a: 0.9, b: 1 }, 1, 0.01);
     expect(end.b).toBeLessThanOrEqual(1);
     expect(end.a).toBeGreaterThanOrEqual(0);
+  });
+});
+
+// The owner reported the wheel as dead and asked for plus and minus buttons.
+// The wheel turned out to be bound and working, but it needs ctrl held, and
+// nothing on screen says so. These buttons are the discoverable form of the same
+// gesture, so the thing they must never do is grow a second vocabulary: a button
+// that zooms by a different step than the key it mirrors is two features that
+// drift. They are pinned to keyToIntent rather than to a copy of its numbers.
+describe("buttonToIntent", () => {
+  it("speaks the SAME intent as the key it mirrors, so the two cannot drift", () => {
+    expect(buttonToIntent("in")).toEqual(keyToIntent("+", false));
+    expect(buttonToIntent("out")).toEqual(keyToIntent("-", false));
+    expect(buttonToIntent("fit")).toEqual(keyToIntent("0", false));
+  });
+
+  it("narrows on in and widens on out", () => {
+    const i = buttonToIntent("in");
+    const o = buttonToIntent("out");
+    expect(i.kind).toBe("zoom");
+    expect(o.kind).toBe("zoom");
+    if (i.kind === "zoom" && o.kind === "zoom") {
+      expect(i.factor).toBeLessThan(1);
+      expect(o.factor).toBeGreaterThan(1);
+    }
+  });
+});
+
+describe("zoomEnabled", () => {
+  it("cannot zoom out or fit at full extent, because that IS the whole", () => {
+    const e = zoomEnabled(fit(), M);
+    expect(e.out).toBe(false);
+    expect(e.fit).toBe(false);
+    expect(e.in).toBe(true);
+  });
+
+  it("cannot zoom in at the floor, which is the limit the button has to admit to", () => {
+    const e = zoomEnabled({ a: 0.5, b: 0.5 + M }, M);
+    expect(e.in).toBe(false);
+    expect(e.out).toBe(true);
+    expect(e.fit).toBe(true);
+  });
+
+  it("offers all three from a window that is neither the whole nor the floor", () => {
+    expect(zoomEnabled({ a: 0.25, b: 0.75 }, M)).toEqual({ in: true, out: true, fit: true });
+  });
+
+  // The property that makes "disabled" honest rather than decorative: a button is
+  // enabled EXACTLY when pressing it would move the window. Anything else is a
+  // control that either lies about being dead or goes dead quietly.
+  it("is enabled exactly when the press would actually change the window", () => {
+    const ctxAt = { anchorPx: 500, widthPx: 1000, minW: M, ticks: [] as LaneTick[] };
+    let win = fit();
+    for (let step = 0; step < 40; step++) {
+      const enabled = zoomEnabled(win, M);
+      for (const b of ["in", "out", "fit"] as const) {
+        const next = applyIntent(win, buttonToIntent(b), ctxAt);
+        const moved = Math.abs(next.a - win.a) > 1e-12 || Math.abs(next.b - win.b) > 1e-12;
+        expect({ button: b, step, enabled: enabled[b] }).toEqual({ button: b, step, enabled: moved });
+      }
+      win = applyIntent(win, buttonToIntent("in"), ctxAt);
+    }
+  });
+
+  // A stream shorter than the zoom floor gets minW 1 from minWidthFor, so the
+  // whole IS the floor. Every control must then be off rather than inviting a
+  // press that cannot do anything.
+  it("offers nothing when the floor is the whole domain", () => {
+    expect(zoomEnabled(fit(), 1)).toEqual({ in: false, out: false, fit: false });
   });
 });

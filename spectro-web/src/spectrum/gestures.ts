@@ -63,6 +63,30 @@ export function wheelToIntent(
   return { kind: "pan", byWindows: dx / widthPx };
 }
 
+/** The three things a pointing device can ask of the zoom without a keyboard.
+ *
+ *  Named rather than expressed as a factor, because a caller that could pass its
+ *  own factor is a caller that can invent a fourth zoom step. */
+export type ZoomButton = "in" | "out" | "fit";
+
+/** A button press, classified.
+ *
+ *  This is the BASE vocabulary and the keyboard below delegates to it, rather
+ *  than the two carrying a copy of the same numbers. The buttons exist because
+ *  ctrl + wheel is undiscoverable, so they have to be the same gesture in a
+ *  visible form; a button that zoomed by a different step than the key it
+ *  mirrors would be a second feature wearing the first one's clothes. */
+export function buttonToIntent(button: ZoomButton): Intent {
+  switch (button) {
+    case "in":
+      return { kind: "zoom", factor: KEY_ZOOM_IN };
+    case "out":
+      return { kind: "zoom", factor: KEY_ZOOM_OUT };
+    case "fit":
+      return { kind: "fit" };
+  }
+}
+
 /** A key press, classified. Null means the key belongs to somebody else. */
 export function keyToIntent(key: string, shiftKey: boolean): Intent | null {
   switch (key) {
@@ -74,11 +98,11 @@ export function keyToIntent(key: string, shiftKey: boolean): Intent | null {
     // shift to zoom in is a keyboard tax nobody agreed to pay.
     case "+":
     case "=":
-      return { kind: "zoom", factor: KEY_ZOOM_IN };
+      return buttonToIntent("in");
     case "-":
-      return { kind: "zoom", factor: KEY_ZOOM_OUT };
+      return buttonToIntent("out");
     case "0":
-      return { kind: "fit" };
+      return buttonToIntent("fit");
     case "Home":
       return { kind: "home" };
     case "End":
@@ -90,6 +114,37 @@ export function keyToIntent(key: string, shiftKey: boolean): Intent | null {
     default:
       return null;
   }
+}
+
+/** Which of the three controls can still do something from this window. */
+export interface ZoomEnabled {
+  in: boolean;
+  out: boolean;
+  fit: boolean;
+}
+
+/** Absorbs the rounding residue a window carries after a few zooms.
+ *
+ *  `normalize` reconstructs `b` as `a + w`, so a window sitting exactly on the
+ *  floor measures a hair wide. Without this the floor button would stay enabled
+ *  and do nothing, which is the precise failure these limits exist to prevent. */
+const ZOOM_EPS = 1e-9;
+
+/** What the zoom controls may offer from here.
+ *
+ *  A control is enabled EXACTLY when pressing it would move the window, and that
+ *  equivalence is pinned as a property rather than described here. Disabling is
+ *  the honest form of a limit: a button that stays lit and silently does nothing
+ *  teaches a reader that the app ignores them, and they stop pressing it. The
+ *  reason belongs on the disabled control as a title, not in a console. */
+export function zoomEnabled(win: Window, minW: number): ZoomEnabled {
+  const w = win.b - win.a;
+  const floor = Math.min(1, Math.max(0, Number.isFinite(minW) ? minW : 0));
+  return {
+    in: w > floor + ZOOM_EPS,
+    out: w < 1 - ZOOM_EPS,
+    fit: win.a > ZOOM_EPS || win.b < 1 - ZOOM_EPS,
+  };
 }
 
 /** Everything an intent needs to become a window. */

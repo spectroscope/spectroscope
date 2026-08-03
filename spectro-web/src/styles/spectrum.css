@@ -40,10 +40,61 @@
   border-radius: 1px;
 }
 
-.spectrum-count {
+/* The readout plus its controls, kept together at the end of the toolbar so a
+   longer count cannot push the buttons onto a line of their own. */
+.spectrum-toolbar-end {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.spectrum-count {
   font-size: var(--fs-11);
   color: var(--text-dim);
+}
+
+/* The zoom, in reach of a mouse. Sits hard against the count because the count
+   is what it changes: the window width is printed one element to its left. */
+.spectrum-zoom {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.spectrum-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 var(--sp-1);
+  font-size: var(--fs-12);
+  line-height: 1;
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+.spectrum-zoom-btn--word {
+  font-size: var(--fs-11);
+  letter-spacing: 0.04em;
+}
+.spectrum-zoom-btn:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.spectrum-zoom-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* A limit reached, said quietly rather than by going dead. The reason rides on
+   the title; this only has to stop the control from inviting a press. */
+.spectrum-zoom-btn:disabled {
+  color: var(--text-faint);
+  border-color: var(--border);
+  cursor: default;
+  opacity: 0.55;
 }
 
 .spectrum-lanes {
