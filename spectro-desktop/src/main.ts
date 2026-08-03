@@ -2,11 +2,12 @@
 // spectro-server JVM. The core never runs in Electron (there is no JVM here); the main
 // process spawns "java -jar spectro-server.jar" as a child, health-checks it, and points a
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, shell } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, session, shell } from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
+import { LAST_RUN_VERSION_FILE, lastRunVersionPayload, readLastRunVersion, shouldClearCache } from "./cacheRecovery";
 import { appMenuTemplate, openAboutScript } from "./menu";
 
 // Health budget: 30 s by default, overridable for slow environments (the CI
@@ -289,8 +290,40 @@ if (!gotTheLock) {
   }
 }
 
+// (a') Cache recovery (card 130): Electron's HTTP cache lives in userData and
+// survives app updates — which is exactly when the server's content-hashed
+// asset names change. A shell cached before the server grew its Cache-Control
+// headers can render a stale index.html whose assets 404 on the new jar: a
+// blank window. Clear the HTTP cache ONCE per version change, before any
+// window loads a URL; every run after that is covered by the headers.
+function recoverFromStaleCache(): Promise<void> {
+  const marker = path.join(app.getPath("userData"), LAST_RUN_VERSION_FILE);
+  let raw: string | null = null;
+  try {
+    raw = fs.readFileSync(marker, "utf8");
+  } catch {
+    // no marker yet — a fresh install, or an upgrade from a build without one
+  }
+  if (!shouldClearCache(readLastRunVersion(raw), app.getVersion())) return Promise.resolve();
+  return session.defaultSession
+    .clearCache() // HTTP cache only — localStorage and the like stay untouched
+    .catch(() => {
+      // A failed clear leaves us no worse than before this feature existed;
+      // the marker below is still written so the next version tries again.
+    })
+    .then(() => {
+      try {
+        fs.mkdirSync(app.getPath("userData"), { recursive: true });
+        fs.writeFileSync(marker, lastRunVersionPayload(app.getVersion()));
+      } catch {
+        // best effort — an unwritable userData just re-clears next launch
+      }
+    });
+}
+
 async function startup(): Promise<void> {
   app.setAppUserModelId("dev.spectro.desktop"); // otherwise no notifications on Windows
+  await recoverFromStaleCache(); // before any BrowserWindow exists to load a stale shell
   createAppMenu();
   tray = createTray();
 
