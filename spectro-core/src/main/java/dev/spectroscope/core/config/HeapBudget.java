@@ -63,9 +63,13 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
 
     /**
      * The cap {@code ClaudeTranscriptsController} refuses transcripts above,
-     * mirrored here because core cannot see into the server module and the floor
-     * is a function of it. The mirror is not on trust: {@code HeapFlagDriftTest}
-     * reads the controller's source and fails when the two drift apart.
+     * mirrored here because {@link #line()} reports it at boot and core cannot
+     * see into the server module to read it. It is reported, not computed with:
+     * {@link #floorBytes()} ignores it, and this mirror once justified itself by
+     * saying the floor was a function of it, which was true of the read that
+     * held the file in heap and false from the moment that read was streamed.
+     * The mirror is not on trust: {@code HeapFlagDriftTest} reads the
+     * controller's source and fails when the two drift apart.
      */
     public static final long TRANSCRIPT_IMPORT_CAP_BYTES = 128L * 1024 * 1024;
 
