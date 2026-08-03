@@ -20,14 +20,18 @@ import java.util.Optional;
  * cgroup the third is a third of the cgroup limit, not of the host.
  *
  * <h2>Where the floor comes from</h2>
- * Measured, on real transcripts. A single import of a 47 MB session needs
- * between 256m and 384m to complete; three concurrent ones need between 768m and
- * 1g. The expansion is roughly eightfold because the read holds the whole file
- * as a UTF-16 String and then copies it into the response. The transcript
- * endpoint refuses anything over its own cap, so that cap, times the expansion,
- * is the smallest heap on which the worst allowed import can still finish. Raise
- * the cap and this floor rises with it, which is the point: the cap is the heap
- * budget, not a politeness limit.
+ * Measured, on real transcripts, and no longer derived from anything. It used to
+ * be the transcript cap times eight, because the import read answered with
+ * {@code Files.readString}: one request held the whole file as a UTF-16 String
+ * and then copied it into the response, so the cap really was this process's
+ * heap budget. The endpoint streams now. Its cost is a buffer, three concurrent
+ * reads of the largest transcript in the real store complete on {@code -Xmx128m},
+ * and the floor stopped moving with the cap. See {@link #FLOOR_BYTES} for the
+ * measurement and {@link #floorBytes()} for what it is independent of.
+ *
+ * <p>So raising the transcript cap raises what the BROWSER must survive, not
+ * what this process must hold. Whoever changes {@code MAX_CONTENT_BYTES} does
+ * not need to change the floor with it.
  *
  * <h2>What a bigger ceiling does not buy</h2>
  * The same three concurrent imports peaked at 2.65 GB used against the 12 GiB
@@ -40,7 +44,9 @@ import java.util.Optional;
  *
  * @param maxHeapBytes  the ceiling this JVM will actually honour
  * @param physicalBytes the machine or container size, or 0 when unknown
- * @param importCapBytes the largest transcript the server will read into heap
+ * @param importCapBytes the largest transcript the server will serve, reported
+ *                       by {@link #line()} as an operational fact; it is not a
+ *                       heap input, because the read is streamed
  */
 public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBytes) {
 
@@ -168,14 +174,19 @@ public record HeapBudget(long maxHeapBytes, long physicalBytes, long importCapBy
      * floor, which is what a fixed {@code -Xmx} or a tight container limit
      * produces. Silent on every machine that can run this product at all.
      *
+     * <p>The sentence names the floor and not the transcript cap. It used to
+     * name both, which was true at the shipped cap and implied a derivation the
+     * streamed read deleted: lowering the cap would not move the number, so a
+     * reader who acted on the sentence would change the wrong thing.</p>
+     *
      * @return the warning with the fix in it, or empty when there is room
      */
     public Optional<String> warning() {
         if (maxHeapBytes >= floorBytes()) {
             return Optional.empty();
         }
-        return Optional.of("heap: max " + human(maxHeapBytes) + " is under the " + human(floorBytes())
-                + " one transcript import at the " + human(importCapBytes) + " cap needs. Pass "
+        return Optional.of("heap: max " + human(maxHeapBytes) + " is under the measured "
+                + human(floorBytes()) + " this server's working set needs. Pass "
                 + FLAG + ", or give the container more memory.");
     }
 

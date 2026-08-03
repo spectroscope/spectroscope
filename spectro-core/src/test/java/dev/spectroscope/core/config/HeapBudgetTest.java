@@ -86,6 +86,25 @@ class HeapBudgetTest {
     }
 
     @Test
+    void theWarningDoesNotBlameTheCapForANumberTheCapDoesNotMove() {
+        // "under the 256 MiB one transcript import at the 128 MiB cap needs" is
+        // true at the shipped cap and names a cause that does not exist: lower
+        // the cap and the sentence still says 256 MiB. A reader who takes the
+        // sentence at its word lowers the cap to make the warning go away, and
+        // it does not move. The floor is measured, so the sentence says so.
+        String lowered = new HeapBudget(64 * MIB, 2 * GIB, 8 * MIB).warning().orElseThrow();
+        assertFalse(lowered.contains("8 MiB cap"), lowered);
+        assertTrue(lowered.contains("256 MiB"), lowered);
+        assertTrue(lowered.contains(HeapBudget.FLAG), lowered);
+
+        // And the sentence must not change with the cap at all, because the
+        // number in it does not.
+        String shipped = new HeapBudget(64 * MIB, 2 * GIB, CAP).warning().orElseThrow();
+        assertEquals(shipped, lowered,
+                "the warning still varies with the import cap, but the floor it reports does not");
+    }
+
+    @Test
     void theLineAnswersHowMuchHeapWeHave() {
         // The owner's actual question. The share is what makes a missing flag
         // visible: 25 percent means no launcher passed anything.
