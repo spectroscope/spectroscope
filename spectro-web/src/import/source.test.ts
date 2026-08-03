@@ -11,8 +11,26 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { detectAndLoad } from "./detect";
 
-const fixture = (name: string): string =>
-  readFileSync(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url)), "utf8");
+const path = (name: string): string => fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url));
+
+const fixture = (name: string): string => readFileSync(path(name), "utf8");
+
+/** The file's lines as raw byte slices, cut on 0x0A and nothing else. No trim,
+ *  no filter, no decode: this is the side of the comparison that has to owe the
+ *  implementation nothing. */
+const rawLines = (name: string): Buffer[] => {
+  const parts: Buffer[] = [];
+  const bytes = readFileSync(path(name));
+  let start = 0;
+  for (let i = 0; i < bytes.length; i++) {
+    if (bytes[i] === 0x0a) {
+      parts.push(bytes.subarray(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(bytes.subarray(start));
+  return parts;
+};
 
 /** The lines the importer is supposed to have carried: the file's own, blank
  *  ones dropped, nothing else touched. */
@@ -45,6 +63,31 @@ describe("the carried source", () => {
       const { source } = detectAndLoad(text);
       expect(source.lines).toEqual(nonBlankLines(text));
     }
+  });
+
+  it("carries a line's surrounding whitespace, measured against the file's bytes", () => {
+    // The two tests above derive what they expect with the SAME expression the
+    // importer uses, so a change to that expression moves both sides at once.
+    // This one owes it nothing: it names the byte slices by position and
+    // compares bytes with bytes. The fixture is built for it, because no real
+    // transcript indents its records and the claim on screen is nevertheless
+    // "byte for byte".
+    const parts = rawLines("cc-indented.jsonl");
+    // 0 a plain record, 1 indented by two spaces, 2 empty, 3 spaces only,
+    // 4 closed by a tab and a space, 5 the tail after the final newline.
+    expect(parts).toHaveLength(6);
+
+    const { source } = detectAndLoad(fixture("cc-indented.jsonl"));
+
+    expect(source.lines).toHaveLength(3);
+    const carried = [0, 1, 4];
+    for (let i = 0; i < carried.length; i++) {
+      expect(Buffer.from(source.lines[i], "utf8").equals(parts[carried[i]])).toBe(true);
+    }
+    // Said out loud as well, so a failure reads as the defect rather than as a
+    // buffer mismatch: the whitespace is part of the line, not noise around it.
+    expect(source.lines[1].startsWith("  ")).toBe(true);
+    expect(source.lines[2].endsWith("\t ")).toBe(true);
   });
 
   it("carries a spectroscope session's own lines too", () => {
