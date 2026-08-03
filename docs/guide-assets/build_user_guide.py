@@ -24,6 +24,25 @@ The PDF is rendered from the finished HTML with headless Chrome:
       --headless --disable-gpu --no-pdf-header-footer \
       --virtual-time-budget=20000 \
       --print-to-pdf=../USER-GUIDE.pdf ../USER-GUIDE.html
+
+Known lag, 2026-08-03: the editions are four rows behind the parts
+  ../USER-GUIDE.html, ../USER-GUIDE-LIGHT.html and both PDFs were last built
+  at be6bc12 (2026-07-31). Since then exactly one part changed, and it is a
+  correction: parts/16-ref-wire.html now publishes the transcript listing as
+  the object it really answers (limitBytes, truncated, per-row loadable), the
+  128 MiB cap the server really enforces, and the local-origin fence and
+  symlink check both endpoints really wear. The built editions still print the
+  old bare-array shape and "64 MB cap" at line 3531 of each, so a reader of the
+  shipped guide is told a cap the server passed and a shape no client can use.
+
+  Left unbuilt on purpose rather than forgotten. A rebuild is its own ritual
+  (both themes, both PDFs, a pdftotext check that the pages really changed),
+  and the deploy mirror behind spectroscope.ai/guide lives in a different repo,
+  so regenerating here alone would leave the published copies disagreeing with
+  this tree instead of agreeing with it. The next guide build carries the
+  correction with no extra work; whoever runs it should re-sync the mirror in
+  the same pass. WireDocDriftTest guards the parts, which is what this
+  generator reads, so the fix cannot be lost in the meantime.
 """
 
 import base64
