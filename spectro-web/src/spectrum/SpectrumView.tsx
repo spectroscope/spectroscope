@@ -65,8 +65,10 @@ const CENTRE = { anchorPx: 0.5, widthPx: 1 };
  *  These are the same intents the wheel and the keys produce, which is why they
  *  route through `buttonToIntent` rather than carrying their own steps.
  *
- *  It sits beside the count because the count is its readout: the window width
- *  this changes is printed one element to the left. */
+ *  It rides in the pinned strip row, not the toolbar. The toolbar scrolls away
+ *  after 94px and takes its controls with it; the strip stays, and it is the
+ *  better readout anyway, because the window outline moves under your thumb as
+ *  you press. */
 function ZoomControls({
   win,
   minW,
@@ -283,11 +285,8 @@ export function SpectrumView(props: {
             </span>
           ))}
         </span>
-        {/* The readout and the controls that change it wrap as ONE unit. Left
-            as two children of the toolbar they wrapped separately: the first
-            press lengthens the count by "38 m 53 s in view", the buttons fall
-            to the next line, and a control that moves the instant you use it
-            is a control you stop trusting. */}
+        {/* The totals are orientation you read once, so they scroll away with
+            the legend. The zoom went with the strip instead: see below. */}
         <span className="spectrum-toolbar-end">
           <span className="spectrum-count mono tabular">
             {t(lang, "sp.count", { n: model.totalEvents, lanes: model.lanes.length })}
@@ -300,10 +299,6 @@ export function SpectrumView(props: {
                 prints the total span twice for the rest of the session. */}
             {!isWhole(win) && ` · ${formatDuration(span * (win.b - win.a))} ${t(lang, "sp.ofSpan")}`}
           </span>
-          {/* Same condition as the strip and the axis: one rule decides whether
-              this stream has a viewport at all, and every surface of it appears
-              and disappears together. */}
-          {zoomable && model.lanes.length > 0 && <ZoomControls win={win} minW={minW} onWindow={setWindow} />}
         </span>
       </div>
 
@@ -317,10 +312,17 @@ export function SpectrumView(props: {
 
       {/* The strip and the axis sit in the lane grid, not beside it: the rail
           column is flexible, so anything aligned to the bands by a fixed margin
-          would drift the moment the window resized. */}
+          would drift the moment the window resized.
+          They are also the two rows that pin, to the top and the bottom of this
+          scroller. The zoom rides in the head's rail cell rather than up in the
+          toolbar: it is a control, the strip beside it is what it moves, and
+          the toolbar scrolls away after 94px. */}
       {zoomable && model.lanes.length > 0 && (
-        <div className="spectrum-viewport-row">
-          <span className="spectrum-viewport-label mono">{t(lang, "sp.overview")}</span>
+        <div className="spectrum-viewport-row spectrum-viewport-row--head">
+          <span className="spectrum-viewport-rail">
+            <span className="spectrum-viewport-label mono">{t(lang, "sp.overview")}</span>
+            <ZoomControls win={win} minW={minW} onWindow={setWindow} />
+          </span>
           <SpectrumStrip ticks={allTicks} win={win} minW={minW} cols={bandW} onWindow={setWindow} />
         </div>
       )}
@@ -357,7 +359,7 @@ export function SpectrumView(props: {
       )}
 
       {zoomable && model.lanes.length > 0 && (
-        <div className="spectrum-viewport-row">
+        <div className="spectrum-viewport-row spectrum-viewport-row--foot">
           <span />
           <SpectrumAxis win={win} t0={model.t0} t1={model.t1} cols={bandW} />
         </div>

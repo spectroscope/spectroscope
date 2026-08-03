@@ -8,8 +8,20 @@
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: var(--sp-4) var(--sp-5) var(--sp-5);
+  padding: 0 var(--sp-5);
   gap: var(--sp-3);
+}
+
+/* The vertical air belongs to whichever child owns the edge, not to the
+   scroller. Left on the scroller it is a slot a sticky `top: 0` cannot reach:
+   measured, a band painted in the 16px above the pinned strip and two lane
+   cards in the 24px below the pinned axis. Neither of these two rules knows a
+   row height, so there is no number here that can go stale. */
+.spectrum-view > :first-child {
+  padding-top: var(--sp-4);
+}
+.spectrum-view > :last-child {
+  padding-bottom: var(--sp-5);
 }
 
 .spectrum-toolbar {
@@ -40,8 +52,10 @@
   border-radius: 1px;
 }
 
-/* The readout plus its controls, kept together at the end of the toolbar so a
-   longer count cannot push the buttons onto a line of their own. */
+/* The totals, at the end of the toolbar. The zoom used to live here too, held
+   in one wrapping unit so a lengthening count could not push the buttons onto
+   a line of their own; it moved to the pinned strip row, and the count is free
+   to wrap on its own now that nothing is riding on it. */
 .spectrum-toolbar-end {
   margin-left: auto;
   display: inline-flex;
@@ -54,8 +68,8 @@
   color: var(--text-dim);
 }
 
-/* The zoom, in reach of a mouse. Sits hard against the count because the count
-   is what it changes: the window width is printed one element to its left. */
+/* The zoom, in reach of a mouse, and in the pinned head so it is still in reach
+   once the reader is deep in the lanes. */
 .spectrum-zoom {
   display: inline-flex;
   align-items: center;
@@ -307,6 +321,48 @@
   letter-spacing: 0.04em;
 }
 
+/* Two pinned edges. The strip is a control AND the "where am I" readout; the
+   axis is the only clock in the view; 837px of lanes sit between them, so on a
+   287px window the reader got one or the other and, across a measured 500px of
+   scrollTop, neither.
+   The rule that keeps this from rotting: exactly one sticky element per edge,
+   and no offset but zero. Nothing is positioned against another row's height,
+   which is what makes the toolbar's wrap from 22px to 55px under 800px of
+   width a non-event instead of something a media query has to catch. The
+   toolbar itself deliberately does not pin: measured, pinning it and offsetting
+   the strip by its wide-window height covered 21px of the 32px scrub bar at
+   exactly the width the complaint comes from.
+   The ground is load-bearing, not decoration: lane cards are a lighter surface
+   than the panel, and a transparent pinned row has them sliding through it. */
+.spectrum-viewport-row--head {
+  position: sticky;
+  top: 0;
+  z-index: var(--z-sticky);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+.spectrum-viewport-row--foot {
+  position: sticky;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  background: var(--bg);
+  border-top: 1px solid var(--border);
+}
+
+/* The head's rail cell: the label at its start, the zoom hard against its end
+   so the buttons sit next to the strip they move. They used to sit beside the
+   count, on the reasoning that the count is their readout; the strip is the
+   better one, because the window outline moves under your thumb as you press. */
+.spectrum-viewport-rail {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-width: 0;
+}
+.spectrum-viewport-rail .spectrum-zoom {
+  margin-left: auto;
+}
+
 /* The strip is the orientation surface: the WHOLE axis, always. Grab, because
    dragging it is the whole gesture. */
 .spectrum-strip {
@@ -337,12 +393,15 @@
   stroke-width: 1;
 }
 
-/* The axis: graduations as lines, labels as HTML. Separation is a line. */
+/* The axis: graduations as lines, labels as HTML. Separation is a line, and
+   since the axis was pinned that line moved up one level to the row: at the
+   axis it stopped at the band column, so the rail column had no edge at all
+   while lane cards slid under it. Kept in both places it would have doubled,
+   because the row and the axis are the same 30px tall. */
 .spectrum-axis {
   position: relative;
   min-width: 0;
   height: 30px;
-  border-top: 1px solid var(--border);
 }
 .spectrum-axis svg {
   display: block;
