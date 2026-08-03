@@ -1056,8 +1056,14 @@ export function App() {
       // One back-press between hash entries fires hashchange AND popstate;
       // comparing the DISPATCHED route string — set synchronously, before any
       // async work — makes the second call a no-op. Comparing against app
-      // state instead would lag the fetch and let both through.
-      if (key === lastApplied.current) return;
+      // state instead would lag the fetch and let both through. A new
+      // SPELLING of the applied place ("#/bogus" typed over "#/") still gets
+      // its bar corrected: writeRoute replaces on a raw difference and stays
+      // silent on the echo, so this costs the double-fire nothing.
+      if (key === lastApplied.current) {
+        writeRoute(route, "apply");
+        return;
+      }
       lastApplied.current = key;
       void applyRouteRef.current(route);
     };
