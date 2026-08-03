@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { fracAt, markX, seqAt, viewBoxX } from "./bandGeometry";
+import { fracAt, innerWidthPx, markX, seqAt, viewBoxX } from "./bandGeometry";
 import { seqAtFrac } from "./bandScrub";
 import { fit, normalize } from "./viewport";
 import type { LaneTick } from "./spectrumModel";
@@ -129,5 +129,31 @@ describe("seqAt", () => {
   it("stays calm on an empty lane and an unmeasured band", () => {
     expect(seqAt([], 10, W, PAD, fit())).toBeNull();
     expect(seqAt(ticks, 10, 0, PAD, fit())).toBeNull();
+  });
+});
+
+// The band has two widths: the viewBox units it draws in, and the layout pixels
+// a wheel reports its deltas in. Marks convert into the first; a gesture stays
+// in the second, and this is the width it belongs against. Mixing them made the
+// wheel's axis a function of the browser window's size.
+describe("innerWidthPx", () => {
+  it("is the drawable width, in the pixels the band actually occupies", () => {
+    // 1000 units wide with a 4-unit pad each side is 99.2% drawable.
+    expect(innerWidthPx(1000, W, PAD)).toBeCloseTo(992, 9);
+    expect(innerWidthPx(500, W, PAD)).toBeCloseTo(496, 9);
+    expect(innerWidthPx(1884, W, PAD)).toBeCloseTo(1868.928, 9);
+  });
+
+  it("keeps the ratio the drawing uses, so a pan covers the same time at any size", () => {
+    for (const rect of [200, 764, 1884, 3000]) {
+      expect(innerWidthPx(rect, W, PAD) / rect).toBeCloseTo(INNER / W, 12);
+    }
+  });
+
+  it("returns zero for a band that has not been measured, never NaN", () => {
+    expect(innerWidthPx(0, W, PAD)).toBe(0);
+    expect(innerWidthPx(-5, W, PAD)).toBe(0);
+    expect(innerWidthPx(NaN, W, PAD)).toBe(0);
+    expect(innerWidthPx(800, 0, PAD)).toBe(0);
   });
 });

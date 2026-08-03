@@ -13,7 +13,7 @@
 
 import { pageNext, pagePrev } from "./laneSlice";
 import type { LaneTick } from "./spectrumModel";
-import { fit, fromScreen, normalize, panBy, zoomAt, type Window } from "./viewport";
+import { fit, fromScreen, isWhole, normalize, panBy, WINDOW_EPS, zoomAt, type Window } from "./viewport";
 
 export type Intent =
   | { kind: "zoom"; factor: number }
@@ -41,7 +41,14 @@ const KEY_ZOOM_OUT = 2;
  *
  *  A trackpad pinch arrives as a wheel event with a synthetic `ctrlKey`, so
  *  pinch and ctrl+wheel are one gesture and need no second handler. Null means
- *  "not ours": the caller must then leave the event alone so the page scrolls. */
+ *  "not ours": the caller must then leave the event alone so the page scrolls.
+ *
+ *  ONE SPACE. The two deltas are weighed against each other to settle which axis
+ *  owns the gesture, and `widthPx` is measured in the same units they arrive in,
+ *  so all three must be the pixels the browser reported. A caller that scales
+ *  one of them into a drawing's own coordinates makes the verdict a function of
+ *  how wide that drawing happens to be rendered, which is a swipe that pans on
+ *  one screen and scrolls on another. */
 export function wheelToIntent(
   deltaX: number,
   deltaY: number,
@@ -63,6 +70,30 @@ export function wheelToIntent(
   return { kind: "pan", byWindows: dx / widthPx };
 }
 
+/** The three things a pointing device can ask of the zoom without a keyboard.
+ *
+ *  Named rather than expressed as a factor, because a caller that could pass its
+ *  own factor is a caller that can invent a fourth zoom step. */
+export type ZoomButton = "in" | "out" | "fit";
+
+/** A button press, classified.
+ *
+ *  This is the BASE vocabulary and the keyboard below delegates to it, rather
+ *  than the two carrying a copy of the same numbers. The buttons exist because
+ *  ctrl + wheel is undiscoverable, so they have to be the same gesture in a
+ *  visible form; a button that zoomed by a different step than the key it
+ *  mirrors would be a second feature wearing the first one's clothes. */
+export function buttonToIntent(button: ZoomButton): Intent {
+  switch (button) {
+    case "in":
+      return { kind: "zoom", factor: KEY_ZOOM_IN };
+    case "out":
+      return { kind: "zoom", factor: KEY_ZOOM_OUT };
+    case "fit":
+      return { kind: "fit" };
+  }
+}
+
 /** A key press, classified. Null means the key belongs to somebody else. */
 export function keyToIntent(key: string, shiftKey: boolean): Intent | null {
   switch (key) {
@@ -74,11 +105,11 @@ export function keyToIntent(key: string, shiftKey: boolean): Intent | null {
     // shift to zoom in is a keyboard tax nobody agreed to pay.
     case "+":
     case "=":
-      return { kind: "zoom", factor: KEY_ZOOM_IN };
+      return buttonToIntent("in");
     case "-":
-      return { kind: "zoom", factor: KEY_ZOOM_OUT };
+      return buttonToIntent("out");
     case "0":
-      return { kind: "fit" };
+      return buttonToIntent("fit");
     case "Home":
       return { kind: "home" };
     case "End":
@@ -90,6 +121,36 @@ export function keyToIntent(key: string, shiftKey: boolean): Intent | null {
     default:
       return null;
   }
+}
+
+/** Which of the three controls can still do something from this window. */
+export interface ZoomEnabled {
+  in: boolean;
+  out: boolean;
+  fit: boolean;
+}
+
+/** What the zoom controls may offer from here.
+ *
+ *  A control is enabled EXACTLY when pressing it would move the window, and that
+ *  equivalence is pinned as a property rather than described here. Disabling is
+ *  the honest form of a limit: a button that stays lit and silently does nothing
+ *  teaches a reader that the app ignores them, and they stop pressing it. The
+ *  reason belongs on the disabled control as a title, not in a console. */
+export function zoomEnabled(win: Window, minW: number): ZoomEnabled {
+  const w = win.b - win.a;
+  const floor = Math.min(1, Math.max(0, Number.isFinite(minW) ? minW : 0));
+  return {
+    // The residue is absorbed on both limits for the same reason: a window
+    // sitting exactly on the floor, or exactly back at the whole, measures a
+    // hair off, and a button that stays lit and does nothing is the precise
+    // failure these limits exist to prevent.
+    in: w > floor + WINDOW_EPS,
+    out: w < 1 - WINDOW_EPS,
+    // The same predicate the readout uses. "There is a way back" and "there is
+    // a slice to report" are one question, so they answer with one function.
+    fit: !isWhole(win),
+  };
 }
 
 /** Everything an intent needs to become a window. */

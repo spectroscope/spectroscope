@@ -26,6 +26,8 @@ import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
 import { TranslatePanel } from "./TranslatePanel";
 import { ExportMenu } from "./ExportMenu";
+import { chatTools } from "./chatTools";
+import { useTranslation } from "../state/translate";
 import { useChatWidth } from "../state/chatWidth";
 import { WorkspaceChooser } from "./WorkspaceChooser";
 import { reportCount, useSearch } from "../state/search";
@@ -95,6 +97,9 @@ export function Chat(props: {
   const { state, liveView } = props;
   const lang = useLang();
   const chatWidth = useChatWidth(); // the reading width, from the disclosure menu
+  // How many passages are translated for this view. Read here so the tools row
+  // and the translate panel answer "is there anything to show?" from one place.
+  const translated = useTranslation(props.viewKey ?? "live");
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -369,21 +374,36 @@ export function Chat(props: {
     }
   };
 
+  // The session tools, in the bottom bar rather than floating over the first
+  // message (owner, 2026-08-03). One row, built once, rendered by whichever
+  // branch is on screen: a live session and an archive are equally exportable
+  // and equally translatable, so they must not offer different controls.
+  //
+  // viewKey: without it the export cannot see that a translation is showing,
+  // and would keep writing the recorded stream under a label promising the view
+  // on screen. It is the same key the translate sheet is handed, one line down.
+  const tools = chatTools({ events: props.events?.length ?? 0, translatedUnits: translated.byId.size });
+  const toolsRow = tools.row && (
+    <div className="composer-tools" role="group" aria-label={t(lang, "chat.tools")}>
+      {tools.exportControl && (
+        <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} viewKey={vk} />
+      )}
+      {tools.translateControl && <TranslatePanel events={props.events ?? []} viewKey={vk} />}
+    </div>
+  );
+
+  // The disclosure menu, built once here for the same reason the tools row is:
+  // it belongs to BOTH bars. It is the only route to the disclosure level, the
+  // reading width and the chat reading, and those three say how a session is
+  // read, not what it does. Reading someone else's stored session is what the
+  // archive branch is for, so a menu that appears only while a run is live is
+  // absent from the screen that needs it most. Not folded into the tools row:
+  // that row withholds itself on an empty chat, and this control still applies
+  // there. One mount, two places to render it.
+  const discMenu = <DisclosureMenu />;
+
   return (
     <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>
-      {/* Card 78 #4: the disclosure-level menu, top-right corner of the chat
-          (its twin sits in the composer row). Floats over the scroll area.
-          The translation trigger sits next to it and brings its own toggle
-          back to the record — one row, because they are the same kind of
-          control: how this session is READ, not what it does. */}
-      <div className="chat-disc">
-        {/* The same viewKey the translate sheet uses. Without it the export
-            cannot see that a translation is showing, and would keep writing the
-            recorded stream under a label promising the view on screen. */}
-        <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} viewKey={vk} />
-        <TranslatePanel events={props.events ?? []} viewKey={vk} />
-        <DisclosureMenu placement="down" />
-      </div>
       {/* Jump rail, the trace's affordance: an imported session runs to hundreds
           of turns and scrolling it by hand is not navigation. */}
       <div className="chat-rail">
@@ -533,6 +553,7 @@ export function Chat(props: {
       {liveView ? (
         <div className="composer">
           <div className="composer-column">
+            {toolsRow}
             {/* The waiting line (card 78 #3): queued messages as removable
                 chips — they auto-send, oldest first, when the run ends. */}
             {props.queued !== undefined && props.queued.length > 0 && (
@@ -574,9 +595,9 @@ export function Chat(props: {
                 tabIndex={-1}
                 onChange={attachments.onFilePicked}
               />
-              {/* Card 78 #4: the disclosure menu's composer twin — LEFT of the
-                  first toolbox button, per the owner's placement. */}
-              <DisclosureMenu placement="up" />
+              {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
+                  button, per the owner's placement. */}
+              {discMenu}
               <button
                 type="button"
                 className="icon-button attach-button"
@@ -685,35 +706,43 @@ export function Chat(props: {
         </div>
       ) : (
         <div className="composer archive-bar">
-          <div className="composer-inner">
-            <span className="archive-note">{t(lang, "lab.viewingArchive")}</span>
-            {props.onResume !== undefined && (
-              <button
-                type="button"
-                className="soft-primary resume-btn"
-                title={t(lang, "arch.resumeTitle")}
-                onClick={props.onResume}
-              >
-                {t(lang, "arch.resume")}
+          {/* Same column wrapper as the live branch, so the tools row sits on
+              the reading width and the bar below it keeps the width it had. */}
+          <div className="composer-column">
+            {toolsRow}
+            <div className="composer-inner">
+              {/* Leftmost, as in the live bar: same control, same end of the
+                  row, so the hand goes to the same place on both screens. */}
+              {discMenu}
+              <span className="archive-note">{t(lang, "lab.viewingArchive")}</span>
+              {props.onResume !== undefined && (
+                <button
+                  type="button"
+                  className="soft-primary resume-btn"
+                  title={t(lang, "arch.resumeTitle")}
+                  onClick={props.onResume}
+                >
+                  {t(lang, "arch.resume")}
+                </button>
+              )}
+              {/* Card 95: export is the mirror of the import — the stored JSONL,
+                  verbatim, as a download. A plain link so the browser handles the
+                  save dialog; same-origin, so the local fence sees no Origin. */}
+              {props.exportId !== undefined && (
+                <a
+                  className="ghost archive-export"
+                  href={`/api/sessions/${encodeURIComponent(props.exportId)}/export`}
+                  download={`${props.exportId}.jsonl`}
+                  title={t(lang, "arch.exportTitle")}
+                >
+                  {t(lang, "arch.export")}
+                </a>
+              )}
+              {props.onDelete !== undefined && <DeleteButton onDelete={props.onDelete} />}
+              <button type="button" className="link" onClick={props.onReturnToLive}>
+                {t(lang, "lab.returnLive")}
               </button>
-            )}
-            {/* Card 95: export is the mirror of the import — the stored JSONL,
-                verbatim, as a download. A plain link so the browser handles the
-                save dialog; same-origin, so the local fence sees no Origin. */}
-            {props.exportId !== undefined && (
-              <a
-                className="ghost archive-export"
-                href={`/api/sessions/${encodeURIComponent(props.exportId)}/export`}
-                download={`${props.exportId}.jsonl`}
-                title={t(lang, "arch.exportTitle")}
-              >
-                {t(lang, "arch.export")}
-              </a>
-            )}
-            {props.onDelete !== undefined && <DeleteButton onDelete={props.onDelete} />}
-            <button type="button" className="link" onClick={props.onReturnToLive}>
-              {t(lang, "lab.returnLive")}
-            </button>
+            </div>
           </div>
         </div>
       )}

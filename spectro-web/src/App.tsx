@@ -1233,12 +1233,15 @@ export function App() {
           >
             lab
           </button>
-          {/* The way back to the record, on EVERY lens. The chat header has the
-              same toggle next to the translate trigger, but a reader who is
-              looking at the trace or the text feed must not have to leave the
+          {/* The way back to the record, on EVERY lens, and the only always
+              visible one: the copy that sat next to the translate trigger is
+              gone (2026-08-03), the sheet's own copy needs the sheet open. A
+              reader on the trace or the text feed must not have to leave the
               tab they are on to see what was actually recorded. Rendered only
-              once something IS translated — an always-present span would eat
-              the auto margin the level pill sits on. */}
+              once something IS translated, since an always-present span would
+              eat the auto margin the level pill sits on. Deleting this one
+              leaves no toggle on screen, which is why the drift test counts
+              it. */}
           {translation.byId.size > 0 && (
             <span className="tab-nav__translate">
               <TranslateToggle viewKey={viewKey} />
@@ -1392,6 +1395,10 @@ export function App() {
                agentId, and events without an agentId stay visible under any
                filter, so the lane is a safe fallback there. */
             onFocusEvent={focusInTrace}
+            /* In a fleet the lanes are hub nodes, so the view can name them:
+               the roster carries each node's capabilities and its epoch. A
+               plain session has no roster and passes nothing. */
+            fleet={enteredFleet !== null ? enteredFleetModel : undefined}
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (

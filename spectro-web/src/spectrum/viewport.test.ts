@@ -3,7 +3,18 @@
 // funnels through one normalize and every invariant it owes is pinned here.
 
 import { describe, expect, it } from "vitest";
-import { fit, fromScreen, minWidthFor, normalize, panBy, rebase, toScreen, zoomAt } from "./viewport";
+import {
+  fit,
+  fromScreen,
+  isWhole,
+  minWidthFor,
+  normalize,
+  panBy,
+  rebase,
+  storeWindow,
+  toScreen,
+  zoomAt,
+} from "./viewport";
 
 /** A 100x floor: most cases below do not care about the number, only that the
  *  window can never fall through it. */
@@ -201,5 +212,43 @@ describe("rebase", () => {
       expect(Number.isFinite(w.b)).toBe(true);
       expect(w.a).toBeLessThan(w.b);
     }
+  });
+});
+
+// "The whole" is a claim about the WINDOW, and the view had two ways of asking
+// it: the predicate below, and whether its state slot happened to have been
+// written. The two disagree the moment a gesture lands on the whole by arriving
+// there, which the fit button does on every press.
+describe("isWhole", () => {
+  it("is true of the whole and false of anything narrower", () => {
+    expect(isWhole(fit())).toBe(true);
+    expect(isWhole({ a: 0, b: 0.999 })).toBe(false);
+    expect(isWhole({ a: 0.001, b: 1 })).toBe(false);
+    expect(isWhole({ a: 0.4, b: 0.6 })).toBe(false);
+  });
+
+  it("absorbs the residue normalize leaves behind, so it cannot be true a hair off", () => {
+    // normalize rebuilds b as a + w, so a window that walked back to the whole
+    // measures a hair wide. A predicate that called that "not the whole" would
+    // leave the reader in a view that says it is showing everything and offers
+    // a button to show everything.
+    expect(isWhole(normalize(0, 1 + 1e-15, 0))).toBe(true);
+    expect(isWhole({ a: 1e-12, b: 1 - 1e-12 })).toBe(true);
+  });
+});
+
+// The one place a gesture's result becomes stored state. A window that IS the
+// whole has to be stored as the sentinel: on a live stream the whole keeps
+// moving, and a stored pair of fractions freezes it at the instant of the press.
+describe("storeWindow", () => {
+  it("stores the whole as null, which is how this view says follow the live edge", () => {
+    expect(storeWindow(fit())).toBeNull();
+    expect(storeWindow({ a: 0, b: 1 })).toBeNull();
+  });
+
+  it("stores anything narrower unchanged, to the exact numbers", () => {
+    const win = { a: 0.375, b: 0.625 };
+    expect(storeWindow(win)).toEqual(win);
+    expect(storeWindow({ a: 0, b: 0.5 })).toEqual({ a: 0, b: 0.5 });
   });
 });

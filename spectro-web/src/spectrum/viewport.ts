@@ -28,6 +28,36 @@ export function fit(): Window {
   return { a: 0, b: 1 };
 }
 
+/** The rounding residue a window carries after a few zooms.
+ *
+ *  `normalize` reconstructs `b` as `a + w`, so a window that has walked back to
+ *  the whole measures a hair wide. Every comparison against the domain edges has
+ *  to absorb that, or the view sits a rounding error away from the whole and
+ *  says so on screen while offering a button that does nothing. */
+export const WINDOW_EPS = 1e-9;
+
+/** Is this window the whole domain?
+ *
+ *  One predicate for the question the view asks in three places: whether to
+ *  offer a way back, whether to report a slice, and whether there is anything to
+ *  store at all. Asking it three ways is how a readout and a button come to
+ *  disagree about where "everything" ends. */
+export function isWhole(win: Window): boolean {
+  return win.a <= WINDOW_EPS && win.b >= 1 - WINDOW_EPS;
+}
+
+/** What a gesture's result becomes once it is STORED.
+ *
+ *  The whole is stored as null, and that is not tidying up. A live stream keeps
+ *  moving t1, so a stored pair of fractions freezes the view at the instant of
+ *  the press: `rebase` below then carries those fractions onto the new span, and
+ *  the window that meant "everything" quietly becomes "everything up to the
+ *  press", with every later event off the right edge. Null needs no rewriting
+ *  and cannot drift, so every gesture that lands on the whole comes back here. */
+export function storeWindow(win: Window): Window | null {
+  return isWhole(win) ? null : win;
+}
+
 /** The one gate every window passes through.
  *
  *  It shifts as a RIGID BODY. Clamping `a` and `b` independently would change

@@ -239,6 +239,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sp.ofSpan": { de: "im Fenster", en: "in view" },
   "sp.overview": { de: "überblick", en: "overview" },
   "sp.zoomHint": { de: "Zoomen: ctrl + Mausrad oder + und −. Verschieben: Umschalt + Pfeiltasten, [ und ] springen über leere Achse. 0 zeigt wieder alles.", en: "Zoom: ctrl + wheel, or + and −. Pan: shift + arrows, and [ and ] page across empty axis. 0 shows everything again." },
+  // The zoom controls. Every one of them carries words, not just a glyph: a bare
+  // "+" is unreadable to a screen reader and ambiguous next to a token count.
+  "sp.zoomControlsAria": { de: "Zoom", en: "Zoom" },
+  "sp.zoomIn": { de: "Näher heran (Taste +)", en: "Zoom in (key +)" },
+  "sp.zoomOut": { de: "Weiter weg (Taste −)", en: "Zoom out (key −)" },
+  "sp.zoomFit": { de: "Alles zeigen (Taste 0)", en: "Show everything (key 0)" },
+  "sp.zoomFitShort": { de: "alles", en: "all" },
+  // Why a control is off. A disabled button with no reason is the same dead end
+  // as a live one that does nothing; these say which limit was reached.
+  "sp.zoomAtFloor": { de: "Feinste Stufe erreicht: eine Sekunde", en: "Finest step reached: one second" },
+  "sp.zoomAtWhole": { de: "Es ist bereits alles zu sehen", en: "Everything is already in view" },
 
   // fleet roster (Spectrum LIVE)
   "fleet.title": { de: "Flotte", en: "Fleet" },
@@ -247,7 +258,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleet.online": { de: "online", en: "online" },
   "fleet.offline": { de: "offline", en: "offline" },
   "fleet.epoch": { de: "Epoche {n}", en: "epoch {n}" },
-  "fleet.restarted": { de: "neugestartet — neue Prozess-Inkarnation", en: "restarted — new process incarnation" },
+  "fleet.restarted": { de: "neugestartet: neue Prozess-Inkarnation", en: "restarted: a new process incarnation" },
   "fleet.lastSeen": { de: "vor {t} gesehen", en: "seen {t} ago" },
   "fleet.noEvents": { de: "Noch keine Flotten-Events. Die Knoten sind da, ihre Linien erscheinen, sobald sie laufen.", en: "No fleet events yet. The nodes are here; their lines appear once they run." },
   "fleet.modeAria": { de: "Graph-Lesart", en: "Graph reading" },
@@ -701,6 +712,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.queue": { de: "Einreihen", en: "Queue" },
   "chat.queuedHint": { de: "startet nach dem laufenden Lauf", en: "sends after the current run" },
   "chat.unqueue": { de: "Aus der Warteschlange nehmen", en: "Remove from queue" },
+  // Names the row that holds export and translate, above the input. A group of
+  // two buttons with no name is two loose buttons to a screen reader.
+  "chat.tools": { de: "Sitzungs-Werkzeuge", en: "session tools" },
   "disc.title": { de: "Anzeigetiefe", en: "disclosure level" },
   "tf.extended": { de: "vollständig", en: "extended" },
   "tf.extendedTitle": { de: "Alles zeigen, was das Protokoll trägt — auch den zusammengebauten Request (System-Prompt, Tool-Schemas, Conversation), die Token-Wahrheit, Turn-Grenzen und den Plan.", en: "Show everything the record carries — the assembled request (system prompt, tool schemas, conversation), the token truth, turn boundaries and the plan." },
@@ -922,8 +936,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "local.model.vibethinker-3b.blurb": { de: "Ein kleiner Reasoning-Spezialist. Zeigt sein Denken schön, kann aber keine Tools aufrufen; der Agent antwortet nur mit Worten.", en: "A small reasoning specialist. Shows its thinking beautifully but cannot call tools, so the agent answers with words only." },
   "local.model.vibethinker-3b.licenceCaveat": { de: "Die Lizenz des Basismodells (Qwen2.5-Coder-3B) erlaubt Forschungs- und Evaluationsnutzung. Die GGUF-Datei ist eine Community-Requantisierung (mradermacher), nicht von WeiboAI selbst — du lädst sie eigenhändig, sha256-gepinnt.", en: "Its base model's licence (Qwen2.5-Coder-3B) allows research and evaluation use. The GGUF is a community requantization (mradermacher) rather than WeiboAI's own file — you fetch it yourself, sha256-pinned." },
 
-  "arch.export": { de: "Exportieren", en: "Export" },
-  "arch.exportTitle": { de: "Diese Session als .jsonl herunterladen — der Import liest sie wieder ein", en: "Download this session as .jsonl — the import reads it back" },
+  // Named after the file it hands over, not after the act: the tools row one
+  // line above carries "exportieren" / "export", which opens the format dialog
+  // and writes the view on screen. Two neighbours reading "Export" would have
+  // been one word for two different things (owner report, 2026-08-03).
+  "arch.export": { de: ".jsonl herunterladen", en: "download .jsonl" },
+  "arch.exportTitle": { de: "Die aufgezeichnete Datei, unverändert; der Import liest sie wieder ein", en: "The recorded file, unchanged; the import reads it back" },
 
   // tool card views (card 94)
   "tv.modeAria": { de: "Darstellung des Tool-Aufrufs", en: "Tool call view" },

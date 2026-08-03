@@ -10,7 +10,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { eventPreview } from "./eventPreview";
 import { stepSeq } from "./bandScrub";
-import { markX, seqAt, viewBoxX } from "./bandGeometry";
+import { innerWidthPx, markX, seqAt, viewBoxX } from "./bandGeometry";
 import { applyIntent, followMark, keyToIntent, wheelToIntent } from "./gestures";
 import type { Window } from "./viewport";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
@@ -138,12 +138,25 @@ export function SpectrumBand({
       if (!now.onWindow) return;
       const rect = el.getBoundingClientRect();
       const px = viewBoxX(e.clientX - rect.left, rect.width, BAND_W);
-      const dx = viewBoxX(e.deltaX, rect.width, BAND_W);
-      if (px === null || dx === null) return;
+      if (px === null) return;
       // A trackpad pinch arrives as a wheel with a synthetic ctrlKey; meta is
       // the same intent on a mouse. A plain vertical wheel is left alone so the
       // page can still scroll past twenty lanes.
-      const intent = wheelToIntent(dx, e.deltaY, e.ctrlKey || e.metaKey, BAND_INNER);
+      //
+      // The deltas go over RAW, in the pixels the browser reported them in, and
+      // the width they are measured against is the band's drawable width in the
+      // same pixels. The pointer above needs the viewBox conversion because it
+      // is a position in the drawing; a swipe is two deltas weighed against each
+      // other, and converting one of them let the band's rendered size decide
+      // which axis owns the gesture. The same swipe then panned on a laptop and
+      // scrolled the page on a wide monitor, and on a narrow band a vertical
+      // swipe was claimed as a pan, trapping the scroll this leaves alone.
+      const intent = wheelToIntent(
+        e.deltaX,
+        e.deltaY,
+        e.ctrlKey || e.metaKey,
+        innerWidthPx(rect.width, BAND_W, BAND_PAD_X),
+      );
       if (intent === null) return;
       e.preventDefault();
       now.onWindow(

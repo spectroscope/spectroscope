@@ -9,9 +9,12 @@
 // the reading happens in the chat, the trace, the text feed and the lab.
 //
 // Four rules the design is built on:
-//  1. The record survives, and it is ONE CLICK away — TranslateToggle sits next
-//     to the trigger and flips back to the original. This gets used on other
-//     people's incident evidence.
+//  1. The record survives, and it is ONE CLICK away. TranslateToggle carries
+//     that click and lives in the tab row (App.tsx), where it is reachable from
+//     the trace and the text feed too, plus a copy in this sheet. It is not
+//     next to the trigger: the row that held it there is gone (2026-08-03).
+//     Note that the tab row's copy renders only once something is translated.
+//     This gets used on other people's incident evidence.
 //  2. The run is a background job. Closing the sheet (or Escape) leaves it
 //     running; only "stop" stops it.
 //  3. Only prose is sent. state/translate.ts and translate/units.ts decide what
@@ -145,9 +148,11 @@ export function canRun(engines: Engines | null, engine: Engine | null, passages:
 }
 
 /**
- * The one-click way back to the record. Rendered wherever a translated stream
- * is shown — next to the trigger in the chat header, and in the tab row, so
- * the record is one click away on the trace, the text feed and the lab too.
+ * The one-click way back to the record. Mounted twice: in the tab row (App.tsx)
+ * so the record is one click away on the chat, the trace, the text feed and the
+ * lab alike, and in this sheet's footer. Not beside the trigger, which would
+ * have reached the chat only and would have addressed the live session while
+ * the reader was on an archive.
  *
  * A lens, not a swap button: it carries the same fixed label as the reasoning
  * lens next door and says with its pressed state which text is on screen. A
@@ -180,9 +185,10 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
   const [engines, setEngines] = useState<Engines | null>(null);
   const [enginesError, setEnginesError] = useState<string | null>(null);
 
-  // Only while the sheet is open. This trigger lives in the chat header of a
-  // LIVE session, where the stream grows every animation frame, and planning
-  // walks and splits every unit of it — a cost nobody is looking at.
+  // Only while the sheet is open. This trigger lives in the composer's tools
+  // row, on a live session and on an archive alike, and on a live one the
+  // stream grows every animation frame while planning walks and splits every
+  // unit of it, a cost nobody is looking at.
   //
   // The reasoning choice is a dependency, not a filter applied afterwards: it
   // changes which units are extracted, so the preview has to be re-planned for
@@ -252,11 +258,16 @@ export function TranslatePanel(props: { events: readonly RunEvent[]; viewKey?: s
       >
         {t(lang, "tr.button")}
       </button>
-      <TranslateToggle viewKey={viewKey} />
+
+      {/* No TranslateToggle beside the trigger. The tab row already carries one
+          (App.tsx), deliberately, so the way back to the record is reachable
+          from the trace and the text feed too. That copy also reads App.tsx's
+          viewKey, while a copy here would fall back to "live" and address the
+          live session while the reader is looking at an archive. */}
 
       {/* Portalled to the body like ParticleField: the trigger can then live
-          anywhere, including inside a positioned corner box, without that box's
-          stacking context deciding whether the sheet is visible. */}
+          anywhere, including inside a bar with its own stacking context,
+          without that context deciding whether the sheet is visible. */}
       {open &&
         createPortal(
           <div className="km-backdrop" onClick={() => setOpen(false)} role="presentation">
