@@ -19,9 +19,15 @@ describe("navigationIntent on a gesture", () => {
   it("is none for the same address, whatever the kind", () => {
     expect(navigationIntent(LIVE, { kind: "live", tab: null }, "gesture")).toBe("none");
     expect(navigationIntent(session("x", 3, "trace"), session("x", 3, "trace"), "gesture")).toBe("none");
-    expect(navigationIntent({ kind: "fleet", contextId: "c" }, { kind: "fleet", contextId: "c" }, "gesture")).toBe("none");
     expect(
-      navigationIntent({ kind: "settings", section: "design" }, { kind: "settings", section: "design" }, "gesture"),
+      navigationIntent({ kind: "fleet", contextId: "c" }, { kind: "fleet", contextId: "c" }, "gesture"),
+    ).toBe("none");
+    expect(
+      navigationIntent(
+        { kind: "settings", section: "design" },
+        { kind: "settings", section: "design" },
+        "gesture",
+      ),
     ).toBe("none");
   });
 
@@ -42,7 +48,11 @@ describe("navigationIntent on a gesture", () => {
     expect(navigationIntent(LIVE, { kind: "fleet", contextId: "c" }, "gesture")).toBe("push");
     expect(navigationIntent(LIVE, { kind: "settings", section: null }, "gesture")).toBe("push");
     expect(
-      navigationIntent({ kind: "settings", section: null }, { kind: "settings", section: "machine" }, "gesture"),
+      navigationIntent(
+        { kind: "settings", section: null },
+        { kind: "settings", section: "machine" },
+        "gesture",
+      ),
     ).toBe("push");
   });
 

@@ -34,7 +34,17 @@ import { LevelingIntro } from "./components/LevelingIntro";
 import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { setBeaconSink } from "./state/levelingBeacon";
-import { parseRoute } from "./state/route";
+import { formatRoute, parseAppRoute, type Route, type SettingsSection, type ViewTab } from "./state/route";
+import { writeRoute, type NavCause, type NavIntent } from "./state/history";
+import {
+  createNavNonce,
+  pinAfterNavigation,
+  planRoute,
+  routeOfPlace,
+  settingsCloseDecision,
+  viewIdentity,
+  type Place,
+} from "./state/appRouter";
 import { DoctorPanel } from "./components/DoctorPanel";
 import { Keymap } from "./components/Keymap";
 import { SearchBox } from "./components/SearchBox";
@@ -87,6 +97,7 @@ import {
   fleetPushLive,
   fleetLoadScenario,
   hydrateFleet,
+  knownFleet,
   useFleet,
   useFleetHubPort,
   fleetPending,
@@ -152,7 +163,7 @@ export function App() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
-  const [tab, setTab] = useState<"chat" | "spectrum" | "graph" | "trace" | "text" | "lab">("chat");
+  const [tab, setTab] = useState<ViewTab>("chat"); // chat | spectrum | graph | trace | text | lab
   // The ladder (card 80). Server state only: every lock is derived from the
   // snapshot on render, never cached, so a mode flipped elsewhere cannot leave
   // a stale lock behind.
@@ -645,12 +656,55 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imageKeys, imageProvider, conn.status]);
 
+  // ---- Deep links (card 131): the hash is the address of what is shown ----
+  // The pure decisions live in state/appRouter (the facet diff, the nonce, the
+  // settings-close verdict) and state/history (push/replace/none); here is
+  // only the execution against this component's state.
+  const navNonce = useRef(createNavNonce()).current;
+  // The last route string this app DISPATCHED — set synchronously before any
+  // async work, never derived from app state (which lags a fetch and would let
+  // the hashchange+popstate double-fire of one back-press through twice).
+  const lastApplied = useRef<string | null>(null);
+  // Whether the CURRENT settings entry is one this app pushed: tracked at the
+  // push, never guessed from history, so close knows back() from close().
+  const settingsPushed = useRef(false);
+  // The section a #/settings/{section} deep link named, for scroll-into-view.
+  const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
+  // What is on screen, as the planner needs it — a ref because follow() runs
+  // outside the render (hash events) and after awaits.
+  const placeRef = useRef<Place>({ replayId: null, enteredFleet: null, tab: "chat", settingsOpen: false });
+  placeRef.current = { replayId: replay?.id ?? null, enteredFleet, tab, settingsOpen };
+  const fleetsLocked = leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false;
+  const fleetsLockedRef = useRef(fleetsLocked);
+  fleetsLockedRef.current = fleetsLocked;
+  const replayRef = useRef<Replay | null>(null);
+  replayRef.current = replay;
+  const currentAppRoute = (): Route => routeOfPlace(placeRef.current);
+  // The one writer: every write also stamps lastApplied, so a later back onto
+  // this very entry is recognized as a route to apply, not an echo to skip.
+  const commitUrl = (route: Route, cause: NavCause): NavIntent => {
+    lastApplied.current = formatRoute(route);
+    return writeRoute(route, cause);
+  };
+
   // Replay: fetch the stored events and push them through the SAME reducer.
-  const openSession = async (id: string, atEvent?: number | null): Promise<void> => {
+  // A route application passes its cause and the tab the address resolved to
+  // (applied HERE, after the fetch lands, so the leveling beacons read the
+  // session actually shown); a gesture passes neither and keeps the current
+  // tab. The nonce makes rapid navigations last-wins: a slow fetch a later
+  // navigation overtook drops its result instead of committing a stale view.
+  const openSession = async (
+    id: string,
+    atEvent?: number | null,
+    opts?: { tab?: ViewTab | null; cause?: NavCause },
+  ): Promise<void> => {
+    const cause: NavCause = opts?.cause ?? "gesture";
+    const ticket = navNonce.issue();
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
       if (!res.ok) throw new Error(String(res.status));
       const events = (await res.json()) as RunEvent[];
+      if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
       setReplay({ id, state: foldArchive(events), events });
       setEnteredFleet(null);
       beaconRef.current("session", id);
@@ -658,32 +712,125 @@ export function App() {
       // the event itself to the existing focus seam. An index past the end (a
       // stale link, a rewritten file) simply opens the session unseeked: landing
       // on the wrong frame would be worse than landing on none.
+      let landedTab: ViewTab = opts?.tab ?? placeRef.current.tab;
       if (atEvent !== null && atEvent !== undefined) {
         const target = events[atEvent];
         if (target) {
-          setTab("trace");
           setFocusEvent(target);
+          landedTab = opts?.tab ?? "trace";
         }
       }
+      if (landedTab !== placeRef.current.tab) setTab(landedTab);
+      if (cause === "gesture") {
+        commitUrl(
+          {
+            kind: "session",
+            sessionId: id,
+            eventIndex: atEvent ?? null,
+            tab: landedTab === "chat" ? null : landedTab,
+          },
+          "gesture",
+        );
+      }
     } catch {
-      // Server unreachable or session gone — stay on the current view.
+      // Server unreachable or session gone — stay on the current view. An
+      // APPLIED address that named nothing real must not keep lying in the
+      // bar, so it is corrected to the place actually shown.
+      if (!navNonce.isCurrent(ticket)) return;
+      if (cause === "apply") commitUrl(currentAppRoute(), "apply");
     }
   };
 
-  const returnToLive = (): void => {
+  // The state half of leaving for the live view — shared by the gesture below
+  // and by route application (which writes no URL of its own).
+  const leaveToLiveCore = (): void => {
+    navNonce.issue(); // outdate any in-flight session open
     setReplay(null);
     setEnteredFleet(null);
   };
 
-  // Enter a fleet like a session: its events feed the tabs; land on Spectrum so
-  // the agents are visible at once, and clear any single-agent trace filter.
-  const enterFleet = (contextId: string): void => {
+  const returnToLive = (): void => {
+    leaveToLiveCore();
+    commitUrl({ kind: "live", tab: tab === "chat" ? null : tab }, "gesture");
+  };
+
+  // The state half of entering a fleet — shared by the gesture below and by
+  // route application, which must NOT report a fleet visit: a pasted
+  // #/fleet/{id} is an address resolving, not the operator reaching the
+  // fleet surface (the plan's enter-fleet lands here, beaconless).
+  const applyFleet = (contextId: string): void => {
+    navNonce.issue(); // outdate any in-flight session open
     setReplay(null);
     setEnteredFleet(contextId);
     setTraceAgent(null);
     setTab("spectrum");
-    beaconRef.current("fleet", contextId);
   };
+
+  // Enter a fleet like a session (the gesture): its events feed the tabs; land
+  // on Spectrum so the agents are visible at once, and clear any single-agent
+  // trace filter. A scenario fleet's contextId writes "#/" — replays have no
+  // address, so the URL never carries a scenario:* id through the fleet door.
+  const enterFleet = (contextId: string): void => {
+    applyFleet(contextId);
+    beaconRef.current("fleet", contextId);
+    commitUrl({ kind: "fleet", contextId }, "gesture");
+  };
+
+  // A view tab chosen by hand: the flip plus its address — the tab suffix on
+  // a session, the bare tab on the live view, and no tab vocabulary at all on
+  // a fleet landing (the write is a no-op there).
+  const changeTab = (next: ViewTab): void => {
+    setTab(next);
+    const wire = next === "chat" ? null : next;
+    commitUrl(
+      enteredFleet !== null
+        ? { kind: "fleet", contextId: enteredFleet }
+        : replay !== null
+          ? { kind: "session", sessionId: replay.id, eventIndex: null, tab: wire }
+          : { kind: "live", tab: wire },
+      "gesture",
+    );
+  };
+
+  // Settings open/close, with history manners (card 131). Open pushes one
+  // entry and remembers having done so; close goes history.back() ONLY for
+  // that entry (the popstate follow closes the panel — a facet diff, so the
+  // view beneath is not refetched). A deep-linked settings page has no app
+  // entry behind it: it closes in place and corrects the bar. Opening by
+  // route stays write-free settings-wise — the card-121 guard in the panel
+  // holds for every opener.
+  const openSettingsPage = (): void => {
+    setSettingsOpen(true);
+    setSettingsSection(null);
+    if (commitUrl({ kind: "settings", section: null }, "gesture") === "push") {
+      settingsPushed.current = true;
+    }
+  };
+  const closeSettings = (): void => {
+    const decision = settingsCloseDecision(
+      parseAppRoute(window.location.hash).kind === "settings",
+      settingsPushed.current,
+    );
+    settingsPushed.current = false;
+    setSettingsOpen(false);
+    setSettingsSection(null);
+    if (decision.verb === "back") {
+      window.history.back();
+    } else if (decision.rewrite) {
+      commitUrl(currentAppRoute(), "apply");
+    }
+  };
+
+  // Late lock arrival: the leveling snapshot lands AFTER boot, so a fleet deep
+  // link can apply before the ladder says fleets are locked. Enforcement is
+  // continuous — a locked home holds no entered fleet, however it got in.
+  useEffect(() => {
+    if (fleetsLocked && enteredFleet !== null) {
+      leaveToLiveCore();
+      commitUrl({ kind: "live", tab: null }, "apply");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fleetsLocked, enteredFleet]);
 
   // Session import (spectroscope JSONL or an adapted Claude Code transcript): the
   // loaded stream takes the SAME replay path as a stored session.
@@ -703,6 +850,7 @@ export function App() {
     kind: "spectroscope" | "claude-code" | "vscode-agent",
     source: ImportSource,
   ): void => {
+    navNonce.issue(); // an import supersedes any in-flight session open
     setReplay({
       id: `import:${kind}:${label}`,
       state: foldArchive(events),
@@ -711,6 +859,8 @@ export function App() {
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setImportOpen(false);
+    // An import is a view, not an address (its id must never reach the bar).
+    commitUrl({ kind: "live", tab: null }, "gesture");
     // The dialog is gone by the time this bar matters, so it belongs to the
     // session, not to the dialog. The VS Code note keeps its own sentence: that
     // export records that each tool ran and whether it succeeded, never what it
@@ -742,6 +892,7 @@ export function App() {
       enterFleet(contextId);
       return;
     }
+    navNonce.issue(); // a scenario supersedes any in-flight session open
     setReplay({
       id: `scenario:${dsl.id}`,
       state: foldArchive(events),
@@ -752,6 +903,8 @@ export function App() {
     // renders the fleet's events. Owner-found: dialog-load after a fleet.
     setEnteredFleet(null);
     setTab("lab");
+    // A scenario is a view, not an address (its id must never reach the bar).
+    commitUrl({ kind: "live", tab: null }, "gesture");
   };
 
   const newChat = (): void => {
@@ -768,6 +921,8 @@ export function App() {
     labResetLive(); // the Lab's dam starts empty too
     setTab("chat"); // a fresh chat STARTS in the chat — leaving a fleet's lab/graph behind
     setConnNonce((n) => n + 1);
+    navNonce.issue(); // a fresh chat supersedes any in-flight session open
+    commitUrl({ kind: "live", tab: null }, "gesture");
   };
 
   // Resume a stored session AS the live session: seed the UI from its JSONL
@@ -778,10 +933,12 @@ export function App() {
   // session_resume trace marker, then the context_info/usage jump.
   const resumeSession = async (id: string): Promise<void> => {
     if (live.running) return; // never hijack a running live session
+    const ticket = navNonce.issue();
     try {
       const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
       if (!res.ok) return;
       const events = (await res.json()) as RunEvent[];
+      if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
       const seeded = recordResumeMarker(
         foldArchive(events),
         // history carries the full re-uploaded JSONL: the trace detail's
@@ -796,6 +953,7 @@ export function App() {
       setResumeId(id); // reconnects the socket with ?resume=<id>
       setConnNonce((n) => n + 1); // force a fresh connection even for the same id
       setTab("chat");
+      commitUrl({ kind: "live", tab: null }, "gesture"); // resumed = the live view again
     } catch {
       // server unreachable: stay in the replay view, nothing lost
     }
@@ -815,24 +973,101 @@ export function App() {
       if (!res.ok) return; // 404/400: nothing deleted, stay in the view
       setReplay(null); // back to the live view
       setRefreshToken((n) => n + 1); // the sidebar list drops the entry
+      // The address named a session that no longer exists: correct the bar
+      // without minting an entry — a deletion is a fallback, not a navigation.
+      commitUrl({ kind: "live", tab: null }, "apply");
     } catch {
       // server unreachable: nothing deleted, stay in the replay view
     }
   };
   const canDelete = canResume && replay !== null && replay.id !== resumeId;
 
-  // Deep links: #/session/{id}@{n}. Built for the ladder's receipts, useful on
-  // its own — the hash is a shareable address for one frame of one run.
+  // Deep links: the whole address book (card 131) — #/{tab}, #/session/{id}
+  // [@{n}][/{tab}], #/fleet/{contextId}, #/settings[/{section}], grown around
+  // the card-81 receipt links, which resolve byte-for-byte unchanged.
+  //
+  // applyRoute executes the pure plan through the SAME state cores the sidebar
+  // and tabs use — never by poking replay/enteredFleet ad hoc, or the
+  // enteredFleet bleed would return through the back button. A fleet address
+  // in a fresh tab hydrates the roster first, so it is judged against the hub,
+  // not against an empty boot store; a route a guard refuses (locked fleets,
+  // unknown fleet, unparseable address) falls through to the live default and
+  // the bar is corrected by replace, never push.
   const openSessionRef = useRef(openSession);
   openSessionRef.current = openSession;
+  const applyRoute = async (route: Route): Promise<void> => {
+    if (route.kind === "fleet" && !fleetsLockedRef.current && !knownFleet(route.contextId)) {
+      const key = formatRoute(route);
+      await hydrateFleet();
+      if (lastApplied.current !== key) return; // another navigation won meanwhile
+    }
+    const plan = planRoute(route, placeRef.current, {
+      fleetsLocked: fleetsLockedRef.current,
+      fleetKnown: route.kind !== "fleet" || knownFleet(route.contextId),
+    });
+    let opensSession = false;
+    for (const action of plan.actions) {
+      switch (action.kind) {
+        case "open-session":
+          opensSession = true;
+          void openSessionRef.current(action.sessionId, action.eventIndex, {
+            tab: action.tab,
+            cause: "apply",
+          });
+          break;
+        case "seek": {
+          // Same session, new frame: the focus seam, never a refetch.
+          const target = replayRef.current?.events[action.eventIndex];
+          if (target) setFocusEvent(target);
+          break;
+        }
+        case "set-tab":
+          setTab(action.tab);
+          break;
+        case "enter-fleet":
+          applyFleet(action.contextId); // the beaconless core
+          break;
+        case "return-to-live":
+          leaveToLiveCore();
+          break;
+        case "open-settings":
+          setSettingsOpen(true);
+          setSettingsSection(action.section);
+          break;
+        case "close-settings":
+          setSettingsOpen(false);
+          setSettingsSection(null);
+          settingsPushed.current = false;
+          break;
+      }
+    }
+    // Normalization: the bar learns the canonical spelling, or the default a
+    // refused address fell to — replace either way, follow never authors. An
+    // open-session waits for its fetch (success needs no write, a dead
+    // address is corrected in its catch).
+    if (!opensSession) commitUrl(plan.effective, "apply");
+  };
+  const applyRouteRef = useRef(applyRoute);
+  applyRouteRef.current = applyRoute;
   useEffect(() => {
     const follow = (): void => {
-      const route = parseRoute(window.location.hash);
-      if (route) void openSessionRef.current(route.sessionId, route.eventIndex);
+      const route = parseAppRoute(window.location.hash);
+      const key = formatRoute(route);
+      // One back-press between hash entries fires hashchange AND popstate;
+      // comparing the DISPATCHED route string — set synchronously, before any
+      // async work — makes the second call a no-op. Comparing against app
+      // state instead would lag the fetch and let both through.
+      if (key === lastApplied.current) return;
+      lastApplied.current = key;
+      void applyRouteRef.current(route);
     };
     follow();
     window.addEventListener("hashchange", follow);
-    return () => window.removeEventListener("hashchange", follow);
+    window.addEventListener("popstate", follow);
+    return () => {
+      window.removeEventListener("hashchange", follow);
+      window.removeEventListener("popstate", follow);
+    };
   }, []);
 
   const viewingLive = replay === null;
@@ -882,6 +1117,19 @@ export function App() {
   // recomputes exactly nothing. The recorded array itself is never touched —
   // it stays the thing the translate sheet plans and exports from.
   const viewKey = enteredFleet ?? replay?.id ?? "live";
+  // Card 147: the trace's agent pin belongs to the view it was taken in. When
+  // another session, a fleet, a scenario, an import, or a fresh/resumed chat
+  // takes the screen, the pin does not ride along — it would filter the new
+  // stream with the chip row hidden by the one-agent guard (measured: 2 of
+  // 1575 rows visible, no message, no control). The identity carries the
+  // connection nonce, so a new chat clears it even though the key stays "live".
+  const pinIdentity = viewIdentity(connNonce, viewKey);
+  const prevPinIdentity = useRef(pinIdentity);
+  useEffect(() => {
+    const previous = prevPinIdentity.current;
+    prevPinIdentity.current = pinIdentity;
+    setTraceAgent((pin) => pinAfterNavigation(previous, pinIdentity, pin));
+  }, [pinIdentity]);
   // The selector is readonly by contract — it hands back the recorded array
   // itself when there is nothing to show. The tab props are not, and widening
   // once here beats five casts at the call sites; nothing downstream writes.
@@ -924,7 +1172,7 @@ export function App() {
         : agentId;
     setTraceAgent(evAgent);
     setFocusEvent(event);
-    setTab("trace");
+    changeTab("trace"); // a gesture: the flip earns its address like a tab click
   };
   // Choosing v2 opens the panel it is half of: a reading whose right column is
   // collapsed is v1 with the children missing. Only on the flip INTO v2 — a
@@ -1111,7 +1359,12 @@ export function App() {
           activeFleet={enteredFleet}
           onRemoveFleet={(contextId) => {
             removeFleet(contextId);
-            if (enteredFleet === contextId) setEnteredFleet(null); // leave a deleted fleet
+            if (enteredFleet === contextId) {
+              // Leave a deleted fleet, and correct the bar without minting an
+              // entry — a removal is a fallback, not a navigation.
+              leaveToLiveCore();
+              commitUrl({ kind: "live", tab: null }, "apply");
+            }
           }}
           onSelectFleet={enterFleet}
           onSpawnNode={() => setSpawnDialogOpen(true)}
@@ -1145,7 +1398,7 @@ export function App() {
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
           settingsOpen={settingsOpen}
-          onToggleSettings={() => setSettingsOpen((o) => !o)}
+          onToggleSettings={() => (settingsOpen ? closeSettings() : openSettingsPage())}
           doctorOpen={doctorOpen}
           onToggleDoctor={() => setDoctorOpen((o) => !o)}
           onOpenKeymap={() => setKeymapOpen(true)}
@@ -1179,7 +1432,7 @@ export function App() {
             role="tab"
             aria-selected={tab === "chat"}
             className={tab === "chat" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("chat")}
+            onClick={() => changeTab("chat")}
           >
             chat
           </button>
@@ -1188,7 +1441,7 @@ export function App() {
             role="tab"
             aria-selected={tab === "spectrum"}
             className={tab === "spectrum" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("spectrum")}
+            onClick={() => changeTab("spectrum")}
           >
             spectrum
           </button>
@@ -1197,7 +1450,7 @@ export function App() {
             role="tab"
             aria-selected={tab === "trace"}
             className={tab === "trace" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("trace")}
+            onClick={() => changeTab("trace")}
           >
             trace
             {view.trace.length > 0 && (
@@ -1211,7 +1464,7 @@ export function App() {
             role="tab"
             aria-selected={tab === "graph"}
             className={tab === "graph" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("graph")}
+            onClick={() => changeTab("graph")}
           >
             graph
           </button>
@@ -1220,7 +1473,7 @@ export function App() {
             role="tab"
             aria-selected={tab === "text"}
             className={tab === "text" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("text")}
+            onClick={() => changeTab("text")}
           >
             text
           </button>
@@ -1229,7 +1482,7 @@ export function App() {
             role="tab"
             aria-selected={tab === "lab"}
             className={tab === "lab" ? "tab tab--active" : "tab"}
-            onClick={() => setTab("lab")}
+            onClick={() => changeTab("lab")}
           >
             lab
           </button>
@@ -1388,7 +1641,7 @@ export function App() {
             }
             onOpenTrace={(agentId) => {
               setTraceAgent(agentId);
-              setTab("trace");
+              changeTab("trace");
             }}
             /* The seam is one function now (focusInTrace, above): an
                agent_spawn tick sits on the parent lane but carries the child's
@@ -1414,7 +1667,7 @@ export function App() {
               onStop={stopFleetNode}
               onOpenTrace={(agentId) => {
                 setTraceAgent(agentId);
-                setTab("trace");
+                changeTab("trace");
               }}
             />
           ) : (
@@ -1553,7 +1806,8 @@ export function App() {
 
       <SettingsPanel
         open={settingsOpen}
-        onClose={() => setSettingsOpen(false)}
+        onClose={closeSettings}
+        section={settingsSection}
         providerStatus={providerStatus ?? undefined}
         onKeySaved={() => setConfigNonce((n) => n + 1)}
         leveling={leveling}

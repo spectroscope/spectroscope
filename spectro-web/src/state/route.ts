@@ -124,9 +124,7 @@ export function formatRoute(route: Route): string {
  */
 export function parseRoute(hash: string | null | undefined): SessionRoute | null {
   const route = parseAppRoute(hash);
-  return route.kind === "session"
-    ? { sessionId: route.sessionId, eventIndex: route.eventIndex }
-    : null;
+  return route.kind === "session" ? { sessionId: route.sessionId, eventIndex: route.eventIndex } : null;
 }
 
 /**

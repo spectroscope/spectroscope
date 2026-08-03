@@ -35,7 +35,9 @@ const at = (over: Partial<Place> = {}): Place => ({
 const session = (
   sessionId: string,
   eventIndex: number | null = null,
-  tab: Route & { kind: "session" } extends never ? never : "chat" | "spectrum" | "graph" | "trace" | "text" | "lab" | null = null,
+  tab: Route & { kind: "session" } extends never
+    ? never
+    : "chat" | "spectrum" | "graph" | "trace" | "text" | "lab" | null = null,
 ): Route => ({ kind: "session", sessionId, eventIndex, tab });
 
 describe("planRoute for a session address", () => {
@@ -43,9 +45,7 @@ describe("planRoute for a session address", () => {
     // Amendment 3: the tab suffix must not be a sibling setTab call — it rides
     // into the open and is applied in the resolved branch, after the fetch.
     const plan = planRoute(session("x", null, "trace"), at(), openGuards);
-    expect(plan.actions).toEqual([
-      { kind: "open-session", sessionId: "x", eventIndex: null, tab: "trace" },
-    ]);
+    expect(plan.actions).toEqual([{ kind: "open-session", sessionId: "x", eventIndex: null, tab: "trace" }]);
     expect(plan.effective).toEqual(session("x", null, "trace"));
   });
 
@@ -134,30 +134,24 @@ describe("planRoute for a fleet address", () => {
 
   it("falls through to the live default while fleets are locked", () => {
     // Amendment 4: a deep link must not walk around the ladder's fleets lock.
-    const plan = planRoute(
-      { kind: "fleet", contextId: "c" },
-      at(),
-      { fleetsLocked: true, fleetKnown: true },
-    );
+    const plan = planRoute({ kind: "fleet", contextId: "c" }, at(), { fleetsLocked: true, fleetKnown: true });
     expect(plan.actions).toEqual([]);
     expect(plan.effective).toEqual({ kind: "live", tab: null });
   });
 
   it("kicks a locked deep link out of an already-shown replay too", () => {
-    const plan = planRoute(
-      { kind: "fleet", contextId: "c" },
-      at({ replayId: "x" }),
-      { fleetsLocked: true, fleetKnown: true },
-    );
+    const plan = planRoute({ kind: "fleet", contextId: "c" }, at({ replayId: "x" }), {
+      fleetsLocked: true,
+      fleetKnown: true,
+    });
     expect(plan.actions).toEqual([{ kind: "return-to-live" }]);
   });
 
   it("falls through to the live default for a fleet the roster does not know", () => {
-    const plan = planRoute(
-      { kind: "fleet", contextId: "ghost" },
-      at(),
-      { fleetsLocked: false, fleetKnown: false },
-    );
+    const plan = planRoute({ kind: "fleet", contextId: "ghost" }, at(), {
+      fleetsLocked: false,
+      fleetKnown: false,
+    });
     expect(plan.actions).toEqual([]);
     expect(plan.effective).toEqual({ kind: "live", tab: null });
   });
@@ -231,9 +225,9 @@ describe("the trace pin across navigations (card 147)", () => {
     const live = viewIdentity(1, "live");
     expect(pinAfterNavigation(live, viewIdentity(1, "20260725-175159"), "worker-2")).toBe(null);
     expect(pinAfterNavigation(live, viewIdentity(1, "fleet-c"), "worker-2")).toBe(null);
-    expect(
-      pinAfterNavigation(viewIdentity(1, "scenario:demo"), viewIdentity(1, "live"), "worker-2"),
-    ).toBe(null);
+    expect(pinAfterNavigation(viewIdentity(1, "scenario:demo"), viewIdentity(1, "live"), "worker-2")).toBe(
+      null,
+    );
   });
 
   it("clears on a new or resumed chat: same view key, new connection", () => {
