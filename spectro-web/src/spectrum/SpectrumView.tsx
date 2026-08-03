@@ -19,7 +19,9 @@ import { SpectrumStrip } from "./SpectrumStrip";
 import { sliceLane } from "./laneSlice";
 import { needsViewport } from "./overview";
 import { applyIntent, buttonToIntent, zoomEnabled, type ZoomButton } from "./gestures";
-import { fit, minWidthFor, rebase, type Window } from "./viewport";
+import { fit, isWhole, minWidthFor, rebase, storeWindow, type Window } from "./viewport";
+import { FleetRoster } from "./FleetRoster";
+import type { FleetNode } from "./fleetModel";
 import { useEffect } from "react";
 import { beacon } from "../state/levelingBeacon";
 
@@ -198,6 +200,11 @@ export function SpectrumView(props: {
   onOpenTrace: (agentId: string) => void;
   /** Drill into ONE event from the band; absent = no per-event trace hand-off. */
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
+  /** The entered fleet's fold, when this view is showing a fleet rather than one
+   *  session. Absent for a session: there are no hub nodes to name. The roster
+   *  is the only place a node's advertised capabilities and its epoch as a
+   *  RESTART are on screen, and both are folded off every roster frame. */
+  fleet?: { roster: FleetNode[]; epochBySender: Record<string, number> };
 }) {
   const lang = useLang();
   // Pure props.events fold. The event SOURCE (own session, replay, or an entered
@@ -224,6 +231,16 @@ export function SpectrumView(props: {
   const span = model.t1 - model.t0;
   const minW = minWidthFor(span, FLOOR_MS);
 
+  // The ONE writer. A gesture hands back a window; what gets stored is a window
+  // or the sentinel, and `storeWindow` is the only place that decides which.
+  // Pressing "all" used to store the pair {0,1} through the raw setter, which
+  // reads as the whole for exactly as long as the stream stops growing: the next
+  // arriving event rebased it, the button that had just been pressed lit up
+  // again, and everything after the press sat off the right edge. Every surface
+  // that can move the window goes through here, so the buttons, the keys and the
+  // overview strip cannot come to disagree about what "the whole" means.
+  const setWindow = (next: Window) => setWinState(storeWindow(next));
+
   // A window is a pair of fractions OF THE SPAN. When an arriving event extends
   // the stream, every mark renormalizes underneath it, and a reader zoomed into
   // something twenty minutes ago would be dragged off it without touching
@@ -233,7 +250,7 @@ export function SpectrumView(props: {
     const was = domain.current;
     domain.current = { t0: model.t0, t1: model.t1 };
     if (winState !== null) {
-      setWinState(rebase(winState, was.t0, was.t1, model.t0, model.t1));
+      setWindow(rebase(winState, was.t0, was.t1, model.t0, model.t1));
     }
   }
 
@@ -253,7 +270,7 @@ export function SpectrumView(props: {
     () => (zoomable ? model.lanes.flatMap((l) => l.ticks) : []),
     [model.lanes, zoomable],
   );
-  const onWindow = zoomable ? setWinState : undefined;
+  const onWindow = zoomable ? setWindow : undefined;
 
   return (
     <div className="spectrum-view" data-reveal>
@@ -277,17 +294,26 @@ export function SpectrumView(props: {
             {span > 0 && ` · ${formatDuration(span)}`}
             {running && ` · ${t(lang, "sp.live")}`}
             {/* Only once a reader has actually left the whole. On a view that is
-                showing everything there is nothing to report and nothing to undo. */}
-            {winState !== null && ` · ${formatDuration(span * (win.b - win.a))} ${t(lang, "sp.ofSpan")}`}
+                showing everything there is nothing to report and nothing to undo,
+                and that is a question about the WINDOW: a slot that has been
+                written once holds {0,1} just as happily, and then the readout
+                prints the total span twice for the rest of the session. */}
+            {!isWhole(win) && ` · ${formatDuration(span * (win.b - win.a))} ${t(lang, "sp.ofSpan")}`}
           </span>
           {/* Same condition as the strip and the axis: one rule decides whether
               this stream has a viewport at all, and every surface of it appears
               and disappears together. */}
-          {zoomable && model.lanes.length > 0 && (
-            <ZoomControls win={win} minW={minW} onWindow={setWinState} />
-          )}
+          {zoomable && model.lanes.length > 0 && <ZoomControls win={win} minW={minW} onWindow={setWindow} />}
         </span>
       </div>
+
+      {/* The fleet, named, above its lanes: which nodes the hub has seen, what
+          each one can do, and whether an epoch says a node restarted rather than
+          kept running. A lane shows what a node DID; nothing else in the app
+          shows what it can do. */}
+      {props.fleet !== undefined && props.fleet.roster.length > 0 && (
+        <FleetRoster roster={props.fleet.roster} epochBySender={props.fleet.epochBySender} />
+      )}
 
       {/* The strip and the axis sit in the lane grid, not beside it: the rail
           column is flexible, so anything aligned to the bands by a fixed margin
@@ -295,7 +321,7 @@ export function SpectrumView(props: {
       {zoomable && model.lanes.length > 0 && (
         <div className="spectrum-viewport-row">
           <span className="spectrum-viewport-label mono">{t(lang, "sp.overview")}</span>
-          <SpectrumStrip ticks={allTicks} win={win} minW={minW} cols={bandW} onWindow={setWinState} />
+          <SpectrumStrip ticks={allTicks} win={win} minW={minW} cols={bandW} onWindow={setWindow} />
         </div>
       )}
 

@@ -13,7 +13,7 @@
 
 import { pageNext, pagePrev } from "./laneSlice";
 import type { LaneTick } from "./spectrumModel";
-import { fit, fromScreen, normalize, panBy, zoomAt, type Window } from "./viewport";
+import { fit, fromScreen, isWhole, normalize, panBy, WINDOW_EPS, zoomAt, type Window } from "./viewport";
 
 export type Intent =
   | { kind: "zoom"; factor: number }
@@ -41,7 +41,14 @@ const KEY_ZOOM_OUT = 2;
  *
  *  A trackpad pinch arrives as a wheel event with a synthetic `ctrlKey`, so
  *  pinch and ctrl+wheel are one gesture and need no second handler. Null means
- *  "not ours": the caller must then leave the event alone so the page scrolls. */
+ *  "not ours": the caller must then leave the event alone so the page scrolls.
+ *
+ *  ONE SPACE. The two deltas are weighed against each other to settle which axis
+ *  owns the gesture, and `widthPx` is measured in the same units they arrive in,
+ *  so all three must be the pixels the browser reported. A caller that scales
+ *  one of them into a drawing's own coordinates makes the verdict a function of
+ *  how wide that drawing happens to be rendered, which is a swipe that pans on
+ *  one screen and scrolls on another. */
 export function wheelToIntent(
   deltaX: number,
   deltaY: number,
@@ -123,13 +130,6 @@ export interface ZoomEnabled {
   fit: boolean;
 }
 
-/** Absorbs the rounding residue a window carries after a few zooms.
- *
- *  `normalize` reconstructs `b` as `a + w`, so a window sitting exactly on the
- *  floor measures a hair wide. Without this the floor button would stay enabled
- *  and do nothing, which is the precise failure these limits exist to prevent. */
-const ZOOM_EPS = 1e-9;
-
 /** What the zoom controls may offer from here.
  *
  *  A control is enabled EXACTLY when pressing it would move the window, and that
@@ -141,9 +141,15 @@ export function zoomEnabled(win: Window, minW: number): ZoomEnabled {
   const w = win.b - win.a;
   const floor = Math.min(1, Math.max(0, Number.isFinite(minW) ? minW : 0));
   return {
-    in: w > floor + ZOOM_EPS,
-    out: w < 1 - ZOOM_EPS,
-    fit: win.a > ZOOM_EPS || win.b < 1 - ZOOM_EPS,
+    // The residue is absorbed on both limits for the same reason: a window
+    // sitting exactly on the floor, or exactly back at the whole, measures a
+    // hair off, and a button that stays lit and does nothing is the precise
+    // failure these limits exist to prevent.
+    in: w > floor + WINDOW_EPS,
+    out: w < 1 - WINDOW_EPS,
+    // The same predicate the readout uses. "There is a way back" and "there is
+    // a slice to report" are one question, so they answer with one function.
+    fit: !isWhole(win),
   };
 }
 

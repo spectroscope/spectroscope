@@ -258,7 +258,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleet.online": { de: "online", en: "online" },
   "fleet.offline": { de: "offline", en: "offline" },
   "fleet.epoch": { de: "Epoche {n}", en: "epoch {n}" },
-  "fleet.restarted": { de: "neugestartet — neue Prozess-Inkarnation", en: "restarted — new process incarnation" },
+  "fleet.restarted": { de: "neugestartet: neue Prozess-Inkarnation", en: "restarted: a new process incarnation" },
   "fleet.lastSeen": { de: "vor {t} gesehen", en: "seen {t} ago" },
   "fleet.noEvents": { de: "Noch keine Flotten-Events. Die Knoten sind da, ihre Linien erscheinen, sobald sie laufen.", en: "No fleet events yet. The nodes are here; their lines appear once they run." },
   "fleet.modeAria": { de: "Graph-Lesart", en: "Graph reading" },

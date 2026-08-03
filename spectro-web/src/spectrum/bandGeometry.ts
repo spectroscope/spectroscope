@@ -24,6 +24,20 @@ export function viewBoxX(offsetPx: number, rectWidth: number, width: number): nu
   return (offsetPx / rectWidth) * width;
 }
 
+/** The band's DRAWABLE width in LAYOUT pixels: what a screen-space gesture is
+ *  measured against.
+ *
+ *  The band has two widths and they are not interchangeable. Marks and pointers
+ *  convert into the viewBox units above, because that is where drawing happens.
+ *  A wheel reports its deltas in layout pixels and they stay there, because a
+ *  gesture compares its own two deltas against each other: scale one of them and
+ *  the axis a swipe belongs to becomes a function of how wide the browser window
+ *  is. Zero, never NaN, for a band that has not been measured. */
+export function innerWidthPx(rectWidth: number, width: number, pad: number): number {
+  if (!(rectWidth > 0) || !(width > 0)) return 0;
+  return (rectWidth * Math.max(0, width - 2 * pad)) / width;
+}
+
 /** A mark's centre, in the same coordinate space as `width`.
  *
  *  A mark outside the window comes back outside `[pad, width - pad]`, on purpose.

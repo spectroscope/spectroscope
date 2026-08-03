@@ -1392,6 +1392,10 @@ export function App() {
                agentId, and events without an agentId stay visible under any
                filter, so the lane is a safe fallback there. */
             onFocusEvent={focusInTrace}
+            /* In a fleet the lanes are hub nodes, so the view can name them:
+               the roster carries each node's capabilities and its epoch. A
+               plain session has no roster and passes nothing. */
+            fleet={enteredFleet !== null ? enteredFleetModel : undefined}
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (

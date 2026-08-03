@@ -17,7 +17,7 @@ import {
   zoomEnabled,
 } from "./gestures";
 import type { LaneTick, TickKind } from "./spectrumModel";
-import { fit } from "./viewport";
+import { fit, minWidthFor, rebase, storeWindow, type Window } from "./viewport";
 
 const M = 0.01;
 const tick = (x: number, kind: TickKind, seq: number): LaneTick => ({ x, kind, seq });
@@ -292,5 +292,68 @@ describe("zoomEnabled", () => {
   // press that cannot do anything.
   it("offers nothing when the floor is the whole domain", () => {
     expect(zoomEnabled(fit(), 1)).toEqual({ in: false, out: false, fit: false });
+  });
+});
+
+// The wheel used to be handed a deltaX already scaled into the band's 1000-unit
+// viewBox while deltaY arrived raw, so the axis verdict depended on how wide the
+// band happened to be drawn. Both numbers now arrive in the space the browser
+// reported them in, and this pins that the verdict cannot move with the layout.
+describe("the wheel's axis, settled in one space", () => {
+  it("gives the same swipe the same verdict at any band width", () => {
+    // One physical trackpad swipe, mostly horizontal, on four band widths a real
+    // window produces. It panned the spectrum on a laptop and scrolled the page
+    // on a wide monitor.
+    for (const widthPx of [300, 604, 764, 1884]) {
+      expect(wheelToIntent(12, 10, false, widthPx)?.kind).toBe("pan");
+    }
+  });
+
+  it("never claims a mostly VERTICAL swipe, however narrow the band is", () => {
+    // The other direction of the same defect: a scaled-up dx won the comparison
+    // on a narrow band, and the handler then took the page scroll it exists to
+    // protect.
+    for (const widthPx of [300, 604, 764, 1884]) {
+      expect(wheelToIntent(10, 15, false, widthPx)).toBeNull();
+    }
+  });
+
+  it("measures the pan against the width the deltas were reported in", () => {
+    // 120 css px of a 600 px band is a fifth of the visible window.
+    const i = wheelToIntent(120, 4, false, 600);
+    if (i?.kind !== "pan") throw new Error("not a pan");
+    expect(i.byWindows).toBeCloseTo(0.2, 12);
+  });
+});
+
+// The owner-visible defect behind the fit button: it stored the pair {0,1} where
+// this view documents null as the only way to say "the whole". On a live stream
+// the whole keeps moving, so the next arriving event rebased that pair into a
+// window that is no longer everything, the button the reader had just pressed
+// lit back up, and the newest events sat off the right edge of a view whose
+// button reads "show everything".
+describe("pressing fit on a live stream", () => {
+  const SPAN = 60_000;
+  const press = (win: Window) =>
+    storeWindow(applyIntent(win, buttonToIntent("fit"), ctx({ minW: minWidthFor(SPAN, 1_000) })));
+
+  it("goes back to following the live edge instead of freezing the window", () => {
+    expect(press({ a: 0.4, b: 0.6 })).toBeNull();
+  });
+
+  it("leaves nothing for an arriving event to rebase, so the button stays pressed", () => {
+    const stored = press({ a: 0.4, b: 0.6 });
+    // A stored pair would come back from rebase as {0, 0.9836} one second later,
+    // which re-enables both controls that are supposed to be at their limit.
+    const win = stored === null ? fit() : rebase(stored, 0, SPAN, 0, SPAN + 1_000);
+    expect(win).toEqual({ a: 0, b: 1 });
+    const enabled = zoomEnabled(win, minWidthFor(SPAN + 1_000, 1_000));
+    expect(enabled.out).toBe(false);
+    expect(enabled.fit).toBe(false);
+  });
+
+  it("stores a window that is genuinely narrower, untouched", () => {
+    const zoomed = applyIntent(fit(), buttonToIntent("in"), ctx({ minW: minWidthFor(SPAN, 1_000) }));
+    expect(storeWindow(zoomed)).toEqual(zoomed);
   });
 });
