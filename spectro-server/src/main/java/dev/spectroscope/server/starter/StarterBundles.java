@@ -20,9 +20,43 @@ import java.util.Map;
  */
 public final class StarterBundles {
 
-    /** The published Maven Central coordinates the bundles depend on. */
+    /** The published Maven Central group the bundles depend on. */
     public static final String GROUP = "dev.spectroscope";
-    public static final String VERSION = "0.4.1";
+
+    /**
+     * The version the bundle coordinates pin — and the one {@code /api/bundles}
+     * serves to the About dialog. Read from a build-stamped resource, never a
+     * literal: the release pipeline bumps the Gradle files and package.json but
+     * cannot see Java source, which is how a hand-written {@code "0.4.1"} here
+     * stood still through the 0.5.0 cut (card 143). Central is append-only, so
+     * the stale coordinate still resolved — it worked and was wrong. Stamping
+     * beats a drift test alone because it leaves nothing to forget; the drift
+     * test ({@code StarterVersionDriftTest}) remains to hold the stamp to the
+     * build files on disk.
+     */
+    public static final String VERSION = stampedVersion();
+
+    private static String stampedVersion() {
+        String path = "/starter/spectro-version.properties";
+        try (java.io.InputStream in = StarterBundles.class.getResourceAsStream(path)) {
+            if (in == null) {
+                throw new IllegalStateException(path + " is missing — the build no longer"
+                        + " stamps the module version (see processResources in"
+                        + " spectro-server/build.gradle.kts, card 143)");
+            }
+            java.util.Properties props = new java.util.Properties();
+            props.load(in);
+            String version = props.getProperty("version", "").trim();
+            if (version.isEmpty() || version.contains("${")) {
+                throw new IllegalStateException("unstamped version '" + version + "' in " + path
+                        + " — processResources must expand it; refusing to serve starter"
+                        + " bundles with made-up Maven coordinates (card 143)");
+            }
+            return version;
+        } catch (java.io.IOException e) {
+            throw new IllegalStateException("cannot read " + path, e);
+        }
+    }
 
     /** The editions a bundle can be rendered for: the two JVM build tools, the
      *  Python edition, and plain bash driving the CLI. */

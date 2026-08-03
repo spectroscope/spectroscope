@@ -42,7 +42,11 @@ import { Onboarding } from "./components/Onboarding";
 import { ONBOARDED_KEY, shouldOnboard, shouldShowOnboarding } from "./components/onboardingFlag";
 import { LocalModelNotice } from "./components/LocalModelNotice";
 import { LocalModelDialog } from "./components/LocalModelDialog";
-import { LOCAL_NOTICE_KEY, shouldShowLocalNotice } from "./components/localNoticeFlag";
+import {
+  markLocalNoticeSeen,
+  readLocalNoticeSeen,
+  shouldShowLocalNotice,
+} from "./components/localNoticeFlag";
 import { ScenarioDialog } from "./components/ScenarioDialog";
 import { StarterDialog } from "./components/StarterDialog";
 import { compile } from "./scenario/compile";
@@ -549,25 +553,15 @@ export function App() {
   }, [confirmedProviderInfo]);
 
   useEffect(() => {
-    let stored: string | null = null;
-    try {
-      stored = localStorage.getItem(LOCAL_NOTICE_KEY);
-    } catch {
-      /* blocked storage: the notice may repeat — better than never showing */
-    }
-    if (shouldShowLocalNotice(stored, live.providerInfo?.provider ?? null)) {
+    if (shouldShowLocalNotice(readLocalNoticeSeen(), live.providerInfo?.provider ?? null)) {
       setLocalNoticeOpen(true);
     }
   }, [live.providerInfo]);
-  const dismissLocalNotice = (persist: boolean): void => {
+  // Card 144: one handler for all four ways out of the sheet — every exit
+  // records the dismissal, and Settings keeps the deliberate way back.
+  const dismissLocalNotice = (): void => {
     setLocalNoticeOpen(false);
-    if (persist) {
-      try {
-        localStorage.setItem(LOCAL_NOTICE_KEY, "1");
-      } catch {
-        /* ignore */
-      }
-    }
+    markLocalNoticeSeen();
   };
 
   // The active LLM backend (provider + model) for the header and the Lab map.
@@ -1557,6 +1551,12 @@ export function App() {
         providerStatus={providerStatus ?? undefined}
         onKeySaved={() => setConfigNonce((n) => n + 1)}
         leveling={leveling}
+        onShowLocalNotice={() => {
+          // The deliberate way back (card 144): settings folds away so the
+          // sheet is read where it normally appears, over the app.
+          setSettingsOpen(false);
+          setLocalNoticeOpen(true);
+        }}
       />
       <Keymap open={keymapOpen} onClose={() => setKeymapOpen(false)} />
       {shownBar !== null && (
@@ -1576,11 +1576,7 @@ export function App() {
         </div>
       )}
       {localNoticeOpen && (
-        <LocalModelNotice
-          model={live.providerInfo?.model}
-          onGotIt={() => dismissLocalNotice(true)}
-          onClose={() => dismissLocalNotice(false)}
-        />
+        <LocalModelNotice model={live.providerInfo?.model} onDismiss={dismissLocalNotice} />
       )}
       <Onboarding
         open={onboardingOpen}

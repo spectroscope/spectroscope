@@ -680,6 +680,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.imageModelAuto": { de: "Standard des Backends", en: "backend default" },
   "set.sttModel": { de: "STT-Modell", en: "STT model" },
 
+  // settings page — the way back to the built-in model's one-time notice
+  // (card 144: every exit of the sheet dismisses it for good)
+  "set.secLocalNotice": { de: "Eingebautes Modell", en: "Built-in model" },
+  "set.localNoticeHint": { de: "Der einmalige Hinweis zu Stärken und Grenzen des eingebauten Modells. Jedes Schließen merkt er sich — hier kommt er auf Wunsch zurück.", en: "The one-time notice about the built-in model's strengths and limits. Any close dismisses it for good — this brings it back on request." },
+  "set.localNoticeShow": { de: "Hinweis wieder anzeigen", en: "Show the notice again" },
+
   // settings page — one-shot graduation banner (retiring the two localStorage
   // stores in favor of server-backed user settings)
   "set.gradTitle": { de: "Lokal gemerkte Standards in die User-Settings übernehmen?", en: "Adopt locally remembered defaults into your user settings?" },
