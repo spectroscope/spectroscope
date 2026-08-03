@@ -906,10 +906,38 @@ describe("workspace_info (socket-only frame)", () => {
       ts: 1,
     } as unknown as RunEvent;
     const s = reduce(initialState, frame);
-    expect(s.workspace).toEqual({ sessionId: "s-1", path: "/tmp/spectroscope-ws/s-1", configured: false });
+    expect(s.workspace).toEqual({
+      sessionId: "s-1",
+      path: "/tmp/spectroscope-ws/s-1",
+      configured: false,
+      // An older server sends neither field; the pane must go on behaving as
+      // it always did against one rather than waiting forever.
+      resolved: true,
+      mode: "random",
+      exists: undefined,
+    });
     expect(s.turns).toHaveLength(0);
     // the trace still shows the frame — that is the didactic point
     expect(s.trace[s.trace.length - 1].type).toBe("workspace_info");
+  });
+
+  it("keeps the prospective connect frame apart from a resolved one", () => {
+    // Sent before any run: it names where a run started right now would work,
+    // and carries no session id because none has been minted.
+    const prospective = {
+      type: "workspace_info",
+      resolved: false,
+      mode: "default",
+      configured: true,
+      path: "/Users/you/spectroscope-workspace",
+      exists: true,
+      ts: 1,
+    } as unknown as RunEvent;
+
+    const s = reduce(initialState, prospective);
+    expect(s.workspace?.resolved).toBe(false);
+    expect(s.workspace?.mode).toBe("default");
+    expect(s.workspace?.sessionId).toBeUndefined();
   });
 });
 

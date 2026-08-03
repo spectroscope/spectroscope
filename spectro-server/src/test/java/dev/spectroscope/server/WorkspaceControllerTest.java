@@ -1,5 +1,6 @@
 package dev.spectroscope.server;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.ResponseEntity;
@@ -15,8 +16,21 @@ class WorkspaceControllerTest {
     @TempDir
     Path root;
 
+    /** A session id that really has a workspace, the only door into the tree now. */
+    private String session;
+
+    @BeforeEach
+    void registerTheSessionsWorkspace() {
+        // Stands in for the socket having resolved a workspace for this session.
+        // The controller used to reach the same folder through the process cwd
+        // or through a configured path with no session behind it; both doors
+        // are gone, so the tests walk in the way the app does.
+        session = "ws-test-" + System.nanoTime();
+        SessionWorkspaces.resolved(session, root.toString());
+    }
+
     private WorkspaceController controller() {
-        return new WorkspaceController(root);
+        return new WorkspaceController();
     }
 
     @Test
@@ -28,7 +42,8 @@ class WorkspaceControllerTest {
         Files.createDirectories(root.resolve(".git"));
         Files.writeString(root.resolve(".env"), "SECRET=1");
 
-        WorkspaceController.FilesResponse res = controller().files(null).getBody();
+        WorkspaceController.FilesResponse res =
+                (WorkspaceController.FilesResponse) controller().files(session).getBody();
 
         assertThat(res.truncated()).isFalse();
         assertThat(res.entries()).extracting(WorkspaceController.FileNode::name)
@@ -47,7 +62,8 @@ class WorkspaceControllerTest {
         for (int i = 0; i < 2100; i++) {
             Files.writeString(root.resolve("f" + i + ".txt"), "x");
         }
-        WorkspaceController.FilesResponse res = controller().files(null).getBody();
+        WorkspaceController.FilesResponse res =
+                (WorkspaceController.FilesResponse) controller().files(session).getBody();
         assertThat(res.truncated()).isTrue();
         assertThat(countNodes(res.entries())).isLessThanOrEqualTo(2000);
     }
@@ -64,7 +80,7 @@ class WorkspaceControllerTest {
     void servesTextWithCspSandboxHeader() throws Exception {
         Files.writeString(root.resolve("notes.txt"), "hello workspace");
 
-        ResponseEntity<byte[]> res = controller().file("notes.txt", null);
+        ResponseEntity<byte[]> res = controller().file("notes.txt", session);
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(new String(res.getBody())).contains("hello workspace");
@@ -76,7 +92,7 @@ class WorkspaceControllerTest {
     void servesHtmlAsTextHtmlSandboxed() throws Exception {
         Files.writeString(root.resolve("page.html"), "<h1>hi</h1><script>1</script>");
 
-        ResponseEntity<byte[]> res = controller().file("page.html", null);
+        ResponseEntity<byte[]> res = controller().file("page.html", session);
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getHeaders().getContentType().toString()).startsWith("text/html");
@@ -87,7 +103,7 @@ class WorkspaceControllerTest {
     void servesImagesWithTheirContentType() throws Exception {
         Files.write(root.resolve("dot.png"), new byte[] {(byte) 0x89, 'P', 'N', 'G', 0, 1, 2});
 
-        ResponseEntity<byte[]> res = controller().file("dot.png", null);
+        ResponseEntity<byte[]> res = controller().file("dot.png", session);
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getHeaders().getContentType().toString()).isEqualTo("image/png");
@@ -99,9 +115,9 @@ class WorkspaceControllerTest {
         Files.createDirectories(root.resolve("node_modules"));
         Files.writeString(root.resolve("node_modules/pkg.json"), "{}");
 
-        assertThat(controller().file("../outside.txt", null).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file(".env", null).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file("node_modules/pkg.json", null).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("../outside.txt", session).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file(".env", session).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("node_modules/pkg.json", session).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
@@ -111,13 +127,13 @@ class WorkspaceControllerTest {
         java.util.Arrays.fill(big, (byte) 'a');
         Files.write(root.resolve("big.txt"), big);
 
-        assertThat(controller().file("blob.bin", null).getStatusCode().value()).isEqualTo(415);
-        assertThat(controller().file("big.txt", null).getStatusCode().value()).isEqualTo(413);
+        assertThat(controller().file("blob.bin", session).getStatusCode().value()).isEqualTo(415);
+        assertThat(controller().file("big.txt", session).getStatusCode().value()).isEqualTo(413);
     }
 
     @Test
     void missingFileIs404() {
-        assertThat(controller().file("nope.txt", null).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("nope.txt", session).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
@@ -127,25 +143,68 @@ class WorkspaceControllerTest {
     }
 
     @Test
-    void anUnknownSessionWorkspaceIs404() {
-        assertThat(controller().files("no-such-session-workspace-xyz").getStatusCode().value())
-                .isEqualTo(404);
+    void aResolvedWorkspaceWhoseFolderIsGoneIs404() {
+        // The session resolved a workspace, but the folder is not on disk, the
+        // honest 404 the pane reads as "not created yet", separate from the 409
+        // that means no workspace was ever resolved.
+        String gone = "ws-test-gone-" + System.nanoTime();
+        SessionWorkspaces.resolved(gone, root.resolve("never-created").toString());
+
+        assertThat(controller().files(gone).getStatusCode().value()).isEqualTo(404);
+    }
+
+    @Test
+    void filesWithoutSessionDoesNotServeTheProcessCwd() {
+        // Production wiring rooted the controller at user.dir. On a developer
+        // machine that is the product's OWN checkout, so a sessionless GET
+        // handed the browser this repository: a browsing surface nobody
+        // designed. There is no session behind such a request, so there is no
+        // workspace to serve.
+        ResponseEntity<?> res = controller().files(null);
+
+        assertThat(res.getStatusCode().value()).isNotEqualTo(200);
+    }
+
+    @Test
+    void filesWithoutSessionSaysNoWorkspaceIsResolved() {
+        // Distinct from "the folder is not there yet" (404) and from a dead
+        // server (no response at all): the pane must be able to say "no folder
+        // yet" instead of "server unreachable".
+        ResponseEntity<?> res = controller().files(null);
+
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
+        assertThat(String.valueOf(res.getBody())).contains("no-workspace");
+    }
+
+    @Test
+    void aSessionIdThatNeverExistedIsNotTreatedAsResolved() {
+        // locate() short-circuits on a configured workspace and never looks at
+        // the session id, so with one configured ANY id used to answer with that
+        // folder as though it were the session's. A session that never resolved
+        // a workspace has none, configured or not.
+        ResponseEntity<?> res = controller().files("never-was-a-session-" + System.nanoTime());
+
+        assertThat(res.getStatusCode().value()).isNotEqualTo(200);
+        assertThat(res.getStatusCode().value()).isEqualTo(409);
     }
 
     @Test
     void aSessionParameterServesThatSessionsWorkspace(@TempDir Path elsewhere) throws Exception {
-        // The configured-workspace seam stands in for ~/.spectro config: with a
-        // session id, the controller resolves via WorkspaceResolver.locate and
-        // serves THAT folder — the boot root is not consulted at all.
-        WorkspaceController controller = new WorkspaceController(root, () -> elsewhere.toString());
+        // Two sessions, two folders: each one is served its own, and the other
+        // session's folder is never what comes back.
+        String other = "ws-test-other-" + System.nanoTime();
+        SessionWorkspaces.resolved(other, elsewhere.toString());
         Files.writeString(elsewhere.resolve("made-by-agent.py"), "print('hi')");
+        Files.writeString(root.resolve("belongs-to-the-first-session.txt"), "mine");
 
-        var res = controller.files("some-session-id");
+        var res = controller().files(other);
         assertThat(res.getStatusCode().value()).isEqualTo(200);
-        assertThat(res.getBody().entries()).extracting(WorkspaceController.FileNode::name)
-                .contains("made-by-agent.py");
+        assertThat(((WorkspaceController.FilesResponse) res.getBody()).entries())
+                .extracting(WorkspaceController.FileNode::name)
+                .contains("made-by-agent.py")
+                .doesNotContain("belongs-to-the-first-session.txt");
 
-        var content = controller.file("made-by-agent.py", "some-session-id");
+        var content = controller().file("made-by-agent.py", other);
         assertThat(content.getStatusCode().value()).isEqualTo(200);
         assertThat(new String(content.getBody())).contains("print('hi')");
     }

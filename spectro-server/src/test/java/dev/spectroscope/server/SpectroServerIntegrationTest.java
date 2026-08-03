@@ -243,10 +243,11 @@ class SpectroServerIntegrationTest {
 
         List<String> types = events.stream().map(e -> e.path("type").asText()).toList();
         // The socket-only frames precede the first run (none of them is ever
-        // stored in the JSONL): provider_info + permission_mode_info on
-        // connect, the SAME pair again from buildAgentOnce's session-moment
-        // reseed (fix 1 — idempotent here since nothing actually changed),
-        // then workspace_info on first run.
+        // stored in the JSONL): provider_info + permission_mode_info + the
+        // PROSPECTIVE workspace_info on connect, the SAME provider pair again
+        // from buildAgentOnce's session-moment reseed (fix 1 — idempotent here
+        // since nothing actually changed), then the resolved workspace_info on
+        // first run.
         assertEquals("provider_info", types.getFirst(),
                 "the active backend is announced on connect, got " + types);
         JsonNode providerInfo = events.getFirst();
@@ -257,18 +258,27 @@ class SpectroServerIntegrationTest {
                 "the frame names the real network counterpart");
         assertEquals("permission_mode_info", types.get(1),
                 "the permission mode is announced on connect too, got " + types);
-        assertEquals("provider_info", types.get(2),
+        assertEquals("workspace_info", types.get(2),
+                "connect names the PROSPECTIVE workspace, got " + types);
+        JsonNode prospective = events.get(2);
+        assertFalse(prospective.path("resolved").asBoolean(true),
+                "the connect frame says it is not resolved yet");
+        assertTrue(prospective.path("sessionId").asText("").isBlank(),
+                "naming a folder must not mint a session");
+        assertEquals("provider_info", types.get(3),
                 "the session-moment reseed re-announces provider_info too, got " + types);
-        assertEquals("permission_mode_info", types.get(3),
+        assertEquals("permission_mode_info", types.get(4),
                 "...and permission_mode_info right after it, got " + types);
-        assertEquals("workspace_info", types.get(4),
+        assertEquals("workspace_info", types.get(5),
                 "the workspace announcement precedes the run, got " + types);
-        JsonNode workspaceInfo = events.get(4);
+        JsonNode workspaceInfo = events.get(5);
+        assertTrue(workspaceInfo.path("resolved").asBoolean(false),
+                "the run's announcement is the resolved one");
         assertFalse(workspaceInfo.path("sessionId").asText().isBlank());
         assertTrue(workspaceInfo.path("path").asText()
                         .endsWith(workspaceInfo.path("sessionId").asText()),
                 "the auto workspace is keyed by the session id");
-        assertEquals("run_start", types.get(5), "sequence starts with run_start, got " + types);
+        assertEquals("run_start", types.get(6), "sequence starts with run_start, got " + types);
         assertTrue(types.contains("text_delta"), "text must stream, got " + types);
         assertTrue(types.contains("usage"), "usage must arrive, got " + types);
         assertEquals("run_end", types.getLast());
@@ -439,17 +449,19 @@ class SpectroServerIntegrationTest {
         List<String> types = events.stream().map(e -> e.path("type").asText()).toList();
         assertEquals("provider_info", types.getFirst(), "connect announces the backend first");
         assertEquals("permission_mode_info", types.get(1), "connect also announces the permission mode");
-        assertEquals("error", types.get(2));
+        assertEquals("workspace_info", types.get(2),
+                "connect names the prospective workspace before anything runs, got " + types);
+        assertEquals("error", types.get(3));
         // The rejected upload never reaches buildAgentOnce (no agent yet); the
         // valid message then builds it for the first time — the session-moment
         // reseed re-announces provider_info + permission_mode_info (fix 1,
         // idempotent here) — before announcing the workspace (socket-only) and running.
-        assertEquals("provider_info", types.get(3),
+        assertEquals("provider_info", types.get(4),
                 "the reseed re-announces provider_info too, got " + types);
-        assertEquals("permission_mode_info", types.get(4),
+        assertEquals("permission_mode_info", types.get(5),
                 "...and permission_mode_info right after it, got " + types);
-        assertEquals("workspace_info", types.get(5));
-        assertEquals("run_start", types.get(6),
+        assertEquals("workspace_info", types.get(6));
+        assertEquals("run_start", types.get(7),
                 "the ONLY run events come from the second, valid message: " + types);
     }
 
@@ -465,12 +477,14 @@ class SpectroServerIntegrationTest {
                     .join();
             socket.sendText("""
                     {"type":"set_workspace","path":"%s"}""".formatted(picked), true);
-            for (int i = 0; i < 100 && events.stream()
-                    .noneMatch(e -> "workspace_info".equals(e.path("type").asText())); i++) {
+            // Connect already announced a PROSPECTIVE workspace; the pick's
+            // answer is the RESOLVED one, so filter rather than take the first.
+            for (int i = 0; i < 100 && events.stream().noneMatch(SpectroServerIntegrationTest::isResolvedWorkspace);
+                    i++) {
                 Thread.sleep(100);
             }
             JsonNode info = events.stream()
-                    .filter(e -> "workspace_info".equals(e.path("type").asText()))
+                    .filter(SpectroServerIntegrationTest::isResolvedWorkspace)
                     .findFirst().orElseThrow(() ->
                             new AssertionError("set_workspace must answer with workspace_info"));
             assertEquals(picked.toAbsolutePath().normalize().toString(), info.path("path").asText(),
@@ -505,9 +519,21 @@ class SpectroServerIntegrationTest {
         assertTrue(events.stream().anyMatch(e -> "error".equals(e.path("type").asText())
                         && e.path("message").asText().contains("fixed once the agent has run")),
                 "a late set_workspace answers a readable refusal");
-        // Exactly ONE workspace_info: the pick announced it, the run reused it.
+        // Exactly ONE resolved workspace_info: the pick announced it, the run
+        // reused it. The connect-time prospective frame is a separate, earlier
+        // thing and must not be counted as a second resolution.
+        assertEquals(1, events.stream().filter(SpectroServerIntegrationTest::isResolvedWorkspace).count());
         assertEquals(1, events.stream()
-                .filter(e -> "workspace_info".equals(e.path("type").asText())).count());
+                        .filter(e -> "workspace_info".equals(e.path("type").asText()))
+                        .filter(e -> !e.path("resolved").asBoolean(true)).count(),
+                "connect announced the prospective workspace exactly once");
+    }
+
+    /** A workspace_info that names a REAL folder, not the connect-time proposal.
+     *  An older frame carries no `resolved` field at all and counts as real. */
+    private static boolean isResolvedWorkspace(JsonNode event) {
+        return "workspace_info".equals(event.path("type").asText())
+                && event.path("resolved").asBoolean(true);
     }
 
     @Test
@@ -701,16 +727,19 @@ class SpectroServerIntegrationTest {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
 
-        assertTrue(events.size() >= 3,
-                "connect (provider + permission mode) + switch must all announce, got " + events);
+        assertTrue(events.size() >= 4,
+                "connect (provider + permission mode + workspace) + switch must all announce, got "
+                        + events);
         JsonNode boot = events.get(0);
         assertEquals("provider_info", boot.path("type").asText());
         assertEquals("ollama", boot.path("provider").asText());
 
         assertEquals("permission_mode_info", events.get(1).path("type").asText(),
                 "the boot permission mode is announced right after the boot provider");
+        assertEquals("workspace_info", events.get(2).path("type").asText(),
+                "connect also names the prospective workspace");
 
-        JsonNode switched = events.get(2);
+        JsonNode switched = events.get(3);
         assertEquals("provider_info", switched.path("type").asText());
         assertEquals("openai", switched.path("provider").asText());
         assertEquals("my-local", switched.path("model").asText());

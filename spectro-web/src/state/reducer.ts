@@ -4,6 +4,7 @@
 // same mental figure as buildGraph.
 
 import type { ClientMessage, RunEvent } from "../events";
+import type { WorkspaceMode } from "../workspace/paneState";
 
 export interface ToolCard {
   callId: string;
@@ -143,11 +144,23 @@ export interface PlanStep {
 /** Where THIS session's agent works — from the socket-only workspace_info
  *  frame (never in the JSONL; archives replay without it). */
 export interface WorkspaceInfo {
-  sessionId: string;
-  path: string;
+  /** Present only once a session exists, the connect-time frame has none,
+   *  because announcing a folder must not mint a session. */
+  sessionId?: string;
+  /** Absent for the "random" mode before a run: that folder is keyed by a
+   *  session id that does not exist yet. */
+  path?: string;
   /** true when the workspace comes from the config, false for the
    *  per-session temp folder. */
   configured: boolean;
+  /** false on the PROSPECTIVE frame sent at connect: what a run started right
+   *  now would use, with nothing created and no session minted. The Files pane
+   *  shows a waiting state for it rather than a tree. */
+  resolved: boolean;
+  /** Which of the chooser's modes is actually in effect. */
+  mode: WorkspaceMode;
+  /** Whether the named folder is already on disk. */
+  exists?: boolean;
 }
 
 /** The ACTIVE LLM backend — from the socket-only provider_info frame, sent on
@@ -430,7 +443,16 @@ export function reduce(state: UiState, event: RunEvent): UiState {
     const w = event as unknown as WorkspaceInfo;
     return {
       ...traced,
-      workspace: { sessionId: w.sessionId, path: w.path, configured: w.configured === true },
+      workspace: {
+        sessionId: w.sessionId,
+        path: w.path,
+        configured: w.configured === true,
+        // An older server sends neither field; treating that frame as resolved
+        // keeps the pane behaving as it always did against one.
+        resolved: w.resolved !== false,
+        mode: w.mode ?? (w.configured === true ? "default" : "random"),
+        exists: w.exists,
+      },
     };
   }
   // Same boundary rule for provider_info: connect + every switch announce the

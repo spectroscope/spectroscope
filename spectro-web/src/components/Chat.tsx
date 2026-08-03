@@ -482,7 +482,11 @@ export function Chat(props: {
               {t(lang, "chat.emptyHint")}
             </p>
             {liveView && props.onPickFolder && (
-              <WorkspaceChooser sendClient={props.sendClient} onPickFolder={props.onPickFolder} />
+              <WorkspaceChooser
+                sendClient={props.sendClient}
+                onPickFolder={props.onPickFolder}
+                workspace={state.workspace}
+              />
             )}
           </div>
         ) : (

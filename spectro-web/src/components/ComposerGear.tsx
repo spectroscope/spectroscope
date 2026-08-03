@@ -127,7 +127,10 @@ export function ComposerGear({
   const [hooksError, setHooksError] = useState<string | null>(null);
 
   const sessionId = workspaceInfo?.sessionId;
-  const model = buildGearModel(view, workspaceInfo, permissionMode);
+  // Only a RESOLVED workspace reaches the gear. The connect-time frame names
+  // where a run would work, which is not the same as a folder that exists with
+  // a .spectro to persist rules into.
+  const model = buildGearModel(view, workspaceInfo?.resolved === true ? workspaceInfo : null, permissionMode);
 
   // Fetch the project-scope view fresh on every open — another tab or the
   // Settings page may have changed the file since the last time. An

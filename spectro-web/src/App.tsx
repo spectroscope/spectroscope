@@ -1045,7 +1045,10 @@ export function App() {
   // The workspace announcement makes the Files panel visible: the first
   // workspace_info of a session opens the right panel on the Files tab —
   // the agent's desk appears where its files land.
-  const wsPath = live.workspace?.path ?? null;
+  // Only a RESOLVED workspace throws the panel open. The connect-time frame
+  // names a prospective folder for every new chat; opening the Files tab on it
+  // would hijack the panel before anything has happened.
+  const wsPath = live.workspace?.resolved === true ? (live.workspace.path ?? null) : null;
   useEffect(() => {
     if (wsPath !== null) {
       openRightPanel();

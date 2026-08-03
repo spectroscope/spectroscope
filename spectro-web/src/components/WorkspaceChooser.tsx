@@ -1,25 +1,37 @@
 // The new-chat workspace chooser: where the agent works this session. Three
-// modes — random (a throwaway per-session temp folder, the pre-selected default),
-// default (your configured workspace, or ~/spectroscope-workspace when none is
-// set), and set (pick a folder). The backend resolves the actual path per mode
+// modes: random (a throwaway per-session temp folder), default (your configured
+// workspace, or ~/spectroscope-workspace when none is set), and set (pick a
+// folder). The backend resolves the actual path per mode
 // (SessionConnection.onSetWorkspace); "set" reuses the native folder picker.
-// It only applies on click, so a configured default is never overridden silently.
+//
+// The selection follows the server's announcement rather than a constant. It
+// used to open on "random" while buildAgentOnce resolves `pinned != null ?
+// pinned : config.workspace()`, so with a configured workspace the empty chat
+// showed one answer and the first run used another. Clicking still applies, so
+// a configured default is never overridden silently; what changed is that the
+// unclicked state now reports the truth instead of a guess.
 
 import { useState } from "react";
 import { useLang } from "../state/lang";
 import type { ClientMessage } from "../events";
+import type { WorkspaceInfo } from "../state/reducer";
+import { preselectedMode } from "../workspace/chooserMode";
 
 type Mode = "random" | "default" | "set";
 
 export function WorkspaceChooser(props: {
   sendClient: (m: ClientMessage) => boolean;
   onPickFolder: () => void;
+  /** The prospective workspace announcement, what a run started now would use. */
+  workspace: WorkspaceInfo | null;
 }) {
   const de = useLang() === "de";
-  const [chosen, setChosen] = useState<Mode>("random");
+  const [picked, setPicked] = useState<Mode | null>(null);
+  // A click wins; until then the announcement speaks.
+  const chosen: Mode | null = picked ?? preselectedMode(props.workspace);
 
   const pick = (mode: Mode): void => {
-    setChosen(mode);
+    setPicked(mode);
     if (mode === "set") props.onPickFolder();
     else props.sendClient({ type: "set_workspace", mode });
   };

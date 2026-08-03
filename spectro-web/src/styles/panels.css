@@ -158,6 +158,16 @@
 .ws-md { flex: 1; overflow-y: auto; padding: var(--sp-2) var(--sp-3); font-size: var(--fs-12); }
 .ws-note { margin: var(--sp-2); font-size: var(--fs-12); color: var(--text-dim); }
 
+/* Before the first run: no folder yet, so the pane says what will happen
+   instead of drawing somebody else's directory. */
+.ws-pending > p { margin: 0; }
+.ws-pending-path {
+  margin-top: var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
 /* Agenten list — background-tasks style cards */
 .agents-empty,
 .ctx-empty {

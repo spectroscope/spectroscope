@@ -21,6 +21,8 @@ import {
   readStoredTermSplit,
 } from "./shellPrefs";
 import type { WorkspaceInfo } from "../state/reducer";
+import { paneState } from "./paneState";
+import type { FetchOutcome } from "./paneState";
 
 interface FileNode {
   name: string;
@@ -187,7 +189,7 @@ export function WorkspaceTab({
 }) {
   const lang = useLang();
   const [tree, setTree] = useState<FilesResponse | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [outcome, setOutcome] = useState<FetchOutcome | null>(null);
   const [open, setOpen] = useState<ReadonlySet<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
 
@@ -295,17 +297,33 @@ export function WorkspaceTab({
   // tree — the 5 s safety poll must not make the panel flicker.
   const lastJson = useRef("");
   const load = useCallback((): void => {
-    fetch(sessionId === undefined ? "/api/files" : `/api/files?session=${encodeURIComponent(sessionId)}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+    // No session, no request. The sessionless call used to be answered with the
+    // server's own working directory; there is nothing to ask for until a
+    // workspace has been resolved.
+    if (sessionId === undefined) {
+      setOutcome(null);
+      return;
+    }
+    fetch(`/api/files?session=${encodeURIComponent(sessionId)}`)
+      .then((r) => {
+        if (!r.ok) {
+          setOutcome({ kind: "status", status: r.status });
+          return null;
+        }
+        return r.json();
+      })
       .then((res) => {
-        setFailed(false);
+        if (res === null) return;
+        setOutcome({ kind: "ok" });
         const next = JSON.stringify(res);
         if (next !== lastJson.current) {
           lastJson.current = next;
           setTree(res as FilesResponse);
         }
       })
-      .catch(() => setFailed(true));
+      // A throw is the network, not a status: a dead server and a folder that
+      // does not exist yet are different things and must read differently.
+      .catch(() => setOutcome({ kind: "offline" }));
   }, [sessionId]);
 
   useEffect(load, [load]);
@@ -345,7 +363,23 @@ export function WorkspaceTab({
     });
   };
 
-  if (failed) return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
+  const pane = paneState(workspace, outcome, lang);
+  if (pane.kind === "unreachable") return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
+  if (pane.kind === "pending") {
+    // Before the first run there is no folder and no session. Saying what will
+    // happen beats both a tree of somebody else's directory and a bare
+    // "unreachable" that blames the server for a decision nobody made yet.
+    return (
+      <div className="ctx-empty ws-pending">
+        <p>{pane.message}</p>
+        {pane.path !== null && (
+          <p className="ws-pending-path mono" title={pane.path}>
+            {pane.path}
+          </p>
+        )}
+      </div>
+    );
+  }
   if (tree === null) return <p className="ctx-empty">{t(lang, "ws.loading")}</p>;
 
   return (

@@ -46,6 +46,7 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -254,6 +255,7 @@ public final class SessionConnection {
             fleet.addListener(fleetListener);
         }
         if (resumeId == null) {
+            sendProspectiveWorkspace();
             return;
         }
         try {
@@ -270,7 +272,7 @@ public final class SessionConnection {
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
             String pinned = SessionWorkspaces.pinned(store.id());
-            workspace = WorkspaceResolver.resolve(
+            workspace = resolveAndRecord(
                     pinned != null ? pinned : config.workspace(), store.id());
             sendWorkspaceInfo();
         } catch (Exception missing) {
@@ -593,7 +595,7 @@ public final class SessionConnection {
                     return;
                 }
             }
-            workspace = WorkspaceResolver.resolve(picked, store.id());
+            workspace = resolveAndRecord(picked, store.id());
             // The pin is SHARED state: the REST side (/api/files) must root the
             // Files tab at the same folder the sandbox uses, and a resume in
             // this server process finds the folder again.
@@ -703,7 +705,7 @@ public final class SessionConnection {
         // (the store minted the id already). The Files tab learns it through
         // the workspace_info frame below.
         String pinned = SessionWorkspaces.pinned(store.id());
-        workspace = WorkspaceResolver.resolve(
+        workspace = resolveAndRecord(
                 pinned != null ? pinned : config.workspace(), store.id());
 
         // The session moment: the workspace's own .spectro pair joins the chain now.
@@ -868,8 +870,68 @@ public final class SessionConnection {
         }
     }
 
+    /**
+     * Resolves a workspace AND records it as this session's, the single door,
+     * so the REST side can never be blind to a folder the agent is already
+     * working in. Every resolve site goes through here for exactly that reason:
+     * "resolved" and "known to /api/files" must not be two facts that drift.
+     *
+     * @param picked the pinned or configured path, or null for the temp folder
+     * @param sessionId the session the workspace belongs to
+     * @return the resolved, existing workspace directory
+     */
+    private static Path resolveAndRecord(String picked, String sessionId) {
+        Path resolved = WorkspaceResolver.resolve(picked, sessionId);
+        SessionWorkspaces.resolved(sessionId, resolved.toString());
+        return resolved;
+    }
+
     /** Whether the workspace_info frame already went out on this connection. */
     private boolean workspaceAnnounced = false;
+
+    /**
+     * The PROSPECTIVE workspace: what a run started right now would use, sent on
+     * connect so the Files tab can say "no folder yet" instead of falling back to
+     * a sessionless listing of the server's own working directory.
+     *
+     * <p>Computed with {@link WorkspaceResolver#locate} and nothing else. The
+     * eager alternative was tried and reverted: {@code resolve()} CREATES the
+     * directory and {@code ensureStore()} mints a session id and a JSONL store,
+     * so every tab opened and closed would leave a folder and a session row
+     * behind, for a choice the operator can still change. Naming is free;
+     * creating is a decision that belongs to the first run.</p>
+     *
+     * <p>The mode mirrors what {@code buildAgentOnce} will actually do
+     * ({@code pinned != null ? pinned : config.workspace()}), so the chooser can
+     * pre-select the mode in effect instead of hardcoding one.</p>
+     */
+    private synchronized void sendProspectiveWorkspace() {
+        if (!socket.isOpen()) {
+            return;
+        }
+        String configured = config.workspace();
+        boolean hasConfigured = configured != null && !configured.isBlank();
+        Map<String, Object> frame = new java.util.LinkedHashMap<>();
+        frame.put("type", "workspace_info");
+        frame.put("resolved", false);
+        frame.put("mode", hasConfigured ? "default" : "random");
+        frame.put("configured", hasConfigured);
+        if (hasConfigured) {
+            // locate() needs no session id once a workspace is configured, and
+            // it creates nothing, the read-only twin of resolve().
+            Path named = WorkspaceResolver.locate(configured, null);
+            frame.put("path", named.toString());
+            frame.put("exists", Files.isDirectory(named));
+        }
+        // No path for "random": the folder is keyed by a session id that does
+        // not exist yet, and inventing one would mint the session.
+        try {
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(frame)));
+        } catch (Exception ignored) {
+            // A dead socket just misses the hint, the pane stays on its
+            // pending state until the first run announces for real.
+        }
+    }
 
     /**
      * Tells the client where THIS session's agent works — a socket-only UI
@@ -877,21 +939,31 @@ public final class SessionConnection {
      * clients ignore unknown types per forward compatibility, and the trace
      * tab shows the frame). Sent once, after the workspace is resolved; the
      * Files tab then queries {@code GET /api/files?session=<id>}.
+     *
+     * <p>Carries {@code resolved: true} to separate it from the connect-time
+     * proposal, which names a folder that may not exist for a session that does
+     * not exist yet. The pane draws a tree for one and a waiting state for the
+     * other, and cannot tell them apart without being told.</p>
      */
     private synchronized void sendWorkspaceInfo() {
         if (workspaceAnnounced || workspace == null || !socket.isOpen()) {
             return;
         }
+        String pinned = SessionWorkspaces.pinned(store.id());
+        boolean configured = pinned != null || config.workspace() != null;
         try {
             socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
                     "type", "workspace_info",
+                    "resolved", true,
+                    "mode", pinned != null ? "set" : (config.workspace() != null ? "default" : "random"),
+                    "exists", Files.isDirectory(workspace),
                     "sessionId", store.id(),
                     "path", workspace.toString(),
-                    "configured", SessionWorkspaces.pinned(store.id()) != null
-                            || config.workspace() != null))));
+                    "configured", configured))));
             workspaceAnnounced = true;
         } catch (Exception ignored) {
-            // A dead socket just misses the hint — the Files tab falls back.
+            // A dead socket just misses the hint, the Files tab stays on its
+            // waiting state until the next announcement.
         }
     }
 

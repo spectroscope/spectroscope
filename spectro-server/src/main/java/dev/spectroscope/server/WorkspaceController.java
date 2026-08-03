@@ -1,8 +1,6 @@
 package dev.spectroscope.server;
 
 import org.springframework.http.MediaType;
-import dev.spectroscope.core.config.SpectroConfig;
-import dev.spectroscope.core.config.WorkspaceResolver;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,9 +18,11 @@ import java.util.Set;
 
 /**
  * Phase 5: the workspace panel's backend — a read-only, sandboxed view of the
- * agent's working directory. {@code GET /api/files} returns the cwd tree
- * (hidden files and build/dependency directories skipped, capped);
- * {@code GET /api/file} serves one file for the preview pane.
+ * agent's working directory. {@code GET /api/files} returns the tree of the
+ * requesting SESSION's workspace (hidden files and build/dependency
+ * directories skipped, capped); {@code GET /api/file} serves one file for the
+ * preview pane. Both require a session that has actually resolved a workspace
+ * and answer 409 otherwise, see {@link #rootFor}.
  *
  * <p>Sandbox rules, same maxim as the tools ("tool inputs are model output and
  * therefore untrusted" — and URL parameters are user/model input too): the
@@ -63,37 +63,17 @@ public class WorkspaceController {
     /** Every preview document renders in an opaque origin; scripts run isolated. */
     private static final String CSP_SANDBOX = "sandbox allow-scripts";
 
-    private final Path root;
-
-    /** Supplies the configured workspace (or null) — a fresh config read per
-     *  request in production, injectable for tests. */
-    private final java.util.function.Supplier<String> configuredWorkspace;
-
-    /** Spring wiring: the parameterless root is the server process's working
-     *  directory; session lookups read the live config's workspace key. */
-    public WorkspaceController() {
-        this(Path.of(System.getProperty("user.dir")),
-                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).workspace());
-    }
-
-    /**
-     * Seam for tests: sandbox the controller into a throwaway root.
+    /** The 409 body: the pane must tell "no folder yet" apart from a dead server.
      *
-     * @param root the directory to serve as workspace root — normalized to absolute
+     * @param reason a stable machine-readable token, never a sentence to render
      */
-    WorkspaceController(Path root) {
-        this(root, () -> null);
-    }
+    public record NoWorkspace(String reason) {}
 
-    /**
-     * Full seam: root AND the configured-workspace supplier.
-     *
-     * @param root the parameterless root
-     * @param configuredWorkspace supplies the config's workspace key (nullable)
-     */
-    WorkspaceController(Path root, java.util.function.Supplier<String> configuredWorkspace) {
-        this.root = root.toAbsolutePath().normalize();
-        this.configuredWorkspace = configuredWorkspace;
+    /** Signals "this request has no workspace behind it", answered as 409. */
+    private static final class NoWorkspaceResolved extends RuntimeException {
+        NoWorkspaceResolved(String reason) {
+            super(reason);
+        }
     }
 
     // ---- the tree -------------------------------------------------------------
@@ -105,13 +85,15 @@ public class WorkspaceController {
      * @return the tree under the root plus the honest truncated flag
      */
     @GetMapping("/api/files")
-    public ResponseEntity<FilesResponse> files(
+    public ResponseEntity<?> files(
             @RequestParam(value = "session", required = false) String session) {
         Path base;
         try {
             base = rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
+        } catch (NoWorkspaceResolved none) {
+            return ResponseEntity.status(409).body(new NoWorkspace(none.getMessage()));
         }
         if (!Files.isDirectory(base)) {
             return ResponseEntity.notFound().build(); // no workspace folder (yet)
@@ -124,26 +106,40 @@ public class WorkspaceController {
     }
 
     /**
-     * The tree/content root for a request: without a session parameter, the
-     * boot root (unchanged behaviour); with one, THAT session's workspace —
-     * a per-session pin (the folder the user picked, shared state with the
-     * socket side) wins, else the config/auto rules via
-     * {@link WorkspaceResolver#locate} (no directory is ever created by a
-     * GET). The id shape is guarded exactly like the sessions DELETE.
+     * The tree/content root for a request: THAT session's resolved workspace,
+     * and nothing else. The id shape is guarded exactly like the sessions
+     * DELETE.
      *
-     * @param session the session id from the query, or null/blank for the boot root
+     * <p>There is deliberately no fallback. A sessionless request used to be
+     * answered with {@code System.getProperty("user.dir")}, which on a
+     * developer machine is the product's own checkout: an unfenced listing of
+     * the server's working directory that nobody designed and the UI only ever
+     * reached by accident, before the first run, when it had no session id yet.
+     * A request with no session behind it has no workspace, and says so.</p>
+     *
+     * <p>Nor is the configured workspace consulted directly. {@code locate()}
+     * short-circuits on a configured path and never looks at the session id, so
+     * ANY id, including one that never existed, used to come back with the
+     * configured folder as though it were that session's. The socket records
+     * every workspace it resolves; this reads that record.</p>
+     *
+     * @param session the session id from the query
      * @return the directory to serve
      * @throws IllegalArgumentException for a malformed session id (answered as 400)
+     * @throws NoWorkspaceResolved when no workspace belongs to this request (409)
      */
     private Path rootFor(String session) {
         if (session == null || session.isBlank()) {
-            return root;
+            throw new NoWorkspaceResolved("no-workspace-for-request");
         }
         if (!session.matches("[A-Za-z0-9][A-Za-z0-9-]*")) {
             throw new IllegalArgumentException("malformed session id");
         }
-        String pinned = SessionWorkspaces.pinned(session);
-        return WorkspaceResolver.locate(pinned != null ? pinned : configuredWorkspace.get(), session);
+        String resolved = SessionWorkspaces.resolvedPath(session);
+        if (resolved == null) {
+            throw new NoWorkspaceResolved("no-workspace-for-session");
+        }
+        return Path.of(resolved).toAbsolutePath().normalize();
     }
 
     /**
@@ -225,6 +221,8 @@ public class WorkspaceController {
             base = rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
+        } catch (NoWorkspaceResolved none) {
+            return ResponseEntity.status(409).body(none.getMessage().getBytes(StandardCharsets.UTF_8));
         }
         Path requested;
         try {
