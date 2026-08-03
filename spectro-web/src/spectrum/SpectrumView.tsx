@@ -173,7 +173,10 @@ export function SpectrumView(props: {
   }
 
   const win = winState ?? FULL;
-  const slices = useMemo(() => model.lanes.map((l) => sliceLane(l.ticks, win, bandW)), [model.lanes, win, bandW]);
+  const slices = useMemo(
+    () => model.lanes.map((l) => sliceLane(l.ticks, win, bandW)),
+    [model.lanes, win, bandW],
+  );
   const hidden = slices.reduce((n, s) => n + s.hidden, 0);
 
   // Does this stream need a viewport at all? Asked of the WHOLE, never of the
@@ -181,7 +184,10 @@ export function SpectrumView(props: {
   // reader zoomed into a sparse minute, the strip would vanish, and they would
   // be stranded deep in the axis with no orientation and no way back.
   const zoomable = useMemo(() => needsViewport(model.lanes, bandW), [model.lanes, bandW]);
-  const allTicks = useMemo(() => (zoomable ? model.lanes.flatMap((l) => l.ticks) : []), [model.lanes, zoomable]);
+  const allTicks = useMemo(
+    () => (zoomable ? model.lanes.flatMap((l) => l.ticks) : []),
+    [model.lanes, zoomable],
+  );
   const onWindow = zoomable ? setWinState : undefined;
 
   return (

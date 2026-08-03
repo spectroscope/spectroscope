@@ -206,8 +206,7 @@ export function SpectrumBand({
       e.preventDefault();
       // No pointer means no deixis, so the reader's declared focus is the mark
       // they are hovering, and the middle of the window when there is none.
-      const anchorPx =
-        tick === null ? BAND_INNER / 2 : markX(tick.x, win, BAND_W, BAND_PAD_X) - BAND_PAD_X;
+      const anchorPx = tick === null ? BAND_INNER / 2 : markX(tick.x, win, BAND_W, BAND_PAD_X) - BAND_PAD_X;
       onWindow(applyIntent(win, intent, { anchorPx, widthPx: BAND_INNER, minW, ticks: lane.ticks }));
       return;
     }
