@@ -327,6 +327,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tool.deniedByUser": { de: "vom Nutzer abgelehnt", en: "denied by user" },
   "common.copy": { de: "Kopieren", en: "Copy" },
   "common.copied": { de: "Kopiert", en: "Copied" },
+  "common.copyReadable": { de: "Lesbares kopieren", en: "Copy readable" },
 
   // lab toolbar
   "lab.blocks": { de: "Blöcke", en: "Blocks" },
@@ -498,7 +499,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.modeAria": { de: "Detail-Ansicht", en: "Detail view" },
   "trace.mode.insight": { de: "Insight", en: "Insight" },
   "trace.mode.compact": { de: "Compact", en: "Compact" },
-  "trace.mode.raw": { de: "Raw", en: "Raw" },
+  "trace.mode.wire": { de: "Draht", en: "Wire" },
+  "trace.mode.source": { de: "Quelle", en: "Source" },
 
   // system-context tab
   "ctx.unavailable": { de: "System-Kontext nicht verfügbar (Server offline?).", en: "System context unavailable (server offline?)." },
@@ -707,7 +709,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.faceTitle.structured": { de: "Frames als das aufklappen, was sie sind — ein Aufruf als seine Tool-Karte, eine Antwort als ihr Text.", en: "Open frames as the thing they are — a call as its tool card, an answer as its text." },
   "trace.faceTitle.insight": { de: "Frames als aufgeklappten Baum aufklappen.", en: "Open frames as an expanded tree." },
   "trace.faceTitle.compact": { de: "Frames als eine hervorgehobene Zeile je Wire-Line aufklappen.", en: "Open frames as one highlighted row per wire line." },
-  "trace.faceTitle.raw": { de: "Frames als reinen Text aufklappen — genau die Zeilen, die über den Draht gingen.", en: "Open frames as plain text — exactly the lines that crossed the wire." },
+  "trace.faceTitle.wire": { de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen.", en: "Open frames as plain text: exactly the lines that crossed the wire." },
+  "trace.faceTitle.source": { de: "Frames mit der Zeile der importierten Datei aufklappen, aus der sie gelesen wurden.", en: "Open frames with the line of the imported file they were read from." },
+
+  // The source pane (card: the source line). Four cases, four sentences: this
+  // card exists because one label meant two things, so none of these falls back
+  // to another's words.
+  "trace.source.none": { de: "Diese Sitzung ist hier entstanden, es gibt also keine getrennte Quelle. Die Draht-Zeile ist die gespeicherte Zeile, Byte für Byte.", en: "This session was produced here, so there is no separate source. The wire line is the stored line, byte for byte." },
+  "trace.source.built": { de: "Diesen Frame hat der Import gebaut. Keine einzelne Zeile der Datei hat ihn erzeugt.", en: "The importer built this frame. No single line of the file produced it." },
+  "trace.source.missing": { de: "Dieser Frame zeigt auf Zeile {n}, die diese Datei nicht hat. Sie zählt {total} Zeilen.", en: "This frame points at line {n}, which this file does not have. It counts {total} lines." },
+  "trace.source.line": { de: "Zeile {n} von {total}.", en: "Line {n} of {total}." },
+  "trace.source.shared": { de: "Zeile {n} von {total}. Sie hat {k} Frames erzeugt; dies ist Frame {i}.", en: "Line {n} of {total}. It produced {k} frames; this is frame {i}." },
+  "trace.source.notJson": { de: "Diese Zeile ist kein JSON. Sie steht unverändert da.", en: "This line is not JSON. It stands here unchanged." },
+  "trace.source.capped": { de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.", en: "Showing {shown} of {total} characters. Copying always takes the whole line." },
+  "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
+  "trace.readingAria": { de: "Lesart", en: "Reading" },
+  "trace.reading.verbatim": { de: "Wörtlich", en: "Verbatim" },
+  "trace.reading.readable": { de: "Lesbar", en: "Readable" },
+  "trace.readingTitle.verbatim": { de: "Die Bytes zeigen, wie sie in der Datei stehen. Das ist die Voreinstellung und wird nicht gespeichert.", en: "Show the bytes as they stand in the file. This is the default and it is not remembered." },
+  "trace.readingTitle.readable": { de: "Verschachtelte Dokumente aufschlagen und echte Zeilenumbrüche zeigen. Das ist eine Deutung der Zeile, nicht die Zeile.", en: "Open embedded documents and show real line breaks. This is a reading of the line, not the line." },
   "search.regexTitle": { de: "Als regulären Ausdruck lesen", en: "Read as a regular expression" },
   "tr.applied": { de: "Die Übersetzung landet gleichzeitig in allen Ansichten dieser Session — Chat, Trace, Text-Feed und Lab lesen denselben Stream.", en: "The translation lands in every view of this session at once — chat, trace, text feed and lab all read the same stream." },
   "tr.plan": { de: "{u} Textstellen, zerlegt in {n} Aufrufe, die ins Modell passen.", en: "{u} passages of text, cut into {n} calls that fit the model." },

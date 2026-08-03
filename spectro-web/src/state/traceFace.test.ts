@@ -18,8 +18,16 @@ describe("traceFace", () => {
     setTraceFace("structured");
   });
 
-  it("names exactly the four faces, structured first", () => {
-    expect(TRACE_FACES).toEqual(["structured", "insight", "compact", "raw"]);
+  it("offers five faces, structured first", () => {
+    expect(TRACE_FACES).toEqual(["structured", "insight", "compact", "wire", "source"]);
+  });
+
+  // "raw" was this store's word for the wire lines until a real source line
+  // existed to be confused with. The word changed, the content did not, so a
+  // reader who chose it keeps what they chose; without this line parse() falls
+  // through to the default and silently puts them back on structured.
+  it("reads a stored legacy raw as wire", () => {
+    expect(parseTraceFace("raw")).toBe("wire");
   });
 
   // Nobody's trace changes shape on upgrade: this is what every row did before
@@ -30,8 +38,8 @@ describe("traceFace", () => {
   });
 
   it("set + read round-trips", () => {
-    setTraceFace("raw");
-    expect(currentTraceFace().face).toBe("raw");
+    setTraceFace("wire");
+    expect(currentTraceFace().face).toBe("wire");
     setTraceFace("compact");
     expect(currentTraceFace().face).toBe("compact");
   });
@@ -66,41 +74,41 @@ describe("a row on top of the master", () => {
 
   it("follows the master while the row was never touched", () => {
     expect(rowFace(currentTraceFace(), null)).toBe("structured");
-    setTraceFace("raw");
-    expect(rowFace(currentTraceFace(), null)).toBe("raw");
+    setTraceFace("wire");
+    expect(rowFace(currentTraceFace(), null)).toBe("wire");
   });
 
   it("shows the hand-picked face over the master", () => {
     const pref = currentTraceFace();
-    expect(rowFace(pref, { face: "raw", epoch: pref.epoch })).toBe("raw");
+    expect(rowFace(pref, { face: "wire", epoch: pref.epoch })).toBe("wire");
   });
 
   // The complaint that produced the master switch was "otherwise I have to
   // switch every row" — so a master that left touched rows alone would look
   // broken in exactly the case it exists for.
   it("discards the hand-picked face when the master moves", () => {
-    const override = { face: "raw" as const, epoch: currentTraceFace().epoch };
+    const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
     setTraceFace("compact");
     expect(rowFace(currentTraceFace(), override)).toBe("compact");
   });
 
   it("survives a re-read of the same master (scrolling, streaming, re-render)", () => {
-    const override = { face: "raw" as const, epoch: currentTraceFace().epoch };
-    expect(rowFace(currentTraceFace(), override)).toBe("raw");
-    expect(rowFace(currentTraceFace(), override)).toBe("raw");
+    const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
+    expect(rowFace(currentTraceFace(), override)).toBe("wire");
+    expect(rowFace(currentTraceFace(), override)).toBe("wire");
   });
 
   // Stamping an override with the master's VALUE would resurrect it here.
   it("never resurrects an override when the master returns to where it was", () => {
-    const override = { face: "raw" as const, epoch: currentTraceFace().epoch };
+    const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
     setTraceFace("compact");
     setTraceFace("structured");
     expect(rowFace(currentTraceFace(), override)).toBe("structured");
   });
 
   it("leaves a row alone when the master is set to what it already was", () => {
-    const override = { face: "raw" as const, epoch: currentTraceFace().epoch };
+    const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
     setTraceFace("structured");
-    expect(rowFace(currentTraceFace(), override)).toBe("raw");
+    expect(rowFace(currentTraceFace(), override)).toBe("wire");
   });
 });

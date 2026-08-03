@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
 import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
+import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS } from "../components/traceDetail";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 
@@ -58,6 +59,34 @@ describe("i18n dict", () => {
     for (const k of SOURCE_NOTE_KINDS) {
       expect(dict[`trace.note.${k}`], `trace.note.${k}`).toBeDefined();
       expect(dict[`trace.note.${k}Title`], `trace.note.${k}Title`).toBeDefined();
+    }
+    // The source pane's four cases. Each one is a whole sentence, because each
+    // is a different statement about where the frame came from, and a pane that
+    // fell back to a shared word for two of them would be this card's own
+    // defect. The shared-line sentence is the fifth string: it is the "line"
+    // case when one line produced several frames.
+    for (const k of SOURCE_PANE_KINDS) {
+      expect(dict[`trace.source.${k}`], `trace.source.${k}`).toBeDefined();
+    }
+    for (const k of [
+      "trace.source.shared",
+      "trace.source.notJson",
+      "trace.source.capped",
+      "trace.source.showAll",
+    ]) {
+      expect(dict[k], k).toBeDefined();
+    }
+    // The verbatim/readable strip inside the source and wire panes: a label and
+    // the tooltip that says which of the two is the file's own bytes.
+    for (const r of READINGS) {
+      expect(dict[`trace.reading.${r}`], `trace.reading.${r}`).toBeDefined();
+      expect(dict[`trace.readingTitle.${r}`], `trace.readingTitle.${r}`).toBeDefined();
+    }
+    expect(dict["trace.readingAria"], "trace.readingAria").toBeDefined();
+    // The copy button names which of the two it took, reached as
+    // `common.${copyLabel(...)}`.
+    for (const k of COPY_LABELS) {
+      expect(dict[`common.${k}`], `common.${k}`).toBeDefined();
     }
     // The reasoning seg (card 88): every string the shared control renders.
     // A missing key ships as its bare name — it happened twice this week.

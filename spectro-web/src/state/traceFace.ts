@@ -3,10 +3,21 @@
 // card 120), persisted to localStorage. It decides the DEFAULT only; a row's
 // own click still wins until the master moves again.
 //
-//   structured — the frame rendered as the thing it is (the pre-master default)
-//   insight    — the collapsible tree
-//   compact    — one highlighted row per wire line
-//   raw        — plain text, the wire lines verbatim
+//   structured  the frame rendered as the thing it is (the pre-master default)
+//   insight     the collapsible tree
+//   compact     one highlighted row per wire line
+//   wire        plain text, the wire lines verbatim
+//   source      the line of the imported file this frame was read from
+//
+// WHY "wire" AND NOT "raw". Until an imported file could show its own line,
+// "raw" was the only unrendered thing in the app and the word was unambiguous.
+// It is not any more: "the raw line" of an imported session means the file's
+// line to a reader and our wire line to us, and a face whose meaning depends on
+// where the session came from is exactly the defect the source face exists to
+// remove. The content did not change, only the word, and the word is one the
+// app already used for it: TraceEntry's own doc says "one frame in the wire
+// view" and the German tooltip already said "über den Draht gingen". A stored
+// "raw" therefore maps to "wire" rather than falling back (see faceStore).
 //
 // DELIBERATE DIVERGENCE from disclosure.ts: there a hand-made choice SURVIVES a
 // level change (`manual ?? defaultOpen(level)`), because a chat reader opens one
@@ -21,9 +32,12 @@
 import { DETAIL_MODES, type DetailMode } from "../components/traceDetail";
 import { createFaceStore, overrideFace, useFaceStore, type FaceOverride, type FacePref } from "./faceStore";
 
-/** Structured leads; the other three are exactly the detail panel's modes, read
+/** Structured leads; the other four are exactly the detail panel's modes, read
  *  from there so the two lists cannot drift apart. */
 export const TRACE_FACES = ["structured", ...DETAIL_MODES] as const;
+
+/** The one word this store used to write, and what it is called now. */
+const LEGACY_TRACE_FACES: Readonly<Record<string, TraceFace>> = { raw: "wire" };
 
 export type TraceFace = "structured" | DetailMode;
 
@@ -35,7 +49,12 @@ export type TraceFacePref = FacePref<TraceFace>;
 /** What one row was switched to by hand, and under which master. */
 export type RowFace = FaceOverride<TraceFace>;
 
-const store = createFaceStore<TraceFace>("spectroscope:trace.face", TRACE_FACES, DEFAULT_TRACE_FACE);
+const store = createFaceStore<TraceFace>(
+  "spectroscope:trace.face",
+  TRACE_FACES,
+  DEFAULT_TRACE_FACE,
+  LEGACY_TRACE_FACES,
+);
 
 /** Visible for tests: the stored master, or the default for anything else. */
 export function parseTraceFace(raw: string | null): TraceFace {

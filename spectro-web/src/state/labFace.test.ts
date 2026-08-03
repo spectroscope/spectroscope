@@ -46,13 +46,16 @@ describe("labFace", () => {
     expect(parseLabFace("insight")).toBe("insight");
   });
 
-  // "raw"/"compact" belong to the trace's store, "json" to the chat's — the
-  // lab's two-value space must reject all foreign vocabulary.
+  // "wire"/"compact"/"source" belong to the trace's store, "json" to the
+  // chat's, and "raw" belonged to the trace's store until the rename. The lab's
+  // two-value space must reject all of it, the retired word included.
   it("falls back to the default for absent, malformed or foreign storage", () => {
     expect(parseLabFace(null)).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("Insight")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("json")).toBe(DEFAULT_LAB_FACE);
+    expect(parseLabFace("wire")).toBe(DEFAULT_LAB_FACE);
+    expect(parseLabFace("source")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("raw")).toBe(DEFAULT_LAB_FACE);
     expect(parseLabFace("compact")).toBe(DEFAULT_LAB_FACE);
   });
@@ -117,7 +120,7 @@ describe("the lab store next to the trace store", () => {
   it("moves independently of the trace master", () => {
     setLabFace("structured");
     expect(currentTraceFace().face).toBe("structured");
-    setTraceFace("raw");
+    setTraceFace("wire");
     expect(currentLabFace().face).toBe("structured");
   });
 
