@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { HEAD_CHARS, MAX_EMBED_DEPTH, readable, readableText } from "./readable";
+import { HEAD_CHARS, HEAVY_CHARS, MAX_EMBED_DEPTH, opaqueField, readable, readableText } from "./readable";
 
 const fixture = (name: string): string[] =>
   readFileSync(fileURLToPath(new URL(`../import/fixtures/${name}`, import.meta.url)), "utf8")
@@ -145,7 +145,91 @@ describe("readable, on a document inside a string", () => {
   });
 });
 
+// Bytes that are not language. A thinking block's signature and an image's
+// base64 are unreadable at every length, and together they are 61% of the
+// owner's corpus by weight, so a pane that prints them where they stand prints
+// nothing else. They are COLLAPSED, never dropped: the placeholder names the
+// field, counts the characters and opens on request, and the clipboard still
+// carries the whole thing.
+describe("readable, on bytes nobody reads", () => {
+  it("collapses a signature where it stands, whatever its length", () => {
+    // A real thinking block, 1684 characters of signature. Measured over 706
+    // signatures in one transcript: the median is 1564 and the shortest 356, so
+    // a size rule alone would leave half of them on screen. This one is
+    // collapsed because of what the field IS, not because of how big it got.
+    const blocks = readable(heavy[1]).blocks;
+
+    const sig = blocks.find((b) => b.path === "message.content[0].signature");
+    expect(sig?.kind).toBe("hidden");
+    expect(sig?.text).toHaveLength(1684);
+    expect(sig?.text.startsWith("CAIS5wkKhwEIEBgCKkBc")).toBe(true);
+    // and it stands shortened in the skeleton, so the record around it is readable
+    expect(blocks[0].text).toContain("CAIS5wkKhwEIEBgCKkBc");
+    expect(blocks[0].text).not.toContain(sig!.text);
+  });
+
+  it("collapses the base64 of an image the same way", () => {
+    const blocks = readable(heavy[7]).blocks;
+
+    const data = blocks.filter((b) => b.kind === "hidden");
+    expect(data.map((b) => b.path)).toEqual([
+      "message.content[0].content[0].source.data",
+      "toolUseResult[0].source.data",
+    ]);
+    expect(data[0].text).toHaveLength(1200);
+    // the media type beside it is short and stays where it is
+    expect(blocks[0].text).toContain('"media_type": "image/jpeg"');
+  });
+
+  it("names the fields it treats as opaque, and nothing else", () => {
+    expect(opaqueField("message.content[0].signature")).toBe(true);
+    expect(opaqueField("message.content[0].source.data")).toBe(true);
+    expect(opaqueField("toolUseResult.file.base64")).toBe(true);
+    // a field that only ends in the same letters is a different field
+    expect(opaqueField("message.content[0].data")).toBe(false);
+    expect(opaqueField("message.signature_verified")).toBe(false);
+    expect(opaqueField("message.content[0].text")).toBe(false);
+  });
+
+  it("collapses any single run too long to read, whatever it is called", () => {
+    // Constructed: the fixtures are trimmed specimens, and the size rule needs a
+    // string over the threshold. Measured: the longest single run of real prose
+    // in one transcript is 1237 characters, so 2048 is above everything a person
+    // wrote and below every blob.
+    const line = JSON.stringify({ note: "z".repeat(HEAVY_CHARS + 1) });
+
+    const blocks = readable(line).blocks;
+
+    expect(blocks[1]?.kind).toBe("hidden");
+    expect(blocks[1]?.path).toBe("note");
+    expect(blocks[1]?.text).toHaveLength(HEAVY_CHARS + 1);
+  });
+
+  it("leaves long readable prose open, however big it gets", () => {
+    // Thinking, stdout and markdown carry real line breaks and are exactly what
+    // the reader came for. Size alone must never hide them: only a single run
+    // with no breaks in it is a candidate.
+    const prose = `${"word ".repeat(HEAVY_CHARS)}\nand a second line`;
+    const line = JSON.stringify({ thinking: prose });
+
+    const block = readable(line).blocks[1];
+
+    expect(block.kind).toBe("text");
+    expect(block.text).toBe(prose);
+  });
+});
+
 describe("readableText", () => {
+  it("carries a collapsed value into the clipboard whole", () => {
+    // The pane collapses it; the clipboard does not. Copying always takes the
+    // whole thing, or the reader walks away with a file they believe is
+    // complete.
+    const text = readableText(heavy[1]);
+
+    expect(text).toContain("message.content[0].signature");
+    expect(text).toContain(JSON.parse(heavy[1]).message.content[0].signature);
+  });
+
   it("names every opened block by its path and keeps the real line breaks", () => {
     const text = readableText(HOOK);
 

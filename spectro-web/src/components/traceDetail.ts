@@ -2,8 +2,12 @@
 // lines": an ordinary frame is exactly ONE line (JSON as it crossed the
 // socket, no artificial breaks); the synthetic session_resume marker carries
 // the whole re-uploaded history, one JSONL line per event. Wire and Compact
-// render these lines verbatim - newlines only between real lines, horizontal
-// scrolling instead of wrapping.
+// carry the same text and differ in how it is painted: Wire keeps one row per
+// wire line and scrolls sideways, Compact wraps so the whole record is on
+// screen (owner 2026-08-03, and the reason the two names now mean two things).
+// The wrap is a stylesheet fact only. This module still hands the clipboard one
+// line per wire line, because a copy that pasted the pane's line breaks would
+// paste a file nobody wrote.
 //
 // The fifth face, source, shows something else entirely: the line of the
 // IMPORTED FILE the frame was read from. Wire and source are the same bytes

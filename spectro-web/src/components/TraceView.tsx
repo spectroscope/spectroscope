@@ -25,7 +25,18 @@ import {
   wireProtocol,
 } from "./eventSummary";
 import type { LlmDir } from "./eventSummary";
-import { detailLines, detailText } from "./traceDetail";
+import {
+  READINGS,
+  SOURCE_DISPLAY_CHARS,
+  copyLabel,
+  detailLines,
+  detailText,
+  sourcePane,
+  withinBudget,
+  type Reading,
+  type SourcePane,
+} from "./traceDetail";
+import { readable, type ReadableBlock } from "./readable";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
 import { sourceNoteIndex, type SourceNote } from "../import/sourceNotes";
@@ -243,6 +254,9 @@ const TraceRow = memo(function TraceRow(props: {
   /** The open row's call index, same reason: a fresh Map on every append would
    *  re-render every closed row during a delta flood. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** The source face's two inputs, and the same rule a third time: only the open
+   *  row is handed the stream it stands in and the file it was read from. */
+  source?: { rows: readonly TraceEntry[]; lines: readonly string[] | null };
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -363,6 +377,8 @@ const TraceRow = memo(function TraceRow(props: {
           lang={lang}
           chain={props.chain ?? [entry]}
           calls={props.calls}
+          rows={props.source?.rows ?? [entry]}
+          sourceLines={props.source?.lines ?? null}
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
@@ -517,10 +533,132 @@ export function EventStructured(props: {
   );
 }
 
-/** The expanded frame, in one of four honest views: Structured (the frame as
- *  the thing it is), Insight (the collapsible tree), Compact (highlighted, ONE
- *  row per wire line, x-scroll instead of artificial wrapping) and Raw (plain
- *  text, newlines only between real lines). session_resume expands to the whole
+/** A count as a reader counts it, in their own grouping. Line 4127 of 6431 is
+ *  a number somebody scrolls a file to; 4127 unspaced is a token. */
+const counted = (n: number, lang: Lang): string => n.toLocaleString(lang === "de" ? "de-DE" : "en-US");
+
+/**
+ * Text in a pane that stops at a ceiling and SAYS it stopped.
+ *
+ * Single lines in the owner's corpus reach 769295 characters and a 4.7 MB image
+ * block is an ordinary record, so a pane without a ceiling is a pane that
+ * freezes. Truncation that names itself is a display limit; truncation that
+ * stays quiet is this card's own defect. The clipboard never sees the ceiling.
+ */
+function Budgeted({ text, lang, wrap }: { text: string; lang: Lang; wrap?: boolean }) {
+  const [all, setAll] = useState(false);
+  const cut = withinBudget(text, all ? text.length : SOURCE_DISPLAY_CHARS);
+  return (
+    <>
+      <pre className={wrap === true ? "trace-detail-raw trace-detail-raw--wrap" : "trace-detail-raw"}>
+        {cut.text}
+      </pre>
+      {cut.capped && (
+        <p className="trace-source-cap">
+          {t(lang, "trace.source.capped", {
+            shown: counted(cut.shown, lang),
+            total: counted(cut.total, lang),
+          })}{" "}
+          <button type="button" className="trace-source-more" onClick={() => setAll(true)}>
+            {t(lang, "trace.source.showAll")}
+          </button>
+        </p>
+      )}
+    </>
+  );
+}
+
+/** One piece of an opened line. A document prints as a document; a string with
+ *  real line breaks prints with them; bytes that are not language print as what
+ *  they are, how many, and a way in. */
+function ReadableBlockView({ block, lang }: { block: ReadableBlock; lang: Lang }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="trace-source-block">
+      {block.path !== "" && <p className="trace-source-path mono">{block.path}</p>}
+      {block.kind === "hidden" ? (
+        <>
+          <p className="trace-source-cap">
+            {t(lang, "trace.source.hidden", { n: counted(block.text.length, lang) })}{" "}
+            <button type="button" className="trace-source-more" onClick={() => setOpen(!open)}>
+              {t(lang, open ? "trace.source.hide" : "trace.source.show")}
+            </button>
+          </p>
+          {open && <Budgeted text={block.text} lang={lang} wrap />}
+        </>
+      ) : (
+        <Budgeted text={block.text} lang={lang} wrap={block.kind === "text"} />
+      )}
+    </div>
+  );
+}
+
+/** One line, opened out. Openly a reading of the line and never the default:
+ *  see readable.ts for the escape rule that keeps it from rewriting anybody's
+ *  shell command. */
+function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
+  const { parsed, blocks } = useMemo(() => readable(line), [line]);
+  return (
+    <div className="trace-source-blocks">
+      {!parsed && <p className="trace-source-note">{t(lang, "trace.source.notJson")}</p>}
+      {blocks.map((b, i) => (
+        <ReadableBlockView key={`${b.path}#${i}`} block={b} lang={lang} />
+      ))}
+    </div>
+  );
+}
+
+/**
+ * The source face of one frame: the line of the imported file it was read from.
+ *
+ * Four cases, four sentences, and the sentence comes FIRST in every one of them,
+ * including the three that have no line to show. A pane that went blank for a
+ * session produced here would be the same silence this card exists to end.
+ */
+function SourceBody({ pane, reading, lang }: { pane: SourcePane; reading: Reading; lang: Lang }) {
+  if (pane.kind === "none" || pane.kind === "built") {
+    return <p className="trace-source-note">{t(lang, `trace.source.${pane.kind}`)}</p>;
+  }
+  if (pane.kind === "missing") {
+    return (
+      <p className="trace-source-note">
+        {t(lang, "trace.source.missing", {
+          n: counted(pane.lineNumber, lang),
+          total: counted(pane.total, lang),
+        })}
+      </p>
+    );
+  }
+  return (
+    <>
+      <p className="trace-source-note">
+        {pane.siblings > 1
+          ? t(lang, "trace.source.shared", {
+              n: counted(pane.lineNumber, lang),
+              total: counted(pane.total, lang),
+              k: counted(pane.siblings, lang),
+              i: counted(pane.ordinal, lang),
+            })
+          : t(lang, "trace.source.line", {
+              n: counted(pane.lineNumber, lang),
+              total: counted(pane.total, lang),
+            })}
+      </p>
+      {reading === "readable" ? (
+        <ReadableLine line={pane.text} lang={lang} />
+      ) : (
+        <Budgeted key={pane.lineNumber} text={pane.text} lang={lang} />
+      )}
+    </>
+  );
+}
+
+/** The expanded frame, in one of five honest views: Structured (the frame as
+ *  the thing it is), Insight (the collapsible tree), Compact (highlighted and
+ *  WRAPPED, so the whole record is on screen without a horizontal scroll), Wire
+ *  (plain text, one row per real wire line, byte faithful and scrolling
+ *  sideways) and Source (the line of the imported file this frame was read
+ *  from). session_resume expands to the whole
  *  re-uploaded history: one JSONL line per event, exactly what rides back to
  *  the LLM. Above the views: the causal chain (spectro-explain feature 2),
  *  walked back to the prompt. The face a frame lands on comes from the
@@ -531,6 +669,8 @@ function TraceDetail({
   lang,
   chain,
   calls,
+  rows,
+  sourceLines,
   onJump,
 }: {
   entry: TraceEntry;
@@ -540,6 +680,11 @@ function TraceDetail({
   chain: TraceEntry[];
   /** Same rule as the chain: only the open row gets the call index. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** The frames this one stands among, read only to count the ones that share
+   *  its source line. Same rule again: only the open row gets them. */
+  rows: readonly TraceEntry[];
+  /** The imported file's lines, or null for a session produced here. */
+  sourceLines?: readonly string[] | null;
   onJump: (seq: number) => void;
 }) {
   // The row subscribes to the master itself: only the OPEN row renders a
@@ -548,7 +693,23 @@ function TraceDetail({
   const master = useTraceFace();
   const [override, setOverride] = useState<RowFace | null>(null);
   const mode = rowFace(master, override);
+  // How the pane reads what it was given. Session state on purpose: a saved
+  // default of readable would make every reader's source view an interpretation.
+  const [chosen, setChosen] = useState<Reading>("verbatim");
+  // Only two panes have two readings to choose between. Structured and Insight
+  // already render the parsed payload, and Compact's whole job is the wire line
+  // with its escapes highlighted.
+  const hasReading = mode === "source" || mode === "wire";
+  const reading: Reading = hasReading ? chosen : "verbatim";
   const lines = detailLines(entry.type, entry.payload);
+  // The line this frame was read from, or nothing. Only the source pane's copy
+  // button hands it over, and only when there is one to hand over.
+  // Walked once: the sibling count reads every row, and the pane is needed both
+  // for the body and for whether there is anything to copy.
+  const pane = mode === "source" ? sourcePane(entry, rows, sourceLines) : null;
+  const sourceText = pane?.kind === "line" ? pane.text : undefined;
+  const copyMode = mode === "structured" ? "insight" : mode;
+  const copyable = mode !== "source" || sourceText !== undefined;
   return (
     <div className="trace-detail">
       {chain.length > 1 && (
@@ -584,11 +745,38 @@ function TraceDetail({
           </button>
         ))}
       </div>
+      {/* Which of the two readings the pane is showing. Inside the pane and not
+          a face: the byte faithful one is the default and cannot be talked out
+          of being the default. */}
+      {hasReading && (
+        <div
+          className="trace-detail-modes trace-reading"
+          role="group"
+          aria-label={t(lang, "trace.readingAria")}
+        >
+          {READINGS.map((r) => (
+            <button
+              key={r}
+              type="button"
+              aria-pressed={reading === r}
+              title={t(lang, `trace.readingTitle.${r}`)}
+              onClick={() => setChosen(r)}
+            >
+              {t(lang, `trace.reading.${r}`)}
+            </button>
+          ))}
+        </div>
+      )}
       {/* Structured has no text of its own: what it renders IS the payload, so
-          the copy button hands over the payload, pretty-printed. */}
-      <CopyButton
-        text={() => detailText(mode === "structured" ? "insight" : mode, entry.type, entry.payload)}
-      />
+          the copy button hands over the payload, pretty-printed. A source pane
+          with no line behind it has nothing to copy, so it offers no button
+          rather than a button that hands over an empty string. */}
+      {copyable && (
+        <CopyButton
+          text={() => detailText(copyMode, entry.type, entry.payload, { line: sourceText, reading })}
+          label={t(lang, `common.${copyLabel(copyMode, reading)}`)}
+        />
+      )}
       {mode === "structured" ? (
         <EventStructured type={entry.type} payload={entry.payload} calls={calls} />
       ) : mode === "insight" ? (
@@ -597,11 +785,22 @@ function TraceDetail({
         // never nest anywhere near this deep, so 99 reads as "all".
         <JsonTree value={entry.payload} defaultDepth={99} />
       ) : mode === "compact" ? (
+        // WRAPPED (owner 2026-08-03): the whole record on screen, no sideways
+        // scrolling. Wire below is the same text and does NOT wrap, which is
+        // what finally makes the two names mean two different things.
         <div className="trace-detail-lines">
           {lines.map((ln, i) => (
             <div key={i} className="trace-detail-line">
               <SummaryLine text={ln} />
             </div>
+          ))}
+        </div>
+      ) : pane !== null ? (
+        <SourceBody pane={pane} reading={reading} lang={lang} />
+      ) : reading === "readable" ? (
+        <div className="trace-source-blocks">
+          {lines.map((ln, i) => (
+            <ReadableLine key={i} line={ln} lang={lang} />
           ))}
         </div>
       ) : (
@@ -796,6 +995,16 @@ export function TraceView(props: {
     if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
     return toolCallsById(allEntries.map((e) => e.payload));
   }, [openSeq, bySeq, allEntries]);
+
+  // What the source face reads: the file's lines, and the frames the open row
+  // stands among so it can count the ones that share its line. Counted over the
+  // WHOLE stream and never over the filtered view. A sibling count that shrank
+  // when somebody typed in the filter box would be a number meaning two things,
+  // which is the defect this face exists to remove.
+  const openSource = useMemo(
+    () => ({ rows: allEntries, lines: props.sourceLines ?? null }),
+    [allEntries, props.sourceLines],
+  );
 
   // Jump: open the frame and bring its row into view (it may sit outside the
   // current scroll window; if a filter hides it, the row simply is not there).
@@ -1347,6 +1556,7 @@ export function TraceView(props: {
                     }
                     chain={openSeq === e.seq ? openChain : undefined}
                     calls={openSeq === e.seq ? openCalls : undefined}
+                    source={openSeq === e.seq ? openSource : undefined}
                     onJump={jumpTo}
                     onToggle={onToggle}
                   />

@@ -708,8 +708,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.faceHint": { de: "Legt fest, in welcher Ansicht Frames aufklappen. Umschalten holt alle Zeilen auf diese Ansicht zurück; einzelne Zeilen kannst du danach weiter umschalten.", en: "Sets which view frames open in. Switching it brings every row back to that view; a single row can still be switched afterwards." },
   "trace.faceTitle.structured": { de: "Frames als das aufklappen, was sie sind — ein Aufruf als seine Tool-Karte, eine Antwort als ihr Text.", en: "Open frames as the thing they are — a call as its tool card, an answer as its text." },
   "trace.faceTitle.insight": { de: "Frames als aufgeklappten Baum aufklappen.", en: "Open frames as an expanded tree." },
-  "trace.faceTitle.compact": { de: "Frames als eine hervorgehobene Zeile je Wire-Line aufklappen.", en: "Open frames as one highlighted row per wire line." },
-  "trace.faceTitle.wire": { de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen.", en: "Open frames as plain text: exactly the lines that crossed the wire." },
+  "trace.faceTitle.compact": { de: "Frames hervorgehoben und umgebrochen aufklappen: der ganze Inhalt im Bild, ohne seitliches Scrollen.", en: "Open frames highlighted and wrapped: the whole content on screen, no sideways scrolling." },
+  "trace.faceTitle.wire": { de: "Frames als reinen Text aufklappen: genau die Zeilen, die über den Draht gingen, je eine Zeile.", en: "Open frames as plain text: exactly the lines that crossed the wire, one row each." },
   "trace.faceTitle.source": { de: "Frames mit der Zeile der importierten Datei aufklappen, aus der sie gelesen wurden.", en: "Open frames with the line of the imported file they were read from." },
 
   // The source pane (card: the source line). Four cases, four sentences: this
@@ -723,6 +723,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.source.notJson": { de: "Diese Zeile ist kein JSON. Sie steht unverändert da.", en: "This line is not JSON. It stands here unchanged." },
   "trace.source.capped": { de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.", en: "Showing {shown} of {total} characters. Copying always takes the whole line." },
   "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
+  // A signature or a base64 body: carried whole, collapsed on screen, and never
+  // dropped without saying so.
+  "trace.source.hidden": { de: "{n} Zeichen, die kein Text sind", en: "{n} characters that are not text" },
+  "trace.source.show": { de: "Zeigen", en: "Show" },
+  "trace.source.hide": { de: "Wieder einklappen", en: "Collapse again" },
   "trace.readingAria": { de: "Lesart", en: "Reading" },
   "trace.reading.verbatim": { de: "Wörtlich", en: "Verbatim" },
   "trace.reading.readable": { de: "Lesbar", en: "Readable" },

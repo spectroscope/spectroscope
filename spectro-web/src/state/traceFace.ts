@@ -5,8 +5,8 @@
 //
 //   structured  the frame rendered as the thing it is (the pre-master default)
 //   insight     the collapsible tree
-//   compact     one highlighted row per wire line
-//   wire        plain text, the wire lines verbatim
+//   compact     the wire line highlighted and wrapped, all of it on screen
+//   wire        plain text, one row per wire line, scrolling sideways
 //   source      the line of the imported file this frame was read from
 //
 // WHY "wire" AND NOT "raw". Until an imported file could show its own line,

@@ -181,6 +181,21 @@ describe("what the copy button hands over", () => {
     expect(copied).toContain("one\ntwo");
   });
 
+  // The compact pane WRAPS on screen (owner 2026-08-03: "compact und raw sehen
+  // noch sehr gleich aus ... text/word wrap an, damit man den ganzen json inhalt
+  // sieht"), and wrapping is the one thing the clipboard must not learn. A copy
+  // that pasted the pane's line breaks would paste a file nobody wrote, so the
+  // wrap lives in the stylesheet and this text stays one line per wire line.
+  it("copies a wrapped compact pane as one line per wire line", () => {
+    const wide = { text: "x".repeat(4000) };
+
+    const copied = detailText("compact", "text_delta", wide);
+
+    expect(copied.split("\n")).toHaveLength(1);
+    expect(copied).toBe(detailText("wire", "text_delta", wide));
+    expect(copied).toHaveLength(JSON.stringify(wide).length);
+  });
+
   // Copying prettified text while the reader believes they copied the source is
   // its own defect, so the button says which of the two it took.
   it("names what it copies", () => {

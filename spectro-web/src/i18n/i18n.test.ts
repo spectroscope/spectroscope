@@ -73,6 +73,13 @@ describe("i18n dict", () => {
       "trace.source.notJson",
       "trace.source.capped",
       "trace.source.showAll",
+      // A value the readable pane collapses because it is bytes and not
+      // language: what it is, how much of it there is, and the two words that
+      // open and close it. Dropping it silently would be a hole the reader
+      // cannot see, so it is always three visible strings.
+      "trace.source.hidden",
+      "trace.source.show",
+      "trace.source.hide",
     ]) {
       expect(dict[k], k).toBeDefined();
     }
