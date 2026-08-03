@@ -1,6 +1,7 @@
 package dev.spectroscope.server;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.io.Resource;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +16,11 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ClaudeTranscriptsControllerTest {
+
+    /** A loopback request with a localhost Host, i.e. what the real UI sends. */
+    private static MockHttpServletRequest local() {
+        return new MockHttpServletRequest();
+    }
 
     @TempDir
     Path home;
@@ -37,7 +43,7 @@ class ClaudeTranscriptsControllerTest {
         Files.setLastModifiedTime(newer, FileTime.fromMillis(2_000_000));
 
         List<ClaudeTranscriptsController.TranscriptInfo> list =
-                new ClaudeTranscriptsController(base).transcripts().transcripts();
+                new ClaudeTranscriptsController(base).transcripts(local()).getBody().transcripts();
 
         assertThat(list).hasSize(2);
         assertThat(list.get(0).file()).isEqualTo("s2.jsonl");
@@ -53,7 +59,7 @@ class ClaudeTranscriptsControllerTest {
         Files.writeString(sub.resolve("agent-1.jsonl"), "{}\n");
 
         List<ClaudeTranscriptsController.TranscriptInfo> list =
-                new ClaudeTranscriptsController(base).transcripts().transcripts();
+                new ClaudeTranscriptsController(base).transcripts(local()).getBody().transcripts();
 
         assertThat(list).hasSize(1);
         assertThat(list.get(0).path()).isEqualTo("-proj/subagents/agent-1.jsonl");
@@ -63,7 +69,7 @@ class ClaudeTranscriptsControllerTest {
     void missingBaseDirectoryYieldsEmptyList() {
         ClaudeTranscriptsController c =
                 new ClaudeTranscriptsController(home.resolve("does-not-exist"));
-        assertThat(c.transcripts().transcripts()).isEmpty();
+        assertThat(c.transcripts(local()).getBody().transcripts()).isEmpty();
     }
 
     @Test
@@ -73,7 +79,7 @@ class ClaudeTranscriptsControllerTest {
         Files.writeString(proj.resolve("s.jsonl"), "{\"type\":\"run_start\"}\n");
 
         ResponseEntity<Resource> res =
-                new ClaudeTranscriptsController(base).content("-proj/s.jsonl");
+                new ClaudeTranscriptsController(base).content("-proj/s.jsonl", local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(bodyOf(res)).contains("run_start");
@@ -85,7 +91,7 @@ class ClaudeTranscriptsControllerTest {
         Files.writeString(home.resolve("secret.jsonl"), "top secret");
 
         ResponseEntity<Resource> res =
-                new ClaudeTranscriptsController(base).content("../../secret.jsonl");
+                new ClaudeTranscriptsController(base).content("../../secret.jsonl", local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(404);
     }
@@ -97,7 +103,7 @@ class ClaudeTranscriptsControllerTest {
         Files.writeString(proj.resolve("notes.txt"), "plain");
 
         ResponseEntity<Resource> res =
-                new ClaudeTranscriptsController(base).content("-proj/notes.txt");
+                new ClaudeTranscriptsController(base).content("-proj/notes.txt", local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(400);
     }
@@ -105,7 +111,7 @@ class ClaudeTranscriptsControllerTest {
     @Test
     void missingFileIs404() throws Exception {
         ResponseEntity<Resource> res =
-                new ClaudeTranscriptsController(projects()).content("-proj/missing.jsonl");
+                new ClaudeTranscriptsController(projects()).content("-proj/missing.jsonl", local());
         assertThat(res.getStatusCode().value()).isEqualTo(404);
     }
 
@@ -147,13 +153,13 @@ class ClaudeTranscriptsControllerTest {
 
         ClaudeTranscriptsController c = new ClaudeTranscriptsController(base);
 
-        assertThat(c.transcripts().limitBytes())
+        assertThat(c.transcripts(local()).getBody().limitBytes())
                 .as("the published ceiling is 128 MiB")
                 .isEqualTo(cap);
-        assertThat(c.content("-proj/over-cap.jsonl").getStatusCode().value())
+        assertThat(c.content("-proj/over-cap.jsonl", local()).getStatusCode().value())
                 .as("a file one byte over the cap must be refused with 413")
                 .isEqualTo(413);
-        assertThat(c.content("-proj/at-cap.jsonl").getStatusCode().value())
+        assertThat(c.content("-proj/at-cap.jsonl", local()).getStatusCode().value())
                 .as("a file exactly at the cap must still be served")
                 .isNotEqualTo(413);
     }
@@ -198,7 +204,7 @@ class ClaudeTranscriptsControllerTest {
         Files.writeString(proj.resolve("small.jsonl"), "{\"type\":\"run_start\"}\n");
         sparse(proj.resolve("huge.jsonl"), 512L * 1024 * 1024);
 
-        var listing = new ClaudeTranscriptsController(base).transcripts();
+        var listing = new ClaudeTranscriptsController(base).transcripts(local()).getBody();
 
         var small = listing.transcripts().stream()
                 .filter(t -> t.file().equals("small.jsonl")).findFirst().orElseThrow();
@@ -227,16 +233,16 @@ class ClaudeTranscriptsControllerTest {
         Path proj = Files.createDirectories(base.resolve("-proj"));
         ClaudeTranscriptsController c = new ClaudeTranscriptsController(base);
 
-        long published = c.transcripts().limitBytes();
+        long published = c.transcripts(local()).getBody().limitBytes();
         assertThat(published).as("the listing must publish a limit at all").isPositive();
 
         sparse(proj.resolve("at.jsonl"), published);
         sparse(proj.resolve("over.jsonl"), published + 1);
 
-        assertThat(c.content("-proj/at.jsonl").getStatusCode().value())
+        assertThat(c.content("-proj/at.jsonl", local()).getStatusCode().value())
                 .as("the published limit must actually be served, not refused")
                 .isNotEqualTo(413);
-        assertThat(c.content("-proj/over.jsonl").getStatusCode().value())
+        assertThat(c.content("-proj/over.jsonl", local()).getStatusCode().value())
                 .as("one byte past the published limit must be refused")
                 .isEqualTo(413);
     }
@@ -255,10 +261,10 @@ class ClaudeTranscriptsControllerTest {
         Path base = projects();
         Path proj = Files.createDirectories(base.resolve("-proj"));
         ClaudeTranscriptsController c = new ClaudeTranscriptsController(base);
-        long over = c.transcripts().limitBytes() + 4096;
+        long over = c.transcripts(local()).getBody().limitBytes() + 4096;
         sparse(proj.resolve("over.jsonl"), over);
 
-        ResponseEntity<Resource> res = c.content("-proj/over.jsonl");
+        ResponseEntity<Resource> res = c.content("-proj/over.jsonl", local());
         String body = bodyOf(res);
 
         assertThat(res.getStatusCode().value()).isEqualTo(413);
@@ -267,7 +273,7 @@ class ClaudeTranscriptsControllerTest {
                 .contains(String.valueOf(over));
         assertThat(body)
                 .as("the refusal must name the limit it was measured against")
-                .contains(String.valueOf(c.transcripts().limitBytes()));
+                .contains(String.valueOf(c.transcripts(local()).getBody().limitBytes()));
     }
 
     /**
@@ -299,7 +305,7 @@ class ClaudeTranscriptsControllerTest {
         long id = Thread.currentThread().threadId();
 
         long before = threads.getThreadAllocatedBytes(id);
-        ResponseEntity<Resource> res = new ClaudeTranscriptsController(base).content("-proj/big.jsonl");
+        ResponseEntity<Resource> res = new ClaudeTranscriptsController(base).content("-proj/big.jsonl", local());
         long allocated = threads.getThreadAllocatedBytes(id) - before;
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
@@ -320,12 +326,12 @@ class ClaudeTranscriptsControllerTest {
         Path base = projects();
         Path proj = Files.createDirectories(base.resolve("-proj"));
         ClaudeTranscriptsController c = new ClaudeTranscriptsController(base);
-        long limit = c.transcripts().limitBytes();
+        long limit = c.transcripts(local()).getBody().limitBytes();
         sparse(proj.resolve("at.jsonl"), limit);
         sparse(proj.resolve("over.jsonl"), limit + 1);
 
-        for (var row : c.transcripts().transcripts()) {
-            int status = c.content(row.path()).getStatusCode().value();
+        for (var row : c.transcripts(local()).getBody().transcripts()) {
+            int status = c.content(row.path(), local()).getStatusCode().value();
             if (row.loadable()) {
                 assertThat(status)
                         .as("%s was listed as loadable and then refused", row.file())

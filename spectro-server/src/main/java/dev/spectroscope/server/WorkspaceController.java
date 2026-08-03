@@ -1,12 +1,12 @@
 package dev.spectroscope.server;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -30,6 +30,16 @@ import java.util.Set;
  * or ignored segments are refused, and every served document carries a CSP
  * sandbox header, so an HTML file previews in an opaque origin — its scripts
  * run isolated and can never reach the spectroscope UI or its socket.</p>
+ *
+ * <p>Canonically means through {@code toRealPath} on both sides, not
+ * {@code normalize}. Normalizing is a string operation that never touches the
+ * filesystem, so a symlink named like an ordinary file used to walk straight
+ * out of the workspace and the read followed it. Both endpoints now compare the
+ * REAL location against the REAL root, the way the transcript store does.</p>
+ *
+ * <p>Both endpoints wear the local-origin fence (card 74). They answer with the
+ * operator's own files, and a DNS-rebound page reaches loopback with the
+ * attacker's Host, which is the half JavaScript cannot forge.</p>
  */
 @RestController
 public class WorkspaceController {
@@ -82,11 +92,18 @@ public class WorkspaceController {
      * {@code GET /api/files}: the whole workspace tree in one response — hidden
      * and ignored directories skipped, capped by depth and entry budget.
      *
-     * @return the tree under the root plus the honest truncated flag
+     * @param session the session whose workspace is asked for
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host; else the tree under
+     *         the root plus the honest truncated flag
      */
     @GetMapping("/api/files")
     public ResponseEntity<?> files(
-            @RequestParam(value = "session", required = false) String session) {
+            @RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
         Path base;
         try {
             base = rootFor(session);
@@ -98,8 +115,14 @@ public class WorkspaceController {
         if (!Files.isDirectory(base)) {
             return ResponseEntity.notFound().build(); // no workspace folder (yet)
         }
+        Path realBase;
+        try {
+            realBase = base.toRealPath();
+        } catch (IOException gone) {
+            return ResponseEntity.notFound().build();
+        }
         int[] budget = {MAX_ENTRIES};
-        List<FileNode> entries = list(base, "", 0, budget);
+        List<FileNode> entries = list(base, "", 0, budget, realBase);
         return ResponseEntity.ok(new FilesResponse(
                 base.getFileName() == null ? base.toString() : base.getFileName().toString(),
                 budget[0] <= 0, entries));
@@ -151,9 +174,12 @@ public class WorkspaceController {
      * @param depth current recursion depth — beyond MAX_DEPTH the walk stops
      * @param budget single-element countdown shared across the whole walk — once
      *               spent, every remaining branch is cut
+     * @param realBase the canonical workspace root, so a link out of the tree is
+     *                 left out of the listing instead of naming files the
+     *                 content endpoint then refuses
      * @return the child nodes of {@code dir}, possibly cut short by the caps
      */
-    private List<FileNode> list(Path dir, String relPrefix, int depth, int[] budget) {
+    private List<FileNode> list(Path dir, String relPrefix, int depth, int[] budget, Path realBase) {
         if (depth > MAX_DEPTH || budget[0] <= 0) {
             return List.of();
         }
@@ -172,12 +198,15 @@ public class WorkspaceController {
             if (skipped(name)) {
                 continue;
             }
+            if (Files.isSymbolicLink(child) && !insideRealBase(child, realBase)) {
+                continue; // a link out of the workspace is not part of the workspace
+            }
             if (budget[0]-- <= 0) {
                 break;
             }
             String rel = relPrefix.isEmpty() ? name : relPrefix + "/" + name;
             if (Files.isDirectory(child)) {
-                out.add(new FileNode(name, rel, true, 0, list(child, rel, depth + 1, budget)));
+                out.add(new FileNode(name, rel, true, 0, list(child, rel, depth + 1, budget, realBase)));
             } else {
                 long size;
                 try {
@@ -210,12 +239,19 @@ public class WorkspaceController {
      *
      * @param rel the root-relative path from the tree — resolved and checked
      *            against the sandbox before any read
-     * @return 200 with typed bytes; 404 for anything outside, hidden, ignored or
-     *         missing; 413 over the size caps; 415 for binary content
+     * @param session the session whose workspace is asked for
+     * @param request the servlet request, for the local-origin fence
+     * @return 200 with typed bytes; 404 for a non-local caller or a rebound
+     *         Host, and for anything outside, hidden, ignored or missing; 413
+     *         over the size caps; 415 for binary content
      */
     @GetMapping("/api/file")
     public ResponseEntity<byte[]> file(@RequestParam("path") String rel,
-            @RequestParam(value = "session", required = false) String session) {
+            @RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
         Path base;
         try {
             base = rootFor(session);
@@ -224,14 +260,16 @@ public class WorkspaceController {
         } catch (NoWorkspaceResolved none) {
             return ResponseEntity.status(409).body(none.getMessage().getBytes(StandardCharsets.UTF_8));
         }
+        Path realBase;
         Path requested;
         try {
-            requested = resolveInside(base, rel);
+            realBase = base.toRealPath();
+            requested = resolveInside(realBase, rel);
         } catch (IOException outside) {
             return ResponseEntity.notFound().build();
         }
         // Defense in depth: what the tree hides, the content endpoint refuses.
-        for (Path segment : base.relativize(requested)) {
+        for (Path segment : realBase.relativize(requested)) {
             if (skipped(segment.toString())) {
                 return ResponseEntity.notFound().build();
             }
@@ -274,16 +312,43 @@ public class WorkspaceController {
     /**
      * The tools' sandbox rule, applied to a URL parameter.
      *
+     * <p>The comparison is between REAL paths. It used to be
+     * {@code normalize()} plus a {@code startsWith} on the string, which is
+     * lexical: {@code normalize} resolves {@code ..} in the text and never asks
+     * the filesystem anything, while every read below follows links. A file
+     * named {@code notes.txt} pointing at {@code ~/.spectro/.env} therefore
+     * passed the check and was served, which is exactly what the hide rule
+     * exists to prevent. Both sides are canonicalized because the root itself is
+     * often a link (a macOS temp folder lives under {@code /var}, which is a
+     * link to {@code /private/var}), so real against normalized would refuse
+     * every ordinary read instead.</p>
+     *
+     * @param realBase the canonical workspace root
      * @param relative the untrusted root-relative path from the request
-     * @return the normalized absolute path, proven inside the workspace root —
-     *         an escape attempt throws instead of returning
+     * @return the canonical absolute path, proven inside the workspace root —
+     *         an escape attempt or a missing file throws instead of returning
      */
-    private static Path resolveInside(Path base, String relative) throws IOException {
-        Path resolved = base.resolve(relative).normalize();
-        if (!resolved.equals(base) && !resolved.startsWith(base + File.separator)) {
+    private static Path resolveInside(Path realBase, String relative) throws IOException {
+        Path real = realBase.resolve(relative).normalize().toRealPath();
+        if (!real.equals(realBase) && !real.startsWith(realBase)) {
             throw new IOException("path is outside the working directory: " + relative);
         }
-        return resolved;
+        return real;
+    }
+
+    /**
+     * Whether a symlink in the tree still points inside the workspace.
+     *
+     * @param link the child entry to test
+     * @param realBase the canonical workspace root
+     * @return {@code false} for a link that leaves the root and for a broken one
+     */
+    private static boolean insideRealBase(Path link, Path realBase) {
+        try {
+            return link.toRealPath().startsWith(realBase);
+        } catch (IOException brokenOrUnreadable) {
+            return false;
+        }
     }
 
     /**

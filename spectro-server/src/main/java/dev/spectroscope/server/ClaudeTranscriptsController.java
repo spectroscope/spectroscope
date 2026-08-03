@@ -1,5 +1,6 @@
 package dev.spectroscope.server;
 
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -26,6 +27,11 @@ import java.util.stream.Stream;
  * Strictly sandboxed: only files inside the base directory, only .jsonl, the
  * requested path is resolved canonically before it is read (no traversal, no
  * symlink escape — request parameters are untrusted input).
+ *
+ * <p>Both endpoints wear the local-origin fence (card 74). What they answer
+ * with is every prompt the operator ever typed and every tool result that came
+ * back, and a DNS-rebound page arrives on loopback like the real UI does, so
+ * the Host header is the only part of the request that tells them apart.</p>
  */
 @RestController
 public class ClaudeTranscriptsController {
@@ -92,11 +98,25 @@ public class ClaudeTranscriptsController {
     /**
      * All *.jsonl transcripts under the base, newest first, capped.
      *
-     * @return the transcript descriptors — an absent or unreadable store answers
-     *         an empty list, never an error (browsing must not break the dialog)
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host; else the transcript
+     *         descriptors — an absent or unreadable store answers an empty list,
+     *         never an error (browsing must not break the dialog)
      */
     @GetMapping("/api/claude/transcripts")
-    public TranscriptListing transcripts() {
+    public ResponseEntity<TranscriptListing> transcripts(HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
+        return ResponseEntity.ok(listing());
+    }
+
+    /**
+     * The listing itself, fence already passed.
+     *
+     * @return the rows plus the limit that governs them
+     */
+    private TranscriptListing listing() {
         if (!Files.isDirectory(base)) {
             return new TranscriptListing(MAX_CONTENT_BYTES, List.of());
         }
@@ -118,13 +138,19 @@ public class ClaudeTranscriptsController {
      *
      * @param rel the base-relative path from the listing — canonicalized and
      *            checked against the real base before any read
-     * @return 200 streaming the UTF-8 body; 400 for a non-.jsonl name, 404 for
-     *         anything outside the base or missing, 413 above
-     *         {@link #MAX_CONTENT_BYTES} with a body naming the file's size and
-     *         that cap, so the dialog can say why rather than print a number
+     * @param request the servlet request, for the local-origin fence
+     * @return 200 streaming the UTF-8 body; 404 for a non-local caller or a
+     *         rebound Host; 400 for a non-.jsonl name, 404 for anything outside
+     *         the base or missing, 413 above {@link #MAX_CONTENT_BYTES} with a
+     *         body naming the file's size and that cap, so the dialog can say
+     *         why rather than print a number
      */
     @GetMapping("/api/claude/transcripts/content")
-    public ResponseEntity<Resource> content(@RequestParam("path") String rel) {
+    public ResponseEntity<Resource> content(@RequestParam("path") String rel,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
         if (!rel.endsWith(".jsonl")) {
             return ResponseEntity.badRequest().build();
         }
