@@ -1297,13 +1297,22 @@ export function describeTool(
       // command rather than beside it in a field of its own.
       const command = str(input, "command");
       if (command === null) return generic;
-      // The record's stdout over the block: they agree except where the
-      // transcript kept a preview of an output too big for it, and there the
-      // block is 2 KB of a run that produced more.
+      // The record's stdout over the block, but only when the command wrote
+      // something. Measured over the 17,465 command cards in ~/.claude/projects:
+      // 15,244 blocks ARE the stdout, 990 are the two streams run together (the
+      // reason to prefer the field), 30 are a 2 KB preview of a run the field
+      // kept 30 KB of — and 650 carry an EMPTY stdout beside a block that is the
+      // only sentence there is: "(Bash completed with no output)", a background
+      // id, a timeout note, a cwd reset. An empty string is a value, so `??`
+      // never fell back and those 650 bodies were suppressed on "".
+      // Still only on the raw face: the "[This command modified N files …]"
+      // reminder the client appends to 46 blocks, which is a note to the model
+      // rather than anything the command printed.
+      const stdout = d?.stdout;
       return {
         kind: "command",
         command,
-        output: d?.stdout ?? out,
+        output: stdout === undefined || stdout === "" ? out : stdout,
         failed: isError,
         stderr: d?.stderr ?? null,
       };

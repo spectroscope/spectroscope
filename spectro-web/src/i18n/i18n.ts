@@ -897,6 +897,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.historyAria": { de: "Verlauf des Agenten-Laufs", en: "Agent run history" },
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },
   "info.compacted": { de: "Verlauf kompaktiert: {n} Turns zusammengefasst", en: "History compacted: {n} turns summarized" },
+  "info.compactedInto": {
+    de: "Verlauf kompaktiert: {n} Turns zu {chars} Zeichen zusammengefasst",
+    en: "History compacted: {n} turns summarized into {chars} characters",
+  },
 
   // built-in model first-use notice (card 91; per-model since the catalogue)
   "lmn.title": { de: "eingebautes modell — läuft auf dieser maschine", en: "built-in model — runs on this machine" },
@@ -1175,6 +1179,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "footer.subagentsTitle": {
     de: "Der Session-Wert enthält die Subagenten: {out} out stammen von ihnen.",
     en: "The session figure includes the subagents: {out} out came from them.",
+  },
+  "footer.runSubagentsTitle": {
+    de: "Der Lauf-Wert enthält die Subagenten: {out} out stammen von ihnen.",
+    en: "The run figure includes the subagents: {out} out came from them.",
   },
   "footer.runActive": { de: "Lauf aktiv", en: "run active" },
   "footer.stopped": { de: "gestoppt · {r}", en: "stopped · {r}" },

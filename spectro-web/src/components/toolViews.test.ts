@@ -1447,6 +1447,41 @@ describe("describeTool with the tool's own return value", () => {
     expect(view).toMatchObject({ kind: "command", output: "a\nb\n", stderr: null });
   });
 
+  it("keeps the block when the command wrote nothing and the block is the only sentence", () => {
+    // 650 commands in the corpus carry an EMPTY stdout beside a block that
+    // speaks: 168 "(Bash completed with no output)", the rest a background id,
+    // a timeout note or a cwd reset. An empty string is a value, so `??` never
+    // falls back, and the body region is suppressed on "" — the card went blank.
+    const backgrounded = describeTool(
+      "Bash",
+      { command: "npm run build" },
+      "Command running in background with ID: bx1q9\nOutput is being written to: /tmp/b.log",
+      false,
+      // Exactly what `readToolResultDetail` produces here: an empty stdout is
+      // carried, an empty stderr never is.
+      { stdout: "" },
+    );
+    expect(backgrounded).toMatchObject({
+      kind: "command",
+      output: "Command running in background with ID: bx1q9\nOutput is being written to: /tmp/b.log",
+      stderr: null,
+    });
+
+    const silent = describeTool("Bash", { command: "true" }, "(Bash completed with no output)", false, {
+      stdout: "",
+    });
+    expect(silent).toMatchObject({ kind: "command", output: "(Bash completed with no output)" });
+  });
+
+  it("still prefers a stdout that carries more than the block's preview", () => {
+    // The 30 persisted-output commands: the block is a 2 KB preview, stdout is
+    // the run. The empty-stdout fallback must not cost that.
+    const view = describeTool("Bash", { command: "git status" }, "<persisted-output>\npreview", false, {
+      stdout: "the whole thing",
+    });
+    expect(view).toMatchObject({ kind: "command", output: "the whole thing" });
+  });
+
   it("says where an edit landed, which the result line never does", () => {
     const view = describeTool(
       "Edit",

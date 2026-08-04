@@ -9,7 +9,7 @@
 // subagents are in it — and says nothing at all when none are.
 
 import { describe, expect, it } from "vitest";
-import { subagentShare } from "./UsageFooter";
+import { runShare, subagentShare } from "./UsageFooter";
 import type { AgentInfo } from "../state/reducer";
 
 const agent = (p: Partial<AgentInfo> & { id: string }): AgentInfo => ({
@@ -56,5 +56,26 @@ describe("subagentShare", () => {
         agent({ id: "t2", parentId: "t1", outTokens: 5 }),
       ])?.count,
     ).toBe(2);
+  });
+});
+
+// The same disclosure on the other figure. The run total counts a child's
+// tokens exactly the way the session total does, and said nothing about it.
+describe("runShare", () => {
+  it("says nothing about a run that spent everything itself", () => {
+    expect(runShare({ ids: [], inputTokens: 0, outputTokens: 0 })).toBeNull();
+  });
+
+  it("says nothing when the children that billed billed nothing", () => {
+    expect(runShare({ ids: ["t1"], inputTokens: 0, outputTokens: 0 })).toBeNull();
+  });
+
+  it("counts the agents in the run figure, not their responses", () => {
+    // t1 billed twice; it is one subagent.
+    expect(runShare({ ids: ["t1", "t2"], inputTokens: 10, outputTokens: 2811 })).toEqual({
+      count: 2,
+      inTokens: 10,
+      outTokens: 2811,
+    });
   });
 });

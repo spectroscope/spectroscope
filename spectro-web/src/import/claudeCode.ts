@@ -365,11 +365,18 @@ function blockNote(b: CCBlock): string {
  * A message body as text.
  *
  * A text block travels VERBATIM and always has; what changed (card 167) is what
- * a block that is NOT text produces. It used to produce the empty string, which
- * on 5,269 tool_result cards in the corpus was the whole output — a tool that
- * ran, succeeded and showed nothing — and on 1,520 ToolSearch cards threw away
- * the tool names the result consisted of. Now every block says what it is, and
- * a note gets a line of its own so it can never run into the words beside it.
+ * a block that is NOT text produces. It used to produce the empty string.
+ *
+ * COUNTED TWICE, because the two counts are not the same number and only one of
+ * them is about a reader. 6,789 tool_result BLOCKS in the corpus flattened to
+ * nothing — 5,269 whose only block was an image or a document, 1,520 whose only
+ * block was a `tool_reference` — but 5,240 of those sit in `agent-*.jsonl`
+ * sidechain files, which import to a couple of frames and no tool cards at all.
+ * What a reader could actually open blank is 1,546 CARDS: 1,348 that showed a
+ * tool which ran, succeeded and displayed nothing, and 201 ToolSearch results
+ * that threw away the 439 tool names they consisted of. All 1,546 now say what
+ * they hold, and a note gets a line of its own so it can never run into the
+ * words beside it.
  *
  * A body of nothing but text is byte-identical to what this returned before:
  * every piece is joined with no separator, exactly as it was.

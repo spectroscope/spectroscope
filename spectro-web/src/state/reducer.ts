@@ -80,6 +80,13 @@ export interface TokenUsage {
   outputTokens: number;
 }
 
+/** The children inside one run's token figure. `ids` is in first-billed order
+ *  and holds each child once, so its length is a count of agents rather than of
+ *  responses. */
+export interface RunSubagents extends TokenUsage {
+  ids: readonly string[];
+}
+
 /** One frame in the wire view (trace tab): dir "in" for RunEvents from the
  *  server, dir "out" for ClientMessages this UI sent. payload keeps the raw
  *  object — the trace shows what crossed the socket, not an interpretation. */
@@ -199,6 +206,12 @@ export interface UiState {
   usage: TokenUsage;
   /** The current (or most recently finished) run only. */
   runUsage: TokenUsage;
+  /** Which children billed inside that same run, and for how much. The run
+   *  figure counts a subagent exactly the way the session figure does (card
+   *  167), and a total that changes meaning has to say so on BOTH lines — the
+   *  session line reads its share off the roster, which is session-wide, so the
+   *  run needs its own. Reset with `runUsage` at run_start. */
+  runSubagents: RunSubagents;
   running: boolean;
   /** Internal: only the root run's run_end may end "running". */
   rootRunId: string | null;
@@ -259,6 +272,7 @@ export const initialState: UiState = {
   pendingPermissions: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   runUsage: { inputTokens: 0, outputTokens: 0 },
+  runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
   rootRunId: null,
   provider: null,
@@ -590,6 +604,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           running: true,
           rootRunId: event.runId,
           runUsage: { inputTokens: 0, outputTokens: 0 },
+          runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
           provider: event.provider ?? state.provider,
           runModel: event.model ?? state.providerInfo?.model ?? state.runModel,
           lastStopReason: null,
@@ -706,11 +721,23 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       });
 
     case "compaction":
+      // The size of the summary is the other half of the boundary: an import
+      // drops that machine prose out of the chat rather than draw it as the
+      // person's words (card 167), and until now `summaryChars` rode on the
+      // frame with no surface reading it — so the line said turns went away
+      // without saying what replaced them. A 0 is a boundary whose summary is
+      // not in the window; "into 0 characters" would be a count nobody wrote.
       return addTurn(state, {
         kind: "info",
-        text: `History compacted: ${event.removedTurns} turns summarized`,
-        infoKey: "info.compacted",
-        infoVars: { n: event.removedTurns },
+        text:
+          event.summaryChars > 0
+            ? `History compacted: ${event.removedTurns} turns summarized into ${event.summaryChars} characters`
+            : `History compacted: ${event.removedTurns} turns summarized`,
+        infoKey: event.summaryChars > 0 ? "info.compactedInto" : "info.compacted",
+        infoVars:
+          event.summaryChars > 0
+            ? { n: event.removedTurns, chars: event.summaryChars }
+            : { n: event.removedTurns },
         tone: "warn",
       });
 
@@ -743,6 +770,19 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           inputTokens: state.runUsage.inputTokens + event.inputTokens,
           outputTokens: state.runUsage.outputTokens + event.outputTokens,
         },
+        // "main" is this reducer's own word for the run's own agent — the same
+        // sentinel the context ring uses two lines down. Everything else that
+        // bills is a child, and the run line has to be able to say so.
+        runSubagents:
+          event.agentId === "main"
+            ? state.runSubagents
+            : {
+                ids: state.runSubagents.ids.includes(event.agentId)
+                  ? state.runSubagents.ids
+                  : [...state.runSubagents.ids, event.agentId],
+                inputTokens: state.runSubagents.inputTokens + event.inputTokens,
+                outputTokens: state.runSubagents.outputTokens + event.outputTokens,
+              },
         // The context ring reads the LAST request size of the main agent —
         // subagent usage has its own window and must not move the gauge.
         // With Anthropic prompt caching, inputTokens is only the UNCACHED

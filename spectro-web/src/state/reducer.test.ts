@@ -143,6 +143,33 @@ describe("reduce — happy path", () => {
     expect(state.usage).toEqual({ inputTokens: 320, outputTokens: 80 });
     expect(state.runUsage).toEqual({ inputTokens: 200, outputTokens: 50 });
   });
+
+  it("remembers which children are inside the run figure, and forgets them at the next run", () => {
+    // The run total counts a subagent's usage exactly the way the session total
+    // does. The session line says so; the run line could not, because nothing
+    // told it which of its tokens came from a child.
+    const withChild: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "Fan out", ts: 1 },
+      { type: "usage", agentId: "main", inputTokens: 100, outputTokens: 10, ts: 2 },
+      { type: "usage", agentId: "t1", inputTokens: 2, outputTokens: 2779, ts: 3 },
+      { type: "usage", agentId: "t1", inputTokens: 3, outputTokens: 21, ts: 4 },
+      { type: "usage", agentId: "t2", inputTokens: 5, outputTokens: 11, ts: 5 },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 6 },
+    ];
+    const fannedOut = reduceAll(initialState, withChild);
+    expect(fannedOut.runUsage).toEqual({ inputTokens: 110, outputTokens: 2821 });
+    expect(fannedOut.runSubagents).toEqual({
+      ids: ["t1", "t2"],
+      inputTokens: 10,
+      outputTokens: 2811,
+    });
+
+    const next = reduceAll(fannedOut, [
+      { type: "run_start", runId: "r2", agentId: "main", prompt: "Alone", ts: 7 },
+      { type: "usage", agentId: "main", inputTokens: 8, outputTokens: 4, ts: 8 },
+    ]);
+    expect(next.runSubagents).toEqual({ ids: [], inputTokens: 0, outputTokens: 0 });
+  });
 });
 
 describe("reduce — thinking (reasoning stream)", () => {
@@ -461,10 +488,29 @@ describe("reduce — forward compatibility and errors", () => {
     });
     expect(state.turns[0]).toEqual({
       kind: "info",
-      text: "History compacted: 12 turns summarized",
+      text: "History compacted: 12 turns summarized into 2048 characters",
+      tone: "warn",
+      infoKey: "info.compactedInto",
+      infoVars: { n: 12, chars: 2048 },
+    });
+  });
+
+  it("says only what it knows when the boundary carried no summary size", () => {
+    // `summaryChars` is 0 for a boundary whose summary is not in the window.
+    // "into 0 characters" would be a claim about a summary nobody measured.
+    const state = reduce(initialState, {
+      type: "compaction",
+      agentId: "main",
+      removedTurns: 397,
+      summaryChars: 0,
+      ts: 1,
+    });
+    expect(state.turns[0]).toEqual({
+      kind: "info",
+      text: "History compacted: 397 turns summarized",
       tone: "warn",
       infoKey: "info.compacted",
-      infoVars: { n: 12 },
+      infoVars: { n: 397 },
     });
   });
 });

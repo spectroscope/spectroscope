@@ -1323,11 +1323,14 @@ describe("claudeCode adapter (text blocks in a user record)", () => {
 
 // A card that came up blank (card 167, finding 4). The importer's asText read
 // only `.text`, so every block that was not text mapped to the empty string and
-// the card it belonged to showed nothing at all. Measured over the 5,119
-// transcripts in ~/.claude/projects: 5,269 tool_result cards import completely
-// empty because their only block is an image, and 1,520 ToolSearch cards import
-// empty because a `tool_reference` block rendered as nothing instead of naming
-// the tool it had just loaded. On the person's own side, 196 user records whose
+// the card it belonged to showed nothing at all. Measured over the transcripts
+// in ~/.claude/projects: 6,789 tool_result BLOCKS flatten to nothing (5,269
+// image-or-document, 1,520 `tool_reference`), but 5,240 of them are in
+// `agent-*.jsonl` sidechain files that produce no tool cards — so what a reader
+// can open blank is 1,546 CARDS, 1,348 with only an image and 201 ToolSearch
+// results that dropped the 439 tool names they consisted of. Blocks are the
+// bigger number and cards are the honest one; both are stated so neither gets
+// borrowed for the other. On the person's own side, 196 user records whose
 // body is nothing but attachments produced NO frame at all — the prompt vanished
 // from the transcript — and 298 more imported as the words with the screenshot
 // they were about removed.
@@ -1510,7 +1513,10 @@ describe("claudeCode adapter (compaction)", () => {
 
   it("reaches the reader through the consumers that were already there", () => {
     const state = reduceAll(initialState, events);
-    expect(state.turns.some((t) => t.kind === "info" && t.infoKey === "info.compacted")).toBe(true);
+    // With a summary in the window the chat line names its size too — all 21
+    // boundaries in ~/.claude/projects carry one, 391,308 characters in total,
+    // and `summaryChars` had no surface until it did.
+    expect(state.turns.some((t) => t.kind === "info" && t.infoKey === "info.compactedInto")).toBe(true);
     expect(buildTextFeed(events).some((l) => l.text === "[compaction −2 turns]")).toBe(true);
   });
 

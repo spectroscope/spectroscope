@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import { AboutDialog } from "./AboutDialog";
 import { onAboutRequested } from "../state/aboutSignal";
-import type { AgentInfo, UiState } from "../state/reducer";
+import type { AgentInfo, RunSubagents, UiState } from "../state/reducer";
 import type { ConnectionStatus } from "../transport/ws";
 import { formatTokens } from "../format";
 import { t } from "../i18n/i18n";
@@ -40,9 +40,24 @@ export function subagentShare(
   };
 }
 
+/**
+ * The same disclosure for the RUN figure, or null when there is nothing to say.
+ *
+ * The run total counts a child's tokens the same way the session total does, so
+ * it needs the same note; it cannot borrow the session's, which is folded from
+ * the roster and therefore covers every run ever seen by this state. The count
+ * is of agents — the reducer keeps each child's id once, however often it
+ * billed.
+ */
+export function runShare(run: RunSubagents): { count: number; inTokens: number; outTokens: number } | null {
+  if (run.ids.length === 0 || run.inputTokens + run.outputTokens === 0) return null;
+  return { count: run.ids.length, inTokens: run.inputTokens, outTokens: run.outputTokens };
+}
+
 export function UsageFooter(props: { state: UiState; connection: ConnectionStatus }) {
-  const { usage, runUsage, running, lastStopReason, agents } = props.state;
+  const { usage, runUsage, runSubagents, running, lastStopReason, agents } = props.state;
   const share = subagentShare(agents);
+  const runPart = runShare(runSubagents);
   const { connection } = props;
   const [aboutOpen, setAboutOpen] = useState(false);
   const lang = useLang();
@@ -70,6 +85,18 @@ export function UsageFooter(props: { state: UiState; connection: ConnectionStatu
         <span className="usage tabular">
           {t(lang, "footer.run")} {formatTokens(runUsage.inputTokens)} in &middot;{" "}
           {formatTokens(runUsage.outputTokens)} out
+          {runPart !== null && (
+            <span
+              className="usage-subagents"
+              title={t(lang, "footer.runSubagentsTitle", { out: formatTokens(runPart.outTokens) })}
+            >
+              {" "}
+              &middot;{" "}
+              {t(lang, runPart.count === 1 ? "footer.subagent" : "footer.subagents", {
+                n: runPart.count,
+              })}
+            </span>
+          )}
         </span>
         <span className="footer-diamond" aria-hidden="true">
           &middot;
