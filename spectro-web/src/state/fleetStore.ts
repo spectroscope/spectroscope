@@ -366,6 +366,14 @@ export function useFleets(): FleetSummary[] {
   return useSyncExternalStore(subscribe, getSummaries, getSummaries);
 }
 
+/** Whether the store knows a fleet by this contextId — the deep-link guard
+ *  (card 131) asks AFTER hydration, so a fresh tab's #/fleet/{id} is judged
+ *  against the roster, not against an empty boot store. Not a hook: it is
+ *  read inside a hashchange handler, at application time. */
+export function knownFleet(contextId: string): boolean {
+  return byContext.has(contextId);
+}
+
 /** React binding: the loopback hub port (null when the hub is off), for the
  *  spawn panel's copy-paste node command. */
 export function useFleetHubPort(): number | null {

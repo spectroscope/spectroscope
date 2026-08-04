@@ -290,6 +290,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "pp.customPh": { de: "Modellnamen eingeben", en: "Type a model name" },
   "pp.keepPh": { de: "leer = aktuelles Modell behalten", en: "empty = keep the current model" },
   "pp.noList": { de: "gerade keine Modell-Liste vom Backend; Modell-ID eintippen", en: "no model list from the backend right now; type the model id" },
+  "pp.notOffered": { de: "nicht in der Modell-Liste dieses Providers — deine Einstellung bleibt", en: "not in this provider's model list — your setting is kept" },
   "pp.needsKey": { de: "kein Key gesetzt — trag ihn in die .env (siehe Hilfe)", en: "no key set — add it to your .env (see the help)" },
   "pp.setInSettings": { de: "Key in den Einstellungen setzen →", en: "set a key in Settings →" },
   "pp.localDown": { de: "backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)", en: "backend not reachable — start ollama / LM Studio (or type a model id)" },

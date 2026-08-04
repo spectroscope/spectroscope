@@ -18,12 +18,14 @@
 // network and risk out-of-order writes racing each other), every select
 // commits on the discrete choice itself.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DESIGNS, applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
+import type { SettingsSection } from "../state/route";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
 import { ModelField, useProviderModels } from "./providerModelField";
+import { settingsMayAutoPick } from "./settingsModelPolicy";
 import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
@@ -167,9 +169,16 @@ const SAVED_FLASH_MS = 1400;
 const IMAGE_PROVIDERS = ["gemini", "openai"] as const;
 const LOG_LEVELS = ["error", "warn", "info", "debug", "trace"] as const;
 
+/** The DOM anchor of a settings section — one id per address the route
+ *  vocabulary knows (#/settings/{section}, card 131). */
+export function sectionAnchorId(section: SettingsSection): string {
+  return `settings-sec-${section}`;
+}
+
 export function SettingsPanel({
   open,
   onClose,
+  section,
   providerStatus,
   onKeySaved,
   leveling,
@@ -177,6 +186,9 @@ export function SettingsPanel({
 }: {
   open: boolean;
   onClose: () => void;
+  /** The section a #/settings/{section} deep link named, scrolled into view
+   *  once its block exists. null opens the page at its top. */
+  section?: SettingsSection | null;
   /** The deliberate way back to the built-in model's one-time notice (card
    *  144): every exit of that sheet dismisses it for good, so this is the only
    *  door left. Opens the sheet over the app (settings folds away first). */
@@ -205,6 +217,11 @@ export function SettingsPanel({
   // Whether Docker is usable here (card 137) — null until the probe answers,
   // and null forever on a server that does not carry the route.
   const [docker, setDocker] = useState<DockerStatus | null>(null);
+  // Card 121: whether the operator changed the provider in THIS panel session.
+  // The model auto-pick persists through putSettings, so it may only follow a
+  // real gesture — opening the panel (click or deep link) rearms to "looking",
+  // under which the chooser must write nothing.
+  const [providerTouched, setProviderTouched] = useState(false);
 
   // Re-fetch the resolved view each time the page opens (other surfaces — the
   // header picker, the Files tab's own folder pick — may have changed the
@@ -213,6 +230,7 @@ export function SettingsPanel({
     if (!open) return;
     setLoadFailed(false);
     setSaveError(null);
+    setProviderTouched(false);
     setLegacy(readLegacyLocalStorage());
     fetchSettings()
       .then(setView)
@@ -248,13 +266,34 @@ export function SettingsPanel({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Deep link #/settings/{section} (card 131): scroll the named block into
+  // view once it exists — the server-backed sections render only after the
+  // settings fetch lands (and the leveling block after its snapshot), so this
+  // retries per render until the anchor is in the DOM, then stops. It only
+  // LOOKS: a deep-linked open writes nothing, the card-121 guard holds for
+  // every opener.
+  const scrolledFor = useRef<string | null>(null);
+  useEffect(() => {
+    if (!open || section == null) {
+      scrolledFor.current = null;
+      return;
+    }
+    if (scrolledFor.current === section) return;
+    const anchor = document.getElementById(sectionAnchorId(section));
+    if (anchor) {
+      anchor.scrollIntoView({ block: "start" });
+      scrolledFor.current = section;
+    }
+  });
+
   // Shared model list for the session-defaults chooser — the SAME real
-  // /api/models list, needs-key logic AND local-model snap as the header picker.
-  // autoPick snaps a non-installed model on a LOCAL backend to a real one (a
-  // cloud model like opus makes no sense as ollama's default), so picking ollama
-  // never leaves a stale opus behind; cloud providers are never second-guessed.
-  // Guarded on `open` so a closed panel makes no request. Must sit above the
-  // early return (hook order).
+  // /api/models list and needs-key logic as the header picker. The local-model
+  // snap (a cloud model like opus makes no sense as ollama's default) persists,
+  // so it is gated on a gesture: only after the operator changed the provider
+  // in this panel may the resolve write — opening the page writes nothing
+  // (card 121; the panel used to flip a configured model on open). Guarded on
+  // `open` so a closed panel makes no request. Must sit above the early return
+  // (hook order).
   const settingsProvider = open && view ? String(view.effective.provider ?? "") : "";
   const settingsModel = view ? String(view.effective.model ?? "") : "";
   const { models: settingsModels, mode: settingsModelMode } = useProviderModels(
@@ -268,7 +307,7 @@ export function SettingsPanel({
         void putSettings("user", { model: m === "" ? null : m })
           .then(setView)
           .catch(() => {}),
-      autoPick: true,
+      autoPick: settingsMayAutoPick(providerTouched ? "gesture" : "open"),
     },
   );
 
@@ -382,10 +421,10 @@ export function SettingsPanel({
           )}
 
           {/* ---- Design — auto-saves on selection (owner decision) ---- */}
-          <div className="settings-label" id="skin-label">
+          <div className="settings-label" id={sectionAnchorId("design")}>
             {t(lang, "set.secDesign")}
           </div>
-          <div className="design-picker" role="radiogroup" aria-labelledby="skin-label">
+          <div className="design-picker" role="radiogroup" aria-labelledby={sectionAnchorId("design")}>
             {DESIGNS.map((d) => (
               <button
                 key={d.id}
@@ -433,7 +472,9 @@ export function SettingsPanel({
           </div>
 
           {/* ---- Language ---- */}
-          <div className="settings-label">{t(lang, "set.secLanguage")}</div>
+          <div className="settings-label" id={sectionAnchorId("language")}>
+            {t(lang, "set.secLanguage")}
+          </div>
           <div className="settings-seg" role="radiogroup" aria-label={t(lang, "set.secLanguage")}>
             <button
               type="button"
@@ -475,7 +516,9 @@ export function SettingsPanel({
           {view && (
             <>
               {/* ---- Session defaults — server-backed (Task 13) ---- */}
-              <div className="settings-label">{t(lang, "set.secSession")}</div>
+              <div className="settings-label" id={sectionAnchorId("session")}>
+                {t(lang, "set.secSession")}
+              </div>
               <p className="settings-note">{t(lang, "set.sessionHint")}</p>
               <div className="settings-grid">
                 <label className="settings-field">
@@ -483,7 +526,13 @@ export function SettingsPanel({
                   <select
                     className="provider-select"
                     value={String(view.effective.provider ?? "")}
-                    onChange={(e) => saveUser({ provider: e.target.value, model: null })}
+                    onChange={(e) => {
+                      // The gesture that unlocks the model auto-snap (card 121):
+                      // the operator chose a provider, so filling its model is
+                      // completing their choice, not overriding their config.
+                      setProviderTouched(true);
+                      saveUser({ provider: e.target.value, model: null });
+                    }}
                   >
                     {PROVIDERS.map((p) => (
                       <option key={p} value={p}>
@@ -509,6 +558,7 @@ export function SettingsPanel({
                     providerStatus={providerStatus}
                     keyAffordance="inline"
                     onKeySaved={onKeySaved}
+                    markAbsent
                   />
                   {settingsModelMode !== "needs-key" && (
                     <OriginRow
@@ -601,7 +651,9 @@ export function SettingsPanel({
               {/* ---- Leveling: how much of the ladder is doing work here ---- */}
               {leveling?.snapshot && (
                 <>
-                  <div className="settings-label">{t(lang, "leveling.settings.title")}</div>
+                  <div className="settings-label" id={sectionAnchorId("leveling")}>
+                    {t(lang, "leveling.settings.title")}
+                  </div>
                   <div className="settings-grid">
                     <label className="settings-field">
                       <span>{t(lang, "leveling.settings.mode")}</span>
@@ -635,7 +687,9 @@ export function SettingsPanel({
               )}
 
               {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
-              <div className="settings-label">{t(lang, "set.secObservability")}</div>
+              <div className="settings-label" id={sectionAnchorId("observability")}>
+                {t(lang, "set.secObservability")}
+              </div>
               <p className="settings-note">{t(lang, "set.otlpHint")}</p>
               <div className="settings-grid">
                 <label className="settings-field">
@@ -699,7 +753,9 @@ export function SettingsPanel({
               <DockerOfferBlock status={docker} lang={lang} />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
-              <div className="settings-label">{t(lang, "set.secWorkspace")}</div>
+              <div className="settings-label" id={sectionAnchorId("workspace")}>
+                {t(lang, "set.secWorkspace")}
+              </div>
               {view.effective.workspace ? (
                 <div className="settings-ws">
                   <code className="settings-ws-path" title={String(view.effective.workspace)}>
@@ -728,7 +784,9 @@ export function SettingsPanel({
               <p className="settings-note">{t(lang, "set.wsApplies")}</p>
 
               {/* ---- Operator logging — editable (Task 13) ---- */}
-              <div className="settings-label">{t(lang, "set.secLogging")}</div>
+              <div className="settings-label" id={sectionAnchorId("logging")}>
+                {t(lang, "set.secLogging")}
+              </div>
               <label className="settings-field">
                 <span>{t(lang, "set.logLevel")}</span>
                 <select
@@ -752,7 +810,9 @@ export function SettingsPanel({
               <p className="settings-note">{t(lang, "set.logApplies")}</p>
 
               {/* ---- Machine — new in this task: browse_page/image/STT paths ---- */}
-              <div className="settings-label">{t(lang, "set.machine")}</div>
+              <div className="settings-label" id={sectionAnchorId("machine")}>
+                {t(lang, "set.machine")}
+              </div>
               <p className="settings-note">{t(lang, "set.machineHint")}</p>
               <div className="settings-grid">
                 <label className="settings-field">

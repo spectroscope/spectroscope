@@ -3,6 +3,7 @@ import {
   fleetPushLive,
   fleetLoadScenario,
   hydrateFleet,
+  knownFleet,
   removeFleet,
   fleetPending,
   __getFleet,
@@ -260,6 +261,14 @@ describe("fleetStore multi-fleet keying", () => {
     fleetPushLive([ctxEvent("b", "ctxB", 0, delta("b", "b0")) as unknown as RunEvent]);
     // ctxA did not change, so its model reference is reused (no spurious render).
     expect(__getFleetOf("ctxA")).toBe(before);
+  });
+
+  it("knownFleet answers by contextId — the deep-link guard's roster check", () => {
+    // Card 131: #/fleet/{id} in a fresh tab hydrates first, then asks this.
+    expect(knownFleet("ctxA")).toBe(false);
+    fleetPushLive([ctxEvent("a", "ctxA", 0, delta("a", "a0")) as unknown as RunEvent]);
+    expect(knownFleet("ctxA")).toBe(true);
+    expect(knownFleet("ghost")).toBe(false);
   });
 });
 
