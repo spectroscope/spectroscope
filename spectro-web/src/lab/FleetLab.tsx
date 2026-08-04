@@ -121,8 +121,14 @@ export function FleetLab(props: { model: FleetModel; running: boolean }) {
   }, [total]);
   const visible = useMemo(() => model.events.slice(0, clamped), [model.events, clamped]);
   const scene = useMemo(
-    () => buildFleetLabScene({ roster: model.roster, events: visible, epochBySender: model.epochBySender }),
-    [model.roster, visible, model.epochBySender],
+    () =>
+      buildFleetLabScene({
+        roster: model.roster,
+        events: visible,
+        frames: model.frames.slice(0, clamped),
+        epochBySender: model.epochBySender,
+      }),
+    [model.roster, visible, model.frames, clamped, model.epochBySender],
   );
   const detail = useMemo(() => deriveDetail(visible), [visible]);
   const flow = useMemo(() => fleetToFlow(scene, detail, { lang, expanded }), [scene, detail, lang, expanded]);

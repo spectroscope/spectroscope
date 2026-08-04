@@ -22,10 +22,25 @@ import { buildSpectrum } from "./spectrumModel";
 import { buildFleetLedger } from "./fleetLedger";
 import { buildFleetTree } from "./fleetTree";
 import type { FleetModel } from "./fleetModel";
+import { FleetBus } from "./FleetBus";
 import { FleetCanvas } from "./FleetCanvas";
 import { FleetDetail } from "./FleetDetail";
 import { FleetLedgerStrip } from "./FleetLedgerStrip";
 import { FleetTreeRail } from "./FleetTreeRail";
+
+/** Which reading the centre column shows. The bus is the default: a fleet is a
+ *  bus with peers on it, and the graph answers the narrower question of who
+ *  spawned whom. Persisted, because a reading is a habit, not a session. */
+export type CentreView = "bus" | "graph";
+const CENTRE_KEY = "spectroscope:fleet.centre";
+
+function storedCentre(): CentreView {
+  try {
+    return localStorage.getItem(CENTRE_KEY) === "graph" ? "graph" : "bus";
+  } catch {
+    return "bus"; // blocked storage: the default is still the default
+  }
+}
 
 export function FleetControlRoom({
   contextId,
@@ -51,6 +66,15 @@ export function FleetControlRoom({
 }) {
   const lang = useLang();
   const [selected, setSelected] = useState<string | null>(null);
+  const [centre, setCentre] = useState<CentreView>(storedCentre);
+  const pickCentre = (next: CentreView): void => {
+    setCentre(next);
+    try {
+      localStorage.setItem(CENTRE_KEY, next);
+    } catch {
+      /* blocked storage: the pick still holds for this session */
+    }
+  };
 
   const ledger = useMemo(() => buildFleetLedger(model), [model]);
   const tree = useMemo(() => buildFleetTree(model), [model]);
@@ -86,21 +110,53 @@ export function FleetControlRoom({
               <p className="spectrum-empty-sub">{t(lang, "fleet.noNodesHint")}</p>
             </div>
           ) : (
-            <FleetCanvas
-              model={model}
-              events={events}
-              /* In the control room a node click SELECTS: the detail column is
-                 right there, so jumping to another tab would undo the point of
-                 having three columns. The graph tab keeps its own hand-off. */
-              selectedId={selected}
-              onSelect={setSelected}
-              onFocusEvent={onFocusEvent}
-              /* A scripted scenario has no live hub — its node command would
-                 connect to nothing, so the spawn panel stays off. */
-              contextId={isScenario ? undefined : contextId}
-              hubPort={hubPort}
-              onStop={onStop}
-            />
+            <>
+              {/* Two readings of the same fleet, and the reader picks. The bus
+                  shows every agent whole, docked on one rail; the graph answers
+                  ancestry. Same selection drives both and the two side columns. */}
+              <div className="fleet-centre-pick" role="tablist" aria-label={t(lang, "fleet.centre.aria")}>
+                {(["bus", "graph"] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    role="tab"
+                    aria-selected={centre === view}
+                    className={centre === view ? "fleet-centre-tab on" : "fleet-centre-tab"}
+                    title={t(lang, `fleet.centre.${view}.title`)}
+                    onClick={() => pickCentre(view)}
+                  >
+                    {t(lang, `fleet.centre.${view}`)}
+                  </button>
+                ))}
+              </div>
+              {centre === "bus" ? (
+                <FleetBus
+                  model={model}
+                  events={events}
+                  selectedId={selected}
+                  onSelect={setSelected}
+                  contextId={isScenario ? undefined : contextId}
+                  hubPort={hubPort}
+                  onStop={onStop}
+                />
+              ) : (
+                <FleetCanvas
+                  model={model}
+                  events={events}
+                  /* In the control room a node click SELECTS: the detail column is
+                     right there, so jumping to another tab would undo the point of
+                     having three columns. The graph tab keeps its own hand-off. */
+                  selectedId={selected}
+                  onSelect={setSelected}
+                  onFocusEvent={onFocusEvent}
+                  /* A scripted scenario has no live hub — its node command would
+                     connect to nothing, so the spawn panel stays off. */
+                  contextId={isScenario ? undefined : contextId}
+                  hubPort={hubPort}
+                  onStop={onStop}
+                />
+              )}
+            </>
           )}
         </div>
         <FleetDetail

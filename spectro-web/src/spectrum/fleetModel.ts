@@ -49,13 +49,17 @@ export interface FleetModel {
   /** The fleet's RunEvent payloads in arrival order — buildSpectrum folds these
    *  into lanes (each node stamps agentId = its own id at the source). */
   events: RunEvent[];
+  /** The same stream with its envelopes on: sender, taskId, sequence, causal
+   *  parentId. The bus view reads traffic from here; `events` stays the
+   *  spectrum's payload-only input. frames[i].payload === events[i]. */
+  frames: FleetEnvelope[];
   /** Latest epoch seen per sender — a restart (new epoch) is visible here and
    *  marked on the NodeCard, never silently merged into the lane. */
   epochBySender: Record<string, number>;
 }
 
 /** The empty fleet — a stable reference for a hub that is off or silent. */
-export const EMPTY_FLEET: FleetModel = { roster: [], events: [], epochBySender: {} };
+export const EMPTY_FLEET: FleetModel = { roster: [], events: [], frames: [], epochBySender: {} };
 
 /** Is this stream item a fleet frame? ws.ts casts anything with a string `type`
  *  to RunEvent, so fleet frames ride the same batch; this splits them back out. */
@@ -73,6 +77,7 @@ export function isFleetFrame(event: unknown): event is FleetFrame {
 export function buildFleet(frames: FleetFrame[]): FleetModel {
   let roster: FleetNode[] = [];
   const events: RunEvent[] = [];
+  const envelopes: FleetEnvelope[] = [];
   const epochBySender: Record<string, number> = {};
   for (const frame of frames) {
     if (frame.type === "fleet_roster") {
@@ -80,11 +85,12 @@ export function buildFleet(frames: FleetFrame[]): FleetModel {
     } else {
       const envelope = frame.frame;
       events.push(envelope.payload);
+      envelopes.push(envelope);
       const seen = epochBySender[envelope.sender];
       if (seen === undefined || envelope.epoch > seen) {
         epochBySender[envelope.sender] = envelope.epoch;
       }
     }
   }
-  return { roster, events, epochBySender };
+  return { roster, events, frames: envelopes, epochBySender };
 }

@@ -10,7 +10,7 @@ function node(id: string, role: string, connected = true): FleetNode {
 }
 
 function model(roster: FleetNode[], events: RunEvent[]): FleetModel {
-  return { roster, events, epochBySender: {} };
+  return { roster, events, frames: [], epochBySender: {} };
 }
 
 describe("buildFleetLabScene — the fleet machine-room fold", () => {

@@ -16,7 +16,7 @@ function node(id: string, role: string, extra: Partial<FleetNode> = {}): FleetNo
 }
 
 function model(roster: FleetNode[], events: RunEvent[]): FleetModel {
-  return { roster, events, epochBySender: {} };
+  return { roster, events, frames: [], epochBySender: {} };
 }
 
 describe("buildFleetLedger", () => {
@@ -282,7 +282,7 @@ describe("buildFleetLedger", () => {
   });
 
   it("is empty and finite for an empty fleet", () => {
-    const ledger = buildFleetLedger({ roster: [], events: [], epochBySender: {} });
+    const ledger = buildFleetLedger({ roster: [], events: [], frames: [], epochBySender: {} });
     expect(ledger.rows).toEqual([]);
     expect(ledger.roles).toEqual([]);
     expect(ledger.total.spanMs).toBe(0);

@@ -11,6 +11,7 @@ function rnode(id: string, connected = true): FleetNode {
 // (epoch 1) and is blocked on a gate; worker-1 reports a result.
 const model: FleetModel = {
   roster: [rnode("root"), rnode("worker-1"), rnode("worker-2")],
+  frames: [],
   events: [
     { type: "run_start", runId: "r0", agentId: "root", prompt: "orchestrate", ts: 1 },
     { type: "agent_spawn", agentId: "worker-1", parentId: "root", task: "scan", ts: 2 },
@@ -92,6 +93,7 @@ describe("buildFleetGraph", () => {
   it("leaves a roster member with no events unstamped", () => {
     const g = buildFleetGraph({
       roster: [rnode("silent")],
+      frames: [],
       events: [],
       epochBySender: {},
     });
@@ -113,7 +115,7 @@ describe("buildFleetGraph", () => {
   });
 
   it("is empty for an empty fleet", () => {
-    const g = buildFleetGraph({ roster: [], events: [], epochBySender: {} });
+    const g = buildFleetGraph({ roster: [], events: [], frames: [], epochBySender: {} });
     expect(g.nodes).toEqual([]);
     expect(g.edges).toEqual([]);
   });

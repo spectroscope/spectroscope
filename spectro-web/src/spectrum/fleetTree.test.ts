@@ -8,7 +8,7 @@ function node(id: string, role: string, extra: Partial<FleetNode> = {}): FleetNo
 }
 
 function model(roster: FleetNode[], events: RunEvent[]): FleetModel {
-  return { roster, events, epochBySender: {} };
+  return { roster, events, frames: [], epochBySender: {} };
 }
 
 describe("buildFleetTree", () => {
@@ -98,6 +98,6 @@ describe("buildFleetTree", () => {
   });
 
   it("is empty for an empty fleet", () => {
-    expect(buildFleetTree({ roster: [], events: [], epochBySender: {} })).toEqual([]);
+    expect(buildFleetTree({ roster: [], events: [], frames: [], epochBySender: {} })).toEqual([]);
   });
 });

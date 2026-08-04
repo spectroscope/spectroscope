@@ -316,6 +316,23 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleet.noNodes": { de: "Noch keine Knoten in dieser Flotte.", en: "No nodes in this fleet yet." },
   "fleet.noNodesHint": { de: "Starte einen Node — rechts steht das Kommando.", en: "Start a node: the command is on the right." },
 
+  // the control room's centre: the bus reading and the graph reading
+  "fleet.centre.aria": { de: "Mittelspalte: Lesart", en: "Centre column: reading" },
+  "fleet.centre.bus": { de: "bus", en: "bus" },
+  "fleet.centre.bus.title": { de: "Jeder Agent hängt als eigene Karte an der Schiene, mit seinem eigenen OS-Band", en: "Every agent docked on the rail as its own card, with its own OS row" },
+  "fleet.centre.graph": { de: "graph", en: "graph" },
+  "fleet.centre.graph.title": { de: "Die Abstammung als Graph — wer wen gespawnt hat", en: "Ancestry as a graph — who spawned whom" },
+  "bus.openAgent": { de: "diesen Agenten wählen", en: "select this agent" },
+  "bus.spawnedBy": { de: "gespawnt von", en: "spawned by" },
+  "bus.gatePending": { de: "Gate wartet auf eine Entscheidung", en: "gate waiting for a decision" },
+  "bus.openTrace": { de: "im Trace öffnen", en: "open in trace" },
+  "bus.inlineOs": { de: "Inline-OS", en: "inline OS" },
+  "bus.stopNode": { de: "diesen Knoten stoppen", en: "stop this node" },
+  "bus.composerPlaceholder": { de: "Nachricht an diesen Agenten …", en: "message this agent …" },
+  "bus.composerPending": { de: "Bus-Nachrichten kommen mit dem 0.7-Wire-Verb — der Hub spricht heute stop und gate", en: "bus messaging lands with the 0.7 wire verb — the hub speaks stop and gate today" },
+  "bus.empty": { de: "Noch keine Knoten am Bus.", en: "No nodes on the bus yet." },
+  "bus.spawnNode": { de: "+ Node andocken", en: "+ dock a node" },
+
   // permission dialog
   "perm.wants": { de: "möchte ausführen", en: "wants to execute" },
   "perm.by": { de: "angefragt von {id}", en: "requested by {id}" },
