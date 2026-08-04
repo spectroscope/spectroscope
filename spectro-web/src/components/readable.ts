@@ -2,9 +2,11 @@
 //
 // WHY THIS IS A SECOND RENDERING AND NOT THE ONLY ONE. A pane that calls
 // itself the source and shows something other than the bytes is the defect
-// this card exists to remove. So the source pane's default stays byte
-// faithful, and this is the OTHER, named reading: it says openly that it
-// interpreted the line, and it is never the default and never persisted.
+// this card exists to remove. This reading is the one the pane opens on (owner
+// call, 2026-08-03: the verbatim line is unreadable at a glance), and it stays
+// honest by never being the only one on offer. The strip above the pane names
+// the rendering on screen, and the byte faithful one is one click away. The
+// choice is session only and never persisted.
 //
 // THE ONE RULE THAT KEEPS IT HONEST: never string replace an escape. The only
 // unescape here is another JSON.parse. 1265 Bash commands in the owner's
