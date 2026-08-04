@@ -1701,11 +1701,11 @@ describe("claudeCode adapter (API failures)", () => {
 // ---------------------------------------------------------------------------
 // Card 167, findings 1 and 6: the subagent's own numbers.
 //
-// A modern transcript never holds its children: measured over the 5,121 files
-// in ~/.claude/projects, 0 of 309,064 sidechain records resolve an owner in
-// their own file, and 4,664 files are sidechain-only. What a session file DOES
-// hold is the launch record, and its toolUseResult carries the child's model,
-// its token bill and whether it ever reported back.
+// A modern transcript never holds its children: measured over the 5,132 files
+// in ~/.claude/projects on 2026-08-04, 0 of 311,332 sidechain records resolve
+// an owner in their own file, and 4,674 files are sidechain-only. What a
+// session file DOES hold is the launch record, and its toolUseResult carries
+// the child's model, its token bill and whether it ever reported back.
 // ---------------------------------------------------------------------------
 
 /** A parent session that launches two children: one reported back, one did not. */
@@ -1868,6 +1868,171 @@ describe("claudeCode adapter (the subagent's own numbers)", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// A launched child that DID report back, in the same file.
+//
+// "launched, never reported back" is the app's claim about somebody else's
+// transcript, and measured over ~/.claude/projects on 2026-08-04 the
+// transcript refutes it on 365 of the 394 async launches: a later
+// <task-notification> names the same <tool-use-id> and carries a terminal
+// <status>. 218 of those sit in the user record this importer already parses;
+// the other 147 sit in the `queue-operation` and `queued_command` records it
+// already frames. The same import then drew the outcome a second time, as a
+// parentless roster row under the task id.
+//
+// One rule covers all of it: a notification whose <tool-use-id> names a launch
+// this file made IS that child reporting back, whichever record carries it.
+// ---------------------------------------------------------------------------
+const NOTE = (status: string | null, result: string): string =>
+  [
+    "<task-notification>",
+    "<task-id>a1758523bf8ddf207</task-id>",
+    "<tool-use-id>toolu_async</tool-use-id>",
+    "<output-file>/private/tmp/tasks/a1758523bf8ddf207.output</output-file>",
+    ...(status === null ? [] : [`<status>${status}</status>`]),
+    '<summary>Agent "translate the pitch" completed</summary>',
+    `<result>${result}</result>`,
+    "</task-notification>",
+  ].join("\n");
+
+/** The notification as a user record — the channel the importer already read. */
+const asUser = (text: string): unknown => ({
+  type: "user",
+  message: { role: "user", content: text },
+  uuid: "u4",
+  parentUuid: "u3",
+});
+
+describe("a launched child that reported back later in the same file", () => {
+  const fold = (note: unknown) => {
+    const events = claudeCodeToRunEvents([...launches, note]);
+    return { events, roster: reduceAll(initialState, events).agents };
+  };
+  const { events, roster } = fold(asUser(NOTE("completed", "Saved 11 lines.")));
+  const child = roster.find((a) => a.id === "toolu_async");
+
+  it("finishes the child the notification finished", () => {
+    expect(child?.state).toBe("completed");
+  });
+
+  it("takes the badge back off — the file says it reported back", () => {
+    expect(child?.launched).toBeUndefined();
+  });
+
+  it("does not draw the same child a second time, parentless, under its task id", () => {
+    expect(roster.map((a) => a.id)).not.toContain("a1758523bf8ddf207");
+    expect(roster.filter((a) => a.parentId !== null).map((a) => a.id)).toEqual(["toolu_done", "toolu_async"]);
+  });
+
+  it("lands the notification's own words, under the child", () => {
+    const msg = events.find(
+      (e) => e.type === "agent_message" && (e as { from?: string }).from === "toolu_async",
+    ) as unknown as { role: string; state: string; to: string; text: string } | undefined;
+    expect(msg).toMatchObject({ role: "result", state: "completed", to: "main" });
+    expect(msg?.text).toContain("Saved 11 lines.");
+    // The join keys and the machine-local path are not words about the run.
+    expect(msg?.text).not.toContain("/private/tmp/tasks");
+  });
+
+  it("keeps the model the launch record named", () => {
+    expect(child?.model).toBe("claude-opus-4-8[1m]");
+  });
+
+  it("does not turn the launch receipt into the child's answer", () => {
+    const results = events.filter(
+      (e) => e.type === "agent_message" && (e as { role?: string }).role === "result",
+    ) as unknown as { from: string; text: string }[];
+    expect(results.find((m) => m.from === "toolu_async")?.text).not.toContain("launched successfully");
+  });
+
+  it("reads the same block out of a queue-operation record", () => {
+    const { roster: r } = fold({
+      type: "queue-operation",
+      operation: "enqueue",
+      content: NOTE("completed", "Saved 11 lines."),
+    });
+    expect(r.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(r.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+  });
+
+  it("reads the same block out of a queued_command attachment", () => {
+    const { roster: r } = fold({
+      type: "attachment",
+      attachment: { type: "queued_command", prompt: NOTE("completed", "Saved 11 lines.") },
+      uuid: "u4",
+      parentUuid: "u3",
+    });
+    expect(r.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(r.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+  });
+
+  it("lands the same block once when two records carry it", () => {
+    const text = NOTE("completed", "Saved 11 lines.");
+    const events2 = claudeCodeToRunEvents([
+      ...launches,
+      { type: "queue-operation", operation: "enqueue", content: text },
+      { type: "attachment", attachment: { type: "queued_command", prompt: text }, uuid: "u4" },
+      asUser(text),
+    ]);
+    expect(
+      events2.filter((e) => e.type === "agent_message" && (e as { from?: string }).from === "toolu_async"),
+    ).toHaveLength(1);
+  });
+
+  it("fails the child a failed report failed", () => {
+    const { roster: r } = fold(asUser(NOTE("failed", "the sandbox died")));
+    expect(r.find((a) => a.id === "toolu_async")?.state).toBe("failed");
+    expect(r.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+  });
+
+  it("leaves a progress report as progress — reported, not finished", () => {
+    const { roster: r } = fold(asUser(NOTE(null, "still reading")));
+    const c = r.find((a) => a.id === "toolu_async");
+    // It reported in, so the badge's sentence is false; it did not end, so the
+    // row is not completed either.
+    expect(c?.state).toBe("working");
+    expect(c?.launched).toBeUndefined();
+    expect(c?.lastStatus).toContain("still reading");
+  });
+
+  it("holds a report the file wrote down BEFORE the launch it answers", () => {
+    // 4 rows in ~/.claude/projects: a compaction replayed the launch after the
+    // queue-operation that had already taken the notification. Landing the
+    // outcome where it sits would put the ending in front of the spawn, and
+    // the task message right after it would reset the row to "submitted" — the
+    // file says completed, and the app would have said not started.
+    const events = claudeCodeToRunEvents([
+      launches[0],
+      { type: "queue-operation", operation: "enqueue", content: NOTE("completed", "Saved 11 lines.") },
+      launches[3],
+      launches[4],
+    ]);
+    const roster = reduceAll(initialState, events).agents;
+    expect(roster.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(roster.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+    const kinds = (events as unknown as { type: string; from?: string; role?: string }[])
+      .filter((e) => (e.type === "agent_spawn" && e.from === undefined) || e.from === "toolu_async")
+      .map((e) => `${e.type}${e.role === undefined ? "" : `:${e.role}`}`);
+    expect(kinds).toEqual(["agent_spawn", "agent_message:result"]);
+  });
+
+  it("does not un-finish a child whose launch a compaction replayed", () => {
+    // 1 row in ~/.claude/projects: the launch record comes back 926 records
+    // later, and the task message riding with it says "submitted". A child the
+    // file had already reported completed went back to not-started.
+    const events = claudeCodeToRunEvents([...launches, asUser(NOTE("completed", "done")), launches[3]]);
+    const roster = reduceAll(initialState, events).agents;
+    expect(roster.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(roster.filter((a) => a.id === "toolu_async")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "agent_spawn")).toHaveLength(2);
+  });
+
+  it("still says nothing about a launch this file never mentions again", () => {
+    const { roster: r } = fold(asUser(NOTE("completed", "done").replace("toolu_async", "toolu_other")));
+    expect(r.find((a) => a.id === "toolu_async")).toMatchObject({ state: "working", launched: true });
+  });
+});
+
 describe("claudeCode adapter (a subagent that IS in the file)", () => {
   // The older layout, and the one the child-run machinery was built for: the
   // child's own records live in the parent's file. 0 of today's corpus does
@@ -1918,6 +2083,42 @@ describe("claudeCode adapter (a subagent that IS in the file)", () => {
     const state = reduceAll(initialState, claudeCodeToRunEvents(withChild));
     expect(state.lastInputTokens).toBe(0);
     expect(state.usage.outputTokens).toBe(22);
+  });
+
+  it("charges the response ONCE when both the child and the launch record bill it", () => {
+    // The launch record's `usage` is the child's whole run — `totalTokens` on
+    // the real records is exactly its four counters added up. A file that also
+    // holds the child's own records therefore says the same bill twice, and
+    // charging both paths doubled the child and the session total. The child's
+    // own records win: they are the per-response grain, and the summary is the
+    // same money counted again.
+    const mixed = [
+      ...withChild,
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "task1", content: "read" }],
+        },
+        toolUseResult: {
+          status: "completed",
+          resolvedModel: "claude-haiku-4-5-20251001",
+          totalTokens: 66,
+          usage: { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 33 },
+        },
+        uuid: "u2",
+        parentUuid: "a1",
+      },
+    ];
+    const events = claudeCodeToRunEvents(mixed);
+    expect(
+      events.filter((e) => e.type === "usage" && (e as { agentId: string }).agentId === "task1"),
+    ).toHaveLength(1);
+    const state = reduceAll(initialState, events);
+    expect(state.agents.find((a) => a.id === "task1")?.outTokens).toBe(22);
+    expect(state.usage.outputTokens).toBe(22);
+    // The rest of the launch record's reading is unaffected.
+    expect(state.agents.find((a) => a.id === "task1")?.model).toBe("claude-haiku-4-5-20251001");
   });
 });
 

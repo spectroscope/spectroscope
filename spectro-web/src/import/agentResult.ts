@@ -1,16 +1,18 @@
 // What a subagent cost, said on its parent's record (card 167, findings 1+6).
 //
 // A modern Claude Code transcript does not contain its own children. Measured
-// over the 5,121 files in ~/.claude/projects: 0 of 309,064 sidechain records
-// resolve an owner inside the file that holds them, and 4,664 files are
-// nothing BUT sidechain records — a subagent's transcript is a separate file
+// over the 5,132 files in ~/.claude/projects on 2026-08-04: 0 of 311,332
+// sidechain records resolve an owner inside the file that holds them, and
+// 4,674 files are nothing BUT sidechain records — a subagent's transcript is a
+// separate file
 // under <session-uuid>/subagents/. So on a session import the whole child-run
 // machinery (run_start `cc-<id>`, per-child turns, per-child usage) never
 // fires, and everything a reader can learn about a child comes from the one
 // record the parent wrote when the call came back:
 //
-//   resolvedModel  the model the child ACTUALLY ran on. 617 of 624 launch
-//                  records name one, across seven ids — and it is a different
+//   resolvedModel  the model the child ACTUALLY ran on. 617 of the 624 launch
+//                  records that carry a result object name one, across seven
+//                  ids — and it is a different
 //                  model from the parent's often enough that inheriting the
 //                  parent's was wrong on all of them, sometimes by a whole
 //                  tier (a haiku child under an opus parent).
@@ -28,13 +30,13 @@
 // existing `usage` event under the CHILD's agentId — and the other half rides
 // an import-only frame (wire/nonWire.ts) that can never be written to a file.
 //
-// ABSENT-FIRST. Every reader returns nothing rather than a default: 119 of the
-// 743 launch results in the corpus carry no object at all, and a zero token
+// ABSENT-FIRST. Every reader returns nothing rather than a default: 117 of the
+// 741 launch results in the corpus carry no object at all, and a zero token
 // count would read as "the child was free".
 //
 // VALUES TRAVEL VERBATIM. The model id keeps the "[1m]" context-window suffix
-// the file wrote on 46 of them; trimming it would name a model the child did
-// not run on.
+// the file wrote on 63 of them (46 opus-4-8, 17 opus-5); trimming it would name
+// a model the child did not run on.
 
 /** The child's own token bill, in this app's names. */
 export interface AgentUsage {

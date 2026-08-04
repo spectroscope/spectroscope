@@ -871,9 +871,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         return patchCard(state, raw.callId, { detail: raw.detail as ToolResultDetail });
       // What a transcript's launch record says about the child it launched
       // (card 167, finding 6): the model the child ACTUALLY ran on, which is
-      // not the parent's, and whether it ever reported back. A launched child
-      // is held open — 394 of the 624 launches in the measured corpus never
-      // came back, and every one of them used to read as finished.
+      // not the parent's, and whether it went into the background. A launched
+      // child is held open until something in the file finishes it. 394 of the
+      // 624 launches in the measured corpus are async, and every one of them
+      // used to read as finished; 365 of the 394 are finished later by a
+      // task-notification in the same file, so only 28 rows end up held open.
       if (raw.type === "agent_detail" && typeof raw.agentId === "string" && raw.agentId !== "")
         return {
           ...state,

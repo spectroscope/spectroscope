@@ -54,6 +54,12 @@ export function AgentsTab({
                     ids, and a haiku child under an opus parent is a normal
                     line. Verbatim, "[1m]" suffix and all. */}
                 {a.model !== undefined && <span className="agent-model mono">{a.model}</span>}
+                {/* "launched, never reported back" is a claim about the file,
+                    so the importer only sets `launched` when the file says
+                    nothing further: measured over ~/.claude/projects on
+                    2026-08-04, 365 of the 394 background launches ARE answered
+                    by a later task-notification in the same transcript, and 28
+                    rows are left carrying this badge. */}
                 <span className={`agent-badge agent-badge--${a.state}`}>
                   {a.launched === true ? t(lang, "agents.launched") : t(lang, `map.life.${a.state}`)}
                 </span>

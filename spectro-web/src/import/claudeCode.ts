@@ -245,6 +245,20 @@ function receiptTaskId(output: string): string | null {
   return m === null ? null : m[1];
 }
 
+/**
+ * A notification's own words, and only those.
+ *
+ * The join keys are already gone (parseTaskNotification keeps them out of
+ * `fields`); `output-file` goes too, because it is a path on the machine that
+ * ran the task and says nothing to a reader who is not on it.
+ */
+function notificationText(n: TaskNotification): string {
+  return n.fields
+    .filter((f) => f.label !== "output-file" && f.value !== "")
+    .map((f) => f.value)
+    .join("\n");
+}
+
 /** What a notification adds under the receipt it belongs to. */
 function outcomeSection(n: TaskNotification): string {
   const head = `--- task ${n.taskId}${n.status === null ? "" : ` · ${n.status}`} ---`;
@@ -525,6 +539,48 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         if (b?.type === "tool_use" && isSpawnTool(b.name) && typeof b.id === "string") taskIds.add(b.id);
     }
   }
+  /**
+   * Every place a record can carry a `<task-notification>` block.
+   *
+   * Three channels, and the file picks one without telling anybody: the user
+   * record read inline further down, the `queue-operation` that enqueued the
+   * text, and the `queued_command` attachment that holds it. Measured over
+   * ~/.claude/projects on 2026-08-04, of the 365 terminal notifications that
+   * name an async launch of their own file, 218 arrive as a user record and
+   * 147 only in the other two. Which record type carried it says nothing about
+   * whether the child reported back.
+   */
+  const notificationTexts = (r: CCRecord): string[] => {
+    const texts: string[] = [];
+    const body = r.message?.content;
+    if (typeof body === "string") texts.push(body);
+    if (r.type === "queue-operation" && typeof r.content === "string") texts.push(r.content);
+    if (r.type === "attachment" && r.attachment?.type === "queued_command")
+      texts.push(asText(r.attachment.prompt));
+    return texts;
+  };
+
+  /**
+   * Launch calls that this file names again in a notification, whatever it says.
+   *
+   * The badge these suppress reads "launched, never reported back", and that is
+   * the app's claim about somebody else's transcript. Measured over
+   * ~/.claude/projects on 2026-08-04, the transcript refutes it on 365 of the
+   * 394 async launches — the notification is right there in the same file, and
+   * the same import used to render it a second time as a parentless roster row
+   * under the task id. A progress notification counts too: it has no ending in
+   * it, but a task that files a progress report has reported back.
+   *
+   * Read up front because the notification lands after the launch record that
+   * would otherwise have already claimed the silence.
+   */
+  const reportedBack = new Set<string>();
+  for (const r of recs)
+    for (const text of notificationTexts(r)) {
+      const n = parseTaskNotification(text);
+      if (n !== null && n.callId !== null && taskIds.has(n.callId)) reportedBack.add(n.callId);
+    }
+
   const byUuid = new Map(
     recs.filter((r) => typeof r.uuid === "string").map((r) => [r.uuid as string, r] as const),
   );
@@ -539,6 +595,19 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     return null;
   };
   const childStarted = new Set<string>();
+  /**
+   * Children already billed from their OWN records in this file.
+   *
+   * The launch record's `usage` is the child's whole run — on the real records
+   * its four counters add up to `totalTokens` exactly — so in a file that also
+   * holds the child's sidechain records it is the same money a second time.
+   * Charging both put the child, and the session total, at double. The child's
+   * own records win: they are the per-response grain, and the summary only
+   * repeats them. (Not reachable on today's corpus: 0 of 311,332 sidechain
+   * records resolve an owner inside their own file. The branch exists for the
+   * mixed transcript, and it has to be right there or nowhere.)
+   */
+  const billedOwn = new Set<string>();
   // Who spawned a Task, and what for — a Task nested inside a sidechain belongs
   // under its spawner, not under main.
   const spawnedBy = new Map<string, string>();
@@ -687,11 +756,18 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   // piece dropped the field still reports what the file did record.
   //
   // A SUBAGENT'S TOKENS ARE COUNTED TOO, on the owner's own agentId (card 167,
-  // finding 1, on the owner's word "zähl die subagent-tokens"). Both branches
-  // charge a response the same way, so an imported session total now means what
-  // the SESSION spent rather than what its main agent spent. The footer says so
-  // whenever a child is in it — a total that changes meaning in silence between
-  // an old import and a new one is the thing to avoid, not the higher number.
+  // finding 1, on the owner's word "zähl die subagent-tokens"). An imported
+  // session total therefore means what the SESSION spent rather than what its
+  // main agent spent. The footer says so whenever a child is in it — a total
+  // that changes meaning in silence between an old import and a new one is the
+  // thing to avoid, not the higher number.
+  //
+  // Both branches charge through the one emitter below, and a response is
+  // charged ONCE. (An earlier version of this sentence said the two branches
+  // "charge a response the same way, so a mixed transcript that does hold its
+  // children counts them too". They did, and it counted them twice: the launch
+  // record's `usage` is the child's whole run, so a file that also holds the
+  // child's own records says the same bill in both places. See billedOwn.)
   const lastUsage = new Map<number, number>();
   for (let i = 0; i < recs.length; i++) {
     if (runStart[i] < 0 || !recs[i].message?.usage) continue;
@@ -809,6 +885,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       out.push({ type: "text_delta", agentId, text: b.text ?? "", ts });
     } else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
       if (isSpawnTool(b.name)) {
+        // A compaction replays whole records verbatim, and a replayed launch
+        // used to spawn the child a SECOND time: the task message that comes
+        // with it says `submitted`, so a child the file had already reported
+        // finished went back to "not started yet". Same guard the tool_call
+        // branch below has had, for the same reason. Measured over
+        // ~/.claude/projects: 1 row (32ab8b5d…, toolu_01AS7uYQ…, replayed 926
+        // records after its launch).
+        if (spawnedBy.has(b.id)) return;
         const task = typeof b.input?.description === "string" ? b.input.description : "subtask";
         // The agent type ("Explore", "code-reviewer") is the only readable name
         // a subagent has — its id is the raw tool-use id. It travels on the task
@@ -827,6 +911,16 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           label,
           ts,
         });
+        // A report the file wrote down before this launch, held back so it
+        // would not land in front of the row it is about. Its own record still
+        // carries its own timestamp; this frame is stamped where the reader
+        // learns of it, which is the earliest point in the stream where the
+        // child exists to be reported on.
+        const held = pending.get(b.id);
+        if (held !== undefined) {
+          pending.delete(b.id);
+          pushOutcome(b.id, held, ts);
+        }
       } else if (!calls.has(b.id)) {
         // A compaction replays whole records verbatim, launch call included. The
         // reducer keys cards by callId, so emitting the call twice re-creates the
@@ -845,10 +939,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         // What the record says about the child itself (card 167, finding 6):
         // the model it ran on, and whether it ever reported back.
         if (agent !== null && agent !== undefined) {
-          emitAgentDetail(b.tool_use_id, agent, ts);
+          // The record says "async_launched" and it is right — but only about
+          // the launch. Whether the child ever came back is the FILE's answer,
+          // and a notification naming this call is it.
+          const { launched: _wentBackground, ...rest } = agent;
+          emitAgentDetail(b.tool_use_id, reportedBack.has(b.tool_use_id) ? rest : agent, ts);
           // The child's own bill, under the child. Nothing else in a session
-          // file carries it, and without it the fan-out looks free.
-          if (agent.usage !== undefined)
+          // file carries it, and without it the fan-out looks free — unless the
+          // child's own records already paid it, see billedOwn.
+          if (agent.usage !== undefined && !billedOwn.has(b.tool_use_id))
             emitUsage(
               b.tool_use_id,
               {
@@ -864,11 +963,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
               ts,
             );
         }
-        // A launch that never reported back gets NO result message: 394 of the
-        // 624 launch records in ~/.claude/projects say `async_launched`, and a
-        // result message would mark every one of them completed in the roster
-        // while the card showed the launch receipt as the child's answer. The
-        // receipt itself stays where the launch put it, on the parent's card.
+        // A background launch gets NO result message HERE: 394 of the 624
+        // launch records in ~/.claude/projects say `async_launched`, and this
+        // message would mark every one of them completed off a receipt that
+        // reads "Async agent launched successfully." — the launch's answer,
+        // not the child's. What finishes such a child is its own
+        // task-notification later in the file (emitLaunchOutcome), which is
+        // where its real answer is. The receipt itself stays where the launch
+        // put it, on the parent's card.
         if (agent?.launched !== true)
           out.push({
             type: "agent_message",
@@ -913,6 +1015,84 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     }
   };
 
+  /** Outcomes already landed, so one block carried by three records lands once. */
+  const landed = new Set<string>();
+  /**
+   * Reports the file wrote down BEFORE the launch they answer.
+   *
+   * 4 rows in ~/.claude/projects do this: the queue-operation that took the
+   * notification sits ahead of the assistant record holding the tool_use,
+   * because a compaction replayed the launch after it. Pushing the outcome
+   * there would put the child's ending in front of its own spawn, and the task
+   * message that follows would reset the row to "submitted" — the file says
+   * "completed" and the app would have said "not started yet".
+   */
+  const pending = new Map<string, TaskNotification>();
+
+  /**
+   * A launched child reporting back, on the child's own row.
+   *
+   * A `<task-notification>` whose `<tool-use-id>` names a launch THIS file made
+   * is that child talking, and it belongs where the child is — not under its
+   * task id as a roster row of its own with no parent, which is what the
+   * fallback below did with it. Measured over ~/.claude/projects on 2026-08-04,
+   * that fallback drew 245 parentless rows in the 70 files that fan out, and
+   * 218 of them were a child the same import had already drawn.
+   *
+   * A terminal `<status>` ends the child (`killed`, `stopped` and `failed` all
+   * read as failed, which is what the reducer has words for); no status is a
+   * progress report and leaves it working with what it said. The text is the
+   * notification's own fields, same as the fallback.
+   *
+   * @return true when this notification belonged to a launch in this file
+   */
+  const emitLaunchOutcome = (n: TaskNotification, ts: number): boolean => {
+    if (n.callId === null || !taskIds.has(n.callId)) return false;
+    // A background agent files a notification every time it comes to rest, and
+    // the client writes each one down up to three times (queued, attached,
+    // delivered). Same call, same status, same summary is the same report.
+    const key = [n.callId, n.status ?? "", n.summary].join(" ");
+    if (landed.has(key)) return true;
+    landed.add(key);
+    // The launch is not in the stream yet: hold the report until it is.
+    if (!spawnedBy.has(n.callId)) {
+      pending.set(n.callId, n);
+      return true;
+    }
+    pushOutcome(n.callId, n, ts);
+    return true;
+  };
+
+  /** The report itself, on the child's row. */
+  const pushOutcome = (callId: string, n: TaskNotification, ts: number): void => {
+    const text = notificationText(n);
+    out.push({
+      type: "agent_message",
+      from: callId,
+      to: spawnedBy.get(callId) ?? "main",
+      role: n.status === null ? "status" : "result",
+      state: n.status ?? "working",
+      text: text === "" ? n.summary : text,
+      ts,
+    });
+  };
+
+  /**
+   * The same, off a record that is not the delivered user message.
+   *
+   * A `queue-operation` and a `queued_command` attachment carry the block
+   * verbatim. Only the launch-outcome half runs here: the fallback that turns
+   * an unjoinable notification into a report of its own stays on the user
+   * channel, where it was measured, so these records add no roster row that
+   * was not already there.
+   */
+  const landNotification = (r: CCRecord, ts: number): void => {
+    for (const text of notificationTexts(r)) {
+      const n = parseTaskNotification(text);
+      if (n !== null) emitLaunchOutcome(n, ts);
+    }
+  };
+
   /**
    * A notification, landed where it belongs.
    *
@@ -927,6 +1107,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
    * is the notification's own text.
    */
   const emitNotification = (n: TaskNotification, ts: number): void => {
+    if (emitLaunchOutcome(n, ts)) return;
     const callId = n.callId !== null && calls.has(n.callId) ? n.callId : (launchOf.get(n.taskId) ?? null);
     if (callId !== null && calls.has(callId)) {
       const card = results.get(callId) ?? { ts, text: "", agentId: "main" };
@@ -947,10 +1128,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       });
       return;
     }
-    const text = n.fields
-      .filter((f) => f.label !== "output-file" && f.value !== "")
-      .map((f) => f.value)
-      .join("\n");
+    const text = notificationText(n);
     out.push({
       type: "agent_message",
       from: n.taskId,
@@ -1050,6 +1228,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           ts,
         } as unknown as RunEvent);
       }
+      // 147 of the 365 notifications that answer an async launch of their own
+      // file are only ever HERE and in the attachment below — the delivered
+      // user record is not in the transcript. The frame above carries the text
+      // for the reader; this carries the answer to the child's row.
+      landNotification(r, ts);
       return true;
     }
     if (r.type !== "attachment") return false;
@@ -1106,6 +1289,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           ...(a.origin !== undefined && a.origin !== null ? { origin: a.origin } : {}),
           ts,
         } as unknown as RunEvent);
+        landNotification(r, ts);
         return true;
       }
       default:
@@ -1194,6 +1378,12 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     // attachment).
     noteGround(r, ts);
     if (emitNoConversation(r, ts)) return;
+    // Every other record type, so that what SUPPRESSES the "never reported
+    // back" badge and what LANDS the child's outcome are read off the same
+    // records. They came apart once: the badge came off 365 children and only
+    // 361 of them got an outcome, and the four left over fell back to
+    // "submitted" — a worse sentence than the one being fixed.
+    landNotification(r, ts);
     if (emitSystem(r, i, ts)) return;
     // The machine's summary of the conversation it replaced. It used to import
     // as a plain user_message: 391,308 characters of the model's own prose,
@@ -1246,7 +1436,12 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       else for (const b of blocks) emitBlock(owner, b, ts, detail, agent);
       // The child's response costs what it costs, and it is charged to the
       // child. Same rule as the main branch below, same piece of the response.
-      if (r.type === "assistant" && usageAt.has(i) && r.message?.usage) emitUsage(owner, r.message.usage, ts);
+      // Once this fires, the launch record's summary of the same run is a
+      // second copy of the same money — see billedOwn.
+      if (r.type === "assistant" && usageAt.has(i) && r.message?.usage) {
+        emitUsage(owner, r.message.usage, ts);
+        billedOwn.add(owner);
+      }
       return;
     }
     if (r.type === "user") {
