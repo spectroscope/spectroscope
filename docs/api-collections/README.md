@@ -46,15 +46,19 @@ environment block for exactly this reason.
 
 ## The fences, measured
 
-Several endpoints are origin-gated (the 0.3.0 hardening). The good news for
-REST clients: **a browserless client sends no `Origin` header, and the
-server treats an absent Origin as safe** — from the same machine, targeting
-`localhost`, every request in this collection passes. Measured with curl
-from loopback against a live the spectro-server built from this tree (2026-07-30):
+The whole surface is origin-gated. One filter checks every `/api` request
+for a loopback peer and a localhost `Host` before it reaches a handler, and
+`GET /api/health` is the only path left open — the individual endpoints then
+add their own stricter checks on top. The good news for REST clients:
+**a browserless client sends no `Origin` header, and the server treats an
+absent Origin as safe** — from the same machine, targeting `localhost`,
+every request in this collection passes. Measured with curl from loopback
+against a live spectro-server built from this tree (2026-08-04):
 
 | endpoint | fence | no Origin | `Origin: http://localhost:<port>` | `Origin: https://evil.example` | `Host: evil.example` |
 |---|---|---|---|---|---|
-| GET /api/sessions | none | 200 | 200 | 200 | 200 |
+| GET /api/health | none | 200 | 200 | 200 | 200 |
+| GET /api/sessions | host | 200 | 200 | 200 | 404 |
 | GET /api/settings | host | 200 | 200 | 200 | 404 |
 | GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |
 | POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |
@@ -72,8 +76,9 @@ the answer to "why is this 404?" is always one click away.
 ## Handle with care
 
 - `DELETE /api/sessions/{id}` **really deletes** and is the one destructive
-  endpoint without an origin fence. Replay the collection against a
-  throwaway home, not your real `~/.spectro`.
+  endpoint without an *Origin* fence — it wears the host fence and the id
+  shape check, nothing more. Replay the collection against a throwaway home,
+  not your real `~/.spectro`.
 - `DELETE /api/skills/{name}` is **permanent** — the seeding ledger will not
   re-seed a deleted skill on the next boot.
 - `POST /api/local-model/download` starts a **multi-gigabyte** download into

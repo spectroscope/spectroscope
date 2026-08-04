@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""17 — The ladder: seven states, and what each one opens.
+"""17 — The tutorial: seven states, and what each one opens.
 
 The leveling wave as one picture: an ascending staircase, one tread per state,
 each carrying the spectral line it adds to the header strip, the criteria that
@@ -25,13 +25,13 @@ PAD = 56
 LADDER = (pathlib.Path(__file__).resolve().parents[2]
           / "spectro-core/src/main/resources/leveling/levels.json")
 
-# The five spectral lines a climber collects, in ladder order. Same five as the
+# The five spectral lines a reader collects, in tutorial order. Same five as the
 # logo, same order; the sixth tread holds all of them at once.
 LINES = [C.CORAL, C.MOSS, C.BLOSSOM, C.LILAC, C.OCEAN]
 
 
 def load():
-    """The ladder as the product sees it."""
+    """The levels as the product sees it."""
     data = json.loads(LADDER.read_text(encoding="utf-8"))
     by_level: dict[int, list[dict]] = {}
     for crit in data["criteria"]:
@@ -86,7 +86,7 @@ def tread(x, y, w, level, criteria, accent):
 
 def build():
     levels, by_level = load()
-    head, y = C.header(W, "leveling", "the ladder",
+    head, y = C.header(W, "leveling", "the tutorial",
                        "seven states, and the surfaces each one opens")
     body = [head]
     y += 24

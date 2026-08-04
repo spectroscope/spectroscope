@@ -7,7 +7,7 @@ repositories {
 }
 
 dependencies {
-    implementation("dev.spectroscope:spectro-core:0.6.0")
+    implementation("dev.spectroscope:spectro-core:0.6.1")
     // A logging backend so provider warnings are visible; any slf4j binding works.
     runtimeOnly("org.slf4j:slf4j-simple:2.0.18")
 }

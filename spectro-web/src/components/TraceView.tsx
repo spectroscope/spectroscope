@@ -41,7 +41,7 @@ import {
 } from "./traceDetail";
 import { readable, type ReadableBlock } from "./readable";
 import { readTodoItems, statusLabel, todoSummary } from "./todoList";
-import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
+import { causalChain, reasoningPairs, reasoningBlockText, reasoningReach } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
 import { sourceNoteIndex, type SourceNote } from "../import/sourceNotes";
 import { readRecordMeta, type MetaGroup } from "../import/recordMeta";
@@ -195,11 +195,31 @@ export function traceLinkState(
   return otlpFailure !== null ? "failed" : "none";
 }
 
-/** Reasoning lens (card 13): the row's role while the lens is active. */
-function lensRole(type: string): "hi" | "anchor" | "dim" {
-  if (type === "thinking_delta") return "hi";
+/** Reasoning lens (card 13): the row's role while the lens is active.
+ *
+ *  `wearsReasoning` is what a turn_start needs: on an imported transcript the
+ *  turn and the thought are ONE line of the file, so that row now carries the
+ *  block — and a row carrying the whole thought must not be dimmed as though it
+ *  said nothing. The type alone can no longer answer this.
+ *
+ *  Exported for the tests: the `wearsReasoning` branch decides whether a row
+ *  holding the whole thought is foregrounded or greyed out, and a branch that
+ *  quietly stopped being taken would look exactly like a row that never thought. */
+export function lensRole(type: string, wearsReasoning: boolean): "hi" | "anchor" | "dim" {
+  if (wearsReasoning || type === "thinking_delta") return "hi";
   if (type === "tool_call" || type.startsWith("permission_") || type === "error") return "anchor";
   return "dim";
+}
+
+/** The opening clause of a thought, for the chip that points back at it: one
+ *  line, whitespace collapsed, cut on a word. Long enough to answer "why this
+ *  call", short enough that it stays a pointer and never becomes the text. */
+export function reasoningLead(text: string, max = 72): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  if (flat.length <= max) return flat;
+  const cut = flat.slice(0, max);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > max * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
 }
 
 /** Wall-clock with millisecond precision — the wire view's native unit. */
@@ -303,9 +323,12 @@ const TraceRow = memo(function TraceRow(props: {
   tl: number | null;
   /** Lens pairing: the action that followed this thinking block, if any. */
   pair?: { seq: number; label: string };
-  /** Lens: the block-ending thinking row carries the WHOLE block's reasoning
-   *  text (every thinking_delta of the block joined), untruncated. */
+  /** Lens: the row that opens the block's line carries the WHOLE block's
+   *  reasoning text (every thinking_delta of the block joined), untruncated. */
   blockText?: string;
+  /** Lens, the other direction: the block that was in charge when this action
+   *  ran. Absent on every row that ran with nothing in charge. */
+  from?: { seq: number; lead: string };
   /** What the imported line behind this frame says beyond the frame itself
    *  (card: the source line). Undefined on every row of a session produced
    *  here, on a frame the importer built, and on the sibling rows of a line
@@ -334,7 +357,8 @@ const TraceRow = memo(function TraceRow(props: {
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
-  const { entry, dt, proto, host, showHost, showModel, hit, open, lang, lens, tl, pair, blockText } = props;
+  const { entry, dt, proto, host, showHost, showModel, hit, open, lang, lens, tl, pair, blockText, from } =
+    props;
   // The DIR flag now reads as the LLM direction (derived from the type); the
   // socket direction moves into the tooltip.
   const ld = llmDirection(entry.type);
@@ -433,6 +457,22 @@ const TraceRow = memo(function TraceRow(props: {
           <span className="trace-reason-kicker mono">{t(lang, "trace.reasonBlock")}</span>
           <p className="trace-reason-text">{blockText}</p>
         </div>
+      )}
+      {/* The lens, read backwards: standing on a call, the thought that was in
+          charge of it, one click away. It names the thought's opening clause
+          and nothing of the call's own input or result — those are the tool
+          card's subject, and repeating them here would make the lens a second
+          transcript. */}
+      {from !== undefined && (
+        <button
+          type="button"
+          className="trace-pair trace-pair--from"
+          title={t(lang, "trace.pairFromTitle")}
+          onClick={() => props.onJump?.(from.seq)}
+        >
+          <span aria-hidden="true">&#8624;</span> {t(lang, "trace.pairFrom")}{" "}
+          <span className="mono">{from.lead}</span>
+        </button>
       )}
       {pair !== undefined && (
         <button
@@ -1192,6 +1232,13 @@ export function TraceView(props: {
     () => (lensOn ? reasoningBlockText(allEntries) : new Map<number, string>()),
     [lensOn, allEntries],
   );
+  // And the same relation read backwards: the block that was in charge when an
+  // action ran. Without it a tool call said nothing under the lens at all —
+  // measured, 41,346 imported tool_call rows and not one of them spoke.
+  const reach = useMemo(
+    () => (lensOn ? reasoningReach(allEntries) : new Map<number, number>()),
+    [lensOn, allEntries],
+  );
   const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
   const hasThinking = useMemo(() => allEntries.some((e) => e.type === "thinking_delta"), [allEntries]);
 
@@ -1753,6 +1800,9 @@ export function TraceView(props: {
               {visible.map((e, i) => {
                 const pairSeq = lensOn ? pairs.get(e.seq) : undefined;
                 const pairTarget = pairSeq !== undefined ? bySeq.get(pairSeq) : undefined;
+                const ownText = lensOn ? blockTexts.get(e.seq) : undefined;
+                const fromSeq = lensOn ? reach.get(e.seq) : undefined;
+                const fromText = fromSeq === undefined ? undefined : blockTexts.get(fromSeq);
                 return (
                   <TraceRow
                     key={e.seq}
@@ -1766,7 +1816,7 @@ export function TraceView(props: {
                     hit={hitSeqs.has(e.seq) ? (e.seq === currentSeq ? "hit-cur" : "hit") : ""}
                     open={openSeq === e.seq}
                     lang={lang}
-                    lens={lensOn ? lensRole(e.type) : ""}
+                    lens={lensOn ? lensRole(e.type, ownText !== undefined && ownText !== "") : ""}
                     pair={
                       pairTarget !== undefined
                         ? {
@@ -1775,7 +1825,12 @@ export function TraceView(props: {
                           }
                         : undefined
                     }
-                    blockText={lensOn ? blockTexts.get(e.seq) : undefined}
+                    blockText={ownText}
+                    from={
+                      fromSeq !== undefined && fromText !== undefined && fromText !== ""
+                        ? { seq: fromSeq, lead: reasoningLead(fromText) }
+                        : undefined
+                    }
                     notes={
                       e.sourceLine !== undefined && anchors?.get(e.sourceLine) === e.seq
                         ? noteIndex.get(e.sourceLine)

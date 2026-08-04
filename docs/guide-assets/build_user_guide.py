@@ -35,6 +35,16 @@ Known lag, 2026-08-03: the editions are four rows behind the parts
   old bare-array shape and "64 MB cap" at line 3531 of each, so a reader of the
   shipped guide is told a cap the server passed and a shape no client can use.
 
+  Second row, 2026-08-04: the owner renamed the leveling feature from "the
+  ladder" to "the tutorial". parts/06b-leveling.html and the three parts that
+  point at it carry the new word, and so do diagram 17 and the CLI help. The
+  plates do NOT: shots/33-leveling-intro, 34-leveling-panel, 36-leveling-teaser,
+  40-leveling-levelup and 41-leveling-settings still photograph a settings block
+  headed "Leveling" and a button reading "Start with the ladder". Rebuilding the
+  editions before capture_leveling.sh has been re-run would print a chapter whose
+  prose and whose pictures disagree, which is worse than the lag. Reshoot first,
+  then build.
+
   Left unbuilt on purpose rather than forgotten. A rebuild is its own ritual
   (both themes, both PDFs, a pdftotext check that the pages really changed),
   and the deploy mirror behind spectroscope.ai/guide lives in a different repo,

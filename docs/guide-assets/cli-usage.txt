@@ -14,7 +14,7 @@
                 ./gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"
   doctor        check Java, config layers, provider reachability
                 ./gradlew -q --console=plain :spectro-cli:run --args="doctor"
-  level         the leveling ladder with its ticks and receipts (no server needed)
+  level         the tutorial with its ticks and receipts (no server needed)
                 ./gradlew -q --console=plain :spectro-cli:run --args="level"
   tour          guided feature tour — menu, tips, settings
                 ./gradlew -q --console=plain tour
