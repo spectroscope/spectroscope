@@ -14,12 +14,14 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 >
 > **Version counter — bump this line with every cut.** Published so far:
 > **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27), **0.5.0** (2026-07-31),
-> **0.6.0** (2026-08-04). Those numbers are burned forever; the next release
-> MUST be **0.6.1 or higher**. Pick the number by what is in the cut, not by
-> habit: 0.5.0 carries features (node triggers, the PTY shell, reasoning
-> capabilities), so a patch number would have undersold it and readers skip
-> patches. This applies to every artifact in the table below, not just the
-> Maven libs: apps and the desktop kit move to the same number in step 2.
+> **0.6.0** and **0.6.1** (both 2026-08-04). Those numbers are burned forever;
+> the next release MUST be **0.6.2 or higher**. Pick the number by what is in
+> the cut, not by habit: 0.5.0 carries features (node triggers, the PTY shell,
+> reasoning capabilities), so a patch number would have undersold it and readers
+> skip patches — while 0.6.1 is a patch by the same rule, because its headline is
+> a desktop shell that forgot every preference on every start. This applies to
+> every artifact in the table below, not just the Maven libs: apps and the
+> desktop kit move to the same number in step 2.
 
 ---
 
