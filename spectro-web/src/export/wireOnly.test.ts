@@ -33,7 +33,7 @@ const typeOf = (event: unknown): string => (event as { type: string }).type;
 
 describe("what a written jsonl may contain", () => {
   it("names every frame that is ours rather than the wire's", () => {
-    // The seven the app builds for its own screen, plus the six an import
+    // The seven the app builds for its own screen, plus the seven an import
     // reads. Written out by hand on purpose, so removing one goes red here;
     // ADDING one is what wireOnly.drift.test.ts catches, by reading
     // SessionConnection and the RunEvent union off disk. This list alone missed
@@ -53,10 +53,11 @@ describe("what a written jsonl may contain", () => {
       "queued_command",
       "edited_text_file",
       "tool_result_detail",
+      "agent_detail",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    expect(NON_WIRE_TYPES.size).toBe(13);
+    expect(NON_WIRE_TYPES.size).toBe(14);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

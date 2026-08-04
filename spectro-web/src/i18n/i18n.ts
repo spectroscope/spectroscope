@@ -599,6 +599,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   // agents tab
   "agents.empty": { de: "Noch kein Lauf. Sobald du etwas schickst, erscheint hier der Haupt-Agent — und jeder Subagent, den er spawnt, bleibt für die Session sichtbar.", en: "No run yet. As soon as you send something, the main agent appears here — and every subagent it spawns stays visible for the session." },
   "agents.main": { de: "Haupt", en: "Main" },
+  "agents.launched": { de: "gestartet, ohne Rückmeldung", en: "launched, never reported back" },
 
   // work panel + chat v2 (branch chat-v2, prototype)
   "rp.work": { de: "Arbeit", en: "Work" },
@@ -1165,6 +1166,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   // usage footer
   "footer.run": { de: "Lauf", en: "run" },
   "footer.session": { de: "Session", en: "session" },
+  "footer.subagent": { de: "inkl. 1 Subagent", en: "incl. 1 subagent" },
+  "footer.subagents": { de: "inkl. {n} Subagenten", en: "incl. {n} subagents" },
+  "footer.subagentsTitle": {
+    de: "Der Session-Wert enthält die Subagenten: {out} out stammen von ihnen.",
+    en: "The session figure includes the subagents: {out} out came from them.",
+  },
   "footer.runActive": { de: "Lauf aktiv", en: "run active" },
   "footer.stopped": { de: "gestoppt · {r}", en: "stopped · {r}" },
   "footer.ready": { de: "bereit", en: "ready" },

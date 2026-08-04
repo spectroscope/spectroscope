@@ -12,6 +12,19 @@
 
 import type { RunEvent } from "../events";
 import { readToolResultDetail, type ToolResultDetail } from "./toolResultDetail";
+import { readAgentResult, type AgentRunResult } from "./agentResult";
+
+/** What a response reported it cost. The same four counters arrive twice: on a
+ *  record's own `message.usage`, and — for a subagent whose transcript is a
+ *  different file — inside the parent's `toolUseResult.usage`. */
+interface CCUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  /** Anthropic prompt caching. Additive on our wire too: absent means the
+   *  provider reported none, which is not the same as zero. */
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
 
 interface CCRecord {
   type?: string;
@@ -30,14 +43,7 @@ interface CCRecord {
      *  "stop_sequence"), or null on a message that never reported an ending.
      *  Absent on user records and on transcripts old enough not to carry it. */
     stop_reason?: string | null;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      /** Anthropic prompt caching. Additive on our wire too: absent means the
-       *  provider reported none, which is not the same as zero. */
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
+    usage?: CCUsage;
   };
   uuid?: string;
   parentUuid?: string;
@@ -654,12 +660,12 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   // "The last that HAS one" and not simply "the last", so a run whose final
   // piece dropped the field still reports what the file did record.
   //
-  // NOT COUNTED HERE AT ALL: a subagent's tokens. The sidechain branch emits no
-  // usage frame, and 68.5% of the corpus's assistant records are sidechain,
-  // carrying 86,341,266 output tokens that never become a frame. That is a
-  // separate gap, named rather than quietly closed: framing them would move
-  // every imported session's total upward, which is a change an owner gets to
-  // sanction.
+  // A SUBAGENT'S TOKENS ARE COUNTED TOO, on the owner's own agentId (card 167,
+  // finding 1, on the owner's word "zähl die subagent-tokens"). Both branches
+  // charge a response the same way, so an imported session total now means what
+  // the SESSION spent rather than what its main agent spent. The footer says so
+  // whenever a child is in it — a total that changes meaning in silence between
+  // an old import and a new one is the thing to avoid, not the higher number.
   const lastUsage = new Map<number, number>();
   for (let i = 0; i < recs.length; i++) {
     if (runStart[i] < 0 || !recs[i].message?.usage) continue;
@@ -696,15 +702,68 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   };
 
   /**
+   * One response's token bill, charged to whoever produced it.
+   *
+   * The main branch and the sidechain branch call this with different owners,
+   * which is the whole of finding 1: a subagent's response used to reach the
+   * screen with its words and without its cost.
+   *
+   * A cache counter is spread in only when the record wrote one. A synthesised
+   * zero reads as "nothing was cached", which is a claim about a request that
+   * reported nothing at all.
+   */
+  const emitUsage = (agentId: string, u: CCUsage, ts: number): void => {
+    out.push({
+      type: "usage",
+      agentId,
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      ...(u.cache_read_input_tokens !== undefined ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
+      ...(u.cache_creation_input_tokens !== undefined
+        ? { cacheCreationTokens: u.cache_creation_input_tokens }
+        : {}),
+      ts,
+    });
+  };
+
+  /**
+   * What the launch record says about the child, beside the receipt it shows.
+   *
+   * `agent_detail` is import-only (wire/nonWire.ts): a reading of somebody
+   * else's transcript, in the idiom sourceNotes.ts and tool_result_detail
+   * already use. A record that names neither the model nor a background launch
+   * produces no frame, so a row with no model chip is exactly a row whose file
+   * did not name one.
+   */
+  const emitAgentDetail = (agentId: string, res: AgentRunResult, ts: number): void => {
+    if (res.model === undefined && res.launched === undefined) return;
+    out.push({
+      type: "agent_detail",
+      agentId,
+      ...(res.model !== undefined ? { model: res.model } : {}),
+      ...(res.launched !== undefined ? { launched: true } : {}),
+      ts,
+    } as unknown as RunEvent);
+  };
+
+  /**
    * One content block under `agentId`, whoever owns it.
    *
-   * `detail` is the owning record's `toolUseResult`, already read. It rides
-   * with the block rather than being looked up afterwards because the record is
-   * where the two belong together: measured over the corpus, NO record carries
-   * more than one tool_result block, so a record's detail belongs to exactly
-   * one call and the join can never pick the wrong one.
+   * `detail` and `agent` are two readings of the owning record's ONE
+   * `toolUseResult`: what a tool returned, and what a launch says about the
+   * child it launched. Both ride with the block rather than being looked up
+   * afterwards because the record is where they belong together: measured over
+   * the corpus, NO record carries more than one tool_result block, so a
+   * record's readings belong to exactly one call and the join can never pick
+   * the wrong one.
    */
-  const emitBlock = (agentId: string, b: CCBlock, ts: number, detail?: ToolResultDetail | null): void => {
+  const emitBlock = (
+    agentId: string,
+    b: CCBlock,
+    ts: number,
+    detail?: ToolResultDetail | null,
+    agent?: AgentRunResult | null,
+  ): void => {
     // Signature-only thinking / empty text blocks would render as empty
     // activities and empty stream slices — skip them.
     if (b?.type === "thinking" && (b.thinking ?? "") !== "") {
@@ -746,15 +805,43 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           // record has been read by now, so the answer is complete here.
           out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: stopOf(b.tool_use_id), ts });
         }
-        out.push({
-          type: "agent_message",
-          from: b.tool_use_id,
-          to: agentId,
-          role: "result",
-          state: b.is_error ? "failed" : "completed",
-          text: asText(b.content),
-          ts,
-        });
+        // What the record says about the child itself (card 167, finding 6):
+        // the model it ran on, and whether it ever reported back.
+        if (agent !== null && agent !== undefined) {
+          emitAgentDetail(b.tool_use_id, agent, ts);
+          // The child's own bill, under the child. Nothing else in a session
+          // file carries it, and without it the fan-out looks free.
+          if (agent.usage !== undefined)
+            emitUsage(
+              b.tool_use_id,
+              {
+                input_tokens: agent.usage.inputTokens,
+                output_tokens: agent.usage.outputTokens,
+                ...(agent.usage.cacheReadTokens !== undefined
+                  ? { cache_read_input_tokens: agent.usage.cacheReadTokens }
+                  : {}),
+                ...(agent.usage.cacheCreationTokens !== undefined
+                  ? { cache_creation_input_tokens: agent.usage.cacheCreationTokens }
+                  : {}),
+              },
+              ts,
+            );
+        }
+        // A launch that never reported back gets NO result message: 394 of the
+        // 624 launch records in ~/.claude/projects say `async_launched`, and a
+        // result message would mark every one of them completed in the roster
+        // while the card showed the launch receipt as the child's answer. The
+        // receipt itself stays where the launch put it, on the parent's card.
+        if (agent?.launched !== true)
+          out.push({
+            type: "agent_message",
+            from: b.tool_use_id,
+            to: agentId,
+            role: "result",
+            state: b.is_error ? "failed" : "completed",
+            text: asText(b.content),
+            ts,
+          });
       }
       const output = asText(b.content);
       const taskId = receiptTaskId(output);
@@ -1021,6 +1108,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     // parsing it again for every block of a 40 MB transcript would be a second
     // pass over the file for nothing.
     const detail = readToolResultDetail(r.toolUseResult);
+    const agent = readAgentResult(r.toolUseResult);
     if (r.isSidechain) {
       const owner = ownerOf(r);
       if (!owner) return; // orphaned sidechain: skip, never crash
@@ -1044,7 +1132,10 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         if (startsTurn(i)) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
       if (apiError) emitApiErrorMessage(owner, blocks, ts);
-      else for (const b of blocks) emitBlock(owner, b, ts, detail);
+      else for (const b of blocks) emitBlock(owner, b, ts, detail, agent);
+      // The child's response costs what it costs, and it is charged to the
+      // child. Same rule as the main branch below, same piece of the response.
+      if (r.type === "assistant" && usageAt.has(i) && r.message?.usage) emitUsage(owner, r.message.usage, ts);
       return;
     }
     if (r.type === "user") {
@@ -1099,7 +1190,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             // exactly that. See attachmentNote for why the bytes stay behind.
             const note = attachmentNote(b);
             if (note !== "") out.push({ type: "user_message", text: note, ts } as unknown as RunEvent);
-            else emitBlock("main", b, ts, detail);
+            else emitBlock("main", b, ts, detail, agent);
           }
       }
     } else if (r.type === "assistant") {
@@ -1113,21 +1204,9 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         if (typeof r.uuid === "string") mainTurnUuids.push(r.uuid);
       }
       if (apiError) emitApiErrorMessage("main", blocks, ts);
-      else for (const b of blocks) emitBlock("main", b, ts, detail);
+      else for (const b of blocks) emitBlock("main", b, ts, detail, agent);
       // The response's tokens, once, off the piece that finished the accounting.
-      const u = usageAt.has(i) ? r.message?.usage : undefined;
-      if (u)
-        out.push({
-          type: "usage",
-          agentId: "main",
-          inputTokens: u.input_tokens ?? 0,
-          outputTokens: u.output_tokens ?? 0,
-          ...(u.cache_read_input_tokens !== undefined ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
-          ...(u.cache_creation_input_tokens !== undefined
-            ? { cacheCreationTokens: u.cache_creation_input_tokens }
-            : {}),
-          ts,
-        });
+      if (usageAt.has(i) && r.message?.usage) emitUsage("main", r.message.usage, ts);
     }
   };
 

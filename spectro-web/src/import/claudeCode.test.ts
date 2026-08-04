@@ -1618,3 +1618,226 @@ describe("claudeCode adapter (API failures)", () => {
     expect(buildTextFeed(events).some((l) => l.text === "[error] API Error: Overloaded")).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Card 167, findings 1 and 6: the subagent's own numbers.
+//
+// A modern transcript never holds its children: measured over the 5,121 files
+// in ~/.claude/projects, 0 of 309,064 sidechain records resolve an owner in
+// their own file, and 4,664 files are sidechain-only. What a session file DOES
+// hold is the launch record, and its toolUseResult carries the child's model,
+// its token bill and whether it ever reported back.
+// ---------------------------------------------------------------------------
+
+/** A parent session that launches two children: one reported back, one did not. */
+const launches: unknown[] = [
+  { type: "user", message: { role: "user", content: "fan out" }, uuid: "u1", parentUuid: null },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      id: "m1",
+      model: "claude-opus-5",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_done",
+          name: "Agent",
+          input: { description: "review the diff", subagent_type: "code-reviewer" },
+        },
+      ],
+    },
+    uuid: "a1",
+    parentUuid: "u1",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_done", content: "three findings" }],
+    },
+    toolUseResult: {
+      status: "completed",
+      resolvedModel: "claude-haiku-4-5-20251001",
+      totalDurationMs: 420972,
+      totalTokens: 60607,
+      usage: {
+        input_tokens: 2,
+        cache_creation_input_tokens: 3536,
+        cache_read_input_tokens: 54290,
+        output_tokens: 2779,
+      },
+    },
+    uuid: "u2",
+    parentUuid: "a1",
+  },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      id: "m2",
+      model: "claude-opus-5",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_async",
+          name: "Agent",
+          input: { description: "translate the pitch", subagent_type: "Explore" },
+        },
+      ],
+    },
+    uuid: "a2",
+    parentUuid: "u2",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        { type: "tool_result", tool_use_id: "toolu_async", content: "Async agent launched successfully." },
+      ],
+    },
+    toolUseResult: {
+      isAsync: true,
+      status: "async_launched",
+      resolvedModel: "claude-opus-4-8[1m]",
+      outputFile: "/private/tmp/tasks/afa7775.output",
+    },
+    uuid: "u3",
+    parentUuid: "a2",
+  },
+];
+
+describe("claudeCode adapter (the subagent's own numbers)", () => {
+  const events = claudeCodeToRunEvents(launches);
+  const roster = reduceAll(initialState, events).agents;
+
+  it("counts the child's tokens, under the child", () => {
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "usage",
+        agentId: "toolu_done",
+        inputTokens: 2,
+        outputTokens: 2779,
+        cacheReadTokens: 54290,
+        cacheCreationTokens: 3536,
+      }),
+    );
+  });
+
+  it("puts those tokens on the child's roster row and in the session total", () => {
+    expect(roster.find((a) => a.id === "toolu_done")?.outTokens).toBe(2779);
+    expect(reduceAll(initialState, events).usage.outputTokens).toBe(2779);
+  });
+
+  it("names the model the child actually ran on, not the parent's", () => {
+    expect(roster.find((a) => a.id === "toolu_done")?.model).toBe("claude-haiku-4-5-20251001");
+    expect(roster.find((a) => a.id === "toolu_async")?.model).toBe("claude-opus-4-8[1m]");
+  });
+
+  it("does not announce the child's model as the run's own", () => {
+    // provider_info is latest-wins for the whole run: a child announcement
+    // would tell the reader the session had switched models.
+    const announced = (events as unknown as { type: string; model?: string }[])
+      .filter((e) => e.type === "provider_info")
+      .map((e) => e.model);
+    expect(announced).toEqual(["claude-opus-5"]);
+  });
+
+  it("does not draw a launch that never reported back as finished", () => {
+    expect(roster.find((a) => a.id === "toolu_async")?.state).toBe("working");
+    expect(roster.find((a) => a.id === "toolu_async")?.launched).toBe(true);
+  });
+
+  it("still finishes the child that did report back", () => {
+    expect(roster.find((a) => a.id === "toolu_done")?.state).toBe("completed");
+    expect(roster.find((a) => a.id === "toolu_done")?.launched).toBeUndefined();
+  });
+
+  it("keeps the receipt on the parent's card either way", () => {
+    const outputs = events
+      .filter((e) => e.type === "tool_result")
+      .map((e) => (e as unknown as { output: string }).output);
+    expect(outputs).toContain("three findings");
+    expect(outputs).toContain("Async agent launched successfully.");
+  });
+
+  it("says nothing about a launch whose record carries none of it", () => {
+    const bare = claudeCodeToRunEvents([
+      launches[0],
+      launches[1],
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_done", content: "ok" }],
+        },
+        uuid: "u2",
+        parentUuid: "a1",
+      },
+    ]);
+    expect((bare as unknown as { type: string }[]).some((e) => e.type === "agent_detail")).toBe(false);
+    expect(bare.some((e) => e.type === "usage" && (e as { agentId: string }).agentId !== "main")).toBe(false);
+    expect(reduceAll(initialState, bare).agents.find((a) => a.id === "toolu_done")?.state).toBe("completed");
+  });
+
+  it("keeps the child reading out of a session file", () => {
+    // agent_detail is a reading of somebody else's transcript, never a frame
+    // the wire carries: a writer that let it through would produce a file the
+    // Java reader drops without a word.
+    expect(events.filter((e) => !isWireEvent(e)).map((e) => e.type)).toContain("agent_detail");
+  });
+});
+
+describe("claudeCode adapter (a subagent that IS in the file)", () => {
+  // The older layout, and the one the child-run machinery was built for: the
+  // child's own records live in the parent's file. 0 of today's corpus does
+  // this, and the branch has to count tokens anyway or a file that does will
+  // silently drop them again.
+  const withChild: unknown[] = [
+    { type: "user", message: { role: "user", content: "go" }, uuid: "u1", parentUuid: null },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        id: "m1",
+        model: "claude-opus-5",
+        content: [{ type: "tool_use", id: "task1", name: "Task", input: { description: "read it" } }],
+      },
+      uuid: "a1",
+      parentUuid: "u1",
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        id: "c1",
+        model: "claude-opus-5",
+        content: [{ type: "text", text: "read" }],
+        usage: { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 33 },
+      },
+      uuid: "s1",
+      parentUuid: "task1",
+      isSidechain: true,
+    },
+  ];
+
+  it("charges a sidechain response to the subagent that produced it", () => {
+    const events = claudeCodeToRunEvents(withChild);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "usage",
+        agentId: "task1",
+        inputTokens: 11,
+        outputTokens: 22,
+        cacheReadTokens: 33,
+      }),
+    );
+  });
+
+  it("leaves the context ring alone — the child has its own window", () => {
+    const state = reduceAll(initialState, claudeCodeToRunEvents(withChild));
+    expect(state.lastInputTokens).toBe(0);
+    expect(state.usage.outputTokens).toBe(22);
+  });
+});

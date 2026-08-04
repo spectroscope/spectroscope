@@ -1283,3 +1283,37 @@ describe("reduce (a user turn from the stream)", () => {
     expect(state.agents[0].state).toBe("working");
   });
 });
+
+describe("reduce — agent_detail (import-only, card 167)", () => {
+  const spawn: RunEvent[] = [
+    { type: "run_start", runId: "r", agentId: "main", prompt: "go", ts: 1 },
+    { type: "agent_spawn", agentId: "t1", parentId: "main", task: "review", ts: 2 },
+  ];
+  const detail = (p: Record<string, unknown>) =>
+    ({ type: "agent_detail", ts: 3, ...p }) as unknown as RunEvent;
+
+  it("names the model the child ran on, beside the parent's own", () => {
+    const s = reduceAll(initialState, [...spawn, detail({ agentId: "t1", model: "claude-haiku-4-5" })]);
+    expect(s.agents.find((a) => a.id === "t1")?.model).toBe("claude-haiku-4-5");
+  });
+
+  it("leaves the run's announced model alone", () => {
+    const s = reduceAll(initialState, [
+      ...spawn,
+      { type: "provider_info", provider: "anthropic", model: "claude-opus-5", ts: 2 } as unknown as RunEvent,
+      detail({ agentId: "t1", model: "claude-haiku-4-5" }),
+    ]);
+    expect(s.runModel).toBe("claude-opus-5");
+  });
+
+  it("holds a launched child open instead of letting a result close it", () => {
+    const s = reduceAll(initialState, [...spawn, detail({ agentId: "t1", launched: true })]);
+    expect(s.agents.find((a) => a.id === "t1")?.state).toBe("working");
+    expect(s.agents.find((a) => a.id === "t1")?.launched).toBe(true);
+  });
+
+  it("ignores a frame that names no agent", () => {
+    const s = reduceAll(initialState, [...spawn, detail({ model: "claude-haiku-4-5" })]);
+    expect(s.agents.map((a) => a.id)).toEqual(["main", "t1"]);
+  });
+});

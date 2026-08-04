@@ -138,6 +138,16 @@ export interface AgentInfo {
   lastStatus: string | null;
   inTokens: number;
   outTokens: number;
+  /** The model this agent ran on, when something said so. Only an import ever
+   *  does: a live subagent runs on the run's own model, and a transcript names
+   *  the child's model on the launch record (card 167). Absent, not null —
+   *  every live session and every older transcript says nothing here, and a
+   *  row with no chip is exactly a row nothing was said about. */
+  model?: string;
+  /** The child was launched into the background and never reported back inside
+   *  the transcript. Only ever true; a child that did report back says so by
+   *  its state. */
+  launched?: true;
 }
 
 /** One step of the agent's plan (from the additive `plan` event). Wire status
@@ -799,9 +809,29 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // tool RETURNED, beside the flattened text the model was shown. It lands
       // on the card its call built and nowhere else, so a card that never got
       // one is exactly a card whose record did not carry the field.
-      const raw = event as unknown as { type: string; callId?: unknown; detail?: unknown };
+      const raw = event as unknown as {
+        type: string;
+        callId?: unknown;
+        detail?: unknown;
+        agentId?: unknown;
+        model?: unknown;
+        launched?: unknown;
+      };
       if (raw.type === "tool_result_detail" && typeof raw.callId === "string" && !!raw.detail)
         return patchCard(state, raw.callId, { detail: raw.detail as ToolResultDetail });
+      // What a transcript's launch record says about the child it launched
+      // (card 167, finding 6): the model the child ACTUALLY ran on, which is
+      // not the parent's, and whether it ever reported back. A launched child
+      // is held open — 394 of the 624 launches in the measured corpus never
+      // came back, and every one of them used to read as finished.
+      if (raw.type === "agent_detail" && typeof raw.agentId === "string" && raw.agentId !== "")
+        return {
+          ...state,
+          agents: upsertAgent(state.agents, raw.agentId, {
+            ...(typeof raw.model === "string" && raw.model !== "" ? { model: raw.model } : {}),
+            ...(raw.launched === true ? { launched: true as const, state: "working" as const } : {}),
+          }),
+        };
       // Everything else unknown is ignored — forward compatibility. Frontends
       // never crash because the core learned a new event.
       return state;

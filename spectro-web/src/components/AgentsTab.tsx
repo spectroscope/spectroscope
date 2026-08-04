@@ -48,8 +48,14 @@ export function AgentsTab({
                   {a.id}
                 </span>
                 {isMain && <span className="agent-role-tag">{t(lang, "agents.main")}</span>}
+                {/* The model the child ACTUALLY ran on, when a transcript said
+                    so (card 167). It is not the parent's: measured over
+                    ~/.claude/projects, 617 launch records name one across seven
+                    ids, and a haiku child under an opus parent is a normal
+                    line. Verbatim, "[1m]" suffix and all. */}
+                {a.model !== undefined && <span className="agent-model mono">{a.model}</span>}
                 <span className={`agent-badge agent-badge--${a.state}`}>
-                  {t(lang, `map.life.${a.state}`)}
+                  {a.launched === true ? t(lang, "agents.launched") : t(lang, `map.life.${a.state}`)}
                 </span>
               </span>
               {a.task !== "" && <span className="agent-card-task">{a.task}</span>}
