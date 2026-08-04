@@ -91,6 +91,27 @@ class WireDocDriftTest {
     }
 
     @Test
+    void theOnlyEndpointPublishedAsUnfencedIsTheOneTheFilterLeavesOpen() throws IOException {
+        Path root = repoRoot();
+        assumeTrue(root != null, "not running from a source checkout");
+        JsonNode table = new ObjectMapper().readTree(Files.readString(root.resolve(ENDPOINTS)));
+
+        // The fence moved into ApiLocalFence, which is default-deny: a row can
+        // no longer be honestly "none" unless the filter names that exact path.
+        // Without this, a table row keeps telling client authors an endpoint is
+        // open long after the code closed it, which is the drift card 74 found
+        // (five rows said "none" against a server that had fenced four of them).
+        for (JsonNode endpoint : table.path("endpoints")) {
+            String path = endpoint.path("path").asText();
+            if ("none".equals(endpoint.path("fence").asText())) {
+                assertTrue(ApiLocalFence.isOpen(path),
+                        path + " is published as unfenced, but the API filter fences it —"
+                                + " every generated collection tells a client the wrong thing");
+            }
+        }
+    }
+
+    @Test
     void theCollectionDescriptionOfTheTranscriptCapMatchesTheSource() throws IOException {
         Path root = repoRoot();
         assumeTrue(root != null, "not running from a source checkout");

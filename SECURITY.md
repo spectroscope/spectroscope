@@ -28,10 +28,11 @@ What the project defends, and where its responsibility ends.
 
 In scope:
 
-- **the local fences.** The server binds `127.0.0.1`. Fenced endpoints check
-  a loopback peer and a localhost `Host` header (DNS-rebinding defense);
-  origin-fenced endpoints also require an absent-or-loopback `Origin` (CSRF
-  defense) — the fence class per endpoint is documented. Refusals are blank
+- **the local fences.** The server binds `127.0.0.1`. One filter checks
+  every `/api` request for a loopback peer and a localhost `Host`
+  (DNS-rebinding defense) before it reaches a handler, `GET /api/health`
+  excepted; origin-fenced endpoints also require an absent-or-loopback
+  `Origin` (CSRF defense) — the fence class per endpoint is documented. Refusals are blank
   404s, so a refused caller cannot fingerprint the server. The fences are
   measured with curl; the tables live in `docs/api-collections/`.
 - **the permission gate.** Every tool call — files, shell, web, image

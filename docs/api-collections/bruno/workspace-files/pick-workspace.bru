@@ -15,7 +15,7 @@ docs {
   
   CAUTION: Blocks until a human answers the dialog on the server machine — exclude it from automated replays.
   
-  Fence: none — No origin gating.
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
   
   Writes state: no
 }

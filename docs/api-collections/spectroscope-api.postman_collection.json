@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3c9061cd-742f-5c32-a0be-58a7fdb43d25",
     "name": "spectroscope REST API",
-    "description": "The whole REST surface of spectro-server — 48 endpoints in 16 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server built from this tree (port 8199, 2026-07-30). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/sessions | none | 200 | 200 | 200 | 200 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an origin fence — the id shape check is the only guard. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.",
+    "description": "The whole REST surface of spectro-server — 48 endpoints in 16 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server built from this tree (port 8236, 2026-08-04). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL. GET /api/health is the one path deliberately left open.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/health | none | 200 | 200 | 200 | 200 |\n| GET /api/sessions | host | 200 | 200 | 200 | 404 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -78,7 +78,7 @@
                 "state"
               ]
             },
-            "description": "The scheduler's job-state map from ~/.spectro/jobs-state.json (what `spectroscope cron status` prints); empty when absent/corrupt.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "The scheduler's job-state map from ~/.spectro/jobs-state.json (what `spectroscope cron status` prints); empty when absent/corrupt.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -123,7 +123,7 @@
                 "sessions"
               ]
             },
-            "description": "List every stored session's metadata from the JSONL store (the sidebar list).\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "List every stored session's metadata from the JSONL store (the sidebar list).\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -144,7 +144,7 @@
                 "events"
               ]
             },
-            "description": "All parsed RunEvents of one session as JSON; 404 when unreadable.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "All parsed RunEvents of one session as JSON; 404 when unreadable.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -185,7 +185,7 @@
                 "{{sessionId}}"
               ]
             },
-            "description": "Delete one stored session (JSONL + blob folder). 204 success, 400 malformed id, 404 unknown.\n\nCAUTION: This really deletes the session, and it is the one destructive endpoint without an origin fence — the id shape check is the only guard. Point it at a throwaway home before replaying the whole collection.\n\nFence: none — No origin gating.\n\nWrites state: yes"
+            "description": "Delete one stored session (JSONL + blob folder). 204 success, 400 malformed id, 404 unknown.\n\nCAUTION: This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: yes"
           },
           "response": []
         }
@@ -210,7 +210,7 @@
                 "config"
               ]
             },
-            "description": "Active provider/model/logLevel, image-key presence (booleans only), per-provider onboarding status incl. spectro-local.\n\nSide effect: A ready provider establishes the 'provider-ready' leveling criterion — harmless, but a drift guard replaying the whole collection should know.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "Active provider/model/logLevel, image-key presence (booleans only), per-provider onboarding status incl. spectro-local.\n\nSide effect: A ready provider establishes the 'provider-ready' leveling criterion — harmless, but a drift guard replaying the whole collection should know.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -263,7 +263,7 @@
                 "context"
               ]
             },
-            "description": "The assembled system context (system prompt, tools, skills, MCP servers, subagent profiles) for the server's working directory — stateless.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "The assembled system context (system prompt, tools, skills, MCP servers, subagent profiles) for the server's working directory — stateless.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         }
@@ -296,7 +296,7 @@
                 }
               ]
             },
-            "description": "Live model list for the picker (Anthropic Models API / /v1/models / ollama /api/tags), curated fallback; unknown provider answers [].\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "Live model list for the picker (Anthropic Models API / /v1/models / ollama /api/tags), curated fallback; unknown provider answers [].\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -328,7 +328,7 @@
                 }
               ]
             },
-            "description": "Reasoning capability of one (provider,model) pair — control/efforts/wire; live API overlay for anthropic/ollama/openrouter, static table otherwise. Never errors.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "Reasoning capability of one (provider,model) pair — control/efforts/wire; live API overlay for anthropic/ollama/openrouter, static table otherwise. Never errors.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -717,7 +717,7 @@
                 "pick-workspace"
               ]
             },
-            "description": "Open the NATIVE macOS folder chooser on the server machine (blocks up to 120 s). 200 {path}, 204 cancel, 409 dialog already open, 501 non-macOS, 500 failure. Picks only — changes nothing.\n\nCAUTION: Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "Open the NATIVE macOS folder chooser on the server machine (blocks up to 120 s). 200 {path}, 204 cancel, 409 dialog already open, 501 non-macOS, 500 failure. Picks only — changes nothing.\n\nCAUTION: Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         }
@@ -1265,7 +1265,7 @@
                 "transcribe"
               ]
             },
-            "description": "Speech-to-text: webm→WAV (ffmpeg)→whisper-cli→{text}. 503 with setup hint when STT not installed, 500 temp-dir/interrupt. Sent without a body — as this request ships — Spring answers 400 (Required request body is missing) before the controller runs.\n\nBody: Send the raw webm/opus recording as the request body (curl --data-binary @recording.webm). No JSON wrapper.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "Speech-to-text: webm→WAV (ffmpeg)→whisper-cli→{text}. 503 with setup hint when STT not installed, 500 temp-dir/interrupt. Sent without a body — as this request ships — Spring answers 400 (Required request body is missing) before the controller runs.\n\nBody: Send the raw webm/opus recording as the request body (curl --data-binary @recording.webm). No JSON wrapper.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         }
@@ -1316,7 +1316,7 @@
                 "bundles"
               ]
             },
-            "description": "The starter-bundle catalog: {bundles:[{id,name,description,fleet}], buildTools:[gradle,maven,python,bash], version}.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "The starter-bundle catalog: {bundles:[{id,name,description,fleet}], buildTools:[gradle,maven,python,bash], version}.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -1344,7 +1344,7 @@
                 }
               ]
             },
-            "description": "One bundle's rendered file set for copy-paste: {id, buildTool, files:{path:content}}. 404 unknown bundle.\n\nFence: none — No origin gating.\n\nWrites state: no"
+            "description": "One bundle's rendered file set for copy-paste: {id, buildTool, files:{path:content}}. 404 unknown bundle.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
