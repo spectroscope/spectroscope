@@ -11,6 +11,7 @@
 // Ported from the LLM_Simulator; keep the two in sync.
 
 import type { RunEvent } from "../events";
+import { readToolResultDetail, type ToolResultDetail } from "./toolResultDetail";
 
 interface CCRecord {
   type?: string;
@@ -47,6 +48,10 @@ interface CCRecord {
    *  85,369 multi-piece runs in the corpus, so demanding both costs nothing and
    *  refuses to fuse a file that ever reuses an id. */
   requestId?: string;
+  /** The tool's own return value, beside the tool_result block that carries
+   *  the flattened text. Read by import/toolResultDetail.ts, never rendered as
+   *  itself. Present on 44,208 records of 496,675 — absent-first, always. */
+  toolUseResult?: unknown;
   /** `attachment` records: what the client recorded around the conversation. */
   attachment?: CCAttachment;
   /** `queue-operation` records: enqueue, dequeue or remove. */
@@ -560,8 +565,16 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     out.push({ type: "provider_info", model, ts } as unknown as RunEvent);
   };
 
-  /** One content block under `agentId`, whoever owns it. */
-  const emitBlock = (agentId: string, b: CCBlock, ts: number): void => {
+  /**
+   * One content block under `agentId`, whoever owns it.
+   *
+   * `detail` is the owning record's `toolUseResult`, already read. It rides
+   * with the block rather than being looked up afterwards because the record is
+   * where the two belong together: measured over the corpus, NO record carries
+   * more than one tool_result block, so a record's detail belongs to exactly
+   * one call and the join can never pick the wrong one.
+   */
+  const emitBlock = (agentId: string, b: CCBlock, ts: number, detail?: ToolResultDetail | null): void => {
     // Signature-only thinking / empty text blocks would render as empty
     // activities and empty stream slices — skip them.
     if (b?.type === "thinking" && (b.thinking ?? "") !== "") {
@@ -637,6 +650,12 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         durationMs: 0,
         ts,
       });
+      // What the tool RETURNED, next to what the model was SHOWN. The output
+      // above stays the block, byte for byte; this is the same answer
+      // structured, and the card reads it where the flattened text lost
+      // something (the gutter, the two streams, the place an edit landed).
+      if (detail != null)
+        out.push({ type: "tool_result_detail", callId: b.tool_use_id, detail, ts } as unknown as RunEvent);
     }
   };
 
@@ -802,6 +821,10 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     if (emitNoConversation(r, ts)) return;
     const content = r.message?.content;
     const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
+    // Read once per record, not once per block: the field is the record's, and
+    // parsing it again for every block of a 40 MB transcript would be a second
+    // pass over the file for nothing.
+    const detail = readToolResultDetail(r.toolUseResult);
     if (r.isSidechain) {
       const owner = ownerOf(r);
       if (!owner) return; // orphaned sidechain: skip, never crash
@@ -822,7 +845,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         // Only the piece that OPENED the response opens a turn; see startsTurn.
         if (startsTurn(i)) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
-      for (const b of blocks) emitBlock(owner, b, ts);
+      for (const b of blocks) emitBlock(owner, b, ts, detail);
       return;
     }
     if (r.type === "user") {
@@ -877,7 +900,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             // exactly that. See attachmentNote for why the bytes stay behind.
             const note = attachmentNote(b);
             if (note !== "") out.push({ type: "user_message", text: note, ts } as unknown as RunEvent);
-            else emitBlock("main", b, ts);
+            else emitBlock("main", b, ts, detail);
           }
       }
     } else if (r.type === "assistant") {
@@ -887,7 +910,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       announce(modelOf(r), ts);
       noteStop("main", r);
       if (startsTurn(i)) out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
-      for (const b of blocks) emitBlock("main", b, ts);
+      for (const b of blocks) emitBlock("main", b, ts, detail);
       // The response's tokens, once, off the piece that finished the accounting.
       const u = usageAt.has(i) ? r.message?.usage : undefined;
       if (u)

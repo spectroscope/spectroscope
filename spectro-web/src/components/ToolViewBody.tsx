@@ -293,6 +293,10 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
             meta={view.range ?? (view.lineCount > 0 ? t(lang, "tv.lines", { n: view.lineCount }) : undefined)}
           >
             <div className="tv-path mono">{view.path}</div>
+            {/* 14 of the 22 truncations in the corpus are stated nowhere in the
+                text that came back, so without this the card presents a partial
+                file as the file. */}
+            {view.truncated && <p className="tv-note">{t(lang, "tv.truncatedCap")}</p>}
           </Region>
           {view.body !== "" && (
             <Body label={t(lang, "tv.content")} path={view.path} text={view.body} lang={lang} />
@@ -318,6 +322,10 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
         <>
           <Region label={t(lang, "tv.edited")} meta={view.result}>
             <div className="tv-path mono">{view.path}</div>
+            {/* Where it landed. The two panes are the call's own strings and
+                float with no position otherwise: 7,525 of 7,627 Edit results in
+                the corpus say nothing but "has been updated successfully". */}
+            {view.at !== null && <p className="tv-note">{t(lang, "tv.landed", { at: view.at })}</p>}
           </Region>
           <div className="tv-diff">
             <div className="tv-diff-side tv-diff-side--before">
@@ -379,6 +387,14 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
               <pre className={`tv-well tv-term mono${view.failed ? " tv-term--failed" : ""}`}>
                 {cut(view.output)}
               </pre>
+            </Region>
+          )}
+          {/* The other stream, on its own. The flattened text runs the two
+              together with no marker on 980 of the 999 commands that wrote to
+              stderr, so an error line and a result line read the same. */}
+          {view.stderr !== null && (
+            <Region label={t(lang, "tv.stderr")}>
+              <pre className="tv-well tv-term tv-term--failed mono">{cut(view.stderr)}</pre>
             </Region>
           )}
         </>
@@ -471,10 +487,15 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
       );
 
     case "task": {
-      // The heading carries the verb, so the row never has to. That is why an
-      // update reads "#3 · done" and not "→ done": the call names the state it
+      // The heading carries the verb, so the row never has to. It used to say
+      // "#3 · done" and never "→ done", because the CALL names the state it
       // asked for and never the one it came from, and an arrow with nothing on
       // its left invites a reader to look for a from-state that is not here.
+      //
+      // The from-state turned out to be in the file after all (card 167): a
+      // Claude Code record carries `toolUseResult.statusChange {from, to}` on
+      // 1,314 of its updates, and the importer now reads it. So the arrow is
+      // drawn where it has both ends and nowhere else.
       const heading =
         view.op === "create" ? "tv.taskCreated" : view.op === "update" ? "tv.taskUpdated" : "tv.tasks";
       return (
@@ -498,6 +519,20 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
                   {row.id !== null && <span className="tv-task-id mono">#{row.id}</span>}
                   {/* The agent-card dot/badge, same as the plan above, so a
                       state reads identically wherever it shows up. */}
+                  {/* The arrow the heading comment above had to refuse. It is
+                      drawn only where the record NAMED the from-state (1,314
+                      updates in the corpus); everywhere else the row is the one
+                      state it knows, exactly as before. */}
+                  {row.fromStatus !== null && (
+                    <>
+                      <span className={`agent-badge agent-badge--${row.fromStatus} tv-task-from`}>
+                        {statusLabel(row.fromStatus, lang)}
+                      </span>
+                      <span className="tv-task-arrow" aria-hidden="true">
+                        &#8594;
+                      </span>
+                    </>
+                  )}
                   {row.status !== null && (
                     <>
                       <span className={`agent-dot agent-dot--${row.status}`} aria-hidden="true" />

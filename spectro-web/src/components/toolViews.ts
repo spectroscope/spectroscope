@@ -8,17 +8,49 @@
 // falls back to `generic` (the raw pair). We never render an empty pretty card
 // over a payload we did not understand — the model can send anything.
 
+import type { PatchHunk, ToolResultDetail } from "../import/toolResultDetail";
 import { hlLangForFence, hlLangForPath, tokenize, type HlLang } from "../workspace/highlight";
 import { formatDuration, formatTokens } from "../format";
 
 /** One tool call, described as what it actually is. */
 export type ToolView =
-  | { kind: "file"; path: string; range: string | null; body: string; lineCount: number }
+  | {
+      kind: "file";
+      path: string;
+      range: string | null;
+      body: string;
+      lineCount: number;
+      /** The read stopped at the token cap. 14 of the 22 truncations in the
+       *  corpus are stated NOWHERE in the flattened block, so a card without
+       *  this presents a partial file as the file. */
+      truncated: boolean;
+    }
   | { kind: "write"; path: string; content: string; result: string }
-  | { kind: "edit"; path: string; before: string; after: string; result: string }
+  | {
+      kind: "edit";
+      path: string;
+      before: string;
+      after: string;
+      result: string;
+      /** Where the change landed, in the file's NEW numbering ("lines 51–71"),
+       *  or null when the record carried no patch. The before/after panes come
+       *  from the call's own strings and float with no position otherwise: the
+       *  result line says nothing but "has been updated successfully" on 7,525
+       *  of 7,627 Edit blocks. */
+      at: string | null;
+    }
   | { kind: "listing"; path: string; entries: string[] }
   | { kind: "matches"; pattern: string; path: string | null; lines: string[] }
-  | { kind: "command"; command: string; output: string; failed: boolean }
+  | {
+      kind: "command";
+      command: string;
+      output: string;
+      failed: boolean;
+      /** What the command wrote to stderr, kept apart from stdout. Null when
+       *  the record did not separate them — which is every live run and every
+       *  transcript older than the field, so absent is the common case. */
+      stderr: string | null;
+    }
   | { kind: "image"; source: string | null; prompt: string | null; preview: string | null; result: string }
   | { kind: "skill"; name: string; body: string }
   | { kind: "mcp"; server: string; tool: string; input: unknown; output: string }
@@ -69,6 +101,11 @@ export type TaskRow = {
   subject: string | null;
   description: string | null;
   status: string | null;
+  /** The state the task moved OUT of. Null unless the record said so: the call
+   *  names the state it asked for and never the one it came from, which is why
+   *  the row used to read "#3 · done" and not "→ done". 1,314 updates in the
+   *  corpus carry it; nothing else ever does. */
+  fromStatus: string | null;
   blockedBy: string[];
 };
 
@@ -278,7 +315,7 @@ function rosterRows(out: string): TaskRow[] | null {
   for (const line of lines(out)) {
     const m = TASK_ROW.exec(line);
     if (m === null) return null;
-    rows.push({ id: m[1], subject: m[3], description: null, status: m[2], blockedBy: [] });
+    rows.push({ id: m[1], subject: m[3], description: null, status: m[2], fromStatus: null, blockedBy: [] });
   }
   return rows;
 }
@@ -1129,13 +1166,56 @@ export function runStats(run: WorkflowRun): RunStat[] {
  * @param isError whether the result came back as an error
  * @return the view the card renders; `generic` whenever the shape is unclear
  */
+/**
+ * The page a read returned, as the record itself states it.
+ *
+ * The card's own reconstruction reads the CALL's offset/limit, which 22 of the
+ * 1,565 partial reads in the corpus do not carry at all, and the line count
+ * behind it counts the flattened text — gutter lines and any appended
+ * system-reminder included — so it states the page's length as the file's.
+ *
+ * @return the range, or null when the record said nothing about the page
+ */
+function pageRange(d: ToolResultDetail): string | null {
+  const start = d.startLine;
+  const shown = d.numLines;
+  if (start === undefined || shown === undefined) return null;
+  const end = start + Math.max(shown, 1) - 1;
+  const span = `lines ${start}–${end}`;
+  // "of 611" only when the file is longer than the page: on a whole small file
+  // the two numbers are the same and repeating one is noise.
+  return d.totalLines !== undefined && d.totalLines > shown ? `${span} of ${d.totalLines}` : span;
+}
+
+/**
+ * Where the hunks landed, in the file's NEW numbering.
+ *
+ * The new side and not the old one, because a reader who opens the file after
+ * the edit is looking at the new numbering. A zero-line hunk (a pure deletion)
+ * still names the one line it sits at rather than an empty range.
+ */
+function patchAt(hunks: readonly PatchHunk[]): string | null {
+  if (hunks.length === 0) return null;
+  const spans = hunks.map((h) => {
+    const end = h.newStart + Math.max(h.newLines, 1) - 1;
+    return end === h.newStart ? `${h.newStart}` : `${h.newStart}–${end}`;
+  });
+  return `lines ${spans.join(", ")}`;
+}
+
 export function describeTool(
   name: string,
   input: unknown,
   output: string | undefined,
   isError: boolean,
+  /** What the tool RETURNED, when an import read it beside the flattened text
+   *  (card 167). Absent on every live call and on every transcript older than
+   *  the field, so every use below is absent-first: with nothing here the view
+   *  is exactly what it was. */
+  detail?: ToolResultDetail | null,
 ): ToolView {
   const out = output ?? "";
+  const d = detail ?? null;
   const generic: ToolView = { kind: "generic", input, output: out };
 
   switch (name) {
@@ -1146,13 +1226,24 @@ export function describeTool(
       if (path === null) return generic;
       const offset = num(input, "offset");
       const limit = num(input, "limit");
-      const range =
+      const called =
         offset !== null
           ? limit !== null
             ? `lines ${offset}–${offset + limit - 1}`
             : `from line ${offset}`
           : null;
-      return { kind: "file", path, range, body: out, lineCount: out === "" ? 0 : out.split("\n").length };
+      // The record's own page over the call's: the call says what was ASKED
+      // for, the record says what came back, and 22 of the corpus's paged reads
+      // asked for nothing at all.
+      const body = d?.fileContent ?? out;
+      return {
+        kind: "file",
+        path,
+        range: (d === null ? null : pageRange(d)) ?? called,
+        body,
+        lineCount: d?.numLines ?? (body === "" ? 0 : body.split("\n").length),
+        truncated: d?.truncated === true,
+      };
     }
 
     case "Write":
@@ -1173,7 +1264,7 @@ export function describeTool(
       const before = str(input, "old_string") ?? str(input, "oldString");
       const after = str(input, "new_string") ?? str(input, "newString");
       if (path === null || before === null || after === null) return generic;
-      return { kind: "edit", path, before, after, result: out };
+      return { kind: "edit", path, before, after, result: out, at: d?.patch ? patchAt(d.patch) : null };
     }
 
     case "list_dir": {
@@ -1206,7 +1297,16 @@ export function describeTool(
       // command rather than beside it in a field of its own.
       const command = str(input, "command");
       if (command === null) return generic;
-      return { kind: "command", command, output: out, failed: isError };
+      // The record's stdout over the block: they agree except where the
+      // transcript kept a preview of an output too big for it, and there the
+      // block is 2 KB of a run that produced more.
+      return {
+        kind: "command",
+        command,
+        output: d?.stdout ?? out,
+        failed: isError,
+        stderr: d?.stderr ?? null,
+      };
     }
 
     case "view_image": {
@@ -1276,7 +1376,16 @@ export function describeTool(
       return {
         kind: "task",
         op: "create",
-        rows: [{ id, subject, description: str(input, "description"), status: null, blockedBy: [] }],
+        rows: [
+          {
+            id,
+            subject,
+            description: str(input, "description"),
+            status: null,
+            fromStatus: null,
+            blockedBy: [],
+          },
+        ],
         wrote: "silent",
         // The line names the id and echoes the subject, so once the id is read
         // there is nothing in it the row does not already show. Anything else —
@@ -1303,7 +1412,11 @@ export function describeTool(
             id: done?.[1] ?? asked,
             subject: str(input, "subject"),
             description: str(input, "description"),
-            status: str(input, "status"),
+            // The record's answer over the input's ask, for the same reason the
+            // id above prefers it: the input says which state was aimed at, the
+            // record says which one the task ended in.
+            status: d?.statusTo ?? str(input, "status"),
+            fromStatus: d?.statusFrom ?? null,
             blockedBy: deps as string[],
           },
         ],

@@ -774,7 +774,7 @@ describe("describeTool — the task list", () => {
     if (v.kind !== "task") throw new Error("kind");
     expect(v.op).toBe("update");
     expect(v.rows).toEqual([
-      { id: "1", subject: null, description: null, status: "completed", blockedBy: [] },
+      { id: "1", subject: null, description: null, status: "completed", fromStatus: null, blockedBy: [] },
     ]);
     expect(v.wrote).toBe("named");
     expect(v.result).toBe("");
@@ -848,6 +848,7 @@ describe("describeTool — the task list", () => {
       subject: "Logo-Set + Favicon in spectro-web",
       description: null,
       status: "in_progress",
+      fromStatus: null,
       blockedBy: [],
     });
   });
@@ -1391,5 +1392,113 @@ describe("splitInput — a one-line program is a block too", () => {
     const split = splitInput("some_tool", { note: prose });
     expect(split.blocks).toEqual([]);
     expect(split.shape).toEqual({ note: prose });
+  });
+});
+
+// What the tool RETURNED, read off the record beside the flattened text the
+// model was shown (card 167, finding 5). Every one of these is a field the
+// importer now carries and the view had no way to know before.
+describe("describeTool with the tool's own return value", () => {
+  it("draws the file body without the gutter the block welded on", () => {
+    // Measured over the 5,119 transcripts in ~/.claude/projects: 3,154 reads
+    // carry a body, and all 3,154 blocks have the gutter. The highlighter was
+    // colouring the line numbers as program text.
+    const view = describeTool("Read", { file_path: "/tmp/a.md" }, "1\t# Heading\n2\t\n3\t- one", false, {
+      fileContent: "# Heading\n\n- one",
+      numLines: 3,
+      startLine: 1,
+      totalLines: 611,
+    });
+    expect(view).toMatchObject({ kind: "file", body: "# Heading\n\n- one", lineCount: 3 });
+  });
+
+  it("states the page the read returned, not the length of what came back", () => {
+    const view = describeTool("Read", { file_path: "/a" }, "x", false, {
+      fileContent: "x",
+      startLine: 1,
+      numLines: 272,
+      totalLines: 611,
+    });
+    expect(view).toMatchObject({ kind: "file", range: "lines 1–272 of 611" });
+  });
+
+  it("keeps the call's own range when the record carried no page", () => {
+    const view = describeTool("Read", { file_path: "/a", offset: 5, limit: 3 }, "x", false);
+    expect(view).toMatchObject({ kind: "file", range: "lines 5–7" });
+  });
+
+  it("says a read stopped at the token cap, which 14 of 22 blocks never say", () => {
+    const plain = describeTool("Read", { file_path: "/a" }, "x", false);
+    expect(plain).toMatchObject({ kind: "file", truncated: false });
+    const cut = describeTool("Read", { file_path: "/a" }, "x", false, { fileContent: "x", truncated: true });
+    expect(cut).toMatchObject({ kind: "file", truncated: true });
+  });
+
+  it("splits a command's two streams, which the block runs together unmarked", () => {
+    const view = describeTool("Bash", { command: "du -sh x" }, " 66M\tx\n\nreset\n", false, {
+      stdout: " 66M\tx\n",
+      stderr: "\nreset\n",
+    });
+    expect(view).toMatchObject({ kind: "command", output: " 66M\tx\n", stderr: "\nreset\n" });
+  });
+
+  it("leaves a command with no recorded streams exactly as it was", () => {
+    const view = describeTool("Bash", { command: "ls" }, "a\nb\n", false);
+    expect(view).toMatchObject({ kind: "command", output: "a\nb\n", stderr: null });
+  });
+
+  it("says where an edit landed, which the result line never does", () => {
+    const view = describeTool(
+      "Edit",
+      { file_path: "/a", old_string: "one", new_string: "two" },
+      "The file /a has been updated successfully.",
+      false,
+      { patch: [{ oldStart: 51, oldLines: 20, newStart: 51, newLines: 21 }] },
+    );
+    expect(view).toMatchObject({ kind: "edit", at: "lines 51–71" });
+  });
+
+  it("names every place a multi-hunk edit landed", () => {
+    const view = describeTool(
+      "Edit",
+      { file_path: "/a", old_string: "one", new_string: "two" },
+      "ok",
+      false,
+      {
+        patch: [
+          { oldStart: 51, oldLines: 20, newStart: 51, newLines: 21 },
+          { oldStart: 120, oldLines: 3, newStart: 121, newLines: 3 },
+        ],
+      },
+    );
+    expect(view).toMatchObject({ kind: "edit", at: "lines 51–71, 121–123" });
+  });
+
+  it("draws the arrow the task view had to refuse: from → to", () => {
+    const view = describeTool(
+      "TaskUpdate",
+      { taskId: "3", status: "completed" },
+      "Task #3 updated successfully: status",
+      false,
+      {
+        statusFrom: "in_progress",
+        statusTo: "completed",
+      },
+    );
+    expect(view).toMatchObject({
+      kind: "task",
+      op: "update",
+      rows: [{ id: "3", fromStatus: "in_progress", status: "completed" }],
+    });
+  });
+
+  it("leaves the from-state empty on an update whose record did not carry it", () => {
+    const view = describeTool(
+      "TaskUpdate",
+      { taskId: "3", status: "completed" },
+      "Task #3 updated successfully: status",
+      false,
+    );
+    expect(view).toMatchObject({ kind: "task", rows: [{ fromStatus: null }] });
   });
 });

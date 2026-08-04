@@ -970,6 +970,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.image": { de: "Bild", en: "Image" },
   "tv.skill": { de: "Skill", en: "Skill" },
   "tv.lines": { de: "{n} Zeilen", en: "{n} lines" },
+  // Card 167: three things a Claude Code transcript records beside the text the
+  // model was shown, and the card had no way to know before.
+  "tv.truncatedCap": {
+    de: "am Token-Limit abgeschnitten \u2014 das ist nicht die ganze Datei",
+    en: "cut off at the token cap \u2014 this is not the whole file",
+  },
+  "tv.stderr": { de: "Standardfehler", en: "stderr" },
+  "tv.landed": { de: "ge\u00e4ndert bei {at}", en: "changed at {at}" },
   "tv.entries": { de: "{n} Einträge", en: "{n} entries" },
   "tv.hits": { de: "{n} Treffer", en: "{n} hits" },
   "tv.workflow": { de: "Workflow", en: "Workflow" },

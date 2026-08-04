@@ -137,6 +137,9 @@ const LABELS: Record<Lang, Record<string, string>> = {
     "run.tools": "tool calls",
     "run.elapsed": "elapsed",
     args: "arguments",
+    truncatedCap: "cut off at the token cap \u2014 this is not the whole file",
+    stderr: "stderr",
+    landed: "changed at {at}",
   },
   de: {
     chat: "Chat",
@@ -216,6 +219,9 @@ const LABELS: Record<Lang, Record<string, string>> = {
     "run.tools": "Tool-Aufrufe",
     "run.elapsed": "Dauer",
     args: "Argumente",
+    truncatedCap: "am Token-Limit abgeschnitten \u2014 das ist nicht die ganze Datei",
+    stderr: "Standardfehler",
+    landed: "ge\u00e4ndert bei {at}",
   },
 };
 

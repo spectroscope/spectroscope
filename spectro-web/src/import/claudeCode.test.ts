@@ -13,6 +13,7 @@ import ccFollowup from "./fixtures/cc-followup.jsonl?raw";
 import ccUserBlocks from "./fixtures/cc-user-blocks.jsonl?raw";
 import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
 import ccBlankCards from "./fixtures/cc-blank-cards.jsonl?raw";
+import ccToolResult from "./fixtures/cc-tool-result.jsonl?raw";
 import {
   claudeCodeToRunEvents,
   claudeCodeWithOrigin,
@@ -23,6 +24,7 @@ import { detectAndLoad } from "./detect";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
 import { buildTextFeed } from "../state/textFeed";
+import { isWireEvent } from "../wire/nonWire";
 
 describe("claudeCode adapter (linear)", () => {
   const events = parseTranscript(ccLinear);
@@ -1380,5 +1382,67 @@ describe("claudeCode adapter (blocks that are not text)", () => {
     const state = reduceAll(initialState, events);
     const answered = state.turns.filter((t) => t.kind === "assistant").map((t) => t.text);
     expect(answered.join("\n")).not.toContain("[image/");
+  });
+});
+
+// The tool's own return value, carried to the card it belongs to (card 167,
+// finding 5). 44,208 records in the corpus hold a `toolUseResult` and the
+// importer read none of it, so a Read card showed the body with the line-number
+// gutter welded on, a Bash card ran stdout and stderr together, an Edit card
+// never said where the change landed and a TaskUpdate card could not draw the
+// state it came from. It rides an IMPORT-ONLY frame: nothing in events.ts gains
+// a field, and wire/nonWire.ts keeps it out of every file this app writes.
+describe("claudeCode adapter (what the tool actually returned)", () => {
+  const events = parseTranscript(ccToolResult);
+  const detailOf = (callId: string): Record<string, unknown> | undefined =>
+    (
+      events.find(
+        (e) =>
+          (e as unknown as { type: string }).type === "tool_result_detail" &&
+          (e as unknown as { callId: string }).callId === callId,
+      ) as unknown as { detail: Record<string, unknown> } | undefined
+    )?.detail;
+
+  it("carries the file body without the gutter the block welded on", () => {
+    expect(detailOf("r1")?.fileContent).toBe("# Heading\n\n- one");
+    // The block itself is untouched: the output is what the model was shown.
+    const result = events.find((e) => e.type === "tool_result" && e.callId === "r1") as { output: string };
+    expect(result.output).toBe("1\t# Heading\n2\t\n3\t- one");
+  });
+
+  it("carries the page the read returned, and that it stopped at the cap", () => {
+    expect(detailOf("r1")).toMatchObject({ startLine: 1, numLines: 3, totalLines: 611, truncated: true });
+  });
+
+  it("keeps the two Bash streams apart", () => {
+    expect(detailOf("b1")).toMatchObject({
+      stdout: " 66M\tapp.asar\n",
+      stderr: "\nShell cwd was reset to /tmp\n",
+    });
+  });
+
+  it("carries where an edit landed", () => {
+    expect(detailOf("e1")?.patch).toEqual([{ oldStart: 51, oldLines: 20, newStart: 51, newLines: 21 }]);
+  });
+
+  it("carries the state an update moved out of", () => {
+    expect(detailOf("k1")).toMatchObject({ statusFrom: "in_progress", statusTo: "completed" });
+  });
+
+  it("says nothing for a call whose record carried no toolUseResult", () => {
+    const linear = parseTranscript(ccLinear);
+    expect(linear.some((e) => (e as unknown as { type: string }).type === "tool_result_detail")).toBe(false);
+  });
+
+  it("puts the detail on the card the reducer built", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.cards["r1"].detail).toMatchObject({ fileContent: "# Heading\n\n- one" });
+    expect(state.cards["b1"].detail).toMatchObject({ stderr: "\nShell cwd was reset to /tmp\n" });
+  });
+
+  it("never lets the detail frame into a file this app writes", () => {
+    const detail = events.find((e) => (e as unknown as { type: string }).type === "tool_result_detail");
+    expect(detail).toBeTruthy();
+    expect(isWireEvent(detail as unknown as { type: string })).toBe(false);
   });
 });

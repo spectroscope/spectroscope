@@ -6,6 +6,8 @@
 import type { ClientMessage, RunEvent } from "../events";
 import type { WorkspaceMode } from "../workspace/paneState";
 
+import type { ToolResultDetail } from "../import/toolResultDetail";
+
 export interface ToolCard {
   callId: string;
   agentId: string;
@@ -13,6 +15,10 @@ export interface ToolCard {
   input: unknown;
   status: "pending" | "ok" | "error";
   output?: string;
+  /** What the tool RETURNED, when an import read it beside the flattened text
+   *  (card 167). UI state only: it comes off an import-only frame, nothing in
+   *  events.ts carries it, and a card built from a live run never has one. */
+  detail?: ToolResultDetail;
   durationMs?: number;
   permission?: "pending" | "allowed" | "denied";
   /** ts of the tool_call event — drives the live duration count-up. */
@@ -788,10 +794,18 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // like context_info.
       return { ...state, plan: event.steps };
 
-    default:
-      // Unknown event types are ignored — forward compatibility. Frontends
+    default: {
+      // An import-only frame the wire union does not know (card 167): what the
+      // tool RETURNED, beside the flattened text the model was shown. It lands
+      // on the card its call built and nowhere else, so a card that never got
+      // one is exactly a card whose record did not carry the field.
+      const raw = event as unknown as { type: string; callId?: unknown; detail?: unknown };
+      if (raw.type === "tool_result_detail" && typeof raw.callId === "string" && !!raw.detail)
+        return patchCard(state, raw.callId, { detail: raw.detail as ToolResultDetail });
+      // Everything else unknown is ignored — forward compatibility. Frontends
       // never crash because the core learned a new event.
       return state;
+    }
   }
 }
 
