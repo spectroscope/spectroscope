@@ -60,11 +60,28 @@ describe("causalChain", () => {
   });
 });
 
+/**
+ * Both lens maps key the row that OPENS a block, and this used to be the row
+ * that closed it.
+ *
+ * The owner reported that "a turn_start always has a huge thinking event and
+ * the thinking lens ignores it", and the measurement said he was right. On his
+ * own transcript the 451 thinking frames form 305 blocks, 146 of them two rows
+ * long. In 146 of those 146 the FIRST row sits directly under the turn_start,
+ * and in 146 of 146 it holds more text than the second — so the lens drew its
+ * panel and its "then:" chip on the short tail while the long thought above it,
+ * the one the eye lands on, showed nothing at all. Measured example, seq 13/14:
+ * 788 characters silent, 112 characters carrying the whole joined block.
+ *
+ * The block still reads as one block and the joined text is unchanged. What
+ * moved is which row wears it: the one where the block starts, which is the row
+ * under the turn_start.
+ */
 describe("reasoningPairs", () => {
-  it("pairs the END of a thinking block with the next same-agent action", () => {
+  it("pairs the START of a thinking block with the next same-agent action", () => {
     const pairs = reasoningPairs(stream);
-    expect(pairs.get(4)).toBe(5); // block 3-4 -> tool_call seq 5
-    expect(pairs.has(3)).toBe(false); // mid-block deltas carry no pair
+    expect(pairs.get(3)).toBe(5); // block 3-4 opens at 3 -> tool_call seq 5
+    expect(pairs.has(4)).toBe(false); // the block wears its pair once, at the top
   });
 
   it("pairs across other agents' frames, never with them", () => {
@@ -75,14 +92,24 @@ describe("reasoningPairs", () => {
     ];
     expect(reasoningPairs(s).get(1)).toBe(3);
   });
+
+  it("looks for the action past the whole block, not past its first row", () => {
+    // The action follows the block; anchoring at the top must not make the
+    // block's own later rows count as the thing it led to.
+    const s = [
+      E(1, "thinking_delta", "main", { text: "first " }),
+      E(2, "thinking_delta", "main", { text: "second" }),
+      E(3, "tool_call", "main", { callId: "c", name: "x", input: {} }),
+    ];
+    expect(reasoningPairs(s).get(1)).toBe(3);
+  });
 });
 
 describe("reasoningBlockText", () => {
-  it("joins a block's full thinking text onto the block-ending seq", () => {
-    // seq 3+4 are one main block (ends at 4); the map keys the ENDING seq.
+  it("joins a block's full thinking text onto the seq that OPENS it", () => {
     const blocks = reasoningBlockText(stream);
-    expect(blocks.get(4)).toBe("rm needs a gate…asking first.");
-    expect(blocks.has(3)).toBe(false); // only the block-ending frame carries the text
+    expect(blocks.get(3)).toBe("rm needs a gate…asking first.");
+    expect(blocks.has(4)).toBe(false); // said once, on the row the block starts on
   });
 
   it("keeps separate agents' blocks apart", () => {
@@ -93,7 +120,21 @@ describe("reasoningBlockText", () => {
       E(4, "tool_call", "b", { callId: "c", name: "x", input: {} }),
     ];
     const blocks = reasoningBlockText(s);
-    expect(blocks.get(2)).toBe("A1 A2");
+    expect(blocks.get(1)).toBe("A1 A2");
     expect(blocks.get(3)).toBe("B1");
+  });
+
+  it("puts the long thought's own row in charge of showing it", () => {
+    // The owner's shape, in miniature: a long first row and a short tail.
+    const s: TraceEntry[] = [
+      E(1, "turn_start", "main", { turn: 7 }),
+      E(2, "thinking_delta", "main", { text: "x".repeat(788) }),
+      E(3, "thinking_delta", "main", { text: "y".repeat(112) }),
+      E(4, "tool_call", "main", { callId: "c", name: "Bash", input: {} }),
+    ];
+    const blocks = reasoningBlockText(s);
+    expect(blocks.get(2)).toHaveLength(900);
+    expect(blocks.has(3)).toBe(false);
+    expect(reasoningPairs(s).get(2)).toBe(4);
   });
 });

@@ -363,11 +363,12 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   // Claude Code does not write a record per response. It writes one per content
   // block — the thinking lands, then the text, then each tool_use — and every
   // piece repeats the same `message.id` AND the whole `message.usage`. Measured
-  // over the 4977 transcripts in ~/.claude/projects: 265,009 assistant records
-  // are 143,025 responses, and only 60,098 responses were ever a single record.
-  // So reading a record as a turn counted 1.85 turns for every turn that
-  // happened, and counted the response's tokens once per piece: 226,873,474
-  // output tokens where the files say 142,811,312.
+  // over the transcripts in ~/.claude/projects: ~266,000 assistant records are
+  // ~117,400 responses, and only 27% of responses were ever a single record.
+  // So reading a record as a turn counted 2.26 turns for every turn that
+  // happened, and counted the response's tokens once per piece. On the owner's
+  // own session, main agent only, which is what the app frames: 1,321,954
+  // output tokens on screen where the file says 599,435.
   //
   // WHAT ENDS A RUN. Not any gap: the pieces of one response are routinely
   // separated by the tool_result records coming back between them (measured,
@@ -419,11 +420,23 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   const startsTurn = (i: number): boolean => runStart[i] === i;
 
   // Which piece reports the response's tokens: the LAST one carrying a usage
-  // object. Measured, the last piece holds the maximum output_tokens on all
-  // 85,369 multi-piece runs with no exception — the earlier ones are partial
-  // accountings (output_tokens 0 or 1, the cache fields absent). "The last that
-  // HAS one" and not simply "the last", so a run whose final piece dropped the
-  // field still reports what the file did record instead of nothing.
+  // object. The one measured fact that carries this rule: across every
+  // multi-piece run in the corpus, the last piece holding a usage object holds
+  // the maximum output_tokens, with zero exceptions. (An earlier draft of this
+  // comment said the earlier pieces are "partial accountings, output_tokens 0
+  // or 1, cache fields absent". That was checked and is false — it describes 6
+  // of 31,658 differing splits. The pieces differ in many ways; what does not
+  // vary is which one holds the finished number.)
+  //
+  // "The last that HAS one" and not simply "the last", so a run whose final
+  // piece dropped the field still reports what the file did record.
+  //
+  // NOT COUNTED HERE AT ALL: a subagent's tokens. The sidechain branch emits no
+  // usage frame, and 68.5% of the corpus's assistant records are sidechain,
+  // carrying 86,341,266 output tokens that never become a frame. That is a
+  // separate gap, named rather than quietly closed: framing them would move
+  // every imported session's total upward, which is a change an owner gets to
+  // sanction.
   const lastUsage = new Map<number, number>();
   for (let i = 0; i < recs.length; i++) {
     if (runStart[i] < 0 || !recs[i].message?.usage) continue;
