@@ -5,7 +5,7 @@
     "collectionName": "spectroscope REST API",
     "measuredOn": "2026-08-04",
     "measuredAgainst": "the spectro-server built from this tree, on 127.0.0.1:8236, fresh throwaway home (card 74: one filter fences every /api path, /api/health excepted)",
-    "endpointCount": 48,
+    "endpointCount": 49,
     "wsEndpoints": ["/ws", "/ws/shell"],
     "wsNote": "The chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.",
     "fenceSemantics": {
@@ -484,6 +484,21 @@
       "pathVars": [],
       "query": [
         {"name": "path", "required": true, "example": "{{transcriptPath}}", "note": "base-relative, canonicalized, .jsonl only"}
+      ],
+      "body": null
+    },
+    {
+      "id": "claude-transcript-facts",
+      "method": "GET",
+      "path": "/api/claude/transcripts/facts",
+      "area": "import",
+      "name": "what listed transcripts contain",
+      "description": "What a bounded batch of listed transcripts contains, so the import dialog can label a row without reading the store. Answers {maxBatch, facts: [{path, models, workflowCalls, subagents, language?, firstPrompt?}]}. Models are listed in the order they first spoke; subagents are counted from the session's sidecar folder, not the transcript. Unknown facts are omitted rather than sent as a placeholder. At most 24 paths per call; a path outside the store, a non-.jsonl name and a missing file all yield no row.",
+      "fence": "host",
+      "writes": false,
+      "pathVars": [],
+      "query": [
+        {"name": "path", "required": false, "example": "{{transcriptPath}}", "note": "base-relative, repeatable, at most 24 honoured"}
       ],
       "body": null
     },

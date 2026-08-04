@@ -1,0 +1,184 @@
+package dev.spectroscope.server;
+
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * The fold that reads one Claude Code transcript into the handful of facts the
+ * import dialog puts on a row.
+ *
+ * <p>Every expectation here was measured against the operator's real store
+ * before it was written down, because three of the obvious guesses about that
+ * format are wrong: {@code isSidechain} is never true, no transcript carries a
+ * {@code Task} tool call, and a model the session never used before can first
+ * appear on the very last line. The tests that look over-careful are the ones
+ * standing on those measurements.</p>
+ */
+class TranscriptFactsTest {
+
+    @TempDir
+    Path store;
+
+    /** One transcript in a project folder, plus whatever sidecars a case needs. */
+    private Path transcript(String name, String... lines) throws Exception {
+        Path project = Files.createDirectories(store.resolve("-Users-x-repo"));
+        Path file = project.resolve(name + ".jsonl");
+        Files.writeString(file, String.join("\n", lines) + "\n");
+        return file;
+    }
+
+    private static String assistant(String model) {
+        return "{\"type\":\"assistant\",\"message\":{\"model\":\"" + model
+                + "\",\"content\":[{\"type\":\"text\",\"text\":\"hi\"}]}}";
+    }
+
+    private static String userPrompt(String text) {
+        return "{\"type\":\"user\",\"promptSource\":\"user\",\"message\":{\"role\":\"user\","
+                + "\"content\":[{\"type\":\"text\",\"text\":\"" + text + "\"}]}}";
+    }
+
+    private static String toolCall(String name) {
+        return "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-4-8\",\"content\":"
+                + "[{\"type\":\"tool_use\",\"name\":\"" + name + "\",\"input\":{}}]}}";
+    }
+
+    @Test
+    void theFirstUserPromptTravelsVerbatim() throws Exception {
+        Path f = transcript("s", userPrompt("read the card first"), userPrompt("now build it"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals("read the card first", facts.firstPrompt());
+    }
+
+    @Test
+    void aTranscriptWithNoUserPromptOffersNoneRatherThanAPlaceholder() throws Exception {
+        Path f = transcript("s", assistant("claude-opus-4-8"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertNull(facts.firstPrompt(), "an unknown fact must produce nothing, never a dash");
+        assertNull(facts.language());
+    }
+
+    @Test
+    void everyModelIsReportedInTheOrderItFirstSpoke() throws Exception {
+        Path f = transcript("s",
+                assistant("claude-opus-4-8"),
+                assistant("claude-opus-4-8"),
+                assistant("claude-fable-5"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals(List.of("claude-opus-4-8", "claude-fable-5"), facts.models());
+    }
+
+    /**
+     * The measurement that decided the whole stage: across the 60 largest real
+     * transcripts the last previously-unseen model appears at a median 27% of
+     * the way in, at 94% for the ninetieth, and in one file on the final line.
+     * So no prefix answers this question, and a fold that stops early lies.
+     */
+    @Test
+    void aModelThatFirstSpeaksOnTheLastLineIsStillReported() throws Exception {
+        String[] lines = new String[400];
+        lines[0] = userPrompt("go");
+        for (int i = 1; i < 399; i++) {
+            lines[i] = assistant("claude-opus-4-8");
+        }
+        lines[399] = assistant("claude-fable-5");
+        Path f = transcript("s", lines);
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals(List.of("claude-opus-4-8", "claude-fable-5"), facts.models());
+    }
+
+    @Test
+    void workflowCallsAreCountedAndOtherToolsAreNot() throws Exception {
+        Path f = transcript("s",
+                toolCall("Workflow"), toolCall("Bash"), toolCall("Workflow"), toolCall("Read"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals(2, facts.workflowCalls());
+    }
+
+    /**
+     * Subagents are not in the transcript at all. They are sibling files under
+     * {@code <session>/subagents/}, which is why this count costs a directory
+     * listing and no bytes of transcript.
+     */
+    @Test
+    void subagentsAreCountedFromTheSidecarFolderNotTheTranscript() throws Exception {
+        Path f = transcript("s", userPrompt("go"));
+        Path subagents = Files.createDirectories(store.resolve("-Users-x-repo/s/subagents"));
+        Files.writeString(subagents.resolve("agent-aaa.jsonl"), "{}\n");
+        Files.writeString(subagents.resolve("agent-bbb.jsonl"), "{}\n");
+        Files.writeString(subagents.resolve("agent-bbb.meta.json"), "{}\n");
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals(2, facts.subagents(), "the .meta.json sidecar is not an agent");
+    }
+
+    @Test
+    void aTranscriptWithoutASidecarFolderReportsNoSubagents() throws Exception {
+        Path f = transcript("s", userPrompt("go"));
+
+        assertEquals(0, TranscriptFacts.fold(f).subagents());
+    }
+
+    @Test
+    void germanAndEnglishPromptsAreToldApartLocally() throws Exception {
+        Path de = transcript("de", userPrompt("bitte lies die Karte und sag mir was noch fehlt"));
+        Path en = transcript("en", userPrompt("please read the card and tell me what is missing"));
+
+        assertEquals("de", TranscriptFacts.fold(de).language());
+        assertEquals("en", TranscriptFacts.fold(en).language());
+    }
+
+    @Test
+    void aPromptTooShortToJudgeGetsNoLanguageRatherThanAGuess() throws Exception {
+        Path f = transcript("s", userPrompt("ok"));
+
+        assertNull(TranscriptFacts.fold(f).language());
+    }
+
+    @Test
+    void aVeryLongFirstPromptIsBoundedBeforeItTravels() throws Exception {
+        Path f = transcript("s", userPrompt("x".repeat(9000)));
+
+        String prompt = TranscriptFacts.fold(f).firstPrompt();
+
+        assertTrue(prompt.length() <= TranscriptFacts.MAX_PROMPT_CHARS,
+                "the row shows a prompt, not a transcript");
+    }
+
+    @Test
+    void aBrokenLineIsSkippedAndTheRestStillFolds() throws Exception {
+        Path f = transcript("s", "{not json", userPrompt("still here"), assistant("claude-fable-5"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals("still here", facts.firstPrompt());
+        assertEquals(List.of("claude-fable-5"), facts.models());
+    }
+
+    @Test
+    void aMissingFileFoldsToNothingRatherThanThrowing() {
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(store.resolve("-Users-x-repo/gone.jsonl"));
+
+        assertNull(facts.firstPrompt());
+        assertEquals(List.of(), facts.models());
+        assertEquals(0, facts.workflowCalls());
+    }
+}
