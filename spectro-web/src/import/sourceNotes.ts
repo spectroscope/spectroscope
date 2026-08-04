@@ -25,21 +25,31 @@
  * translated label and the file's own token beside it.
  */
 export type SourceNote = {
-  /** effort:    how hard the model was told to think on this turn ("xhigh").
+  /** skill:     the skill that was driving this turn.
+   *  mcp:       the MCP server and tool whose output is still driving it.
+   *  effort:    how hard the model was told to think on this turn ("xhigh").
    *  origin:    who wrote a user turn when it was NOT a person.
    *  truncated: the answer stopped on a limit, not on its own ending.
    *  fallback:  the model was swapped under the run, from one to another. */
-  kind: "effort" | "origin" | "truncated" | "fallback";
+  kind: "skill" | "mcp" | "effort" | "origin" | "truncated" | "fallback";
   value: string;
 };
 
 /** Every note kind, for the dictionary's coverage test. */
-export const SOURCE_NOTE_KINDS = ["effort", "origin", "truncated", "fallback"] as const;
+export const SOURCE_NOTE_KINDS = ["skill", "mcp", "effort", "origin", "truncated", "fallback"] as const;
 
 /** Cheap prefilter: a line that names none of these cannot produce a note, and
  *  a real transcript is mostly such lines. Parsing all of them would mean a
  *  second full parse of a file that can run to 80 MB. */
-const CANDIDATE = ['"effort"', '"origin"', '"max_tokens"', '"stop_sequence"', '"fallback"'];
+const CANDIDATE = [
+  '"effort"',
+  '"origin"',
+  '"max_tokens"',
+  '"stop_sequence"',
+  '"fallback"',
+  '"attributionSkill"',
+  '"attributionMcpServer"',
+];
 
 /** The endings that mean the answer was CUT OFF rather than finished: a token
  *  ceiling and a configured stop sequence. "end_turn" and "tool_use" are the
@@ -70,6 +80,30 @@ export function readSourceNotes(line: string): SourceNote[] {
   }
   if (rec === null || typeof rec !== "object") return [];
   const notes: SourceNote[] = [];
+  // WHAT WAS DRIVING THE TURN, before how hard it thought: a stretch of turns
+  // that suddenly writes tests is explained by the skill in charge, not by the
+  // effort level. Measured over the 167 session transcripts in
+  // ~/.claude/projects: 19,582 records in 106 files name a skill and 28,952 in
+  // 113 name an MCP server, all of it dropped until now.
+  const skill = (rec as { attributionSkill?: unknown }).attributionSkill;
+  // Verbatim, plugin prefix included. attributionPlugin is deliberately NOT a
+  // chip of its own: it is a substring of this value on all 13,069 session
+  // records that carry it and appears on none that lack a skill, so a second
+  // chip would say one fact twice. attributionAgent is not read either — 0 of
+  // the 306,425 records carrying it sit in a session transcript, it lives only
+  // in the sibling agent-*.jsonl, and such a file imports to a single
+  // provider_info frame with no row to wear a chip.
+  if (typeof skill === "string" && skill !== "") notes.push({ kind: "skill", value: skill });
+  // The server and the tool are ONE fact, and the file writes them as two
+  // fields that never appear apart (28,952 session records carry both, 0 carry
+  // either alone). "computer" on its own names nothing a reader can look up, so
+  // the tool rides behind its server or not at all.
+  const server = (rec as { attributionMcpServer?: unknown }).attributionMcpServer;
+  if (typeof server === "string" && server !== "") {
+    const tool = (rec as { attributionMcpTool?: unknown }).attributionMcpTool;
+    const named = typeof tool === "string" && tool !== "" ? `${server}:${tool}` : server;
+    notes.push({ kind: "mcp", value: named });
+  }
   const effort = (rec as { effort?: unknown }).effort;
   if (typeof effort === "string" && effort !== "") notes.push({ kind: "effort", value: effort });
   // "human" is deliberately silent. Half the corpus predates the field, so an

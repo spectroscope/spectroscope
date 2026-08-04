@@ -1841,3 +1841,178 @@ describe("claudeCode adapter (a subagent that IS in the file)", () => {
     expect(state.usage.outputTokens).toBe(22);
   });
 });
+
+// WHERE THE RUN STOOD, AND WHEN IT MOVED (card 167, finding 8).
+//
+// Every user, assistant, system and attachment record stamps the working
+// directory, the git branch and the client version. Measured over the 167
+// session transcripts in ~/.claude/projects: 104 of them (62%) carry more than
+// one cwd, 32 more than one gitBranch, 12 more than one version. A run that
+// walked from a repo root into a worktree and back is a fact about every
+// relative path in every tool result after it, and the app said nothing.
+//
+// The importer already has the shape: provider_info is announced once up front
+// and again at each model switch. ground_info is the same announcement about
+// the ground under the run, and it is IMPORT-ONLY — a reading of somebody
+// else's file, never a frame our wire carries.
+describe("the ground under an imported run", () => {
+  // ground_info is IMPORT-ONLY, so it is deliberately not in the RunEvent
+  // union and the compiler is right to refuse a direct comparison. Same read
+  // as the four card-141 kinds get everywhere else in this file.
+  const typeOf = (e: RunEvent): string => (e as unknown as { type: string }).type;
+  const ground = (events: RunEvent[]): unknown[] => events.filter((e) => typeOf(e) === "ground_info");
+
+  it("announces where the run stood, once, off the first line that says so", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "queue-operation", operation: "enqueue" },
+      {
+        type: "user",
+        cwd: "/Users/x/repo",
+        gitBranch: "main",
+        version: "2.1.170",
+        message: { role: "user", content: "go" },
+      },
+      {
+        type: "assistant",
+        cwd: "/Users/x/repo",
+        gitBranch: "main",
+        version: "2.1.170",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    expect(ground(events)).toEqual([
+      expect.objectContaining({
+        type: "ground_info",
+        cwd: "/Users/x/repo",
+        gitBranch: "main",
+        version: "2.1.170",
+      }),
+    ]);
+    // No `from` on the opening announcement: nothing was left behind.
+    expect(ground(events)[0]).not.toHaveProperty("from");
+  });
+
+  it("says nothing at all about a file that records no ground", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" } },
+      {
+        type: "assistant",
+        message: { role: "assistant", id: "m1", content: [{ type: "text", text: "ok" }] },
+      },
+    ]);
+    expect(ground(events)).toEqual([]);
+  });
+
+  it("carries only the fields the file recorded", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/Users/x/repo", message: { role: "user", content: "go" } },
+    ]);
+    expect(ground(events)).toEqual([expect.objectContaining({ cwd: "/Users/x/repo" })]);
+    expect(ground(events)[0]).not.toHaveProperty("gitBranch");
+    expect(ground(events)[0]).not.toHaveProperty("version");
+  });
+
+  it("marks a move, naming what it left and what it landed on", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/Users/x/repo", gitBranch: "main", message: { role: "user", content: "go" } },
+      {
+        type: "assistant",
+        cwd: "/Users/x/repo/worktrees/wt",
+        gitBranch: "main",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    const moves = ground(events);
+    expect(moves).toHaveLength(2);
+    expect(moves[1]).toMatchObject({
+      type: "ground_info",
+      cwd: "/Users/x/repo/worktrees/wt",
+      from: { cwd: "/Users/x/repo" },
+    });
+    // The branch did not move, so the move frame says nothing about it.
+    expect(moves[1]).not.toHaveProperty("gitBranch");
+  });
+
+  it("puts two fields that moved together on one frame", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/a", gitBranch: "main", message: { role: "user", content: "go" } },
+      {
+        type: "assistant",
+        cwd: "/b",
+        gitBranch: "feature",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    expect(ground(events)[1]).toMatchObject({
+      cwd: "/b",
+      gitBranch: "feature",
+      from: { cwd: "/a", gitBranch: "main" },
+    });
+  });
+
+  // 3,204 of the corpus's 3,672 cwd moves return to a directory the session
+  // already stood in. A move back is exactly as real as a move away — the
+  // relative paths in the tool results after it mean what they meant before —
+  // so it is announced, and it is announced as a move rather than as a repeat
+  // of the opening.
+  it("announces a move back to where it came from", () => {
+    const at = (cwd: string, id: string): unknown => ({
+      type: "assistant",
+      cwd,
+      message: { role: "assistant", id, model: "claude-opus-5", content: [{ type: "text", text: "x" }] },
+    });
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/a", message: { role: "user", content: "go" } },
+      at("/b", "m1"),
+      at("/a", "m2"),
+    ]);
+    const moves = ground(events);
+    expect(moves).toHaveLength(3);
+    expect(moves[2]).toMatchObject({ cwd: "/a", from: { cwd: "/b" } });
+  });
+
+  // A ground frame is a reading of the record's own line, so the source face
+  // opens on the line that recorded the move.
+  it("charges each ground frame to the line that recorded it", () => {
+    const text = [
+      JSON.stringify({ type: "user", cwd: "/a", message: { role: "user", content: "go" } }),
+      JSON.stringify({
+        type: "assistant",
+        cwd: "/b",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      }),
+    ].join("\n");
+    const { events, source } = detectAndLoad(text);
+    const at = events.map((e, n) => (typeOf(e) === "ground_info" ? n : -1)).filter((n) => n >= 0);
+    expect(at).toHaveLength(2);
+    expect([source.origin[at[0]], source.origin[at[1]]]).toEqual([0, 1]);
+  });
+
+  it("never reaches a written session file", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/a", message: { role: "user", content: "go" } },
+    ]);
+    expect(ground(events)).toHaveLength(1); // it is emitted …
+    expect(events.filter(isWireEvent).some((e) => typeOf(e) === "ground_info")).toBe(false); // … and unwritable
+  });
+});

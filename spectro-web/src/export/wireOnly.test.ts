@@ -54,10 +54,11 @@ describe("what a written jsonl may contain", () => {
       "edited_text_file",
       "tool_result_detail",
       "agent_detail",
+      "ground_info",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    expect(NON_WIRE_TYPES.size).toBe(14);
+    expect(NON_WIRE_TYPES.size).toBe(15);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

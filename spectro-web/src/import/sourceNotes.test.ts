@@ -169,3 +169,95 @@ describe("a model swapped under the run", () => {
     ).toEqual([]);
   });
 });
+
+// WHY IS IT SUDDENLY WRITING TESTS? (card 167, finding 7.) A reader of somebody
+// else's session sees a long stretch of turns with no explanation, and the file
+// says on every one of them that a skill was in charge, or that an MCP tool
+// handed the instruction back three turns ago. Measured over the 167 session
+// transcripts in ~/.claude/projects: 19,582 records in 106 files carry
+// attributionSkill, 28,952 in 113 carry attributionMcpServer, and the app drew
+// none of it — the prefilter did not even name the fields, so the line was
+// never parsed for them.
+describe("what was driving the turn", () => {
+  // The absent case first, as everywhere in this module: 61 of 167 session
+  // files carry no attributionSkill at all.
+  it("says nothing about a turn no skill was driving", () => {
+    expect(readSourceNotes('{"type":"assistant","message":{"role":"assistant"}}')).toEqual([]);
+  });
+
+  it("names the skill verbatim, plugin prefix and all", () => {
+    expect(readSourceNotes('{"type":"assistant","attributionSkill":"humanizer"}')).toEqual([
+      { kind: "skill", value: "humanizer" },
+    ]);
+    expect(
+      readSourceNotes('{"type":"assistant","attributionSkill":"superpowers:test-driven-development"}'),
+    ).toEqual([{ kind: "skill", value: "superpowers:test-driven-development" }]);
+  });
+
+  // attributionPlugin is a substring of attributionSkill on all 13,069 session
+  // records that carry it, and appears on none that lack a skill. A chip of its
+  // own would put two chips on a turn that has one fact.
+  it("stays quiet about the plugin, which the skill already spells out", () => {
+    expect(readSourceNotes('{"type":"assistant","attributionPlugin":"superpowers"}')).toEqual([]);
+    expect(
+      readSourceNotes(
+        '{"type":"assistant","attributionPlugin":"superpowers","attributionSkill":"superpowers:brainstorming"}',
+      ),
+    ).toEqual([{ kind: "skill", value: "superpowers:brainstorming" }]);
+  });
+
+  it("ignores a skill that is not a non-empty string", () => {
+    expect(readSourceNotes('{"attributionSkill":""}')).toEqual([]);
+    expect(readSourceNotes('{"attributionSkill":7}')).toEqual([]);
+    expect(readSourceNotes('{"attributionSkill":{"name":"humanizer"}}')).toEqual([]);
+  });
+
+  // The pair is one fact: "computer" on its own says nothing, and the server
+  // without the tool is half a sentence. Measured: the two appear together on
+  // all 28,952 session records, and neither ever appears alone.
+  it("joins the mcp server and its tool into one chip", () => {
+    expect(
+      readSourceNotes(
+        '{"type":"assistant","attributionMcpServer":"Claude Browser","attributionMcpTool":"javascript_tool"}',
+      ),
+    ).toEqual([{ kind: "mcp", value: "Claude Browser:javascript_tool" }]);
+  });
+
+  it("names the server alone when that is all the line says", () => {
+    expect(readSourceNotes('{"attributionMcpServer":"visualize"}')).toEqual([
+      { kind: "mcp", value: "visualize" },
+    ]);
+  });
+
+  // A tool with no server to belong to is not a chip: mcp__?__computer is not
+  // a thing a reader can look up.
+  it("says nothing about a tool with no server beside it", () => {
+    expect(readSourceNotes('{"attributionMcpTool":"computer"}')).toEqual([]);
+  });
+
+  // attributionAgent is deliberately not read. Measured: 0 of 306,425 records
+  // carrying it sit in a session transcript — it lives only in the sibling
+  // agent-*.jsonl, and an agent-file import produces a single provider_info
+  // frame with no row to hang a chip on.
+  it("says nothing about attributionAgent, which no session transcript carries", () => {
+    expect(readSourceNotes('{"type":"assistant","attributionAgent":"general-purpose"}')).toEqual([]);
+  });
+
+  it("wears both chips when the line carries both, driver before effort", () => {
+    expect(
+      readSourceNotes(
+        '{"type":"assistant","effort":"high","attributionSkill":"loop","attributionMcpServer":"ccd_session","attributionMcpTool":"mark_chapter"}',
+      ),
+    ).toEqual([
+      { kind: "skill", value: "loop" },
+      { kind: "mcp", value: "ccd_session:mark_chapter" },
+      { kind: "effort", value: "high" },
+    ]);
+  });
+
+  it("reaches the index like every other note", () => {
+    const index = sourceNoteIndex(['{"type":"user"}', '{"attributionSkill":"kanban-ai"}']);
+    expect(index.get(1)).toEqual([{ kind: "skill", value: "kanban-ai" }]);
+    expect(index.has(0)).toBe(false);
+  });
+});

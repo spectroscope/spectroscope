@@ -120,10 +120,14 @@ export function categoryOf(type: string): Category {
     // list, the prompt queue, the file somebody edited (card 141). Their own
     // group rather than `other`, so a reader can bring them in or put them
     // away in one click instead of hunting them among agent_spawn and error.
+    // ground_info joins them (card 167): where the run stood, announced once
+    // and again at every move. The busiest file in the corpus carries 273 of
+    // those rows, so the one-click chip is what keeps them out of the way.
     case "task_reminder":
     case "queue_operation":
     case "queued_command":
     case "edited_text_file":
+    case "ground_info":
       return "client";
     default:
       // agent_spawn, compaction, error — and every future type.
@@ -244,6 +248,21 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
       return `${String(p["from"] ?? "")} → ${String(p["to"] ?? "")} · ${String(p["state"] ?? "")} · ${JSON.stringify(
         String(p["text"] ?? "").slice(0, AGENT_MESSAGE_PREVIEW_CHARS),
       )}`;
+    case "ground_info": {
+      // Where the run stood, and what it left to get there (card 167). The
+      // field names are the FILE's own words and stay untranslated, the same
+      // rule recordMeta.ts labels its groups by: a wire path is its own label
+      // and cannot drift from the file. A frame naming none of the three is
+      // not one this can read, so it falls through to the raw json below.
+      const from = p["from"] as Record<string, unknown> | undefined;
+      const moved = ["cwd", "gitBranch", "version"]
+        .filter((f) => typeof p[f] === "string")
+        .map((f) => {
+          const left = from === undefined ? undefined : from[f];
+          return typeof left === "string" ? `${f} ${left} → ${String(p[f])}` : `${f} ${String(p[f])}`;
+        });
+      return moved.length === 0 ? compactJson(entry.payload) : moved.join(" · ");
+    }
     case "task_reminder": {
       // The todo list an imported transcript carried (card 141). compactJson
       // of a ten-item list is a wall of braces that ellipsizes after the first

@@ -59,6 +59,15 @@ export interface MetaGroup {
  * is a tool's whole output, up to megabytes of it, and it belongs in the tool
  * card rather than in a metadata list.
  *
+ * WHAT IS DELIBERATELY NOT HELD BACK (card 167, findings 7 and 8): the
+ * attribution fields and cwd/gitBranch/version. Both now also reach the reader
+ * on the collapsed row — the attribution five as a chip (sourceNotes.ts), a
+ * move of the ground as its own frame — and those are a different reading, not
+ * a second copy. The chip and the frame speak only where something is worth
+ * calling out: a skill chip appears on 19,582 of the corpus's records, a ground
+ * frame on 3,913. This list is the record itself, opened out, and on every
+ * other record it is the only place its working directory appears at all.
+ *
  * `compactMetadata` is held back for the reason `message` is: it gets a group
  * of its own below. Left to the fall-through it would print as a single
  * `{trigger, preTokens, …}` shape, because the block runs well past

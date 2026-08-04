@@ -88,6 +88,17 @@ interface CCRecord {
    *  writing down an outage. false is a different synthetic message ("No
    *  response requested."), so only the true case may be read. */
   isApiErrorMessage?: boolean;
+  /** Where the run stood when this record was written. Stamped on every user,
+   *  assistant, system and attachment record, and NOT a constant: 104 of the
+   *  167 session transcripts in ~/.claude/projects carry more than one cwd. */
+  cwd?: string;
+  /** The git branch at the time of the record. 32 of 167 session files carry
+   *  more than one; the longest sequence measured is five. */
+  gitBranch?: string;
+  /** The Claude Code client version. 12 of 167 session files carry more than
+   *  one — the client was upgraded under the running session, which is what
+   *  explains why the first stretch of a file carries none of these fields. */
+  version?: string;
 }
 
 /**
@@ -929,6 +940,55 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   announce(firstModel, stamps[0] ?? base);
   chargeTo(-1); // the opening announcement is the importer's, not a line's
 
+  // WHERE THE RUN STOOD, AND WHEN IT MOVED (card 167, finding 8).
+  //
+  // The same idiom as provider_info directly above: announce it once, off the
+  // first line that says it, and again whenever the file says it changed. A
+  // constant would be header material; measured over the 167 session
+  // transcripts in ~/.claude/projects, it is not one — 104 of them (62%) stand
+  // in more than one directory, 32 on more than one branch, 12 on more than one
+  // client version. Every relative path in every tool result after a move means
+  // something else than it did before, and the app said nothing.
+  //
+  // The frame is IMPORT-ONLY (wire/nonWire.ts). Nothing in events.ts gained a
+  // field: this is a reading of somebody else's file, and no Java or Python
+  // reader would ever construct one.
+  const GROUND_FIELDS = ["cwd", "gitBranch", "version"] as const;
+  type GroundField = (typeof GROUND_FIELDS)[number];
+  /** What the run stood on, as of the last record that said so. */
+  const ground: Partial<Record<GroundField, string>> = {};
+  /**
+   * Announce the ground if this record moved it.
+   *
+   * The frame carries ONLY the fields that changed, plus a `from` naming what
+   * each of them left. A record that changed nothing produces nothing, which
+   * is the majority of every file. On the first announcement there is no
+   * `from`: nothing was left behind, and an empty object would read as one.
+   *
+   * A move BACK to a directory the session already stood in is announced like
+   * any other move (3,204 of the corpus's 3,672 cwd moves are exactly that):
+   * the ground is where it is, not where it has ever been.
+   */
+  const noteGround = (r: CCRecord, ts: number): void => {
+    const moved: Partial<Record<GroundField, string>> = {};
+    const from: Partial<Record<GroundField, string>> = {};
+    let changed = false;
+    let left = false;
+    for (const field of GROUND_FIELDS) {
+      const value = r[field];
+      if (typeof value !== "string" || value === "" || value === ground[field]) continue;
+      if (ground[field] !== undefined) {
+        from[field] = ground[field];
+        left = true;
+      }
+      moved[field] = value;
+      ground[field] = value;
+      changed = true;
+    }
+    if (!changed) return;
+    out.push({ type: "ground_info", ...moved, ...(left ? { from } : {}), ts } as unknown as RunEvent);
+  };
+
   /**
    * The kinds a transcript records AROUND the conversation (card 141).
    *
@@ -1093,6 +1153,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
 
   const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
+    // Before every early return below: a record that carries no conversation
+    // still carries the ground, and 487 of the corpus's 3,746 moves are
+    // recorded on exactly such a line (486 on a system record, 1 on an
+    // attachment).
+    noteGround(r, ts);
     if (emitNoConversation(r, ts)) return;
     if (emitSystem(r, i, ts)) return;
     // The machine's summary of the conversation it replaced. It used to import
