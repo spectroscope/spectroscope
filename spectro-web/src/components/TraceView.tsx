@@ -43,6 +43,7 @@ import { readTodoItems, statusLabel, todoSummary } from "./todoList";
 import { causalChain, reasoningPairs, reasoningBlockText } from "./traceChain";
 import { timelineFractions } from "./traceTimeline";
 import { sourceNoteIndex, type SourceNote } from "../import/sourceNotes";
+import { readRecordMeta, type MetaGroup } from "../import/recordMeta";
 import { noteAnchors } from "../state/traceSource";
 import { beacon } from "../state/levelingBeacon";
 import { ExplainPanel } from "./ExplainPanel";
@@ -611,18 +612,45 @@ export function EventStructured(props: {
   /** The stream's calls by callId, so a tool_result can render as its call.
    *  Absent means the pairing is simply not offered — nothing is invented. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** The record this frame was imported from, already read (recordMeta.ts).
+   *  Absent for every session produced here, which is why the Lab passes
+   *  nothing and renders exactly what it always did. */
+  meta?: readonly MetaGroup[];
 }) {
   const lang = useLang();
   const sections = useMemo(
     () => describeEvent(props.type, props.payload, props.calls),
     [props.type, props.payload, props.calls],
   );
-  if (sections.length === 0) return <p className="ed-empty">{t(lang, "ed.nothing")}</p>;
+  const meta = props.meta ?? [];
+  if (sections.length === 0 && meta.length === 0) return <p className="ed-empty">{t(lang, "ed.nothing")}</p>;
   return (
     <div className="ed">
       {sections.map((section, i) => (
         <DetailSectionView key={`${section.kind}.${section.field}.${i}`} section={section} lang={lang} />
       ))}
+      {/* What the imported line says about the turn, under the frames it
+          produced. Kept visibly apart from them: the sections above are this
+          app's own reading of its own wire, and everything below is a field of
+          somebody else's file, printed the way the file spells it. */}
+      {meta.length > 0 && (
+        <div className="ed-meta">
+          <p className="ed-meta-note">{t(lang, "ed.fromFile")}</p>
+          {meta.map((group) => (
+            <div key={group.path} className="ed-sec">
+              <SectionLabel field={group.path} />
+              <dl className="ed-rows">
+                {group.rows.map((row) => (
+                  <div key={row.key}>
+                    <dt className="mono">{row.key}</dt>
+                    <dd className="mono">{row.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -835,6 +863,17 @@ function TraceDetail({
   // for the body and for whether there is anything to copy.
   const pane = mode === "source" ? sourcePane(entry, rows, sourceLines, provenance) : null;
   const sourceText = pane?.kind === "line" ? pane.text : undefined;
+  // The record behind this frame, for the structured face. Read right here and
+  // not indexed up front: only the ONE open row renders a detail, so this is a
+  // single JSON.parse on click, where an eager index over the whole import
+  // would parse an 80 MB file to fill a panel nobody opened. A frame the
+  // importer built itself has no line and therefore no record.
+  const at = entry.sourceLine;
+  const metaLine = mode === "structured" && at !== undefined ? sourceLines?.[at] : undefined;
+  const meta = useMemo<readonly MetaGroup[]>(
+    () => (metaLine === undefined ? [] : readRecordMeta(metaLine)),
+    [metaLine],
+  );
   const copyMode = mode === "structured" ? "insight" : mode;
   const copyable = mode !== "source" || sourceText !== undefined;
   return (
@@ -906,7 +945,7 @@ function TraceDetail({
         />
       )}
       {mode === "structured" ? (
-        <EventStructured type={entry.type} payload={entry.payload} calls={calls} />
+        <EventStructured type={entry.type} payload={entry.payload} calls={calls} meta={meta} />
       ) : mode === "insight" ? (
         // Expand every level of the event from the start — no clicking open the
         // nested {…} (e.g. a plan's steps, a context_info's parts). Real events

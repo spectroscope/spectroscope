@@ -110,10 +110,42 @@ export function causalChain(entries: TraceEntry[], target: TraceEntry): TraceEnt
 }
 
 /**
- * Said-vs-did pairs (reasoning lens, card 13): for the LAST frame of each
- * consecutive thinking block, the next same-agent action that followed it —
- * a tool call, a gate event, the answer text, or an error. Returns a map
- * from the block-ending thinking seq to the action's seq.
+ * WHERE A BLOCK WEARS ITS LENS OUTPUT: on the row that OPENS it.
+ *
+ * Both maps below used to key the row that CLOSED the block, and the owner
+ * caught what that costs. His report was "a turn_start always has a huge
+ * thinking event and the thinking lens ignores it", and the measurement backs
+ * him: on his own transcript the 451 thinking frames form 305 blocks, 146 of
+ * them two rows long, and in 146 of those 146 the FIRST row sits directly under
+ * the turn_start AND holds more text than the second. So the panel and the
+ * "then:" chip were drawn on the short tail while the long thought above them —
+ * the one the eye lands on — showed nothing. Measured, seq 13/14 of that file:
+ * 788 characters silent, 112 characters carrying the whole joined block.
+ *
+ * The block is still one block and the joined text is unchanged. Only the
+ * anchor moved, from the last row to the first.
+ */
+
+/** The index after the end of the same-agent thinking block starting at `i`. */
+function blockEnd(entries: TraceEntry[], i: number): number {
+  const agentId = entries[i].agentId;
+  let j = i + 1;
+  while (j < entries.length && entries[j].type === "thinking_delta" && entries[j].agentId === agentId) j++;
+  return j;
+}
+
+/** Whether `i` opens a block rather than continuing one. */
+function opensBlock(entries: TraceEntry[], i: number): boolean {
+  if (entries[i].type !== "thinking_delta") return false;
+  const prev = entries[i - 1];
+  return prev === undefined || prev.type !== "thinking_delta" || prev.agentId !== entries[i].agentId;
+}
+
+/**
+ * Said-vs-did pairs (reasoning lens, card 13): for each consecutive thinking
+ * block, the next same-agent action that followed THE WHOLE BLOCK — a tool
+ * call, a gate event, the answer text, or an error. Returns a map from the
+ * block-OPENING thinking seq to the action's seq.
  */
 export function reasoningPairs(entries: TraceEntry[]): Map<number, number> {
   const pairs = new Map<number, number>();
@@ -124,15 +156,13 @@ export function reasoningPairs(entries: TraceEntry[]): Map<number, number> {
     e.type === "error";
 
   for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    if (e.type !== "thinking_delta") continue;
-    const next = entries[i + 1];
-    const blockEnds = next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
-    if (!blockEnds) continue;
-    for (let j = i + 1; j < entries.length; j++) {
+    if (!opensBlock(entries, i)) continue;
+    // Search from past the block, never from past its first row: the block's
+    // own later rows are not the thing it led to.
+    for (let j = blockEnd(entries, i); j < entries.length; j++) {
       const cand = entries[j];
-      if (cand.agentId === e.agentId && isAction(cand)) {
-        pairs.set(e.seq, cand.seq);
+      if (cand.agentId === entries[i].agentId && isAction(cand)) {
+        pairs.set(entries[i].seq, cand.seq);
         break;
       }
     }
@@ -141,32 +171,20 @@ export function reasoningPairs(entries: TraceEntry[]): Map<number, number> {
 }
 
 /**
- * Full reasoning text per block (reasoning lens): for the LAST frame of each
- * consecutive same-agent thinking block, the WHOLE block's text — every
- * thinking_delta of the block joined in order, untruncated. So the lens can
- * show the complete thought behind an action, not just the fragment on one row.
- * Returns a map from the block-ending thinking seq to the joined text.
+ * Full reasoning text per block (reasoning lens): for each consecutive
+ * same-agent thinking block, the WHOLE block's text — every thinking_delta of
+ * the block joined in order, untruncated. So the lens shows the complete
+ * thought behind an action, not just the fragment on one row. Returns a map
+ * from the block-OPENING thinking seq to the joined text.
  */
 export function reasoningBlockText(entries: TraceEntry[]): Map<number, string> {
   const blocks = new Map<number, string>();
-  let start = -1; // index of the current block's first thinking frame
   for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    if (e.type !== "thinking_delta") {
-      start = -1;
-      continue;
-    }
-    if (start < 0) start = i;
-    const next = entries[i + 1];
-    const blockEnds = next === undefined || next.type !== "thinking_delta" || next.agentId !== e.agentId;
-    if (blockEnds) {
-      let text = "";
-      for (let k = start; k <= i; k++) {
-        text += str(payload(entries[k])["text"]) ?? "";
-      }
-      blocks.set(e.seq, text);
-      start = -1;
-    }
+    if (!opensBlock(entries, i)) continue;
+    const end = blockEnd(entries, i);
+    let text = "";
+    for (let k = i; k < end; k++) text += str(payload(entries[k])["text"]) ?? "";
+    blocks.set(entries[i].seq, text);
   }
   return blocks;
 }
