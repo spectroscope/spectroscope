@@ -1,13 +1,13 @@
-<h1 data-ch="6c" id="ch-leveling">the ladder</h1>
+<h1 data-ch="6c" id="ch-leveling">the tutorial</h1>
 
 <p>spectroscope has seven tabs, three lenses, a fleet canvas, a machine
 room and an observability page. Every one of them earned its place, and
 together they are a wall. A fresh install therefore starts small and
-opens up as you use it. That is the ladder.</p>
+opens up as you use it. That is the tutorial.</p>
 
-<p>The twist is that it is not a tutorial. The product already watches
-agents through an event stream; the ladder watches you through the same
-instrument. You do not tick a checkbox to say you have read a trace. You
+<p>The twist is that there is nothing to sit through. The product already
+watches agents through an event stream; the tutorial watches you through the
+same instrument. You do not tick a checkbox to say you have read a trace. You
 read one, and the engine sees it in the events the interface was
 rendering anyway.</p>
 
@@ -21,19 +21,19 @@ sessions or a settings file is never asked at all and never sees a lock.
 If you have been using spectroscope, nothing about this changes for
 you.</p>
 
-<!--SHOT:33-leveling-intro|The one screen a fresh install opens with: what the ladder is, and a real choice with no default.-->
+<!--SHOT:33-leveling-intro|The one screen a fresh install opens with: what the tutorial is, and a real choice with no default.-->
 
 <p>It is also the <em>only</em> screen at that moment. A first run has a
 second thing to say — that spectroscope needs a backend and which ones
 are free — and two welcome dialogs on top of each other is the wall this
-whole wave exists to remove. So the backend sheet waits until the ladder
+whole wave exists to remove. So the backend sheet waits until the tutorial
 question has been answered, and then takes the screen alone.</p>
 
 <!--SHOT:35-leveling-backend-next|What follows, once the first question is answered: the backend sheet, on its own. The two never stack.-->
 
 <h2 id="leveling-rungs">the seven states</h2>
 
-<!--SVG:17-leveling-ladder|The ladder as one picture, generated from the same levels.json the engine reads: each state, the spectral line it adds, and the criteria that leave it.-->
+<!--SVG:17-leveling-ladder|The tutorial as one picture, generated from the same levels.json the engine reads: each state, the spectral line it adds, and the criteria that leave it.-->
 
 <p>Four of the names are the product's own words. Three are borrowed
 from telescopes, because they describe the same progression.</p>
@@ -57,13 +57,13 @@ you point the thing at a patch of sky that looks empty and stare long
 enough.</p>
 
 <p>The header pill carries a small spectrum strip that gains one colored
-line per state reached. At the top of the ladder you hold the full
+line per state reached. At the end of the tutorial you hold the full
 spectrum, which is the same five lines as the mark on the cover of this
 guide.</p>
 
 <!--SHOT:37-leveling-strip-dark|Six empty slots. A home that has not been used yet, and the pill saying so rather than pretending otherwise.|half-->
-<!--SHOT:38-leveling-strip-trace|Two rungs up: one line per state reached, in the order the mark uses.|half-->
-<!--SHOT:39-leveling-strip-deep|The top of the ladder — five lines plus the full band, which is the mark on this guide's cover.|half-->
+<!--SHOT:38-leveling-strip-trace|Two steps up: one line per state reached, in the order the mark uses.|half-->
+<!--SHOT:39-leveling-strip-deep|The end of the tutorial — five lines plus the full band, which is the mark on this guide's cover.|half-->
 
 <p class="small">No new colour was invented for any of this. The five
 lines are the app's existing event tokens, in the app's existing order,
@@ -79,9 +79,9 @@ the trace, at that frame. The address is a plain hash
 (<code>#/session/&lt;id&gt;@&lt;n&gt;</code>), so it can be copied into a
 bug report like any other link.</p>
 
-<!--SHOT:34-leveling-panel|The progress panel: every rung, every criterion with what it counts, and a receipt that opens the exact frame it was earned in.-->
+<!--SHOT:34-leveling-panel|The progress panel: every step, every criterion with what it counts, and a receipt that opens the exact frame it was earned in.-->
 
-<p>A criterion you tick by hand says so, permanently. The ladder
+<p>A criterion you tick by hand says so, permanently. The tutorial
 distinguishes what it saw from what it was told, because a progress
 display that cannot tell the difference is decoration.</p>
 
@@ -100,27 +100,27 @@ was, because a feature nobody can see is a feature nobody adopts. What it
 shows you is the one criterion still outstanding, not a percentage, and
 the button beside it ends the whole arrangement then and there.</p>
 
-<h2 id="leveling-levelup">reaching a rung</h2>
+<h2 id="leveling-levelup">reaching a step</h2>
 
 <p>A climb is announced once, briefly, and names what it opened. The new
 line on the strip ignites as it lands. It blocks nothing and needs no
-dismissing, and after seven seconds it is gone again, because a ladder
-that congratulates you at length is a ladder standing in your way.</p>
+dismissing, and after seven seconds it is gone again, because a tutorial
+that congratulates you at length is a tutorial standing in your way.</p>
 
-<!--SHOT:40-leveling-levelup|Opening a finished run settles the last criterion of first light. The toast names the rung and what it opened; the second line on the pill is mid-ignite.-->
+<!--SHOT:40-leveling-levelup|Opening a finished run settles the last criterion of first light. The toast names the step and what it opened; the second line on the pill is mid-ignite.-->
 
 <h2 id="leveling-off">turning it off</h2>
 
-<p>Settings has three modes. <b>Ladder</b> opens surfaces as you go.
+<p>Settings has three modes. <b>Tutorial</b> opens surfaces as you go.
 <b>Checklist</b> locks nothing but still tracks and celebrates, which is
 what every existing home gets. <b>Off</b> removes the pill and the panel
-and stops recording entirely. The same block restarts the ladder from the
+and stops recording entirely. The same block restarts the tutorial from the
 dark frame; restarting does not ask the first question again.</p>
 
-<!--SHOT:41-leveling-settings|Two controls and no ceremony: which mode the ladder runs in, and one button back to the dark frame.-->
+<!--SHOT:41-leveling-settings|Two controls and no ceremony: which mode the tutorial runs in, and one button back to the dark frame.-->
 
 <p>The CLI reports the same state without a server:
-<code>spectro level</code> prints the ladder with its ticks and receipts,
+<code>spectro level</code> prints the tutorial with its ticks and receipts,
 and <code>spectro doctor</code> carries one line of it. All three faces
 read the same <code>levels.json</code> from the core, so they cannot
 drift apart.</p>

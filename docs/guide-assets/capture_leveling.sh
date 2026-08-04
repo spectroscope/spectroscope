@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The whole ladder capture, from a cold start to eight plates in both themes.
+# The whole tutorial capture, from a cold start to eight plates in both themes.
 #
 # The plates need states a used home cannot be put back into, so this stands up
 # two servers on pristine homes rather than resetting one:
@@ -9,7 +9,7 @@
 #
 # Each themed pass gets its own fresh pair, because the intro is asked once per
 # home and `first-run-complete` can only be earned by a live run — a reset walks
-# the ladder back down but cannot un-ask the question or re-run the agent.
+# the tutorial back down but cannot un-ask the question or re-run the agent.
 #
 # Usage (from the repo root of spectro/):
 #   docs/guide-assets/capture_leveling.sh

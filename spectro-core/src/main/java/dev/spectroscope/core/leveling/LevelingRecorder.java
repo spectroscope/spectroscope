@@ -174,7 +174,7 @@ public final class LevelingRecorder {
         } catch (IOException | RuntimeException unwritable) {
             if (warned.compareAndSet(false, true)) {
                 System.err.println("leveling: cannot write " + store.file()
-                        + ", the ladder stops keeping score (" + unwritable + ")");
+                        + ", the tutorial stops keeping score (" + unwritable + ")");
             }
         }
     }

@@ -9,7 +9,7 @@ Read off:
   spectro-core/.../config/SpectroConfig.java   the layer order and the file names
   spectro-core/.../session/SessionStore.java   the sessions dir
   spectro-core/.../local/LocalModel.java       the models dir
-  spectro-core/.../leveling/LevelingStore.java the ladder's state file
+  spectro-core/.../leveling/LevelingStore.java the tutorial's state file
   and a real home used for the guide captures, listed after a run.
 
 Theme: SPECTRO_DIAGRAM_THEME=dark|light, like every other build_*.py here.
@@ -41,7 +41,7 @@ FILES = [
     ("sessions/*.jsonl", "one append-only event file per session — the archive", C.LILAC),
     ("sessions/<id>/blobs/", "attachment bytes, file name = sha256", C.LILAC),
     ("images/<sha256>.png", "generated images, shared across sessions", C.LILAC),
-    ("leveling.json", "the ladder's marks, receipts and mode", C.MOSS),
+    ("leveling.json", "the tutorial's marks, receipts and mode", C.MOSS),
     ("skills/ + .seeded", "user-scope skills; the ledger keeps your edits", C.ZONE_CORE),
     ("models/", "the built-in GGUF, and the whisper/piper voice models", C.ZONE_DISK),
     ("logs/spectroscope.log", "operator diagnostics, prefixed per agent", C.ZONE_DISK),

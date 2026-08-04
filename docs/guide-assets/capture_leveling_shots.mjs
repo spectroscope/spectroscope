@@ -1,9 +1,9 @@
-// The ladder's plates for the guide chapter (cards 83, 84).
+// The tutorial's plates for the guide chapter (cards 83, 84).
 //
 // Its own script, like capture_fleet_shots.mjs, for one reason: several of these
 // states cannot be restored on a home that has already been used. The intro is
 // asked once per home and a reset deliberately keeps the answer, because
-// restarting the ladder is not re-onboarding. So the plates are shot against
+// restarting the tutorial is not re-onboarding. So the plates are shot against
 // servers started on pristine homes, and the rest is staged through the leveling
 // endpoints rather than by clicking a path through the interface.
 //
@@ -145,12 +145,12 @@ if (MODE === "fresh") {
   await page.waitForSelector(".ob-panel", { timeout: 10_000 });
   await shoot("35-leveling-backend-next");
 
-  // ---- plate 3: the empty strip, with the ladder still shut ----
+  // ---- plate 3: the empty strip, with the tutorial still shut ----
   await page.locator(".km-close").first().click();
   await page.waitForTimeout(500);
   await shootStrip("37-leveling-strip-dark");
 } else {
-  // The climb home has answered nothing yet either; take the ladder.
+  // The climb home has answered nothing yet either; take the tutorial.
   if (await page.locator(".lvl-intro").count()) {
     await page.locator(".lvl-intro__pick--primary").click();
     await page.waitForTimeout(700);
@@ -247,10 +247,10 @@ if (MODE === "fresh") {
   // ---- plate 9: the way out ----
   await page.locator('button[aria-label="Settings"]').first().click();
   await page.waitForSelector(".settings-page", { timeout: 5_000 });
-  // The block only renders once the ladder snapshot has arrived, so wait for it
+  // The block only renders once the tutorial snapshot has arrived, so wait for it
   // rather than racing the fetch.
   await page
-    .locator(".settings-page .settings-label", { hasText: /^(Leveling|Leiter)$/ })
+    .locator(".settings-page .settings-label", { hasText: /^Tutorial$/ })
     .first()
     .waitFor({ state: "attached", timeout: 10_000 });
   // Scroll the panel's own scroll container rather than asking the label to
@@ -259,7 +259,7 @@ if (MODE === "fresh") {
   // wrong box and quietly does nothing.
   const scrolled = await page.evaluate(() => {
     const label = [...document.querySelectorAll(".settings-page .settings-label")].find((el) =>
-      /^\s*(leveling|leiter)\s*$/i.test(el.textContent || ""),
+      /^\s*tutorial\s*$/i.test(el.textContent || ""),
     );
     if (!label) return false;
     const box = label.closest(".settings-body") ?? label.parentElement;
@@ -272,7 +272,7 @@ if (MODE === "fresh") {
   // Prove it is actually on screen before spending a plate on it.
   const onScreen = await page.evaluate(() => {
     const label = [...document.querySelectorAll(".settings-page .settings-label")].find((el) =>
-      /^\s*(leveling|leiter)\s*$/i.test(el.textContent || ""),
+      /^\s*tutorial\s*$/i.test(el.textContent || ""),
     );
     const rect = label?.getBoundingClientRect();
     return !!rect && rect.top >= 0 && rect.bottom <= window.innerHeight;
