@@ -681,9 +681,25 @@ export function EventStructured(props: {
               <SectionLabel field={group.path} />
               <dl className="ed-rows">
                 {group.rows.map((row) => (
-                  <div key={row.key}>
+                  <div key={row.key} className={row.block === undefined ? undefined : "ed-row--block"}>
                     <dt className="mono">{row.key}</dt>
-                    <dd className="mono">{row.value}</dd>
+                    {/* A run of the file's own bytes is painted the way the
+                        source pane paints one, down to the sentence: the
+                        thought is read where it stands, a signature is opened
+                        on request. Same component, so the two faces of one line
+                        cannot drift into two vocabularies. The path is already
+                        the <dt>, so the block carries none. */}
+                    {row.block === undefined ? (
+                      <dd className="mono">{row.value}</dd>
+                    ) : (
+                      <dd>
+                        <ReadableBlockView
+                          block={{ kind: row.block, path: "", depth: 0, text: row.value }}
+                          lang={lang}
+                          capNote="trace.meta.capped"
+                        />
+                      </dd>
+                    )}
                   </div>
                 ))}
               </dl>
@@ -706,8 +722,25 @@ const counted = (n: number, lang: Lang): string => n.toLocaleString(lang === "de
  * block is an ordinary record, so a pane without a ceiling is a pane that
  * freezes. Truncation that names itself is a display limit; truncation that
  * stays quiet is this card's own defect. The clipboard never sees the ceiling.
+ *
+ * @param capNote which sentence names the two numbers. One ceiling and one
+ *                pair of numbers everywhere; only the escape differs, because
+ *                the source pane's copy button hands over the whole line and
+ *                the structured face's hands over the payload. A pane that
+ *                promised a copy it does not make would be this card's defect
+ *                wearing the fix's clothes.
  */
-function Budgeted({ text, lang, wrap }: { text: string; lang: Lang; wrap?: boolean }) {
+function Budgeted({
+  text,
+  lang,
+  wrap,
+  capNote = "trace.source.capped",
+}: {
+  text: string;
+  lang: Lang;
+  wrap?: boolean;
+  capNote?: string;
+}) {
   const [all, setAll] = useState(false);
   const cut = withinBudget(text, all ? text.length : SOURCE_DISPLAY_CHARS);
   return (
@@ -717,7 +750,7 @@ function Budgeted({ text, lang, wrap }: { text: string; lang: Lang; wrap?: boole
       </pre>
       {cut.capped && (
         <p className="trace-source-cap">
-          {t(lang, "trace.source.capped", {
+          {t(lang, capNote, {
             shown: counted(cut.shown, lang),
             total: counted(cut.total, lang),
           })}{" "}
@@ -738,7 +771,17 @@ function Budgeted({ text, lang, wrap }: { text: string; lang: Lang; wrap?: boole
  *  claim: `hidden` is a signature or a base64 body, `long` is one run of
  *  characters too long to read where it stands, and most of those are prose.
  *  They shared the byte sentence until a dictated prompt met it. */
-function ReadableBlockView({ block, lang }: { block: ReadableBlock; lang: Lang }) {
+function ReadableBlockView({
+  block,
+  lang,
+  capNote,
+}: {
+  block: ReadableBlock;
+  lang: Lang;
+  /** Passed through to {@link Budgeted}: see there for why one ceiling has two
+   *  sentences. */
+  capNote?: string;
+}) {
   const [open, setOpen] = useState(false);
   const collapsed = block.kind === "hidden" || block.kind === "long";
   return (
@@ -752,10 +795,10 @@ function ReadableBlockView({ block, lang }: { block: ReadableBlock; lang: Lang }
               {t(lang, open ? "trace.source.hide" : "trace.source.show")}
             </button>
           </p>
-          {open && <Budgeted text={block.text} lang={lang} wrap />}
+          {open && <Budgeted text={block.text} lang={lang} wrap capNote={capNote} />}
         </>
       ) : (
-        <Budgeted text={block.text} lang={lang} wrap={block.kind === "text"} />
+        <Budgeted text={block.text} lang={lang} wrap={block.kind === "text"} capNote={capNote} />
       )}
     </div>
   );

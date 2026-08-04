@@ -800,6 +800,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.source.notJson": { de: "Diese Zeile ist kein JSON. Sie steht unverändert da.", en: "This line is not JSON. It stands here unchanged." },
   "trace.source.capped": { de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.", en: "Showing {shown} of {total} characters. Copying always takes the whole line." },
   "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
+  // The same ceiling and the same two numbers one face over, where the copy
+  // button hands over the payload rather than the line — so the second half is
+  // the escape that is actually next to it. Measured over 83,214 thinking
+  // blocks in ~/.claude/projects, exactly one is long enough to read this.
+  "trace.meta.capped": { de: "{shown} von {total} Zeichen im Bild. Der ganze Wert ist einen Klick entfernt.", en: "Showing {shown} of {total} characters. The whole value is one click away." },
   // A signature or a base64 body: carried whole, collapsed on screen, and never
   // dropped without saying so.
   // The two collapsed kinds (readable.ts HIDDEN_KINDS), which are two claims

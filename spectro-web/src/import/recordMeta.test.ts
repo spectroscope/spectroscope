@@ -2,7 +2,7 @@
 // here is about one of the module's three rules: absent says nothing, present
 // travels verbatim, and unnamed still arrives.
 import { describe, expect, it } from "vitest";
-import { INLINE_CHARS, readRecordMeta } from "./recordMeta";
+import { INLINE_CHARS, readRecordMeta, type MetaRow } from "./recordMeta";
 import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
 import ccLinear from "./fixtures/cc-linear.jsonl?raw";
 
@@ -13,6 +13,11 @@ const groupsOf = (line: string): Record<string, Record<string, string>> => {
   }
   return out;
 };
+
+/** The content group's rows with their block marking intact, which is the half
+ *  `groupsOf` throws away and the half that decides how a row is painted. */
+const contentRows = (line: string): MetaRow[] =>
+  readRecordMeta(line).find((g) => g.path === "message.content")?.rows ?? [];
 
 const lines = (raw: string): string[] => raw.split(/\r?\n/).filter((l) => l.trim());
 
@@ -57,6 +62,130 @@ describe("readRecordMeta", () => {
     expect(assistant["message"]).not.toHaveProperty("content");
     expect(assistant["message"]).not.toHaveProperty("role");
     expect(assistant[""]).not.toHaveProperty("timestamp");
+  });
+});
+
+// The owner's report: "beim structured view eines turn start sieht man jetzt
+// alle parameter aber das wichtige … message.content[0].thinking ist nicht
+// dabei". The Source face prints that field under its own label, so the two
+// faces of one line disagreed about whether the thought exists.
+describe("readRecordMeta over the content blocks", () => {
+  const thinking = lines(ccSplit)[1];
+  const answer = lines(ccSplit)[2];
+  const call = lines(ccSplit)[3];
+
+  it("prints the thinking of the block that carries it, verbatim", () => {
+    expect(groupsOf(thinking)["message.content"]["[0].thinking"]).toBe(
+      "I should look at git status before saying anything.",
+    );
+  });
+
+  it("names every block by its type, so the shape of the response is on screen", () => {
+    expect(groupsOf(thinking)["message.content"]["[0].type"]).toBe("thinking");
+    expect(groupsOf(answer)["message.content"]["[0].type"]).toBe("text");
+    expect(groupsOf(call)["message.content"]["[0].type"]).toBe("tool_use");
+  });
+
+  it("marks the thought as language and the signature as bytes", () => {
+    // Two markings because the pane says two different sentences over them,
+    // exactly as the source pane does: one is read, the other is opened.
+    const rows = contentRows(thinking);
+    expect(rows.find((r) => r.key === "[0].thinking")?.block).toBe("text");
+    expect(rows.find((r) => r.key === "[0].signature")).toEqual({
+      key: "[0].signature",
+      value: "AAAAsignature",
+      block: "hidden",
+    });
+  });
+
+  it("names the answer and its size and does not print it a second time", () => {
+    // "Let me check." is 13 characters. The text_delta frames below this panel
+    // carry the words; printing them here would make the structured face a
+    // second chat.
+    const content = groupsOf(answer)["message.content"];
+    expect(content["[0].text"]).toBe("[13 characters]");
+    expect(JSON.stringify(content)).not.toContain("Let me check");
+  });
+
+  it("counts one character as one character", () => {
+    const one = groupsOf(JSON.stringify({ message: { content: [{ type: "text", text: "x" }] } }));
+    expect(one["message.content"]["[0].text"]).toBe("[1 character]");
+  });
+
+  it("holds a tool result's output back the same way, and by the same rule", () => {
+    // A tool_result block's `content` is the tool's whole output, which is why
+    // the record-level `toolUseResult` is held back too.
+    const result = groupsOf(lines(ccSplit)[4])["message.content"];
+    expect(result["[0].type"]).toBe("tool_result");
+    expect(result["[0].content"]).toBe("[5 characters]");
+    expect(result["[0].tool_use_id"]).toBe("t1");
+  });
+
+  it("lets every other field of a block through, unnamed ones included", () => {
+    const content = groupsOf(call)["message.content"];
+    expect(content["[0].name"]).toBe("Bash");
+    expect(content["[0].input"]).toBe('{"command":"git status --short"}');
+    const future = groupsOf(
+      JSON.stringify({ message: { content: [{ type: "reasoning_summary", summary: "short" }] } }),
+    );
+    expect(future["message.content"]).toEqual({
+      "[0].type": "reasoning_summary",
+      "[0].summary": "short",
+    });
+  });
+
+  it("keeps the file's own index, so a second block is [1] and not a new list", () => {
+    // Measured over ~/.claude/projects: 83,211 records carry a thinking block
+    // at index 0 and three carry one at index 1. The index is the file's.
+    const two = groupsOf(
+      JSON.stringify({
+        message: {
+          content: [
+            { type: "text", text: "hi" },
+            { type: "thinking", thinking: "second", signature: "s" },
+          ],
+        },
+      }),
+    );
+    expect(two["message.content"]).toEqual({
+      "[0].type": "text",
+      "[0].text": "[2 characters]",
+      "[1].type": "thinking",
+      "[1].thinking": "second",
+      "[1].signature": "s",
+    });
+  });
+
+  it("produces no thinking row for a record that did not think", () => {
+    const rows = contentRows(call);
+    expect(rows.map((r) => r.key)).not.toContain("[0].thinking");
+    expect(rows.every((r) => r.value !== "")).toBe(true);
+  });
+
+  it("produces no thinking row for a thinking block with nothing in it", () => {
+    // Measured: the shortest thinking in the corpus is 0 characters. An empty
+    // row would claim the model thought and the app lost it.
+    const empty = groupsOf(JSON.stringify({ message: { content: [{ type: "thinking", thinking: "" }] } }));
+    expect(empty["message.content"]).toEqual({ "[0].type": "thinking" });
+  });
+
+  it("says nothing about a body that is not a list of blocks", () => {
+    // A user record stores its prompt as a plain string, and that string IS the
+    // conversation: run_start and user_message carry it.
+    expect(groupsOf(lines(ccSplit)[0])).not.toHaveProperty("message.content");
+    expect(readRecordMeta(lines(ccSplit)[0]).map((g) => g.path)).toEqual([""]);
+  });
+
+  it("carries a long thought whole and leaves the ceiling to the pane", () => {
+    // Measured over 83,214 blocks: median 296 characters, p99 8,625, longest
+    // 67,984 — one single block past the source pane's 65,536. The pane stops
+    // painting and names both numbers; the value in the row is never cut, or
+    // the copy would hand over a file the reader believes is complete.
+    const long = "t".repeat(200_000);
+    const rows = contentRows(
+      JSON.stringify({ message: { content: [{ type: "thinking", thinking: long }] } }),
+    );
+    expect(rows.find((r) => r.key === "[0].thinking")?.value).toHaveLength(200_000);
   });
 
   it("lets a field nobody named through rather than swallowing it", () => {
@@ -110,6 +239,11 @@ describe("readRecordMeta over a whole real-shaped file", () => {
     // and both of those ARE the conversation — so there is no message group,
     // rather than an empty one with a heading over no rows.
     expect(readRecordMeta(lines(ccSplit)[0]).map((g) => g.path)).toEqual([""]);
-    expect(readRecordMeta(lines(ccSplit)[3]).map((g) => g.path)).toEqual(["", "message", "message.usage"]);
+    expect(readRecordMeta(lines(ccSplit)[3]).map((g) => g.path)).toEqual([
+      "",
+      "message",
+      "message.content",
+      "message.usage",
+    ]);
   });
 });

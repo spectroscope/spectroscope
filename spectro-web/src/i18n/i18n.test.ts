@@ -107,6 +107,10 @@ describe("i18n dict", () => {
       "trace.source.notJson",
       "trace.source.capped",
       "trace.source.showAll",
+      // One ceiling, two escapes: the structured face's copy button hands over
+      // the payload, so it cannot borrow the source pane's promise about the
+      // line. A missing sentence here would fall back to that promise.
+      "trace.meta.capped",
       // What it is and how much of it there is, plus the two words that open and
       // close it. Dropping a collapsed value silently would be a hole the reader
       // cannot see, so it is always three visible strings.
