@@ -76,6 +76,11 @@ Move together:
 - **Samples:** the Maven coordinates pinned in `samples/*/build.gradle.kts`
   (they resolve once step 6 publishes; the samples build standalone and are
   not part of the root gate).
+- **The citation file:** `version` and `date-released` in `CITATION.cff`.
+  GitHub renders it in the "Cite this repository" box on the repo front page,
+  and it sat at 0.3.0 through two cuts before anyone clicked that box (found
+  on 0.6.0 release day). tag.yml bumps both fields, and the stray grep below
+  covers `*.cff`.
 - **Then grep the tree for the OLD version string** (`grep -rn "0\.2\.0" --include='*.ts' --include='*.kts' --include='*.json' .`
   minus lockfiles and `*.test.ts` — test fixtures legitimately quote
   historical version strings): 0.2.0 shipped with `spectro-desktop/main.ts` still

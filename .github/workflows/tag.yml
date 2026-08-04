@@ -126,6 +126,17 @@ jobs:
             echo "::error::the bump did not land in spectro-desktop/package.json"
             exit 1
           fi
+          # The citation file names a version too — GitHub renders it in the
+          # "Cite this repository" box on the repo front page, and it sat at
+          # 0.3.0 through two cuts before anyone clicked that box (found on
+          # 0.6.0 release day). The date moves with it: a citation names the
+          # release it cites.
+          sed -i -e "s/^version: \"${old_re}\"/version: \"${VERSION}\"/" \
+                 -e "s/^date-released: \"[0-9-]*\"/date-released: \"$(date -u +%F)\"/" CITATION.cff
+          if ! grep -q "^version: \"${VERSION}\"" CITATION.cff; then
+            echo "::error::the bump did not land in CITATION.cff"
+            exit 1
+          fi
           # The samples pin the published Maven coordinates and move with the
           # release too (they resolve as soon as playbook step 6 publishes;
           # they are not part of the root Gradle build, so the gate never
@@ -157,7 +168,7 @@ jobs:
           # sentence "carried 0.4.1 straight through the 0.5.0 cut". Only
           # lines that OPEN with a comment marker are dropped, so
           # `val v = "0.5.0" // the version` is still code and still caught.
-          hits="$(git grep -n "${old_re}" -- '*.ts' '*.kts' '*.json' \
+          hits="$(git grep -n "${old_re}" -- '*.ts' '*.kts' '*.json' '*.cff' \
               ':(exclude)*package-lock.json' ':(exclude)*.test.ts' \
             | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
           if [ -n "$hits" ]; then
