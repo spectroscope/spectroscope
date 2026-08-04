@@ -12,6 +12,7 @@ import ccWorkflow from "./fixtures/cc-workflow.jsonl?raw";
 import ccFollowup from "./fixtures/cc-followup.jsonl?raw";
 import ccUserBlocks from "./fixtures/cc-user-blocks.jsonl?raw";
 import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
+import ccBlankCards from "./fixtures/cc-blank-cards.jsonl?raw";
 import {
   claudeCodeToRunEvents,
   claudeCodeWithOrigin,
@@ -1032,10 +1033,14 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
     expect("origin" in frames[1]).toBe(false);
   });
 
-  it("reads a queued command whose prompt is a block array", () => {
+  it("reads a queued command whose prompt is a block array, image included", () => {
     // 159 of the 1,213 prompts are arrays, 142 of them with a text block; the
     // rest is a pasted image. String concatenation would render "[object
     // Object]" into the trace.
+    //
+    // The image line is card 167: this used to read "hold on" and nothing else,
+    // and on the 17 array prompts that are an image ALONE it read as no prompt
+    // at all. A queued command with a screenshot in it now says so.
     const frames = framesOfType(
       [
         attachment({
@@ -1050,7 +1055,7 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
       "queued_command",
     );
     expect(frames.length).toBe(1);
-    expect(frames[0].prompt).toBe("hold on");
+    expect(frames[0].prompt).toBe("[image/png · 3 B]\nhold on");
   });
 
   it("says less about a queue operation that carries no content", () => {
@@ -1309,5 +1314,71 @@ describe("claudeCode adapter (text blocks in a user record)", () => {
         (e as unknown as { text: string }).text === "[Request interrupted by user]",
     );
     expect(source.origin[at]).toBe(3); // the fourth line of the file, counted from zero
+  });
+});
+
+// A card that came up blank (card 167, finding 4). The importer's asText read
+// only `.text`, so every block that was not text mapped to the empty string and
+// the card it belonged to showed nothing at all. Measured over the 5,119
+// transcripts in ~/.claude/projects: 5,269 tool_result cards import completely
+// empty because their only block is an image, and 1,520 ToolSearch cards import
+// empty because a `tool_reference` block rendered as nothing instead of naming
+// the tool it had just loaded. On the person's own side, 196 user records whose
+// body is nothing but attachments produced NO frame at all — the prompt vanished
+// from the transcript — and 298 more imported as the words with the screenshot
+// they were about removed.
+//
+// The bytes are NOT carried, and that is a measurement, not a shrug: the corpus
+// holds 1.23 GB of base64 image data, an import is a browser-side File.text()
+// read with no server blob behind it, and events.ts holds no frame that could
+// carry it without claiming the picture was generated here. So the card says
+// what was there, in the file's own words for the type and a stated size.
+describe("claudeCode adapter (blocks that are not text)", () => {
+  const events = parseTranscript(ccBlankCards);
+  const outputOf = (callId: string): string =>
+    (events.find((e) => e.type === "tool_result" && e.callId === callId) as { output: string }).output;
+  const userSaid = events
+    .filter((e) => (e as unknown as { type: string }).type === "user_message")
+    .map((e) => (e as unknown as { text: string }).text);
+
+  it("names the tools a ToolSearch result loaded instead of returning nothing", () => {
+    expect(outputOf("t1")).toBe("WebFetch\nWebSearch");
+  });
+
+  it("says an image came back rather than showing an empty card", () => {
+    expect(outputOf("t2")).toBe("[image/png · 11 B]");
+  });
+
+  it("keeps the text verbatim and adds the screenshot beside it, in the file's order", () => {
+    expect(outputOf("t3")).toBe("Took a screenshot of the page.\n[image/jpeg · 6 B]");
+  });
+
+  it("keeps a text-only result byte-identical", () => {
+    const linear = parseTranscript(ccLinear);
+    const call = linear.find((e) => e.type === "tool_result") as { output: string };
+    expect(call.output).not.toMatch(/^\[/);
+    expect(call.output).not.toContain("\n[");
+  });
+
+  it("stops a prompt that was nothing but a screenshot from vanishing", () => {
+    expect(userSaid).toContain("[image/png · 11 B]");
+  });
+
+  it("puts the attachment and the words in the person's bubble, in the file's order", () => {
+    const state = reduceAll(initialState, events);
+    const said = state.turns.filter((t) => t.kind === "user").map((t) => t.text);
+    expect(said).toContain("[image/jpeg · 6 B]");
+    expect(said).toContain("this is the frame I meant");
+    expect(said.indexOf("[image/jpeg · 6 B]")).toBeLessThan(said.indexOf("this is the frame I meant"));
+  });
+
+  it("names a document by the media type the file gave it", () => {
+    expect(userSaid).toContain("[application/pdf · 6 B]");
+  });
+
+  it("never puts an attachment note in the model's mouth", () => {
+    const state = reduceAll(initialState, events);
+    const answered = state.turns.filter((t) => t.kind === "assistant").map((t) => t.text);
+    expect(answered.join("\n")).not.toContain("[image/");
   });
 });

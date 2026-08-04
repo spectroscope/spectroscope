@@ -93,6 +93,12 @@ interface CCBlock {
   tool_use_id?: string;
   content?: unknown;
   is_error?: boolean;
+  /** `tool_reference`: the tool a ToolSearch result just loaded. The whole
+   *  block is `{type, tool_name}` on all 2,805 of them in the corpus. */
+  tool_name?: string;
+  /** `image` / `document`: the bytes, always `{type:"base64", media_type,
+   *  data}` — never a path and never a URL, measured on all 8,594. */
+  source?: { type?: string; media_type?: string; data?: string };
 }
 
 /** Records without a timestamp get synthetic ones this far apart. */
@@ -245,12 +251,102 @@ function stampRecords(recs: CCRecord[], base: number): number[] {
 // "Task" is the classic subagent tool; newer Claude Code versions call it "Agent".
 const isSpawnTool = (name: unknown): boolean => name === "Task" || name === "Agent";
 
+/** Longest a foreign block type may be when it is named on a card, and the
+ *  control characters it may not smuggle in. The type is somebody else's
+ *  vocabulary rendered as interface text, so it is treated the way detect.ts
+ *  treats an unrecognised record type. */
+const MAX_BLOCK_TYPE_CHARS = 32;
+// C0, DEL, C1 and the two Unicode line separators — everything a renderer could
+// read as "start a new line".
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+
+const safeWord = (raw: string): string => {
+  const flat = raw.replace(CONTROL, " ").trim();
+  return flat.length > MAX_BLOCK_TYPE_CHARS ? `${flat.slice(0, MAX_BLOCK_TYPE_CHARS)}…` : flat;
+};
+
+/** Base64 decoded, in bytes. Four characters carry three, less the padding. */
+function decodedBytes(base64: string): number {
+  const pad = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((base64.length / 4) * 3) - pad);
+}
+
+function byteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * What a block that is not text SAYS it is.
+ *
+ * The bytes do not travel, and that is measured rather than assumed: the corpus
+ * holds 1.23 GB of base64 image data, an import is a browser-side `File.text()`
+ * read with no server blob behind it, and the one frame that could carry a
+ * picture — `image_generated` — resolves through `/api/images/<file>` and would
+ * claim the screenshot was generated here when it was read or grabbed. So the
+ * note names the media type the file itself wrote and states the size it
+ * decodes to. Nothing else is invented: a block with no media type is named by
+ * its own `type` word, which is the file's word, capped and stripped of control
+ * characters because it is foreign data being rendered as interface text.
+ *
+ * @return the note, or "" for a block that is text or carries nothing to name
+ */
+function blockNote(b: CCBlock): string {
+  if (b.type === "tool_reference") return typeof b.tool_name === "string" ? safeWord(b.tool_name) : "";
+  const kind = typeof b.type === "string" ? safeWord(b.type) : "";
+  if (kind === "" || kind === "text") return "";
+  const media = typeof b.source?.media_type === "string" ? safeWord(b.source.media_type) : "";
+  const data = typeof b.source?.data === "string" ? b.source.data : null;
+  if (media === "") return `[${kind}]`;
+  return data === null ? `[${media}]` : `[${media} · ${byteSize(decodedBytes(data))}]`;
+}
+
+/**
+ * A message body as text.
+ *
+ * A text block travels VERBATIM and always has; what changed (card 167) is what
+ * a block that is NOT text produces. It used to produce the empty string, which
+ * on 5,269 tool_result cards in the corpus was the whole output — a tool that
+ * ran, succeeded and showed nothing — and on 1,520 ToolSearch cards threw away
+ * the tool names the result consisted of. Now every block says what it is, and
+ * a note gets a line of its own so it can never run into the words beside it.
+ *
+ * A body of nothing but text is byte-identical to what this returned before:
+ * every piece is joined with no separator, exactly as it was.
+ */
 const asText = (content: unknown): string => {
   if (typeof content === "string") return content;
-  if (Array.isArray(content))
-    return content.map((b: CCBlock | string) => (typeof b === "string" ? b : (b.text ?? ""))).join("");
-  return "";
+  if (!Array.isArray(content)) return "";
+  let out = "";
+  let ownLine = false;
+  for (const b of content as (CCBlock | string)[]) {
+    const isText = typeof b === "string" || b?.type === "text" || b?.type === undefined;
+    const piece = typeof b === "string" ? b : isText ? (b.text ?? "") : blockNote(b);
+    if (piece === "") continue;
+    if ((ownLine || !isText) && out !== "" && !out.endsWith("\n")) out += "\n";
+    out += piece;
+    ownLine = !isText;
+  }
+  return out;
 };
+
+/**
+ * What the person attached to a message of their own.
+ *
+ * Only on a user record, and only for the two block types that are an
+ * attachment: `image` (1,446 top-level blocks in the corpus) and `document`
+ * (19, all base64 PDFs). They reach `emitBlock`, match no branch there and
+ * produce nothing — so 196 records whose body is nothing but attachments import
+ * as no frame at all, the prompt gone from the transcript, and 298 more import
+ * as the words with the screenshot they were about removed.
+ *
+ * @return the note to put in the person's bubble, or "" for any other block
+ */
+function attachmentNote(b: CCBlock): string {
+  return b?.type === "image" || b?.type === "document" ? blockNote(b) : "";
+}
 
 /**
  * An adapted stream, with the line each frame came from.
@@ -773,7 +869,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             if (b?.type === "text") {
               if ((b.text ?? "") !== "")
                 out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
-            } else emitBlock("main", b, ts);
+              continue;
+            }
+            // An attachment is the person's too, and it goes in the bubble in
+            // the file's own order — a screenshot pasted BEFORE the sentence it
+            // is about reads as one message, and 298 records in the corpus are
+            // exactly that. See attachmentNote for why the bytes stay behind.
+            const note = attachmentNote(b);
+            if (note !== "") out.push({ type: "user_message", text: note, ts } as unknown as RunEvent);
+            else emitBlock("main", b, ts);
           }
       }
     } else if (r.type === "assistant") {
