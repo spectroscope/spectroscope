@@ -40,6 +40,27 @@ export function FleetBar({
         </svg>
         bus
       </button>
+      {/* Owner pick after the A/B: the fleet keeps its spectrum and trace
+          readings — whole-fleet views, docked before the per-agent tabs. */}
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active === "spectrum"}
+        className={active === "spectrum" ? "tab tab--active" : "tab"}
+        onClick={() => onPick("spectrum")}
+      >
+        spectrum
+      </button>
+      <button
+        type="button"
+        role="tab"
+        aria-selected={active === "trace"}
+        className={active === "trace" ? "tab tab--active" : "tab"}
+        onClick={() => onPick("trace")}
+      >
+        trace
+      </button>
+      <span className="fleet-bar-sep" aria-hidden="true" />
       {ordered.map((n) => {
         const dot =
           n.state === "failed"
@@ -54,9 +75,9 @@ export function FleetBar({
             key={n.id}
             type="button"
             role="tab"
-            aria-selected={active === n.id}
-            className={`${active === n.id ? "tab tab--active" : "tab"} mono fleet-bar-agent${n.pendingGate ? " gate" : ""}`}
-            onClick={() => onPick(n.id)}
+            aria-selected={active === `agent:${n.id}`}
+            className={`${active === `agent:${n.id}` ? "tab tab--active" : "tab"} mono fleet-bar-agent${n.pendingGate ? " gate" : ""}`}
+            onClick={() => onPick(`agent:${n.id}`)}
           >
             <span
               className={`dot ${dot}${n.state === "working" && n.connected ? " pulse" : ""}`}

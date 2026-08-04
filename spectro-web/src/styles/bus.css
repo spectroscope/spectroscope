@@ -323,6 +323,13 @@
   color: var(--fg-faint);
 }
 
+.fleet-bar .fleet-bar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 6px;
+  background: var(--line);
+}
+
 .agent-feed {
   display: flex;
   flex-direction: column;

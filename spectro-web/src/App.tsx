@@ -1180,7 +1180,11 @@ export function App() {
         : agentId;
     setTraceAgent(evAgent);
     setFocusEvent(event);
-    changeTab("trace"); // a gesture: the flip earns its address like a tab click
+    if (enteredFleet !== null) {
+      setFleetTab("trace"); // variant B: the fleet bar owns the tab vocabulary
+    } else {
+      changeTab("trace"); // a gesture: the flip earns its address like a tab click
+    }
   };
   // Choosing v2 opens the panel it is half of: a reading whose right column is
   // collapsed is v1 with the children missing. Only on the flip INTO v2 — a
@@ -1440,7 +1444,12 @@ export function App() {
           <FleetBar
             model={enteredFleetModel}
             active={fleetTab}
-            onPick={setFleetTab}
+            onPick={(next) => {
+              /* Picking an agent pins the trace filter with it — "trace per
+                 agent" is one click away and already scoped (owner ask). */
+              if (next.startsWith("agent:")) setTraceAgent(next.slice("agent:".length));
+              setFleetTab(next);
+            }}
             onSpawn={enteredFleet.startsWith("scenario:") ? undefined : () => setSpawnDialogOpen(true)}
           />
         ) : (
@@ -1544,10 +1553,44 @@ export function App() {
               contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
               hubPort={fleetHubPort}
               onStop={stopFleetNode}
-              onFocusAgent={(agentId) => setFleetTab(agentId)}
+              onOpenTrace={(agentId) => {
+                setTraceAgent(agentId);
+                setFleetTab("trace");
+              }}
+              onFocusAgent={(agentId) => {
+                setTraceAgent(agentId);
+                setFleetTab(`agent:${agentId}`);
+              }}
+            />
+          ) : fleetTab === "spectrum" ? (
+            /* Owner pick after the A/B: the fleet keeps its spectrum reading —
+               same component, same props as the (now unreachable) app-tab twin. */
+            <SpectrumView
+              events={shownEvents}
+              running={enteredFleetModel.roster.some((node) => node.connected)}
+              onOpenTrace={(agentId) => {
+                setTraceAgent(agentId);
+                setFleetTab("trace");
+              }}
+              onFocusEvent={focusInTrace}
+              fleet={enteredFleetModel}
+            />
+          ) : fleetTab === "trace" ? (
+            /* And the trace stays mandatory, agent-filterable via its own bar. */
+            <TraceView
+              entries={traceEntries}
+              agentFilter={traceAgent}
+              onAgentFilter={setTraceAgent}
+              focusEvent={focusEvent}
+              onFocusHandled={() => setFocusEvent(null)}
+              langfuseUrl={langfuseUrl}
+              otlpFailure={otlpFailure}
+              sourceLines={null}
+              provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
+              translated={false}
             />
           ) : (
-            <AgentFeed agentId={fleetTab} events={shownEvents} />
+            <AgentFeed agentId={fleetTab.slice("agent:".length)} events={shownEvents} />
           )
         ) : tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
           /* A locked surface shows a teaser, never its content. The tab itself
