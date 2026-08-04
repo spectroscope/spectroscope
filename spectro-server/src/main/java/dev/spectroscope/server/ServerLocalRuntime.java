@@ -1,5 +1,6 @@
 package dev.spectroscope.server;
 
+import dev.spectroscope.core.local.LlamaServerBinary;
 import dev.spectroscope.core.local.LocalCatalog;
 import dev.spectroscope.core.local.LocalModel;
 import dev.spectroscope.core.local.LocalProviderFactory;
@@ -7,7 +8,6 @@ import dev.spectroscope.core.local.LocalRuntime;
 import dev.spectroscope.core.local.ModelResolution;
 import dev.spectroscope.core.provider.LlmProvider;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
@@ -257,18 +257,7 @@ public final class ServerLocalRuntime {
 
     /** The llama-server binary: bundled next to the app if packaged, else PATH. */
     private static String binary() {
-        Path bundled = bundledBinary();
-        return bundled != null ? bundled.toString() : "llama-server"; // dev / brew: on PATH
-    }
-
-    /** @return the bundled binary when the packaged app set and shipped one, else null */
-    private static Path bundledBinary() {
-        String dir = System.getProperty("spectro.bundle.bin");
-        if (dir == null || dir.isBlank()) {
-            return null;
-        }
-        Path b = Path.of(dir, "llama-server");
-        return Files.isExecutable(b) ? b : null;
+        return LlamaServerBinary.command();
     }
 
     /**
@@ -279,28 +268,13 @@ public final class ServerLocalRuntime {
      * model will run, because a missing binary otherwise surfaces as a spawn that
      * fails after a multi-gigabyte download.
      *
+     * <p>The lookup itself moved to {@link LlamaServerBinary} in core when the
+     * CLI's doctor started asking the same question (card 164) — two faces, one
+     * rule.</p>
+     *
      * @return true when a bundled or PATH llama-server is executable
      */
     public static boolean binaryAvailable() {
-        if (bundledBinary() != null) {
-            return true;
-        }
-        String path = System.getenv("PATH");
-        if (path == null || path.isBlank()) {
-            return false;
-        }
-        for (String entry : path.split(java.io.File.pathSeparator)) {
-            if (entry.isBlank()) {
-                continue;
-            }
-            try {
-                if (Files.isExecutable(Path.of(entry, "llama-server"))) {
-                    return true;
-                }
-            } catch (RuntimeException malformedEntry) {
-                // a junk PATH entry is not an answer either way — keep looking
-            }
-        }
-        return false;
+        return LlamaServerBinary.available();
     }
 }
