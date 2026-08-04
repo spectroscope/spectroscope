@@ -1170,8 +1170,9 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
    * `from`: nothing was left behind, and an empty object would read as one.
    *
    * A move BACK to a directory the session already stood in is announced like
-   * any other move (3,204 of the corpus's 3,672 cwd moves are exactly that):
-   * the ground is where it is, not where it has ever been.
+   * any other move (3,221 of the corpus's 3,692 cwd moves are exactly that,
+   * measured 2026-08-04): the ground is where it is, not where it has ever
+   * been.
    */
   const noteGround = (r: CCRecord, ts: number): void => {
     const moved: Partial<Record<GroundField, string>> = {};
@@ -1373,9 +1374,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
     // Before every early return below: a record that carries no conversation
-    // still carries the ground, and 487 of the corpus's 3,746 moves are
-    // recorded on exactly such a line (486 on a system record, 1 on an
-    // attachment).
+    // still carries the ground. Measured 2026-08-04 over the 167 transcripts:
+    // 621 of the 3,933 ground frames come off a line that produces nothing
+    // else — 488 of the 3,766 moves (487 on a `system/stop_hook_summary`
+    // record, one on a `user` one) and 133 of the 167 openings, every one of
+    // those on an `attachment`.
     noteGround(r, ts);
     if (emitNoConversation(r, ts)) return;
     // Every other record type, so that what SUPPRESSES the "never reported

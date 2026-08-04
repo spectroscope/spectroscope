@@ -2245,8 +2245,8 @@ describe("the ground under an imported run", () => {
     });
   });
 
-  // 3,204 of the corpus's 3,672 cwd moves return to a directory the session
-  // already stood in. A move back is exactly as real as a move away — the
+  // 3,221 of the corpus's 3,692 cwd moves return to a directory the session
+  // already stood in (measured 2026-08-04). A move back is exactly as real as a move away — the
   // relative paths in the tool results after it mean what they meant before —
   // so it is announced, and it is announced as a move rather than as a repeat
   // of the opening.

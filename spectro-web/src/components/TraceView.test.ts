@@ -153,8 +153,9 @@ describe("the todo row's summary", () => {
 });
 
 // Where the run stood, and when it moved (card 167, finding 8). The frame is
-// import-only and it belongs beside the other four: a session that walked
-// through nine directories has 265 of these rows in one file, and a reader who
+// import-only and it belongs beside the other four: the busiest transcript in
+// the corpus stood in 16 different directories and carries 273 of these rows
+// (measured 2026-08-04, `3e010de0…`), and a reader who
 // wants the conversation must be able to put them away in one click.
 describe("the ground row", () => {
   const ground = (payload: unknown): TraceEntry => ({

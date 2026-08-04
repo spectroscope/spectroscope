@@ -108,8 +108,8 @@ describe("formatLosses", () => {
     const written = toJsonl(events).trimEnd().split("\n").length;
 
     // The screen shows fifteen frames and the file holds five. This fixture is
-    // stitched from records of several real transcripts, so it stands in six
-    // different working directories: one opening ground_info and five moves
+    // stitched from records of several real transcripts, so it stands in five
+    // different working directories: one opening ground_info and four moves
     // (card 167, finding 8), all of them import-only and none of them writable.
     expect(facts.events).toBe(15);
     expect(written).toBe(5);

@@ -82,8 +82,8 @@ export function readSourceNotes(line: string): SourceNote[] {
   const notes: SourceNote[] = [];
   // WHAT WAS DRIVING THE TURN, before how hard it thought: a stretch of turns
   // that suddenly writes tests is explained by the skill in charge, not by the
-  // effort level. Measured over the 167 session transcripts in
-  // ~/.claude/projects: 19,582 records in 106 files name a skill and 28,952 in
+  // effort level. Measured 2026-08-04 over the 167 session transcripts in
+  // ~/.claude/projects: 19,595 records in 106 files name a skill and 28,952 in
   // 113 name an MCP server, all of it dropped until now.
   const skill = (rec as { attributionSkill?: unknown }).attributionSkill;
   // Verbatim, plugin prefix included. attributionPlugin is deliberately NOT a

@@ -173,8 +173,8 @@ describe("a model swapped under the run", () => {
 // WHY IS IT SUDDENLY WRITING TESTS? (card 167, finding 7.) A reader of somebody
 // else's session sees a long stretch of turns with no explanation, and the file
 // says on every one of them that a skill was in charge, or that an MCP tool
-// handed the instruction back three turns ago. Measured over the 167 session
-// transcripts in ~/.claude/projects: 19,582 records in 106 files carry
+// handed the instruction back three turns ago. Measured 2026-08-04 over the 167
+// session transcripts in ~/.claude/projects: 19,595 records in 106 files carry
 // attributionSkill, 28,952 in 113 carry attributionMcpServer, and the app drew
 // none of it — the prefilter did not even name the fields, so the line was
 // never parsed for them.

@@ -64,9 +64,12 @@ export interface MetaGroup {
  * on the collapsed row — the attribution five as a chip (sourceNotes.ts), a
  * move of the ground as its own frame — and those are a different reading, not
  * a second copy. The chip and the frame speak only where something is worth
- * calling out: a skill chip appears on 19,582 of the corpus's records, a ground
- * frame on 3,913. This list is the record itself, opened out, and on every
- * other record it is the only place its working directory appears at all.
+ * calling out: measured 2026-08-04, a skill chip appears on 19,595 of the
+ * corpus's records and a ground frame on 3,933. (The corpus is a live directory
+ * of transcripts and grows while it is being read, so the totals carry the day
+ * they were counted; the share is what holds.) This list is the record itself,
+ * opened out, and on every other record it is the only place its working
+ * directory appears at all.
  *
  * `compactMetadata` is held back for the reason `message` is: it gets a group
  * of its own below. Left to the fall-through it would print as a single
