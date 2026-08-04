@@ -26,10 +26,14 @@ export type DetailMode = "insight" | "compact" | "wire" | "source";
 export const DETAIL_MODES: readonly DetailMode[] = ["insight", "compact", "wire", "source"];
 
 /** How a pane renders what it was given. Verbatim is the bytes; readable is
- *  openly an interpretation of them (see readable.ts). Deliberately NOT a face
- *  and deliberately not persisted: a saved default of readable would make every
- *  reader's source view an interpretation, and the pane's whole selling point
- *  is that its default cannot be talked out of showing the bytes. */
+ *  openly an interpretation of them (see readable.ts). Readable is what the pane
+ *  shows first (owner call, 2026-08-03): a source line is escaped JSON inside
+ *  escaped JSON, and that form is unreadable at a glance, so opening on it makes
+ *  the pane look broken rather than faithful. What keeps the pane honest is not
+ *  which rendering comes up first but that the strip above it names the one on
+ *  screen and verbatim is one click away. Deliberately NOT a face, and the
+ *  choice is session only: it is never persisted, so it cannot follow a reader
+ *  into the next file they look at. */
 export type Reading = "verbatim" | "readable";
 
 export const READINGS: readonly Reading[] = ["verbatim", "readable"];

@@ -693,9 +693,9 @@ function ReadableBlockView({ block, lang }: { block: ReadableBlock; lang: Lang }
   );
 }
 
-/** One line, opened out. Openly a reading of the line and never the default:
- *  see readable.ts for the escape rule that keeps it from rewriting anybody's
- *  shell command. */
+/** One line, opened out. Openly a reading of the line, and the one the pane
+ *  opens on: see readable.ts for the escape rule that keeps it from rewriting
+ *  anybody's shell command. */
 function ReadableLine({ line, lang }: { line: string; lang: Lang }) {
   const { parsed, blocks } = useMemo(() => readable(line), [line]);
   return (
@@ -873,8 +873,9 @@ function TraceDetail({
         ))}
       </div>
       {/* Which of the two readings the pane is showing. Inside the pane and not
-          a face: the byte faithful one is the default and cannot be talked out
-          of being the default. */}
+          a face. With readable opening first, this strip is what stops the pane
+          from passing an interpretation off as the bytes: it names the
+          rendering on screen, and verbatim is the click next to it. */}
       {hasReading && (
         <div
           className="trace-detail-modes trace-reading"
