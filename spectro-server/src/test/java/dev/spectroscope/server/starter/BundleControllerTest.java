@@ -146,7 +146,11 @@ class BundleControllerTest {
         assertTrue(Files.exists(dir.resolve("settings.gradle.kts")));
         assertTrue(Files.exists(dir.resolve("build.gradle.kts")));
         assertTrue(Files.exists(dir.resolve("src/main/java/demo/FiveLines.java")));
-        assertTrue(Files.readString(dir.resolve("build.gradle.kts")).contains("spectro-core:0.4.1"));
+        // Against the constant, never a literal: a hand-written version here
+        // held the whole suite green while StarterBundles served 0.4.1 out of
+        // a 0.5.0 build (card 143).
+        assertTrue(Files.readString(dir.resolve("build.gradle.kts"))
+                .contains("spectro-core:" + StarterBundles.VERSION));
     }
 
     @Test

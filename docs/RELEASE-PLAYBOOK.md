@@ -82,6 +82,13 @@ Move together:
   pinning `spectro-server-0.1.0.jar` — the desktop face died on a fresh
   clone. Version literals outside the build files are bugs; prefer globbing
   (the desktop launcher now globs the newest jar for exactly this reason).
+- **And the QUOTED old version in shipped Java** (`git grep -n '"0\.2\.0"' -- '*.java' ':(exclude)*/src/test/*'`):
+  Java source is invisible to the bump above, which is how
+  `StarterBundles.VERSION` served 0.4.1 out of a 0.5.0 build (card 143). That
+  constant is build-stamped now (`processResources` expands the module version
+  into `starter/spectro-version.properties`), so any hit here means a version
+  written by hand again. Quoted matches only — javadoc prose may honestly
+  record which version a measurement ran against. tag.yml runs both greps.
 
 ### 3. Full gate — must be green before anything irreversible
 ```bash
