@@ -17,17 +17,37 @@ export type ChatBlock =
   | { kind: "turn"; turn: Turn; index: number }
   | { kind: "thread"; agentId: string; task: string; label: string | null; items: ThreadItem[] };
 
+/**
+ * Whose transcript is the spine of this session (card 152).
+ *
+ * The grouping used to ask "is this main?", which is right for every session
+ * this app produces and for every joined import, because their root IS called
+ * main. It is wrong for a standalone subagent transcript, whose root agent is
+ * the id the file names: every turn of the conversation answered no, and the
+ * whole transcript collapsed into one thread chip inside an empty session.
+ *
+ * Main still wins wherever a main agent exists at all, so nothing that has one
+ * changes by a single block. The roster is only consulted for a session that
+ * has no main in it, which today is exactly the standalone case.
+ */
+function rootOf(agents: readonly AgentInfo[]): string {
+  if (agents.length === 0) return "main";
+  for (const a of agents) if (a.id === "main") return "main";
+  for (const a of agents) if (a.parentId === null) return a.id;
+  return "main";
+}
+
 /** Which agent a flat turn belongs to (tool turns resolve via their card). */
-function ownerOf(turn: Turn, cards: Record<string, ToolCard>): string {
+function ownerOf(turn: Turn, cards: Record<string, ToolCard>, root: string): string {
   switch (turn.kind) {
     case "assistant":
       return turn.agentId;
     case "tool":
-      return cards[turn.callId]?.agentId ?? "main";
+      return cards[turn.callId]?.agentId ?? root;
     case "info":
-      return turn.agentId ?? "main";
+      return turn.agentId ?? root;
     default:
-      return "main";
+      return root;
   }
 }
 
@@ -53,12 +73,17 @@ export type ChatBlockV2 =
   /** One or more children starting here. `index` is the first turn they took. */
   | { kind: "chip"; workIds: string[]; index: number };
 
-export function groupTurnsV2(turns: Turn[], cards: Record<string, ToolCard>): ChatBlockV2[] {
+export function groupTurnsV2(
+  turns: Turn[],
+  cards: Record<string, ToolCard>,
+  agents: readonly AgentInfo[] = [],
+): ChatBlockV2[] {
+  const root = rootOf(agents);
   const blocks: ChatBlockV2[] = [];
   const chipped = new Set<string>();
   turns.forEach((turn, index) => {
-    const owner = ownerOf(turn, cards);
-    if (owner === "main") {
+    const owner = ownerOf(turn, cards, root);
+    if (owner === root) {
       blocks.push({ kind: "turn", turn, index });
       return;
     }
@@ -75,11 +100,12 @@ export function groupTurnsV2(turns: Turn[], cards: Record<string, ToolCard>): Ch
 }
 
 export function groupTurns(turns: Turn[], cards: Record<string, ToolCard>, agents: AgentInfo[]): ChatBlock[] {
+  const root = rootOf(agents);
   const byId = new Map(agents.map((a) => [a.id, a]));
   const blocks: ChatBlock[] = [];
   turns.forEach((turn, index) => {
-    const owner = ownerOf(turn, cards);
-    if (owner === "main") {
+    const owner = ownerOf(turn, cards, root);
+    if (owner === root) {
       blocks.push({ kind: "turn", turn, index });
       return;
     }

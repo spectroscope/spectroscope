@@ -112,3 +112,53 @@ describe("groupTurnsV2", () => {
     expect(groupTurnsV2(only, {})).toEqual([{ kind: "turn", turn: only[0], index: 0 }]);
   });
 });
+
+// Whose transcript is the spine (card 152).
+//
+// The grouping asked "is this main?" and put everything else in a thread. That
+// is right for every session this app produces and for every joined import,
+// because their root IS called main. It is wrong for a standalone subagent
+// transcript, whose root agent is the id the file names: every turn of the
+// conversation answered "no" and the whole transcript collapsed into one
+// thread chip inside an otherwise empty session.
+//
+// The root is read off the roster instead, and "main" still wins wherever a
+// main agent exists at all, so nothing that has a main changes.
+describe("the spine of a transcript whose root is not called main", () => {
+  const root: AgentInfo = {
+    id: "a0b476c3c018",
+    parentId: null,
+    label: null,
+    task: "",
+    state: "working",
+    lastStatus: null,
+    inTokens: 0,
+    outTokens: 0,
+  };
+  const child: AgentInfo = { ...root, id: "nested1", parentId: "a0b476c3c018", task: "Count them" };
+  const subTurns: Turn[] = [
+    { kind: "user", text: "Build the poster" },
+    { kind: "assistant", agentId: "a0b476c3c018", text: "Building.", thinking: "" },
+    { kind: "assistant", agentId: "nested1", text: "168 files.", thinking: "" },
+    { kind: "assistant", agentId: "a0b476c3c018", text: "Done.", thinking: "" },
+  ];
+
+  it("reads the root's turns as the transcript, not as a thread", () => {
+    const blocks = groupTurns(subTurns, {}, [root, child]);
+    expect(blocks.map((b) => b.kind)).toEqual(["turn", "turn", "thread", "turn"]);
+    expect((blocks[2] as { agentId: string }).agentId).toBe("nested1");
+  });
+
+  it("does the same in the v2 grouping", () => {
+    const blocks = groupTurnsV2(subTurns, {}, [root, child]);
+    expect(blocks.map((b) => b.kind)).toEqual(["turn", "turn", "chip", "turn"]);
+  });
+
+  it("still treats main as the spine wherever a main agent exists", () => {
+    // The invariant that keeps every existing session byte-identical: the root
+    // is only read off the roster when the roster holds no main at all.
+    const withMain: AgentInfo[] = [{ ...root, id: "main" }, worker];
+    expect(groupTurns(turns, cards, withMain)).toEqual(groupTurns(turns, cards, [worker]));
+    expect(groupTurnsV2(turns, cards, withMain)).toEqual(groupTurnsV2(turns, cards));
+  });
+});

@@ -240,7 +240,7 @@ export function Chat(props: {
   const blocks = useMemo(
     () =>
       grouping === "v2"
-        ? groupTurnsV2(state.turns, state.cards)
+        ? groupTurnsV2(state.turns, state.cards, state.agents)
         : groupTurns(state.turns, state.cards, state.agents),
     [grouping, state.turns, state.cards, state.agents],
   );
