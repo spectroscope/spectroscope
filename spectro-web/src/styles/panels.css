@@ -787,6 +787,9 @@
 }
 .trace-pair:hover { color: var(--text); background: var(--surface-2); }
 .trace-pair .mono { color: var(--text-dim); }
+/* The same relation read backwards, on the action's own row: dashed, so a
+   glance tells which way the arrow points without reading the word. */
+.trace-pair--from { border-left-style: dashed; }
 /* Reasoning lens: the whole thinking block behind an action, untruncated. */
 .trace-reason {
   border-left: 2px solid var(--ev-reasoning);
