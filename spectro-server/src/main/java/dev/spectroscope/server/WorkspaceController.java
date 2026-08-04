@@ -1,5 +1,7 @@
 package dev.spectroscope.server;
 
+import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.config.WorkspaceResolver;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -15,6 +17,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Phase 5: the workspace panel's backend — a read-only, sandboxed view of the
@@ -23,6 +26,11 @@ import java.util.Set;
  * directories skipped, capped); {@code GET /api/file} serves one file for the
  * preview pane. Both require a session that has actually resolved a workspace
  * and answer 409 otherwise, see {@link #rootFor}.
+ *
+ * <p>{@code GET /api/files?scope=prospective} is the one read that needs no
+ * session: the folder a run started right now would use, for the pane that has
+ * been told its path on connect and could not ask about it, see
+ * {@link #prospectiveRoot}. It takes no path from the caller.</p>
  *
  * <p>Sandbox rules, same maxim as the tools ("tool inputs are model output and
  * therefore untrusted" — and URL parameters are user/model input too): the
@@ -43,6 +51,26 @@ import java.util.Set;
  */
 @RestController
 public class WorkspaceController {
+
+    /** The configured workspace key, read fresh per request in production and
+     *  injected by tests — the one thing {@code scope=prospective} consults. */
+    private final Supplier<String> configuredWorkspace;
+
+    /** Spring wiring: the configured workspace comes from the settings chain,
+     *  the same value {@code SessionConnection} announces on connect. */
+    public WorkspaceController() {
+        this(() -> SpectroConfig.load(SpectroConfig.Overrides.none()).workspace());
+    }
+
+    /**
+     * Seam for tests, so the prospective read needs no settings file on disk.
+     *
+     * @param configuredWorkspace supplies the configured workspace key, or
+     *                            {@code null}/blank when none is set
+     */
+    WorkspaceController(Supplier<String> configuredWorkspace) {
+        this.configuredWorkspace = configuredWorkspace;
+    }
 
     /**
      * One tree node; path is relative to the workspace root, '/'-separated.
@@ -88,25 +116,38 @@ public class WorkspaceController {
 
     // ---- the tree -------------------------------------------------------------
 
+    /** The two questions {@code GET /api/files} answers. */
+    private static final String SCOPE_SESSION = "session";
+    private static final String SCOPE_PROSPECTIVE = "prospective";
+
     /**
      * {@code GET /api/files}: the whole workspace tree in one response — hidden
      * and ignored directories skipped, capped by depth and entry budget.
      *
-     * @param session the session whose workspace is asked for
+     * @param session the session whose workspace is asked for; ignored entirely
+     *                under {@code scope=prospective}
+     * @param scope {@code session} (the default) for that session's resolved
+     *              workspace, or {@code prospective} for the folder a run
+     *              started right now would use
      * @param request the servlet request, for the local-origin fence
-     * @return 404 for a non-local caller or a rebound Host; else the tree under
-     *         the root plus the honest truncated flag
+     * @return 404 for a non-local caller or a rebound Host; 400 for an unknown
+     *         scope; else the tree under the root plus the honest truncated flag
      */
     @GetMapping("/api/files")
     public ResponseEntity<?> files(
             @RequestParam(value = "session", required = false) String session,
+            @RequestParam(value = "scope", required = false) String scope,
             HttpServletRequest request) {
         if (!FleetController.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
+        boolean prospective = SCOPE_PROSPECTIVE.equals(scope);
+        if (!prospective && scope != null && !scope.isBlank() && !SCOPE_SESSION.equals(scope)) {
+            return ResponseEntity.badRequest().build();
+        }
         Path base;
         try {
-            base = rootFor(session);
+            base = prospective ? prospectiveRoot() : rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
         } catch (NoWorkspaceResolved none) {
@@ -163,6 +204,34 @@ public class WorkspaceController {
             throw new NoWorkspaceResolved("no-workspace-for-session");
         }
         return Path.of(resolved).toAbsolutePath().normalize();
+    }
+
+    /**
+     * The folder a run started right now would work in, named without creating
+     * anything — the read-side twin of the connect-time {@code workspace_info}
+     * announcement, computed the same way ({@code locate()} over the configured
+     * workspace, no session id).
+     *
+     * <p>The client contributes NOTHING to this path. That is the whole design:
+     * the alternative was to let the pane send the path it had just been told,
+     * which would have made this an arbitrary directory listing of the
+     * operator's disk wearing a workspace's name, and the sessionless fallback
+     * this class deleted was exactly that mistake in its first form. Here the
+     * only directory reachable is the one the settings chain names.</p>
+     *
+     * <p>No configured workspace means the run would land in a per-session temp
+     * folder keyed by a session id that has not been minted, so there is
+     * genuinely nothing to list and the answer is 409, not an invented one.</p>
+     *
+     * @return the configured workspace directory
+     * @throws NoWorkspaceResolved when no workspace is configured (answered as 409)
+     */
+    private Path prospectiveRoot() {
+        String configured = configuredWorkspace.get();
+        if (configured == null || configured.isBlank()) {
+            throw new NoWorkspaceResolved("no-workspace-configured");
+        }
+        return WorkspaceResolver.locate(configured, null);
     }
 
     /**
@@ -239,7 +308,11 @@ public class WorkspaceController {
      *
      * @param rel the root-relative path from the tree — resolved and checked
      *            against the sandbox before any read
-     * @param session the session whose workspace is asked for
+     * @param session the session whose workspace is asked for; ignored entirely
+     *                under {@code scope=prospective}
+     * @param scope {@code session} (the default) or {@code prospective}, the
+     *              same two roots the tree offers — a tree that lists a file
+     *              and an endpoint that will not open it is half an answer
      * @param request the servlet request, for the local-origin fence
      * @return 200 with typed bytes; 404 for a non-local caller or a rebound
      *         Host, and for anything outside, hidden, ignored or missing; 413
@@ -248,13 +321,18 @@ public class WorkspaceController {
     @GetMapping("/api/file")
     public ResponseEntity<byte[]> file(@RequestParam("path") String rel,
             @RequestParam(value = "session", required = false) String session,
+            @RequestParam(value = "scope", required = false) String scope,
             HttpServletRequest request) {
         if (!FleetController.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
+        boolean prospective = SCOPE_PROSPECTIVE.equals(scope);
+        if (!prospective && scope != null && !scope.isBlank() && !SCOPE_SESSION.equals(scope)) {
+            return ResponseEntity.badRequest().build();
+        }
         Path base;
         try {
-            base = rootFor(session);
+            base = prospective ? prospectiveRoot() : rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
         } catch (NoWorkspaceResolved none) {

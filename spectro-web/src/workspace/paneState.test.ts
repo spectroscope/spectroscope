@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { paneState } from "./paneState";
+import { listableBeforeTheFirstRun, paneState } from "./paneState";
 import type { WorkspaceAnnouncement, FetchOutcome } from "./paneState";
 
 const configured: WorkspaceAnnouncement = {
@@ -26,21 +26,27 @@ const running: WorkspaceAnnouncement = {
 };
 
 describe("paneState", () => {
-  it("beforeTheFirstRunThePaneIsPendingNotATree", () => {
+  it("beforeTheFirstRunAnUnnamedFolderIsPendingNotATree", () => {
     // The pane used to fall back to a sessionless /api/files, which answered
-    // with the server's own working directory. There is no tree to show yet.
+    // with the server's own working directory. Where no folder is named there
+    // is still nothing to show.
     expect(paneState(random, null, "en").kind).toBe("pending");
-    expect(paneState(configured, null, "en").kind).toBe("pending");
     expect(paneState(null, null, "en").kind).toBe("pending");
+    expect(paneState({ ...configured, exists: false }, null, "en").kind).toBe("pending");
   });
 
-  it("noInputEverProducesATreeWithoutAResolvedWorkspace", () => {
+  it("noTreeIsDrawnForAFolderThatIsNeitherResolvedNorOnDisk", () => {
+    // The premise of the older version of this test was "no tree without a
+    // resolved workspace", and it is replaced rather than loosened: a mode that
+    // NAMES a folder which the announcement says is on disk is a folder the app
+    // knows. What may never produce a tree is a folder nobody has named, or one
+    // named but not there.
     const announcements: (WorkspaceAnnouncement | null)[] = [
       null,
       random,
-      configured,
       { ...configured, exists: false },
-      { ...random, path: "/tmp/spectroscope-ws/x" },
+      { ...configured, path: undefined },
+      { ...random, path: "/tmp/spectroscope-ws/x", exists: true },
     ];
     const outcomes: (FetchOutcome | null)[] = [
       null,
@@ -59,6 +65,62 @@ describe("paneState", () => {
     }
   });
 
+  it("aNamedFolderThatIsOnDiskIsListedBeforeTheFirstRun", () => {
+    // The owner's report: on a fresh start the Files pane printed the folder
+    // and showed nothing in it. Toggling the chooser to random and back minted
+    // a session, which resolved a workspace, which finally populated the pane.
+    // The app knew the folder the whole time.
+    expect(listableBeforeTheFirstRun(configured)).toBe(true);
+    const asked = paneState(configured, { kind: "ok" }, "en");
+    expect(asked.kind).toBe("tree");
+    if (asked.kind !== "tree") throw new Error("expected tree");
+    expect(asked.scope).toBe("prospective");
+  });
+
+  it("aTreeSaysWhetherItIsASessionsFolderOrTheOneTheFirstRunWillUse", () => {
+    // Nothing may claim a session that has not started, so the two trees are
+    // not the same state with the same header.
+    const prospective = paneState(configured, { kind: "ok" }, "en");
+    const session = paneState(running, { kind: "ok" }, "en");
+    if (prospective.kind !== "tree" || session.kind !== "tree") throw new Error("expected trees");
+    expect(prospective.scope).toBe("prospective");
+    expect(session.scope).toBe("session");
+  });
+
+  it("aFolderTheFirstRunWouldUseIsNeitherRandomNorAbsent", () => {
+    // random is keyed by a session id that does not exist yet: there is no
+    // folder to ask about, and asking would have to invent one.
+    expect(listableBeforeTheFirstRun(random)).toBe(false);
+    expect(listableBeforeTheFirstRun({ ...random, path: "/tmp/spectroscope-ws/x", exists: true })).toBe(
+      false,
+    );
+    expect(listableBeforeTheFirstRun({ ...configured, exists: false })).toBe(false);
+    expect(listableBeforeTheFirstRun({ ...configured, path: undefined })).toBe(false);
+    expect(listableBeforeTheFirstRun(null)).toBe(false);
+    // Already resolved: that is the session tree, not the prospective one.
+    expect(listableBeforeTheFirstRun(running)).toBe(false);
+  });
+
+  it("theProspectiveTreeWaitsForTheServerInsteadOfPromisingTheFolderIsEmpty", () => {
+    const waiting = paneState(configured, null, "en");
+    expect(waiting.kind).toBe("loading");
+  });
+
+  it("aServerThatWillNotListTheProspectiveFolderFallsBackToNamingIt", () => {
+    // 409 here means the server has no configured workspace to list, while the
+    // announcement said it has one. The pane repeats what it was told and
+    // claims no tree, rather than inventing either.
+    const refused = paneState(configured, { kind: "status", status: 409 }, "en");
+    expect(refused.kind).toBe("pending");
+    if (refused.kind !== "pending") throw new Error("expected pending");
+    expect(refused.path).toBe(configured.path);
+    const gone = paneState(configured, { kind: "status", status: 404 }, "en");
+    if (gone.kind !== "pending") throw new Error("expected pending");
+    expect(gone.message).not.toContain("first run");
+    // A dead server outranks everything, prospective or not.
+    expect(paneState(configured, { kind: "offline" }, "en").kind).toBe("unreachable");
+  });
+
   it("aDeadServerReadsAsUnreachableAndAnAbsentFolderDoesNot", () => {
     // Today both collapse into "Server unreachable". A folder that has not been
     // created yet is not a broken server.
@@ -72,7 +134,7 @@ describe("paneState", () => {
   });
 
   it("thePendingStateNamesWhatWillHappenInBothLanguages", () => {
-    for (const announcement of [random, configured, { ...configured, exists: false }]) {
+    for (const announcement of [random, { ...configured, exists: false }]) {
       const en = paneState(announcement, null, "en");
       const de = paneState(announcement, null, "de");
       if (en.kind !== "pending" || de.kind !== "pending") throw new Error("expected pending");
@@ -132,7 +194,7 @@ describe("paneState", () => {
   });
 
   it("thePendingStateCarriesThePathOnlyWhenOneIsKnown", () => {
-    const withPath = paneState(configured, null, "en");
+    const withPath = paneState({ ...configured, exists: false }, null, "en");
     const withoutPath = paneState(random, null, "en");
     if (withPath.kind !== "pending" || withoutPath.kind !== "pending") {
       throw new Error("expected pending");

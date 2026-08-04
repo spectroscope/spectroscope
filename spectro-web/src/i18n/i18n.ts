@@ -525,6 +525,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tf.explainFailed": { de: "Deutung fehlgeschlagen: {msg}", en: "The reading failed: {msg}" },
   "ws.perSession": { de: "Session-Workspace", en: "session workspace" },
   "ws.pinned": { de: "fester Workspace", en: "pinned workspace" },
+  // The tree drawn before any run: the folder the first run WILL work in. It
+  // is not a session workspace, and there is no session yet to call it one.
+  "ws.firstRunFolder": { de: "Ordner des ersten Laufs", en: "the first run's folder" },
   // The type chips. The nine that predate card 141 kept the exact lowercase
   // word they rendered before, in both languages, because that word is the
   // wire's own vocabulary and translating it would break the link between the

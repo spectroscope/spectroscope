@@ -380,12 +380,13 @@
       "path": "/api/files",
       "area": "workspace-files",
       "name": "workspace tree",
-      "description": "That session's resolved workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag; a link out of the workspace is left out). 400 malformed session id, 404 no workspace folder, 409 no workspace resolved for this session.",
+      "description": "That session's resolved workspace tree (dot-files and build/dep dirs hidden, depth 8, 2000-entry cap, honest truncated flag; a link out of the workspace is left out). 400 malformed session id or unknown scope, 404 no workspace folder, 409 no workspace resolved for this session. With scope=prospective: the folder a run started now would use, named by the server from the configured workspace and never by the caller (409 when none is configured).",
       "fence": "host",
       "writes": false,
       "pathVars": [],
       "query": [
-        {"name": "session", "required": false, "example": "{{sessionId}}", "note": "the session whose resolved workspace to serve; absent = 409, there is no fallback"}
+        {"name": "session", "required": false, "example": "{{sessionId}}", "note": "the session whose resolved workspace to serve; absent = 409, there is no fallback; ignored under scope=prospective"},
+        {"name": "scope", "required": false, "example": "prospective", "note": "session (default) or prospective — the configured folder the first run will use, before any session exists"}
       ],
       "body": null
     },
