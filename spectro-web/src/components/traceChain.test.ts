@@ -310,6 +310,52 @@ describe("reasoningReach", () => {
     ];
     expect(reasoningReach(s).size).toBe(0);
   });
+
+  // A session produced HERE streams the answer token by token: one text_delta
+  // is one chunk, not one thing the model did. Measured on the 175 sessions in
+  // ~/.spectro/sessions before this rule: 75 blocks produced 3,213 back-chips,
+  // 3,150 of them on a text_delta, and on 20260725-175159-422e84fb one answer
+  // wore 720 identical buttons. The pointer has to stay a pointer.
+  it("draws one chip on a streamed answer, on the chunk that opens it", () => {
+    const s: TraceEntry[] = [
+      E(1, "thinking_delta", "main", { text: "greet back" }),
+      E(2, "text_delta", "main", { text: "Hal" }),
+      E(3, "text_delta", "main", { text: "lo" }),
+      E(4, "text_delta", "main", { text: "!" }),
+    ];
+    const reach = reasoningReach(s);
+    expect(reach.get(2)).toBe(1);
+    expect(reach.has(3)).toBe(false);
+    expect(reach.has(4)).toBe(false);
+    expect(reach.size).toBe(1);
+  });
+
+  it("gives a second answer its own chip when something ran in between", () => {
+    const s: TraceEntry[] = [
+      E(1, "thinking_delta", "main", { text: "look, then say" }),
+      E(2, "text_delta", "main", { text: "checking" }),
+      E(3, "text_delta", "main", { text: " now" }),
+      E(4, "tool_call", "main", { callId: "a", name: "read_file", input: {} }),
+      E(5, "tool_result", "main", { callId: "a", output: "ok" }),
+      E(6, "text_delta", "main", { text: "found it" }),
+    ];
+    const reach = reasoningReach(s);
+    expect([...reach.keys()]).toEqual([2, 4, 6]);
+  });
+
+  it("counts two agents streaming in turn as two answers, not one", () => {
+    const s: TraceEntry[] = [
+      E(1, "thinking_delta", "main", { text: "…" }),
+      E(2, "thinking_delta", "helper", { text: "…" }),
+      E(3, "text_delta", "main", { text: "a" }),
+      E(4, "text_delta", "helper", { text: "b" }),
+      E(5, "text_delta", "helper", { text: "c" }),
+    ];
+    const reach = reasoningReach(s);
+    expect(reach.get(3)).toBe(1);
+    expect(reach.get(4)).toBe(2);
+    expect(reach.has(5)).toBe(false);
+  });
 });
 
 // The whole path, over a real record shape: import the fixture, attach the

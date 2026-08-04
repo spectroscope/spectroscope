@@ -195,8 +195,12 @@ export function traceLinkState(
  *  `wearsReasoning` is what a turn_start needs: on an imported transcript the
  *  turn and the thought are ONE line of the file, so that row now carries the
  *  block — and a row carrying the whole thought must not be dimmed as though it
- *  said nothing. The type alone can no longer answer this. */
-function lensRole(type: string, wearsReasoning: boolean): "hi" | "anchor" | "dim" {
+ *  said nothing. The type alone can no longer answer this.
+ *
+ *  Exported for the tests: the `wearsReasoning` branch decides whether a row
+ *  holding the whole thought is foregrounded or greyed out, and a branch that
+ *  quietly stopped being taken would look exactly like a row that never thought. */
+export function lensRole(type: string, wearsReasoning: boolean): "hi" | "anchor" | "dim" {
   if (wearsReasoning || type === "thinking_delta") return "hi";
   if (type === "tool_call" || type.startsWith("permission_") || type === "error") return "anchor";
   return "dim";

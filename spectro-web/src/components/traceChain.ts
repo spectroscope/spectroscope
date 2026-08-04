@@ -181,11 +181,15 @@ function blockEnd(entries: TraceEntry[], i: number): number {
 const isAction = (e: TraceEntry): boolean =>
   e.type === "tool_call" || e.type === "permission_request" || e.type === "text_delta" || e.type === "error";
 
+/** Whether `i` opens a same-agent run of its own type rather than continuing one. */
+function opensStreak(entries: TraceEntry[], i: number): boolean {
+  const prev = entries[i - 1];
+  return prev === undefined || prev.type !== entries[i].type || prev.agentId !== entries[i].agentId;
+}
+
 /** Whether `i` opens a block rather than continuing one. */
 function opensBlock(entries: TraceEntry[], i: number): boolean {
-  if (entries[i].type !== "thinking_delta") return false;
-  const prev = entries[i - 1];
-  return prev === undefined || prev.type !== "thinking_delta" || prev.agentId !== entries[i].agentId;
+  return entries[i].type === "thinking_delta" && opensStreak(entries, i);
 }
 
 /**
@@ -223,10 +227,25 @@ export function reasoningPairs(entries: TraceEntry[]): Map<number, number> {
  * of them ran with a thinking block in charge. The "then:" chip reached 7,061.
  *
  * This map is per ACTION: the block that was in charge when that action ran.
- * A block takes charge where it ends and holds it until the model thinks again
+ * A block takes charge where it OPENS and holds it until the model thinks again
  * or the turn ends, because that is exactly as far as a recorded thought can
- * honestly be said to reach. It reaches 29,043 action rows (19,589 tool calls,
- * 9,454 answers) that had nothing before.
+ * honestly be said to reach. Opening and ending pick the same actions — no
+ * action can sit inside a block, since a row between two thinking rows of one
+ * agent would end the block — and opening is where the reading already lives.
+ * It reaches 29,043 action rows (19,589 tool calls, 9,454 answers) that had
+ * nothing before.
+ *
+ * ONE CHIP PER ANSWER, NOT PER CHUNK. A session produced HERE streams its
+ * answer token by token, so one `text_delta` is one chunk of an answer, not one
+ * thing the model did. Measured over the 175 sessions in ~/.spectro/sessions
+ * before this rule: 75 thinking blocks produced 3,213 back-chips, 3,150 of them
+ * on a `text_delta`, and one answer in 20260725-175159-422e84fb wore 720
+ * buttons carrying the same 72 characters. So a chunk that continues an answer
+ * already opened says nothing; the chip sits on the chunk that opens it. On an
+ * imported transcript one text block is already one row and two never sit next
+ * to each other, so the count there does not move: 29,067 with the rule and
+ * 29,067 without, re-counted over 5,130 transcripts. Live it falls to 106, and
+ * the flooded session above drops from 747 chips to 2, one per answer.
  *
  * WHAT IS DELIBERATELY NOT IN HERE: anything out of the call's own input or its
  * result. A tool's arguments and its output are the tool card's subject, and
@@ -256,6 +275,8 @@ export function reasoningReach(entries: TraceEntry[]): Map<number, number> {
       continue;
     }
     if (!isAction(e)) continue;
+    // A streamed answer is one answer: only the chunk that opens it points back.
+    if (e.type === "text_delta" && !opensStreak(entries, i)) continue;
     const at = inCharge.get(e.agentId);
     if (at !== undefined) reach.set(e.seq, at);
   }
