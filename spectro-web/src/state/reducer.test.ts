@@ -478,6 +478,26 @@ describe("reduce — forward compatibility and errors", () => {
     expect(state.turns).toEqual([{ kind: "error", text: "Provider unreachable" }]);
   });
 
+  it("keeps a child's failure under the child", () => {
+    // `error` has carried an optional agentId all along, and a session import
+    // sets it: an outage inside a subagent belongs in that child's thread, the
+    // way its spawn line does. Dropping it read every child's outage as the
+    // main run's own. All 83 outages in ~/.claude/projects are main, so this
+    // holds the seam rather than a live misplacement.
+    const state = reduce(initialState, {
+      type: "error",
+      agentId: "worker-1",
+      message: "You've hit your session limit",
+      ts: 1,
+    });
+    expect(state.turns).toEqual([
+      { kind: "error", text: "You've hit your session limit", agentId: "worker-1" },
+    ]);
+    // and the run's own failure still carries no owner to group by
+    const main = reduce(initialState, { type: "error", message: "Provider unreachable", ts: 1 });
+    expect(main.turns[0]).toEqual({ kind: "error", text: "Provider unreachable" });
+  });
+
   it("records compaction as a warn-toned info line", () => {
     const state = reduce(initialState, {
       type: "compaction",

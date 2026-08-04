@@ -582,6 +582,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   // so it is not tracked at all: that understates what went rather than
   // claiming a turn was dropped because the file forgot to give it a uuid.
   const mainTurnUuids: string[] = [];
+  // How many main turns stand, named or not. An understatement is one thing; a
+  // file whose records carry NO uuid would leave the list empty and report
+  // "0 turns removed" about a session that was cut in half, which is a count
+  // nobody wrote — the very thing survivors() refuses a frame over. So that
+  // boundary produces no frame either. 0 files in ~/.claude/projects are like
+  // that (every boundary there removed 184 to 848 turns, median 397), so this
+  // holds a latch rather than a live bug.
+  let mainTurnsStanding = 0;
 
   // How long the summary that follows each boundary runs, by boundary index.
   // The summary itself never becomes a frame — see the isCompactSummary branch
@@ -695,10 +703,21 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   const modelOf = (r: CCRecord): string | undefined =>
     typeof r.message?.model === "string" && r.message.model !== "" ? r.message.model : undefined;
   // The model the file opens on, for the up-front announcement and for
-  // run_start. An outage record is skipped: its model is the literal string
-  // "<synthetic>", and 121 transcripts in the corpus open on one, so the run
-  // announced a switch to a model by that name before a word was said and
-  // carried it on run_start too.
+  // run_start. A record the file FLAGS as an outage is skipped: its model is
+  // the literal string "<synthetic>", and 121 transcripts in the corpus open
+  // on one, so the run announced a switch to a model by that name before a
+  // word was said.
+  //
+  // What that is worth, re-measured over ~/.claude/projects rather than
+  // argued: the up-front announcement goes 122 → 1, and "<synthetic>"
+  // announcements of every kind go 191 → 29. It does NOT clear run_start:
+  // exactly 1 file opened on a synthetic model before and the same 1 does
+  // after (6b9d11d3-4fea-4964-99f3-6c3aea453b59), because the record it opens
+  // on carries isApiErrorMessage:false. The 28 mid-file announcements that
+  // remain sit on such records too, all of them reading "No response
+  // requested.". The flag is the file's own word and this filter follows it;
+  // reading the model string instead would be us deciding what somebody
+  // else's record meant.
   const firstModel = recs
     .filter((r) => r.isApiErrorMessage !== true)
     .map(modelOf)
@@ -1116,6 +1135,10 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     if (r.subtype === "compact_boundary") {
       const preserved = survivors(r.compactMetadata);
       if (preserved === null) return true;
+      // Turns stood and not one of them is named: nothing can be counted
+      // against the survivor list, and 0 would read as "nothing was dropped".
+      // Same refusal as the boundary that names no survivors.
+      if (mainTurnsStanding > 0 && mainTurnUuids.length === 0) return true;
       const kept = mainTurnUuids.filter((u) => preserved.has(u));
       const removedTurns = mainTurnUuids.length - kept.length;
       // Only what survived carries into the NEXT boundary. A second compaction
@@ -1124,10 +1147,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       // hold more than one boundary.
       mainTurnUuids.length = 0;
       mainTurnUuids.push(...kept);
+      mainTurnsStanding = kept.length;
       out.push({
         type: "compaction",
         agentId: "main",
         removedTurns,
+        // 0 is this field's own word for "no summary within the window" —
+        // events.ts types it as a number, and the reducer already reads the 0
+        // as absence and drops the size from the line rather than saying
+        // "into 0 characters" (reducer.ts, case "compaction").
         summaryChars: summaryCharsAt.get(i) ?? 0,
         ts,
       });
@@ -1170,8 +1198,19 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     // The machine's summary of the conversation it replaced. It used to import
     // as a plain user_message: 391,308 characters of the model's own prose,
     // across the corpus's 21 boundaries, rendered as the person's words. Its
-    // size travels on the compaction frame beside it and the line itself stays
-    // in the file, where the source face has it byte for byte.
+    // size travels on the compaction frame beside it. The words themselves now
+    // reach NO face of the app: every face hangs off a row — sourcePane reads
+    // `row.sourceLine` (traceDetail.ts) and the structured face reads
+    // `sourceLines[entry.sourceLine]` (TraceView.tsx) — and a line that
+    // produces no frame has no row, so nothing in the app points at it.
+    // Measured over ~/.claude/projects: 21 frames were charged to an
+    // isCompactSummary line before this, 0 after. The bytes stay in the
+    // transcript on disk, and that is the whole of where they stay. (An
+    // earlier version of this comment said the source face has them byte for
+    // byte. It cannot: there is no row to open.) Whether 19 KB of machine
+    // summary should be readable in the app is an owner's call — `compaction`
+    // has no text field, and inventing one on events.ts for a reading of
+    // somebody else's file is what this importer does not do (card 167).
     if (r.isCompactSummary === true) return;
     const apiError = r.isApiErrorMessage === true;
     const content = r.message?.content;
@@ -1273,6 +1312,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       noteStop("main", r);
       if (startsTurn(i)) {
         out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
+        mainTurnsStanding++;
         if (typeof r.uuid === "string") mainTurnUuids.push(r.uuid);
       }
       if (apiError) emitApiErrorMessage("main", blocks, ts);

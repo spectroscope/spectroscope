@@ -1511,6 +1511,48 @@ describe("claudeCode adapter (compaction)", () => {
     expect(line).toMatchObject({ subtype: "compact_boundary", uuid: "s1" });
   });
 
+  it("leaves the summary's words in the file and in no face of the app", () => {
+    // The honest half of dropping the bubble: every face of the trace hangs off
+    // a ROW (sourcePane reads row.sourceLine, the structured face reads
+    // sourceLines[entry.sourceLine]), so a line that produces no frame is
+    // reachable from nowhere. The size on the compaction frame is all that
+    // survives into the app; the words stay in the transcript on disk.
+    // Measured over ~/.claude/projects: 21 frames were charged to an
+    // isCompactSummary line before this, 0 after.
+    const lines = ccCompaction.split(/\r?\n/).filter((l) => l.trim());
+    const summaryLines = new Set(
+      lines
+        .map((l, i) => [JSON.parse(l) as { isCompactSummary?: boolean }, i] as const)
+        .filter(([r]) => r.isCompactSummary === true)
+        .map(([, i]) => i),
+    );
+    // three summaries, one of them behind the boundary that produced no frame
+    expect(summaryLines.size).toBe(3);
+    expect(events.every((_, k) => !summaryLines.has(imported.origin[k]))).toBe(true);
+    // and no frame of any type carries the prose, under any field
+    for (const summary of summaries)
+      expect(events.some((e) => JSON.stringify(e).includes(summary.slice(0, 24)))).toBe(false);
+  });
+
+  it("says nothing about a boundary whose turns the file never named", () => {
+    // The module's own rule, applied where the count comes from: a transcript
+    // whose records carry no uuid gives preservedMessages nothing to match, so
+    // `removedTurns` would be 0 — "nothing was dropped" about a session that
+    // was cut in half. A boundary that cannot be counted produces no frame,
+    // the same way one that names no survivors does. 0 such files in
+    // ~/.claude/projects, so this holds a latch rather than a live bug.
+    const nameless = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" } },
+      { type: "assistant", message: { role: "assistant", id: "m1", model: "claude-opus-5", content: [] } },
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compactMetadata: { trigger: "auto", preservedMessages: { allUuids: ["gone"] } },
+      },
+    ]);
+    expect(nameless.some((e) => e.type === "compaction")).toBe(false);
+  });
+
   it("reaches the reader through the consumers that were already there", () => {
     const state = reduceAll(initialState, events);
     // With a summary in the window the chat line names its size too — all 21
@@ -1606,6 +1648,37 @@ describe("claudeCode adapter (API failures)", () => {
     ]);
     expect(events.some((e) => (e as unknown as { model?: string }).model === "<synthetic>")).toBe(false);
     expect(events[0]).toMatchObject({ type: "provider_info", model: "claude-opus-5" });
+  });
+
+  it("still opens on a synthetic model the file does not call an error", () => {
+    // Where the skip stops, measured rather than assumed. The filter follows
+    // the file's own flag, so a record marked isApiErrorMessage:false is read
+    // as what it says even when its model is the literal "<synthetic>".
+    // Over ~/.claude/projects the skip takes the up-front announcement from 122
+    // to 1 and every "<synthetic>" announcement from 191 to 29, and it leaves
+    // run_start.model exactly where it was: 1 file before, the same 1 after
+    // (6b9d11d3-4fea-4964-99f3-6c3aea453b59). The 28 announcements that remain
+    // sit on records reading "No response requested.". Guessing from the model
+    // string instead would be us deciding what somebody else's record meant.
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      {
+        type: "assistant",
+        isApiErrorMessage: false,
+        message: {
+          role: "assistant",
+          id: "n0",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "No response requested." }],
+        },
+        uuid: "a0",
+        parentUuid: "u1",
+      },
+    ]);
+    expect(events[0]).toMatchObject({ type: "provider_info", model: "<synthetic>" });
+    expect(
+      events.some((e) => e.type === "run_start" && (e as { model?: string }).model === "<synthetic>"),
+    ).toBe(true);
   });
 
   it("leaves a subagent's outage under the subagent", () => {

@@ -66,7 +66,10 @@ export type Turn =
       infoKey?: string;
       infoVars?: Record<string, string | number>;
     }
-  | { kind: "error"; text: string };
+  /** agentId marks a failure that belongs to a subagent's thread — `error` has
+   *  carried the field on the wire all along, and a session import sets it for
+   *  an outage recorded inside a child. Absent is the run's own failure. */
+  | { kind: "error"; text: string; agentId?: string };
 
 export interface PendingPermission {
   callId: string;
@@ -806,7 +809,14 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
 
     case "error":
-      return addTurn(state, { kind: "error", text: event.message });
+      // Whose failure it was, when the frame says so: an outage inside a
+      // subagent groups into that child's thread, the way its spawn line does.
+      // A frame without the field is the run's own and stays flat.
+      return addTurn(state, {
+        kind: "error",
+        text: event.message,
+        ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
+      });
 
     case "image_generated": {
       // Idempotent per callId — a reconnect replays the session history and
