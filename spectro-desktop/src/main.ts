@@ -8,6 +8,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import { LAST_RUN_VERSION_FILE, lastRunVersionPayload, readLastRunVersion, shouldClearCache } from "./cacheRecovery";
+import { SERVER_PORT_FILE, readRememberedPort, rememberedPortPayload, shouldPersistPort } from "./portMemory";
 import { appMenuTemplate, openAboutScript } from "./menu";
 
 // Health budget: 30 s by default, overridable for slow environments (the CI
@@ -22,6 +23,16 @@ const KILL_GRACE_MS = 5_000;     // SIGTERM -> wait -> SIGKILL
 // the note on appMenuTemplate for why that one is left alone.
 const PRODUCT_NAME = "spectroscope";
 
+// Isolated-profile seam: dev `electron .` and the packaged app resolve the SAME
+// userData ("spectro-desktop" — electron-builder's productName lives in its
+// build config, not in the runtime app.name), so a dev launch beside the
+// installed app hands off to it through the Chromium singleton and silently
+// quits. Pointing this at a scratch directory gives a hermetic profile — own
+// singleton, own localStorage, own port marker. Packaged builds never set it.
+// Must run before the single-instance lock below, which binds to userData.
+const userDataOverride = process.env.SPECTRO_DESKTOP_USERDATA;
+if (userDataOverride) app.setPath("userData", userDataOverride);
+
 // 16x16 diamond (Ebony #12120F) as an embedded PNG — no icon asset needed.
 const TRAY_ICON =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAQ0lEQVR42mNgoCUQEuL/D8IUaSbLEHTNJBmCSzNRhhDSjNcQYjVjNYRUzRiGUGwAxV6gSiBSJRqpkpCokpSpkpmIBQBoEYXhBCZorAAAAABJRU5ErkJggg==";
@@ -29,22 +40,57 @@ const TRAY_ICON =
 let win: BrowserWindow | null = null;
 let tray: Tray | null = null;         // hold the reference, otherwise the GC sweeps the icon away
 let child: ChildProcess | null = null; // the managed JVM
-let serverPort = 0;                    // the free port the OS handed us
+let serverPort = 0;                    // the port the server is on (remembered across launches, card 168)
 let jobsPoller: NodeJS.Timeout | null = null;
 let previousJobStates: Record<string, string> = {}; // last /api/jobs/state, for change detection
 
-// (a) Free port: listen on port 0, read what the OS assigned, close the probe. There is a
-// small race between closing the probe and Spring Boot binding the port — acceptable:
-// the health probe below absorbs a lost race; know it exists, do not solve it.
-function findFreePort(): Promise<number> {
+// (a) The server port, with memory (card 168): localStorage is origin-bound, so a fresh
+// OS-assigned port on every launch ran the web app on a new localhost origin with an
+// EMPTY localStorage — every spectroscope:* preference (design, language, disclosure
+// level, the built-in-model notice's dismissal) silently reset on each desktop start.
+// Try the port that served last launch first; only when that bind fails (another
+// process took it) fall back to a fresh free port — one origin change, then stable
+// again. The small race between closing the probe and Spring Boot binding the port is
+// unchanged: the health probe below absorbs a lost race; know it exists, do not solve it.
+function probePort(port: number): Promise<number> {
   return new Promise((resolve, reject) => {
     const probe = net.createServer();
-    probe.listen(0, "127.0.0.1", () => {
-      const port = (probe.address() as net.AddressInfo).port;
-      probe.close(() => resolve(port));
+    probe.once("error", reject); // EADDRINUSE lands here — the caller decides the fallback
+    probe.listen(port, "127.0.0.1", () => {
+      const assigned = (probe.address() as net.AddressInfo).port;
+      probe.close(() => resolve(assigned));
     });
-    probe.on("error", reject);
   });
+}
+
+async function resolveServerPort(): Promise<number> {
+  const marker = path.join(app.getPath("userData"), SERVER_PORT_FILE);
+  let raw: string | null = null;
+  try {
+    raw = fs.readFileSync(marker, "utf8");
+  } catch {
+    // no marker yet — the first launch with port memory, or a wiped userData
+  }
+  const remembered = readRememberedPort(raw);
+  let port: number;
+  if (remembered === null) {
+    port = await probePort(0);
+  } else {
+    try {
+      port = await probePort(remembered);
+    } catch {
+      port = await probePort(0); // remembered port taken — fresh origin once, then stable
+    }
+  }
+  if (shouldPersistPort(remembered, port)) {
+    try {
+      fs.mkdirSync(app.getPath("userData"), { recursive: true });
+      fs.writeFileSync(marker, rememberedPortPayload(port));
+    } catch {
+      // best effort — an unwritable userData just means a fresh port next launch
+    }
+  }
+  return port;
 }
 
 // (b) Resolve the jar: packaged, it sits in the app resources (extraResources, package.json);
@@ -327,7 +373,7 @@ async function startup(): Promise<void> {
   createAppMenu();
   tray = createTray();
 
-  serverPort = await findFreePort();
+  serverPort = await resolveServerPort();
   child = spawnServer(serverPort);
   try {
     await waitForHealth(serverPort); // block until 200, or throw on timeout
