@@ -569,8 +569,9 @@
 .fleet-rail-row {
   width: 100%;
   display: flex;
-  align-items: center;
-  gap: var(--sp-2);
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
   background: none;
   border: 0;
   border-left: 2px solid transparent;
@@ -582,12 +583,13 @@
   cursor: pointer;
   transition: color var(--t-fast), border-color var(--t-fast);
 }
+.fleet-rail-line { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.fleet-rail-line--sub { padding-left: 14px; }
 .fleet-rail-row:hover { color: var(--text); }
 .fleet-rail-row--on { color: var(--text); border-left-color: var(--accent); background: var(--surface-2); }
 .fleet-rail-row--gate { border-left-color: var(--ev-gate); }
 .fleet-rail-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fleet-rail-role { flex: none; font-size: var(--fs-11); color: var(--text-faint); }
-.fleet-rail-epoch { flex: none; font-size: var(--fs-11); color: var(--ev-reasoning); }
 .fleet-rail-gate {
   flex: none;
   font-size: var(--fs-11);
@@ -597,6 +599,7 @@
   padding: 0 4px;
 }
 .fleet-rail-meta { margin-left: auto; flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+.fleet-rail-line--sub:empty { display: none; }
 
 /* right column — the detail panel */
 .fleet-detail {
