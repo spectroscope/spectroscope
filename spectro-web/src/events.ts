@@ -42,7 +42,16 @@ export type RunEvent =
       callId: string;
       output: string;
       isError: boolean;
+      /** Wall-clock EXECUTION time: the clock starts when the tool actually
+       *  runs, never when it was requested (card 111). */
       durationMs: number;
+      /** Additive (card 111): how long the call sat parked at the permission
+       *  gate before the decision. On the wire since card 111
+       *  (RunEvent.java:194-195, a nullable Long, omitted when no gate parked
+       *  the call) and until now dropped by this union. It is the MEASURED
+       *  number: the request-to-decision ts delta is a different, larger
+       *  window, so nothing may reconstruct gate wait from timestamps. */
+      gateWaitMs?: number;
       ts: number;
     }
   | { type: "agent_spawn"; agentId: string; parentId: string; task: string; ts: number }

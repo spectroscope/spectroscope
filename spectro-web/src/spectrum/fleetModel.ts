@@ -13,6 +13,12 @@ export interface FleetNode {
   role: string;
   capabilities: string[];
   topic: string;
+  /** What wakes a triggered node, joined with " + " — e.g. "watch:/drop",
+   *  "listen:127.0.0.1:8300", "every:5m" (card 72). Absent on a plain node,
+   *  which is the normal case. The server has emitted it on every roster frame
+   *  since card 72 (FleetAggregator.nodeJson) and this mirror dropped it, so
+   *  the one thing that says WHY a node exists reached no screen. */
+  trigger?: string;
   connected: boolean;
   lastSeen: number;
 }
