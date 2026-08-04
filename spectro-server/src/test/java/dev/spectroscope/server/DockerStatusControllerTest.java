@@ -125,6 +125,31 @@ class DockerStatusControllerTest {
     }
 
     @Test
+    void aPermissionFailureIsStillUnreachableWhenTheBinaryWalkMissedToo() {
+        // The corner the binary=true case above does not reach: the socket says
+        // "you are not allowed in" AND our binary walk came up empty. That
+        // combination is reachable on a real machine -- binaryDirs covers PATH
+        // plus /usr/local/bin, /opt/homebrew/bin, /usr/bin and ~/.docker/bin, so
+        // a snap-installed CLI under a stripped launchd PATH is invisible to us
+        // while the daemon socket sits right there refusing us.
+        //
+        // A permission denial is evidence that Docker IS installed: something
+        // owns that socket. Branching on the binary walk instead of on the
+        // failure sends that operator to the download link.
+        DockerStatusController controller = controller(false, false, null, socket -> {
+            throw new java.nio.file.AccessDeniedException(socket, null, "Permission denied");
+        });
+        Map<String, Object> out = controller.status(local()).getBody();
+        assertNotNull(out);
+        assertEquals("unreachable", out.get("docker"));
+        assertFalse(String.valueOf(out.get("detail")).contains("no docker executable"),
+                "never the not-installed sentence when the socket refused us");
+        assertTrue(
+                String.valueOf(out.get("detail")).toLowerCase(java.util.Locale.ROOT).contains("permission"),
+                "the detail names permission");
+    }
+
+    @Test
     void readyWhenThePingAnswers() {
         DockerStatusController controller = controller(true, true, null, socket -> true);
         Map<String, Object> out = controller.status(local()).getBody();

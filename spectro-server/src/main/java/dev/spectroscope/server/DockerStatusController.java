@@ -30,10 +30,10 @@ import org.springframework.web.bind.annotation.RestController;
  *       answering on the socket. Both halves, because either one alone is a
  *       measured false negative.
  *   <li>{@code unreachable}: the daemon did not answer, but something says
- *       Docker is here anyway (an executable, or a remote {@code DOCKER_HOST}).
- *       A permission failure lands here too, never in {@code absent}: the
- *       install is fine, so telling that operator to download Docker again is a
- *       lie.
+ *       Docker is here anyway (an executable, a remote {@code DOCKER_HOST}, or
+ *       a socket that refused us). A permission failure lands here whatever the
+ *       binary walk found, never in {@code absent}: the install is fine, so
+ *       telling that operator to download Docker again is a lie.
  *   <li>{@code ready}: the daemon answered {@code 200}.
  * </ul>
  *
@@ -132,7 +132,17 @@ public class DockerStatusController {
                 out.put("detail", "something answered on " + socket + ", but not a docker daemon.");
             }
         } catch (Exception noAnswer) {
-            if (installed) {
+            boolean denied = deniedPermission(noAnswer);
+            if (denied) {
+                // Being refused IS evidence of an install: something owns that
+                // socket and is turning us away. The binary walk gets no vote
+                // here, because it can miss a real CLI (a stripped launchd PATH
+                // and an install outside the handful of directories we know),
+                // and a miss must never downgrade a refusal into "not
+                // installed" plus a download link.
+                out.put("docker", "unreachable");
+                out.put("detail", "the docker socket " + socket + " refused us: " + reason(noAnswer));
+            } else if (installed) {
                 out.put("docker", "unreachable");
                 out.put("detail", "docker is installed, the daemon did not answer on " + socket
                         + ": " + reason(noAnswer));
@@ -156,16 +166,38 @@ public class DockerStatusController {
      * @return a short clause, with permission failures named as such
      */
     private static String reason(Exception failure) {
-        String message = failure.getMessage();
-        String text = message == null || message.isBlank()
-                ? failure.getClass().getSimpleName()
-                : message.strip();
-        boolean denied = failure instanceof java.nio.file.AccessDeniedException
-                || failure instanceof SecurityException
-                || text.toLowerCase(Locale.ROOT).contains("permission")
-                || text.toLowerCase(Locale.ROOT).contains("not permitted");
+        String text = text(failure);
         // A permission failure is a different fix from a stopped daemon, so it
         // gets said out loud rather than folded into "did not answer".
-        return denied ? "permission denied (" + text + ")" : text;
+        return deniedPermission(failure) ? "permission denied (" + text + ")" : text;
+    }
+
+    /**
+     * Was the probe turned away rather than left unanswered? The class is asked
+     * first because it is the reliable half; the message is a fallback for the
+     * platforms that hand an {@code EACCES} back as a plain
+     * {@link java.io.IOException}.
+     *
+     * @param failure what the probe threw
+     * @return true when this is a refusal, not an absence
+     */
+    private static boolean deniedPermission(Exception failure) {
+        return failure instanceof java.nio.file.AccessDeniedException
+                || failure instanceof SecurityException
+                || text(failure).toLowerCase(Locale.ROOT).contains("permission")
+                || text(failure).toLowerCase(Locale.ROOT).contains("not permitted");
+    }
+
+    /**
+     * The failure's own words, or its class name when it has none.
+     *
+     * @param failure what the probe threw
+     * @return a non-blank description
+     */
+    private static String text(Exception failure) {
+        String message = failure.getMessage();
+        return message == null || message.isBlank()
+                ? failure.getClass().getSimpleName()
+                : message.strip();
     }
 }
