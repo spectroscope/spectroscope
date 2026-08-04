@@ -129,6 +129,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.lensNote": { de: "Reasoning ist der Selbstbericht des Modells, aufgezeichnet neben dem, was es dann tat. Kein Fenster in die Gewichte.", en: "Reasoning is the model's self-report, recorded next to what it then did. Not a window into the weights." },
   "trace.lensNone": { de: "Keine Reasoning-Events in diesem Stream. Entweder ist die Aufzeichnung aus (Thinking-Schalter) oder das Modell hat keine gesendet.", en: "No reasoning events in this stream. Either capture is off (thinking toggle) or the model sent none." },
   "trace.pairThen": { de: "danach:", en: "then:" },
+  "trace.pairFrom": { de: "daraus:", en: "after:" },
+  "trace.pairFromTitle": { de: "Zum Reasoning springen, das lief, als dieser Schritt passierte.", en: "Jump to the reasoning that was in charge when this step ran." },
   "trace.reasonBlock": { de: "reasoning", en: "reasoning" },
   "trace.pairJump": { de: "Zur Aktion springen, die auf diesen Denk-Block folgte", en: "Jump to the action that followed this thinking block" },
 

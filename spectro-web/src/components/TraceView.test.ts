@@ -8,10 +8,40 @@ import {
   CATEGORIES,
   categoryOf,
   inCategories,
+  lensRole,
   summarize,
   traceLinkState,
   traceTableClass,
 } from "./TraceView";
+
+// The lens' own three roles. `wearsReasoning` is the branch this pins: since
+// the reading moved onto the row that opens an imported line, a turn_start can
+// hold the whole thought, and dimming it would grey out the one row the eye
+// lands on. A turn that never thought still has to stay dim and silent.
+describe("lensRole", () => {
+  it("foregrounds a turn_start that carries the thought", () => {
+    expect(lensRole("turn_start", true)).toBe("hi");
+  });
+
+  it("leaves a turn that never thought dim", () => {
+    expect(lensRole("turn_start", false)).toBe("dim");
+  });
+
+  it("foregrounds a thinking row whether or not it wears the reading", () => {
+    expect(lensRole("thinking_delta", false)).toBe("hi");
+    expect(lensRole("thinking_delta", true)).toBe("hi");
+  });
+
+  it("anchors the rows a thought is read against", () => {
+    for (const type of ["tool_call", "permission_request", "permission_decision", "error"])
+      expect(lensRole(type, false)).toBe("anchor");
+  });
+
+  it("dims everything the lens has nothing to say about", () => {
+    for (const type of ["usage", "tool_result", "user_message", "run_end", "text_delta"])
+      expect(lensRole(type, false)).toBe("dim");
+  });
+});
 
 describe("traceTableClass", () => {
   it("is the plain table while both optional columns show", () => {
