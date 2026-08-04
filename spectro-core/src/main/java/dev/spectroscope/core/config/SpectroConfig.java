@@ -564,6 +564,16 @@ public record SpectroConfig(
         return KNOWN_PROVIDERS.contains(provider);
     }
 
+    /** Every selectable LLM backend. Exposed so a face that switches over the
+     *  providers can be held to this list by a test rather than by whoever
+     *  remembers to look: the doctor's reachability switch knew three of the
+     *  seven for two releases and called the rest unknown (card 164).
+     *  @return the known provider names; iteration order is not defined
+     *          (use {@link #KNOWN_PROVIDERS_DISPLAY} for anything a human reads) */
+    public static Set<String> knownProviders() {
+        return KNOWN_PROVIDERS;
+    }
+
     /**
      * The default model for a provider when none is set explicitly, or {@code null}
      * when the provider has no honest default. A local backend serves whatever model

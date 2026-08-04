@@ -3,6 +3,10 @@ package dev.spectroscope.cli;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import dev.spectroscope.core.local.LlamaServerBinary;
+import dev.spectroscope.core.local.LocalCatalog;
+import dev.spectroscope.core.local.LocalModel;
+import dev.spectroscope.core.local.ModelResolution;
 import dev.spectroscope.core.provider.OllamaOptions;
 import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.scheduler.CronScheduler;
@@ -19,7 +23,9 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 /**
@@ -177,20 +183,40 @@ public final class DoctorCommand implements Callable<Integer> {
             }
         });
 
-        // Provider reachability
-        switch (config.provider()) {
-            case "anthropic" -> report(SpectroConfig.hasApiKey("ANTHROPIC_API_KEY"),
-                    "ANTHROPIC_API_KEY " + (SpectroConfig.hasApiKey("ANTHROPIC_API_KEY")
-                            ? "is set" : "is NOT set (export it, or save it in the app)"));
-            case "ollama" -> {
-                var version = new OllamaProvider(new OllamaOptions(config.baseUrl(), config.model()))
-                        .serverVersion();
-                report(version.isPresent(), "ollama at " + config.baseUrl()
-                        + version.map(v -> " (version " + v + ")").orElse(" — unreachable"));
+        // Provider reachability. The kind is a pure mapping so a test can hold
+        // it to SpectroConfig's provider list — this switch knew three of the
+        // seven for two releases and called the built-in one "unknown" on every
+        // fresh home (card 164).
+        ProviderCheck check = providerCheckFor(config.provider());
+        if (check == null) {
+            report(false, "unknown provider " + config.provider());
+        } else {
+            switch (check) {
+                case API_KEY -> {
+                    String keyVar = SpectroConfig.keyEnvFor(config.provider());
+                    report(SpectroConfig.hasApiKey(keyVar), keyVar
+                            + (SpectroConfig.hasApiKey(keyVar)
+                                    ? " is set" : " is NOT set (export it, or save it in the app)"));
+                }
+                case OLLAMA -> {
+                    var version = new OllamaProvider(new OllamaOptions(config.baseUrl(), config.model()))
+                            .serverVersion();
+                    report(version.isPresent(), "ollama at " + config.baseUrl()
+                            + version.map(v -> " (version " + v + ")").orElse(" — unreachable"));
+                }
+                case OPENAI_COMPAT -> {
+                    // The EFFECTIVE endpoint, not the raw baseUrl: unset, the raw
+                    // value is still ollama's :11434, so doctor used to probe the
+                    // wrong port and print it as if it were the openai server.
+                    String endpoint = SpectroConfig.effectiveOpenAiBaseUrl(
+                            config.provider(), config.baseUrl());
+                    report(probe(endpoint + "/v1/models"),
+                            "openai-compatible server at " + endpoint);
+                }
+                case BUILT_IN -> emit(builtInProviderLines(LlamaServerBinary.find(),
+                        LocalCatalog.bundled().resolve(config.model()),
+                        localModelFile(config.model())));
             }
-            case "openai" -> report(probe(config.baseUrl() + "/v1/models"),
-                    "openai-compatible server at " + config.baseUrl());
-            default -> report(false, "unknown provider " + config.provider());
         }
 
         // Fleet hub — optional infrastructure: nodes are opt-in, so the lines
@@ -345,6 +371,123 @@ public final class DoctorCommand implements Callable<Integer> {
                 ? ansi.green("\nEverything looks good.")
                 : ansi.red("\nSome checks failed — see above."));
         return healthy ? 0 : 1;
+    }
+
+    /**
+     * How doctor verifies one provider — the pure half of the reachability
+     * switch, so {@code DoctorProviderCheckTest} can hold it to
+     * {@link SpectroConfig#knownProviders()} instead of trusting that whoever
+     * adds the next provider remembers this file.
+     */
+    enum ProviderCheck {
+        /** A cloud service: its {@link SpectroConfig#keyEnvFor} variable must be set. */
+        API_KEY,
+        /** ollama: ask the local daemon for its version. */
+        OLLAMA,
+        /** An OpenAI-compatible endpoint: a cheap GET against {@code /v1/models}. */
+        OPENAI_COMPAT,
+        /** The built-in provider: a llama-server binary and a model file on disk. */
+        BUILT_IN
+    }
+
+    /**
+     * The check that fits a provider.
+     *
+     * @param provider the configured provider name
+     * @return the check kind, or {@code null} when the name is not a provider at
+     *         all — doctor then says so, which is the only case that line was
+     *         ever meant for
+     */
+    static ProviderCheck providerCheckFor(String provider) {
+        return switch (provider) {
+            // gemini and openrouter speak the openai wire, but a request to
+            // either without a key never leaves the machine usefully — the key
+            // is the thing doctor can actually answer for, offline.
+            case "anthropic", "openrouter", "gemini" -> ProviderCheck.API_KEY;
+            case "ollama" -> ProviderCheck.OLLAMA;
+            case "openai", "lmstudio" -> ProviderCheck.OPENAI_COMPAT;
+            case "spectro-local" -> ProviderCheck.BUILT_IN;
+            default -> null;
+        };
+    }
+
+    /** What a check produced: a verdict that moves the exit code, or a note that
+     *  does not. Doctor's own {@code report}/{@code info} pair, made a value so
+     *  the built-in provider's reasoning is testable without capturing stdout. */
+    enum Kind { PASS, FAIL, INFO }
+
+    /**
+     * One line of a provider check.
+     *
+     * @param kind    verdict or note
+     * @param message the human-readable text
+     */
+    record Line(Kind kind, String message) {}
+
+    /** Prints assembled lines through doctor's own two faces. */
+    private void emit(List<Line> lines) {
+        for (Line line : lines) {
+            if (line.kind() == Kind.INFO) {
+                info(line.message());
+            } else {
+                report(line.kind() == Kind.PASS, line.message());
+            }
+        }
+    }
+
+    /**
+     * The built-in provider's two questions, assembled pure: is there a
+     * {@code llama-server} to run at all, and are this model's weights on disk.
+     *
+     * <p>Only the first is a verdict. A missing binary means the provider cannot
+     * answer anything, ever, and the remedy is one brew command. Missing weights
+     * are the normal state of a fresh install — the model chooser downloads them
+     * on first use — so that line informs and leaves the exit code alone.</p>
+     *
+     * @param binary the located llama-server, or empty
+     * @param model  the catalogue entry the config selected
+     * @param file   where that model's weights are (or would be downloaded to)
+     * @return the lines to print, binary first
+     */
+    static List<Line> builtInProviderLines(Optional<LlamaServerBinary.Found> binary,
+            LocalCatalog.Model model, ModelResolution.Resolved file) {
+        List<Line> lines = new java.util.ArrayList<>();
+        lines.add(binary
+                .map(found -> new Line(Kind.PASS, "built-in: llama-server "
+                        + (found.source() == LlamaServerBinary.Source.BUNDLE
+                                ? "bundled with the app (" + found.path() + ")"
+                                : "at " + found.path())))
+                .orElseGet(() -> new Line(Kind.FAIL, "built-in: no llama-server found"
+                        + " — the built-in provider runs models through it."
+                        + " Install llama.cpp (brew install llama.cpp), or use the"
+                        + " desktop run kit, which bundles one")));
+        if (file.source() == ModelResolution.Source.ABSENT) {
+            lines.add(new Line(Kind.INFO, "built-in model " + model.id()
+                    + " is not downloaded yet — the model chooser fetches "
+                    + gigabytes(model.sizeBytes()) + " into " + file.path()
+                    + " on first use; a fresh install is expected to look like this"));
+        } else {
+            lines.add(new Line(Kind.PASS, "built-in model " + model.id() + ": "
+                    + file.path() + " ("
+                    + (file.source() == ModelResolution.Source.BUNDLE
+                            ? "bundled with the app" : "downloaded") + ")"));
+        }
+        return lines;
+    }
+
+    /** Where the selected built-in model's weights are, or would be downloaded to.
+     *  @param modelId the configured model id (null or stale resolves to the default)
+     *  @return the resolution over this machine's real bundle and user model dirs */
+    private static ModelResolution.Resolved localModelFile(String modelId) {
+        return ModelResolution.locate(LocalModel.bundleDir(), LocalModel.userModelsDir(),
+                LocalCatalog.bundled().resolve(modelId).file());
+    }
+
+    /** A download size in whole-tenths of a gigabyte, for a hint line.
+     *  @param bytes the exact size from the catalogue
+     *  @return e.g. "2.5 GB" */
+    private static String gigabytes(long bytes) {
+        return String.format(Locale.ROOT, "%.1f GB", bytes / 1_000_000_000d);
     }
 
     /**
