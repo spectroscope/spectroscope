@@ -17,6 +17,11 @@ interface CCRecord {
   message?: {
     role?: string;
     content?: unknown;
+    /** The API response this record is a piece of. Several consecutive records
+     *  share one, which is how a response written block by block is put back
+     *  together — see the run grouping in claudeCodeWithOrigin. Absent on user
+     *  records and on transcripts older than the field. */
+    id?: string;
     /** Assistant records name the model that produced them; it can change
      *  mid-file (a /model switch, or a subagent on another model). */
     model?: string;
@@ -37,6 +42,11 @@ interface CCRecord {
   parentUuid?: string;
   isSidechain?: boolean;
   timestamp?: string;
+  /** One HTTP call to the API. Read only as a second key on the response
+   *  grouping below, never as content: it agrees with `message.id` on all
+   *  85,369 multi-piece runs in the corpus, so demanding both costs nothing and
+   *  refuses to fuse a file that ever reuses an id. */
+  requestId?: string;
   /** `attachment` records: what the client recorded around the conversation. */
   attachment?: CCAttachment;
   /** `queue-operation` records: enqueue, dequeue or remove. */
@@ -348,6 +358,92 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     return n;
   };
 
+  // ONE API RESPONSE, WRITTEN DOWN AS SEVERAL RECORDS.
+  //
+  // Claude Code does not write a record per response. It writes one per content
+  // block — the thinking lands, then the text, then each tool_use — and every
+  // piece repeats the same `message.id` AND the whole `message.usage`. Measured
+  // over the transcripts in ~/.claude/projects: ~266,000 assistant records are
+  // ~117,400 responses, and only 27% of responses were ever a single record.
+  // So reading a record as a turn counted 2.26 turns for every turn that
+  // happened, and counted the response's tokens once per piece. On the owner's
+  // own session, main agent only, which is what the app frames: 1,321,954
+  // output tokens on screen where the file says 599,435.
+  //
+  // WHAT ENDS A RUN. Not any gap: the pieces of one response are routinely
+  // separated by the tool_result records coming back between them (measured,
+  // 18,892 of 19,298 interleaved messages are separated by nothing else). A run
+  // therefore survives every record that is NOT an assistant record and ends
+  // only when ANOTHER assistant message begins. That guard is what keeps a
+  // compaction apart: a compaction replays a record verbatim, id and all, and
+  // the copy lands after other assistant messages have spoken.
+  //
+  // The key is `message.id` AND `requestId` together, plus the sidechain flag.
+  // Measured over 85,369 multi-piece runs: requestId — one HTTP call — agrees
+  // with this grouping on every single one and disagrees on none. Demanding
+  // both costs nothing and refuses to fuse a file that ever reuses an id.
+  //
+  // `runStart[i]` is the record that opened record i's response, or -1 for a
+  // record that is not an assistant one.
+  const runStart = new Int32Array(recs.length).fill(-1);
+  let openAt = -1;
+  let openId: string | undefined;
+  let openReq: string | undefined;
+  let openSidechain = false;
+  for (let i = 0; i < recs.length; i++) {
+    const r = recs[i];
+    if (r.type !== "assistant") continue;
+    const id = typeof r.message?.id === "string" && r.message.id !== "" ? r.message.id : undefined;
+    // The sidechain flag is part of the identity: merging across it would move
+    // a subagent's tokens onto the main run. No message in the corpus mixes the
+    // two, so this half never fires today — it is here because that failure
+    // would be silent and wrong, not because it is common.
+    if (
+      openAt >= 0 &&
+      id !== undefined &&
+      id === openId &&
+      r.requestId === openReq &&
+      !!r.isSidechain === openSidechain
+    ) {
+      runStart[i] = openAt;
+      continue;
+    }
+    openAt = i;
+    openId = id;
+    openReq = r.requestId;
+    openSidechain = !!r.isSidechain;
+    runStart[i] = i;
+  }
+  /** Whether this record OPENS a response, and so a turn. A record with no
+   *  message.id opens one of its own, which is what every transcript written
+   *  before the field carried it has always done. */
+  const startsTurn = (i: number): boolean => runStart[i] === i;
+
+  // Which piece reports the response's tokens: the LAST one carrying a usage
+  // object. The one measured fact that carries this rule: across every
+  // multi-piece run in the corpus, the last piece holding a usage object holds
+  // the maximum output_tokens, with zero exceptions. (An earlier draft of this
+  // comment said the earlier pieces are "partial accountings, output_tokens 0
+  // or 1, cache fields absent". That was checked and is false — it describes 6
+  // of 31,658 differing splits. The pieces differ in many ways; what does not
+  // vary is which one holds the finished number.)
+  //
+  // "The last that HAS one" and not simply "the last", so a run whose final
+  // piece dropped the field still reports what the file did record.
+  //
+  // NOT COUNTED HERE AT ALL: a subagent's tokens. The sidechain branch emits no
+  // usage frame, and 68.5% of the corpus's assistant records are sidechain,
+  // carrying 86,341,266 output tokens that never become a frame. That is a
+  // separate gap, named rather than quietly closed: framing them would move
+  // every imported session's total upward, which is a change an owner gets to
+  // sanction.
+  const lastUsage = new Map<number, number>();
+  for (let i = 0; i < recs.length; i++) {
+    if (runStart[i] < 0 || !recs[i].message?.usage) continue;
+    lastUsage.set(runStart[i], i);
+  }
+  const usageAt = new Set(lastUsage.values());
+
   const stamps = stampRecords(recs, base);
   const modelOf = (r: CCRecord): string | undefined =>
     typeof r.message?.model === "string" && r.message.model !== "" ? r.message.model : undefined;
@@ -627,7 +723,8 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       if (r.type === "assistant") {
         announce(modelOf(r), ts);
         noteStop(owner, r);
-        out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
+        // Only the piece that OPENED the response opens a turn; see startsTurn.
+        if (startsTurn(i)) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
       for (const b of blocks) emitBlock(owner, b, ts);
       return;
@@ -680,13 +777,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           }
       }
     } else if (r.type === "assistant") {
-      // One assistant message is one turn. A long session is hundreds of them,
-      // and the graph draws a node per turn_start.
+      // One RESPONSE is one turn, and a response is usually several records —
+      // see startsTurn. A long session is hundreds of them, and the graph draws
+      // a node per turn_start.
       announce(modelOf(r), ts);
       noteStop("main", r);
-      out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
+      if (startsTurn(i)) out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
       for (const b of blocks) emitBlock("main", b, ts);
-      const u = r.message?.usage;
+      // The response's tokens, once, off the piece that finished the accounting.
+      const u = usageAt.has(i) ? r.message?.usage : undefined;
       if (u)
         out.push({
           type: "usage",

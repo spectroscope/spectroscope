@@ -618,6 +618,14 @@
 .ed-note { color: var(--text-faint); margin-left: var(--sp-2); }
 .ed-more { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
 .ed-empty { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* What the IMPORTED LINE says about the turn, under the frames it produced.
+   Set apart by a rule and not by a colour: everything above the line is this
+   app reading its own wire, everything below is a field of somebody else's
+   file, and that is a difference in provenance, not in importance. No accent
+   here — colour lives on the spectral lines. */
+.ed-meta { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0;
+  padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.ed-meta-note { margin: 0; font-size: var(--fs-11); color: var(--text-faint); }
 /* Rendered markdown reads as prose, one step below the chat's own size. */
 .ed-md { font-size: var(--fs-12); color: var(--text); overflow-wrap: anywhere; }
 .ed-md .md h1 { font-size: var(--fs-14); }

@@ -862,6 +862,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.mode.structured": { de: "Struktur", en: "Structured" },
   "ed.nothing": { de: "Dieser Frame trägt nichts außer seinem Typ.", en: "This frame carries nothing beyond its type." },
   "ed.more": { de: "+{n} weitere", en: "+{n} more" },
+  "ed.fromFile": { de: "Aus der importierten Zeile — die Felder des Records selbst, unverändert. Die Abschnitte darüber sind das, was diese Zeile erzeugt hat.", en: "From the imported line — the record's own fields, verbatim. The sections above are what this line produced." },
   "exp.button": { de: "exportieren", en: "export" },
   "exp.title": { de: "Diese Ansicht exportieren", en: "Export this view" },
   "exp.emptyTitle": { de: "Noch nichts zu exportieren — diese Ansicht trägt keine Events.", en: "Nothing to export yet — this view carries no events." },
