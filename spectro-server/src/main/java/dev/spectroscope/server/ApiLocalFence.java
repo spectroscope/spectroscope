@@ -10,6 +10,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
+import org.springframework.web.util.UrlPathHelper;
 
 import java.io.IOException;
 import java.util.Set;
@@ -112,12 +113,23 @@ public class ApiLocalFence implements Filter {
         return "/api/explain".equals(path) ? ExplainController.MAX_BODY_BYTES : Long.MAX_VALUE;
     }
 
-    /** The request path with any context path removed, so the rules read as written. */
+    /**
+     * The path as the MAPPING will read it: context path removed, percent
+     * escapes decoded, semicolon parameters dropped.
+     *
+     * <p>Reading the raw target here was a hole, and a measured one: a rebound
+     * page asking for {@code /%61pi/config} carried no literal {@code /api/},
+     * so a raw match waved it through while the container decoded it and handed
+     * it to the handler — full config, full system context, and a DELETE that
+     * removed a session from disk. The rule is therefore not "decode", it is
+     * "see what the dispatcher sees", which is what {@link UrlPathHelper}'s
+     * default instance is: the same helper, the same single decode, no second
+     * opinion to disagree with.</p>
+     *
+     * @param request the request being filtered
+     * @return the decoded path within the application
+     */
     private static String pathOf(HttpServletRequest request) {
-        String uri = request.getRequestURI();
-        String context = request.getContextPath();
-        return (context != null && !context.isEmpty() && uri.startsWith(context))
-                ? uri.substring(context.length())
-                : uri;
+        return UrlPathHelper.defaultInstance.getPathWithinApplication(request);
     }
 }

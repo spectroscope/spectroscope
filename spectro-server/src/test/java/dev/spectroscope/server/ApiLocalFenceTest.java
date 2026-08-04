@@ -5,12 +5,18 @@ import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.server.starter.BundleController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.Optional;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -73,6 +79,56 @@ class ApiLocalFenceTest {
         // it, the fence answers a blank 404 before the handler is ever reached.
         mvc.perform(delete("http://evil.example/api/sessions/not a session id"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void anEncodedPrefixIsStillTheApi() throws Exception {
+        // The filter must read the path the MAPPING reads, not the raw target.
+        // A browser preserves an escape it was given, so a rebound page can ask
+        // for /%61pi/config; a fence matching the raw string sees no "/api/"
+        // there, waves the request on, and the container — which dispatches on
+        // the decoded path — hands it to the handler. Measured live against the
+        // first cut of this filter: 200 with the full config body, and a DELETE
+        // that took a session off disk.
+        //
+        // Driven through the filter directly rather than MockMvc: the standalone
+        // setup never decodes the target, so it cannot stage the attack at all
+        // and would pass whatever the filter did.
+        MockFilterChain chain = new MockFilterChain();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new ApiLocalFence().doFilter(rebound("/%61pi/config"), response, chain);
+
+        assertEquals(404, response.getStatus());
+        assertNull(chain.getRequest(), "the request must not reach the chain at all");
+    }
+
+    @Test
+    void anEncodedPrefixFromLoopbackStillReachesItsHandler() throws Exception {
+        // The fence decodes to DECIDE, never to rewrite: a loopback caller that
+        // spells its path oddly is not an attacker and must travel on.
+        MockFilterChain chain = new MockFilterChain();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        new ApiLocalFence().doFilter(loopback("/%61pi/config"), response, chain);
+
+        assertNotNull(chain.getRequest(), "a loopback request must reach the chain");
+    }
+
+    /** A request from a page rebound to this machine: real loopback peer, foreign Host. */
+    private static MockHttpServletRequest rebound(String uri) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", uri);
+        request.setRequestURI(uri);
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("Host", "evil.example");
+        return request;
+    }
+
+    /** The honest local caller, same path spelling. */
+    private static MockHttpServletRequest loopback(String uri) {
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", uri);
+        request.setRequestURI(uri);
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("Host", "127.0.0.1:8080");
+        return request;
     }
 
     @Test
