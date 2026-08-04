@@ -14,8 +14,9 @@ import { JsonTree } from "./JsonTree";
 import { Markdown } from "./Markdown";
 import { highlight } from "./Highlighted";
 import { ToolViewBody } from "./ToolViewBody";
-import { describeEvent, toolCallsById } from "./eventDetail";
+import { describeEvent, toolCallsById, toolResultDetailsById } from "./eventDetail";
 import type { DetailSection, ToolCallRef } from "./eventDetail";
+import type { ToolResultDetail } from "../import/toolResultDetail";
 import {
   LLM_DIR_GLYPH,
   SummaryLine,
@@ -315,6 +316,9 @@ const TraceRow = memo(function TraceRow(props: {
   /** The open row's call index, same reason: a fresh Map on every append would
    *  re-render every closed row during a delta flood. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** The open row's detail index, same rule again: what the tools RETURNED,
+   *  when an importer read it beside the flattened block (card 167). */
+  details?: ReadonlyMap<string, ToolResultDetail>;
   /** The source face's two inputs, and the same rule a third time: only the open
    *  row is handed the stream it stands in and the file it was read from. */
   source?: { rows: readonly TraceEntry[]; lines: readonly string[] | null };
@@ -447,6 +451,7 @@ const TraceRow = memo(function TraceRow(props: {
           lang={lang}
           chain={props.chain ?? [entry]}
           calls={props.calls}
+          details={props.details}
           rows={props.source?.rows ?? [entry]}
           sourceLines={props.source?.lines ?? null}
           provenance={props.provenance}
@@ -517,6 +522,7 @@ function DetailSectionView({ section, lang }: { section: DetailSection; lang: La
           output={section.output}
           isError={section.isError}
           denied={false}
+          detail={section.detail}
         />
       );
 
@@ -631,6 +637,11 @@ export function EventStructured(props: {
   /** The stream's calls by callId, so a tool_result can render as its call.
    *  Absent means the pairing is simply not offered — nothing is invented. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** What those calls RETURNED, when an importer read it beside the flattened
+   *  block (card 167). The trace's structured face opens the very body the chat
+   *  card draws, so it is handed the very same evidence — otherwise one call
+   *  would read two ways inside one app. */
+  details?: ReadonlyMap<string, ToolResultDetail>;
   /** The record this frame was imported from, already read (recordMeta.ts).
    *  Absent for every session produced here, which is why the Lab passes
    *  nothing and renders exactly what it always did. */
@@ -638,8 +649,8 @@ export function EventStructured(props: {
 }) {
   const lang = useLang();
   const sections = useMemo(
-    () => describeEvent(props.type, props.payload, props.calls),
-    [props.type, props.payload, props.calls],
+    () => describeEvent(props.type, props.payload, props.calls, props.details),
+    [props.type, props.payload, props.calls, props.details],
   );
   const meta = props.meta ?? [];
   if (sections.length === 0 && meta.length === 0) return <p className="ed-empty">{t(lang, "ed.nothing")}</p>;
@@ -831,6 +842,7 @@ function TraceDetail({
   lang,
   chain,
   calls,
+  details,
   rows,
   sourceLines,
   provenance,
@@ -844,6 +856,8 @@ function TraceDetail({
   chain: TraceEntry[];
   /** Same rule as the chain: only the open row gets the call index. */
   calls?: ReadonlyMap<string, ToolCallRef>;
+  /** Same rule as the calls: only the open row gets the detail index. */
+  details?: ReadonlyMap<string, ToolResultDetail>;
   /** The frames this one stands among, read only to count the ones that share
    *  its source line. Same rule again: only the open row gets them. */
   rows: readonly TraceEntry[];
@@ -964,7 +978,13 @@ function TraceDetail({
         />
       )}
       {mode === "structured" ? (
-        <EventStructured type={entry.type} payload={entry.payload} calls={calls} meta={meta} />
+        <EventStructured
+          type={entry.type}
+          payload={entry.payload}
+          calls={calls}
+          details={details}
+          meta={meta}
+        />
       ) : mode === "insight" ? (
         // Expand every level of the event from the start — no clicking open the
         // nested {…} (e.g. a plan's steps, a context_info's parts). Real events
@@ -1189,6 +1209,15 @@ export function TraceView(props: {
   const openCalls = useMemo(() => {
     if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
     return toolCallsById(allEntries.map((e) => e.payload));
+  }, [openSeq, bySeq, allEntries]);
+
+  // And what those calls returned, when the stream carries an importer's
+  // reading of it. Built under exactly the same condition and paid for the same
+  // way: only while a tool_result row is open, and never for a live stream that
+  // has no such frame in it at all.
+  const openDetails = useMemo(() => {
+    if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
+    return toolResultDetailsById(allEntries.map((e) => e.payload));
   }, [openSeq, bySeq, allEntries]);
 
   // What the source face reads: the file's lines, and the frames the open row
@@ -1754,6 +1783,7 @@ export function TraceView(props: {
                     }
                     chain={openSeq === e.seq ? openChain : undefined}
                     calls={openSeq === e.seq ? openCalls : undefined}
+                    details={openSeq === e.seq ? openDetails : undefined}
                     source={openSeq === e.seq ? openSource : undefined}
                     provenance={provenance}
                     translated={props.translated ?? false}

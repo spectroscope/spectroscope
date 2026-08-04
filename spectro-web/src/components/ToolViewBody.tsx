@@ -14,6 +14,7 @@
 import { useMemo, useState } from "react";
 import type { AskedQuestion, QuestionOption, ToolView, WorkflowRun } from "./toolViews";
 import { describeTool, runStats, splitInput } from "./toolViews";
+import type { ToolResultDetail } from "../import/toolResultDetail";
 import { bodyFace, markdownBody } from "./bodyFace";
 import { JsonTree } from "./JsonTree";
 import { Markdown } from "./Markdown";
@@ -739,6 +740,12 @@ export function ToolViewBody(props: {
   output?: string;
   isError: boolean;
   denied: boolean;
+  /** What the tool RETURNED, when an import read it beside the flattened text
+   *  (card 167). Only the structured face uses it: json and raw are the pair as
+   *  it stands, and a face that says "raw" may not quietly show a second
+   *  reading. Absent on every live call, and a card without one renders exactly
+   *  as it did. */
+  detail?: ToolResultDetail | null;
 }) {
   const lang = useLang();
 
@@ -749,7 +756,7 @@ export function ToolViewBody(props: {
   if (props.mode === "structured") {
     return (
       <Structured
-        view={describeTool(props.name, props.input, props.output, props.isError)}
+        view={describeTool(props.name, props.input, props.output, props.isError, props.detail)}
         name={props.name}
         lang={lang}
       />
