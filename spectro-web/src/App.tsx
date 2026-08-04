@@ -90,7 +90,7 @@ import { LabView } from "./lab/LabView";
 import { FleetLab } from "./lab/FleetLab";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetCanvas } from "./spectrum/FleetCanvas";
-import { FleetHome } from "./spectrum/FleetHome";
+import { FleetControlRoom } from "./spectrum/FleetControlRoom";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
   backToLive as labBackToLive,
@@ -1394,7 +1394,11 @@ export function App() {
           imageCount={view.images.length}
           imagesOpen={imagesOpen}
           onToggleImages={() => setImagesOpen((o) => !o)}
-          showPanelToggle={tab === "chat"}
+          /* The right panel is rendered inside the chat row, which an entered
+             fleet replaces with the control room — so in a fleet the header
+             offered a toggle for a panel that could never appear (and whose
+             agents/context would have described the OTHER session anyway). */
+          showPanelToggle={tab === "chat" && enteredFleet === null}
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
           settingsOpen={settingsOpen}
@@ -1434,7 +1438,11 @@ export function App() {
             className={tab === "chat" ? "tab tab--active" : "tab"}
             onClick={() => changeTab("chat")}
           >
-            chat
+            {/* The tab's IDENTITY stays "chat" — the route vocabulary, the
+                keymap and the leveling surfaces all key on it, and a fleet's
+                address must not change because of a word. Only the label tells
+                the truth about what the pane holds. */}
+            {enteredFleet !== null ? "fleet" : "chat"}
           </button>
           <button
             type="button"
@@ -1527,13 +1535,22 @@ export function App() {
           />
         ) : tab === "chat" ? (
           enteredFleet !== null ? (
-            /* A fleet has no chat — show its home (getting-started + spawn), not
-               the stale session chat, so entering a fleet switches the pane. */
-            <FleetHome
+            /* A fleet has no chat. It gets the control room instead: the three
+               columns of FLEET-MANAGER.md §2 (tree · canvas · detail) under one
+               ledger strip, one selection driving all three. The old landing
+               card lives on inside the detail column's no-selection state. */
+            <FleetControlRoom
               contextId={enteredFleet}
-              nodeCount={enteredFleetModel.roster.length}
+              model={enteredFleetModel}
+              events={shownEvents}
               hubPort={fleetHubPort}
               onSpawn={() => setSpawnDialogOpen(true)}
+              onStop={stopFleetNode}
+              onFocusEvent={focusInTrace}
+              onOpenTrace={(agentId) => {
+                setTraceAgent(agentId);
+                changeTab("trace");
+              }}
             />
           ) : (
             /* Chat + gallery share the tab area; the graph tab is untouched.

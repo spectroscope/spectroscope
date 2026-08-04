@@ -65,6 +65,8 @@ interface SpectralNodeData {
   node: LegibleNode;
   lane: Lane | null;
   detail: LegibleGraph["detail"];
+  /** True while this card IS the control room's shared selection. */
+  selected?: boolean;
   /** The fleet's event stream — tick.seq indexes into it (the popup's source). */
   events?: RunEvent[];
   /** The stream's first wall-clock ts, for the popup's relative time. */
@@ -117,6 +119,7 @@ function SpectralNode({ data }: NodeProps) {
     isGroup ? "fleet-node-card--group" : "",
     d.detail !== "full" ? `fleet-node-card--${d.detail}` : "",
     node.pendingGate ? "fleet-node-card--gate pulse" : "",
+    d.selected === true ? "fleet-node-card--selected" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -265,11 +268,19 @@ export function FleetCanvas({
   contextId,
   hubPort,
   onStop,
+  selectedId,
+  onSelect,
 }: {
   model: FleetModel;
   events: RunEvent[];
-  /** Drill into an agent's own trace (reuses the sidebar/spectrum hand-off). */
+  /** Drill into an agent's own trace (reuses the sidebar/spectrum hand-off).
+   *  The graph tab passes this; the control room passes onSelect instead,
+   *  because there the detail column is already on screen. */
   onOpenTrace?: (agentId: string) => void;
+  /** The control room's shared selection, highlighted on the card. */
+  selectedId?: string | null;
+  /** Select instead of navigating. Takes precedence over onOpenTrace. */
+  onSelect?: (agentId: string) => void;
   /** The entered fleet's contextId — enables the spawn panel (prefills context). */
   contextId?: string;
   /** The loopback hub port, for the spawn panel's copy-paste node command. */
@@ -340,6 +351,7 @@ export function FleetCanvas({
         node: n,
         lane: n.kind === "agent" ? (laneById.get(n.id) ?? null) : null,
         detail: legible.detail,
+        selected: n.kind === "agent" && n.id === selectedId,
         events,
         t0: spectrum.t0,
         onCollapse: n.groupId !== undefined ? collapseGroup : undefined,
@@ -355,20 +367,24 @@ export function FleetCanvas({
       style: { stroke: EDGE_COLOR[e.kind], strokeWidth: 1.4 },
     }));
     return { nodes: layoutDagre(flowNodes, flowEdges, { nodeW: NODE_W, nodeH: NODE_H }), edges: flowEdges };
-  }, [legible, events, collapseGroup, onStop, onFocusEvent]);
+  }, [legible, events, collapseGroup, onStop, onFocusEvent, selectedId]);
 
-  // A group card expands; an agent card drills into its own trace. The collapse
-  // chip inside an expanded member stops propagation, so it never lands here.
+  // A group card expands; an agent card selects when a detail column is on
+  // screen (the control room) and otherwise drills into its own trace (the
+  // graph tab). The collapse chip inside an expanded member stops propagation,
+  // so it never lands here.
   const onNodeClick = useCallback(
     (_e: MouseEvent, flow: FlowNode) => {
       const node = (flow.data as unknown as SpectralNodeData).node;
       if (node.kind === "group") {
         setExpanded((prev) => new Set(prev).add(node.id));
+      } else if (onSelect) {
+        onSelect(node.id);
       } else if (onOpenTrace) {
         onOpenTrace(node.id);
       }
     },
-    [onOpenTrace],
+    [onOpenTrace, onSelect],
   );
 
   if (nodes.length === 0) {

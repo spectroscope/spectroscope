@@ -115,6 +115,54 @@ describe("buildFleetLedger", () => {
     expect(ledger.rows[0].gateWaitMeasured).toBe(false);
   });
 
+  it("does not call the wait a floor when the call was never gated", () => {
+    // PIN: gateWaitMeasured must flip only for a call that actually parked.
+    // An ordinary tool result carries no gateWaitMs by design (the server omits
+    // it), and reading that absence as a missing measurement would mark every
+    // fleet that ever ran a tool as under-reported.
+    const ledger = buildFleetLedger(
+      model(
+        [node("main", "root")],
+        [
+          {
+            type: "tool_result",
+            agentId: "main",
+            callId: "ungated",
+            output: "ok",
+            isError: false,
+            durationMs: 12,
+            ts: 1,
+          },
+        ],
+      ),
+    );
+    expect(ledger.rows[0].gateWaitMeasured).toBe(true);
+    expect(ledger.total.gateWaitMeasured).toBe(true);
+  });
+
+  it("does not blame one agent for another agent's unmeasured gate", () => {
+    // PIN: callIds are unique per agent in practice, but the attribution must
+    // come from the agent that ASKED, not from whoever reported a result.
+    const ledger = buildFleetLedger(
+      model(
+        [node("a", "worker"), node("b", "worker")],
+        [
+          { type: "permission_request", agentId: "a", callId: "c1", name: "write", input: {}, ts: 1 },
+          {
+            type: "tool_result",
+            agentId: "b",
+            callId: "c1",
+            output: "ok",
+            isError: false,
+            durationMs: 5,
+            ts: 2,
+          },
+        ],
+      ),
+    );
+    expect(ledger.rows.find((r) => r.id === "b")!.gateWaitMeasured).toBe(true);
+  });
+
   it("counts an undecided request as a pending gate", () => {
     const ledger = buildFleetLedger(
       model(

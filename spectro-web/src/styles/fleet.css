@@ -327,32 +327,6 @@
 
 /* ---- fleet control: the spawn panel (a React Flow Panel over the canvas) +
    the per-node stop button. Token-based, no shadows. ---- */
-/* ---- fleet home: the chat-tab getting-started panel for an entered fleet ---- */
-.fleet-home {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: var(--sp-5) var(--sp-3);
-}
-.fleet-home-inner { width: 100%; max-width: 560px; }
-.fleet-home-eyebrow { margin: 0; font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
-.fleet-home-title { margin: 2px 0 var(--sp-2); font-size: var(--fs-18); color: var(--text); }
-.fleet-home-lead { margin: 0 0 var(--sp-4); font-size: var(--fs-13); line-height: 1.55; color: var(--text-dim); }
-.fleet-home-card { border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--shade); padding: var(--sp-3); }
-.fleet-home-card-label { margin: 0 0 var(--sp-2); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
-.fleet-home-code { display: flex; align-items: center; gap: var(--sp-2); background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-chip); padding: var(--sp-2); }
-.fleet-home-code code { flex: 1; min-width: 0; font-size: var(--fs-11); color: var(--text-dim); overflow-x: auto; white-space: nowrap; }
-.fleet-home-copy { flex: none; background: none; border: 1px solid var(--border); border-radius: var(--radius-chip); color: var(--text-faint); font: inherit; font-size: var(--fs-11); padding: 2px var(--sp-2); cursor: pointer; }
-.fleet-home-copy:hover { color: var(--text); border-color: var(--accent); }
-.fleet-home-actions { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-3); }
-.fleet-home-spawn { background: none; border: 1px solid var(--accent); border-radius: var(--radius-chip); color: var(--accent); font: inherit; font-size: var(--fs-12); padding: var(--sp-1) var(--sp-2); cursor: pointer; }
-.fleet-home-spawn:hover { filter: brightness(1.1); }
-.fleet-home-link { font-size: var(--fs-12); color: var(--text-faint); text-decoration: none; }
-.fleet-home-link:hover { color: var(--accent); }
-
 .fleet-spawn { margin: 8px; }
 .fleet-spawn-open {
   font-family: var(--font-mono);
@@ -501,3 +475,294 @@
   transition: filter var(--t-fast);
 }
 .fleet-empty-spawn:hover { filter: brightness(1.08); }
+
+/* ---- the fleet control room: ledger strip over three columns (tree · canvas ·
+   detail), one selection driving all three. FLEET-MANAGER.md §2. Token-based,
+   no shadows, colour only on the lines. ---- */
+.fleet-room {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.fleet-room-cols {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(180px, 15%) 1fr minmax(240px, 24%);
+}
+.fleet-room-canvas {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-inline: 1px solid var(--border);
+}
+
+/* the ledger strip */
+.fleet-strip {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-3) var(--sp-5);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--border);
+}
+.fleet-strip-id { min-width: 0; }
+.fleet-strip-eyebrow {
+  display: block;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.fleet-strip-name {
+  margin: 2px 0 0;
+  font-size: var(--fs-16);
+  font-weight: 500;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.fleet-strip-sub { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
+.fleet-strip-stats { display: flex; flex-wrap: wrap; gap: var(--sp-5); }
+.fleet-stat { display: flex; flex-direction: column; gap: 1px; }
+.fleet-stat-value { font-size: var(--fs-14); color: var(--text); }
+.fleet-stat-label {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fleet-stat--gate .fleet-stat-value { color: var(--ev-gate); }
+.fleet-stat--error .fleet-stat-value { color: var(--error); }
+.fleet-roles { display: flex; flex-wrap: wrap; gap: var(--sp-2); margin: 0; padding: 0; list-style: none; }
+.fleet-role-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px var(--sp-2);
+}
+.fleet-role-name { color: var(--text); }
+.fleet-role-n,
+.fleet-role-tok { color: var(--text-faint); }
+
+/* left column — the agent tree */
+.fleet-rail {
+  min-width: 0;
+  overflow-y: auto;
+  padding: var(--sp-3) 0;
+}
+.fleet-rail-head {
+  margin: 0 0 var(--sp-2) var(--sp-3);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+}
+.fleet-rail-empty { margin: 0 var(--sp-3); font-size: var(--fs-12); color: var(--text-faint); }
+.fleet-rail-list { margin: 0; padding: 0; list-style: none; }
+.fleet-rail-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-12);
+  text-align: left;
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.fleet-rail-row:hover { color: var(--text); }
+.fleet-rail-row--on { color: var(--text); border-left-color: var(--accent); background: var(--surface-2); }
+.fleet-rail-row--gate { border-left-color: var(--ev-gate); }
+.fleet-rail-id { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-rail-role { flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+.fleet-rail-epoch { flex: none; font-size: var(--fs-11); color: var(--ev-reasoning); }
+.fleet-rail-gate {
+  flex: none;
+  font-size: var(--fs-11);
+  color: var(--ev-gate);
+  border: 1px solid var(--ev-gate);
+  border-radius: var(--radius-chip);
+  padding: 0 4px;
+}
+.fleet-rail-meta { margin-left: auto; flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+
+/* right column — the detail panel */
+.fleet-detail {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.fleet-detail-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border-bottom: 1px solid var(--border);
+}
+.fleet-detail-title {
+  min-width: 0;
+  font-size: var(--fs-13);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.fleet-detail-role { flex: none; font-size: var(--fs-11); color: var(--text-faint); }
+.fleet-detail-state { flex: none; font-size: var(--fs-11); }
+.fleet-detail-state.is-online { color: var(--ok); }
+.fleet-detail-state.is-offline { color: var(--text-faint); }
+.fleet-detail-close {
+  margin-left: auto;
+  flex: none;
+  background: none;
+  border: 0;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--fs-14);
+  line-height: 1;
+  cursor: pointer;
+}
+.fleet-detail-close:hover { color: var(--text); }
+.fleet-detail-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.fleet-detail-hint { margin: 0; font-size: var(--fs-12); line-height: var(--lh-body); color: var(--text-faint); }
+.fleet-detail-trigger { margin: 0; font-size: var(--fs-11); color: var(--text-dim); overflow-wrap: anywhere; }
+.fleet-detail-label {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fleet-detail-section { display: flex; flex-direction: column; gap: var(--sp-2); }
+.fleet-detail-section > .fleet-detail-label { margin: 0; }
+.fleet-detail-nums {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: var(--sp-3);
+}
+.fleet-detail-num { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.fleet-detail-num-label {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.fleet-detail-num-value { font-size: var(--fs-13); color: var(--text); }
+.fleet-detail-table { width: 100%; border-collapse: collapse; font-size: var(--fs-11); }
+.fleet-detail-table th {
+  text-align: left;
+  font-weight: 400;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  padding: 2px var(--sp-2) 2px 0;
+}
+.fleet-detail-table td { color: var(--text-dim); padding: 2px var(--sp-2) 2px 0; }
+.fleet-detail-caps { display: flex; flex-wrap: wrap; gap: var(--sp-1); margin: 0; padding: 0; list-style: none; }
+.fleet-detail-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.fleet-detail-action {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: var(--sp-1) var(--sp-2);
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast);
+}
+.fleet-detail-action:hover { color: var(--text); border-color: var(--accent); }
+.fleet-detail-action--stop:hover { color: var(--ev-gate); border-color: var(--ev-gate); }
+.fleet-detail-code {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  background: var(--shade);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: var(--sp-2);
+}
+.fleet-detail-code code {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow-x: auto;
+  white-space: nowrap;
+}
+.fleet-detail-copy {
+  flex: none;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 2px var(--sp-2);
+  cursor: pointer;
+}
+.fleet-detail-copy:hover { color: var(--text); border-color: var(--accent); }
+.fleet-detail-events { margin: 0; padding: 0; list-style: none; }
+.fleet-detail-event {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-11);
+  text-align: left;
+  padding: 2px 0;
+  cursor: pointer;
+}
+.fleet-detail-event:hover { color: var(--text); }
+.fleet-detail-event-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  align-self: center;
+}
+.fleet-detail-event-type { flex: none; color: var(--text); }
+.fleet-detail-event-time { flex: none; color: var(--text-faint); }
+.fleet-detail-event-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-faint);
+}
+
+/* the shared selection, seen on the canvas card */
+.fleet-node-card--selected { border-color: var(--accent); }
+
+/* Narrow windows: the two rails stack under the canvas rather than crushing it.
+   The canvas keeps a floor so dagre always has room to lay out. */
+@media (max-width: 1100px) {
+  .fleet-room-cols { grid-template-columns: 1fr; grid-template-rows: auto minmax(320px, 1fr) auto; }
+  .fleet-room-canvas { border-inline: 0; border-block: 1px solid var(--border); }
+  .fleet-rail { max-height: 200px; }
+  .fleet-detail { max-height: 340px; }
+}

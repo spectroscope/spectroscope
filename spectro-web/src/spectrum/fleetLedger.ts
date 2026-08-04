@@ -16,7 +16,6 @@
 //      overstate. When a gate produced no measurement, the count is reported
 //      and the milliseconds are not claimed (`gateWaitMeasured: false`).
 
-import type { RunEvent } from "../events";
 import type { FleetModel } from "./fleetModel";
 
 /** One agent's line in the ledger. */
