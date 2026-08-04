@@ -12,7 +12,7 @@ function node(id: string, role: string, connected = true): FleetNode {
 }
 
 function flowOf(roster: FleetNode[], events: RunEvent[]) {
-  const model: FleetModel = { roster, events, epochBySender: {} };
+  const model: FleetModel = { roster, events, frames: [], epochBySender: {} };
   const scene = buildFleetLabScene(model);
   return { scene, flow: fleetToFlow(scene, deriveDetail(events), { lang: "en" }) };
 }
@@ -135,7 +135,7 @@ describe("fleetToFlow — the machine-room layout", () => {
   });
 
   it("expanded: the card grid starts clear of the wide user card", () => {
-    const model: FleetModel = { roster: [node("main", "root")], events: [], epochBySender: {} };
+    const model: FleetModel = { roster: [node("main", "root")], events: [], frames: [], epochBySender: {} };
     const scene = buildFleetLabScene(model);
     const flow = fleetToFlow(scene, deriveDetail([]), { lang: "en", expanded: true });
     const user = byId(flow, "user")!;
@@ -148,7 +148,7 @@ describe("fleetToFlow — the machine-room layout", () => {
     for (let i = 1; i <= 3; i++) roster.push(node(`worker-${i}`, "worker"));
     const { flow } = flowOf(roster, []);
     const expanded = fleetToFlow(
-      buildFleetLabScene({ roster, events: [], epochBySender: {} }),
+      buildFleetLabScene({ roster, events: [], frames: [], epochBySender: {} }),
       deriveDetail([]),
       {
         lang: "en",
@@ -169,7 +169,7 @@ describe("fleetToFlow — the machine-room layout", () => {
       { type: "run_start", runId: "r1", agentId: "main", prompt: "go", provider: "ollama", ts },
     ];
     const flow = fleetToFlow(
-      buildFleetLabScene({ roster, events, epochBySender: {} }),
+      buildFleetLabScene({ roster, events, frames: [], epochBySender: {} }),
       deriveDetail(events),
       {
         lang: "en",

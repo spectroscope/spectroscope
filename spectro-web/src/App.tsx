@@ -89,7 +89,7 @@ import { ParticleField } from "./components/ParticleField";
 import { LabView } from "./lab/LabView";
 import { FleetLab } from "./lab/FleetLab";
 import { SpectrumView } from "./spectrum/SpectrumView";
-import { FleetCanvas } from "./spectrum/FleetCanvas";
+import { FleetBus } from "./spectrum/FleetBus";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
@@ -1655,11 +1655,11 @@ export function App() {
           />
         ) : tab === "graph" ? (
           enteredFleet !== null ? (
-            <FleetCanvas
+            /* 0.7 prototype: the ESB view replaces the DAG — one rail, full
+               agent cards docked on it (owner call, fleet-esb-base). */
+            <FleetBus
               model={enteredFleetModel}
               events={shownEvents}
-              /* Same hand-off as the Spectrum band and the work panel. */
-              onFocusEvent={focusInTrace}
               /* A scripted fleet scenario has no live hub — hide the spawn panel
                  (its node command would connect to nothing). */
               contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
