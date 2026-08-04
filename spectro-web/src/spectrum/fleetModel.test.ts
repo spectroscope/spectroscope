@@ -33,6 +33,22 @@ describe("buildFleet", () => {
     expect(m.roster).toEqual([]);
     expect(m.events).toEqual([]);
     expect(m.epochBySender).toEqual({});
+    expect(m.frames).toEqual([]);
+  });
+
+  it("keeps the full envelopes in arrival order — the bus view reads them", () => {
+    const m = buildFleet([
+      event("a", 0, 0, delta("a", "a0", 10)),
+      { type: "fleet_roster", nodes: [node("a")] },
+      event("b", 0, 0, delta("b", "b0", 20)),
+    ]);
+    expect(m.frames).toHaveLength(2);
+    expect(m.frames[0].sender).toBe("a");
+    expect(m.frames[0].taskId).toBe("a#task");
+    expect(m.frames[1].sender).toBe("b");
+    // the payload list and the envelope list are the same stream, same order —
+    // events stays the spectrum's input, frames is the bus's reading of it
+    expect(m.frames.map((f) => f.payload)).toEqual(m.events);
   });
 
   it("takes the roster latest-wins, not accumulated", () => {
