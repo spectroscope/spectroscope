@@ -11,7 +11,13 @@ import ccModern from "./fixtures/cc-modern.jsonl?raw";
 import ccWorkflow from "./fixtures/cc-workflow.jsonl?raw";
 import ccFollowup from "./fixtures/cc-followup.jsonl?raw";
 import ccUserBlocks from "./fixtures/cc-user-blocks.jsonl?raw";
-import { claudeCodeToRunEvents, parseTaskNotification, parseTranscript } from "./claudeCode";
+import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
+import {
+  claudeCodeToRunEvents,
+  claudeCodeWithOrigin,
+  parseTaskNotification,
+  parseTranscript,
+} from "./claudeCode";
 import { detectAndLoad } from "./detect";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
@@ -183,6 +189,114 @@ describe("claudeCode adapter (turns)", () => {
         .map((e) => (e as { turn: number }).turn);
     expect(turnsOf("main")).toEqual([1, 2]);
     expect(turnsOf("task1")).toEqual([1, 2]);
+  });
+});
+
+/**
+ * ONE API response, written down as SEVERAL records.
+ *
+ * Claude Code does not write one record per response. It writes one per content
+ * block: the thinking lands, then the text, then each tool_use, and all of them
+ * carry the SAME `message.id`. Measured over the 4977 transcripts in
+ * ~/.claude/projects: 265,009 assistant records collapse to 143,025 responses,
+ * and only 60,098 responses were ever a single record. Reading a record as a
+ * turn therefore counted 1.85 turns for every turn that happened, and — because
+ * every piece repeats the whole `message.usage` — counted the tokens again on
+ * each piece: 226,873,474 output tokens where the file says 142,811,312.
+ *
+ * The key is ADJACENCY, not the id alone. The same message.id reappears far
+ * later in a file when a compaction replays the record verbatim, and merging
+ * those would fuse two turns that are minutes apart. So a run is a maximal
+ * stretch of CONSECUTIVE assistant records sharing a non-empty message.id, and
+ * anything at all between them ends it. Measured: requestId agrees with that
+ * grouping on all 82,927 multi-piece runs, and 0 disagree.
+ */
+describe("claudeCode adapter (one response, several records)", () => {
+  const events = parseTranscript(ccSplit);
+  const mainTurns = events.filter((e) => e.type === "turn_start" && e.agentId === "main");
+  const usages = events.filter((e) => e.type === "usage");
+
+  it("opens ONE turn for the three records of one response", () => {
+    // thinking / text / tool_use share msg_1; then msg_2; then the replayed
+    // msg_1 at the end, which is its own turn because it does not adjoin.
+    expect(mainTurns.map((e) => (e as { turn: number }).turn)).toEqual([1, 2, 3]);
+  });
+
+  it("still emits every block of every piece", () => {
+    expect(events.filter((e) => e.type === "thinking_delta")).toHaveLength(1);
+    expect(events.some((e) => e.type === "tool_call" && e.name === "Bash")).toBe(true);
+    expect(events.filter((e) => e.type === "text_delta")).toHaveLength(3);
+  });
+
+  it("counts the response's tokens once, from the piece that finished the accounting", () => {
+    // The three pieces of msg_1 report 1, 1 and 140 output tokens; the last is
+    // the complete accounting, and it is the only one that carries the cache
+    // fields. Measured: the last piece holds the maximum on all 82,927
+    // multi-piece runs, with no exception.
+    expect(usages).toHaveLength(3);
+    expect(usages[0]).toMatchObject({
+      inputTokens: 9,
+      outputTokens: 140,
+      cacheReadTokens: 20000,
+      cacheCreationTokens: 300,
+    });
+    expect(usages[1]).toMatchObject({ outputTokens: 25 });
+  });
+
+  it("does not fuse a record that a compaction replayed later", () => {
+    // msg_1 comes back as the last record, with msg_2 in between. Adjacency is
+    // what refuses it: a run ends at anything that is not its own next piece.
+    expect(mainTurns).toHaveLength(3);
+  });
+
+  it("charges the turn to the line the response STARTED on", () => {
+    const { events: evs, origin } = claudeCodeWithOrigin(
+      ccSplit
+        .split(/\r?\n/)
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l)),
+    );
+    const at = evs.findIndex((e) => e.type === "turn_start" && (e as { turn: number }).turn === 1);
+    expect(origin[at]).toBe(1); // the thinking piece, line 2 of the file
+    // ...and each block still names the line it was actually read from.
+    const call = evs.findIndex((e) => e.type === "tool_call");
+    expect(origin[call]).toBe(3);
+  });
+});
+
+describe("claudeCode adapter (records that must NOT be merged)", () => {
+  it("keeps a record with no message.id as a turn of its own", () => {
+    // Every fixture written before this card, and every older transcript, has
+    // no message.id at all. No id is no evidence that two records belong
+    // together, so each stays a turn — the behaviour those files always had.
+    const events = parseTranscript(ccLinear);
+    const turns = events.filter((e) => e.type === "turn_start" && e.agentId === "main");
+    expect(turns).toHaveLength(2);
+    expect(events.filter((e) => e.type === "usage")).toHaveLength(2);
+  });
+
+  it("never merges across the sidechain boundary", () => {
+    // Measured: 0 messages in the corpus mix isSidechain across their pieces.
+    // The guard is here because merging a subagent's record into the main
+    // agent's turn would move somebody else's tokens onto the main run.
+    const line = (over: Record<string, unknown>): unknown => ({
+      type: "assistant",
+      message: {
+        id: "msg_same",
+        role: "assistant",
+        content: [{ type: "text", text: "hi" }],
+        usage: { input_tokens: 1, output_tokens: 2 },
+      },
+      ...over,
+    });
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      line({ uuid: "a1", parentUuid: "u1" }),
+      line({ uuid: "a2", parentUuid: "a1", isSidechain: true }),
+    ]);
+    // The sidechain record is orphaned (no Task owns it) and drops out; what
+    // matters is that it did not silently continue main's turn.
+    expect(events.filter((e) => e.type === "turn_start" && e.agentId === "main")).toHaveLength(1);
   });
 });
 

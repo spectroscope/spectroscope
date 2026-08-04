@@ -348,6 +348,58 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     return n;
   };
 
+  // ONE API RESPONSE, WRITTEN DOWN AS SEVERAL RECORDS.
+  //
+  // Claude Code does not write a record per response. It writes one per content
+  // block — the thinking lands, then the text, then each tool_use — and every
+  // piece repeats the same `message.id` AND the whole `message.usage`. Measured
+  // over the 4977 transcripts in ~/.claude/projects: 265,009 assistant records
+  // are 143,025 responses, and only 60,098 responses were ever a single record.
+  // So reading a record as a turn counted 1.85 turns for every turn that
+  // happened, and counted the response's tokens once per piece: 226,873,474
+  // output tokens where the files say 142,811,312.
+  //
+  // The key is ADJACENCY together with the id, never the id alone. A compaction
+  // replays a record verbatim, id included, and the copy can land far later in
+  // the file; merging on the id would fuse two turns that are minutes apart. A
+  // run therefore ends at ANYTHING that is not its own next piece. Cross-checked
+  // against `requestId`, which is one HTTP call: it agrees with this grouping on
+  // all 82,927 multi-piece runs and disagrees on none.
+  const startsTurn = recs.map(() => true);
+  for (let i = 1; i < recs.length; i++) {
+    const prev = recs[i - 1];
+    const cur = recs[i];
+    if (cur.type !== "assistant" || prev.type !== "assistant") continue;
+    const id = cur.message?.id;
+    // The sidechain flag is part of the identity: merging across it would move
+    // a subagent's tokens onto the main run. No message in the corpus mixes the
+    // two, so this guard never fires today — it is here because that failure
+    // would be silent and wrong, not because it is common.
+    if (
+      typeof id === "string" &&
+      id !== "" &&
+      id === prev.message?.id &&
+      !!prev.isSidechain === !!cur.isSidechain
+    )
+      startsTurn[i] = false;
+  }
+
+  // Which piece reports the response's tokens: the LAST one carrying a usage
+  // object. Measured, the last piece holds the maximum output_tokens on all
+  // 82,927 multi-piece runs with no exception — the earlier ones are partial
+  // accountings (output_tokens 0 or 1, the cache fields absent). "The last that
+  // HAS one" and not simply "the last", so a run whose final piece dropped the
+  // field still reports what the file did record instead of nothing.
+  const usageAt = new Set<number>();
+  for (let i = 0; i < recs.length; i++) {
+    if (recs[i].type !== "assistant" || !startsTurn[i]) continue;
+    let last = -1;
+    for (let j = i; j < recs.length && (j === i || !startsTurn[j]); j++) {
+      if (recs[j].message?.usage) last = j;
+    }
+    if (last >= 0) usageAt.add(last);
+  }
+
   const stamps = stampRecords(recs, base);
   const modelOf = (r: CCRecord): string | undefined =>
     typeof r.message?.model === "string" && r.message.model !== "" ? r.message.model : undefined;
@@ -627,7 +679,8 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       if (r.type === "assistant") {
         announce(modelOf(r), ts);
         noteStop(owner, r);
-        out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
+        // Only the piece that OPENED the response opens a turn; see startsTurn.
+        if (startsTurn[i]) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
       for (const b of blocks) emitBlock(owner, b, ts);
       return;
@@ -680,13 +733,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           }
       }
     } else if (r.type === "assistant") {
-      // One assistant message is one turn. A long session is hundreds of them,
-      // and the graph draws a node per turn_start.
+      // One RESPONSE is one turn, and a response is usually several records —
+      // see startsTurn. A long session is hundreds of them, and the graph draws
+      // a node per turn_start.
       announce(modelOf(r), ts);
       noteStop("main", r);
-      out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
+      if (startsTurn[i]) out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
       for (const b of blocks) emitBlock("main", b, ts);
-      const u = r.message?.usage;
+      // The response's tokens, once, off the piece that finished the accounting.
+      const u = usageAt.has(i) ? r.message?.usage : undefined;
       if (u)
         out.push({
           type: "usage",
