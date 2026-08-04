@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { INLINE_CHARS, readRecordMeta } from "./recordMeta";
 import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
 import ccLinear from "./fixtures/cc-linear.jsonl?raw";
+import ccCompaction from "./fixtures/cc-compaction.jsonl?raw";
 
 const groupsOf = (line: string): Record<string, Record<string, string>> => {
   const out: Record<string, Record<string, string>> = {};
@@ -111,5 +112,57 @@ describe("readRecordMeta over a whole real-shaped file", () => {
     // rather than an empty one with a heading over no rows.
     expect(readRecordMeta(lines(ccSplit)[0]).map((g) => g.path)).toEqual([""]);
     expect(readRecordMeta(lines(ccSplit)[3]).map((g) => g.path)).toEqual(["", "message", "message.usage"]);
+  });
+});
+
+// The compaction's own numbers. The frame carries the count of what went and
+// the size of the summary; the four facts beside them — why it fired, how big
+// the context was before and after, how long it took — are the record's, and
+// they reach the reader here, under the frame the record produced. Without a
+// group of their own compactMetadata renders as one `{trigger, preTokens, …}`
+// shape, because it runs well past INLINE_CHARS.
+describe("readRecordMeta (compaction boundary)", () => {
+  const boundary = groupsOf(lines(ccCompaction)[4]);
+
+  it("opens the compaction's numbers into rows of their own", () => {
+    expect(boundary["compactMetadata"]).toMatchObject({
+      trigger: "auto",
+      preTokens: "999135",
+      postTokens: "18831",
+      durationMs: "155566",
+      cumulativeDroppedTokens: "703967",
+    });
+  });
+
+  it("lets the survivor lists fall through, and names a real one by its shape", () => {
+    // Short enough to print whole in the fixture; a real boundary preserves 29
+    // to 32 uuids and runs far past INLINE_CHARS, where the block is named
+    // instead — the module's own rule, applied one level in.
+    expect(boundary["compactMetadata"].preservedMessages).toContain('"allUuids":["a3"]');
+    const real = groupsOf(
+      JSON.stringify({
+        subtype: "compact_boundary",
+        compactMetadata: {
+          trigger: "auto",
+          preservedMessages: {
+            anchorUuid: "x",
+            uuids: [],
+            allUuids: Array.from({ length: 30 }, (_, i) => `uuid-${i}-padded-to-look-real`),
+          },
+        },
+      }),
+    );
+    expect(real["compactMetadata"].preservedMessages).toBe("{anchorUuid, uuids, allUuids}");
+  });
+
+  it("says nothing for a number the boundary did not record", () => {
+    const second = groupsOf(lines(ccCompaction)[7]);
+    expect(second["compactMetadata"].trigger).toBe("manual");
+    expect(second["compactMetadata"]).not.toHaveProperty("cumulativeDroppedTokens");
+  });
+
+  it("does not repeat the block as a shape on the record itself", () => {
+    expect(boundary[""]).not.toHaveProperty("compactMetadata");
+    expect(boundary[""].subtype).toBe("compact_boundary");
   });
 });

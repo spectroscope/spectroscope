@@ -58,6 +58,42 @@ interface CCRecord {
   operation?: string;
   /** The queued text, on a queue-operation that kept it. */
   content?: unknown;
+  /** `system` records: which kind. Five in the corpus; two of them say
+   *  something a reader acts on and are read below (compact_boundary 21,
+   *  api_error 67). The other three carry nothing new — stop_hook_summary
+   *  (1,750) is the same sentence every time, local_command (16) is the client
+   *  echoing itself, model_refusal_fallback (14) sits only in files that
+   *  already wear a fallback chip. */
+  subtype?: string;
+  /** `system[compact_boundary]`: the compaction as the client recorded it. */
+  compactMetadata?: CCCompactMetadata;
+  /** `system[api_error]`: what failed. An OBJECT here, with `formatted` and
+   *  `message`. The same key on an assistant record is a short classifier
+   *  string, which is why nothing reads it without checking the shape. */
+  error?: unknown;
+  /** `system[api_error]`: the retry the client then made. Both present or both
+   *  absent on all 67. */
+  retryAttempt?: number;
+  maxRetries?: number;
+  /** `user`: this body is the machine's summary of the conversation it
+   *  replaced, not something a person typed. */
+  isCompactSummary?: boolean;
+  /** `assistant`: this message is not the model answering, it is the client
+   *  writing down an outage. false is a different synthetic message ("No
+   *  response requested."), so only the true case may be read. */
+  isApiErrorMessage?: boolean;
+}
+
+/**
+ * What `system[subtype=compact_boundary]` records about the compaction.
+ *
+ * Only the survivor list is read here. The numbers beside it —
+ * trigger, preTokens, postTokens, durationMs, cumulativeDroppedTokens — are
+ * fields of somebody else's file and reach the reader through
+ * import/recordMeta.ts, under the frame this record produces.
+ */
+interface CCCompactMetadata {
+  preservedMessages?: unknown;
 }
 
 /**
@@ -354,6 +390,61 @@ function attachmentNote(b: CCBlock): string {
 }
 
 /**
+ * The messages a compaction kept, by uuid.
+ *
+ * `allUuids` is the full list and `uuids` the visible one; both are on all 21
+ * boundaries in the corpus, and the fuller list is the right denominator for
+ * "what went". A boundary that names NEITHER returns null and produces no
+ * frame: `compaction`'s only number is the count of what was removed, and
+ * counting it against a survivor list the file never wrote would be an
+ * invention about somebody else's session. Measured 0 such boundaries.
+ *
+ * @return the surviving uuids, or null when the record names none
+ */
+function survivors(meta: CCCompactMetadata | undefined): Set<string> | null {
+  const p = meta?.preservedMessages;
+  if (p === null || typeof p !== "object") return null;
+  const { allUuids, uuids } = p as { allUuids?: unknown; uuids?: unknown };
+  const list = Array.isArray(allUuids) ? allUuids : Array.isArray(uuids) ? uuids : null;
+  if (list === null) return null;
+  return new Set(list.filter((u): u is string => typeof u === "string"));
+}
+
+/**
+ * What an `api_error` record says went wrong, as one sentence.
+ *
+ * `formatted` is the client's own rendering ("429 Rate limited", "Connection
+ * interrupted by system sleep") and travels verbatim; `message` is the fallback
+ * for a record that carries no formatted line. The retry rides in the same
+ * string because `error` has one message and no field for a retry, and a field
+ * invented on events.ts for a reading of somebody else's file is exactly what
+ * this importer does not do.
+ *
+ * @return the message, or null for a record that names no failure at all
+ */
+function errorMessage(r: CCRecord): string | null {
+  const e = r.error;
+  if (e === null || typeof e !== "object") return null;
+  const { formatted, message } = e as { formatted?: unknown; message?: unknown };
+  const head =
+    typeof formatted === "string" && formatted !== ""
+      ? formatted
+      : typeof message === "string" && message !== ""
+        ? message
+        : "";
+  if (head === "") return null;
+  return typeof r.retryAttempt === "number" && typeof r.maxRetries === "number"
+    ? `${head} · retry ${r.retryAttempt}/${r.maxRetries}`
+    : head;
+}
+
+/** How far past a boundary its summary may sit. Measured over all 21
+ *  boundaries in the corpus the gap is exactly one line every time; the window
+ *  exists because the distance is the client's business, and a file that ever
+ *  writes a record between the two would otherwise lose the size. */
+const SUMMARY_LOOKAHEAD = 3;
+
+/**
  * An adapted stream, with the line each frame came from.
  *
  * `origin[i]` is the index, in the file's own non-blank lines, of the record
@@ -450,6 +541,37 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     if (typeof s === "string" && s !== "") lastStop.set(agentId, s);
   };
   const stopOf = (agentId: string): string => lastStop.get(agentId) ?? UNRECORDED_STOP;
+
+  // COMPACTION (card 167, finding 2). `compaction` has been in events.ts all
+  // along and five consumers draw it — the reducer's warn line, the text feed's
+  // "[compaction −N turns]", the graph's compact node, LabTrace, TraceView —
+  // and the importer emitted none, so an imported million-token session
+  // restarted its conversation with no marker at all. Measured over the 5,120
+  // transcripts in ~/.claude/projects: 21 boundaries in 17 files, 0 frames.
+  //
+  // The uuid of every main turn still standing, in order. `removedTurns` is the
+  // count of these the boundary did not preserve — arithmetic over two things
+  // the file states, the way the response grouping and the notification's wait
+  // are. Only turns are counted, because `compaction` counts turns.
+  //
+  // A record the file did not name cannot be matched against a list of names,
+  // so it is not tracked at all: that understates what went rather than
+  // claiming a turn was dropped because the file forgot to give it a uuid.
+  const mainTurnUuids: string[] = [];
+
+  // How long the summary that follows each boundary runs, by boundary index.
+  // The summary itself never becomes a frame — see the isCompactSummary branch
+  // — so this is where its size is read.
+  const summaryCharsAt = new Map<number, number>();
+  for (let i = 0; i < recs.length; i++) {
+    if (recs[i].type !== "system" || recs[i].subtype !== "compact_boundary") continue;
+    for (let j = i + 1; j < Math.min(i + 1 + SUMMARY_LOOKAHEAD, recs.length); j++) {
+      if (recs[j].isCompactSummary !== true) continue;
+      const body = recs[j].message?.content;
+      summaryCharsAt.set(i, typeof body === "string" ? body.length : asText(body).length);
+      break;
+    }
+  }
 
   // Turns are per agent: the main run and every subagent count their own.
   const turns = new Map<string, number>();
@@ -548,7 +670,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   const stamps = stampRecords(recs, base);
   const modelOf = (r: CCRecord): string | undefined =>
     typeof r.message?.model === "string" && r.message.model !== "" ? r.message.model : undefined;
-  const firstModel = recs.map(modelOf).find((m) => m !== undefined);
+  // The model the file opens on, for the up-front announcement and for
+  // run_start. An outage record is skipped: its model is the literal string
+  // "<synthetic>", and 121 transcripts in the corpus open on one, so the run
+  // announced a switch to a model by that name before a word was said and
+  // carried it on run_start too.
+  const firstModel = recs
+    .filter((r) => r.isApiErrorMessage !== true)
+    .map(modelOf)
+    .find((m) => m !== undefined);
 
   // provider_info is the socket-only announcement of the active backend, and
   // the reducer takes the latest one. A transcript names its model per message,
@@ -816,9 +946,75 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     }
   };
 
+  /**
+   * A `system` record, which used to produce nothing whatever it said.
+   *
+   * All 1,868 of them in the corpus are non-sidechain, so this runs ahead of
+   * the sidechain branch and there is no owner to get wrong. Every system
+   * record is handled here, including the three subtypes that say nothing a
+   * reader acts on: falling through to the conversation branches was how they
+   * used to be dropped, and stating it is cheaper to read than inferring it.
+   *
+   * @return true always for a system record, false for anything else
+   */
+  const emitSystem = (r: CCRecord, i: number, ts: number): boolean => {
+    if (r.type !== "system") return false;
+    if (r.subtype === "compact_boundary") {
+      const preserved = survivors(r.compactMetadata);
+      if (preserved === null) return true;
+      const kept = mainTurnUuids.filter((u) => preserved.has(u));
+      const removedTurns = mainTurnUuids.length - kept.length;
+      // Only what survived carries into the NEXT boundary. A second compaction
+      // removes what IT removed, and a list that kept the already-dropped turns
+      // would count them a second time — 4 of the corpus's 17 compacting files
+      // hold more than one boundary.
+      mainTurnUuids.length = 0;
+      mainTurnUuids.push(...kept);
+      out.push({
+        type: "compaction",
+        agentId: "main",
+        removedTurns,
+        summaryChars: summaryCharsAt.get(i) ?? 0,
+        ts,
+      });
+      return true;
+    }
+    if (r.subtype === "api_error") {
+      // A real API failure, and the reason a reader finds a twenty-minute gap
+      // between two turns. 67 records in 10 files produced nothing at all
+      // before this, so a retry ladder was a silent hole in the clock.
+      const message = errorMessage(r);
+      if (message !== null) out.push({ type: "error", agentId: "main", message, ts });
+      return true;
+    }
+    return true;
+  };
+
+  /**
+   * An outage the client wrote into the assistant channel.
+   *
+   * 350 records in the corpus, and every one of them imported as a `text_delta`
+   * — "API Error: Overloaded" read in the chat as the model's own answer. The
+   * turn stays (the request was made and it failed), the tokens stay (the file
+   * records its own zeroes), and the words become the `error` frame that
+   * events.ts has carried since the beginning.
+   */
+  const emitApiErrorMessage = (agentId: string, blocks: CCBlock[], ts: number): void => {
+    const message = asText(blocks);
+    if (message !== "") out.push({ type: "error", agentId, message, ts });
+  };
+
   const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
     if (emitNoConversation(r, ts)) return;
+    if (emitSystem(r, i, ts)) return;
+    // The machine's summary of the conversation it replaced. It used to import
+    // as a plain user_message: 391,308 characters of the model's own prose,
+    // across the corpus's 21 boundaries, rendered as the person's words. Its
+    // size travels on the compaction frame beside it and the line itself stays
+    // in the file, where the source face has it byte for byte.
+    if (r.isCompactSummary === true) return;
+    const apiError = r.isApiErrorMessage === true;
     const content = r.message?.content;
     const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
     // Read once per record, not once per block: the field is the record's, and
@@ -840,12 +1036,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         childStarted.add(owner);
       }
       if (r.type === "assistant") {
-        announce(modelOf(r), ts);
+        // An outage record names its model "<synthetic>", and announcing that
+        // made the trace claim the run had switched to a model by that name.
+        if (!apiError) announce(modelOf(r), ts);
         noteStop(owner, r);
         // Only the piece that OPENED the response opens a turn; see startsTurn.
         if (startsTurn(i)) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
       }
-      for (const b of blocks) emitBlock(owner, b, ts, detail);
+      if (apiError) emitApiErrorMessage(owner, blocks, ts);
+      else for (const b of blocks) emitBlock(owner, b, ts, detail);
       return;
     }
     if (r.type === "user") {
@@ -907,10 +1106,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       // One RESPONSE is one turn, and a response is usually several records —
       // see startsTurn. A long session is hundreds of them, and the graph draws
       // a node per turn_start.
-      announce(modelOf(r), ts);
+      if (!apiError) announce(modelOf(r), ts); // never "<synthetic>"; see emitApiErrorMessage
       noteStop("main", r);
-      if (startsTurn(i)) out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
-      for (const b of blocks) emitBlock("main", b, ts, detail);
+      if (startsTurn(i)) {
+        out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
+        if (typeof r.uuid === "string") mainTurnUuids.push(r.uuid);
+      }
+      if (apiError) emitApiErrorMessage("main", blocks, ts);
+      else for (const b of blocks) emitBlock("main", b, ts, detail);
       // The response's tokens, once, off the piece that finished the accounting.
       const u = usageAt.has(i) ? r.message?.usage : undefined;
       if (u)

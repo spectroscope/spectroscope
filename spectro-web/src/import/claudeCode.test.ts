@@ -14,6 +14,8 @@ import ccUserBlocks from "./fixtures/cc-user-blocks.jsonl?raw";
 import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
 import ccBlankCards from "./fixtures/cc-blank-cards.jsonl?raw";
 import ccToolResult from "./fixtures/cc-tool-result.jsonl?raw";
+import ccCompaction from "./fixtures/cc-compaction.jsonl?raw";
+import ccApiError from "./fixtures/cc-api-error.jsonl?raw";
 import {
   claudeCodeToRunEvents,
   claudeCodeWithOrigin,
@@ -1444,5 +1446,175 @@ describe("claudeCode adapter (what the tool actually returned)", () => {
     const detail = events.find((e) => (e as unknown as { type: string }).type === "tool_result_detail");
     expect(detail).toBeTruthy();
     expect(isWireEvent(detail as unknown as { type: string })).toBe(false);
+  });
+});
+
+// COMPACTION, WHICH THE IMPORTER USED TO PASS OVER IN SILENCE (card 167,
+// finding 2). events.ts has carried `compaction` all along and five consumers
+// render it — the reducer's warn line, the text feed's "[compaction −N turns]",
+// the graph's compact node, LabTrace and TraceView — and the importer emitted
+// none: measured over the 5,120 transcripts in ~/.claude/projects, 21 boundaries
+// in 17 files produced 0 frames. Worse, each boundary is followed one line later
+// by the machine's own summary, and all 21 imported as a plain user_message:
+// 391,308 characters of the model's prose rendered as the person's words.
+describe("claudeCode adapter (compaction)", () => {
+  const imported = claudeCodeWithOrigin(
+    ccCompaction
+      .split(/\r?\n/)
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l)),
+  );
+  const events = imported.events;
+  const compactions = events.filter((e) => e.type === "compaction");
+  const summaries = ccCompaction
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as { isCompactSummary?: boolean; message?: { content?: string } })
+    .filter((r) => r.isCompactSummary === true)
+    .map((r) => r.message?.content ?? "");
+
+  it("marks every boundary whose record names the messages that survived", () => {
+    // Three boundaries in the fixture; the third names no survivors, so there
+    // is nothing to count and nothing is claimed.
+    expect(compactions).toHaveLength(2);
+    expect(compactions.every((e) => e.type === "compaction" && e.agentId === "main")).toBe(true);
+  });
+
+  it("counts only the turns THIS boundary dropped", () => {
+    // Three turns before the first boundary, one preserved: two went. The
+    // second boundary preserves the turn after the summary, so the one turn
+    // that survived the first boundary is the only one it drops — a count that
+    // kept the whole history would say three.
+    expect((compactions[0] as { removedTurns: number }).removedTurns).toBe(2);
+    expect((compactions[1] as { removedTurns: number }).removedTurns).toBe(1);
+  });
+
+  it("states the size of the summary the boundary was followed by", () => {
+    expect((compactions[0] as { summaryChars: number }).summaryChars).toBe(summaries[0].length);
+    expect((compactions[1] as { summaryChars: number }).summaryChars).toBe(summaries[1].length);
+  });
+
+  it("never puts the machine's summary in the person's mouth", () => {
+    const said = events.filter((e) => (e as unknown as { type: string }).type === "user_message");
+    for (const summary of summaries)
+      expect(said.some((e) => (e as unknown as { text: string }).text === summary)).toBe(false);
+    // and the boundary that named no survivors does not restore the bubble
+    expect(said).toHaveLength(0);
+  });
+
+  it("charges the frame to the boundary's own line, where the numbers are", () => {
+    const at = imported.origin[events.indexOf(compactions[0])];
+    const line = JSON.parse(ccCompaction.split(/\r?\n/).filter((l) => l.trim())[at]);
+    expect(line).toMatchObject({ subtype: "compact_boundary", uuid: "s1" });
+  });
+
+  it("reaches the reader through the consumers that were already there", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.turns.some((t) => t.kind === "info" && t.infoKey === "info.compacted")).toBe(true);
+    expect(buildTextFeed(events).some((l) => l.text === "[compaction −2 turns]")).toBe(true);
+  });
+
+  it("stays out of every file this app writes", () => {
+    // `compaction` IS on the wire, so this one travels — the point of using it.
+    expect(isWireEvent(compactions[0] as unknown as { type: string })).toBe(true);
+  });
+});
+
+// AN OUTAGE READ AS AN ANSWER (card 167, finding 3). Measured over the same
+// 5,120 transcripts: 67 `system[subtype=api_error]` records produced no frame at
+// all, so a retry ladder was a silent gap in the clock, and 350
+// `isApiErrorMessage` records imported their outage text as a `text_delta` — 83
+// of them reachable in a session import, each costing a turn and each announcing
+// a switch to a model called "<synthetic>". Both are the `error` event that
+// events.ts has carried since the beginning.
+describe("claudeCode adapter (API failures)", () => {
+  const events = parseTranscript(ccApiError);
+  const errors = events.filter((e) => e.type === "error");
+
+  it("frames the failure the client recorded, in the file's own words", () => {
+    expect(errors).toHaveLength(4);
+    expect(errors[0]).toMatchObject({ type: "error", agentId: "main" });
+    // formatted first, verbatim; the retry the client then made rides in the
+    // same sentence, because `error` has no field for it and inventing one
+    // would put a reading of somebody else's file on our wire.
+    expect((errors[0] as { message: string }).message).toBe("429 Rate limited · retry 1/10");
+  });
+
+  it("says nothing about a retry the record did not record", () => {
+    // No `formatted`, no retryAttempt: the message is the one string there is.
+    expect((errors[1] as { message: string }).message).toBe("Connection error.");
+  });
+
+  it("reads the outage as an error and not as the assistant answering", () => {
+    expect((errors[2] as { message: string }).message).toBe("API Error: Overloaded");
+    expect(events.some((e) => e.type === "text_delta" && e.text === "API Error: Overloaded")).toBe(false);
+  });
+
+  it("keeps the turn the run attempted", () => {
+    // The request was made and it failed; the clock and the turn count say so.
+    const turns = events.filter((e) => e.type === "turn_start" && e.agentId === "main");
+    expect(turns.map((e) => (e as { turn: number }).turn)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("does not announce a switch to a model called <synthetic>", () => {
+    const synthetic = events.filter((e) => {
+      const frame = e as unknown as { type: string; model?: string };
+      return frame.type === "provider_info" && frame.model === "<synthetic>";
+    });
+    // Exactly one, and it is the record that is NOT an error: the flag says
+    // "this synthetic message is an error", and only the true case is read.
+    expect(synthetic).toHaveLength(1);
+    expect(events.some((e) => e.type === "text_delta" && e.text === "No response requested.")).toBe(true);
+  });
+
+  it("does not open the file on <synthetic> either", () => {
+    // The up-front announcement takes the file's FIRST model, and 121 of the
+    // corpus's transcripts open on an outage record — so the run announced a
+    // model called "<synthetic>" before a word was said, and run_start.model
+    // carried it too.
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      {
+        type: "assistant",
+        isApiErrorMessage: true,
+        message: {
+          role: "assistant",
+          id: "e0",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "API Error: Overloaded" }],
+        },
+        uuid: "a0",
+        parentUuid: "u1",
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          id: "m0",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "back" }],
+        },
+        uuid: "a1",
+        parentUuid: "a0",
+      },
+    ]);
+    expect(events.some((e) => (e as unknown as { model?: string }).model === "<synthetic>")).toBe(false);
+    expect(events[0]).toMatchObject({ type: "provider_info", model: "claude-opus-5" });
+  });
+
+  it("leaves a subagent's outage under the subagent", () => {
+    expect(errors[3]).toMatchObject({
+      type: "error",
+      agentId: "t1",
+      message: "You've hit your session limit - resets 3:20pm (Europe/Berlin)",
+    });
+  });
+
+  it("reaches the reader through the consumers that were already there", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.turns.filter((t) => t.kind === "error").map((t) => t.text)).toContain(
+      "429 Rate limited · retry 1/10",
+    );
+    expect(buildTextFeed(events).some((l) => l.text === "[error] API Error: Overloaded")).toBe(true);
   });
 });

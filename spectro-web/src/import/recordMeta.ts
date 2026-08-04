@@ -40,9 +40,10 @@ export interface MetaRow {
 
 /** The fields under one path of the record. */
 export interface MetaGroup {
-  /** Where these fields sit, dotted: "" for the record itself, then "message"
-   *  and "message.usage". A wire path is its own label — it needs no
-   *  translation and it cannot drift from the file. */
+  /** Where these fields sit, dotted: "" for the record itself, then "message",
+   *  "message.usage" and, on a compaction boundary, "compactMetadata". A wire
+   *  path is its own label — it needs no translation and it cannot drift from
+   *  the file. */
   path: string;
   rows: MetaRow[];
 }
@@ -57,9 +58,16 @@ export interface MetaGroup {
  * queued_command), and `toolUseResult` is held back for a different reason: it
  * is a tool's whole output, up to megabytes of it, and it belongs in the tool
  * card rather than in a metadata list.
+ *
+ * `compactMetadata` is held back for the reason `message` is: it gets a group
+ * of its own below. Left to the fall-through it would print as a single
+ * `{trigger, preTokens, …}` shape, because the block runs well past
+ * {@link INLINE_CHARS}, and the four numbers a reader came for would be a
+ * summary of their own names.
  */
 const ALREADY_SHOWN = new Set([
   "message",
+  "compactMetadata",
   "content",
   "attachment",
   "toolUseResult",
@@ -98,6 +106,21 @@ const RECORD_FIELDS = [
 ] as const;
 
 const MESSAGE_FIELDS = ["id", "model", "stop_reason", "stop_sequence", "stop_details"] as const;
+
+/** What `system[subtype=compact_boundary]` says about the compaction, in
+ *  reading order: why it fired, how big the context was on each side, how long
+ *  it took, and how much has gone since the session began. The frame beside
+ *  this list carries the count of turns removed and the size of the summary;
+ *  these five are the file's own numbers and are read nowhere else.
+ *  cumulativeDroppedTokens is on 19 of the corpus's 21 boundaries, which is
+ *  exactly why nothing here is defaulted. */
+const COMPACT_FIELDS = [
+  "trigger",
+  "preTokens",
+  "postTokens",
+  "durationMs",
+  "cumulativeDroppedTokens",
+] as const;
 
 const USAGE_FIELDS = [
   "service_tier",
@@ -197,6 +220,13 @@ export function readRecordMeta(line: string): MetaGroup[] {
   const takenRecord = new Set<string>();
   const recordRows = named(record, RECORD_FIELDS, takenRecord);
   push("", [...recordRows, ...rest(record, takenRecord)]);
+
+  const compact = asRecord(record["compactMetadata"]);
+  if (compact !== null) {
+    const takenCompact = new Set<string>();
+    const compactRows = named(compact, COMPACT_FIELDS, takenCompact);
+    push("compactMetadata", [...compactRows, ...rest(compact, takenCompact)]);
+  }
 
   const message = asRecord(record["message"]);
   if (message !== null) {
