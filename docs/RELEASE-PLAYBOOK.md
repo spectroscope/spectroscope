@@ -13,13 +13,13 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 > (0.1.0 → 0.1.1 → …), never a re-publish of an existing version.
 >
 > **Version counter — bump this line with every cut.** Published so far:
-> **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27), **0.5.0** (2026-07-31).
-> Those numbers are burned forever; the next release MUST be **0.5.1 or
-> higher**. Pick the number by what is in the cut, not by habit: 0.5.0 carries
-> features (node triggers, the PTY shell, reasoning capabilities), so a patch
-> number would have undersold it and readers skip patches. This applies to every
-> artifact in the table below, not just the Maven libs: apps and the desktop
-> kit move to the same number in step 2.
+> **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27), **0.5.0** (2026-07-31),
+> **0.6.0** (2026-08-04). Those numbers are burned forever; the next release
+> MUST be **0.6.1 or higher**. Pick the number by what is in the cut, not by
+> habit: 0.5.0 carries features (node triggers, the PTY shell, reasoning
+> capabilities), so a patch number would have undersold it and readers skip
+> patches. This applies to every artifact in the table below, not just the
+> Maven libs: apps and the desktop kit move to the same number in step 2.
 
 ---
 
@@ -102,8 +102,9 @@ single test (UP-TO-DATE — and even `cleanTest test` comes back FROM-CACHE). A
 release check that trusts that green has checked nothing; count the tests in
 the output.
 
-Baseline at v0.4.1: **JUnit 959**, **vitest 1003** (the live-Opus contract check
-self-skips without a key). A new release should never gate below the last one.
+Baseline at v0.6.0: **JUnit 1275**, **vitest 2387** across 161 files (the
+live-Opus contract check self-skips without a key). A new release should never
+gate below the last one.
 The javadoc leg is not decoration: at the 0.4.0 cut it caught three doc
 comments orphaned from their methods by a mid-wave insertion — the only gate
 that runs javadoc is this one.
