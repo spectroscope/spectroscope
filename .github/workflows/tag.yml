@@ -150,8 +150,17 @@ jobs:
       - name: Fail on stray old-version literals
         run: |
           old_re="${OLD_VERSION//./\\.}"
-          if hits="$(git grep -n "${old_re}" -- '*.ts' '*.kts' '*.json' \
-              ':(exclude)*package-lock.json' ':(exclude)*.test.ts')"; then
+          # A comment line is prose, not a version reference. The .java leg
+          # below already draws that line (javadoc records which version a
+          # measurement ran against); this leg did not, and the first build
+          # file to explain its own history failed the 0.6.0 cut on the
+          # sentence "carried 0.4.1 straight through the 0.5.0 cut". Only
+          # lines that OPEN with a comment marker are dropped, so
+          # `val v = "0.5.0" // the version` is still code and still caught.
+          hits="$(git grep -n "${old_re}" -- '*.ts' '*.kts' '*.json' \
+              ':(exclude)*package-lock.json' ':(exclude)*.test.ts' \
+            | grep -vE '^[^:]+:[0-9]+:[[:space:]]*(//|\*)' || true)"
+          if [ -n "$hits" ]; then
             echo "$hits"
             echo "::error::${OLD_VERSION} is still referenced outside build files, lockfiles and test fixtures — fix the stragglers before cutting"
             exit 1
