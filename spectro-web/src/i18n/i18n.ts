@@ -279,6 +279,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "bus.composerPending": { de: "Bus-Nachrichten kommen mit dem 0.7-Wire-Verb — der Hub spricht heute stop und gate", en: "bus messaging lands with the 0.7 wire verb — the hub speaks stop and gate today" },
   "bus.empty": { de: "Noch keine Knoten am Bus.", en: "No nodes on the bus yet." },
   "bus.spawnNode": { de: "+ Node andocken", en: "+ dock a node" },
+  "bus.tabrowAria": { de: "Agenten der Flotte", en: "Fleet agents" },
+  "bus.feedEmpty": { de: "Noch keine Aktivität von diesem Agenten.", en: "No activity from this agent yet." },
 
   // permission dialog
   "perm.wants": { de: "möchte ausführen", en: "wants to execute" },

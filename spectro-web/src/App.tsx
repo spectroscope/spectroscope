@@ -90,6 +90,8 @@ import { LabView } from "./lab/LabView";
 import { FleetLab } from "./lab/FleetLab";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetBus } from "./spectrum/FleetBus";
+import { FleetAgentTabs } from "./spectrum/FleetAgentTabs";
+import { AgentFeed } from "./spectrum/AgentFeed";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
@@ -168,6 +170,12 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
   const [tab, setTab] = useState<ViewTab>("chat"); // chat | spectrum | graph | trace | text | lab
+  /* Variant A (0.7 A/B): the agent tab row's focus — WHO the app tabs read.
+     null = "bus", the whole fleet. Reset on every fleet change. */
+  const [fleetFocusAgent, setFleetFocusAgent] = useState<string | null>(null);
+  useEffect(() => {
+    setFleetFocusAgent(null);
+  }, [enteredFleet]);
   // The ladder (card 80). Server state only: every lock is derived from the
   // snapshot on render, never cached, so a mode flipped elsewhere cannot leave
   // a stale lock behind.
@@ -1511,6 +1519,20 @@ export function App() {
           )}
         </nav>
 
+        {/* Variant A (0.7 A/B): the second row. The agent tab picks WHO, the
+            app tabs above keep picking WHAT; "bus" is the whole fleet. */}
+        {enteredFleet !== null && (
+          <FleetAgentTabs
+            model={enteredFleetModel}
+            focused={fleetFocusAgent}
+            onFocus={(id) => {
+              setFleetFocusAgent(id);
+              if (id !== null) setTraceAgent(id);
+            }}
+            onSpawn={enteredFleet.startsWith("scenario:") ? undefined : () => setSpawnDialogOpen(true)}
+          />
+        )}
+
         {/* Find-in-view. One mount for every tab: the box positions itself
             against this wrapper, and each view reports its own hits. */}
         <SearchBox />
@@ -1527,14 +1549,19 @@ export function App() {
           />
         ) : tab === "chat" ? (
           enteredFleet !== null ? (
-            /* A fleet has no chat — show its home (getting-started + spawn), not
-               the stale session chat, so entering a fleet switches the pane. */
-            <FleetHome
-              contextId={enteredFleet}
-              nodeCount={enteredFleetModel.roster.length}
-              hubPort={fleetHubPort}
-              onSpawn={() => setSpawnDialogOpen(true)}
-            />
+            fleetFocusAgent !== null ? (
+              /* Variant A: a focused agent's chat face is its activity feed. */
+              <AgentFeed agentId={fleetFocusAgent} events={shownEvents} />
+            ) : (
+              /* A fleet has no chat — show its home (getting-started + spawn), not
+                 the stale session chat, so entering a fleet switches the pane. */
+              <FleetHome
+                contextId={enteredFleet}
+                nodeCount={enteredFleetModel.roster.length}
+                hubPort={fleetHubPort}
+                onSpawn={() => setSpawnDialogOpen(true)}
+              />
+            )
           ) : (
             /* Chat + gallery share the tab area; the graph tab is untouched.
              The right panel (agents + system context) docks on the far right. */
@@ -1668,6 +1695,11 @@ export function App() {
               onOpenTrace={(agentId) => {
                 setTraceAgent(agentId);
                 changeTab("trace");
+              }}
+              onFocusAgent={(agentId) => {
+                setFleetFocusAgent(agentId);
+                setTraceAgent(agentId);
+                changeTab("chat");
               }}
             />
           ) : (
