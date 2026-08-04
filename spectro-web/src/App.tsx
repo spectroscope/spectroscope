@@ -90,6 +90,8 @@ import { LabView } from "./lab/LabView";
 import { FleetLab } from "./lab/FleetLab";
 import { SpectrumView } from "./spectrum/SpectrumView";
 import { FleetBus } from "./spectrum/FleetBus";
+import { FleetBar } from "./spectrum/FleetBar";
+import { AgentFeed } from "./spectrum/AgentFeed";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
@@ -168,6 +170,12 @@ export function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
   const [tab, setTab] = useState<ViewTab>("chat"); // chat | spectrum | graph | trace | text | lab
+  /* Variant B (0.7 A/B): while a fleet is entered, its OWN bar replaces the
+     app tabs — "bus" or one agent id. Reset on every fleet change. */
+  const [fleetTab, setFleetTab] = useState<string>("bus");
+  useEffect(() => {
+    setFleetTab("bus");
+  }, [enteredFleet]);
   // The ladder (card 80). Server state only: every lock is derived from the
   // snapshot on render, never cached, so a mode flipped elsewhere cannot leave
   // a stale lock behind.
@@ -1426,67 +1434,77 @@ export function App() {
         {/* Graph and trace are sibling renderers of the chat — the
             same event stream, three different lenses. */}
         {/* Brand voice: tab labels are lowercase wire vocabulary. */}
-        <nav className="tab-nav" role="tablist" aria-label="View">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "chat"}
-            className={tab === "chat" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("chat")}
-          >
-            chat
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "spectrum"}
-            className={tab === "spectrum" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("spectrum")}
-          >
-            spectrum
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "trace"}
-            className={tab === "trace" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("trace")}
-          >
-            trace
-            {view.trace.length > 0 && (
-              <span className="tab-count tabular" aria-label={`${view.trace.length} frames`}>
-                {view.trace.length}
-              </span>
-            )}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "graph"}
-            className={tab === "graph" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("graph")}
-          >
-            graph
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "text"}
-            className={tab === "text" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("text")}
-          >
-            text
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "lab"}
-            className={tab === "lab" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("lab")}
-          >
-            lab
-          </button>
-          {/* The way back to the record, on EVERY lens, and the only always
+        {/* Variant B (0.7 A/B): an entered fleet swaps the whole nav for its
+            own bar — [bus] [one tab per agent] [+]. */}
+        {enteredFleet !== null ? (
+          <FleetBar
+            model={enteredFleetModel}
+            active={fleetTab}
+            onPick={setFleetTab}
+            onSpawn={enteredFleet.startsWith("scenario:") ? undefined : () => setSpawnDialogOpen(true)}
+          />
+        ) : (
+          <nav className="tab-nav" role="tablist" aria-label="View">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "chat"}
+              className={tab === "chat" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("chat")}
+            >
+              chat
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "spectrum"}
+              className={tab === "spectrum" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("spectrum")}
+            >
+              spectrum
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "trace"}
+              className={tab === "trace" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("trace")}
+            >
+              trace
+              {view.trace.length > 0 && (
+                <span className="tab-count tabular" aria-label={`${view.trace.length} frames`}>
+                  {view.trace.length}
+                </span>
+              )}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "graph"}
+              className={tab === "graph" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("graph")}
+            >
+              graph
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "text"}
+              className={tab === "text" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("text")}
+            >
+              text
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "lab"}
+              className={tab === "lab" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("lab")}
+            >
+              lab
+            </button>
+            {/* The way back to the record, on EVERY lens, and the only always
               visible one: the copy that sat next to the translate trigger is
               gone (2026-08-03), the sheet's own copy needs the sheet open. A
               reader on the trace or the text feed must not have to leave the
@@ -1495,26 +1513,43 @@ export function App() {
               eat the auto margin the level pill sits on. Deleting this one
               leaves no toggle on screen, which is why the drift test counts
               it. */}
-          {translation.byId.size > 0 && (
-            <span className="tab-nav__translate">
-              <TranslateToggle viewKey={viewKey} />
-            </span>
-          )}
-          {leveling.snapshot && leveling.snapshot.mode !== "off" && (
-            <span className="tab-nav__level">
-              <LevelPill
-                snapshot={leveling.snapshot}
-                flareSlot={levelUp ? levelUp.level - 1 : -1}
-                onOpen={() => setLevelPanelOpen(true)}
-              />
-            </span>
-          )}
-        </nav>
+            {translation.byId.size > 0 && (
+              <span className="tab-nav__translate">
+                <TranslateToggle viewKey={viewKey} />
+              </span>
+            )}
+            {leveling.snapshot && leveling.snapshot.mode !== "off" && (
+              <span className="tab-nav__level">
+                <LevelPill
+                  snapshot={leveling.snapshot}
+                  flareSlot={levelUp ? levelUp.level - 1 : -1}
+                  onOpen={() => setLevelPanelOpen(true)}
+                />
+              </span>
+            )}
+          </nav>
+        )}
 
         {/* Find-in-view. One mount for every tab: the box positions itself
             against this wrapper, and each view reports its own hits. */}
         <SearchBox />
-        {tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
+        {/* Variant B: the entered fleet's surface answers to ITS bar, not to
+            the app tabs — bus = the ESB reading, anything else = that agent's
+            feed. The tab ternaries below never see an entered fleet. */}
+        {enteredFleet !== null ? (
+          fleetTab === "bus" ? (
+            <FleetBus
+              model={enteredFleetModel}
+              events={shownEvents}
+              contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
+              hubPort={fleetHubPort}
+              onStop={stopFleetNode}
+              onFocusAgent={(agentId) => setFleetTab(agentId)}
+            />
+          ) : (
+            <AgentFeed agentId={fleetTab} events={shownEvents} />
+          )
+        ) : tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
           /* A locked surface shows a teaser, never its content. The tab itself
              stays visible and clickable: a feature nobody can see is a feature
              nobody adopts. Chat is excluded by name because it opens at level 0,
@@ -1654,25 +1689,9 @@ export function App() {
             fleet={enteredFleet !== null ? enteredFleetModel : undefined}
           />
         ) : tab === "graph" ? (
-          enteredFleet !== null ? (
-            /* 0.7 prototype: the ESB view replaces the DAG — one rail, full
-               agent cards docked on it (owner call, fleet-esb-base). */
-            <FleetBus
-              model={enteredFleetModel}
-              events={shownEvents}
-              /* A scripted fleet scenario has no live hub — hide the spawn panel
-                 (its node command would connect to nothing). */
-              contextId={enteredFleet.startsWith("scenario:") ? undefined : enteredFleet}
-              hubPort={fleetHubPort}
-              onStop={stopFleetNode}
-              onOpenTrace={(agentId) => {
-                setTraceAgent(agentId);
-                changeTab("trace");
-              }}
-            />
-          ) : (
-            <GraphView events={shownEvents} isReplay={!viewingLive} />
-          )
+          /* Variant B: an entered fleet never reaches this chain — the ESB
+             reading lives on the fleet bar's own "bus" tab above. */
+          <GraphView events={shownEvents} isReplay={!viewingLive} />
         ) : tab === "text" ? (
           <TextView
             events={shownEvents}
