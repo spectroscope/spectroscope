@@ -184,6 +184,14 @@ export function App() {
     setBeaconSink((surface, sessionId) => beaconRef.current(surface, sessionId ?? null));
     return () => setBeaconSink(null);
   }, []);
+  // A fleet's nav is reduced to fleet / spectrum / trace, so a reader standing
+  // on graph, text or lab when a fleet opens would be on a surface with no tab
+  // to leave it by. Land them in the room instead. The route restores tabs on
+  // its own, which is why this guards the state rather than the address.
+  useEffect(() => {
+    if (enteredFleet === null) return;
+    if (tab === "graph" || tab === "text" || tab === "lab") setTab("chat");
+  }, [enteredFleet, tab]);
   const [levelPanelOpen, setLevelPanelOpen] = useState(false);
   const [levelUp, setLevelUp] = useState<{ level: number; opened: string[] } | null>(null);
   const lastLevel = useRef<number | null>(null);
@@ -757,7 +765,9 @@ export function App() {
     setReplay(null);
     setEnteredFleet(contextId);
     setTraceAgent(null);
-    setTab("spectrum");
+    // The room IS the fleet's landing surface — the ledger, the tree and the bus
+    // in one frame. Spectrum was the landing before the room existed.
+    setTab("chat");
   };
 
   // Enter a fleet like a session (the gesture): its events feed the tabs; land
@@ -1467,33 +1477,43 @@ export function App() {
               </span>
             )}
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "graph"}
-            className={tab === "graph" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("graph")}
-          >
-            graph
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "text"}
-            className={tab === "text" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("text")}
-          >
-            text
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={tab === "lab"}
-            className={tab === "lab" ? "tab tab--active" : "tab"}
-            onClick={() => changeTab("lab")}
-          >
-            lab
-          </button>
+          {/* A fleet's navigation is REDUCED, and deliberately: fleet, spectrum,
+              trace and nothing else. The graph reading lives inside the room's
+              centre picker next to the bus, so a second graph tab would be the
+              same drawing twice; text and lab are single-run lenses that the
+              room's own columns already answer for a fleet. This is the owner's
+              variant-B decision surviving the move into the control room. */}
+          {enteredFleet === null && (
+            <>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "graph"}
+                className={tab === "graph" ? "tab tab--active" : "tab"}
+                onClick={() => changeTab("graph")}
+              >
+                graph
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "text"}
+                className={tab === "text" ? "tab tab--active" : "tab"}
+                onClick={() => changeTab("text")}
+              >
+                text
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === "lab"}
+                className={tab === "lab" ? "tab tab--active" : "tab"}
+                onClick={() => changeTab("lab")}
+              >
+                lab
+              </button>
+            </>
+          )}
           {/* The way back to the record, on EVERY lens, and the only always
               visible one: the copy that sat next to the translate trigger is
               gone (2026-08-03), the sheet's own copy needs the sheet open. A
