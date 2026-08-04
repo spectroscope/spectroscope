@@ -176,13 +176,34 @@ The cask at github.com/spectroscope/homebrew-tap serves
 release is up, in the tap repo:
 
 ```bash
-scripts/bump-cask.sh <v>     # reads the DMG's sha256 from the release asset digest
-brew audit --cask spectroscope/tap/spectroscope
+scripts/bump-cask.sh <v>          # reads the DMG's sha256 from the release asset digest
+brew style Casks/spectroscope.rb  # takes a path: this checks the file you just edited
 git commit -am "bump to <v>" && git push
+brew update                       # Homebrew's own clone of the tap is now behind
+brew audit --cask spectroscope/tap/spectroscope
 ```
 
 The script refuses when the release carries no dmg asset, so step 7's
 desktop build is a prerequisite, not a suggestion.
+
+**The order above is not a preference, and neither is the `brew update`.**
+`brew audit` takes a NAME, not a path (passing a path is disabled outright), and
+Homebrew answers that name from its own clone under
+`/opt/homebrew/Library/Taps/spectroscope/homebrew-tap`. That clone only moves on
+`brew update`. Run the audit before pushing and it reads the PREVIOUS release's
+cask and reports success: measured on 2026-08-04, hours after the 0.6.0 release,
+the clone still said `version "0.5.0"` with the 0.5.0 sha256 while the audit was
+being quoted as proof that 0.6.0 was sound. An audit that cannot see the file
+being shipped is worse than no audit, because it is reported as one.
+
+`brew style` is the half that CAN read a path, which is why it comes first and
+why it is in this list at all: it caught a real offence on a cask that had been
+published four times (the missing `depends_on macos:`, whose autocorrection had
+been sitting uncommitted in Homebrew's clone since 2026-07-31, because somebody
+ran `brew style --fix` in `/opt/homebrew` instead of in the tap repo).
+
+Never edit the tapped clone. It is Homebrew's working copy, `brew update` will
+collide with anything left there, and a fix made in it reaches no user.
 
 ### 8c. Build and attach the Linux kit
 
