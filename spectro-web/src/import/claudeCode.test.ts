@@ -217,23 +217,39 @@ describe("claudeCode adapter (one response, several records)", () => {
   const usages = events.filter((e) => e.type === "usage");
 
   it("opens ONE turn for the three records of one response", () => {
-    // thinking / text / tool_use share msg_1; then msg_2; then the replayed
-    // msg_1 at the end, which is its own turn because it does not adjoin.
-    expect(mainTurns.map((e) => (e as { turn: number }).turn)).toEqual([1, 2, 3]);
+    // msg_1 as thinking / text / tool_use; then msg_2; then the replayed msg_1;
+    // then msg_3, whose pieces straddle a tool_result.
+    expect(mainTurns.map((e) => (e as { turn: number }).turn)).toEqual([1, 2, 3, 4]);
   });
 
   it("still emits every block of every piece", () => {
-    expect(events.filter((e) => e.type === "thinking_delta")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "thinking_delta")).toHaveLength(2);
     expect(events.some((e) => e.type === "tool_call" && e.name === "Bash")).toBe(true);
     expect(events.filter((e) => e.type === "text_delta")).toHaveLength(3);
+    expect(events.filter((e) => e.type === "tool_call")).toHaveLength(3);
+  });
+
+  it("holds the response open across the tool results coming back", () => {
+    // msg_3 asks for one file, the result lands, and its SECOND tool_use is
+    // still the same response. Measured: 18,892 of the 19,298 messages whose
+    // pieces are separated by anything are separated by nothing but
+    // tool_results, so a rule that broke on them would leave most of the
+    // over-counting in place.
+    const reads = events.filter((e) => e.type === "tool_call" && e.name === "Read");
+    expect(reads).toHaveLength(2);
+    // ...and both sit inside turn 4, with no turn opening between them.
+    const at = (p: (e: RunEvent) => boolean): number => events.findIndex(p);
+    const first = at((e) => e.type === "tool_call" && (e as { callId: string }).callId === "t2");
+    const second = at((e) => e.type === "tool_call" && (e as { callId: string }).callId === "t3");
+    expect(events.slice(first, second).some((e) => e.type === "turn_start")).toBe(false);
   });
 
   it("counts the response's tokens once, from the piece that finished the accounting", () => {
     // The three pieces of msg_1 report 1, 1 and 140 output tokens; the last is
-    // the complete accounting, and it is the only one that carries the cache
-    // fields. Measured: the last piece holds the maximum on all 82,927
-    // multi-piece runs, with no exception.
-    expect(usages).toHaveLength(3);
+    // the complete accounting, and the only one carrying the cache fields.
+    // Measured: the last piece holds the maximum on all 85,369 multi-piece
+    // runs, with no exception.
+    expect(usages).toHaveLength(4);
     expect(usages[0]).toMatchObject({
       inputTokens: 9,
       outputTokens: 140,
@@ -241,12 +257,15 @@ describe("claudeCode adapter (one response, several records)", () => {
       cacheCreationTokens: 300,
     });
     expect(usages[1]).toMatchObject({ outputTokens: 25 });
+    // The interleaved response reports once too, off its last piece.
+    expect(usages[3]).toMatchObject({ inputTokens: 40, outputTokens: 310, cacheReadTokens: 900 });
   });
 
   it("does not fuse a record that a compaction replayed later", () => {
-    // msg_1 comes back as the last record, with msg_2 in between. Adjacency is
-    // what refuses it: a run ends at anything that is not its own next piece.
-    expect(mainTurns).toHaveLength(3);
+    // msg_1 comes back after msg_2 has spoken. ANOTHER assistant message is
+    // exactly what ends a run, so the copy is its own turn rather than being
+    // welded onto a response that finished four records earlier.
+    expect(mainTurns).toHaveLength(4);
   });
 
   it("charges the turn to the line the response STARTED on", () => {
