@@ -767,6 +767,66 @@ public record SpectroConfig(
         return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
     }
 
+    /** {@link #onboardingStatus} for a provider talking to a CONCRETE endpoint —
+     *  the same three words, one fact richer. A key variable says a provider CAN
+     *  need a key, not that this endpoint does: {@code openai} is the generic
+     *  OpenAI-compatible escape hatch and is routinely pointed at a keyless
+     *  server on the operator's own machine (see {@link #switchRequiresKey}).
+     *  Against such an endpoint the answer is {@code "local"}, exactly as for a
+     *  provider that has no key variable at all; against a public service a
+     *  missing key is {@code "needs-key"} and nothing about it is healthy.
+     *  @param provider   the provider name
+     *  @param endpoint   the effective base url it will dial
+     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank
+     *  @return "ready" | "needs-key" | "local" */
+    public static String onboardingStatusAt(String provider, String endpoint, boolean keyPresent) {
+        if (isLocalEndpoint(endpoint)) {
+            return "local";
+        }
+        return onboardingStatus(provider, keyPresent);
+    }
+
+    /** Whether a base url names a server on the operator's own machine or private
+     *  network rather than a public service — loopback, a private IPv4 range, or
+     *  a {@code localhost}/{@code .local} name. Deliberately narrow: everything
+     *  it does not recognise counts as public, so an unknown host errs towards
+     *  asking for the key rather than towards a green light.
+     *  @param url the base url, may be null or unparsable
+     *  @return true when the host is loopback, private, or a local name */
+    static boolean isLocalEndpoint(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        String host;
+        try {
+            host = java.net.URI.create(url.trim()).getHost();
+        } catch (IllegalArgumentException notAUrl) {
+            return false;
+        }
+        if (host == null) {
+            return false;
+        }
+        host = host.toLowerCase(java.util.Locale.ROOT).replace("[", "").replace("]", "");
+        if (host.equals("localhost") || host.endsWith(".localhost") || host.endsWith(".local")
+                || host.equals("::1") || host.equals("0.0.0.0")) {
+            return true;
+        }
+        if (host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.")) {
+            return true;
+        }
+        // 172.16.0.0/12 — the one private range whose second octet is a span.
+        if (host.startsWith("172.")) {
+            String[] octets = host.split("\\.");
+            try {
+                int second = Integer.parseInt(octets[1]);
+                return second >= 16 && second <= 31;
+            } catch (RuntimeException notNumeric) {
+                return false;
+            }
+        }
+        return false;
+    }
+
     /** The built-in local provider's picker status: {@code "ready"} once the
      *  model file is present, else {@code "needs-download"} — the lean DMG's
      *  first-run modal fills it. Unlike {@link #onboardingStatus}'s {@code

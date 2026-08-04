@@ -210,10 +210,12 @@ public final class DoctorCommand implements Callable<Integer> {
                     // wrong port and print it as if it were the openai server.
                     String endpoint = SpectroConfig.effectiveOpenAiBaseUrl(
                             config.provider(), config.baseUrl());
-                    report(probe(endpoint + "/v1/models"),
-                            "openai-compatible server at " + endpoint);
+                    emit(openAiCompatLines(config.provider(), endpoint,
+                            probe(endpoint + "/v1/models"),
+                            SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(config.provider()))));
                 }
                 case BUILT_IN -> emit(builtInProviderLines(LlamaServerBinary.find(),
+                        config.model(),
                         LocalCatalog.bundled().resolve(config.model()),
                         localModelFile(config.model())));
             }
@@ -296,15 +298,8 @@ public final class DoctorCommand implements Callable<Integer> {
             }
         }
 
-        // Vision — a hint, never unhealthy. Only the local (ollama) path
-        // needs a vision-capable model; the cloud model (claude) always sees.
-        if ("ollama".equals(config.provider())) {
-            info("vision: local provider — attach images only with a vision model"
-                    + " (e.g. ollama pull qwen3-vl); a text-only model fails fast");
-        } else {
-            info("vision: " + config.provider() + " model handles images natively"
-                    + " — attach with --image (headless) or the web composer");
-        }
+        // Vision — a hint, never unhealthy.
+        info(visionLine(config.provider(), config.model()));
 
         // Voice input — STT is optional infrastructure: info when absent.
         // config.sttModel() already folds the settings hierarchy AND SPECTRO_STT_MODEL;
@@ -436,21 +431,102 @@ public final class DoctorCommand implements Callable<Integer> {
     }
 
     /**
-     * The built-in provider's two questions, assembled pure: is there a
-     * {@code llama-server} to run at all, and are this model's weights on disk.
+     * The OpenAI-compatible endpoint's two questions, kept apart: is something
+     * answering there, and can we actually call it.
+     *
+     * <p>The probe alone was the whole check, and it is the weaker half —
+     * {@code api.openai.com/v1/models} answers 401 to a keyless request, which
+     * is an answer, so a home with no {@code OPENAI_API_KEY} used to collect a
+     * green tick and "Everything looks good" while every call it would ever
+     * make was going to be refused. The auth line says the second half in the
+     * vocabulary the rest of the product already uses
+     * ({@link SpectroConfig#onboardingStatusAt}): a public service without its
+     * key is {@code needs-key} and red, a server on the operator's own machine
+     * is {@code local} and needs nothing.</p>
+     *
+     * @param provider   the configured provider name
+     * @param endpoint   the effective base url (already resolved from the preset)
+     * @param reachable  whether the {@code /v1/models} probe got an answer
+     * @param keyPresent whether this provider's key variable is set somewhere
+     * @return the two lines to print, reachability first
+     */
+    static List<Line> openAiCompatLines(String provider, String endpoint,
+            boolean reachable, boolean keyPresent) {
+        List<Line> lines = new java.util.ArrayList<>();
+        lines.add(new Line(reachable ? Kind.PASS : Kind.FAIL,
+                "openai-compatible server at " + endpoint
+                        + (reachable ? " answers" : " — unreachable")));
+        String status = SpectroConfig.onboardingStatusAt(provider, endpoint, keyPresent);
+        String keyVar = SpectroConfig.keyEnvFor(provider);
+        lines.add(switch (status) {
+            case "local" -> new Line(Kind.INFO, "auth: no key needed — " + endpoint
+                    + " is a server on your own machine or network");
+            case "ready" -> new Line(Kind.PASS, "auth: " + keyVar + " is set");
+            default -> new Line(Kind.FAIL, "auth: " + keyVar + " is NOT set — " + endpoint
+                    + " answers the probe but refuses every call without a key"
+                    + " (export it, or save it in the app)");
+        });
+        return lines;
+    }
+
+    /**
+     * The vision hint for one (provider, model) pair.
+     *
+     * <p>This line used to branch on the name "ollama" and tell everyone else
+     * that their model "handles images natively" — a claim for lmstudio,
+     * openrouter, gemini and the built-in provider that nobody had measured,
+     * and that is plainly false for the last one. spectroscope carries a
+     * per-model fact for tools and for reasoning ({@code ModelProfile},
+     * {@code /api/models/capabilities}) and none at all for vision, so the
+     * providers whose answer depends on the model say that instead of
+     * guessing. The built-in provider is the one case doctor CAN answer: the
+     * runtime starts llama-server with the weights and no projector, so no
+     * catalogue entry can see an image.</p>
+     *
+     * @param provider the configured provider name
+     * @param model    the configured model, may be null
+     * @return the info line to print
+     */
+    static String visionLine(String provider, String model) {
+        String named = (model == null || model.isBlank()) ? "(no model set)" : model;
+        return switch (provider) {
+            case "ollama" -> "vision: ollama serves what you pulled — attach images only with"
+                    + " a vision model (e.g. ollama pull qwen3-vl); a text-only model fails fast";
+            case "lmstudio" -> "vision: lmstudio serves whatever model is loaded — attach images"
+                    + " only when that one is vision-capable; a text-only model fails fast";
+            // No model name here on purpose: the answer does not depend on one.
+            // Naming the CONFIGURED model would also print the wrong id whenever
+            // the catalogue swapped it out one line above.
+            case "spectro-local" -> "vision: not supported — the built-in runtime starts"
+                    + " llama-server with the weights alone (no --mmproj projector), so an"
+                    + " attached image never reaches the model, whichever catalogue entry runs";
+            default -> "vision: unknown for " + provider + " / " + named
+                    + " — no per-model vision fact is carried here (the capabilities endpoint"
+                    + " answers for reasoning only); check the model's own docs before"
+                    + " attaching an image";
+        };
+    }
+
+    /**
+     * The built-in provider's questions, assembled pure: is there a
+     * {@code llama-server} to run at all, which model will really run, and are
+     * that model's weights on disk.
      *
      * <p>Only the first is a verdict. A missing binary means the provider cannot
      * answer anything, ever, and the remedy is one brew command. Missing weights
      * are the normal state of a fresh install — the model chooser downloads them
-     * on first use — so that line informs and leaves the exit code alone.</p>
+     * on first use — so that line informs and leaves the exit code alone, and so
+     * does a configured model the catalogue does not carry: the runtime falls
+     * back to a working one, which is a note rather than a broken machine.</p>
      *
-     * @param binary the located llama-server, or empty
-     * @param model  the catalogue entry the config selected
-     * @param file   where that model's weights are (or would be downloaded to)
+     * @param binary          the located llama-server, or empty
+     * @param configuredModel the model id the config names, may be null or stale
+     * @param model           the catalogue entry that id resolved to
+     * @param file            where that model's weights are (or would be downloaded to)
      * @return the lines to print, binary first
      */
     static List<Line> builtInProviderLines(Optional<LlamaServerBinary.Found> binary,
-            LocalCatalog.Model model, ModelResolution.Resolved file) {
+            String configuredModel, LocalCatalog.Model model, ModelResolution.Resolved file) {
         List<Line> lines = new java.util.ArrayList<>();
         lines.add(binary
                 .map(found -> new Line(Kind.PASS, "built-in: llama-server "
@@ -461,6 +537,16 @@ public final class DoctorCommand implements Callable<Integer> {
                         + " — the built-in provider runs models through it."
                         + " Install llama.cpp (brew install llama.cpp), or use the"
                         + " desktop run kit, which bundles one")));
+        // The catalogue quietly falls back to its default for an id it does not
+        // carry (LocalCatalog.resolve), which is right for the runtime and was
+        // silent here: doctor printed the configured model on the config line
+        // and a different one on the next, with no word between them.
+        if (configuredModel != null && !configuredModel.isBlank()
+                && !configuredModel.equals(model.id())) {
+            lines.add(new Line(Kind.INFO, "built-in: configured model \"" + configuredModel
+                    + "\" is not in the catalogue — the built-in runtime will run "
+                    + model.id() + " instead (the model chooser lists what this build offers)"));
+        }
         if (file.source() == ModelResolution.Source.ABSENT) {
             lines.add(new Line(Kind.INFO, "built-in model " + model.id()
                     + " is not downloaded yet — the model chooser fetches "

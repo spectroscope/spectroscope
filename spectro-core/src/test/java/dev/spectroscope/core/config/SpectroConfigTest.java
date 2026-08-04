@@ -983,4 +983,40 @@ class SpectroConfigTest {
         IllegalStateException e = assertThrows(IllegalStateException.class, config::providerFromConfig);
         assertTrue(e.getMessage().contains("local runtime"), "readable pointer at the runtime layer");
     }
+
+    @Test
+    void loopbackAndPrivateHostsAreLocalEndpoints() {
+        for (String url : List.of("http://localhost:1234", "http://127.0.0.1:8000",
+                "http://[::1]:1234", "http://LM-Studio.local:1234", "http://192.168.1.5:1234",
+                "http://10.0.0.9:8000", "http://172.16.4.4:1234", "http://172.31.0.1:1234")) {
+            assertTrue(SpectroConfig.isLocalEndpoint(url), url + " is not a public service");
+        }
+    }
+
+    @Test
+    void everythingElseCountsAsPublic() {
+        // Anything unrecognised must err towards asking for the key, never
+        // towards a green light: that direction is the whole point.
+        for (String url : List.of("https://api.openai.com", "https://openrouter.ai/api",
+                "https://generativelanguage.googleapis.com/v1beta/openai",
+                "http://172.32.0.1:1234", "http://1270.0.0.1", "not a url at all", "")) {
+            assertFalse(SpectroConfig.isLocalEndpoint(url), url + " is not on this machine");
+        }
+        assertFalse(SpectroConfig.isLocalEndpoint(null));
+    }
+
+    @Test
+    void aKeylessCloudEndpointNeedsItsKeyAndALocalOneDoesNot() {
+        assertEquals("needs-key",
+                SpectroConfig.onboardingStatusAt("openai", "https://api.openai.com", false));
+        assertEquals("ready",
+                SpectroConfig.onboardingStatusAt("openai", "https://api.openai.com", true));
+        // The generic openai escape hatch pointed at a keyless local server —
+        // the case switchRequiresKey already tolerates.
+        assertEquals("local",
+                SpectroConfig.onboardingStatusAt("openai", "http://localhost:1234", false));
+        // A provider with no key variable at all stays local wherever it points.
+        assertEquals("local",
+                SpectroConfig.onboardingStatusAt("lmstudio", "https://example.com", false));
+    }
 }

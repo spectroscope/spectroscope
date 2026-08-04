@@ -64,7 +64,7 @@ class DoctorProviderCheckTest {
     void withoutALlamaServerTheBuiltInCheckFailsAndSaysHowToGetOne() {
         LocalCatalog.Model model = LocalCatalog.bundled().defaultModel();
         List<DoctorCommand.Line> lines = DoctorCommand.builtInProviderLines(
-                Optional.empty(), model, downloaded(model));
+                Optional.empty(), model.id(), model, downloaded(model));
 
         DoctorCommand.Line binary = lines.get(0);
         assertEquals(DoctorCommand.Kind.FAIL, binary.kind(),
@@ -81,7 +81,7 @@ class DoctorProviderCheckTest {
                 Optional.of(new LlamaServerBinary.Found(
                         Path.of("/Applications/spectroscope.app/bin/llama-server"),
                         LlamaServerBinary.Source.BUNDLE)),
-                model, downloaded(model));
+                model.id(), model, downloaded(model));
 
         assertEquals(DoctorCommand.Kind.PASS, lines.get(0).kind());
         assertTrue(lines.get(0).message().contains("bundled"),
@@ -94,7 +94,7 @@ class DoctorProviderCheckTest {
         List<DoctorCommand.Line> lines = DoctorCommand.builtInProviderLines(
                 Optional.of(new LlamaServerBinary.Found(
                         Path.of("/opt/homebrew/bin/llama-server"), LlamaServerBinary.Source.PATH)),
-                model, downloaded(model));
+                model.id(), model, downloaded(model));
 
         assertEquals(DoctorCommand.Kind.PASS, lines.get(0).kind());
         assertTrue(lines.get(0).message().contains("/opt/homebrew/bin/llama-server"),
@@ -107,7 +107,7 @@ class DoctorProviderCheckTest {
         List<DoctorCommand.Line> lines = DoctorCommand.builtInProviderLines(
                 Optional.of(new LlamaServerBinary.Found(
                         Path.of("/opt/homebrew/bin/llama-server"), LlamaServerBinary.Source.PATH)),
-                model, absent(model));
+                model.id(), model, absent(model));
 
         assertTrue(lines.stream().noneMatch(l -> l.kind() == DoctorCommand.Kind.FAIL),
                 "a fresh install has not downloaded a model yet — that is the normal state,"
@@ -124,7 +124,7 @@ class DoctorProviderCheckTest {
         List<DoctorCommand.Line> lines = DoctorCommand.builtInProviderLines(
                 Optional.of(new LlamaServerBinary.Found(
                         Path.of("/opt/homebrew/bin/llama-server"), LlamaServerBinary.Source.PATH)),
-                model, downloaded(model));
+                model.id(), model, downloaded(model));
 
         assertEquals(DoctorCommand.Kind.PASS, lines.get(1).kind());
         assertTrue(lines.get(1).message().contains(model.file()), lines.get(1).message());
@@ -152,7 +152,150 @@ class DoctorProviderCheckTest {
         }
     }
 
+    // ── the openai-compatible probe: reachable is not the same as usable ─────
+
+    @Test
+    void aKeylessCloudEndpointIsRedEvenThoughItAnswers() {
+        List<DoctorCommand.Line> lines = DoctorCommand.openAiCompatLines(
+                "openai", "https://api.openai.com", true, false);
+
+        assertEquals(DoctorCommand.Kind.PASS, lines.get(0).kind(),
+                "the endpoint really does answer — that half was never wrong");
+        DoctorCommand.Line auth = lines.get(1);
+        assertEquals(DoctorCommand.Kind.FAIL, auth.kind(),
+                "an endpoint that refuses every call is not a healthy provider: " + lines);
+        assertTrue(auth.message().contains("OPENAI_API_KEY"),
+                "the line must name the variable that would fix it: " + auth.message());
+    }
+
+    @Test
+    void aKeylessCloudEndpointThatIsAlsoUnreachableIsRedTwice() {
+        // A gateway the operator pointed "openai" at, and that is down: both
+        // questions have a bad answer and both are worth their own line.
+        List<DoctorCommand.Line> lines = DoctorCommand.openAiCompatLines(
+                "openai", "https://gateway.example.com", false, false);
+
+        assertEquals(DoctorCommand.Kind.FAIL, lines.get(0).kind());
+        assertTrue(lines.get(0).message().contains("unreachable"), lines.get(0).message());
+        assertEquals(DoctorCommand.Kind.FAIL, lines.get(1).kind());
+    }
+
+    @Test
+    void aCloudEndpointWithItsKeyIsGreen() {
+        List<DoctorCommand.Line> lines = DoctorCommand.openAiCompatLines(
+                "openai", "https://api.openai.com", true, true);
+
+        assertTrue(lines.stream().noneMatch(l -> l.kind() == DoctorCommand.Kind.FAIL), lines.toString());
+        assertTrue(lines.get(1).message().contains("OPENAI_API_KEY"), lines.get(1).message());
+    }
+
+    @Test
+    void aLocalOpenAiCompatibleServerNeedsNoKey() {
+        for (String endpoint : List.of("http://localhost:1234", "http://127.0.0.1:8000",
+                "http://[::1]:1234")) {
+            // lmstudio has no key variable at all, and "openai" is the generic
+            // escape hatch routinely pointed at a keyless local server.
+            for (String provider : List.of("lmstudio", "openai")) {
+                List<DoctorCommand.Line> lines =
+                        DoctorCommand.openAiCompatLines(provider, endpoint, true, false);
+                assertTrue(lines.stream().noneMatch(l -> l.kind() == DoctorCommand.Kind.FAIL),
+                        provider + " at " + endpoint + " is local and needs no key: " + lines);
+                assertEquals(2, lines.size(),
+                        "reachability and auth are two questions, always both answered: " + lines);
+                assertTrue(lines.get(1).message().contains("no key"),
+                        "say WHY this one is fine without a key: " + lines.get(1).message());
+            }
+        }
+    }
+
+    @Test
+    void theAuthLineSpeaksTheProviderStatusVocabulary() {
+        // ready | needs-key | local — the same three words /api/config and the
+        // first-run dialog use, so doctor is not a fourth opinion.
+        assertEquals("needs-key", SpectroConfig.onboardingStatusAt(
+                "openai", "https://api.openai.com", false));
+        assertEquals("ready", SpectroConfig.onboardingStatusAt(
+                "openai", "https://api.openai.com", true));
+        assertEquals("local", SpectroConfig.onboardingStatusAt(
+                "openai", "http://localhost:1234", false));
+        assertEquals("local", SpectroConfig.onboardingStatusAt(
+                "lmstudio", "http://localhost:1234", false));
+    }
+
+    // ── the built-in provider's model swap ───────────────────────────────────
+
+    @Test
+    void aConfiguredModelOutsideTheCatalogueIsNamedTogetherWithTheOneThatRuns() {
+        LocalCatalog.Model runs = LocalCatalog.bundled().defaultModel();
+        List<DoctorCommand.Line> lines = DoctorCommand.builtInProviderLines(
+                found(), "claude-opus-4-8", runs, absent(runs));
+
+        String all = lines.toString();
+        assertTrue(all.contains("claude-opus-4-8"),
+                "doctor printed the configured model on the config line and then a"
+                        + " different one here, with no word about the swap: " + all);
+        assertTrue(lines.stream().anyMatch(l -> l.message().contains("claude-opus-4-8")
+                        && l.message().contains(runs.id())),
+                "one line must carry BOTH names, or the reader has to guess: " + all);
+    }
+
+    @Test
+    void aConfiguredModelInTheCatalogueSaysNothingAboutSwapping() {
+        LocalCatalog.Model runs = LocalCatalog.bundled().defaultModel();
+        for (String configured : new String[] {runs.id(), null, ""}) {
+            List<DoctorCommand.Line> lines =
+                    DoctorCommand.builtInProviderLines(found(), configured, runs, absent(runs));
+            assertTrue(lines.stream().noneMatch(l -> l.message().contains("instead")),
+                    "nothing was swapped for \"" + configured + "\": " + lines);
+        }
+    }
+
+    @Test
+    void theModelSwapIsANoteAndNeverTurnsTheDoctorRed() {
+        LocalCatalog.Model runs = LocalCatalog.bundled().defaultModel();
+        List<DoctorCommand.Line> lines = DoctorCommand.builtInProviderLines(
+                found(), "claude-opus-4-8", runs, downloaded(runs));
+
+        assertTrue(lines.stream().noneMatch(l -> l.kind() == DoctorCommand.Kind.FAIL),
+                "the runtime still answers — a stale id is a note, not a broken machine: " + lines);
+    }
+
+    // ── the vision line ──────────────────────────────────────────────────────
+
+    @Test
+    void theBuiltInProviderDoesNotClaimToSeeImages() {
+        String line = DoctorCommand.visionLine("spectro-local", "qwen3-4b");
+        assertFalse(line.contains("natively"),
+                "the built-in runtime starts llama-server with the GGUF alone: " + line);
+        assertTrue(line.contains("mmproj"),
+                "name the reason, not just the verdict: " + line);
+    }
+
+    @Test
+    void theProvidersWithNoVisionFactSayThatInsteadOfGuessing() {
+        for (String provider : List.of("openai", "lmstudio", "openrouter", "gemini")) {
+            String line = DoctorCommand.visionLine(provider, "some-model");
+            assertFalse(line.contains("handles images natively"),
+                    provider + " got the cloud claim by falling through an ollama-only"
+                            + " branch, and nobody measured it: " + line);
+            assertTrue(line.contains("unknown") || line.contains("vision-capable"),
+                    "an unmeasured claim is worse than an admitted gap: " + line);
+        }
+    }
+
+    @Test
+    void ollamaKeepsTheHintItAlwaysHad() {
+        String line = DoctorCommand.visionLine("ollama", "qwen3");
+        assertTrue(line.contains("vision model"), line);
+    }
+
     // ── fixtures ─────────────────────────────────────────────────────────────
+
+    private static Optional<LlamaServerBinary.Found> found() {
+        return Optional.of(new LlamaServerBinary.Found(
+                Path.of("/opt/homebrew/bin/llama-server"), LlamaServerBinary.Source.PATH));
+    }
+
 
     private static ModelResolution.Resolved downloaded(LocalCatalog.Model model) {
         return new ModelResolution.Resolved(
