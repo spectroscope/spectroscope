@@ -322,7 +322,7 @@ public final class DoctorCommand implements Callable<Integer> {
             report(false, "sessions dir not writable: " + failure.getMessage());
         }
 
-        // Leveling — an info line, never a hard check: the ladder is a nicety and
+        // Leveling — an info line, never a hard check: the tutorial is a nicety and
         // an unreadable leveling file is not a broken environment.
         try {
             info(LevelCommand.doctorLine(dev.spectroscope.core.leveling.Ladder.bundled(),

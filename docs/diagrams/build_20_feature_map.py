@@ -16,7 +16,7 @@ import svg_common as C
 W = 1680
 PAD = 56
 
-# (title, accent, subtitle, [features]) — the surfaces, in the order the ladder
+# (title, accent, subtitle, [features]) — the surfaces, in the order the tutorial
 # opens them, which is also the order a new person meets them.
 GROUPS = [
     ("the chat", C.ZONE_FACE, "ask, watch, interrupt", [

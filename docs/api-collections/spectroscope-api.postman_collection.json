@@ -839,10 +839,10 @@
     },
     {
       "name": "leveling",
-      "description": "The ladder: progress, surface visits, mode, reset, manual ticks.",
+      "description": "The tutorial: progress, surface visits, mode, reset, manual ticks.",
       "item": [
         {
-          "name": "ladder state",
+          "name": "tutorial state",
           "request": {
             "method": "GET",
             "header": [],
@@ -856,7 +856,7 @@
                 "leveling"
               ]
             },
-            "description": "The ladder + this home's progress: mode, level, marks, remaining, history.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+            "description": "The tutorial + this home's progress: mode, level, marks, remaining, history.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -881,7 +881,7 @@
                 "visit"
               ]
             },
-            "description": "Report a surface was shown (how UI-only acts reach the ladder). Returns fresh state.\n\nBody: VisitBody(String surface, String sessionId, Integer agentsShown) — surface required to record, others optional.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "description": "Report a surface was shown (how UI-only acts reach the tutorial). Returns fresh state.\n\nBody: VisitBody(String surface, String sessionId, Integer agentsShown) — surface required to record, others optional.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
             "body": {
               "mode": "raw",
               "raw": "{\n  \"surface\": \"trace\",\n  \"sessionId\": \"{{sessionId}}\",\n  \"agentsShown\": 3\n}",
@@ -929,7 +929,7 @@
           "response": []
         },
         {
-          "name": "reset the ladder",
+          "name": "reset the tutorial",
           "request": {
             "method": "POST",
             "header": [
@@ -949,7 +949,7 @@
                 "reset"
               ]
             },
-            "description": "Restart the ladder from the dark frame, keeping the mode.\n\nBody: No fields — an empty JSON object satisfies consumes=application/json.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "description": "Restart the tutorial from the dark frame, keeping the mode.\n\nBody: No fields — an empty JSON object satisfies consumes=application/json.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
             "body": {
               "mode": "raw",
               "raw": "{}",

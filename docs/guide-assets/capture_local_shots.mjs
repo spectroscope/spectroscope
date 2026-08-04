@@ -2,7 +2,7 @@
 // the house conventions (capture_0_3_0.mjs / capture_leveling_shots.mjs):
 // 1600x1000 @1.5, en-US, design seeded via localStorage BEFORE boot, THEME
 // picks shots-light/ vs shots/. The shot walks the real first-run tutorial
-// path — ladder intro, backend sheet, "Choose a model …" — so it needs a
+// path — tutorial intro, backend sheet, "Choose a model …" — so it needs a
 // server on a FRESH -Duser.home (the intro appears once per home).
 //
 //   THEME=dark  BASE_URL=http://localhost:8157 node capture_local_shots.mjs
@@ -39,14 +39,14 @@ await ctx.addInitScript(
 const page = await ctx.newPage();
 await page.goto(BASE_URL, { waitUntil: "networkidle" });
 
-// The fresh-home gate: without the ladder intro this home is used and the
+// The fresh-home gate: without the tutorial intro this home is used and the
 // tutorial path cannot be photographed — same discipline as the leveling suite.
 const intro = page.locator(".lvl-intro");
 if ((await intro.count()) === 0) {
-  console.error("no ladder intro on screen — start the server on a pristine -Duser.home");
+  console.error("no tutorial intro on screen — start the server on a pristine -Duser.home");
   process.exit(1);
 }
-await page.getByRole("button", { name: /start with the ladder/i }).click();
+await page.getByRole("button", { name: /start with the tutorial/i }).click();
 
 // The backend sheet follows, with the built-in path first; into the chooser.
 await page.locator(".ob-opt-cta").first().waitFor({ timeout: 5000 });

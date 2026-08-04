@@ -11,7 +11,7 @@ import java.util.concurrent.Callable;
 import picocli.CommandLine.Command;
 
 /**
- * {@code spectro level} — the ladder in text, with ticks and receipts.
+ * {@code spectro level} — the tutorial in text, with ticks and receipts.
  *
  * <p>Reads the same {@code leveling/levels.json} the server and the web UI
  * read, and the same {@code ~/.spectro/leveling.json} the server writes. No
@@ -23,9 +23,9 @@ import picocli.CommandLine.Command;
  * for no gain.</p>
  *
  * <p>Names come from the level ids ({@code the-gate} reads as "the gate"), so
- * the terminal needs no copy table and cannot drift from the ladder file.</p>
+ * the terminal needs no copy table and cannot drift from the levels file.</p>
  */
-@Command(name = "level", description = "Show the leveling ladder and this home's progress.")
+@Command(name = "level", description = "Show the tutorial and this home's progress.")
 public final class LevelCommand implements Callable<Integer> {
 
     private final Ansi ansi = Ansi.detect();
@@ -53,7 +53,7 @@ public final class LevelCommand implements Callable<Integer> {
         }
         int level = state.level(ladder);
         StringBuilder line = new StringBuilder("leveling: ")
-                .append(state.mode().wire())
+                .append(modeLabel(state.mode()))
                 .append(" · level ").append(level)
                 .append(" (").append(display(ladder.levels().get(level).id())).append(")");
         if (level < ladder.levels().size() - 1) {
@@ -116,6 +116,16 @@ public final class LevelCommand implements Callable<Integer> {
             }
         }
         return row.toString();
+    }
+
+    /**
+     * The word a reader gets for a mode. Only {@code LADDER} needs a table: the
+     * owner renamed the feature to "tutorial" while {@code leveling.json} keeps
+     * the spelling every home on disk already has, so the file and the terminal
+     * are allowed to disagree here and nowhere else.
+     */
+    private static String modeLabel(LevelingState.Mode mode) {
+        return mode == LevelingState.Mode.LADDER ? "tutorial" : mode.wire();
     }
 
     /** {@code the-gate} reads as "the gate": the ids were written to be read. */
