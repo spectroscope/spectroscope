@@ -1226,7 +1226,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lt.dam": { de: "▮▮ Damm · {n} wartend", en: "▮▮ dam · {n} waiting" },
   "lt.moreWaiting": { de: "… {n} weitere wartend", en: "… {n} more waiting" },
 
-  // leveling: the ladder (card 80). Level names come from the ids, so only the
+  // leveling: the tutorial (card 80). Level names come from the ids, so only the
   // blurbs and the criteria need words here.
   "leveling.level.darkFrame.name": { de: "Dunkelbild", en: "dark frame" },
   "leveling.level.darkFrame.blurb": { de: "Einen Provider einrichten und Szenarien anschauen.", en: "Set up a provider and watch scenarios." },
@@ -1281,10 +1281,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.criterion.fleetActed.counts": { de: "Einen echten Node starten, stoppen oder sein Tor beantworten.", en: "Spawn, stop or gate a real node." },
 
   // leveling: the UI around it
-  "leveling.pill.title": { de: "Stand: {name} — klicken für die Leiter", en: "At {name} — click for the ladder" },
-  "leveling.panel.title": { de: "Die Leiter", en: "The ladder" },
+  "leveling.pill.title": { de: "Stand: {name} — klicken für das Tutorial", en: "At {name} — click for the tutorial" },
+  "leveling.panel.title": { de: "Das Tutorial", en: "The tutorial" },
   "leveling.panel.at": { de: "Dein Stand: {name}", en: "You are at {name}" },
-  "leveling.panel.toward": { de: "{met} von {total} zum nächsten Schritt", en: "{met} of {total} toward the next rung" },
+  "leveling.panel.toward": { de: "{met} von {total} zum nächsten Schritt", en: "{met} of {total} toward the next step" },
   "leveling.panel.reached": { de: "erreicht", en: "reached" },
   "leveling.panel.mastery": { de: "Kür — schaltet nichts frei", en: "mastery — unlocks nothing" },
   "leveling.panel.byHand": { de: "von Hand markiert", en: "marked by hand" },
@@ -1298,14 +1298,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.levelUp.title": { de: "{name} erreicht", en: "{name} reached" },
   "leveling.levelUp.opened": { de: "Neu offen: {surfaces}", en: "Now open: {surfaces}" },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
-  "leveling.intro.body": { de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Die Leiter macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.", en: "spectroscope has seven tabs, three lenses, a fleet canvas and a machine room. All at once, that is a wall. The ladder turns it into a path: you start with the chat, and each further surface opens once you have used the one before it." },
+  "leveling.intro.body": { de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Das Tutorial macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.", en: "spectroscope has seven tabs, three lenses, a fleet canvas and a machine room. All at once, that is a wall. The tutorial turns it into a path: you start with the chat, and each further surface opens once you have used the one before it." },
   "leveling.intro.honest": { de: "Kein Zwang: du kannst jederzeit alles öffnen, in den Einstellungen oder direkt an jeder verschlossenen Fläche.", en: "Nothing is forced: you can open everything at any moment, in the settings or right on any closed surface." },
-  "leveling.intro.ladder": { de: "Mit der Leiter anfangen", en: "Start with the ladder" },
+  "leveling.intro.ladder": { de: "Mit dem Tutorial anfangen", en: "Start with the tutorial" },
   "leveling.intro.everything": { de: "Alles sofort öffnen", en: "Open everything now" },
   "leveling.intro.foot": { de: "Diese Frage kommt nur einmal. Ändern kannst du es später in den Einstellungen.", en: "This question is asked once. You can change it later in the settings." },
-  "leveling.settings.title": { de: "Leiter", en: "Leveling" },
+  "leveling.settings.title": { de: "Tutorial", en: "Tutorial" },
   "leveling.settings.mode": { de: "Modus", en: "Mode" },
-  "leveling.settings.mode.ladder": { de: "Leiter — Flächen öffnen sich nach und nach", en: "Ladder — surfaces open as you go" },
+  "leveling.settings.mode.ladder": { de: "Tutorial — Flächen öffnen sich nach und nach", en: "Tutorial — surfaces open as you go" },
   "leveling.settings.mode.checklist": { de: "Checkliste — nichts ist gesperrt, Fortschritt zählt mit", en: "Checklist — nothing locks, progress still counts" },
   "leveling.settings.mode.off": { de: "Aus — kein Pill, kein Panel, keine Aufzeichnung", en: "Off — no pill, no panel, no tracking" },
   "leveling.settings.reset": { de: "Zurück zum Dunkelbild", en: "Back to the dark frame" },

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The chat plates, both themes, from a cold start.
 #
-# Each themed pass gets its own pristine home. The ladder's intro is asked once
+# Each themed pass gets its own pristine home. The tutorial's intro is asked once
 # per home and the conversation is typed for real, so a second pass against a
 # used home would find neither the clean header nor an empty chat.
 #

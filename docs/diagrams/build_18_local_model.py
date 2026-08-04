@@ -107,7 +107,7 @@ def build():
         ["Nothing about the rest of the product knows it is local. The events, the "
          "gate, the trace and the JSONL are the same",
          "ones a cloud provider produces, which is the whole reason the keyless "
-         "walkthrough of the ladder reaches deep field."],
+         "walkthrough of the tutorial reaches deep field."],
     ):
         for row in para:
             body.append(C.text(PAD, y, row, 13, C.GREY_MID))

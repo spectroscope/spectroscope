@@ -30,7 +30,19 @@ class LevelCommandTest {
     @Test
     void theDoctorLineNamesModeLevelAndWhatIsLeft() {
         String line = LevelCommand.doctorLine(LADDER, at("provider-ready"));
-        assertEquals("leveling: ladder · level 1 (first light) · 0/2 toward the trace", line);
+        assertEquals("leveling: tutorial · level 1 (first light) · 0/2 toward the trace", line);
+    }
+
+    /** The owner renamed the words, not the file. A home written before the
+     *  rename still says {@code "ladder"} in {@code leveling.json}, and a home
+     *  written after it still has to. This pins the two apart: the terminal
+     *  reads "tutorial", the wire keeps the spelling every stored file uses. */
+    @Test
+    void theModeIsCalledTutorialInTextAndLadderOnTheWire() {
+        assertEquals("ladder", LevelingState.Mode.LADDER.wire());
+        String line = LevelCommand.doctorLine(LADDER, at("provider-ready"));
+        assertFalse(line.contains("ladder"), "the terminal stopped saying ladder: " + line);
+        assertTrue(line.contains("tutorial"), line);
     }
 
     @Test

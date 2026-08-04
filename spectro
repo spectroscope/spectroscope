@@ -29,7 +29,7 @@ show_help() {
     row 'sessions' 'list the stored JSONL sessions (~/.spectro/sessions)' './gradlew -q --console=plain :spectro-cli:run --args="sessions"'
     row 'resume' 'continue a session by id: ./spectro resume <id>' './gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"'
     row 'doctor' 'check Java, config layers, provider reachability' './gradlew -q --console=plain :spectro-cli:run --args="doctor"'
-    row 'level' 'the leveling ladder with its ticks and receipts (no server needed)' './gradlew -q --console=plain :spectro-cli:run --args="level"'
+    row 'level' 'the tutorial with its ticks and receipts (no server needed)' './gradlew -q --console=plain :spectro-cli:run --args="level"'
     row 'tour' 'guided feature tour — menu, tips, settings' './gradlew -q --console=plain tour'
     row 'web' 'web face: a command group — start, dev, stop, status, logs (./spectro web)' './spectro web  ·  ./spectro web start --port 8090'
     row 'desktop' 'desktop face — Electron shell + managed Spring Boot process' './gradlew :spectro-server:bootJar && (cd spectro-desktop && npm start)'
