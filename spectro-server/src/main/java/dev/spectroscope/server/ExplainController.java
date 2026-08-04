@@ -55,6 +55,16 @@ public class ExplainController {
     /** Hard inbound bound; the client caps its digest well below this. */
     private static final int MAX_DIGEST_CHARS = 200_000;
 
+    /**
+     * The same bound one layer out, in bytes, for {@link ApiLocalFence} to
+     * enforce on the DECLARED length before Spring materialises the body — the
+     * check below can only run once the JSON is already an object in memory.
+     * Four bytes per character plus JSON escaping is generous for the widest
+     * digest {@link #MAX_DIGEST_CHARS} allows, so nothing honest is refused
+     * here and everything dishonest stops before it is read.
+     */
+    static final int MAX_BODY_BYTES = 4 * MAX_DIGEST_CHARS;
+
     /** Seam: build the provider from config (real: {@link ProviderFactory}). */
     interface ProviderBuilder {
         LlmProvider build(SpectroConfig config);

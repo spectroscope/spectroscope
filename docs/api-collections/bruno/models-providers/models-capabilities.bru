@@ -18,7 +18,7 @@ params:query {
 docs {
   Reasoning capability of one (provider,model) pair — control/efforts/wire; live API overlay for anthropic/ollama/openrouter, static table otherwise. Never errors.
   
-  Fence: none — No origin gating.
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
   
   Writes state: no
 }

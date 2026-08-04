@@ -133,7 +133,10 @@ it.”</p>
 mutations — but a handful of control writes exist: the transcription POST, the guarded
 session DELETE, the three settings PUTs, the workspace picker and the image copy-to-workspace
 POST (plus the fleet control POSTs). Bound to 127.0.0.1; auth and TLS are a deliberate course
-boundary.</p>
+boundary. Every route below except <code>GET /api/health</code> passes a single filter first,
+which wants a loopback peer <em>and</em> a localhost <code>Host</code> header: a page rebound
+from some other name to 127.0.0.1 reaches the port but cannot forge that header, so it reads a
+blank 404. The per-row notes name the extra guards each endpoint adds on top.</p>
 
 <table class="tbl dense">
   <tr><th>endpoint</th><th>returns</th><th>notes &amp; guards</th></tr>
