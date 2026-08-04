@@ -791,9 +791,13 @@ public record SpectroConfig(
      *  a {@code localhost}/{@code .local} name. Deliberately narrow: everything
      *  it does not recognise counts as public, so an unknown host errs towards
      *  asking for the key rather than towards a green light.
+     *  <p>Public because the doctor line has to know WHICH road reached the
+     *  "local" verdict: a keyless provider called against a public endpoint is
+     *  also "local", and telling that reader the endpoint sits on their own
+     *  machine is a false statement about their network.</p>
      *  @param url the base url, may be null or unparsable
      *  @return true when the host is loopback, private, or a local name */
-    static boolean isLocalEndpoint(String url) {
+    public static boolean isLocalEndpoint(String url) {
         if (url == null || url.isBlank()) {
             return false;
         }
@@ -811,20 +815,42 @@ public record SpectroConfig(
                 || host.equals("::1") || host.equals("0.0.0.0")) {
             return true;
         }
-        if (host.startsWith("127.") || host.startsWith("10.") || host.startsWith("192.168.")) {
-            return true;
+        // A private range is a range of ADDRESSES, so the host has to BE an
+        // address before its octets mean anything. Matching the string prefix
+        // instead handed the private verdict to any name that merely started
+        // that way: 10.example.com, 192.168.example.com and 172.16.example.com
+        // are public DNS names and all three were read as the operator's own
+        // network, which is the opposite of this method's stated bias.
+        return isPrivateIpv4(host);
+    }
+
+    /** Whether a host is literally a private-range IPv4 address.
+     *  @param host the lower-cased host, brackets already stripped
+     *  @return true for 127/8, 10/8, 192.168/16 and 172.16/12 */
+    private static boolean isPrivateIpv4(String host) {
+        String[] octets = host.split("\\.");
+        if (octets.length != 4) {
+            return false;
         }
-        // 172.16.0.0/12 — the one private range whose second octet is a span.
-        if (host.startsWith("172.")) {
-            String[] octets = host.split("\\.");
-            try {
-                int second = Integer.parseInt(octets[1]);
-                return second >= 16 && second <= 31;
-            } catch (RuntimeException notNumeric) {
+        int[] parts = new int[4];
+        for (int i = 0; i < 4; i++) {
+            if (octets[i].isEmpty() || octets[i].length() > 3) {
+                return false;
+            }
+            for (int c = 0; c < octets[i].length(); c++) {
+                if (octets[i].charAt(c) < '0' || octets[i].charAt(c) > '9') {
+                    return false; // a label with a letter in it is a name, not an address
+                }
+            }
+            parts[i] = Integer.parseInt(octets[i]);
+            if (parts[i] > 255) {
                 return false;
             }
         }
-        return false;
+        return parts[0] == 127
+                || parts[0] == 10
+                || (parts[0] == 192 && parts[1] == 168)
+                || (parts[0] == 172 && parts[1] >= 16 && parts[1] <= 31);
     }
 
     /** The built-in local provider's picker status: {@code "ready"} once the

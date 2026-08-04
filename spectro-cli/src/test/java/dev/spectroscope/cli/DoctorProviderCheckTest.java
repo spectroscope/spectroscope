@@ -209,6 +209,27 @@ class DoctorProviderCheckTest {
     }
 
     @Test
+    void aKeylessProviderAtAPublicEndpointIsNotToldItIsOnItsOwnMachine() {
+        // "local" is reached by two roads: the endpoint IS local, or the provider
+        // has no key variable to send anywhere. Printing the first road's sentence
+        // for both made doctor state, as a fact, that api.openai.com sits on the
+        // operator's own machine — measured live, one env var away
+        // (SPECTRO_PROVIDER=lmstudio SPECTRO_BASE_URL=https://api.openai.com).
+        for (String endpoint : List.of("https://api.openai.com", "https://openrouter.ai/api")) {
+            List<DoctorCommand.Line> lines =
+                    DoctorCommand.openAiCompatLines("lmstudio", endpoint, true, false);
+            String auth = lines.get(1).message();
+
+            assertFalse(auth.contains("your own machine"),
+                    "a public endpoint is not on this machine, whatever the verdict is: " + auth);
+            assertTrue(auth.contains("no key"),
+                    "the verdict itself is still right — lmstudio has no key to send: " + auth);
+            assertTrue(auth.contains("lmstudio"),
+                    "so the line must say WHY, and the why is the provider: " + auth);
+        }
+    }
+
+    @Test
     void theAuthLineSpeaksTheProviderStatusVocabulary() {
         // ready | needs-key | local — the same three words /api/config and the
         // first-run dialog use, so doctor is not a fourth opinion.

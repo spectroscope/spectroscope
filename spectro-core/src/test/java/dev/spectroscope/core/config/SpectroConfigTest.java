@@ -999,7 +999,13 @@ class SpectroConfigTest {
         // towards a green light: that direction is the whole point.
         for (String url : List.of("https://api.openai.com", "https://openrouter.ai/api",
                 "https://generativelanguage.googleapis.com/v1beta/openai",
-                "http://172.32.0.1:1234", "http://1270.0.0.1", "not a url at all", "")) {
+                "http://172.32.0.1:1234", "http://1270.0.0.1", "not a url at all", "",
+                // A private range is a range of ADDRESSES. These three are public
+                // DNS names that merely START like one, and a string-prefix match
+                // handed all three the operator's-own-network verdict.
+                "http://10.example.com", "http://192.168.example.com",
+                "http://172.16.example.com", "http://127.0.0.1.evil.example",
+                "http://10.0.0.999")) {
             assertFalse(SpectroConfig.isLocalEndpoint(url), url + " is not on this machine");
         }
         assertFalse(SpectroConfig.isLocalEndpoint(null));

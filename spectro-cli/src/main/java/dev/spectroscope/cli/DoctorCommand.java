@@ -459,8 +459,19 @@ public final class DoctorCommand implements Callable<Integer> {
         String status = SpectroConfig.onboardingStatusAt(provider, endpoint, keyPresent);
         String keyVar = SpectroConfig.keyEnvFor(provider);
         lines.add(switch (status) {
-            case "local" -> new Line(Kind.INFO, "auth: no key needed — " + endpoint
-                    + " is a server on your own machine or network");
+            // "local" is reached by TWO different roads and they are not the same
+            // sentence. Printing the first road's words for both told the reader
+            // that api.openai.com sits on their own machine, as a fact, whenever
+            // they pointed lmstudio at it — a line that had been honest before it
+            // was improved. The verdict may be shared; the reason may not.
+            case "local" -> SpectroConfig.isLocalEndpoint(endpoint)
+                    ? new Line(Kind.INFO, "auth: no key needed — " + endpoint
+                            + " is a server on your own machine or network")
+                    : new Line(Kind.INFO, "auth: no key is sent — spectroscope carries no key"
+                            + " variable for " + provider + ", so " + endpoint
+                            + " is called without one (if it wants a key, point "
+                            + provider + " at a server that does not, or use a"
+                            + " provider that has one)");
             case "ready" -> new Line(Kind.PASS, "auth: " + keyVar + " is set");
             default -> new Line(Kind.FAIL, "auth: " + keyVar + " is NOT set — " + endpoint
                     + " answers the probe but refuses every call without a key"
