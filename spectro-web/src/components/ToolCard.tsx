@@ -158,6 +158,10 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
               </button>
             )}
           </div>
+          {/* card.detail is what the tool RETURNED, when this card came out of
+              an imported transcript (card 167). It is state the reducer patched
+              on and nothing else; a card from a live run simply has none, and
+              the body renders then exactly as it always did. */}
           <ToolViewBody
             mode={viewMode}
             name={card.name}
@@ -165,6 +169,7 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
             output={card.output}
             isError={card.status === "error"}
             denied={denied}
+            detail={card.detail}
           />
         </div>
       </div>
