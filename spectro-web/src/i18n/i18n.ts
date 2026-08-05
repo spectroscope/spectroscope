@@ -682,6 +682,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "work.gatePending": { de: "wartet am Gate", en: "waiting at the gate" },
   "work.noSpan": { de: "keine Zeitspanne aufgezeichnet", en: "no span recorded" },
   "work.opaque": { de: "meldet {n} Agenten · keiner davon in diesem Stream", en: "reports {n} agents · none of them in this stream" },
+  "work.beside": { de: "{n} Agenten-Transkripte liegen neben dieser Datei", en: "{n} agent transcripts sit beside this file" },
+  "work.besideClaim": { de: "die Aufgabe meldete {n}", en: "the task reported {n}" },
   "work.opaqueCalls": { de: "meldet {n} Tool-Calls · keiner davon als Frame", en: "reports {n} tool calls · none of them as a frame" },
   "work.missing": { de: "nicht in diesem Stream: {what}", en: "not in this stream: {what}" },
   "work.miss.agentRows": { de: "die Zeilen je Agent", en: "the per-agent rows" },

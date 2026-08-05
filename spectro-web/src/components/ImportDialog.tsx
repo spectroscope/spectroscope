@@ -47,6 +47,10 @@ export function ImportDialog(props: {
     /** What the file said about itself when it was one agent's transcript
      *  rather than a session's (card 152); absent for every other file. */
     subagent?: SubagentTranscript,
+    /** Where the file lives in the store, when it came from there. Only a
+     *  store path has agents beside it to look for (card 177); a pasted body
+     *  and a picked file have no address, and say so by carrying none. */
+    storePath?: string,
   ) => void;
   onClose: () => void;
 }) {
@@ -192,7 +196,7 @@ export function ImportDialog(props: {
   // Every entry point clears the previous error before it starts. Without this
   // a failed pick left its red line standing while the next attempt succeeded,
   // and only the textarea's onChange ever cleared it.
-  const load = (raw: string, label: string): void => {
+  const load = (raw: string, label: string, storePath?: string): void => {
     setError(null);
     try {
       const { events, kind, source, subagent } = detectAndLoad(raw);
@@ -200,7 +204,7 @@ export function ImportDialog(props: {
       // never what it returned. Say that once, here, rather than leaving the
       // reader to infer it from a screen of empty tool bodies.
       setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(events, label, kind, source, subagent);
+      props.onLoad(events, label, kind, source, subagent, storePath);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
@@ -230,7 +234,7 @@ export function ImportDialog(props: {
         }
         return Promise.reject(new Error(t(lang, "imp.err.fetch", { status: r.status })));
       })
-      .then((raw) => load(raw, tr.file))
+      .then((raw) => load(raw, tr.file, tr.path))
       .catch((e) => setError(e instanceof Error ? e.message : String(e)));
   };
 

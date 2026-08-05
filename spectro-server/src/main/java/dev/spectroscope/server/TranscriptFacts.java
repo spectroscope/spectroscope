@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -286,15 +287,100 @@ final class TranscriptFacts {
      * @param file the transcript path
      * @return both counts, {@link Sidecars#NONE} when there is no sidecar folder
      */
-    static Sidecars sidecarsBeside(Path file) {
+    /**
+     * One agent transcript beside a session — who wrote it, and where it is.
+     *
+     * @param agentId the id the file names, which is the SAME id the parent's
+     *                spawn row carries: the docking point is read, never invented
+     * @param path the store-relative path, what {@code /api/claude/transcripts/content}
+     *             takes back to serve the file
+     * @param runId the workflow run this agent belonged to, or {@code null} for
+     *              a direct {@code Task}/{@code Agent} spawn
+     * @param bytes the file's size — the panel says how much is there before it reads any
+     * @param modifiedAt last-modified epoch millis
+     */
+    public record SidecarAgent(String agentId, String path, String runId, long bytes, long modifiedAt) {}
+
+    /**
+     * Every agent transcript beside a session, NAMED rather than counted.
+     *
+     * <p>This is the read that lets an imported session stop saying "not in
+     * this stream". A Claude Code session holds only its own start: measured
+     * over the 25 largest transcripts in this store, 71,329 records and ZERO
+     * with {@code isSidechain}. Every word the agents said is in these files.</p>
+     *
+     * <p>It stays a directory LISTING and reads no transcript. Opening a session
+     * must not cost thousands of file reads — that is the defect card 151
+     * recorded for the session list, and repeating it here would trade one
+     * silence for a freeze. The bodies arrive one at a time, when a reader opens
+     * a row, through the endpoint that already serves one transcript.</p>
+     *
+     * @param file the session transcript path
+     * @param base the store root, so the paths handed out are relative to it
+     * @return the agents beside it, direct spawns first, each population in
+     *         filename order; empty when there is no sidecar folder
+     */
+    static List<SidecarAgent> sidecarAgentsBeside(Path file, Path base) {
+        Path folder = sidecarFolder(file);
+        if (folder == null) {
+            return List.of();
+        }
+        List<SidecarAgent> direct = new ArrayList<>();
+        List<SidecarAgent> workflow = new ArrayList<>();
+        try (Stream<Path> walk = Files.walk(folder, SIDECAR_DEPTH)) {
+            for (Path entry : (Iterable<Path>) walk::iterator) {
+                String name = entry.getFileName().toString();
+                if (!name.startsWith("agent-") || !name.endsWith(".jsonl")
+                        || !Files.isRegularFile(entry)) {
+                    continue;
+                }
+                String agentId = name.substring("agent-".length(), name.length() - ".jsonl".length());
+                boolean isDirect = folder.equals(entry.getParent());
+                // The run directory IS the run id: subagents/workflows/<runId>/.
+                String runId = isDirect ? null : entry.getParent().getFileName().toString();
+                long bytes;
+                long modified;
+                try {
+                    bytes = Files.size(entry);
+                    modified = Files.getLastModifiedTime(entry).toMillis();
+                } catch (IOException unreadable) {
+                    bytes = 0L;
+                    modified = 0L;
+                }
+                SidecarAgent agent =
+                        new SidecarAgent(agentId, base.relativize(entry).toString(), runId, bytes, modified);
+                (isDirect ? direct : workflow).add(agent);
+            }
+        } catch (IOException unreadable) {
+            return List.of();
+        }
+        direct.sort(Comparator.comparing(SidecarAgent::agentId));
+        workflow.sort(Comparator.comparing(SidecarAgent::runId).thenComparing(SidecarAgent::agentId));
+        List<SidecarAgent> all = new ArrayList<>(direct);
+        all.addAll(workflow);
+        return List.copyOf(all);
+    }
+
+    /**
+     * The sidecar folder beside a transcript, or null when there is none.
+     *
+     * @param file the transcript path
+     * @return {@code <parent>/<name without .jsonl>/subagents}, if it is a directory
+     */
+    private static Path sidecarFolder(Path file) {
         String name = file.getFileName().toString();
         Path parent = file.getParent();
         if (parent == null || !name.endsWith(".jsonl")) {
-            return Sidecars.NONE;
+            return null;
         }
         Path folder = parent.resolve(name.substring(0, name.length() - ".jsonl".length()))
                 .resolve("subagents");
-        if (!Files.isDirectory(folder)) {
+        return Files.isDirectory(folder) ? folder : null;
+    }
+
+    static Sidecars sidecarsBeside(Path file) {
+        Path folder = sidecarFolder(file);
+        if (folder == null) {
             return Sidecars.NONE;
         }
         int direct = 0;

@@ -24,6 +24,7 @@ function item(over: Partial<WorkItem> = {}): WorkItem {
     model: null,
     provider: null,
     opaque: null,
+    runId: null,
     evidence: { start: null, tokens: null, firstCall: null, denial: null, end: null },
     children: [],
     ...over,

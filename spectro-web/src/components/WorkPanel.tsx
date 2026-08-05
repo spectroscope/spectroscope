@@ -14,6 +14,22 @@ import type { CSSProperties } from "react";
 import type { RunEvent } from "../events";
 import type { WorkItem } from "../state/work";
 import { absences, elapsedLabel, opaqueLabel, tokenLabel, workGroups } from "./workLevels";
+import type { SidecarAgent, SidecarIndex } from "../import/sidecarAgents";
+import { NO_SIDECARS } from "../import/sidecarAgents";
+import { createContext, useContext } from "react";
+
+/**
+ * The agents beside the imported session, and how to open one (card 177).
+ *
+ * A context rather than four more props: the rows nest (group → item → child),
+ * and this evidence belongs to the whole panel, not to a row's own shape. The
+ * default is the empty index, so every caller that knows nothing about sidecars
+ * — the live view, the tests, the lab — reads exactly as it did.
+ */
+const BesideContext = createContext<{
+  sidecars: SidecarIndex;
+  onOpenAgent?: (agent: SidecarAgent) => void;
+}>({ sidecars: NO_SIDECARS });
 import type { WorkGroup } from "./workLevels";
 import { agentAccent, clockTime } from "../format";
 import { t } from "../i18n/i18n";
@@ -65,6 +81,11 @@ function ItemRow({
   const opaque = opaqueLabel(item);
   const missing = absences(item);
   const toTrace = t(lang, "work.toTrace");
+  // Card 177: the agents this launch really produced, if they are on the disk
+  // beside the session. The run id comes off the receipt, the folder is named
+  // after it, and the filename carries the agent id — read, never guessed.
+  const { sidecars, onOpenAgent } = useContext(BesideContext);
+  const beside = item.runId === null ? [] : sidecars.forRun(item.runId);
 
   return (
     <li
@@ -130,11 +151,41 @@ function ItemRow({
         </div>
       )}
 
-      {/* What the task CLAIMS about work that is not here. Quoted, never drawn. */}
-      {opaque !== null && (
+      {/* What the task CLAIMS about work that is not here — quoted, never
+          drawn, for as long as there is nothing to draw. Card 177 hands over
+          the evidence when it exists: the agents beside the session, each one
+          openable. The refusal is NOT softened; it is answered, and it stays
+          verbatim wherever the files are absent. */}
+      {opaque !== null && beside.length === 0 && (
         <div className="work-opaque">
           <span>{t(lang, "work.opaque", { n: opaque.agents })}</span>
           {opaque.toolUses !== null && <span>{t(lang, "work.opaqueCalls", { n: opaque.toolUses })}</span>}
+        </div>
+      )}
+      {beside.length > 0 && (
+        <div className="work-beside">
+          <p className="work-beside-head">
+            {t(lang, "work.beside", { n: beside.length })}
+            {opaque?.agents != null && opaque.agents !== beside.length && (
+              <span className="work-beside-off"> · {t(lang, "work.besideClaim", { n: opaque.agents })}</span>
+            )}
+          </p>
+          <ul className="work-beside-list">
+            {beside.map((a) => (
+              <li key={a.path}>
+                <button
+                  type="button"
+                  className="work-beside-row"
+                  title={a.path}
+                  onClick={() => onOpenAgent?.(a)}
+                  disabled={onOpenAgent === undefined}
+                >
+                  <span className="mono work-beside-id">{a.agentId}</span>
+                  <span className="work-beside-size">{Math.max(1, Math.round(a.bytes / 1024))} kB</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
 
@@ -238,9 +289,15 @@ export function WorkPanel({
   liveView,
   highlight,
   onFocusEvent,
+  sidecars,
+  onOpenAgent,
 }: {
   items: WorkItem[];
   liveView: boolean;
+  /** The agents beside the imported session, when it has any (card 177). */
+  sidecars?: SidecarIndex;
+  /** Open one of them as a session in its own right. */
+  onOpenAgent?: (agent: SidecarAgent) => void;
   /** The work id the transcript's chip points at, so the panel can light it. */
   highlight?: string | null;
   /** The SAME seam Spectrum and FleetCanvas use (App.tsx:1261-1279). */
@@ -262,13 +319,15 @@ export function WorkPanel({
   }
 
   return (
-    <div className="work-panel">
-      {groups.map((g) => (
-        <GroupCard key={g.id} group={g} highlight={highlight ?? null} onFocus={onFocusEvent} />
-      ))}
-      {!groups.some((g) => g.kind === "trigger") && (
-        <p className="work-empty-note">{t(lang, "work.triggerNone")}</p>
-      )}
-    </div>
+    <BesideContext.Provider value={{ sidecars: sidecars ?? NO_SIDECARS, onOpenAgent }}>
+      <div className="work-panel">
+        {groups.map((g) => (
+          <GroupCard key={g.id} group={g} highlight={highlight ?? null} onFocus={onFocusEvent} />
+        ))}
+        {!groups.some((g) => g.kind === "trigger") && (
+          <p className="work-empty-note">{t(lang, "work.triggerNone")}</p>
+        )}
+      </div>
+    </BesideContext.Provider>
   );
 }

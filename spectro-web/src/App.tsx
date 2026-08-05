@@ -95,6 +95,9 @@ import { FleetBar } from "./spectrum/FleetBar";
 import { AgentFeed } from "./spectrum/AgentFeed";
 import { FleetHome } from "./spectrum/FleetHome";
 import { FleetLobby } from "./spectrum/FleetLobby";
+import { loadSidecarAgents, NO_SIDECARS, type SidecarAgent, type SidecarIndex } from "./import/sidecarAgents";
+import { detectAndLoad } from "./import/detect";
+import { reportBrowserError } from "./state/browserLog";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
   backToLive as labBackToLive,
@@ -156,6 +159,8 @@ export function App() {
   // The third event source (parallel to replay): a contextId when a fleet is
   // entered, feeding the tabs that fleet's events instead of the own session.
   const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
+  /** The agent transcripts beside the imported session (card 177). */
+  const [sidecars, setSidecars] = useState<SidecarIndex>(NO_SIDECARS);
   /**
    * Which sidebar segment is showing — App's, not the sidebar's.
    *
@@ -869,14 +874,45 @@ export function App() {
   // the import while the header already said archive.
   const shownBar = shownImportBar(importBar, replay?.id ?? null);
 
+  /**
+   * Open one agent's own transcript, from beside the session (card 177).
+   *
+   * The body arrives NOW, not at import time: one file, on the gesture that
+   * asks for it. The reader is already looking at the row that names it, so
+   * there is no second import gesture — this is the row opening, not a new
+   * import. It travels the ordinary import path, which is what makes the agent
+   * readable in the same faces as everything else (card 152 taught that path
+   * to read an `agent-*.jsonl` as a session in its own right).
+   */
+  const openSidecarAgent = (agent: SidecarAgent): void => {
+    void fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(agent.path)}`)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((raw) => {
+        const { events, kind, source, subagent } = detectAndLoad(raw);
+        // No storePath: an agent transcript has no agents beside IT, and asking
+        // would be a directory walk for an answer that is always empty.
+        openImport(events, `agent-${agent.agentId}`, kind, source, subagent);
+      })
+      .catch((e) => reportBrowserError("sidecar-open", e));
+  };
+
   const openImport = (
     events: RunEvent[],
     label: string,
     kind: "spectroscope" | "claude-code" | "vscode-agent",
     source: ImportSource,
     subagent?: SubagentTranscript,
+    storePath?: string,
   ): void => {
     navNonce.issue(); // an import supersedes any in-flight session open
+    // Card 177: ask what sits BESIDE the file, before anything is rendered.
+    // One directory listing, no transcript read — the bodies come later, one
+    // at a time, when a reader opens a row. A file with no address (a paste, a
+    // picked file) has nothing to ask about and keeps the empty index, which
+    // is also what every failure answers: a panel that cannot reach the store
+    // must say what it always said, never that a session has no agents.
+    setSidecars(NO_SIDECARS);
+    if (storePath !== undefined) void loadSidecarAgents(storePath).then(setSidecars);
     setReplay({
       id: `import:${kind}:${label}`,
       state: foldArchive(events),
@@ -1758,6 +1794,8 @@ export function App() {
                     canPickFolder={canPickWorkspace}
                     fsRefreshSignal={viewingLive ? fsTick : undefined}
                     work={chatView === "v2" ? work : undefined}
+                    sidecars={sidecars}
+                    onOpenAgent={openSidecarAgent}
                     workHighlight={workHighlight}
                     onFocusEvent={focusInTrace}
                     liveView={viewingLive}

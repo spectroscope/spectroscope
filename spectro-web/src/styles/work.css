@@ -348,3 +348,51 @@
   border: 1px solid var(--accent);
   border-radius: 2px;
 }
+
+/* ---------- the agents beside the file (card 177) ----------
+   Where `work.opaque` used to print a claim with nothing under it, the rows it
+   was refusing to draw now stand. Same box, same weight: this is the panel
+   keeping its own rule — no number is rendered that cannot be opened. */
+.work-beside {
+  margin-top: var(--sp-2);
+  padding-left: var(--sp-3);
+  border-left: 1px solid var(--border);
+}
+.work-beside-head {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+/* When the task's own claim and the files on disk disagree, both are shown.
+   Neither is corrected: one is what the run said, the other is what is there. */
+.work-beside-off { color: var(--text-faint); }
+.work-beside-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+}
+.work-beside-row {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-11);
+  cursor: pointer;
+  transition:
+    color var(--t-fast),
+    border-color var(--t-fast);
+}
+.work-beside-row:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.work-beside-row:disabled { cursor: default; }
+.work-beside-id { color: var(--text); }
+.work-beside-size { color: var(--text-faint); }
