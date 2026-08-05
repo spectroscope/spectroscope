@@ -281,7 +281,10 @@
 .tv-well--script { max-height: 780px; }
 
 /* A command reads like a command. */
-.tv-cmd { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; }
+/* pre-wrap, since the chain breaker gives every `&&` its own line: without it
+   the newlines collapse to spaces and the whole point is lost. `anywhere` stays
+   so a 200-character path still wraps inside the card rather than widening it. */
+.tv-cmd { font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; white-space: pre-wrap; }
 .tv-prompt { color: var(--accent); margin-right: var(--sp-2); }
 .tv-term { color: var(--text-dim); }
 .tv-term--failed { color: var(--error); }
