@@ -81,6 +81,27 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.err.read": { de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?", en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?" },
   "imp.err.fetch": { de: "Der Server gab {status} zurück, als er die Datei holen sollte.", en: "The server answered {status} when asked for that file." },
   "imp.load": { de: "Laden", en: "Load" },
+  // The full-screen dialog's filter and statistics line. The chips carry wire
+  // vocabulary — the lowercase words the data itself uses — so they read the
+  // same in both languages on purpose; the labels around them translate.
+  "imp.filter.text": {
+    de: "tippen zum Filtern — Datei, Projekt, Modell, Prompt",
+    en: "type to filter — file, project, model, prompt",
+  },
+  "imp.filter.model": { de: "modell", en: "model" },
+  "imp.filter.with": { de: "mit", en: "with" },
+  "imp.chip.workflow": { de: "workflow", en: "workflow" },
+  "imp.chip.subagents": { de: "subagents", en: "subagents" },
+  "imp.stats.transcripts": { de: "{n} Transkripte", en: "{n} transcripts" },
+  "imp.stats.workflow": { de: "workflow-Aufrufe {n}", en: "workflow calls {n}" },
+  "imp.stats.subagents": { de: "Subagenten {n}", en: "subagents {n}" },
+  "imp.stats.workflowAgents": { de: "Workflow-Agenten {n}", en: "workflow agents {n}" },
+  "imp.stats.unread": { de: "{n} noch ungelesen", en: "{n} not read yet" },
+  "imp.pendingNote": {
+    de: "{n} Transkripte sind noch nicht gelesen — sie erscheinen hier, sobald ihre Fakten da sind.",
+    en: "{n} transcripts not read yet — they appear here as their facts arrive.",
+  },
+  "imp.close": { de: "Schließen", en: "Close" },
   // Shown for EVERY import, not only the VS Code one. The counts are the file's
   // own: how many lines arrived, how many frames this view is built from, and
   // how many lines hold no part of the conversation (the pointer records a
@@ -92,10 +113,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the owner looking for a parsing bug that was not there (card 141). The
   // number is smaller now as well, because four of the kinds it counted became
   // frames; what is left really does carry nothing.
+  // Card 152 corrected the last of it. "110 lines carry no conversation" is a
+  // claim about the FILE, and on a subagent transcript it was flatly false: all
+  // 110 of those lines held a conversation, and the importer could not
+  // attribute them. The number is a measurement of what this importer read, so
+  // the sentence says that instead. What the reader does with it is the same
+  // either way; what it no longer does is describe somebody else's file as
+  // empty.
   "imp.bar": {
-    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen tragen kein Gespräch. Nichts wurde auf die Platte geschrieben.",
-    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines carry no conversation. Nothing was written to disk.",
+    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, aus {zero} Zeilen wurde nichts gelesen. Nichts wurde auf die Platte geschrieben.",
+    en: "Imported from {file}. {lines} lines, {frames} frames, nothing read from {zero} of them. Nothing was written to disk.",
   },
+  // What a standalone subagent transcript is, said in three clauses so that a
+  // file which names only its agent says only that. See importBar.ts.
+  "imp.subagent": {
+    de: "Das ist das Transkript eines Subagenten, keine Sitzung: Agent {agent}.",
+    en: "This is a subagent transcript, not a session: agent {agent}.",
+  },
+  "imp.subagentKind": { de: "Art: {kind}.", en: "Kind: {kind}." },
+  "imp.subagentSession": { de: "Er lief in Sitzung {session}.", en: "It ran in session {session}." },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },
@@ -129,6 +165,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.lensNote": { de: "Reasoning ist der Selbstbericht des Modells, aufgezeichnet neben dem, was es dann tat. Kein Fenster in die Gewichte.", en: "Reasoning is the model's self-report, recorded next to what it then did. Not a window into the weights." },
   "trace.lensNone": { de: "Keine Reasoning-Events in diesem Stream. Entweder ist die Aufzeichnung aus (Thinking-Schalter) oder das Modell hat keine gesendet.", en: "No reasoning events in this stream. Either capture is off (thinking toggle) or the model sent none." },
   "trace.pairThen": { de: "danach:", en: "then:" },
+  "trace.pairFrom": { de: "daraus:", en: "after:" },
+  "trace.pairFromTitle": { de: "Zum Reasoning springen, das lief, als dieser Schritt passierte.", en: "Jump to the reasoning that was in charge when this step ran." },
   "trace.reasonBlock": { de: "reasoning", en: "reasoning" },
   "trace.pairJump": { de: "Zur Aktion springen, die auf diesen Denk-Block folgte", en: "Jump to the action that followed this thinking block" },
 
@@ -512,6 +550,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.toEnd": { de: "Zum Ende springen", en: "Jump to the end" },
   "trace.protoTitle": { de: "Auf welchem Draht die Payload fährt: SSE (Claude/OpenAI-Stream), NDJSON (Ollama), JSON-RPC (MCP/stdio), HTTP (web_fetch/web_search/browse_page, Bilder), local (Datei-Tools), — (harness-intern)", en: "The wire the payload rides: SSE (Claude/OpenAI stream), NDJSON (Ollama), JSON-RPC (MCP/stdio), HTTP (web_fetch/web_search/browse_page, images), local (file tools), — (harness-internal)" },
   "trace.hostTitle": { de: "Die Gegenstelle im Netz: api.anthropic.com, localhost:11434 (Ollama), der MCP-Server, der web_fetch/browse_page-Host — live aus dem provider_info-Frame; Replays kennen nur den Provider", en: "The network counterpart: api.anthropic.com, localhost:11434 (Ollama), the MCP server, the web_fetch/browse_page host — live from the provider_info frame; replays only know the provider" },
+  "trace.note.skill": { de: "Skill", en: "skill" },
+  "trace.note.skillTitle": { de: "Diesen Turn trieb ein Skill. Der Name steht wörtlich so in der importierten Datei, Plugin-Präfix inklusive; spectroscope schlägt nichts nach. Steht nichts da, sagt die Datei nichts dazu.", en: "A skill was driving this turn. The name is verbatim from the imported file, plugin prefix and all; spectroscope looks nothing up. No chip means the file says nothing about it." },
+  "trace.note.mcp": { de: "MCP", en: "mcp" },
+  "trace.note.mcpTitle": { de: "Was dieser Turn tut, geht auf die Ausgabe eines MCP-Tools zurück — Server und Tool, wie die Datei sie schreibt. Der Marker bleibt über mehrere Turns stehen: er gehört dem TURN, nicht dem einzelnen Aufruf.", en: "What this turn is doing goes back to an MCP tool's output — the server and the tool, spelled as the file spells them. The marker stays for several turns: it belongs to the TURN, not to one call." },
   "trace.note.effort": { de: "Aufwand", en: "effort" },
   "trace.note.effortTitle": { de: "Wie stark dieser Turn denken sollte, wie die importierte Datei es aufgezeichnet hat. Die Stufe steht wörtlich da; spectroscope deutet sie nicht. Zeilen ohne dieses Feld tragen den Chip nicht.", en: "How hard this turn was told to think, as the imported file recorded it. The level is verbatim; spectroscope does not interpret it. A line without the field wears no chip." },
   "trace.note.origin": { de: "geschrieben von", en: "written by" },
@@ -537,6 +579,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tf.explainFailed": { de: "Deutung fehlgeschlagen: {msg}", en: "The reading failed: {msg}" },
   "ws.perSession": { de: "Session-Workspace", en: "session workspace" },
   "ws.pinned": { de: "fester Workspace", en: "pinned workspace" },
+  // The tree drawn before any run: the folder the first run WILL work in. It
+  // is not a session workspace, and there is no session yet to call it one.
+  "ws.firstRunFolder": { de: "Ordner des ersten Laufs", en: "the first run's folder" },
   // The type chips. The nine that predate card 141 kept the exact lowercase
   // word they rendered before, in both languages, because that word is the
   // wire's own vocabulary and translating it would break the link between the
@@ -549,6 +594,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.cat.text": { de: "text", en: "text" },
   "trace.cat.thinking": { de: "thinking", en: "thinking" },
   "trace.cat.tool": { de: "tool", en: "tool" },
+  // The two chips that ask what the tool was. Same word in both languages for
+  // the same reason as their neighbours: it IS the wire vocabulary. "workflow"
+  // is the tool's own name, and "mcp" is the prefix every tool served over MCP
+  // wears, which is also what a reader recognises on the row.
+  "trace.cat.workflow": { de: "workflow", en: "workflow" },
+  "trace.cat.mcp": { de: "mcp", en: "mcp" },
   "trace.cat.permission": { de: "permission", en: "permission" },
   "trace.cat.usage": { de: "usage", en: "usage" },
   "trace.cat.image": { de: "image", en: "image" },
@@ -613,6 +664,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   // agents tab
   "agents.empty": { de: "Noch kein Lauf. Sobald du etwas schickst, erscheint hier der Haupt-Agent — und jeder Subagent, den er spawnt, bleibt für die Session sichtbar.", en: "No run yet. As soon as you send something, the main agent appears here — and every subagent it spawns stays visible for the session." },
   "agents.main": { de: "Haupt", en: "Main" },
+  "agents.launched": { de: "gestartet, ohne Rückmeldung", en: "launched, never reported back" },
 
   // work panel + chat v2 (branch chat-v2, prototype)
   "rp.work": { de: "Arbeit", en: "Work" },
@@ -812,6 +864,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.source.notJson": { de: "Diese Zeile ist kein JSON. Sie steht unverändert da.", en: "This line is not JSON. It stands here unchanged." },
   "trace.source.capped": { de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.", en: "Showing {shown} of {total} characters. Copying always takes the whole line." },
   "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
+  // The same ceiling and the same two numbers one face over, where the copy
+  // button hands over the payload rather than the line — so the second half is
+  // the escape that is actually next to it. Measured over 83,214 thinking
+  // blocks in ~/.claude/projects, exactly one is long enough to read this.
+  "trace.meta.capped": { de: "{shown} von {total} Zeichen im Bild. Der ganze Wert ist einen Klick entfernt.", en: "Showing {shown} of {total} characters. The whole value is one click away." },
   // A signature or a base64 body: carried whole, collapsed on screen, and never
   // dropped without saying so.
   // The two collapsed kinds (readable.ts HIDDEN_KINDS), which are two claims
@@ -876,6 +933,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.mode.structured": { de: "Struktur", en: "Structured" },
   "ed.nothing": { de: "Dieser Frame trägt nichts außer seinem Typ.", en: "This frame carries nothing beyond its type." },
   "ed.more": { de: "+{n} weitere", en: "+{n} more" },
+  "ed.fromFile": { de: "Aus der importierten Zeile — die Felder des Records selbst, unverändert. Die Abschnitte darüber sind das, was diese Zeile erzeugt hat.", en: "From the imported line — the record's own fields, verbatim. The sections above are what this line produced." },
   "exp.button": { de: "exportieren", en: "export" },
   "exp.title": { de: "Diese Ansicht exportieren", en: "Export this view" },
   "exp.emptyTitle": { de: "Noch nichts zu exportieren — diese Ansicht trägt keine Events.", en: "Nothing to export yet — this view carries no events." },
@@ -905,6 +963,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.historyAria": { de: "Verlauf des Agenten-Laufs", en: "Agent run history" },
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },
   "info.compacted": { de: "Verlauf kompaktiert: {n} Turns zusammengefasst", en: "History compacted: {n} turns summarized" },
+  "info.compactedInto": {
+    de: "Verlauf kompaktiert: {n} Turns zu {chars} Zeichen zusammengefasst",
+    en: "History compacted: {n} turns summarized into {chars} characters",
+  },
 
   // built-in model first-use notice (card 91; per-model since the catalogue)
   "lmn.title": { de: "eingebautes modell — läuft auf dieser maschine", en: "built-in model — runs on this machine" },
@@ -983,6 +1045,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.image": { de: "Bild", en: "Image" },
   "tv.skill": { de: "Skill", en: "Skill" },
   "tv.lines": { de: "{n} Zeilen", en: "{n} lines" },
+  // Card 167: three things a Claude Code transcript records beside the text the
+  // model was shown, and the card had no way to know before.
+  "tv.truncatedCap": {
+    de: "am Token-Limit abgeschnitten \u2014 das ist nicht die ganze Datei",
+    en: "cut off at the token cap \u2014 this is not the whole file",
+  },
+  "tv.stderr": { de: "Standardfehler", en: "stderr" },
+  "tv.landed": { de: "ge\u00e4ndert bei {at}", en: "changed at {at}" },
   "tv.entries": { de: "{n} Einträge", en: "{n} entries" },
   "tv.hits": { de: "{n} Treffer", en: "{n} hits" },
   "tv.workflow": { de: "Workflow", en: "Workflow" },
@@ -1170,6 +1240,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   // usage footer
   "footer.run": { de: "Lauf", en: "run" },
   "footer.session": { de: "Session", en: "session" },
+  "footer.subagent": { de: "inkl. 1 Subagent", en: "incl. 1 subagent" },
+  "footer.subagents": { de: "inkl. {n} Subagenten", en: "incl. {n} subagents" },
+  "footer.subagentsTitle": {
+    de: "Der Session-Wert enthält die Subagenten: {out} out stammen von ihnen.",
+    en: "The session figure includes the subagents: {out} out came from them.",
+  },
+  "footer.runSubagentsTitle": {
+    de: "Der Lauf-Wert enthält die Subagenten: {out} out stammen von ihnen.",
+    en: "The run figure includes the subagents: {out} out came from them.",
+  },
   "footer.runActive": { de: "Lauf aktiv", en: "run active" },
   "footer.stopped": { de: "gestoppt · {r}", en: "stopped · {r}" },
   "footer.ready": { de: "bereit", en: "ready" },
@@ -1239,7 +1319,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "lt.dam": { de: "▮▮ Damm · {n} wartend", en: "▮▮ dam · {n} waiting" },
   "lt.moreWaiting": { de: "… {n} weitere wartend", en: "… {n} more waiting" },
 
-  // leveling: the ladder (card 80). Level names come from the ids, so only the
+  // leveling: the tutorial (card 80). Level names come from the ids, so only the
   // blurbs and the criteria need words here.
   "leveling.level.darkFrame.name": { de: "Dunkelbild", en: "dark frame" },
   "leveling.level.darkFrame.blurb": { de: "Einen Provider einrichten und Szenarien anschauen.", en: "Set up a provider and watch scenarios." },
@@ -1294,10 +1374,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.criterion.fleetActed.counts": { de: "Einen echten Node starten, stoppen oder sein Tor beantworten.", en: "Spawn, stop or gate a real node." },
 
   // leveling: the UI around it
-  "leveling.pill.title": { de: "Stand: {name} — klicken für die Leiter", en: "At {name} — click for the ladder" },
-  "leveling.panel.title": { de: "Die Leiter", en: "The ladder" },
+  "leveling.pill.title": { de: "Stand: {name} — klicken für das Tutorial", en: "At {name} — click for the tutorial" },
+  "leveling.panel.title": { de: "Das Tutorial", en: "The tutorial" },
   "leveling.panel.at": { de: "Dein Stand: {name}", en: "You are at {name}" },
-  "leveling.panel.toward": { de: "{met} von {total} zum nächsten Schritt", en: "{met} of {total} toward the next rung" },
+  "leveling.panel.toward": { de: "{met} von {total} zum nächsten Schritt", en: "{met} of {total} toward the next step" },
   "leveling.panel.reached": { de: "erreicht", en: "reached" },
   "leveling.panel.mastery": { de: "Kür — schaltet nichts frei", en: "mastery — unlocks nothing" },
   "leveling.panel.byHand": { de: "von Hand markiert", en: "marked by hand" },
@@ -1311,14 +1391,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "leveling.levelUp.title": { de: "{name} erreicht", en: "{name} reached" },
   "leveling.levelUp.opened": { de: "Neu offen: {surfaces}", en: "Now open: {surfaces}" },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
-  "leveling.intro.body": { de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Die Leiter macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.", en: "spectroscope has seven tabs, three lenses, a fleet canvas and a machine room. All at once, that is a wall. The ladder turns it into a path: you start with the chat, and each further surface opens once you have used the one before it." },
+  "leveling.intro.body": { de: "spectroscope hat sieben Tabs, drei Linsen, eine Flotten-Canvas und einen Maschinenraum. Alles auf einmal ist eine Wand. Das Tutorial macht daraus einen Weg: du fängst mit dem Chat an, und jede weitere Fläche geht auf, sobald du die davor benutzt hast.", en: "spectroscope has seven tabs, three lenses, a fleet canvas and a machine room. All at once, that is a wall. The tutorial turns it into a path: you start with the chat, and each further surface opens once you have used the one before it." },
   "leveling.intro.honest": { de: "Kein Zwang: du kannst jederzeit alles öffnen, in den Einstellungen oder direkt an jeder verschlossenen Fläche.", en: "Nothing is forced: you can open everything at any moment, in the settings or right on any closed surface." },
-  "leveling.intro.ladder": { de: "Mit der Leiter anfangen", en: "Start with the ladder" },
+  "leveling.intro.ladder": { de: "Mit dem Tutorial anfangen", en: "Start with the tutorial" },
   "leveling.intro.everything": { de: "Alles sofort öffnen", en: "Open everything now" },
   "leveling.intro.foot": { de: "Diese Frage kommt nur einmal. Ändern kannst du es später in den Einstellungen.", en: "This question is asked once. You can change it later in the settings." },
-  "leveling.settings.title": { de: "Leiter", en: "Leveling" },
+  "leveling.settings.title": { de: "Tutorial", en: "Tutorial" },
   "leveling.settings.mode": { de: "Modus", en: "Mode" },
-  "leveling.settings.mode.ladder": { de: "Leiter — Flächen öffnen sich nach und nach", en: "Ladder — surfaces open as you go" },
+  "leveling.settings.mode.ladder": { de: "Tutorial — Flächen öffnen sich nach und nach", en: "Tutorial — surfaces open as you go" },
   "leveling.settings.mode.checklist": { de: "Checkliste — nichts ist gesperrt, Fortschritt zählt mit", en: "Checklist — nothing locks, progress still counts" },
   "leveling.settings.mode.off": { de: "Aus — kein Pill, kein Panel, keine Aufzeichnung", en: "Off — no pill, no panel, no tracking" },
   "leveling.settings.reset": { de: "Zurück zum Dunkelbild", en: "Back to the dark frame" },

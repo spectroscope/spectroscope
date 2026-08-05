@@ -564,6 +564,16 @@ public record SpectroConfig(
         return KNOWN_PROVIDERS.contains(provider);
     }
 
+    /** Every selectable LLM backend. Exposed so a face that switches over the
+     *  providers can be held to this list by a test rather than by whoever
+     *  remembers to look: the doctor's reachability switch knew three of the
+     *  seven for two releases and called the rest unknown (card 164).
+     *  @return the known provider names; iteration order is not defined
+     *          (use {@link #KNOWN_PROVIDERS_DISPLAY} for anything a human reads) */
+    public static Set<String> knownProviders() {
+        return KNOWN_PROVIDERS;
+    }
+
     /**
      * The default model for a provider when none is set explicitly, or {@code null}
      * when the provider has no honest default. A local backend serves whatever model
@@ -755,6 +765,92 @@ public record SpectroConfig(
      *  @return "ready" | "needs-key" | "local" */
     public static String onboardingStatus(String provider, boolean keyPresent) {
         return keyEnvFor(provider) == null ? "local" : (keyPresent ? "ready" : "needs-key");
+    }
+
+    /** {@link #onboardingStatus} for a provider talking to a CONCRETE endpoint —
+     *  the same three words, one fact richer. A key variable says a provider CAN
+     *  need a key, not that this endpoint does: {@code openai} is the generic
+     *  OpenAI-compatible escape hatch and is routinely pointed at a keyless
+     *  server on the operator's own machine (see {@link #switchRequiresKey}).
+     *  Against such an endpoint the answer is {@code "local"}, exactly as for a
+     *  provider that has no key variable at all; against a public service a
+     *  missing key is {@code "needs-key"} and nothing about it is healthy.
+     *  @param provider   the provider name
+     *  @param endpoint   the effective base url it will dial
+     *  @param keyPresent whether {@link #keyEnvFor} is set and non-blank
+     *  @return "ready" | "needs-key" | "local" */
+    public static String onboardingStatusAt(String provider, String endpoint, boolean keyPresent) {
+        if (isLocalEndpoint(endpoint)) {
+            return "local";
+        }
+        return onboardingStatus(provider, keyPresent);
+    }
+
+    /** Whether a base url names a server on the operator's own machine or private
+     *  network rather than a public service — loopback, a private IPv4 range, or
+     *  a {@code localhost}/{@code .local} name. Deliberately narrow: everything
+     *  it does not recognise counts as public, so an unknown host errs towards
+     *  asking for the key rather than towards a green light.
+     *  <p>Public because the doctor line has to know WHICH road reached the
+     *  "local" verdict: a keyless provider called against a public endpoint is
+     *  also "local", and telling that reader the endpoint sits on their own
+     *  machine is a false statement about their network.</p>
+     *  @param url the base url, may be null or unparsable
+     *  @return true when the host is loopback, private, or a local name */
+    public static boolean isLocalEndpoint(String url) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        String host;
+        try {
+            host = java.net.URI.create(url.trim()).getHost();
+        } catch (IllegalArgumentException notAUrl) {
+            return false;
+        }
+        if (host == null) {
+            return false;
+        }
+        host = host.toLowerCase(java.util.Locale.ROOT).replace("[", "").replace("]", "");
+        if (host.equals("localhost") || host.endsWith(".localhost") || host.endsWith(".local")
+                || host.equals("::1") || host.equals("0.0.0.0")) {
+            return true;
+        }
+        // A private range is a range of ADDRESSES, so the host has to BE an
+        // address before its octets mean anything. Matching the string prefix
+        // instead handed the private verdict to any name that merely started
+        // that way: 10.example.com, 192.168.example.com and 172.16.example.com
+        // are public DNS names and all three were read as the operator's own
+        // network, which is the opposite of this method's stated bias.
+        return isPrivateIpv4(host);
+    }
+
+    /** Whether a host is literally a private-range IPv4 address.
+     *  @param host the lower-cased host, brackets already stripped
+     *  @return true for 127/8, 10/8, 192.168/16 and 172.16/12 */
+    private static boolean isPrivateIpv4(String host) {
+        String[] octets = host.split("\\.");
+        if (octets.length != 4) {
+            return false;
+        }
+        int[] parts = new int[4];
+        for (int i = 0; i < 4; i++) {
+            if (octets[i].isEmpty() || octets[i].length() > 3) {
+                return false;
+            }
+            for (int c = 0; c < octets[i].length(); c++) {
+                if (octets[i].charAt(c) < '0' || octets[i].charAt(c) > '9') {
+                    return false; // a label with a letter in it is a name, not an address
+                }
+            }
+            parts[i] = Integer.parseInt(octets[i]);
+            if (parts[i] > 255) {
+                return false;
+            }
+        }
+        return parts[0] == 127
+                || parts[0] == 10
+                || (parts[0] == 192 && parts[1] == 168)
+                || (parts[0] == 172 && parts[1] >= 16 && parts[1] <= 31);
     }
 
     /** The built-in local provider's picker status: {@code "ready"} once the

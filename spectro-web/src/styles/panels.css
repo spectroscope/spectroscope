@@ -211,6 +211,9 @@
 .agent-dot--in_progress { background: var(--accent); animation: spectroscope-pulse 1.2s ease-in-out infinite; }
 .agent-card-name { font-size: var(--fs-12); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-role-tag { font-size: var(--fs-11); color: var(--sand); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0 var(--sp-1); }
+/* The model the child ran on, when the file named one (card 167). Faint and
+   truncating: it qualifies the row, it does not compete with the agent's name. */
+.agent-model { font-size: var(--fs-11); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-badge { margin-left: auto; font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
 .agent-badge--working { color: var(--warn); }
 .agent-badge--completed { color: var(--ok); }
@@ -546,15 +549,19 @@
 /* Chips first, then the text. The text is what ellipsizes: a clipped chip would
    show half a fact with no sign that the other half exists. */
 .trace-col--summary { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; color: var(--text-dim); }
-/* Base 0 so the text gives up its width first; the chips only start shrinking
-   once it has none left, and then they ellipsize VISIBLY rather than being cut
-   off at the cell edge with no sign that more was there. */
-.trace-summary-text { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The text gives up its width first, but never all of it. Measured in Chrome
+   against this stylesheet, with the corpus's widest chip run: at a 1280 px
+   panel TWO chips took the summary to 0 px, and 18,190 rows of the 167
+   transcripts under ~/.claude/projects carry two (4,657 carry three). A row
+   whose summary is gone no longer says what the frame IS, which is worse than a
+   chip that ends in an ellipsis and keeps its full value in the title. So: a
+   floor here, a ceiling on each chip, and both ellipsize visibly. */
+.trace-summary-text { flex: 1 1 auto; min-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* What the imported line says beyond its frame (effort, and the rest of that
    family). A quiet outline chip: it must read as a note ON the row, never as
    the row's own content, so it borrows the type pill's shape and stays a step
    fainter. Sand marks it as a reading of the file rather than a wire fact. */
-.trace-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); white-space: nowrap; }
+.trace-note { flex: 0 1 auto; min-width: 0; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); white-space: nowrap; }
 
 .trace-type { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--text-dim); vertical-align: bottom; }
 
@@ -615,9 +622,22 @@
 .ed-rows > div { display: flex; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-12); }
 .ed-rows dt { flex-shrink: 0; min-width: 116px; color: var(--text-faint); }
 .ed-rows dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+/* A row whose value is a run of the file's own bytes (a thought, a signature):
+   the label sits above it and the value gets the full width, because a wrapped
+   paragraph beside a 116px term column is a column of two words. */
+.ed-rows > div.ed-row--block { flex-direction: column; gap: 2px; }
+.ed-row--block dd { width: 100%; min-width: 0; }
 .ed-note { color: var(--text-faint); margin-left: var(--sp-2); }
 .ed-more { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
 .ed-empty { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
+/* What the IMPORTED LINE says about the turn, under the frames it produced.
+   Set apart by a rule and not by a colour: everything above the line is this
+   app reading its own wire, everything below is a field of somebody else's
+   file, and that is a difference in provenance, not in importance. No accent
+   here — colour lives on the spectral lines. */
+.ed-meta { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0;
+  padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.ed-meta-note { margin: 0; font-size: var(--fs-11); color: var(--text-faint); }
 /* Rendered markdown reads as prose, one step below the chat's own size. */
 .ed-md { font-size: var(--fs-12); color: var(--text); overflow-wrap: anywhere; }
 .ed-md .md h1 { font-size: var(--fs-14); }
@@ -763,7 +783,9 @@
 .trace-row.trace-row--hit-cur { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 2px 0 0 var(--accent); opacity: 1; }
 .trace-search-note { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--accent); white-space: nowrap; }
 
-/* Said-vs-did pairing line under a block-ending thinking row. */
+/* Said-vs-did pairing line under the row that wears a thinking block's reading:
+   the row the block OPENS on, or — when the block and the turn came off one
+   line of an imported file — that line's own opening row. */
 .trace-pair {
   display: block;
   width: 100%;
@@ -779,6 +801,9 @@
 }
 .trace-pair:hover { color: var(--text); background: var(--surface-2); }
 .trace-pair .mono { color: var(--text-dim); }
+/* The same relation read backwards, on the action's own row: dashed, so a
+   glance tells which way the arrow points without reading the word. */
+.trace-pair--from { border-left-style: dashed; }
 /* Reasoning lens: the whole thinking block behind an action, untruncated. */
 .trace-reason {
   border-left: 2px solid var(--ev-reasoning);

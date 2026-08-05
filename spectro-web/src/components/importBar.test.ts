@@ -8,7 +8,7 @@
 // The header eyebrow switches to "archive" and the bar keeps naming the
 // imported file.
 import { describe, expect, it } from "vitest";
-import { shownImportBar } from "./importBar";
+import { shownImportBar, subagentNote } from "./importBar";
 
 const bar = {
   sessionId: "import:claude-code:four-readings.jsonl",
@@ -41,5 +41,53 @@ describe("which session the import bar belongs to", () => {
     const next = { ...bar, sessionId: "import:claude-code:other.jsonl", file: "other.jsonl" };
     expect(shownImportBar(next, next.sessionId)?.file).toBe("other.jsonl");
     expect(shownImportBar(bar, next.sessionId)).toBeNull();
+  });
+});
+
+// Saying what the file is (card 152).
+//
+// A subagent transcript that imports as an ordinary session is a second false
+// statement on top of the first: the reader is told this is a session, when it
+// is one agent lifted out of somebody else's run. The file names its own agent
+// on every line, and names the session it ran under and the kind of agent it
+// was, so the bar can say all three without inventing any of them.
+//
+// The rule of import/sourceNotes.ts applies here word for word: a fact the file
+// does not carry produces NOTHING. No empty clause, no placeholder id.
+describe("what the bar says about a subagent transcript", () => {
+  it("says nothing at all about an ordinary session", () => {
+    expect(subagentNote("en", undefined)).toBeNull();
+    expect(subagentNote("de", null)).toBeNull();
+  });
+
+  it("names the agent, its kind and the session it came out of", () => {
+    const note = subagentNote("en", {
+      agentId: "a0b476c3c018",
+      sessionId: "902488ae-c4cf-49ef-a57c-cd914740bee2",
+      attributionAgent: "general-purpose",
+    });
+    expect(note).toContain("a0b476c3c018");
+    expect(note).toContain("902488ae-c4cf-49ef-a57c-cd914740bee2");
+    expect(note).toContain("general-purpose");
+  });
+
+  it("says it in German too", () => {
+    const note = subagentNote("de", { agentId: "a0b476c3c018", sessionId: "s-1" });
+    expect(note).toContain("a0b476c3c018");
+    expect(note).toContain("s-1");
+    expect(note).not.toMatch(/\{[a-z]+\}/); // no unfilled slot reaches the screen
+  });
+
+  it("drops the session clause when the file does not name one", () => {
+    const note = subagentNote("en", { agentId: "lone" }) ?? "";
+    expect(note).toContain("lone");
+    expect(note.toLowerCase()).not.toContain("session ");
+    expect(note).not.toContain("undefined");
+  });
+
+  it("drops the kind clause when the file does not name one", () => {
+    const note = subagentNote("en", { agentId: "lone", sessionId: "s-1" }) ?? "";
+    expect(note).toContain("s-1");
+    expect(note).not.toContain("undefined");
   });
 });

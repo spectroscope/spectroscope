@@ -11,12 +11,32 @@
 // Ported from the LLM_Simulator; keep the two in sync.
 
 import type { RunEvent } from "../events";
+import { readSubagentTranscript, type SubagentTranscript } from "./subagentFile";
+import { readToolResultDetail, type ToolResultDetail } from "./toolResultDetail";
+import { readAgentResult, type AgentRunResult } from "./agentResult";
+
+/** What a response reported it cost. The same four counters arrive twice: on a
+ *  record's own `message.usage`, and — for a subagent whose transcript is a
+ *  different file — inside the parent's `toolUseResult.usage`. */
+interface CCUsage {
+  input_tokens?: number;
+  output_tokens?: number;
+  /** Anthropic prompt caching. Additive on our wire too: absent means the
+   *  provider reported none, which is not the same as zero. */
+  cache_read_input_tokens?: number;
+  cache_creation_input_tokens?: number;
+}
 
 interface CCRecord {
   type?: string;
   message?: {
     role?: string;
     content?: unknown;
+    /** The API response this record is a piece of. Several consecutive records
+     *  share one, which is how a response written block by block is put back
+     *  together — see the run grouping in claudeCodeWithOrigin. Absent on user
+     *  records and on transcripts older than the field. */
+    id?: string;
     /** Assistant records name the model that produced them; it can change
      *  mid-file (a /model switch, or a subagent on another model). */
     model?: string;
@@ -24,25 +44,77 @@ interface CCRecord {
      *  "stop_sequence"), or null on a message that never reported an ending.
      *  Absent on user records and on transcripts old enough not to carry it. */
     stop_reason?: string | null;
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      /** Anthropic prompt caching. Additive on our wire too: absent means the
-       *  provider reported none, which is not the same as zero. */
-      cache_read_input_tokens?: number;
-      cache_creation_input_tokens?: number;
-    };
+    usage?: CCUsage;
   };
   uuid?: string;
   parentUuid?: string;
   isSidechain?: boolean;
   timestamp?: string;
+  /** One HTTP call to the API. Read only as a second key on the response
+   *  grouping below, never as content: it agrees with `message.id` on all
+   *  85,369 multi-piece runs in the corpus, so demanding both costs nothing and
+   *  refuses to fuse a file that ever reuses an id. */
+  requestId?: string;
+  /** The agent that wrote this record, on a subagent transcript. Read only by
+   *  import/subagentFile.ts, and only at the level of the whole file. */
+  agentId?: string;
+  /** The tool's own return value, beside the tool_result block that carries
+   *  the flattened text. Read by import/toolResultDetail.ts, never rendered as
+   *  itself. Present on 44,208 records of 496,675 — absent-first, always. */
+  toolUseResult?: unknown;
   /** `attachment` records: what the client recorded around the conversation. */
   attachment?: CCAttachment;
   /** `queue-operation` records: enqueue, dequeue or remove. */
   operation?: string;
   /** The queued text, on a queue-operation that kept it. */
   content?: unknown;
+  /** `system` records: which kind. Five in the corpus; two of them say
+   *  something a reader acts on and are read below (compact_boundary 21,
+   *  api_error 67). The other three carry nothing new — stop_hook_summary
+   *  (1,750) is the same sentence every time, local_command (16) is the client
+   *  echoing itself, model_refusal_fallback (14) sits only in files that
+   *  already wear a fallback chip. */
+  subtype?: string;
+  /** `system[compact_boundary]`: the compaction as the client recorded it. */
+  compactMetadata?: CCCompactMetadata;
+  /** `system[api_error]`: what failed. An OBJECT here, with `formatted` and
+   *  `message`. The same key on an assistant record is a short classifier
+   *  string, which is why nothing reads it without checking the shape. */
+  error?: unknown;
+  /** `system[api_error]`: the retry the client then made. Both present or both
+   *  absent on all 67. */
+  retryAttempt?: number;
+  maxRetries?: number;
+  /** `user`: this body is the machine's summary of the conversation it
+   *  replaced, not something a person typed. */
+  isCompactSummary?: boolean;
+  /** `assistant`: this message is not the model answering, it is the client
+   *  writing down an outage. false is a different synthetic message ("No
+   *  response requested."), so only the true case may be read. */
+  isApiErrorMessage?: boolean;
+  /** Where the run stood when this record was written. Stamped on every user,
+   *  assistant, system and attachment record, and NOT a constant: 104 of the
+   *  167 session transcripts in ~/.claude/projects carry more than one cwd. */
+  cwd?: string;
+  /** The git branch at the time of the record. 32 of 167 session files carry
+   *  more than one; the longest sequence measured is five. */
+  gitBranch?: string;
+  /** The Claude Code client version. 12 of 167 session files carry more than
+   *  one — the client was upgraded under the running session, which is what
+   *  explains why the first stretch of a file carries none of these fields. */
+  version?: string;
+}
+
+/**
+ * What `system[subtype=compact_boundary]` records about the compaction.
+ *
+ * Only the survivor list is read here. The numbers beside it —
+ * trigger, preTokens, postTokens, durationMs, cumulativeDroppedTokens — are
+ * fields of somebody else's file and reach the reader through
+ * import/recordMeta.ts, under the frame this record produces.
+ */
+interface CCCompactMetadata {
+  preservedMessages?: unknown;
 }
 
 /**
@@ -83,6 +155,12 @@ interface CCBlock {
   tool_use_id?: string;
   content?: unknown;
   is_error?: boolean;
+  /** `tool_reference`: the tool a ToolSearch result just loaded. The whole
+   *  block is `{type, tool_name}` on all 2,805 of them in the corpus. */
+  tool_name?: string;
+  /** `image` / `document`: the bytes, always `{type:"base64", media_type,
+   *  data}` — never a path and never a URL, measured on all 8,594. */
+  source?: { type?: string; media_type?: string; data?: string };
 }
 
 /** Records without a timestamp get synthetic ones this far apart. */
@@ -171,6 +249,20 @@ function receiptTaskId(output: string): string | null {
   return m === null ? null : m[1];
 }
 
+/**
+ * A notification's own words, and only those.
+ *
+ * The join keys are already gone (parseTaskNotification keeps them out of
+ * `fields`); `output-file` goes too, because it is a path on the machine that
+ * ran the task and says nothing to a reader who is not on it.
+ */
+function notificationText(n: TaskNotification): string {
+  return n.fields
+    .filter((f) => f.label !== "output-file" && f.value !== "")
+    .map((f) => f.value)
+    .join("\n");
+}
+
 /** What a notification adds under the receipt it belongs to. */
 function outcomeSection(n: TaskNotification): string {
   const head = `--- task ${n.taskId}${n.status === null ? "" : ` · ${n.status}`} ---`;
@@ -235,12 +327,164 @@ function stampRecords(recs: CCRecord[], base: number): number[] {
 // "Task" is the classic subagent tool; newer Claude Code versions call it "Agent".
 const isSpawnTool = (name: unknown): boolean => name === "Task" || name === "Agent";
 
+/** Longest a foreign block type may be when it is named on a card, and the
+ *  control characters it may not smuggle in. The type is somebody else's
+ *  vocabulary rendered as interface text, so it is treated the way detect.ts
+ *  treats an unrecognised record type. */
+const MAX_BLOCK_TYPE_CHARS = 32;
+// C0, DEL, C1 and the two Unicode line separators — everything a renderer could
+// read as "start a new line".
+// eslint-disable-next-line no-control-regex
+const CONTROL = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
+
+const safeWord = (raw: string): string => {
+  const flat = raw.replace(CONTROL, " ").trim();
+  return flat.length > MAX_BLOCK_TYPE_CHARS ? `${flat.slice(0, MAX_BLOCK_TYPE_CHARS)}…` : flat;
+};
+
+/** Base64 decoded, in bytes. Four characters carry three, less the padding. */
+function decodedBytes(base64: string): number {
+  const pad = base64.endsWith("==") ? 2 : base64.endsWith("=") ? 1 : 0;
+  return Math.max(0, Math.floor((base64.length / 4) * 3) - pad);
+}
+
+function byteSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * What a block that is not text SAYS it is.
+ *
+ * The bytes do not travel, and that is measured rather than assumed: the corpus
+ * holds 1.23 GB of base64 image data, an import is a browser-side `File.text()`
+ * read with no server blob behind it, and the one frame that could carry a
+ * picture — `image_generated` — resolves through `/api/images/<file>` and would
+ * claim the screenshot was generated here when it was read or grabbed. So the
+ * note names the media type the file itself wrote and states the size it
+ * decodes to. Nothing else is invented: a block with no media type is named by
+ * its own `type` word, which is the file's word, capped and stripped of control
+ * characters because it is foreign data being rendered as interface text.
+ *
+ * @return the note, or "" for a block that is text or carries nothing to name
+ */
+function blockNote(b: CCBlock): string {
+  if (b.type === "tool_reference") return typeof b.tool_name === "string" ? safeWord(b.tool_name) : "";
+  const kind = typeof b.type === "string" ? safeWord(b.type) : "";
+  if (kind === "" || kind === "text") return "";
+  const media = typeof b.source?.media_type === "string" ? safeWord(b.source.media_type) : "";
+  const data = typeof b.source?.data === "string" ? b.source.data : null;
+  if (media === "") return `[${kind}]`;
+  return data === null ? `[${media}]` : `[${media} · ${byteSize(decodedBytes(data))}]`;
+}
+
+/**
+ * A message body as text.
+ *
+ * A text block travels VERBATIM and always has; what changed (card 167) is what
+ * a block that is NOT text produces. It used to produce the empty string.
+ *
+ * COUNTED TWICE, because the two counts are not the same number and only one of
+ * them is about a reader. 6,789 tool_result BLOCKS in the corpus flattened to
+ * nothing — 5,269 whose only block was an image or a document, 1,520 whose only
+ * block was a `tool_reference` — but 5,240 of those sit in `agent-*.jsonl`
+ * sidechain files, which import to a couple of frames and no tool cards at all.
+ * What a reader could actually open blank is 1,546 CARDS: 1,348 that showed a
+ * tool which ran, succeeded and displayed nothing, and 201 ToolSearch results
+ * that threw away the 439 tool names they consisted of. All 1,546 now say what
+ * they hold, and a note gets a line of its own so it can never run into the
+ * words beside it.
+ *
+ * A body of nothing but text is byte-identical to what this returned before:
+ * every piece is joined with no separator, exactly as it was.
+ */
 const asText = (content: unknown): string => {
   if (typeof content === "string") return content;
-  if (Array.isArray(content))
-    return content.map((b: CCBlock | string) => (typeof b === "string" ? b : (b.text ?? ""))).join("");
-  return "";
+  if (!Array.isArray(content)) return "";
+  let out = "";
+  let ownLine = false;
+  for (const b of content as (CCBlock | string)[]) {
+    const isText = typeof b === "string" || b?.type === "text" || b?.type === undefined;
+    const piece = typeof b === "string" ? b : isText ? (b.text ?? "") : blockNote(b);
+    if (piece === "") continue;
+    if ((ownLine || !isText) && out !== "" && !out.endsWith("\n")) out += "\n";
+    out += piece;
+    ownLine = !isText;
+  }
+  return out;
 };
+
+/**
+ * What the person attached to a message of their own.
+ *
+ * Only on a user record, and only for the two block types that are an
+ * attachment: `image` (1,446 top-level blocks in the corpus) and `document`
+ * (19, all base64 PDFs). They reach `emitBlock`, match no branch there and
+ * produce nothing — so 196 records whose body is nothing but attachments import
+ * as no frame at all, the prompt gone from the transcript, and 298 more import
+ * as the words with the screenshot they were about removed.
+ *
+ * @return the note to put in the person's bubble, or "" for any other block
+ */
+function attachmentNote(b: CCBlock): string {
+  return b?.type === "image" || b?.type === "document" ? blockNote(b) : "";
+}
+
+/**
+ * The messages a compaction kept, by uuid.
+ *
+ * `allUuids` is the full list and `uuids` the visible one; both are on all 21
+ * boundaries in the corpus, and the fuller list is the right denominator for
+ * "what went". A boundary that names NEITHER returns null and produces no
+ * frame: `compaction`'s only number is the count of what was removed, and
+ * counting it against a survivor list the file never wrote would be an
+ * invention about somebody else's session. Measured 0 such boundaries.
+ *
+ * @return the surviving uuids, or null when the record names none
+ */
+function survivors(meta: CCCompactMetadata | undefined): Set<string> | null {
+  const p = meta?.preservedMessages;
+  if (p === null || typeof p !== "object") return null;
+  const { allUuids, uuids } = p as { allUuids?: unknown; uuids?: unknown };
+  const list = Array.isArray(allUuids) ? allUuids : Array.isArray(uuids) ? uuids : null;
+  if (list === null) return null;
+  return new Set(list.filter((u): u is string => typeof u === "string"));
+}
+
+/**
+ * What an `api_error` record says went wrong, as one sentence.
+ *
+ * `formatted` is the client's own rendering ("429 Rate limited", "Connection
+ * interrupted by system sleep") and travels verbatim; `message` is the fallback
+ * for a record that carries no formatted line. The retry rides in the same
+ * string because `error` has one message and no field for a retry, and a field
+ * invented on events.ts for a reading of somebody else's file is exactly what
+ * this importer does not do.
+ *
+ * @return the message, or null for a record that names no failure at all
+ */
+function errorMessage(r: CCRecord): string | null {
+  const e = r.error;
+  if (e === null || typeof e !== "object") return null;
+  const { formatted, message } = e as { formatted?: unknown; message?: unknown };
+  const head =
+    typeof formatted === "string" && formatted !== ""
+      ? formatted
+      : typeof message === "string" && message !== ""
+        ? message
+        : "";
+  if (head === "") return null;
+  return typeof r.retryAttempt === "number" && typeof r.maxRetries === "number"
+    ? `${head} · retry ${r.retryAttempt}/${r.maxRetries}`
+    : head;
+}
+
+/** How far past a boundary its summary may sit. Measured over all 21
+ *  boundaries in the corpus the gap is exactly one line every time; the window
+ *  exists because the distance is the client's business, and a file that ever
+ *  writes a record between the two would otherwise lose the size. */
+const SUMMARY_LOOKAHEAD = 3;
 
 /**
  * An adapted stream, with the line each frame came from.
@@ -254,6 +498,10 @@ const asText = (content: unknown): string => {
 export interface ImportedEvents {
   events: RunEvent[];
   origin: Int32Array;
+  /** Present only when the file was one agent's transcript rather than a
+   *  session's (card 152). The import bar says so; absent means an ordinary
+   *  session and the bar says nothing of the kind. */
+  subagent?: SubagentTranscript;
 }
 
 export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
@@ -288,6 +536,18 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   const runId = "cc-import";
   let started = false;
 
+  // WHOSE TRANSCRIPT IS THIS (card 152).
+  //
+  // A file whose records are ALL sidechain is one agent's transcript, and that
+  // agent is the root of this stream: its owner lives in another file, which is
+  // exactly why run_start.parentId is left off rather than pointed at a `main`
+  // this file does not hold. `subagentRoot` is null for every session file, so
+  // `rootId` is the literal "main" everywhere else and every path below reads
+  // identically to how it read before.
+  const subagent = readSubagentTranscript(recs);
+  const subagentRoot = subagent?.agentId ?? null;
+  const rootId = subagentRoot ?? "main";
+
   // Task tool_use ids double as the child agentIds. A sidechain record finds
   // its owning Task by walking parentUuid up: the chain roots either directly
   // at the Task id or at another sidechain record whose chain does.
@@ -299,6 +559,48 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         if (b?.type === "tool_use" && isSpawnTool(b.name) && typeof b.id === "string") taskIds.add(b.id);
     }
   }
+  /**
+   * Every place a record can carry a `<task-notification>` block.
+   *
+   * Three channels, and the file picks one without telling anybody: the user
+   * record read inline further down, the `queue-operation` that enqueued the
+   * text, and the `queued_command` attachment that holds it. Measured over
+   * ~/.claude/projects on 2026-08-04, of the 365 terminal notifications that
+   * name an async launch of their own file, 218 arrive as a user record and
+   * 147 only in the other two. Which record type carried it says nothing about
+   * whether the child reported back.
+   */
+  const notificationTexts = (r: CCRecord): string[] => {
+    const texts: string[] = [];
+    const body = r.message?.content;
+    if (typeof body === "string") texts.push(body);
+    if (r.type === "queue-operation" && typeof r.content === "string") texts.push(r.content);
+    if (r.type === "attachment" && r.attachment?.type === "queued_command")
+      texts.push(asText(r.attachment.prompt));
+    return texts;
+  };
+
+  /**
+   * Launch calls that this file names again in a notification, whatever it says.
+   *
+   * The badge these suppress reads "launched, never reported back", and that is
+   * the app's claim about somebody else's transcript. Measured over
+   * ~/.claude/projects on 2026-08-04, the transcript refutes it on 365 of the
+   * 394 async launches — the notification is right there in the same file, and
+   * the same import used to render it a second time as a parentless roster row
+   * under the task id. A progress notification counts too: it has no ending in
+   * it, but a task that files a progress report has reported back.
+   *
+   * Read up front because the notification lands after the launch record that
+   * would otherwise have already claimed the silence.
+   */
+  const reportedBack = new Set<string>();
+  for (const r of recs)
+    for (const text of notificationTexts(r)) {
+      const n = parseTaskNotification(text);
+      if (n !== null && n.callId !== null && taskIds.has(n.callId)) reportedBack.add(n.callId);
+    }
+
   const byUuid = new Map(
     recs.filter((r) => typeof r.uuid === "string").map((r) => [r.uuid as string, r] as const),
   );
@@ -313,6 +615,19 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     return null;
   };
   const childStarted = new Set<string>();
+  /**
+   * Children already billed from their OWN records in this file.
+   *
+   * The launch record's `usage` is the child's whole run — on the real records
+   * its four counters add up to `totalTokens` exactly — so in a file that also
+   * holds the child's sidechain records it is the same money a second time.
+   * Charging both put the child, and the session total, at double. The child's
+   * own records win: they are the per-response grain, and the summary only
+   * repeats them. (Not reachable on today's corpus: 0 of 311,332 sidechain
+   * records resolve an owner inside their own file. The branch exists for the
+   * mixed transcript, and it has to be right there or nowhere.)
+   */
+  const billedOwn = new Set<string>();
   // Who spawned a Task, and what for — a Task nested inside a sidechain belongs
   // under its spawner, not under main.
   const spawnedBy = new Map<string, string>();
@@ -340,6 +655,45 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   };
   const stopOf = (agentId: string): string => lastStop.get(agentId) ?? UNRECORDED_STOP;
 
+  // COMPACTION (card 167, finding 2). `compaction` has been in events.ts all
+  // along and five consumers draw it — the reducer's warn line, the text feed's
+  // "[compaction −N turns]", the graph's compact node, LabTrace, TraceView —
+  // and the importer emitted none, so an imported million-token session
+  // restarted its conversation with no marker at all. Measured over the 5,120
+  // transcripts in ~/.claude/projects: 21 boundaries in 17 files, 0 frames.
+  //
+  // The uuid of every main turn still standing, in order. `removedTurns` is the
+  // count of these the boundary did not preserve — arithmetic over two things
+  // the file states, the way the response grouping and the notification's wait
+  // are. Only turns are counted, because `compaction` counts turns.
+  //
+  // A record the file did not name cannot be matched against a list of names,
+  // so it is not tracked at all: that understates what went rather than
+  // claiming a turn was dropped because the file forgot to give it a uuid.
+  const mainTurnUuids: string[] = [];
+  // How many main turns stand, named or not. An understatement is one thing; a
+  // file whose records carry NO uuid would leave the list empty and report
+  // "0 turns removed" about a session that was cut in half, which is a count
+  // nobody wrote — the very thing survivors() refuses a frame over. So that
+  // boundary produces no frame either. 0 files in ~/.claude/projects are like
+  // that (every boundary there removed 184 to 848 turns, median 397), so this
+  // holds a latch rather than a live bug.
+  let mainTurnsStanding = 0;
+
+  // How long the summary that follows each boundary runs, by boundary index.
+  // The summary itself never becomes a frame — see the isCompactSummary branch
+  // — so this is where its size is read.
+  const summaryCharsAt = new Map<number, number>();
+  for (let i = 0; i < recs.length; i++) {
+    if (recs[i].type !== "system" || recs[i].subtype !== "compact_boundary") continue;
+    for (let j = i + 1; j < Math.min(i + 1 + SUMMARY_LOOKAHEAD, recs.length); j++) {
+      if (recs[j].isCompactSummary !== true) continue;
+      const body = recs[j].message?.content;
+      summaryCharsAt.set(i, typeof body === "string" ? body.length : asText(body).length);
+      break;
+    }
+  }
+
   // Turns are per agent: the main run and every subagent count their own.
   const turns = new Map<string, number>();
   const nextTurn = (agentId: string): number => {
@@ -348,10 +702,122 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     return n;
   };
 
+  // ONE API RESPONSE, WRITTEN DOWN AS SEVERAL RECORDS.
+  //
+  // Claude Code does not write a record per response. It writes one per content
+  // block — the thinking lands, then the text, then each tool_use — and every
+  // piece repeats the same `message.id` AND the whole `message.usage`. Measured
+  // over the transcripts in ~/.claude/projects: ~266,000 assistant records are
+  // ~117,400 responses, and only 27% of responses were ever a single record.
+  // So reading a record as a turn counted 2.26 turns for every turn that
+  // happened, and counted the response's tokens once per piece. On the owner's
+  // own session, main agent only, which is what the app frames: 1,321,954
+  // output tokens on screen where the file says 599,435.
+  //
+  // WHAT ENDS A RUN. Not any gap: the pieces of one response are routinely
+  // separated by the tool_result records coming back between them (measured,
+  // 18,892 of 19,298 interleaved messages are separated by nothing else). A run
+  // therefore survives every record that is NOT an assistant record and ends
+  // only when ANOTHER assistant message begins. That guard is what keeps a
+  // compaction apart: a compaction replays a record verbatim, id and all, and
+  // the copy lands after other assistant messages have spoken.
+  //
+  // The key is `message.id` AND `requestId` together, plus the sidechain flag.
+  // Measured over 85,369 multi-piece runs: requestId — one HTTP call — agrees
+  // with this grouping on every single one and disagrees on none. Demanding
+  // both costs nothing and refuses to fuse a file that ever reuses an id.
+  //
+  // `runStart[i]` is the record that opened record i's response, or -1 for a
+  // record that is not an assistant one.
+  const runStart = new Int32Array(recs.length).fill(-1);
+  let openAt = -1;
+  let openId: string | undefined;
+  let openReq: string | undefined;
+  let openSidechain = false;
+  for (let i = 0; i < recs.length; i++) {
+    const r = recs[i];
+    if (r.type !== "assistant") continue;
+    const id = typeof r.message?.id === "string" && r.message.id !== "" ? r.message.id : undefined;
+    // The sidechain flag is part of the identity: merging across it would move
+    // a subagent's tokens onto the main run. No message in the corpus mixes the
+    // two, so this half never fires today — it is here because that failure
+    // would be silent and wrong, not because it is common.
+    if (
+      openAt >= 0 &&
+      id !== undefined &&
+      id === openId &&
+      r.requestId === openReq &&
+      !!r.isSidechain === openSidechain
+    ) {
+      runStart[i] = openAt;
+      continue;
+    }
+    openAt = i;
+    openId = id;
+    openReq = r.requestId;
+    openSidechain = !!r.isSidechain;
+    runStart[i] = i;
+  }
+  /** Whether this record OPENS a response, and so a turn. A record with no
+   *  message.id opens one of its own, which is what every transcript written
+   *  before the field carried it has always done. */
+  const startsTurn = (i: number): boolean => runStart[i] === i;
+
+  // Which piece reports the response's tokens: the LAST one carrying a usage
+  // object. The one measured fact that carries this rule: across every
+  // multi-piece run in the corpus, the last piece holding a usage object holds
+  // the maximum output_tokens, with zero exceptions. (An earlier draft of this
+  // comment said the earlier pieces are "partial accountings, output_tokens 0
+  // or 1, cache fields absent". That was checked and is false — it describes 6
+  // of 31,658 differing splits. The pieces differ in many ways; what does not
+  // vary is which one holds the finished number.)
+  //
+  // "The last that HAS one" and not simply "the last", so a run whose final
+  // piece dropped the field still reports what the file did record.
+  //
+  // A SUBAGENT'S TOKENS ARE COUNTED TOO, on the owner's own agentId (card 167,
+  // finding 1, on the owner's word "zähl die subagent-tokens"). An imported
+  // session total therefore means what the SESSION spent rather than what its
+  // main agent spent. The footer says so whenever a child is in it — a total
+  // that changes meaning in silence between an old import and a new one is the
+  // thing to avoid, not the higher number.
+  //
+  // Both branches charge through the one emitter below, and a response is
+  // charged ONCE. (An earlier version of this sentence said the two branches
+  // "charge a response the same way, so a mixed transcript that does hold its
+  // children counts them too". They did, and it counted them twice: the launch
+  // record's `usage` is the child's whole run, so a file that also holds the
+  // child's own records says the same bill in both places. See billedOwn.)
+  const lastUsage = new Map<number, number>();
+  for (let i = 0; i < recs.length; i++) {
+    if (runStart[i] < 0 || !recs[i].message?.usage) continue;
+    lastUsage.set(runStart[i], i);
+  }
+  const usageAt = new Set(lastUsage.values());
+
   const stamps = stampRecords(recs, base);
   const modelOf = (r: CCRecord): string | undefined =>
     typeof r.message?.model === "string" && r.message.model !== "" ? r.message.model : undefined;
-  const firstModel = recs.map(modelOf).find((m) => m !== undefined);
+  // The model the file opens on, for the up-front announcement and for
+  // run_start. A record the file FLAGS as an outage is skipped: its model is
+  // the literal string "<synthetic>", and 121 transcripts in the corpus open
+  // on one, so the run announced a switch to a model by that name before a
+  // word was said.
+  //
+  // What that is worth, re-measured over ~/.claude/projects rather than
+  // argued: the up-front announcement goes 122 → 1, and "<synthetic>"
+  // announcements of every kind go 191 → 29. It does NOT clear run_start:
+  // exactly 1 file opened on a synthetic model before and the same 1 does
+  // after (6b9d11d3-4fea-4964-99f3-6c3aea453b59), because the record it opens
+  // on carries isApiErrorMessage:false. The 28 mid-file announcements that
+  // remain sit on such records too, all of them reading "No response
+  // requested.". The flag is the file's own word and this filter follows it;
+  // reading the model string instead would be us deciding what somebody
+  // else's record meant.
+  const firstModel = recs
+    .filter((r) => r.isApiErrorMessage !== true)
+    .map(modelOf)
+    .find((m) => m !== undefined);
 
   // provider_info is the socket-only announcement of the active backend, and
   // the reducer takes the latest one. A transcript names its model per message,
@@ -368,8 +834,69 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     out.push({ type: "provider_info", model, ts } as unknown as RunEvent);
   };
 
-  /** One content block under `agentId`, whoever owns it. */
-  const emitBlock = (agentId: string, b: CCBlock, ts: number): void => {
+  /**
+   * One response's token bill, charged to whoever produced it.
+   *
+   * The main branch and the sidechain branch call this with different owners,
+   * which is the whole of finding 1: a subagent's response used to reach the
+   * screen with its words and without its cost.
+   *
+   * A cache counter is spread in only when the record wrote one. A synthesised
+   * zero reads as "nothing was cached", which is a claim about a request that
+   * reported nothing at all.
+   */
+  const emitUsage = (agentId: string, u: CCUsage, ts: number): void => {
+    out.push({
+      type: "usage",
+      agentId,
+      inputTokens: u.input_tokens ?? 0,
+      outputTokens: u.output_tokens ?? 0,
+      ...(u.cache_read_input_tokens !== undefined ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
+      ...(u.cache_creation_input_tokens !== undefined
+        ? { cacheCreationTokens: u.cache_creation_input_tokens }
+        : {}),
+      ts,
+    });
+  };
+
+  /**
+   * What the launch record says about the child, beside the receipt it shows.
+   *
+   * `agent_detail` is import-only (wire/nonWire.ts): a reading of somebody
+   * else's transcript, in the idiom sourceNotes.ts and tool_result_detail
+   * already use. A record that names neither the model nor a background launch
+   * produces no frame, so a row with no model chip is exactly a row whose file
+   * did not name one.
+   */
+  const emitAgentDetail = (agentId: string, res: AgentRunResult, ts: number): void => {
+    if (res.model === undefined && res.launched === undefined) return;
+    out.push({
+      type: "agent_detail",
+      agentId,
+      ...(res.model !== undefined ? { model: res.model } : {}),
+      ...(res.launched !== undefined ? { launched: true } : {}),
+      ts,
+    } as unknown as RunEvent);
+  };
+
+  /**
+   * One content block under `agentId`, whoever owns it.
+   *
+   * `detail` and `agent` are two readings of the owning record's ONE
+   * `toolUseResult`: what a tool returned, and what a launch says about the
+   * child it launched. Both ride with the block rather than being looked up
+   * afterwards because the record is where they belong together: measured over
+   * the corpus, NO record carries more than one tool_result block, so a
+   * record's readings belong to exactly one call and the join can never pick
+   * the wrong one.
+   */
+  const emitBlock = (
+    agentId: string,
+    b: CCBlock,
+    ts: number,
+    detail?: ToolResultDetail | null,
+    agent?: AgentRunResult | null,
+  ): void => {
     // Signature-only thinking / empty text blocks would render as empty
     // activities and empty stream slices — skip them.
     if (b?.type === "thinking" && (b.thinking ?? "") !== "") {
@@ -378,6 +905,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       out.push({ type: "text_delta", agentId, text: b.text ?? "", ts });
     } else if (b?.type === "tool_use" && typeof b.id === "string" && typeof b.name === "string") {
       if (isSpawnTool(b.name)) {
+        // A compaction replays whole records verbatim, and a replayed launch
+        // used to spawn the child a SECOND time: the task message that comes
+        // with it says `submitted`, so a child the file had already reported
+        // finished went back to "not started yet". Same guard the tool_call
+        // branch below has had, for the same reason. Measured over
+        // ~/.claude/projects: 1 row (32ab8b5d…, toolu_01AS7uYQ…, replayed 926
+        // records after its launch).
+        if (spawnedBy.has(b.id)) return;
         const task = typeof b.input?.description === "string" ? b.input.description : "subtask";
         // The agent type ("Explore", "code-reviewer") is the only readable name
         // a subagent has — its id is the raw tool-use id. It travels on the task
@@ -396,6 +931,16 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           label,
           ts,
         });
+        // A report the file wrote down before this launch, held back so it
+        // would not land in front of the row it is about. Its own record still
+        // carries its own timestamp; this frame is stamped where the reader
+        // learns of it, which is the earliest point in the stream where the
+        // child exists to be reported on.
+        const held = pending.get(b.id);
+        if (held !== undefined) {
+          pending.delete(b.id);
+          pushOutcome(b.id, held, ts);
+        }
       } else if (!calls.has(b.id)) {
         // A compaction replays whole records verbatim, launch call included. The
         // reducer keys cards by callId, so emitting the call twice re-creates the
@@ -411,15 +956,51 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           // record has been read by now, so the answer is complete here.
           out.push({ type: "run_end", runId: `cc-${b.tool_use_id}`, stopReason: stopOf(b.tool_use_id), ts });
         }
-        out.push({
-          type: "agent_message",
-          from: b.tool_use_id,
-          to: agentId,
-          role: "result",
-          state: b.is_error ? "failed" : "completed",
-          text: asText(b.content),
-          ts,
-        });
+        // What the record says about the child itself (card 167, finding 6):
+        // the model it ran on, and whether it ever reported back.
+        if (agent !== null && agent !== undefined) {
+          // The record says "async_launched" and it is right — but only about
+          // the launch. Whether the child ever came back is the FILE's answer,
+          // and a notification naming this call is it.
+          const { launched: _wentBackground, ...rest } = agent;
+          emitAgentDetail(b.tool_use_id, reportedBack.has(b.tool_use_id) ? rest : agent, ts);
+          // The child's own bill, under the child. Nothing else in a session
+          // file carries it, and without it the fan-out looks free — unless the
+          // child's own records already paid it, see billedOwn.
+          if (agent.usage !== undefined && !billedOwn.has(b.tool_use_id))
+            emitUsage(
+              b.tool_use_id,
+              {
+                input_tokens: agent.usage.inputTokens,
+                output_tokens: agent.usage.outputTokens,
+                ...(agent.usage.cacheReadTokens !== undefined
+                  ? { cache_read_input_tokens: agent.usage.cacheReadTokens }
+                  : {}),
+                ...(agent.usage.cacheCreationTokens !== undefined
+                  ? { cache_creation_input_tokens: agent.usage.cacheCreationTokens }
+                  : {}),
+              },
+              ts,
+            );
+        }
+        // A background launch gets NO result message HERE: 394 of the 624
+        // launch records in ~/.claude/projects say `async_launched`, and this
+        // message would mark every one of them completed off a receipt that
+        // reads "Async agent launched successfully." — the launch's answer,
+        // not the child's. What finishes such a child is its own
+        // task-notification later in the file (emitLaunchOutcome), which is
+        // where its real answer is. The receipt itself stays where the launch
+        // put it, on the parent's card.
+        if (agent?.launched !== true)
+          out.push({
+            type: "agent_message",
+            from: b.tool_use_id,
+            to: agentId,
+            role: "result",
+            state: b.is_error ? "failed" : "completed",
+            text: asText(b.content),
+            ts,
+          });
       }
       const output = asText(b.content);
       const taskId = receiptTaskId(output);
@@ -445,6 +1026,90 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         durationMs: 0,
         ts,
       });
+      // What the tool RETURNED, next to what the model was SHOWN. The output
+      // above stays the block, byte for byte; this is the same answer
+      // structured, and the card reads it where the flattened text lost
+      // something (the gutter, the two streams, the place an edit landed).
+      if (detail != null)
+        out.push({ type: "tool_result_detail", callId: b.tool_use_id, detail, ts } as unknown as RunEvent);
+    }
+  };
+
+  /** Outcomes already landed, so one block carried by three records lands once. */
+  const landed = new Set<string>();
+  /**
+   * Reports the file wrote down BEFORE the launch they answer.
+   *
+   * 4 rows in ~/.claude/projects do this: the queue-operation that took the
+   * notification sits ahead of the assistant record holding the tool_use,
+   * because a compaction replayed the launch after it. Pushing the outcome
+   * there would put the child's ending in front of its own spawn, and the task
+   * message that follows would reset the row to "submitted" — the file says
+   * "completed" and the app would have said "not started yet".
+   */
+  const pending = new Map<string, TaskNotification>();
+
+  /**
+   * A launched child reporting back, on the child's own row.
+   *
+   * A `<task-notification>` whose `<tool-use-id>` names a launch THIS file made
+   * is that child talking, and it belongs where the child is — not under its
+   * task id as a roster row of its own with no parent, which is what the
+   * fallback below did with it. Measured over ~/.claude/projects on 2026-08-04,
+   * that fallback drew 245 parentless rows in the 70 files that fan out, and
+   * 218 of them were a child the same import had already drawn.
+   *
+   * A terminal `<status>` ends the child (`killed`, `stopped` and `failed` all
+   * read as failed, which is what the reducer has words for); no status is a
+   * progress report and leaves it working with what it said. The text is the
+   * notification's own fields, same as the fallback.
+   *
+   * @return true when this notification belonged to a launch in this file
+   */
+  const emitLaunchOutcome = (n: TaskNotification, ts: number): boolean => {
+    if (n.callId === null || !taskIds.has(n.callId)) return false;
+    // A background agent files a notification every time it comes to rest, and
+    // the client writes each one down up to three times (queued, attached,
+    // delivered). Same call, same status, same summary is the same report.
+    const key = [n.callId, n.status ?? "", n.summary].join(" ");
+    if (landed.has(key)) return true;
+    landed.add(key);
+    // The launch is not in the stream yet: hold the report until it is.
+    if (!spawnedBy.has(n.callId)) {
+      pending.set(n.callId, n);
+      return true;
+    }
+    pushOutcome(n.callId, n, ts);
+    return true;
+  };
+
+  /** The report itself, on the child's row. */
+  const pushOutcome = (callId: string, n: TaskNotification, ts: number): void => {
+    const text = notificationText(n);
+    out.push({
+      type: "agent_message",
+      from: callId,
+      to: spawnedBy.get(callId) ?? "main",
+      role: n.status === null ? "status" : "result",
+      state: n.status ?? "working",
+      text: text === "" ? n.summary : text,
+      ts,
+    });
+  };
+
+  /**
+   * The same, off a record that is not the delivered user message.
+   *
+   * A `queue-operation` and a `queued_command` attachment carry the block
+   * verbatim. Only the launch-outcome half runs here: the fallback that turns
+   * an unjoinable notification into a report of its own stays on the user
+   * channel, where it was measured, so these records add no roster row that
+   * was not already there.
+   */
+  const landNotification = (r: CCRecord, ts: number): void => {
+    for (const text of notificationTexts(r)) {
+      const n = parseTaskNotification(text);
+      if (n !== null) emitLaunchOutcome(n, ts);
     }
   };
 
@@ -462,9 +1127,10 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
    * is the notification's own text.
    */
   const emitNotification = (n: TaskNotification, ts: number): void => {
+    if (emitLaunchOutcome(n, ts)) return;
     const callId = n.callId !== null && calls.has(n.callId) ? n.callId : (launchOf.get(n.taskId) ?? null);
     if (callId !== null && calls.has(callId)) {
-      const card = results.get(callId) ?? { ts, text: "", agentId: "main" };
+      const card = results.get(callId) ?? { ts, text: "", agentId: rootId };
       card.text = card.text === "" ? outcomeSection(n) : `${card.text}\n\n${outcomeSection(n)}`;
       results.set(callId, card);
       const p = promised.get(callId);
@@ -482,14 +1148,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       });
       return;
     }
-    const text = n.fields
-      .filter((f) => f.label !== "output-file" && f.value !== "")
-      .map((f) => f.value)
-      .join("\n");
+    const text = notificationText(n);
     out.push({
       type: "agent_message",
       from: n.taskId,
-      to: "main",
+      to: rootId,
       // No status is a progress report, not an ending.
       role: n.status === null ? "status" : "result",
       state: n.status ?? "working",
@@ -500,6 +1163,56 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
 
   announce(firstModel, stamps[0] ?? base);
   chargeTo(-1); // the opening announcement is the importer's, not a line's
+
+  // WHERE THE RUN STOOD, AND WHEN IT MOVED (card 167, finding 8).
+  //
+  // The same idiom as provider_info directly above: announce it once, off the
+  // first line that says it, and again whenever the file says it changed. A
+  // constant would be header material; measured over the 167 session
+  // transcripts in ~/.claude/projects, it is not one — 104 of them (62%) stand
+  // in more than one directory, 32 on more than one branch, 12 on more than one
+  // client version. Every relative path in every tool result after a move means
+  // something else than it did before, and the app said nothing.
+  //
+  // The frame is IMPORT-ONLY (wire/nonWire.ts). Nothing in events.ts gained a
+  // field: this is a reading of somebody else's file, and no Java or Python
+  // reader would ever construct one.
+  const GROUND_FIELDS = ["cwd", "gitBranch", "version"] as const;
+  type GroundField = (typeof GROUND_FIELDS)[number];
+  /** What the run stood on, as of the last record that said so. */
+  const ground: Partial<Record<GroundField, string>> = {};
+  /**
+   * Announce the ground if this record moved it.
+   *
+   * The frame carries ONLY the fields that changed, plus a `from` naming what
+   * each of them left. A record that changed nothing produces nothing, which
+   * is the majority of every file. On the first announcement there is no
+   * `from`: nothing was left behind, and an empty object would read as one.
+   *
+   * A move BACK to a directory the session already stood in is announced like
+   * any other move (3,221 of the corpus's 3,692 cwd moves are exactly that,
+   * measured 2026-08-04): the ground is where it is, not where it has ever
+   * been.
+   */
+  const noteGround = (r: CCRecord, ts: number): void => {
+    const moved: Partial<Record<GroundField, string>> = {};
+    const from: Partial<Record<GroundField, string>> = {};
+    let changed = false;
+    let left = false;
+    for (const field of GROUND_FIELDS) {
+      const value = r[field];
+      if (typeof value !== "string" || value === "" || value === ground[field]) continue;
+      if (ground[field] !== undefined) {
+        from[field] = ground[field];
+        left = true;
+      }
+      moved[field] = value;
+      ground[field] = value;
+      changed = true;
+    }
+    if (!changed) return;
+    out.push({ type: "ground_info", ...moved, ...(left ? { from } : {}), ts } as unknown as RunEvent);
+  };
 
   /**
    * The kinds a transcript records AROUND the conversation (card 141).
@@ -536,6 +1249,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           ts,
         } as unknown as RunEvent);
       }
+      // 147 of the 365 notifications that answer an async launch of their own
+      // file are only ever HERE and in the attachment below — the delivered
+      // user record is not in the transcript. The frame above carries the text
+      // for the reader; this carries the answer to the child's row.
+      landNotification(r, ts);
       return true;
     }
     if (r.type !== "attachment") return false;
@@ -592,6 +1310,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           ...(a.origin !== undefined && a.origin !== null ? { origin: a.origin } : {}),
           ts,
         } as unknown as RunEvent);
+        landNotification(r, ts);
         return true;
       }
       default:
@@ -605,31 +1324,234 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     }
   };
 
+  /**
+   * A `system` record, which used to produce nothing whatever it said.
+   *
+   * All 1,868 of them in the corpus are non-sidechain, so this runs ahead of
+   * the sidechain branch and there is no owner to get wrong. Every system
+   * record is handled here, including the three subtypes that say nothing a
+   * reader acts on: falling through to the conversation branches was how they
+   * used to be dropped, and stating it is cheaper to read than inferring it.
+   *
+   * @return true always for a system record, false for anything else
+   */
+  const emitSystem = (r: CCRecord, i: number, ts: number): boolean => {
+    if (r.type !== "system") return false;
+    if (r.subtype === "compact_boundary") {
+      const preserved = survivors(r.compactMetadata);
+      if (preserved === null) return true;
+      // Turns stood and not one of them is named: nothing can be counted
+      // against the survivor list, and 0 would read as "nothing was dropped".
+      // Same refusal as the boundary that names no survivors.
+      if (mainTurnsStanding > 0 && mainTurnUuids.length === 0) return true;
+      const kept = mainTurnUuids.filter((u) => preserved.has(u));
+      const removedTurns = mainTurnUuids.length - kept.length;
+      // Only what survived carries into the NEXT boundary. A second compaction
+      // removes what IT removed, and a list that kept the already-dropped turns
+      // would count them a second time — 4 of the corpus's 17 compacting files
+      // hold more than one boundary.
+      mainTurnUuids.length = 0;
+      mainTurnUuids.push(...kept);
+      mainTurnsStanding = kept.length;
+      out.push({
+        type: "compaction",
+        agentId: "main",
+        removedTurns,
+        // 0 is this field's own word for "no summary within the window" —
+        // events.ts types it as a number, and the reducer already reads the 0
+        // as absence and drops the size from the line rather than saying
+        // "into 0 characters" (reducer.ts, case "compaction").
+        summaryChars: summaryCharsAt.get(i) ?? 0,
+        ts,
+      });
+      return true;
+    }
+    if (r.subtype === "api_error") {
+      // A real API failure, and the reason a reader finds a twenty-minute gap
+      // between two turns. 67 records in 10 files produced nothing at all
+      // before this, so a retry ladder was a silent hole in the clock.
+      const message = errorMessage(r);
+      if (message !== null) out.push({ type: "error", agentId: "main", message, ts });
+      return true;
+    }
+    return true;
+  };
+
+  /**
+   * An outage the client wrote into the assistant channel.
+   *
+   * 350 records in the corpus, and every one of them imported as a `text_delta`
+   * — "API Error: Overloaded" read in the chat as the model's own answer. The
+   * turn stays (the request was made and it failed), the tokens stay (the file
+   * records its own zeroes), and the words become the `error` frame that
+   * events.ts has carried since the beginning.
+   */
+  const emitApiErrorMessage = (agentId: string, blocks: CCBlock[], ts: number): void => {
+    const message = asText(blocks);
+    if (message !== "") out.push({ type: "error", agentId, message, ts });
+  };
+
   const handleRecord = (r: CCRecord, i: number): void => {
     const ts = stamps[i];
+    // Before every early return below: a record that carries no conversation
+    // still carries the ground. Measured 2026-08-04 over the 167 transcripts:
+    // 621 of the 3,933 ground frames come off a line that produces nothing
+    // else — 488 of the 3,766 moves (487 on a `system/stop_hook_summary`
+    // record, one on a `user` one) and 133 of the 167 openings, every one of
+    // those on an `attachment`.
+    noteGround(r, ts);
     if (emitNoConversation(r, ts)) return;
+    // Every other record type, so that what SUPPRESSES the "never reported
+    // back" badge and what LANDS the child's outcome are read off the same
+    // records. They came apart once: the badge came off 365 children and only
+    // 361 of them got an outcome, and the four left over fell back to
+    // "submitted" — a worse sentence than the one being fixed.
+    landNotification(r, ts);
+    if (emitSystem(r, i, ts)) return;
+    // The machine's summary of the conversation it replaced. It used to import
+    // as a plain user_message: 391,308 characters of the model's own prose,
+    // across the corpus's 21 boundaries, rendered as the person's words. Its
+    // size travels on the compaction frame beside it. The words themselves now
+    // reach NO face of the app: every face hangs off a row — sourcePane reads
+    // `row.sourceLine` (traceDetail.ts) and the structured face reads
+    // `sourceLines[entry.sourceLine]` (TraceView.tsx) — and a line that
+    // produces no frame has no row, so nothing in the app points at it.
+    // Measured over ~/.claude/projects: 21 frames were charged to an
+    // isCompactSummary line before this, 0 after. The bytes stay in the
+    // transcript on disk, and that is the whole of where they stay. (An
+    // earlier version of this comment said the source face has them byte for
+    // byte. It cannot: there is no row to open.) Whether 19 KB of machine
+    // summary should be readable in the app is an owner's call — `compaction`
+    // has no text field, and inventing one on events.ts for a reading of
+    // somebody else's file is what this importer does not do (card 167).
+    if (r.isCompactSummary === true) return;
+    const apiError = r.isApiErrorMessage === true;
     const content = r.message?.content;
     const blocks = Array.isArray(content) ? (content as CCBlock[]) : [];
+    // Read once per record, not once per block: the field is the record's, and
+    // parsing it again for every block of a 40 MB transcript would be a second
+    // pass over the file for nothing.
+    const detail = readToolResultDetail(r.toolUseResult);
+    const agent = readAgentResult(r.toolUseResult);
     if (r.isSidechain) {
-      const owner = ownerOf(r);
+      // The owner IN THE FILE first: a spawn nested inside a subagent
+      // transcript still resolves the ordinary way, so the gate is additive and
+      // never displaces the existing path. `subagentRoot` catches what is left
+      // over, and only in a file that is entirely one agent's.
+      const owner = ownerOf(r) ?? subagentRoot;
       if (!owner) return; // orphaned sidechain: skip, never crash
-      if (!childStarted.has(owner)) {
+      if (owner === subagentRoot) {
+        // The file's own agent. It is the root of this stream, so it opens the
+        // run this import closes, and it carries NO parentId: the spawn that
+        // named it lives in another file, and pointing at a `main` that is not
+        // here would be the invention this whole path exists to avoid.
+        if (!started) {
+          out.push({
+            type: "run_start",
+            runId,
+            agentId: owner,
+            prompt: r.type === "user" ? asText(content) : "",
+            ...(firstModel !== undefined ? { model: firstModel } : {}),
+            ts,
+          });
+          started = true;
+          // The first record is the task the agent was given, and it has now
+          // been read as the prompt. Reading it twice would put it on screen
+          // twice, once as the prompt and once as a message.
+          if (r.type === "user") return;
+        }
+      } else if (!childStarted.has(owner)) {
         out.push({
           type: "run_start",
           runId: `cc-${owner}`,
           agentId: owner,
-          parentId: spawnedBy.get(owner) ?? "main",
+          parentId: spawnedBy.get(owner) ?? rootId,
           prompt: taskOf.get(owner) ?? "subtask",
           ts,
         });
         childStarted.add(owner);
       }
       if (r.type === "assistant") {
-        announce(modelOf(r), ts);
+        // An outage record names its model "<synthetic>", and announcing that
+        // made the trace claim the run had switched to a model by that name.
+        if (!apiError) announce(modelOf(r), ts);
         noteStop(owner, r);
-        out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
+        // Only the piece that OPENED the response opens a turn; see startsTurn.
+        if (startsTurn(i)) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
+        // No blocks and no usage here: both are the shared tail below.
+        //
+        // This branch briefly emitted and billed its own and returned, written
+        // against a rule that had since stopped existing — back when a
+        // subagent's usage became no frame at all, the file's own agent needed
+        // a hand-rolled one or the footer read zero. Card 167 changed that: the
+        // tail bills EVERY sidechain owner through emitUsage + billedOwn, and
+        // `owner === subagentRoot` is an owner like any other. Keeping both
+        // would have been two usage frames for one response, and the reducer
+        // folds usage additively — the footer, the agents panel and the context
+        // ring would each have doubled, with nothing anywhere to fail.
       }
-      for (const b of blocks) emitBlock(owner, b, ts);
+      if (r.type === "user") {
+        // THE SIDECHAIN BRANCH GETS THE MAIN BRANCH'S USER HANDLING (card 152).
+        //
+        // Card 141 fixed both halves of this fifty lines below and never
+        // carried either across. A string body went straight to the block loop,
+        // where a string yields an empty array and the turn vanished — and 51 of
+        // those in the corpus are a coordinator sending a working subagent the
+        // revision it asked for, a real turn no trace has ever shown. An array
+        // body sent every block through emitBlock, so a `text` block became a
+        // text_delta under the agent: all 253 of them read "[Request
+        // interrupted by user]", which is the trace telling the reader the
+        // model said something the model did not say.
+        //
+        // The sender here is the parent rather than a person, and `user_message`
+        // is still the right frame: what it means on our wire is "these words
+        // are not the model's", which is exactly the claim being corrected. One
+        // rule on both branches beats a second vocabulary for the same fact.
+        //
+        // Measured over ~/.claude/projects on 2026-08-04: 5,739 string bodies
+        // and 253 text blocks, ALL of them in files the gate above claims, and
+        // ZERO in a session file. So this reads identically on every session
+        // file in the corpus, and the byte-compare confirms it rather than
+        // being asked to trust it.
+        //
+        // Card 141 has a THIRD half, and it is the one the copy left behind:
+        // the notification join runs BEFORE the string rule. A
+        // `<task-notification>` rides in the user channel as plain text, so the
+        // string rule would swallow it into a chat bubble, the launch's promise
+        // would never settle, and its tool card would read "no result by the
+        // end of the transcript" while the file recorded `completed`. Measured:
+        // no sidechain record in the store carries a parseable notification
+        // today — a subagent transcript closes when the agent returns, and
+        // notifications inject into the live top-level channel. So this is a
+        // gap rather than a defect anyone has hit; the promise machinery does
+        // arm on real files, which is why it is closed here and not later.
+        const n = typeof content === "string" ? parseTaskNotification(content) : null;
+        if (n !== null) {
+          emitNotification(n, ts);
+          return;
+        }
+        if (typeof content === "string") {
+          if (content !== "") out.push({ type: "user_message", text: content, ts } as unknown as RunEvent);
+          return;
+        }
+        for (const b of blocks) {
+          if (b?.type === "text") {
+            if ((b.text ?? "") !== "")
+              out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
+          } else emitBlock(owner, b, ts, detail, agent);
+        }
+        return;
+      }
+      if (apiError) emitApiErrorMessage(owner, blocks, ts);
+      else for (const b of blocks) emitBlock(owner, b, ts, detail, agent);
+      // The child's response costs what it costs, and it is charged to the
+      // child. Same rule as the main branch below, same piece of the response.
+      // Once this fires, the launch record's summary of the same run is a
+      // second copy of the same money — see billedOwn.
+      if (r.type === "assistant" && usageAt.has(i) && r.message?.usage) {
+        emitUsage(owner, r.message.usage, ts);
+        billedOwn.add(owner);
+      }
       return;
     }
     if (r.type === "user") {
@@ -676,29 +1598,32 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             if (b?.type === "text") {
               if ((b.text ?? "") !== "")
                 out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
-            } else emitBlock("main", b, ts);
+              continue;
+            }
+            // An attachment is the person's too, and it goes in the bubble in
+            // the file's own order — a screenshot pasted BEFORE the sentence it
+            // is about reads as one message, and 298 records in the corpus are
+            // exactly that. See attachmentNote for why the bytes stay behind.
+            const note = attachmentNote(b);
+            if (note !== "") out.push({ type: "user_message", text: note, ts } as unknown as RunEvent);
+            else emitBlock(rootId, b, ts, detail, agent);
           }
       }
     } else if (r.type === "assistant") {
-      // One assistant message is one turn. A long session is hundreds of them,
-      // and the graph draws a node per turn_start.
-      announce(modelOf(r), ts);
-      noteStop("main", r);
-      out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
-      for (const b of blocks) emitBlock("main", b, ts);
-      const u = r.message?.usage;
-      if (u)
-        out.push({
-          type: "usage",
-          agentId: "main",
-          inputTokens: u.input_tokens ?? 0,
-          outputTokens: u.output_tokens ?? 0,
-          ...(u.cache_read_input_tokens !== undefined ? { cacheReadTokens: u.cache_read_input_tokens } : {}),
-          ...(u.cache_creation_input_tokens !== undefined
-            ? { cacheCreationTokens: u.cache_creation_input_tokens }
-            : {}),
-          ts,
-        });
+      // One RESPONSE is one turn, and a response is usually several records —
+      // see startsTurn. A long session is hundreds of them, and the graph draws
+      // a node per turn_start.
+      if (!apiError) announce(modelOf(r), ts); // never "<synthetic>"; see emitApiErrorMessage
+      noteStop(rootId, r);
+      if (startsTurn(i)) {
+        out.push({ type: "turn_start", agentId: rootId, turn: nextTurn(rootId), ts });
+        mainTurnsStanding++;
+        if (typeof r.uuid === "string") mainTurnUuids.push(r.uuid);
+      }
+      if (apiError) emitApiErrorMessage(rootId, blocks, ts);
+      else for (const b of blocks) emitBlock(rootId, b, ts, detail, agent);
+      // The response's tokens, once, off the piece that finished the accounting.
+      if (usageAt.has(i) && r.message?.usage) emitUsage("main", r.message.usage, ts);
     }
   };
 
@@ -719,7 +1644,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     // the LAUNCH did succeed; it is the outcome that is unknown.
     for (const [callId, p] of promised) {
       if (p.settled) continue;
-      const card = results.get(callId) ?? { ts: last, text: "", agentId: "main" };
+      const card = results.get(callId) ?? { ts: last, text: "", agentId: rootId };
       const text = card.text === "" ? UNFINISHED(p.taskId) : `${card.text}\n\n${UNFINISHED(p.taskId)}`;
       out.push({
         type: "tool_result",
@@ -731,11 +1656,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         ts: last,
       });
     }
-    out.push({ type: "run_end", runId, stopReason: stopOf("main"), ts: last });
+    out.push({ type: "run_end", runId, stopReason: stopOf(rootId), ts: last });
   }
   // The closing frames belong to the file as a whole, not to its last line.
   chargeTo(-1);
-  return { events: out, origin: Int32Array.from(origin) };
+  return {
+    events: out,
+    origin: Int32Array.from(origin),
+    ...(subagent !== null ? { subagent } : {}),
+  };
 }
 
 export function parseTranscript(text: string): RunEvent[] {

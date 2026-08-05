@@ -6,6 +6,7 @@
 
 import type { RunEvent } from "../events";
 import { claudeCodeWithOrigin } from "./claudeCode";
+import type { SubagentTranscript } from "./subagentFile";
 import { vscodeAgentWithOrigin } from "./vscodeAgent";
 
 const SPECTRO_TYPES = new Set([
@@ -103,6 +104,10 @@ export function detectAndLoad(text: string): {
   events: RunEvent[];
   kind: "spectroscope" | "claude-code" | "vscode-agent";
   source: ImportSource;
+  /** What the file said it was, when it was one agent's transcript rather than
+   *  a session's (card 152). Absent for every other file, which is what keeps
+   *  the bar silent about an ordinary session. */
+  subagent?: SubagentTranscript;
 } {
   const { lines, at } = cut(text);
   if (at.length === 0) throw new Error("empty file");
@@ -146,8 +151,13 @@ export function detectAndLoad(text: string): {
       return { events, kind: "vscode-agent", source: { lines, origin: inFile(origin) } };
     }
     if (r.message !== undefined) {
-      const { events, origin } = claudeCodeWithOrigin(records);
-      return { events, kind: "claude-code", source: { lines, origin: inFile(origin) } };
+      const { events, origin, subagent } = claudeCodeWithOrigin(records);
+      return {
+        events,
+        kind: "claude-code",
+        source: { lines, origin: inFile(origin) },
+        ...(subagent !== undefined ? { subagent } : {}),
+      };
     }
   }
   // Nothing matched. Say what arrived and what is accepted — "unrecognized

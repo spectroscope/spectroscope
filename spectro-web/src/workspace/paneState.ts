@@ -32,12 +32,47 @@ export interface WorkspaceAnnouncement {
 /** What came back from GET /api/files, kept separate from why. */
 export type FetchOutcome = { kind: "ok" } | { kind: "status"; status: number } | { kind: "offline" };
 
+/**
+ * Whose folder a tree belongs to. "session" is the workspace a run resolved;
+ * "prospective" is the folder a run started now WOULD use, listed before any
+ * session exists. They are drawn the same and must not read the same: the pane
+ * may not claim a session that has not started.
+ */
+export type TreeScope = "session" | "prospective";
+
 export type PaneState =
-  | { kind: "tree" }
+  | { kind: "tree"; scope: TreeScope }
   /** Resolved, asked, no answer back yet. The folder exists; nothing is claimed about it. */
   | { kind: "loading"; message: string }
   | { kind: "pending"; message: string; path: string | null }
   | { kind: "unreachable"; message: string };
+
+/**
+ * Whether the announcement names a folder that is already on disk, before any
+ * run has resolved one.
+ *
+ * <p>The pane used to refuse a tree for every unresolved announcement, which is
+ * right for "random" — that folder is keyed by a session id nobody has minted,
+ * so there is nothing to ask about. It was wrong for the modes that name a
+ * concrete path the announcement itself reports as existing: the app knew the
+ * folder, printed the folder, and showed nothing in it until the operator
+ * toggled the chooser to random and back, which minted a session and resolved a
+ * workspace. That toggle was never the fix, it was the workaround.</p>
+ *
+ * @param announcement the latest workspace_info frame, or null before any
+ * @return true when a tree of the first run's folder can honestly be drawn
+ */
+export function listableBeforeTheFirstRun(announcement: WorkspaceAnnouncement | null): boolean {
+  if (announcement === null || announcement.resolved) {
+    return false;
+  }
+  return (
+    announcement.mode !== "random" &&
+    typeof announcement.path === "string" &&
+    announcement.path.length > 0 &&
+    announcement.exists === true
+  );
+}
 
 /** 409: the request carries no resolved workspace. 404: the folder is not there yet. */
 const NO_WORKSPACE = 409;
@@ -62,10 +97,37 @@ export function paneState(
     return { kind: "unreachable", message: de ? "server nicht erreichbar" : "server unreachable" };
   }
 
-  // Nothing resolved yet: say what will happen, and never draw a tree. Without
-  // a session id there is nothing to ask about, so there is nothing to show.
-  if (announcement === null || !announcement.resolved) {
-    return pending(announcement, lang);
+  // Nothing announced at all: nothing to say beyond what will happen.
+  if (announcement === null) {
+    return pending(null, lang);
+  }
+
+  // Nothing resolved yet. Where no folder is named, or the named one is not on
+  // disk, say what will happen and draw nothing.
+  if (!announcement.resolved) {
+    if (!listableBeforeTheFirstRun(announcement)) {
+      return pending(announcement, lang);
+    }
+    // A named folder that exists: the tree is the first run's folder, and the
+    // header says so. The 404 and 409 answers below are the server declining to
+    // list it, and the pane falls back to naming it rather than to a tree of
+    // nothing or a blamed server.
+    if (outcome === null) {
+      return { kind: "loading", message: de ? "lädt …" : "loading …" };
+    }
+    if (outcome.kind === "status") {
+      if (outcome.status === NO_FOLDER) {
+        return {
+          kind: "pending",
+          path: announcement.path ?? null,
+          message: de ? "diesen ordner gibt es nicht mehr" : "this folder is gone",
+        };
+      }
+      if (outcome.status < 200 || outcome.status >= 300) {
+        return pending(announcement, lang);
+      }
+    }
+    return { kind: "tree", scope: "prospective" };
   }
 
   // Resolved and still waiting for /api/files. The run has already made this
@@ -105,7 +167,7 @@ export function paneState(
       };
     }
   }
-  return { kind: "tree" };
+  return { kind: "tree", scope: "session" };
 }
 
 /** The waiting state, worded for the mode actually in effect. */

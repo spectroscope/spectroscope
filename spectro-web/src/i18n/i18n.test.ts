@@ -107,6 +107,10 @@ describe("i18n dict", () => {
       "trace.source.notJson",
       "trace.source.capped",
       "trace.source.showAll",
+      // One ceiling, two escapes: the structured face's copy button hands over
+      // the payload, so it cannot borrow the source pane's promise about the
+      // line. A missing sentence here would fall back to that promise.
+      "trace.meta.capped",
       // What it is and how much of it there is, plus the two words that open and
       // close it. Dropping a collapsed value silently would be a hole the reader
       // cannot see, so it is always three visible strings.
@@ -175,8 +179,27 @@ describe("i18n dict", () => {
 describe("the import bar says what it means", () => {
   it("no longer reports design as a defect, in either language", () => {
     expect(dict["imp.bar"].en).not.toMatch(/produced no frame/);
-    expect(dict["imp.bar"].en).toMatch(/carry no conversation/);
     expect(dict["imp.bar"].de).not.toMatch(/keinen Frame erzeugt/);
+  });
+
+  // Card 152. "110 lines carry no conversation" was a claim about the FILE,
+  // and it was false: those 110 lines held a whole conversation, and the
+  // importer could not attribute them. The count is a measurement of what this
+  // importer read, so the sentence has to say that and not describe somebody
+  // else's file as empty.
+  it("says what was read rather than what the file contains", () => {
+    expect(dict["imp.bar"].en).not.toMatch(/carry no conversation/);
+    expect(dict["imp.bar"].de).not.toMatch(/tragen kein Gespräch/);
+    expect(dict["imp.bar"].en).toMatch(/read/);
+    expect(dict["imp.bar"].de).toMatch(/gelesen/);
+  });
+
+  it("names a subagent transcript for what it is, in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      expect(dict["imp.subagent"][lang]).toContain("{agent}");
+      expect(dict["imp.subagentSession"][lang]).toContain("{session}");
+      expect(dict["imp.subagentKind"][lang]).toContain("{kind}");
+    }
   });
 
   it("still names all three counts, so the sentence stays checkable", () => {

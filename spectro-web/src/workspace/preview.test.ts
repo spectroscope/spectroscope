@@ -21,6 +21,20 @@ describe("fileUrl", () => {
   it("URL-encodes the workspace path", () => {
     expect(fileUrl("src/app data/x y.txt")).toBe("/api/file?path=src%2Fapp%20data%2Fx%20y.txt");
   });
+
+  it("asks the session's workspace when there is a session", () => {
+    expect(fileUrl("notes.md", "20260804-101500")).toBe("/api/file?path=notes.md&session=20260804-101500");
+  });
+
+  it("asks the first run's folder when there is no session yet", () => {
+    // The prospective tree lists files; a preview that cannot open them would
+    // be half an answer. Same root, named by the server, never by the caller.
+    expect(fileUrl("notes.md", undefined, true)).toBe("/api/file?path=notes.md&scope=prospective");
+    // A session outranks it: once a run has resolved a folder, that is the one.
+    expect(fileUrl("notes.md", "20260804-101500", true)).toBe(
+      "/api/file?path=notes.md&session=20260804-101500",
+    );
+  });
 });
 
 describe("formatBytes", () => {

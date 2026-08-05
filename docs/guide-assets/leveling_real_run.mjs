@@ -1,4 +1,4 @@
-// One real agent run against a live server, used to give the ladder plates a
+// One real agent run against a live server, used to give the tutorial plates a
 // receipt that points at something that actually happened.
 //
 // The panel plate is the reason this exists. A criterion marked by hand says

@@ -57,9 +57,13 @@
  <span class="s">"buildTools"</span>: [<span class="s">"gradle"</span>, <span class="s">"maven"</span>, <span class="s">"python"</span>, <span class="s">"bash"</span>],
  <span class="s">"version"</span>: <span class="s">"0.4.1"</span>}</code></pre>
     <p style="margin-top: 1.4rem;">
-      <strong>About the fences.</strong> Part of the surface is origin-gated
+      <strong>About the fences.</strong> The surface is origin-gated
       — the hardening that keeps a malicious web page from driving your
-      local server. A desktop REST client sends no browser
+      local server. One filter checks every <code>/api</code> request for a
+      loopback peer and a localhost <code>Host</code>;
+      <code>GET /api/health</code> is the only path left open, and the
+      individual endpoints add stricter checks on top. A desktop REST client
+      sends no browser
       <code>Origin</code> header, and the server treats an absent Origin as
       safe: from the same machine, targeting <code>localhost</code>, every
       request in the collection passes. The fences bite in exactly two
@@ -71,7 +75,8 @@
     <div class="fmt-scroll">
       <table class="fmt-table">
         <tr><th>endpoint</th><th>fence</th><th>no origin</th><th>evil origin</th><th>evil host</th></tr>
-        <tr><td class="f-name">GET /api/sessions</td><td>none</td><td>200</td><td>200</td><td>200</td></tr>
+        <tr><td class="f-name">GET /api/health</td><td>none</td><td>200</td><td>200</td><td>200</td></tr>
+        <tr><td class="f-name">GET /api/sessions</td><td>host</td><td>200</td><td>200</td><td>404</td></tr>
         <tr><td class="f-name">GET /api/settings</td><td>host</td><td>200</td><td>200</td><td>404</td></tr>
         <tr><td class="f-name">GET /api/leveling</td><td>host+origin</td><td>200</td><td>404</td><td>404</td></tr>
         <tr><td class="f-name">POST /api/leveling/tick</td><td>host+origin</td><td>200</td><td>404</td><td>404</td></tr>

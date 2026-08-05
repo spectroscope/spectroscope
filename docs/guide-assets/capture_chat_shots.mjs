@@ -13,7 +13,7 @@
 //     persisted (App.tsx: useState(true)), so it has to be closed again after
 //     every navigation — the selector is language-safe and the state is
 //     asserted, never assumed.
-//   * The ladder is switched off over REST, so no level pill sits in the
+//   * The tutorial is switched off over REST, so no level pill sits in the
 //     header. These plates are about the chat, not about progression.
 //   * The conversation is REAL and typed into the composer, so the session is
 //     live and the composer is on screen. An imported or replayed session
@@ -144,8 +144,8 @@ async function disclosure(section, row) {
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForTimeout(1200);
 
-// The ladder's intro owns the screen on a pristine home; take "open
-// everything" so nothing is teased, then switch the ladder off entirely so no
+// The tutorial's intro owns the screen on a pristine home; take "open
+// everything" so nothing is teased, then switch the tutorial off entirely so no
 // pill sits in the header of a chat plate.
 if (await page.locator(".lvl-intro").count()) {
   await page.locator(".lvl-intro__pick").last().click();

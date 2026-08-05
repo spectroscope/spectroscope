@@ -135,7 +135,7 @@ implementation("dev.spectroscope:spectro-orchestrator:0.5.0")   // fleets
         <source media="(prefers-color-scheme: dark)" srcset="docs/guide-assets/shots/34-leveling-panel.png">
         <img src="docs/guide-assets/shots-light/34-leveling-panel.png" alt="the leveling progress panel: criteria with ticks and receipts, the spectrum strip filling per level">
       </picture>
-      <br><sub><b>the ladder</b> · levels tick from observed usage, every tick with a receipt into the session it happened in</sub>
+      <br><sub><b>the tutorial</b> · levels tick from observed usage, every tick with a receipt into the session it happened in</sub>
     </td>
   </tr>
   <tr>
