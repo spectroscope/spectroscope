@@ -7,6 +7,8 @@ import org.springframework.core.io.Resource;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -124,6 +126,10 @@ public class ClaudeTranscriptsController {
 
     /** Folded transcripts, kept between calls. */
     private final TranscriptFactsCache facts = new TranscriptFactsCache();
+    /** One model-written line per transcript, on disk (card 179 stage 3). */
+    private final TranscriptGists gists = TranscriptGists.inHome();
+    /** The thing that spends the operator's key, only when he presses. */
+    private final GistWriter gistWriter = new GistWriter();
 
     /** Spring wiring: the real transcript store under {@code ~/.claude/projects}. */
     public ClaudeTranscriptsController() {
@@ -289,6 +295,70 @@ public class ClaudeTranscriptsController {
             }
         }
         return ResponseEntity.ok(new FactsResponse(MAX_FACT_BATCH, List.copyOf(rows)));
+    }
+
+    /** One row of the gist surface. */
+    public record GistRow(String path, String text, String model, boolean stale) {}
+
+    /** What the dialog gets back from either gist call. */
+    public record GistsResponse(List<GistRow> gists, int written, String error) {}
+
+    /** Which transcripts to read, and whether to ignore what is already stored. */
+    public record GistRequest(List<String> paths, boolean all) {}
+
+    /**
+     * {@code GET /api/claude/transcripts/gists}: every gist already on disk.
+     *
+     * <p>Free — no model, no transcript read. The dialog calls it on open so the
+     * rows an operator already paid for are simply there, which is the whole
+     * point of storing them.</p>
+     *
+     * @param request the servlet request, for the local-origin fence
+     * @return the stored gists, each marked {@code stale} when the transcript
+     *         has changed since it was written
+     */
+    @GetMapping("/api/claude/transcripts/gists")
+    public ResponseEntity<GistsResponse> storedGists(HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build();
+        }
+        List<GistRow> rows = new ArrayList<>();
+        gists.all().forEach((path, g) -> {
+            Path file = insideStore(path);
+            boolean stale = file == null || !TranscriptGists.stampOf(file).equals(g.stamp());
+            rows.add(new GistRow(path, g.text(), g.model(), stale));
+        });
+        return ResponseEntity.ok(new GistsResponse(List.copyOf(rows), 0, null));
+    }
+
+    /**
+     * {@code POST /api/claude/transcripts/gists}: write the missing ones.
+     *
+     * <p>The operator pressed a button, so this spends his key — the same fence
+     * pair the key-write and explain endpoints wear, for the same reason.</p>
+     *
+     * <p>Only the ones that need it. A path whose stored gist matches the file's
+     * current stamp is skipped, so pressing again after adding transcripts costs
+     * only the new ones. {@code all: true} clears the store first, which is the
+     * "do them again with a different model" button: a half-finished re-run must
+     * not leave two models' sentences beside each other.</p>
+     *
+     * @param body the paths, and whether to redo everything
+     * @param request the servlet request, for the fences
+     * @return the gists for the requested paths and how many were written; on a
+     *         provider that will not build, the readable reason and nothing else
+     */
+    @PostMapping(value = "/api/claude/transcripts/gists", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<GistsResponse> writeGists(@RequestBody(required = false) GistRequest body,
+                                                    HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.status(404).build();
+        }
+        List<String> paths = body == null || body.paths() == null ? List.of() : body.paths();
+        if (body != null && body.all()) {
+            gists.clear();
+        }
+        return ResponseEntity.ok(gistWriter.write(paths, gists, this::insideStore));
     }
 
     /**

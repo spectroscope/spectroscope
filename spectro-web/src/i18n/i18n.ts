@@ -84,6 +84,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   // The full-screen dialog's filter and statistics line. The chips carry wire
   // vocabulary — the lowercase words the data itself uses — so they read the
   // same in both languages on purpose; the labels around them translate.
+  "imp.gist.run": { de: "{n} zusammenfassen", en: "summarise {n}" },
+  "imp.gist.runWhat": { de: "Fragt das eingestellte Modell, worum es in den angezeigten Sessions ging, die noch keine Zeile haben. Kostet einen Aufruf je Session; das Ergebnis bleibt gespeichert.", en: "Asks the configured model what the shown sessions were about, for the ones with no line yet. One call per session; the answer is kept." },
+  "imp.gist.all": { de: "alle neu", en: "all again" },
+  "imp.gist.allWhat": { de: "Verwirft alle gespeicherten Zeilen und schreibt sie neu — für ein anderes Modell.", en: "Throws away every stored line and writes them again — for a different model." },
+  "imp.gist.working": { de: "läuft …", en: "working …" },
+  "imp.gist.wrote": { de: "{n} geschrieben", en: "{n} written" },
   "imp.filter.text": {
     de: "tippen zum Filtern — Datei, Projekt, Modell, Prompt",
     en: "type to filter — file, project, model, prompt",

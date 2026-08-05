@@ -198,6 +198,14 @@ public class SessionsController {
         providerStatus.put("spectro-local",
                 SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
         out.put("providerStatus", providerStatus);
+        // Whether this install HAS a terminal, and if not, which of the two
+        // reasons it is. The pane used to offer the toggle unconditionally and
+        // then print "the server refused the connection" when the socket closed
+        // — technically true and useless: a plain `java -jar` has no terminal by
+        // construction, because the `spectro-pty` helper rides the signed
+        // desktop bundle and is not in this jar. Saying WHY before the press is
+        // the same rule the fleet lobby's spawn button already follows.
+        out.put("shell", shellStatus());
         // Leveling's one server-established criterion: a configured provider that
         // reports ready settles provider-ready. "local" is deliberately NOT enough —
         // it says a backend is configured, not that it answers; the client reports
@@ -358,6 +366,20 @@ public class SessionsController {
 
     /** One operator setting to save. Not a key — these two are not secrets. */
     public record SettingBody(String name, String value) {}
+
+    /**
+     * What this install can offer as a terminal.
+     *
+     * @return {@code ready} when a PTY helper is present and shells are on,
+     *         {@code off} when the operator turned them off, {@code unavailable}
+     *         when this build simply has no helper — the plain-jar case
+     */
+    private static String shellStatus() {
+        if (!Shells.enabled()) {
+            return "off";
+        }
+        return new HelperPtyProvider().available() ? "ready" : "unavailable";
+    }
 
     /** The save-key request body (never logged). */
     public record KeyBody(String provider, String key) {}

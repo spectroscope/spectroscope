@@ -231,3 +231,15 @@
 .ws-head .ws-term-toggle ~ .ws-refresh {
   margin-left: 0;
 }
+
+/* An install with no terminal says so where the toggle would have been, rather
+   than offering a button that can only fail. Not a button: there is nothing to
+   press. */
+.ws-term-toggle--absent {
+  cursor: default;
+  opacity: 0.55;
+}
+.ws-term-toggle--absent:hover {
+  color: var(--text-dim);
+  border-color: var(--border);
+}

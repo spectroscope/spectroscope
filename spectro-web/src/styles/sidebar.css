@@ -505,3 +505,49 @@
   transition: color var(--t-fast), background var(--t-fast);
 }
 .fleet-row-remove:hover { color: var(--error); background: var(--surface-3); }
+
+/* ---------- the gist buttons (card 179 stage 3) ----------
+   The one thing on a row that costs a model call, so it looks like a control
+   and never like a fact. */
+.import-gists {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  margin: var(--sp-2) 0 0;
+}
+.import-gist-run,
+.import-gist-all {
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: var(--fs-11);
+  cursor: pointer;
+  transition:
+    color var(--t-fast),
+    border-color var(--t-fast);
+}
+.import-gist-run:hover:not(:disabled),
+.import-gist-all:hover:not(:disabled) {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.import-gist-run:disabled,
+.import-gist-all:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.import-gist-note { font-size: var(--fs-11); color: var(--text-faint); }
+.import-gist-bad { font-size: var(--fs-11); color: var(--accent); }
+/* On the row: the model's reading, marked as one. `~` is not decoration — it is
+   the row saying this line was written rather than read off the file. */
+.import-store-gist {
+  font-size: var(--fs-11);
+  color: var(--accent);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
