@@ -14,6 +14,7 @@
 
 import { imageUrl } from "../lab/flowmap/imageUrl";
 import { readTodoItems, type TodoItem } from "./todoList";
+import type { ToolResultDetail } from "../import/toolResultDetail";
 
 /** A key/value pair of a frame, in wire names — this is the wire view. */
 export interface DetailRow {
@@ -30,7 +31,19 @@ export interface DetailItem {
 /** One region of the structured face. `field` names the payload field(s) it
  *  renders, so the label needs no translation and cannot drift from the wire. */
 export type DetailSection =
-  | { kind: "tool"; field: string; name: string; input: unknown; output?: string; isError: boolean }
+  | {
+      kind: "tool";
+      field: string;
+      name: string;
+      input: unknown;
+      output?: string;
+      isError: boolean;
+      /** What the tool RETURNED, when the stream carried an importer's reading
+       *  of it beside the flattened block (card 167). The trace opens the very
+       *  body the chat card draws, so it is handed the same evidence; absent
+       *  everywhere the stream said nothing. */
+      detail?: ToolResultDetail;
+    }
   | { kind: "prose"; field: string; text: string; markdown: boolean }
   | { kind: "rows"; field: string; rows: DetailRow[] }
   | { kind: "list"; field: string; items: DetailItem[]; more: number }
@@ -97,6 +110,33 @@ export function toolCallsById(payloads: Iterable<unknown>): Map<string, ToolCall
   return calls;
 }
 
+/**
+ * Index the importer's readings of what each tool returned, by callId.
+ *
+ * The twin of `toolCallsById`, and deliberately as narrow: it reads only the
+ * import-only `tool_result_detail` frame, and only the `detail` object on it. A
+ * frame that carries none is not indexed at all, because a card with no detail
+ * must render exactly as it always did.
+ *
+ * @param payloads the frames to walk (RunEvents, or trace payloads)
+ * @return callId → the first detail seen under it
+ */
+export function toolResultDetailsById(payloads: Iterable<unknown>): Map<string, ToolResultDetail> {
+  const details = new Map<string, ToolResultDetail>();
+  for (const payload of payloads) {
+    const p = asRecord(payload);
+    if (p === null) continue;
+    if (str(p, "type") !== "tool_result_detail") continue;
+    const callId = str(p, "callId");
+    const detail = asRecord(p["detail"]);
+    // First wins, for the same reason the call index says so: a callId is
+    // answered once, and a later frame under the same id must not rewrite it.
+    if (callId !== null && detail !== null && !details.has(callId))
+      details.set(callId, detail as ToolResultDetail);
+  }
+  return details;
+}
+
 /** The fields already rendered by a named section — the ledger that makes
  *  "nothing is dropped" checkable instead of hopeful. */
 type Used = Set<string>;
@@ -158,6 +198,9 @@ export function describeEvent(
   type: string,
   payload: unknown,
   calls?: ReadonlyMap<string, ToolCallRef>,
+  /** What the tools RETURNED, indexed by callId (toolResultDetailsById). Absent
+   *  for a live stream and for every transcript older than the field. */
+  details?: ReadonlyMap<string, ToolResultDetail>,
 ): DetailSection[] {
   const p = asRecord(payload);
   if (p === null) return [{ kind: "json", field: "", value: payload }];
@@ -201,6 +244,10 @@ export function describeEvent(
           input: call.input,
           output,
           isError: p["isError"] === true,
+          // Not `used.add`ed: the detail is not a field of THIS payload, it is
+          // a second frame's reading of the same call. The ledger above counts
+          // what this frame carries, and nothing here went missing from it.
+          detail: callId === null ? undefined : details?.get(callId),
         });
       } else {
         // No call in the stream: the result is all we have, so that is all we

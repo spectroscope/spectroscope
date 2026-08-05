@@ -481,7 +481,18 @@ function toolHtml(card: ToolCard, lang: Lang, open: boolean): string {
   //
   // A denied call produced no output, so it is not handed one: a shape drawn
   // around an empty result would read as a call that ran and said nothing.
-  const view = describeTool(card.name, card.input, denied ? undefined : card.output, card.status === "error");
+  //
+  // The fifth argument is what the tool RETURNED, when the card came out of an
+  // imported transcript (card 167). It goes to both renderers or to neither: a
+  // saved file that showed the gutter while the screen beside it did not would
+  // be a second reading of the same call, and the export exists to be the view.
+  const view = describeTool(
+    card.name,
+    card.input,
+    denied ? undefined : card.output,
+    card.status === "error",
+    denied ? null : card.detail,
+  );
   // Open by default, and the dialog can say otherwise: a collapsed command in a
   // file attached to a ticket is a command nobody reads, but a hundred-call
   // session is unreadable fully unfolded. Either way the record is complete —

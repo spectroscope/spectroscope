@@ -80,6 +80,35 @@ describe("no component is built and left unattached", () => {
   });
 });
 
+// A component can be mounted and still be handed nothing. The reducer patched
+// what the tool RETURNED onto the card (card 167), describeTool read it, both
+// renderers drew it — and the two call sites in between passed four arguments
+// and dropped the fifth, so 43,204 records reached a card that never asked. The
+// same class of hole as an unmounted component, one level down: the prop.
+//
+// There is no DOM in this suite, so this reads the seam off disk, the way
+// about.drift.test.ts reads the shell module: the assertion is that the argument
+// is THERE, and export/toolDetail.test.ts proves what comes out the other end.
+describe("what the tool returned reaches the card that draws it", () => {
+  const card = read("./components/ToolCard.tsx");
+  const bodyView = read("./components/ToolViewBody.tsx");
+  const html = read("./export/html.ts");
+
+  it("hands the card's detail down to the body", () => {
+    expect(element(card, "ToolViewBody")).toContain("detail=");
+  });
+
+  it("hands it on to describeTool, which has taken it all along", () => {
+    const call = bodyView.slice(bodyView.indexOf("describeTool(props."));
+    expect(call.slice(0, call.indexOf(")"))).toContain("props.detail");
+  });
+
+  it("hands it to the export too, so a saved file says what the screen says", () => {
+    const call = html.slice(html.indexOf("const view = describeTool("));
+    expect(call.slice(0, call.indexOf(");"))).toContain("card.detail");
+  });
+});
+
 describe("the fleet roster is mounted where its own comment says it belongs", () => {
   const view = read("./spectrum/SpectrumView.tsx");
   const app = read("./App.tsx");
