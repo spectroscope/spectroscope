@@ -11,7 +11,8 @@ import { useLang } from "../state/lang";
 import { eventPreview } from "./eventPreview";
 import { stepSeq } from "./bandScrub";
 import { innerWidthPx, markX, seqAt, viewBoxX } from "./bandGeometry";
-import { applyIntent, followMark, keyToIntent, wheelToIntent } from "./gestures";
+import { applyIntent, followMark, keyToIntent } from "./gestures";
+import { useWheelZoom } from "./useWheelZoom";
 import type { Window } from "./viewport";
 import type { Lane, LaneTick, TickKind } from "./spectrumModel";
 
@@ -121,56 +122,26 @@ export function SpectrumBand({
     return () => ro.disconnect();
   }, [onWidth]);
 
-  // The wheel handler reads these rather than closing over them, so the listener
-  // is bound once. Re-binding a non-passive listener on every window change
-  // would drop wheel events mid-gesture, which reads as the zoom stuttering.
-  const latest = useRef({ win, minW, ticks: lane.ticks, onWindow });
-  latest.current = { win, minW, ticks: lane.ticks, onWindow };
-
-  // React's onWheel cannot promise a non-passive listener, and a passive one
-  // cannot preventDefault, so ctrl+wheel would zoom the band AND the browser at
-  // once. This has to be a manual registration.
-  useEffect(() => {
-    const el = bandRef.current;
-    if (!el) return;
-    const onWheel = (e: WheelEvent) => {
-      const now = latest.current;
-      if (!now.onWindow) return;
-      const rect = el.getBoundingClientRect();
+  // The wheel gesture, shared with the strip so the two surfaces cannot drift
+  // into two gestures (useWheelZoom.ts holds the DOM half, gestures.ts the
+  // arithmetic). The pointer needs the viewBox conversion because it is a
+  // position IN THE DRAWING; the deltas and the width they are weighed against
+  // stay in the pixels the browser reported them in.
+  useWheelZoom(bandRef, {
+    win,
+    minW,
+    ticks: lane.ticks,
+    onWindow,
+    measure: (e, rect) => {
       const px = viewBoxX(e.clientX - rect.left, rect.width, BAND_W);
-      if (px === null) return;
-      // A trackpad pinch arrives as a wheel with a synthetic ctrlKey; meta is
-      // the same intent on a mouse. A plain vertical wheel is left alone so the
-      // page can still scroll past twenty lanes.
-      //
-      // The deltas go over RAW, in the pixels the browser reported them in, and
-      // the width they are measured against is the band's drawable width in the
-      // same pixels. The pointer above needs the viewBox conversion because it
-      // is a position in the drawing; a swipe is two deltas weighed against each
-      // other, and converting one of them let the band's rendered size decide
-      // which axis owns the gesture. The same swipe then panned on a laptop and
-      // scrolled the page on a wide monitor, and on a narrow band a vertical
-      // swipe was claimed as a pan, trapping the scroll this leaves alone.
-      const intent = wheelToIntent(
-        e.deltaX,
-        e.deltaY,
-        e.ctrlKey || e.metaKey,
-        innerWidthPx(rect.width, BAND_W, BAND_PAD_X),
-      );
-      if (intent === null) return;
-      e.preventDefault();
-      now.onWindow(
-        applyIntent(now.win, intent, {
-          anchorPx: px - BAND_PAD_X,
-          widthPx: BAND_INNER,
-          minW: now.minW,
-          ticks: now.ticks,
-        }),
-      );
-    };
-    el.addEventListener("wheel", onWheel, { passive: false });
-    return () => el.removeEventListener("wheel", onWheel);
-  }, []);
+      if (px === null) return null;
+      return {
+        anchorPx: px - BAND_PAD_X,
+        widthPx: BAND_INNER,
+        innerWidthPx: innerWidthPx(rect.width, BAND_W, BAND_PAD_X),
+      };
+    },
+  });
 
   // Hit-testing runs over lane.ticks, NOT over the marks that got drawn. The
   // slice is a decision about ink; making it a decision about reach would take a

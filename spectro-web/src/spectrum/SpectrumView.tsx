@@ -17,7 +17,7 @@ import { BAND_W, SpectrumBand, TICK_COLOR } from "./SpectrumBand";
 import { SpectrumAxis } from "./SpectrumAxis";
 import { SpectrumStrip } from "./SpectrumStrip";
 import { sliceLane } from "./laneSlice";
-import { needsViewport } from "./overview";
+
 import { applyIntent, buttonToIntent, zoomEnabled, type ZoomButton } from "./gestures";
 import { fit, isWhole, minWidthFor, rebase, storeWindow, type Window } from "./viewport";
 import { FleetRoster } from "./FleetRoster";
@@ -87,9 +87,17 @@ function ZoomControls({
 
   // A disabled control still has to say WHY, or it is the same dead end as one
   // that stays lit and quietly does nothing.
+  // The − and + knobs are gone (owner, 2026-08-05: "keine knubbel … wie im
+  // musik programm stufenlos rein und rauszoomen"). They were the only stepped
+  // affordance on a surface whose gesture is continuous: the wheel is
+  // exponential, so a trackpad and a coarse mouse both feel proportional, and
+  // two buttons offering fixed halves and doubles beside it taught a reader the
+  // wrong mental model of what the zoom is.
+  //
+  // `fit` stays, and stays a WORD. A stepless zoom needs a way home more than a
+  // stepped one does — you can end up anywhere — and "fit" is a destination
+  // rather than an increment, which is exactly the thing a knob is not.
   const buttons: { key: ZoomButton; glyph: string; label: string; blocked: string }[] = [
-    { key: "out", glyph: "−", label: t(lang, "sp.zoomOut"), blocked: t(lang, "sp.zoomAtWhole") },
-    { key: "in", glyph: "+", label: t(lang, "sp.zoomIn"), blocked: t(lang, "sp.zoomAtFloor") },
     {
       key: "fit",
       glyph: t(lang, "sp.zoomFitShort"),
@@ -267,7 +275,25 @@ export function SpectrumView(props: {
   // current window: asked of the window it would answer false the moment a
   // reader zoomed into a sparse minute, the strip would vanish, and they would
   // be stranded deep in the axis with no orientation and no way back.
-  const zoomable = useMemo(() => needsViewport(model.lanes, bandW), [model.lanes, bandW]);
+  /**
+   * Whether this stream can be steered at all.
+   *
+   * It used to be `needsViewport` — appear only once a lane cannot draw half of
+   * what it carries. That rule is a good answer to "when is a reader LOST", and
+   * the wrong answer to "is there an instrument here": on a 123-event session
+   * the marks fit, so the strip and the zoom simply were not there, and the
+   * owner went looking for them (2026-08-05, session 20260805-163937). A tool
+   * that appears only when you are already in trouble cannot be learned before
+   * you are.
+   *
+   * So: any stream with lanes and a real span. `needsViewport` still decides
+   * nothing here, and the measurement behind it stands — it is just not the
+   * question this gate is asking.
+   */
+  const zoomable = useMemo(
+    () => model.lanes.length > 0 && model.lanes.some((l) => l.ticks.length > 1),
+    [model.lanes],
+  );
   const allTicks = useMemo(
     () => (zoomable ? model.lanes.flatMap((l) => l.ticks) : []),
     [model.lanes, zoomable],

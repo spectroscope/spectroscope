@@ -17,6 +17,7 @@ import { useMemo, useRef, type PointerEvent } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { stripWindowFromPointer } from "./gestures";
+import { useWheelZoom } from "./useWheelZoom";
 import { barHeight, densityProfile } from "./overview";
 import { TICK_COLOR } from "./SpectrumBand";
 import type { LaneTick } from "./spectrumModel";
@@ -67,9 +68,29 @@ export function SpectrumStrip({
     if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e);
   };
 
-  // No wheel handler here on purpose. Drag is the strip's whole gesture, and a
-  // wheel would have needed its own step arithmetic inline in this file, where
-  // nothing in this project can test it.
+  // The wheel gesture, the SAME one the lanes have (owner, 2026-08-05: "das cmd
+  // scrollrad geht auf dem agents hover aber nicht auf dem zoom interface
+  // hover"). The old note here said a wheel would need step arithmetic inline
+  // in this file, where nothing could test it — true then, and answered since:
+  // the arithmetic is gestures.ts and the DOM half is useWheelZoom, so this
+  // surface borrows both rather than growing a second gesture.
+  //
+  // The strip is 1:1 with the whole span, so the pointer's fraction across it
+  // IS the anchor: no viewBox conversion, and the drawable width is the element.
+  useWheelZoom(ref, {
+    win,
+    minW,
+    ticks,
+    onWindow,
+    measure: (e, rect) =>
+      rect.width <= 0
+        ? null
+        : {
+            anchorPx: e.clientX - rect.left,
+            widthPx: rect.width,
+            innerWidthPx: rect.width,
+          },
+  });
 
   const winX = win.a * STRIP_W;
   const winW = (win.b - win.a) * STRIP_W;
