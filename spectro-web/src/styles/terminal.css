@@ -9,6 +9,16 @@
 .term {
   display: flex;
   flex-direction: column;
+  /* GROW as well as shrink. Without the grow this box was `flex: 0 1 auto` —
+     it could give height back and never take it again, which is exactly the
+     asymmetry the owner reported: "wenn ich das fenster des terminals in der
+     höhe verkleinere dann wird es kleiner aber nicht größer wenn ich es höher
+     mache". Measured in the app, viewport 900 → 600 → 900: `.ws-term` returned
+     to its full 276px correctly, and `.term` stayed at 141, so `.term-host`
+     stayed at 61 and the fit kept the 3 rows it had shrunk to. The
+     ResizeObserver and FitAddon were never at fault — they cannot refit a box
+     that never grew. With this line: host 61 → 196px, rows 3 → 10. */
+  flex: 1 1 auto;
   min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
