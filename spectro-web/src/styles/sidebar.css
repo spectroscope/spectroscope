@@ -74,8 +74,11 @@
 /* The import dialog is a full-screen surface (owner: "das import fenster
    vollbild machen"): 300 rows, a two-axis filter and a statistics line do not
    fit a 560px modal. Flex column, and ONLY the row list scrolls — the filter,
-   the stats and the paste box stay reachable at every scroll position. */
-.import-modal {
+   the stats and the paste box stay reachable at every scroll position.
+   Two classes, deliberately: this sheet is concatenated BEFORE the modal
+   sheet, so a bare .import-modal loses the width fight to .modal's own
+   min(560px, …) — measured at exactly 560px on the first live check. */
+.modal.import-modal {
   width: calc(100vw - var(--sp-5));
   height: calc(100vh - var(--sp-5));
   max-height: none;
