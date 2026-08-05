@@ -8,6 +8,8 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  stripGripAt,
+  stripResize,
   applyIntent,
   buttonToIntent,
   followMark,
@@ -355,5 +357,68 @@ describe("pressing fit on a live stream", () => {
   it("stores a window that is genuinely narrower, untouched", () => {
     const zoomed = applyIntent(fit(), buttonToIntent("in"), ctx({ minW: minWidthFor(SPAN, 1_000) }));
     expect(storeWindow(zoomed)).toEqual(zoomed);
+  });
+});
+
+// The window's ends can be grabbed (owner, 2026-08-05: "die anfasser sind
+// immernoch nicht da"). No knobs are drawn — the box stays exactly as wide as
+// the window it stands for — so the generosity lives entirely in the hit zone.
+describe("stripGripAt", () => {
+  const wide = { a: 0.2, b: 0.8 }; // 600px of a 1000px strip
+
+  it("finds the end the pointer is nearest", () => {
+    expect(stripGripAt(wide, 200, 1000, 6)).toBe("start");
+    expect(stripGripAt(wide, 800, 1000, 6)).toBe("end");
+    expect(stripGripAt(wide, 500, 1000, 6)).toBe("body");
+  });
+
+  it("reaches as far as the grab zone and no further", () => {
+    expect(stripGripAt(wide, 206, 1000, 6)).toBe("start");
+    expect(stripGripAt(wide, 207, 1000, 6)).toBe("body");
+    expect(stripGripAt(wide, 794, 1000, 6)).toBe("end");
+    expect(stripGripAt(wide, 793, 1000, 6)).toBe("body");
+  });
+
+  it("has no ends at all when the window is too narrow to have two", () => {
+    // The objection that kept handles out: at the zoom floor the box is a
+    // fraction of a pixel. Two zones need room to be two — below that the
+    // window is one thing, and reaching for it means the whole of it.
+    const hair = { a: 0.5, b: 0.5008 }; // under a pixel of 1000
+    expect(stripGripAt(hair, 500, 1000, 6)).toBe("body");
+    expect(stripGripAt(hair, 500.4, 1000, 6)).toBe("body");
+  });
+
+  it("says body for a pointer that is not a number, or a strip with no width", () => {
+    expect(stripGripAt(wide, Number.NaN, 1000, 6)).toBe("body");
+    expect(stripGripAt(wide, 200, 0, 6)).toBe("body");
+  });
+});
+
+describe("stripResize", () => {
+  const win = { a: 0.2, b: 0.8 };
+
+  it("moves the end that is held and leaves the other alone", () => {
+    expect(stripResize(win, "start", 400, 1000, 0.001)).toEqual({ a: 0.4, b: 0.8 });
+    expect(stripResize(win, "end", 600, 1000, 0.001)).toEqual({ a: 0.2, b: 0.6 });
+  });
+
+  it("does not flip the window when an end is dragged past the other", () => {
+    // A window whose start is after its end is not a thing this app can show,
+    // so the drag stops at the floor instead of turning inside out.
+    const flipped = stripResize(win, "start", 950, 1000, 0.01);
+    expect(flipped.a).toBeLessThan(flipped.b);
+    expect(flipped.b).toBeCloseTo(0.8, 5);
+    const other = stripResize(win, "end", 50, 1000, 0.01);
+    expect(other.a).toBeLessThan(other.b);
+    expect(other.a).toBeCloseTo(0.2, 5);
+  });
+
+  it("honours the zoom floor", () => {
+    const tight = stripResize(win, "start", 799, 1000, 0.05);
+    expect(tight.b - tight.a).toBeGreaterThanOrEqual(0.05 - 1e-9);
+  });
+
+  it("leaves the window alone for a body grip, which pans instead", () => {
+    expect(stripResize(win, "body", 400, 1000, 0.001)).toEqual(win);
   });
 });

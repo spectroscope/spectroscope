@@ -551,3 +551,23 @@
   white-space: nowrap;
   max-width: 100%;
 }
+
+/* The fold-away control, on the thing it folds (card 179). The header's own
+   burger is the first casualty of a narrow window, which left the one button
+   that gives room back reachable only once you already had room. */
+.brand-collapse {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.brand-collapse:hover { color: var(--accent); }

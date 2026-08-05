@@ -420,3 +420,11 @@
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* The window's ends are grabbable, and nothing is drawn to say so — a knob
+   would have to be wider than the window it sits on the moment the window is a
+   hairline, which is the objection that kept handles out. So the cursor is the
+   whole of the affordance (card 179). */
+.spectrum-strip--grip {
+  cursor: ew-resize;
+}

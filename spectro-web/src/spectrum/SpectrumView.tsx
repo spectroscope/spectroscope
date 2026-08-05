@@ -276,24 +276,25 @@ export function SpectrumView(props: {
   // reader zoomed into a sparse minute, the strip would vanish, and they would
   // be stranded deep in the axis with no orientation and no way back.
   /**
-   * Whether this stream can be steered at all.
+   * Whether the viewport surface is drawn at all — which is now: whenever there
+   * is a lane.
    *
-   * It used to be `needsViewport` — appear only once a lane cannot draw half of
-   * what it carries. That rule is a good answer to "when is a reader LOST", and
-   * the wrong answer to "is there an instrument here": on a 123-event session
-   * the marks fit, so the strip and the zoom simply were not there, and the
-   * owner went looking for them (2026-08-05, session 20260805-163937). A tool
-   * that appears only when you are already in trouble cannot be learned before
-   * you are.
+   * It was `needsViewport`: appear once a lane cannot draw half of what it
+   * carries. A good answer to "when is a reader LOST", and the wrong answer to
+   * "is there an instrument here" — on a 123-event session everything fits, so
+   * the strip simply was not there and the owner went looking for it. It was
+   * then "more than one mark", and that was the same mistake one notch smaller.
    *
-   * So: any stream with lanes and a real span. `needsViewport` still decides
-   * nothing here, and the measurement behind it stands — it is just not the
-   * question this gate is asking.
+   * Owner, 2026-08-05: "die scrubbing zoom ui bitte immer einblenden. auch wenn
+   * es nur eine kurze interaktion ist". A one-event run has a strip showing one
+   * mark and a window covering all of it, which is not useless — it is the
+   * instrument being where it always is. A control that moves depending on how
+   * much happened is a control a reader cannot build a habit around.
+   *
+   * `needsViewport` still exists and its measurement still stands; it is simply
+   * not the question this gate asks.
    */
-  const zoomable = useMemo(
-    () => model.lanes.length > 0 && model.lanes.some((l) => l.ticks.length > 1),
-    [model.lanes],
-  );
+  const zoomable = model.lanes.length > 0;
   const allTicks = useMemo(
     () => (zoomable ? model.lanes.flatMap((l) => l.ticks) : []),
     [model.lanes, zoomable],
