@@ -175,7 +175,10 @@ cmd_status() {
     elif [ "$port" = "0" ]; then state="${C_OK}ready${C_0}"
     elif answers "$port" "$path"; then state="${C_OK}up${C_0}"
     else state="${C_WA}starting${C_0}"; fi
-    printf '  %-11s %-7s %-20s %s\n' "$name" "${port/0/—}" "$state" "$n"
+    # NOT ${port/0/—}: that replaces the first 0 ANYWHERE, so 8880 printed as
+    # "888—". A stack with no web face is the literal string "0", nothing else.
+    local shown="$port"; [ "$port" = "0" ] && shown="—"
+    printf '  %-11s %-7s %-20s %s\n' "$name" "$shown" "$state" "$n"
   done <<< "$(stack_names)"
   say ""
   local mem
