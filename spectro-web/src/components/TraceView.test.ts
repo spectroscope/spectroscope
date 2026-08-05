@@ -10,6 +10,7 @@ import {
   categoryOfRow,
   inCategories,
   lensRole,
+  needsCallIndex,
   summarize,
   toolCategory,
   traceLinkState,
@@ -316,5 +317,75 @@ describe("the ground row", () => {
 
   it("falls back to the raw frame when the payload says none of it", () => {
     expect(summarize(ground({ note: "x" }), "en")).toBe('{"note":"x"}');
+  });
+});
+
+// What the callId index costs, and when it is worth paying.
+//
+// Building it is one walk of the whole stream. On a LIVE session the stream
+// grows under it, so an eager index pays that walk again on every frame batch
+// — for a trace nobody has filtered. The index only ever changes an answer
+// while the three tool chips disagree with each other, and that is the rule
+// the view gates on.
+describe("what the callId index is worth", () => {
+  const stream = [
+    { type: "tool_call", callId: "c1", name: "Workflow" },
+    { type: "tool_call", callId: "c2", name: "mcp__Claude_Browser__computer" },
+    { type: "tool_call", callId: "c3", name: "Bash" },
+    { type: "tool_result", callId: "c1", output: "launched" },
+    { type: "tool_result", callId: "c2", output: "clicked" },
+    { type: "tool_result", callId: "c3", output: "ok" },
+    { type: "text_delta", text: "hi" },
+  ];
+  const calls = toolCallsById(stream);
+  const keep = (active: Set<string>, index?: ReturnType<typeof toolCallsById>): string[] =>
+    stream.filter((p) => inCategories({ type: p.type, payload: p }, active, index)).map((p) => p.type);
+
+  it("changes no answer while the three tool chips agree", () => {
+    // All three pressed — the state a trace opens in — and all three released.
+    // In both, a result lands on the same side of the filter whether it
+    // inherited its call's chip or fell back to plain `tool`.
+    const allOn = new Set(CATEGORIES);
+    expect(keep(allOn)).toEqual(keep(allOn, calls));
+    const allToolChipsOff = new Set(
+      CATEGORIES.filter((c) => c !== "tool" && c !== "workflow" && c !== "mcp"),
+    );
+    expect(keep(allToolChipsOff)).toEqual(keep(allToolChipsOff, calls));
+    expect(keep(allToolChipsOff, calls)).toEqual(["text_delta"]);
+  });
+
+  it("is the only thing that tells the three apart once they disagree", () => {
+    const noWorkflow = new Set(CATEGORIES.filter((c) => c !== "workflow"));
+    // With the index, the Workflow call AND the result it owns both go.
+    expect(keep(noWorkflow, calls)).toEqual([
+      "tool_call",
+      "tool_call",
+      "tool_result",
+      "tool_result",
+      "text_delta",
+    ]);
+    // Without it, the result has nothing to inherit and stays as plain `tool`:
+    // the reader loses the launch and keeps the answer, which is exactly the
+    // half-row the index exists to prevent.
+    expect(keep(noWorkflow)).toEqual([
+      "tool_call",
+      "tool_call",
+      "tool_result",
+      "tool_result",
+      "tool_result",
+      "text_delta",
+    ]);
+  });
+
+  it("names the chip states that need it, and no others", () => {
+    expect(needsCallIndex(new Set(CATEGORIES))).toBe(false);
+    expect(needsCallIndex(new Set())).toBe(false);
+    expect(needsCallIndex(new Set(["tool", "workflow", "mcp"]))).toBe(false);
+    expect(needsCallIndex(new Set(CATEGORIES.filter((c) => c !== "workflow")))).toBe(true);
+    expect(needsCallIndex(new Set(CATEGORIES.filter((c) => c !== "mcp")))).toBe(true);
+    expect(needsCallIndex(new Set(CATEGORIES.filter((c) => c !== "tool")))).toBe(true);
+    expect(needsCallIndex(new Set(["workflow"]))).toBe(true);
+    // Chips outside the tool group never make the index worth building.
+    expect(needsCallIndex(new Set(["text", "thinking", "permission"]))).toBe(false);
   });
 });

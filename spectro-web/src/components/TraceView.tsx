@@ -197,6 +197,27 @@ export function categoryOfRow(
   return call === undefined ? "tool" : toolCategory(call.name);
 }
 
+/** The three chips the tool group splits into. A `tool_call` carries the name
+ *  that decides between them; a `tool_result` inherits it through the index. */
+const TOOL_CHIPS: readonly Category[] = ["tool", "workflow", "mcp"];
+
+/**
+ * Whether the callId index can change what the chip row shows.
+ *
+ * Building it is one walk of the whole stream, and on a LIVE session the stream
+ * grows under it — an eager index pays that walk again on every frame batch,
+ * for a trace nobody has filtered. It only earns that while the three tool
+ * chips DISAGREE: with all three pressed (the state a trace opens in) or all
+ * three released, a `tool_result` lands on the same side of the filter whether
+ * it inherited its call's chip or fell back to plain `tool`.
+ *
+ * @param active the categories whose chips are pressed
+ */
+export function needsCallIndex(active: ReadonlySet<string>): boolean {
+  const on = TOOL_CHIPS.filter((c) => active.has(c)).length;
+  return on !== 0 && on !== TOOL_CHIPS.length;
+}
+
 /**
  * Whether a frame survives the chip row.
  *
@@ -1275,13 +1296,28 @@ export function TraceView(props: {
     return seen;
   }, [entries]);
 
-  // callId -> the call it belongs to, ONE pass over the whole stream. The chip
-  // row needs it for every tool_result it decides about (a result carries no
-  // tool name, only the id of the call it answers), and the open row's
-  // structured face needs the same map. Built here, next to bySeq, rather than
-  // per row: the filter runs over every frame and would otherwise walk the
-  // stream once per row.
-  const callIndex = useMemo(() => toolCallsById(allEntries.map((e) => e.payload)), [allEntries]);
+  const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
+  // Whether a tool_result row is open — the second reader of the index below,
+  // and the condition openDetails has always been paid for under.
+  const openIsToolResult = openSeq !== null && bySeq.get(openSeq)?.type === "tool_result";
+
+  // callId -> the call it belongs to: one pass over the whole stream, shared by
+  // the two readers that need it. The chip row decides every tool_result with
+  // it (a result carries no tool name, only the id of the call it answers), and
+  // the open row's structured face renders the call it answers from it.
+  //
+  // Built only when it can change something — while the tool chips disagree
+  // ({@link needsCallIndex}) or while such a row is open. `allEntries` is a new
+  // array on every frame batch of a live session, so an unconditional memo here
+  // would re-walk the whole stream per batch for a trace nobody has filtered;
+  // the two readers were both already conditional, and this keeps them so.
+  const callIndex = useMemo(
+    () =>
+      needsCallIndex(active) || openIsToolResult
+        ? toolCallsById(allEntries.map((e) => e.payload))
+        : undefined,
+    [active, openIsToolResult, allEntries],
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1322,7 +1358,6 @@ export function TraceView(props: {
     () => (lensOn ? reasoningReach(allEntries) : new Map<number, number>()),
     [lensOn, allEntries],
   );
-  const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
   const hasThinking = useMemo(() => allEntries.some((e) => e.type === "thinking_delta"), [allEntries]);
 
   // The open row's causal chain (spectro-explain feature 2) — computed here
@@ -1334,22 +1369,19 @@ export function TraceView(props: {
   }, [openSeq, bySeq, allEntries]);
 
   // A tool_result names only its callId, so the structured face needs the call
-  // it answers. It is the same index the chip row decides with, handed over
-  // only while such a row is open: the map is built once per stream now, and a
-  // closed trace still passes `undefined` down to the row that does not use it.
-  const openCalls = useMemo(() => {
-    if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
-    return callIndex;
-  }, [openSeq, bySeq, callIndex]);
+  // it answers. It is the same index the chip row decides with, handed down
+  // only while such a row is open — a closed trace passes `undefined` to the
+  // row that does not use it, even on the days the chip row built one anyway.
+  const openCalls = openIsToolResult ? callIndex : undefined;
 
   // And what those calls returned, when the stream carries an importer's
   // reading of it. Built under exactly the same condition and paid for the same
   // way: only while a tool_result row is open, and never for a live stream that
   // has no such frame in it at all.
-  const openDetails = useMemo(() => {
-    if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
-    return toolResultDetailsById(allEntries.map((e) => e.payload));
-  }, [openSeq, bySeq, allEntries]);
+  const openDetails = useMemo(
+    () => (openIsToolResult ? toolResultDetailsById(allEntries.map((e) => e.payload)) : undefined),
+    [openIsToolResult, allEntries],
+  );
 
   // What the source face reads: the file's lines, and the frames the open row
   // stands among so it can count the ones that share its line. Counted over the
