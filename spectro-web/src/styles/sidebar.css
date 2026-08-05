@@ -13,7 +13,27 @@
   background-color: var(--surface);
   background-image: linear-gradient(var(--glint), transparent 140px);
   border-right: 1px solid var(--border);
-  padding: var(--sp-4) var(--sp-3);
+  /* The top padding moved into .sidebar-head, or a sticky head at top:0 would
+     let the list slide through the gap above it. */
+  padding: 0 var(--sp-3) var(--sp-4);
+}
+
+/* The brand, the three actions and the sessions/fleets switch, as one block
+   that stays (card 179). The collapse control lives on the brand so a narrow
+   window can still reach it — and a control you can lose by scrolling is a
+   control that is only sometimes there.
+
+   Opaque, because the list scrolls UNDER it. The sidebar's glint gradient is a
+   top gradient, so covering it here costs nothing: this block is the top. */
+.sidebar-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--sp-4) 0 var(--sp-2);
+  background-color: var(--surface);
 }
 
 /* The wordmark: lowercase, sans, medium-heavy, the M1 line bundle in front.

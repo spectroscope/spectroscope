@@ -140,133 +140,140 @@ export function Sidebar(props: {
 
   return (
     <aside className="sidebar">
-      <div className="brand">
-        {/* The M1 line bundle (brand logo), inline so the bars read the active
+      {/* Everything down to the sessions/fleets switch is one sticky block.
+          The collapse control had just moved onto the brand so a narrow window
+          could still reach it — and then scrolling took the brand away with it,
+          which is the same joke one turn later. A control you can lose by
+          scrolling is a control that is only sometimes there. */}
+      <div className="sidebar-head">
+        <div className="brand">
+          {/* The M1 line bundle (brand logo), inline so the bars read the active
             theme's spectral tokens — geometry from design/assets/svg/logo-icon.svg. */}
-        <svg className="brand-mark" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true">
-          <rect x="13.2" y="14" width="2.6" height="36" rx="0.7" fill="var(--sp-red)" />
-          <rect x="21.7" y="14" width="1.6" height="36" rx="0.7" fill="var(--sp-amber)" />
-          <rect x="28.9" y="14" width="5.2" height="36" rx="0.7" fill="var(--sp-teal)" />
-          <rect x="42" y="14" width="2" height="36" rx="0.7" fill="var(--sp-ocean)" />
-          <rect x="49.35" y="14" width="1.3" height="36" rx="0.7" fill="var(--text-faint)" />
-        </svg>
-        spectroscope
-        {/* The collapse control lives HERE as well as in the header, and the
+          <svg className="brand-mark" viewBox="0 0 64 64" width="18" height="18" aria-hidden="true">
+            <rect x="13.2" y="14" width="2.6" height="36" rx="0.7" fill="var(--sp-red)" />
+            <rect x="21.7" y="14" width="1.6" height="36" rx="0.7" fill="var(--sp-amber)" />
+            <rect x="28.9" y="14" width="5.2" height="36" rx="0.7" fill="var(--sp-teal)" />
+            <rect x="42" y="14" width="2" height="36" rx="0.7" fill="var(--sp-ocean)" />
+            <rect x="49.35" y="14" width="1.3" height="36" rx="0.7" fill="var(--text-faint)" />
+          </svg>
+          spectroscope
+          {/* The collapse control lives HERE as well as in the header, and the
             reason is a small circular joke the owner named: the header's burger
             scrolls out of reach on a narrow window, so the one button that would
             give you room back is only reachable once you already have room. A
             control for hiding a thing belongs on the thing. */}
-        {props.onCollapse !== undefined && (
-          <button
-            type="button"
-            className="brand-collapse"
-            onClick={props.onCollapse}
-            title={t(lang, "hdr.sidebarHide")}
-            aria-label={t(lang, "hdr.sidebarHide")}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              width="14"
-              height="14"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              aria-hidden="true"
+          {props.onCollapse !== undefined && (
+            <button
+              type="button"
+              className="brand-collapse"
+              onClick={props.onCollapse}
+              title={t(lang, "hdr.sidebarHide")}
+              aria-label={t(lang, "hdr.sidebarHide")}
             >
-              <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
-            </svg>
-          </button>
-        )}
-      </div>
+              <svg
+                viewBox="0 0 16 16"
+                width="14"
+                height="14"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                aria-hidden="true"
+              >
+                <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
+              </svg>
+            </button>
+          )}
+        </div>
 
-      {/* One wrapper so the three actions carry their OWN gap; the sidebar's column
+        {/* One wrapper so the three actions carry their OWN gap; the sidebar's column
           gap still sets the distance to the wordmark above and the segmented
           control below, which stay where they were. */}
-      <div className="sidebar-actions">
-        <button type="button" className="soft-primary new-chat" onClick={props.onNewChat}>
-          {t(lang, "nav.newChat")}
-        </button>
+        <div className="sidebar-actions">
+          <button type="button" className="soft-primary new-chat" onClick={props.onNewChat}>
+            {t(lang, "nav.newChat")}
+          </button>
 
-        {/* Owner (2026-07-22) reversed the earlier "own area" call: scenarios are now
+          {/* Owner (2026-07-22) reversed the earlier "own area" call: scenarios are now
             ALSO listed inline in the session list below. This button + its modal are
             kept for now (a redundant second path — owner may retire them). */}
-        <button
-          type="button"
-          className="ghost sidebar-scenarios"
-          onClick={props.onScenarios}
-          title={t(lang, "nav.scenariosTitle")}
-        >
-          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-            <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
-          </svg>
-          {t(lang, "nav.scenarios")}
-        </button>
-
-        <button
-          type="button"
-          className="ghost sidebar-scenarios"
-          onClick={props.onStarters}
-          title={t(lang, "nav.startersTitle")}
-        >
-          <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-            <path
-              d="M8 2v12M2 8h12"
-              stroke="currentColor"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              fill="none"
-            />
-          </svg>
-          {t(lang, "nav.starters")}
-        </button>
-      </div>
-
-      <div className="sidebar-eyebrow-row">
-        <div className="sidebar-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
           <button
             type="button"
-            role="tab"
-            aria-selected={nav === "sessions"}
-            className={`sidebar-seg-btn${nav === "sessions" ? " active" : ""}`}
-            onClick={() => props.onNav("sessions")}
+            className="ghost sidebar-scenarios"
+            onClick={props.onScenarios}
+            title={t(lang, "nav.scenariosTitle")}
           >
-            Sessions
+            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+              <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
+            </svg>
+            {t(lang, "nav.scenarios")}
           </button>
+
           <button
             type="button"
-            role="tab"
-            aria-selected={nav === "fleets"}
-            className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
-            onClick={() => !props.fleetsLocked && props.onNav("fleets")}
-            aria-disabled={props.fleetsLocked ? true : undefined}
+            className="ghost sidebar-scenarios"
+            onClick={props.onStarters}
+            title={t(lang, "nav.startersTitle")}
           >
-            {t(lang, "nav.fleets")}
-            {fleets.length > 0 && <span className="sidebar-seg-badge tabular">{fleets.length}</span>}
+            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
+              <path
+                d="M8 2v12M2 8h12"
+                stroke="currentColor"
+                strokeWidth="1.6"
+                strokeLinecap="round"
+                fill="none"
+              />
+            </svg>
+            {t(lang, "nav.starters")}
           </button>
         </div>
-        {nav === "sessions" && (
-          <button
-            type="button"
-            className="sidebar-import"
-            onClick={props.onImport}
-            title={t(lang, "nav.importTitle")}
-          >
-            Import
-          </button>
-        )}
-        {/* Only when fleets EXIST — the empty state below carries its own spawn
+
+        <div className="sidebar-eyebrow-row">
+          <div className="sidebar-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={nav === "sessions"}
+              className={`sidebar-seg-btn${nav === "sessions" ? " active" : ""}`}
+              onClick={() => props.onNav("sessions")}
+            >
+              Sessions
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={nav === "fleets"}
+              className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
+              onClick={() => !props.fleetsLocked && props.onNav("fleets")}
+              aria-disabled={props.fleetsLocked ? true : undefined}
+            >
+              {t(lang, "nav.fleets")}
+              {fleets.length > 0 && <span className="sidebar-seg-badge tabular">{fleets.length}</span>}
+            </button>
+          </div>
+          {nav === "sessions" && (
+            <button
+              type="button"
+              className="sidebar-import"
+              onClick={props.onImport}
+              title={t(lang, "nav.importTitle")}
+            >
+              Import
+            </button>
+          )}
+          {/* Only when fleets EXIST — the empty state below carries its own spawn
             button, so two "+ node" affordances never show at once (owner). */}
-        {nav === "fleets" && orderedFleets.length > 0 && (
-          <button
-            type="button"
-            className="sidebar-import sidebar-spawn"
-            onClick={props.onSpawnNode}
-            title={lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)"}
-          >
-            + node
-          </button>
-        )}
+          {nav === "fleets" && orderedFleets.length > 0 && (
+            <button
+              type="button"
+              className="sidebar-import sidebar-spawn"
+              onClick={props.onSpawnNode}
+              title={lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)"}
+            >
+              + node
+            </button>
+          )}
+        </div>
       </div>
 
       {nav === "sessions" ? (
