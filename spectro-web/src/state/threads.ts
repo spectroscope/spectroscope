@@ -25,6 +25,7 @@ function ownerOf(turn: Turn, cards: Record<string, ToolCard>): string {
     case "tool":
       return cards[turn.callId]?.agentId ?? "main";
     case "info":
+    case "error":
       return turn.agentId ?? "main";
     default:
       return "main";

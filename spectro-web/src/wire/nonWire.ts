@@ -63,8 +63,13 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the
- *  prompt queue, the file that was edited (card 141), and every prompt of the
- *  session after the first.
+ *  prompt queue, the file that was edited (card 141), every prompt of the
+ *  session after the first, what a tool actually returned before the client
+ *  flattened it into the text the model read, and what a launch record says
+ *  about the child it launched — the model it ran on, and whether it ever
+ *  reported back (card 167), and the ground the run stood on — the working
+ *  directory, the git branch and the client version, announced off the first
+ *  line that says them and again at every move.
  *
  *  user_message is also the browser's own outbound frame (a ClientMessage,
  *  never a RunEvent), but an outbound one never enters the array a tab folds:
@@ -76,6 +81,9 @@ export const IMPORT_ONLY_TYPES: ReadonlySet<string> = new Set([
   "queue_operation",
   "queued_command",
   "edited_text_file",
+  "tool_result_detail",
+  "agent_detail",
+  "ground_info",
 ]);
 
 /** Every frame type that must never reach a written session file. */

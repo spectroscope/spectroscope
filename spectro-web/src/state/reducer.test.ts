@@ -143,6 +143,33 @@ describe("reduce — happy path", () => {
     expect(state.usage).toEqual({ inputTokens: 320, outputTokens: 80 });
     expect(state.runUsage).toEqual({ inputTokens: 200, outputTokens: 50 });
   });
+
+  it("remembers which children are inside the run figure, and forgets them at the next run", () => {
+    // The run total counts a subagent's usage exactly the way the session total
+    // does. The session line says so; the run line could not, because nothing
+    // told it which of its tokens came from a child.
+    const withChild: RunEvent[] = [
+      { type: "run_start", runId: "r1", agentId: "main", prompt: "Fan out", ts: 1 },
+      { type: "usage", agentId: "main", inputTokens: 100, outputTokens: 10, ts: 2 },
+      { type: "usage", agentId: "t1", inputTokens: 2, outputTokens: 2779, ts: 3 },
+      { type: "usage", agentId: "t1", inputTokens: 3, outputTokens: 21, ts: 4 },
+      { type: "usage", agentId: "t2", inputTokens: 5, outputTokens: 11, ts: 5 },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: 6 },
+    ];
+    const fannedOut = reduceAll(initialState, withChild);
+    expect(fannedOut.runUsage).toEqual({ inputTokens: 110, outputTokens: 2821 });
+    expect(fannedOut.runSubagents).toEqual({
+      ids: ["t1", "t2"],
+      inputTokens: 10,
+      outputTokens: 2811,
+    });
+
+    const next = reduceAll(fannedOut, [
+      { type: "run_start", runId: "r2", agentId: "main", prompt: "Alone", ts: 7 },
+      { type: "usage", agentId: "main", inputTokens: 8, outputTokens: 4, ts: 8 },
+    ]);
+    expect(next.runSubagents).toEqual({ ids: [], inputTokens: 0, outputTokens: 0 });
+  });
 });
 
 describe("reduce — thinking (reasoning stream)", () => {
@@ -451,6 +478,26 @@ describe("reduce — forward compatibility and errors", () => {
     expect(state.turns).toEqual([{ kind: "error", text: "Provider unreachable" }]);
   });
 
+  it("keeps a child's failure under the child", () => {
+    // `error` has carried an optional agentId all along, and a session import
+    // sets it: an outage inside a subagent belongs in that child's thread, the
+    // way its spawn line does. Dropping it read every child's outage as the
+    // main run's own. All 83 outages in ~/.claude/projects are main, so this
+    // holds the seam rather than a live misplacement.
+    const state = reduce(initialState, {
+      type: "error",
+      agentId: "worker-1",
+      message: "You've hit your session limit",
+      ts: 1,
+    });
+    expect(state.turns).toEqual([
+      { kind: "error", text: "You've hit your session limit", agentId: "worker-1" },
+    ]);
+    // and the run's own failure still carries no owner to group by
+    const main = reduce(initialState, { type: "error", message: "Provider unreachable", ts: 1 });
+    expect(main.turns[0]).toEqual({ kind: "error", text: "Provider unreachable" });
+  });
+
   it("records compaction as a warn-toned info line", () => {
     const state = reduce(initialState, {
       type: "compaction",
@@ -461,10 +508,29 @@ describe("reduce — forward compatibility and errors", () => {
     });
     expect(state.turns[0]).toEqual({
       kind: "info",
-      text: "History compacted: 12 turns summarized",
+      text: "History compacted: 12 turns summarized into 2048 characters",
+      tone: "warn",
+      infoKey: "info.compactedInto",
+      infoVars: { n: 12, chars: 2048 },
+    });
+  });
+
+  it("says only what it knows when the boundary carried no summary size", () => {
+    // `summaryChars` is 0 for a boundary whose summary is not in the window.
+    // "into 0 characters" would be a claim about a summary nobody measured.
+    const state = reduce(initialState, {
+      type: "compaction",
+      agentId: "main",
+      removedTurns: 397,
+      summaryChars: 0,
+      ts: 1,
+    });
+    expect(state.turns[0]).toEqual({
+      kind: "info",
+      text: "History compacted: 397 turns summarized",
       tone: "warn",
       infoKey: "info.compacted",
-      infoVars: { n: 12 },
+      infoVars: { n: 397 },
     });
   });
 });
@@ -1281,5 +1347,39 @@ describe("reduce (a user turn from the stream)", () => {
     ]);
     expect(state.agents.map((a) => a.id)).toEqual(["main"]);
     expect(state.agents[0].state).toBe("working");
+  });
+});
+
+describe("reduce — agent_detail (import-only, card 167)", () => {
+  const spawn: RunEvent[] = [
+    { type: "run_start", runId: "r", agentId: "main", prompt: "go", ts: 1 },
+    { type: "agent_spawn", agentId: "t1", parentId: "main", task: "review", ts: 2 },
+  ];
+  const detail = (p: Record<string, unknown>) =>
+    ({ type: "agent_detail", ts: 3, ...p }) as unknown as RunEvent;
+
+  it("names the model the child ran on, beside the parent's own", () => {
+    const s = reduceAll(initialState, [...spawn, detail({ agentId: "t1", model: "claude-haiku-4-5" })]);
+    expect(s.agents.find((a) => a.id === "t1")?.model).toBe("claude-haiku-4-5");
+  });
+
+  it("leaves the run's announced model alone", () => {
+    const s = reduceAll(initialState, [
+      ...spawn,
+      { type: "provider_info", provider: "anthropic", model: "claude-opus-5", ts: 2 } as unknown as RunEvent,
+      detail({ agentId: "t1", model: "claude-haiku-4-5" }),
+    ]);
+    expect(s.runModel).toBe("claude-opus-5");
+  });
+
+  it("holds a launched child open instead of letting a result close it", () => {
+    const s = reduceAll(initialState, [...spawn, detail({ agentId: "t1", launched: true })]);
+    expect(s.agents.find((a) => a.id === "t1")?.state).toBe("working");
+    expect(s.agents.find((a) => a.id === "t1")?.launched).toBe(true);
+  });
+
+  it("ignores a frame that names no agent", () => {
+    const s = reduceAll(initialState, [...spawn, detail({ model: "claude-haiku-4-5" })]);
+    expect(s.agents.map((a) => a.id)).toEqual(["main", "t1"]);
   });
 });
