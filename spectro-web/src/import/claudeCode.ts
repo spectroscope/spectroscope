@@ -439,12 +439,18 @@ function blockNote(b: CCBlock): string {
  * A body of nothing but text is byte-identical to what this returned before:
  * every piece is joined with no separator, exactly as it was.
  */
-const asText = (content: unknown): string => {
+const asText = (content: unknown, picturesTravel = false): string => {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
   let out = "";
   let ownLine = false;
   for (const b of content as (CCBlock | string)[]) {
+    // Card 179: where the picture itself now travels, its note is a stand-in
+    // for something present, and printing both puts "[image/png · 31.0 KB]" on
+    // screen directly above the picture it describes — and makes that string
+    // the session's title. A picture we CANNOT render keeps its note, because
+    // then the note is the only record there is.
+    if (picturesTravel && typeof b !== "string" && renderableImage(b) !== null) continue;
     const isText = typeof b === "string" || b?.type === "text" || b?.type === undefined;
     const piece = typeof b === "string" ? b : isText ? (b.text ?? "") : blockNote(b);
     if (piece === "") continue;
@@ -1104,6 +1110,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             ts,
           });
       }
+      // NOT picturesTravel here, deliberately. A tool card's `output` is read by
+      // more than the card's own picture row — the text feed, the structured
+      // face, the receipt parser — and card 167 exists because a tool result
+      // that flattened to nothing left a blank card. Beside a thumbnail the note
+      // reads as a caption; dropped, those other surfaces go blank again.
       const output = asText(b.content);
       const taskId = receiptTaskId(output);
       // A duplicated record (the same receipt replayed after a compaction) must
@@ -1558,11 +1569,22 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         // named it lives in another file, and pointing at a `main` that is not
         // here would be the invention this whole path exists to avoid.
         if (!started) {
+          // The pictures this agent was handed, before the run_start they
+          // belong to — the same hole the main path had, in the same shape:
+          // this record BECOMES the run_start and returns below without its
+          // blocks ever being read. Order matters for the same reason: the
+          // reducer parks these and the run_start's bubble collects them.
+          if (r.type === "user") {
+            for (const b of blocks) {
+              const pic = imageFrame(b, ts, owner, undefined, !blocks.some(isSpokenText));
+              if (pic !== null) out.push(pic);
+            }
+          }
           out.push({
             type: "run_start",
             runId,
             agentId: owner,
-            prompt: r.type === "user" ? asText(content) : "",
+            prompt: r.type === "user" ? asText(content, true) : "",
             ...(firstModel !== undefined ? { model: firstModel } : {}),
             ts,
           });
@@ -1688,7 +1710,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           type: "run_start",
           runId,
           agentId: "main",
-          prompt: asText(content),
+          prompt: asText(content, true),
           ...(firstModel !== undefined ? { model: firstModel } : {}),
           ts,
         });
