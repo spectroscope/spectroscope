@@ -292,6 +292,51 @@ public class ClaudeTranscriptsController {
     }
 
     /**
+     * The agents beside one session, named.
+     *
+     * @param agents one row per {@code agent-*.jsonl}, direct spawns first
+     */
+    public record SidecarsResponse(List<TranscriptFacts.SidecarAgent> agents) {}
+
+    /**
+     * {@code GET /api/claude/transcripts/sidecars}: which agent transcripts sit
+     * beside this session, without reading a byte of any of them.
+     *
+     * <p>This is the read that lets an imported session stop saying "not in
+     * this stream: the per-agent rows, tokens, tool calls". A Claude Code
+     * session transcript holds only its own start — measured over the 25
+     * largest in this store, 71,329 records and ZERO carrying
+     * {@code isSidechain} — and every word its agents said is in these
+     * siblings. The filename carries the agent id, which is the same id the
+     * parent's spawn row carries, so the docking point is read and never
+     * invented.</p>
+     *
+     * <p>A LISTING, deliberately. Opening a session must cost one directory
+     * walk, not the 4,000-odd file reads a full join would be; the bodies come
+     * one at a time from {@link #content} when a reader opens a row. That bound
+     * is the whole design, and it is card 151's lesson applied before it can be
+     * repeated here.</p>
+     *
+     * @param rel the session transcript, store-relative
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host; else the agents,
+     *         empty when the session has no sidecar folder — the same shape as
+     *         a session that spawned nothing, which is what it is
+     */
+    @GetMapping("/api/claude/transcripts/sidecars")
+    public ResponseEntity<SidecarsResponse> sidecars(
+            @RequestParam(name = "path") String rel, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
+        Path file = insideStore(rel);
+        if (file == null) {
+            return ResponseEntity.ok(new SidecarsResponse(List.of()));
+        }
+        return ResponseEntity.ok(new SidecarsResponse(TranscriptFacts.sidecarAgentsBeside(file, base)));
+    }
+
+    /**
      * Resolves a caller-supplied path to a real transcript inside the store, or
      * to nothing.
      *

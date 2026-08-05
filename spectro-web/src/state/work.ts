@@ -87,6 +87,9 @@ export interface WorkItem {
   provider: string | null;
   /** Non-null only for launched tasks that reported counts we cannot verify. */
   opaque: OpaqueCounts | null;
+  /** The workflow run this item launched, when its receipt named one. What the
+   *  panel joins to the agent transcripts beside the session (card 177). */
+  runId: string | null;
   evidence: WorkEvidence;
   children: WorkItem[];
 }
@@ -122,9 +125,22 @@ const USAGE_LINE = /^usage: (.+)$/m;
 
 /** The `Summary: …` line of a launch receipt, which is the task's intent. */
 const SUMMARY = /^Summary:\s*(.+)$/m;
+/**
+ * The `Run ID:` a Workflow receipt prints — the docking point for card 177.
+ *
+ * A workflow's agents live in `<session>/subagents/workflows/<runId>/`, so this
+ * one string joins a row on screen to the transcripts sitting beside the file.
+ * Unanchored, unlike RECEIPT: the run id arrives several lines down, and the
+ * pattern is specific enough (`wf_` plus the id's alphabet) that a line quoting
+ * one is a line about this run either way.
+ */
+const RUN_ID = /\brun\s*id[:\s]\s*(wf_[A-Za-z0-9_-]{4,})\b/i;
 
 export interface LaunchReceipt {
   taskId: string;
+  /** The workflow run, when the receipt named one. Null for a Monitor and for
+   *  any launch whose receipt does not print a run id. */
+  runId: string | null;
   intent: string;
   /** The last status the task reported; null while it never reported one. */
   status: string | null;
@@ -172,6 +188,7 @@ export function readReceipt(output: string): LaunchReceipt | null {
     }
   return {
     taskId,
+    runId: RUN_ID.exec(output)?.[1] ?? null,
     intent: (SUMMARY.exec(output)?.[1] ?? "").trim(),
     status,
     opaque: {
@@ -216,6 +233,7 @@ function blank(id: string, kind: WorkKind): WorkItem {
     model: null,
     provider: null,
     opaque: null,
+    runId: null,
     evidence: blankEvidence(),
     children: [],
   };
@@ -422,6 +440,7 @@ export function foldWork(events: readonly RunEvent[]): WorkItem[] {
     item.name = call.name;
     item.intent = receipt.intent;
     item.opaque = receipt.opaque;
+    item.runId = receipt.runId;
     item.evidence.start = call.event;
     item.evidence.end = settle.event;
     item.firstTs = call.ts;

@@ -367,3 +367,37 @@ describe("groupWaves", () => {
     expect(groupWaves([])).toEqual([]);
   });
 });
+
+// Card 177: the run id is the docking point between a row on screen and the
+// agent transcripts sitting beside the file.
+describe("the run a launch names", () => {
+  const receipt = (extra: string): string => `Workflow launched in background. Task ID: wh7szjffr\n${extra}`;
+
+  it("reads the Run ID a Workflow receipt prints", () => {
+    const r = readReceipt(receipt("Summary: check the thing\nRun ID: wf_a50345ce-eb8\n"));
+    expect(r?.runId).toBe("wf_a50345ce-eb8");
+  });
+
+  it("finds it wherever in the receipt it stands", () => {
+    // Unlike the task id, the run id is not on the first line — it arrives
+    // several lines down, under the transcript dir.
+    const r = readReceipt(
+      receipt(
+        "Transcript dir: /Users/x/.claude/projects/p/s/subagents/workflows/wf_9b45e5d8-8de\n" +
+          "Run ID: wf_9b45e5d8-8de\nTo resume: …\n",
+      ),
+    );
+    expect(r?.runId).toBe("wf_9b45e5d8-8de");
+  });
+
+  it("stays null for a receipt that names no run", () => {
+    // A Monitor launch is a receipt without one, and every older transcript is
+    // too. Null means "this row has nothing to dock to", not "no agents".
+    expect(readReceipt("Monitor started (task bngwbqf6s, timeout 2100000ms)")?.runId).toBeNull();
+    expect(readReceipt(receipt("Summary: no run here\n"))?.runId).toBeNull();
+  });
+
+  it("is not fooled by a run id that is not one", () => {
+    expect(readReceipt(receipt("Run ID: not-a-workflow-id\n"))?.runId).toBeNull();
+  });
+});

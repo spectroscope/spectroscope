@@ -10,6 +10,7 @@ import type { RightTab } from "../state/layout";
 import { AgentsTab } from "./AgentsTab";
 import { PlanTab } from "./PlanTab";
 import { WorkPanel } from "./WorkPanel";
+import type { SidecarAgent, SidecarIndex } from "../import/sidecarAgents";
 import type { WorkItem } from "../state/work";
 import type { RunEvent } from "../events";
 import { SystemContextTab } from "./SystemContextTab";
@@ -33,6 +34,8 @@ export function RightPanel({
   fsRefreshSignal,
   work,
   workHighlight,
+  sidecars,
+  onOpenAgent,
   onFocusEvent,
   liveView,
 }: {
@@ -56,6 +59,10 @@ export function RightPanel({
   work?: WorkItem[];
   /** Which work item the transcript's chip is pointing at. */
   workHighlight?: string | null;
+  /** The agents beside the imported session (card 177). */
+  sidecars?: SidecarIndex;
+  /** Open one of them as a session of its own. */
+  onOpenAgent?: (agent: SidecarAgent) => void;
   /** The seam Spectrum and FleetCanvas already use (App.tsx:1261-1279). */
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
   liveView?: boolean;
@@ -122,6 +129,8 @@ export function RightPanel({
             liveView={liveView === true}
             highlight={workHighlight ?? null}
             onFocusEvent={onFocusEvent}
+            sidecars={sidecars}
+            onOpenAgent={onOpenAgent}
           />
         ) : activeTab === "agents" || (activeTab === "work" && work === undefined) ? (
           /* A layout saved while v2 was on must not leave a v1 reader staring
