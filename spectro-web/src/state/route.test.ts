@@ -2,7 +2,7 @@
 // Built for the ladder's receipts, but the useful part is general — a link into
 // a bug report that opens the exact frame someone is talking about.
 import { describe, expect, it } from "vitest";
-import { formatSessionRoute, parseRoute } from "./route";
+import { formatRoute, formatSessionRoute, parseAppRoute, parseRoute } from "./route";
 
 describe("parsing a route", () => {
   it("reads a session and an event", () => {
@@ -64,5 +64,39 @@ describe("formatting a route", () => {
   it("escapes an id that would otherwise break the shape", () => {
     const hash = formatSessionRoute("a b", 1);
     expect(parseRoute(hash)).toEqual({ sessionId: "a b", eventIndex: 1 });
+  });
+});
+
+// Card 179: a transcript from the store is an address.
+//
+// An import used to be a view and nothing else — true for a pasted body and a
+// picked file, which genuinely have none. It stopped being true the moment a
+// session's agents became openable: a reader opened a workflow's agent, landed
+// in it, and had no way back, because what he came FROM had never been an
+// address either.
+describe("the import address", () => {
+  it("carries the store-relative path, encoded", () => {
+    expect(formatRoute({ kind: "import", path: "-Users-x-repo/abc.jsonl" })).toBe(
+      "#/import/-Users-x-repo%2Fabc.jsonl",
+    );
+  });
+
+  it("reads its own hash back", () => {
+    expect(parseAppRoute("#/import/-Users-x-repo%2Fabc.jsonl")).toEqual({
+      kind: "import",
+      path: "-Users-x-repo/abc.jsonl",
+    });
+  });
+
+  it("round-trips a sidecar agent's path, which is the case that needed it", () => {
+    const path = "-Users-x-repo/s/subagents/workflows/wf_a50345ce-eb8/agent-a058779dfdfa033ff.jsonl";
+    expect(parseAppRoute(formatRoute({ kind: "import", path }))).toEqual({ kind: "import", path });
+  });
+
+  it("falls back to live for an address that names nothing", () => {
+    expect(parseAppRoute("#/import/")).toEqual({ kind: "live", tab: null });
+    // A hand-typed hash with a stray % is a typo, not an address.
+    expect(parseAppRoute("#/import/%zz")).toEqual({ kind: "live", tab: null });
+    expect(formatRoute({ kind: "import", path: "" })).toBe("#/");
   });
 });

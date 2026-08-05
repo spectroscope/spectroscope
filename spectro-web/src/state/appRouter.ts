@@ -35,7 +35,9 @@ export type RouteAction =
   | { kind: "enter-fleet"; contextId: string }
   | { kind: "return-to-live" }
   | { kind: "open-settings"; section: SettingsSection | null }
-  | { kind: "close-settings" };
+  | { kind: "close-settings" }
+  /** Fetch a store transcript by path and import it. */
+  | { kind: "open-import"; path: string };
 
 export interface RoutePlan {
   actions: RouteAction[];
@@ -68,6 +70,15 @@ export function planRoute(route: Route, place: Place, guards: RouteGuards): Rout
   const actions: RouteAction[] = [];
   if (place.settingsOpen) {
     actions.push({ kind: "close-settings" });
+  }
+  if (route.kind === "import") {
+    // A store transcript is fetched and imported, which is a different verb
+    // from opening a stored SESSION: nothing here is in the session store, and
+    // the file may be an agent's own transcript rather than a session's. It is
+    // still an address, which is the whole point — an import a reader can go
+    // BACK from (card 179).
+    actions.push({ kind: "open-import", path: route.path });
+    return { actions, effective: route };
   }
   const effective: Route =
     route.kind === "fleet" && (guards.fleetsLocked || !guards.fleetKnown)
