@@ -106,6 +106,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.stats.subagents": { de: "Subagenten {n}", en: "subagents {n}" },
   "imp.stats.workflowAgents": { de: "Workflow-Agenten {n}", en: "workflow agents {n}" },
   "imp.stats.images": { de: "Bilder {n}", en: "images {n}" },
+  // Card 179 follow-up: the three folders a recorded session left on disk. The
+  // store hides under a dot-folder and the scratchpad under a temp path nobody
+  // would guess, so the app could read these files and never show them.
+  "folder.transcript": { de: "Ordner", en: "folder" },
+  "folder.workflows": { de: "Workflows", en: "workflows" },
+  "folder.scratchpad": { de: "Scratchpad", en: "scratchpad" },
+  "folder.failed": { de: "ging nicht auf", en: "did not open" },
+  "folder.failedTitle": {
+    de: "Der Ordner ist weg, oder diese Maschine hat keinen Dateimanager, den wir kennen.",
+    en: "The folder is gone, or this machine has no file manager we know.",
+  },
   "imp.stats.unread": { de: "{n} noch ungelesen", en: "{n} not read yet" },
   "imp.pendingNote": {
     de: "{n} Transkripte sind noch nicht gelesen — sie erscheinen hier, sobald ihre Fakten da sind.",
