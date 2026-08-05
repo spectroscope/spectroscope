@@ -25,6 +25,7 @@ function read(rel: string): string {
 
 const view = read("./SpectrumView.tsx");
 const band = read("./SpectrumBand.tsx");
+const strip = read("./SpectrumStrip.tsx");
 const css = read("../styles/spectrum.css");
 
 /** Every declaration block in a stylesheet, as {selector, body} pairs. Crude on
@@ -123,17 +124,70 @@ describe("the zoom travels with the surface it moves", () => {
   });
 });
 
-describe("the band's wheel", () => {
+describe("the wheel gesture", () => {
+  // It moved out of SpectrumBand into useWheelZoom, so the STRIP can have the
+  // same gesture (owner: ⌘+wheel worked over a lane and nowhere else). The
+  // property this pins did not move with it — it just has one home now instead
+  // of one home and a copy waiting to be written.
+  const hook = read("./useWheelZoom.ts");
+
   it("settles the axis on the raw deltas, in one space", () => {
-    // viewBoxX scales deltaX by 1000/rect.width. Comparing that against a raw
-    // deltaY decides which axis owns the gesture by how wide the band happens
-    // to be drawn, and at a narrow band it claims a vertical swipe and traps
-    // the page scroll the handler's own comment says it is protecting.
-    expect(band).not.toContain("viewBoxX(e.deltaX");
-    const from = band.indexOf("wheelToIntent(");
-    const call = band.slice(from, band.indexOf(");", from));
+    // Scaling deltaX into a drawing's coordinates and comparing it against a
+    // raw deltaY decides which axis owns the gesture by how wide that drawing
+    // happens to be rendered. At a narrow band it claims a vertical swipe and
+    // traps the page scroll the handler exists to leave alone.
+    const from = hook.indexOf("wheelToIntent(");
+    const call = hook.slice(from, hook.indexOf(");", from));
     expect(call).toContain("e.deltaX");
     expect(call).toContain("e.deltaY");
+    expect(call).toContain("innerWidthPx");
+    expect(call).not.toContain("viewBoxX");
+  });
+
+  it("is bound once, and non-passively", () => {
+    // A passive listener cannot preventDefault, so ⌘+wheel would zoom the band
+    // AND the browser. Rebinding it per window change drops events mid-gesture,
+    // which reads as the zoom stuttering — hence the ref and the empty deps.
+    expect(hook).toContain("{ passive: false }");
+    expect(hook).toContain("latest.current");
+  });
+
+  it("is on BOTH surfaces, so the pointer does not have to know where to be", () => {
+    expect(band).toContain("useWheelZoom(");
+    expect(strip).toContain("useWheelZoom(");
+    // And neither of them grew a second gesture of its own.
+    expect(band).not.toContain("wheelToIntent(");
+    expect(strip).not.toContain("wheelToIntent(");
+  });
+
+  it("hands the band its own drawing units for the anchor only", () => {
+    // The anchor is a POSITION in the drawing, so it converts; the deltas and
+    // the width they are weighed against never do.
+    const from = band.indexOf("useWheelZoom(");
+    const call = band.slice(from, band.indexOf("});", from));
+    expect(call).toContain("viewBoxX(");
     expect(call).toContain("innerWidthPx(");
+    expect(call).not.toContain("e.deltaX");
+  });
+});
+
+describe("the zoom is stepless", () => {
+  it("offers no + and no − knob", () => {
+    // Owner 2026-08-05: "keine knubbel … wie im musik programm stufenlos rein
+    // und rauszoomen". Two buttons offering fixed halves and doubles beside an
+    // exponential wheel taught the wrong model of what the zoom is.
+    const from = view.indexOf("const buttons:");
+    const list = view.slice(from, view.indexOf("];", from));
+    expect(list).not.toContain('key: "in"');
+    expect(list).not.toContain('key: "out"');
+    // `fit` stays: a stepless zoom needs a way home more than a stepped one,
+    // and it is a destination rather than an increment.
+    expect(list).toContain('key: "fit"');
+  });
+
+  it("does not wait for a reader to be lost before it appears", () => {
+    // needsViewport answers "when is a reader LOST" and was the wrong question
+    // for "is there an instrument here": on a 123-event session nothing showed.
+    expect(view).not.toContain("needsViewport(");
   });
 });

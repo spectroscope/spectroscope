@@ -1,0 +1,14 @@
+{"type":"run_start","runId":"r-m4x2k9","agentId":"a0","prompt":"Vergleiche apps/ und packages/","provider":"anthropic","ts":1751407220001}
+{"type":"turn_start","agentId":"a0","turn":1,"ts":1751407220002}
+{"type":"text_delta","agentId":"a0","text":"Ich delegiere das an zwei explore-Agenten.","ts":1751407221100}
+{"type":"tool_call","agentId":"a0","callId":"c1","name":"spawn_agents","input":{"tasks":[{"type":"explore","task":"Untersuche apps/"}]},"ts":1751407221900}
+{"type":"agent_spawn","agentId":"a1","parentId":"a0","task":"Untersuche apps/","ts":1751407221950}
+{"type":"turn_start","agentId":"a1","turn":1,"ts":1751407222010}
+{"type":"tool_call","agentId":"a1","callId":"c2","name":"list_dir","input":{"path":"apps"},"ts":1751407223518}
+{"type":"tool_result","agentId":"a1","callId":"c2","output":"cli\nserver\nweb","isError":false,"durationMs":9,"ts":1751407223527}
+{"type":"text_delta","agentId":"a1","text":"apps/ enthält drei Pakete …","ts":1751407224803}
+{"type":"usage","agentId":"a1","inputTokens":911,"outputTokens":74,"ts":1751407225010}
+{"type":"tool_result","agentId":"a0","callId":"c1","output":"[explore-1] apps/ enthält drei Pakete …","isError":false,"durationMs":3110,"ts":1751407225060}
+{"type":"text_delta","agentId":"a0","text":"Zusammengefasst: …","ts":1751407226412}
+{"type":"usage","agentId":"a0","inputTokens":2411,"outputTokens":186,"ts":1751407227200}
+{"type":"run_end","runId":"r-m4x2k9","stopReason":"end_turn","ts":1751407227205}
