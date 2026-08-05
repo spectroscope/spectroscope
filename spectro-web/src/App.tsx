@@ -884,16 +884,18 @@ export function App() {
    * readable in the same faces as everything else (card 152 taught that path
    * to read an `agent-*.jsonl` as a session in its own right).
    */
-  const openSidecarAgent = (agent: SidecarAgent): void => {
-    void fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(agent.path)}`)
+  const openStoreTranscript = (path: string, label: string, cause: NavCause): void => {
+    void fetch(`/api/claude/transcripts/content?path=${encodeURIComponent(path)}`)
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((raw) => {
         const { events, kind, source, subagent } = detectAndLoad(raw);
-        // No storePath: an agent transcript has no agents beside IT, and asking
-        // would be a directory walk for an answer that is always empty.
-        openImport(events, `agent-${agent.agentId}`, kind, source, subagent);
+        openImport(events, label, kind, source, subagent, path, cause);
       })
-      .catch((e) => reportBrowserError("sidecar-open", e));
+      .catch((e) => reportBrowserError("store-open", e));
+  };
+
+  const openSidecarAgent = (agent: SidecarAgent): void => {
+    openStoreTranscript(agent.path, `agent-${agent.agentId}`, "gesture");
   };
 
   const openImport = (
@@ -903,6 +905,9 @@ export function App() {
     source: ImportSource,
     subagent?: SubagentTranscript,
     storePath?: string,
+    /** "gesture" pushes a history entry; "apply" replaces it, so following an
+     *  address does not stack a second one on top of itself. */
+    cause: NavCause = "gesture",
   ): void => {
     navNonce.issue(); // an import supersedes any in-flight session open
     // Card 177: ask what sits BESIDE the file, before anything is rendered.
@@ -921,8 +926,15 @@ export function App() {
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
     setImportOpen(false);
-    // An import is a view, not an address (its id must never reach the bar).
-    commitUrl({ kind: "live", tab: null }, "gesture");
+    // A file from the STORE is an address; a paste and a picked file are not,
+    // and say so by carrying no path. That distinction stopped being academic
+    // when a session's agents became openable (card 177): a reader opened a
+    // workflow's agent, landed in it, and had no way back — because the thing
+    // he came from had never been an address either. Now both are.
+    commitUrl(
+      storePath === undefined ? { kind: "live", tab: null } : { kind: "import", path: storePath },
+      cause,
+    );
     // The dialog is gone by the time this bar matters, so it belongs to the
     // session, not to the dialog. The VS Code note keeps its own sentence: that
     // export records that each tool ran and whether it succeeded, never what it
@@ -1093,6 +1105,11 @@ export function App() {
         }
         case "set-tab":
           setTab(action.tab);
+          break;
+        case "open-import":
+          // Following an address, so it REPLACES rather than pushes: the entry
+          // is already in history, and pushing would make Back a no-op.
+          openStoreTranscript(action.path, action.path.split("/").pop() ?? action.path, "apply");
           break;
         case "enter-fleet":
           applyFleet(action.contextId); // the beaconless core

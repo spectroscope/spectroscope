@@ -247,6 +247,118 @@ public class SessionsController {
         return ResponseEntity.ok(Map.of("saved", true, "provider", body.provider()));
     }
 
+    /**
+     * {@code GET /api/settings/env}: the operator settings the UI may save, and
+     * what they are set to now.
+     *
+     * <p>Not secrets, unlike the keys next door: a port number and a boolean,
+     * both of which the operator is about to edit. The value is reported so the
+     * page can show what is in force rather than an empty box that looks unset.
+     * Only {@link DotEnvSettings#WRITABLE} is ever read or reported.</p>
+     *
+     * @param request the servlet request, for the fences
+     * @return the current values, and whether each came from the process
+     *         environment (which the UI cannot change) or from the file
+     */
+    @GetMapping("/api/settings/env")
+    public ResponseEntity<Map<String, Object>> operatorSettings(HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        Map<String, Object> fromFile = DotEnvSettings.read(SpectroConfig.dotEnvPath());
+        Map<String, Object> out = new LinkedHashMap<>();
+        for (String name : DotEnvSettings.WRITABLE) {
+            String live = System.getenv(name);
+            boolean fromEnv = live != null && !live.isBlank();
+            out.put(name, Map.of(
+                    "value", fromEnv ? live : String.valueOf(fromFile.getOrDefault(name, "")),
+                    // A real env var wins over the file for the whole process
+                    // life, so the UI must say the box it is showing cannot take
+                    // effect rather than let the operator type into it and wonder.
+                    "fromEnvironment", fromEnv));
+        }
+        return ResponseEntity.ok(out);
+    }
+
+    /**
+     * {@code POST /api/settings/env}: save one operator setting to
+     * {@code ~/.spectro/.env}.
+     *
+     * <p>Same two fences as the key write, for the same reason and then one
+     * more: {@code SPECTRO_ALLOW_SPAWN} is the switch that lets this server
+     * start processes, so a cross-site page reaching it would be handing a
+     * website the ability to arm process spawning on the operator's machine.
+     * The UI asks the operator to confirm that one in words before it posts —
+     * but the confirmation is a courtesy to the reader, and THIS fence is the
+     * control.</p>
+     *
+     * <p>The allowlist is the security boundary. {@code ~/.spectro/.env} is read
+     * by the launchers into the process environment, so an unrestricted writer
+     * here would be remote code execution wearing a settings form: one
+     * {@code JAVA_TOOL_OPTIONS} line and the next boot runs whatever it says.
+     * Two names, both validated for shape, and nothing else is accepted.</p>
+     *
+     * @param body the setting to save
+     * @param request the servlet request, for the fences
+     * @return 404 for a refused caller, 400 for an unknown name or a value that
+     *         is not the shape that name takes, else the saved value
+     */
+    @PostMapping(value = "/api/settings/env", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> saveSetting(@RequestBody(required = false) SettingBody body,
+                                                           HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+            return ResponseEntity.notFound().build();
+        }
+        String name = body == null ? null : body.name();
+        if (name == null || !DotEnvSettings.WRITABLE.contains(name)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "not a settable name"));
+        }
+        String value = body.value() == null ? "" : body.value().trim();
+        if (!validSetting(name, value)) {
+            return ResponseEntity.badRequest().body(Map.of("error", "not a value this setting takes"));
+        }
+        try {
+            SpectroConfig.writeApiKey(name, value); // same writer, same 0600 file
+        } catch (Exception writeFailed) {
+            return ResponseEntity.internalServerError().body(Map.of("error", "could not save the setting"));
+        }
+        // Honest about what just happened: the beans that read these are built
+        // at boot, so the value is on disk and NOT in force until a restart.
+        return ResponseEntity.ok(Map.of("saved", true, "name", name, "restartRequired", true));
+    }
+
+    /**
+     * Whether a value is the shape its setting takes.
+     *
+     * <p>Blank is always allowed: it is how an operator turns an opt-in back
+     * off, and both readers treat a blank as "off" already.</p>
+     *
+     * @param name the setting name, already known to be writable
+     * @param value the trimmed value
+     * @return true when it may be written
+     */
+    private static boolean validSetting(String name, String value) {
+        if (value.isEmpty()) {
+            return true;
+        }
+        if (DotEnvSettings.HUB_PORT.equals(name)) {
+            // 0 is meaningful here: it binds an ephemeral loopback port.
+            try {
+                int port = Integer.parseInt(value);
+                return port >= 0 && port <= 65535;
+            } catch (NumberFormatException notAPort) {
+                return false;
+            }
+        }
+        // The reader treats anything but "true" as off; accepting only the two
+        // words keeps the file readable and a typo visible instead of silently
+        // meaning "off".
+        return "true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value);
+    }
+
+    /** One operator setting to save. Not a key — these two are not secrets. */
+    public record SettingBody(String name, String value) {}
+
     /** The save-key request body (never logged). */
     public record KeyBody(String provider, String key) {}
 

@@ -59,6 +59,13 @@ public class SpectroServerApplication {
         // Card 90: the bundled skills reach ~/.spectro/skills exactly once —
         // absent-only + ledgered, a courtesy that must never break the boot.
         BundledSkills.seedFromClasspath();
-        SpringApplication.run(SpectroServerApplication.class, args);
+        // The two fleet switches the UI can save land in ~/.spectro/.env, and a
+        // running JVM cannot change its own environment — so without this they
+        // would be written and never read. Appended LAST, so a real env var, a
+        // -D property and a launcher-loaded ./.env all still win; see
+        // DotEnvSettings for why only two names are lifted out of that file.
+        SpringApplication app = new SpringApplication(SpectroServerApplication.class);
+        app.addInitializers(ctx -> DotEnvSettings.apply(ctx.getEnvironment()));
+        app.run(args);
     }
 }

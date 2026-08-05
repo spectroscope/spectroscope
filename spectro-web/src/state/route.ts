@@ -24,6 +24,7 @@ export const SETTINGS_SECTIONS = [
   "session",
   "leveling",
   "observability",
+  "fleet",
   "workspace",
   "logging",
   "machine",
@@ -35,6 +36,17 @@ export type Route =
   | { kind: "live"; tab: ViewTab | null }
   | { kind: "session"; sessionId: string; eventIndex: number | null; tab: ViewTab | null }
   | { kind: "fleet"; contextId: string }
+  /**
+   * A transcript from the store, by its store-relative path.
+   *
+   * An import used to be a view and nothing else, because a pasted body and a
+   * picked file genuinely have no address. A transcript in the store DOES have
+   * one, and the difference stopped being academic the moment a session's
+   * agents became openable (card 177): a reader opens a workflow's agent, lands
+   * in it, and has no way back, because the thing he came from was never an
+   * address either. So the ones that CAN be addressed now are.
+   */
+  | { kind: "import"; path: string }
   | { kind: "settings"; section: SettingsSection | null };
 
 /** A parsed session route — the card-81 shape, kept for its callers. */
@@ -47,6 +59,7 @@ export interface SessionRoute {
 const SESSION = "session/";
 const FLEET = "fleet/";
 const SETTINGS = "settings";
+const IMPORT = "import/";
 
 /**
  * Reads any hash into a route. Total: an address that names nothing real is
@@ -75,6 +88,9 @@ export function parseAppRoute(hash: string | null | undefined): Route {
   }
   if (rest.startsWith(FLEET)) {
     return fleetRouteOf(rest.slice(FLEET.length));
+  }
+  if (rest.startsWith(IMPORT)) {
+    return importRouteOf(rest.slice(IMPORT.length));
   }
   if (rest === SETTINGS) {
     return { kind: "settings", section: null };
@@ -110,9 +126,33 @@ export function formatRoute(route: Route): string {
     }
     case "fleet":
       return isReplayOnlyId(route.contextId) ? "#/" : `#/${FLEET}${encodeURIComponent(route.contextId)}`;
+    case "import":
+      return route.path === "" ? "#/" : `#/${IMPORT}${encodeURIComponent(route.path)}`;
     case "settings":
       return route.section === null ? `#/${SETTINGS}` : `#/${SETTINGS}/${route.section}`;
   }
+}
+
+/**
+ * A store transcript address, or the live default.
+ *
+ * The path is the store-relative one the listing hands out, and the decode is
+ * the only thing done to it: the server resolves it canonically and refuses
+ * anything outside the store, so this side does not need a second opinion about
+ * what a path may say.
+ *
+ * @param raw the encoded path after `#/import/`
+ * @return the import route, or the live default for an empty one
+ */
+function importRouteOf(raw: string): Route {
+  let path: string;
+  try {
+    path = decodeURIComponent(raw);
+  } catch {
+    // A hand-typed hash with a stray % is not an address; it is a typo.
+    return liveDefault();
+  }
+  return path === "" ? liveDefault() : { kind: "import", path };
 }
 
 /**
