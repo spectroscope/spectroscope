@@ -274,7 +274,7 @@ describe("fleetStore multi-fleet keying", () => {
 
 describe("fleetPending", () => {
   function model(events: RunEvent[]): FleetModel {
-    return { roster: [], events, epochBySender: {} };
+    return { roster: [], events, frames: [], epochBySender: {} };
   }
 
   it("returns undecided permission requests with their payload, dropping decided ones", () => {

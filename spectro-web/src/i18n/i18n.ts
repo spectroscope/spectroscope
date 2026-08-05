@@ -306,6 +306,20 @@ export const dict: Record<string, { de: string; en: string }> = {
   "fleet.mode.expanded.title": { de: "Jeden Agenten als eigenen Knoten zeigen — einem Lauf folgen", en: "Show every agent as its own node — follow one specific run" },
   "fleet.noEventsHint": { de: "Jeder Knoten zeichnet seine Spektrallinie, sobald er Events sendet.", en: "Each node draws its spectral line as soon as it emits events." },
 
+  // the bus view (0.7 ESB prototype)
+  "bus.openAgent": { de: "diesen Agenten öffnen", en: "open this agent" },
+  "bus.spawnedBy": { de: "gespawnt von", en: "spawned by" },
+  "bus.gatePending": { de: "Gate wartet auf eine Entscheidung", en: "gate waiting for a decision" },
+  "bus.openTrace": { de: "im Trace öffnen", en: "open in trace" },
+  "bus.inlineOs": { de: "Inline-OS", en: "inline OS" },
+  "bus.stopNode": { de: "diesen Knoten stoppen", en: "stop this node" },
+  "bus.composerPlaceholder": { de: "Nachricht an diesen Agenten …", en: "message this agent …" },
+  "bus.composerPending": { de: "Bus-Nachrichten kommen mit dem 0.7-Wire-Verb — der Hub spricht heute stop und gate", en: "bus messaging lands with the 0.7 wire verb — the hub speaks stop and gate today" },
+  "bus.empty": { de: "Noch keine Knoten am Bus.", en: "No nodes on the bus yet." },
+  "bus.spawnNode": { de: "+ Node andocken", en: "+ dock a node" },
+  "bus.barAria": { de: "Flotten-Leiste", en: "Fleet bar" },
+  "bus.feedEmpty": { de: "Noch keine Aktivität von diesem Agenten.", en: "No activity from this agent yet." },
+
   // permission dialog
   "perm.wants": { de: "möchte ausführen", en: "wants to execute" },
   "perm.by": { de: "angefragt von {id}", en: "requested by {id}" },

@@ -1,0 +1,417 @@
+/* The bus view (0.7 ESB prototype). Brand rules apply: colour lives on lines
+ * (the rail, the drops, the band ticks, chip underlines), surfaces stay
+ * neutral, lowercase labels, no shadows. */
+
+.bus-canvas {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.bus-canvas--empty {
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.bus-empty {
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
+.bus-scroll {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow-x: auto;
+  overflow-y: auto;
+  padding: 28px 32px 8px;
+}
+
+.bus-cards {
+  display: flex;
+  align-items: flex-end;
+  gap: 20px;
+  padding-bottom: 0;
+}
+
+.bus-slot {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.bus-slot--child {
+  margin-left: -8px;
+}
+
+.bus-slot-parent {
+  font-size: 10px;
+  color: var(--fg-faint);
+  padding-left: 4px;
+}
+
+.bus-slot--spawn {
+  align-self: flex-end;
+  min-width: 240px;
+  opacity: 0.9;
+}
+
+/* ---- the card: a full agent, docked -------------------------------------- */
+
+.bus-card {
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  /* the dock: the card's one coloured edge points at the rail */
+  border-bottom: 2px solid var(--cluster);
+}
+
+.bus-card--failed {
+  border-bottom-color: var(--error);
+}
+
+.bus-card--gate {
+  border-color: var(--ev-gate);
+}
+
+.bus-card-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.bus-card-head:disabled {
+  cursor: default;
+}
+
+.bus-card-id {
+  font-size: 12px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bus-card-role {
+  font-size: 11px;
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+
+.bus-card-provider {
+  font-size: 10px;
+  color: var(--fg-faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 4px;
+  white-space: nowrap;
+}
+
+.bus-card-epoch {
+  font-size: 10px;
+  color: var(--ev-gate);
+}
+
+.bus-card-ghost {
+  font-size: 10px;
+  color: var(--fg-faint);
+  margin-left: auto;
+}
+
+.bus-card-task {
+  margin: 0;
+  font-size: 11px;
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- the inline OS row --------------------------------------------------- */
+
+.bus-card-os {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bus-os-chip {
+  font-size: 10px;
+  color: var(--fg-faint);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  /* activity is a line, not a fill */
+  border-bottom-width: 2px;
+}
+
+.bus-os-chip.on {
+  color: var(--fg);
+  border-bottom-color: var(--ev-tool);
+}
+
+.bus-os-chip.on.remote {
+  border-bottom-color: var(--ev-reasoning);
+}
+
+.bus-card-gaterow {
+  font-size: 10px;
+  color: var(--ev-gate);
+  border-top: 1px solid var(--ev-gate);
+  padding-top: 4px;
+}
+
+/* ---- the spectral band --------------------------------------------------- */
+
+.bus-card-bandwrap {
+  display: block;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.bus-card-band {
+  display: block;
+  width: 100%;
+  height: 14px;
+}
+
+.bus-card-baseline {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.bus-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--fg-faint);
+}
+
+.bus-card-stop {
+  background: none;
+  border: none;
+  color: var(--fg-faint);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 2px;
+}
+
+.bus-card-stop:hover {
+  color: var(--error);
+}
+
+/* ---- the honest composer mock -------------------------------------------- */
+
+.bus-card-composer {
+  display: flex;
+  gap: 4px;
+}
+
+.bus-card-composer input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  padding: 3px 6px;
+  background: var(--bg);
+  color: var(--fg-dim);
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+}
+
+.bus-card-composer button {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 5px;
+  color: var(--fg-faint);
+}
+
+.bus-card-composer input:disabled,
+.bus-card-composer button:disabled {
+  cursor: not-allowed;
+}
+
+.bus-spawn-toggle {
+  font-size: 11px;
+  padding: 6px 12px;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--fg-dim);
+  cursor: pointer;
+}
+
+.bus-spawn-toggle:hover {
+  border-color: var(--accent);
+  color: var(--fg);
+}
+
+/* ---- the rail ------------------------------------------------------------ */
+
+.bus-rail {
+  display: block;
+  margin-top: 0;
+}
+
+.bus-rail-drop {
+  stroke: var(--line);
+  stroke-width: 1.2;
+}
+
+.bus-mark-dir {
+  font-size: 9px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bus-mark--flight animate {
+    display: none;
+  }
+}
+
+/* ---- variant B: the fleet bar + the agent feed ---------------------------- */
+
+.fleet-bar .fleet-bar-glyph {
+  display: inline-block;
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.fleet-bar .fleet-bar-glyph line {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.fleet-bar .fleet-bar-glyph circle {
+  fill: currentColor;
+}
+
+.fleet-bar .fleet-bar-agent .dot {
+  margin-right: 5px;
+}
+
+.fleet-bar .fleet-bar-agent.gate {
+  color: var(--ev-gate);
+}
+
+.fleet-bar .fleet-bar-spawn {
+  color: var(--fg-faint);
+}
+
+.fleet-bar .fleet-bar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 6px 6px;
+  background: var(--line);
+}
+
+.agent-feed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+}
+
+.agent-feed-scroll {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 20px;
+}
+
+.agent-feed-empty {
+  color: var(--fg-dim);
+  font-size: 13px;
+}
+
+.agent-feed-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+  min-width: 0;
+}
+
+.agent-feed-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  align-self: center;
+}
+
+.agent-feed-time {
+  color: var(--fg-faint);
+  font-size: 10px;
+  min-width: 46px;
+  text-align: right;
+}
+
+.agent-feed-type {
+  color: var(--fg-dim);
+  font-size: 11px;
+  min-width: 120px;
+}
+
+.agent-feed-detail {
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-feed-composer {
+  display: flex;
+  gap: 6px;
+  padding: 10px 20px;
+  border-top: 1px solid var(--line);
+}
+
+.agent-feed-composer input {
+  flex: 1;
+  font-size: 12px;
+  padding: 6px 10px;
+  background: var(--bg);
+  color: var(--fg-dim);
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+}
+
+.agent-feed-composer button {
+  font-size: 12px;
+  padding: 6px 12px;
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 6px;
+  color: var(--fg-faint);
+}
+
+.agent-feed-composer input:disabled,
+.agent-feed-composer button:disabled {
+  cursor: not-allowed;
+}
