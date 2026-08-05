@@ -10,10 +10,12 @@
   background: var(--bg);
 }
 
-.bus-canvas--empty {
+/* An empty bus still draws its rail: the card row holds a card's height open
+   so the rail sits where it always sits, rather than pinning to the floor of
+   an empty pane (.bus-scroll is justify-content: flex-end). */
+.bus-cards--empty {
+  min-height: 132px;
   align-items: center;
-  justify-content: center;
-  gap: 16px;
 }
 
 .bus-empty {

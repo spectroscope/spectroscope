@@ -1356,7 +1356,20 @@ export function TraceView(props: {
   const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
   // Whether a tool_result row is open — the second reader of the index below,
   // and the condition openDetails has always been paid for under.
-  const openIsToolResult = openSeq !== null && bySeq.get(openSeq)?.type === "tool_result";
+  const openType = openSeq === null ? undefined : bySeq.get(openSeq)?.type;
+  /** A row whose OWN payload carries the importer's reading of a tool result. */
+  const openIsToolResult = openType === "tool_result";
+  /**
+   * A row that needs the callId index — which is one row wider than the above.
+   *
+   * A `tool_result_detail` frame is `{type, callId, detail, ts}`: the call it
+   * answers is named only by its id, exactly like a `tool_result`. Testing for
+   * `"tool_result"` alone handed that row `calls: undefined`, so the strongest
+   * evidence about what a lifted body IS — the file path on the call, which
+   * every one of the 3,215 such frames in this store carries — was unreachable
+   * from the very row that needed it.
+   */
+  const openNeedsCalls = openIsToolResult || openType === "tool_result_detail";
 
   // callId -> the call it belongs to: one pass over the whole stream, shared by
   // the two readers that need it. The chip row decides every tool_result with
@@ -1375,7 +1388,7 @@ export function TraceView(props: {
   // unrelated chip on a resting import. Cheap either way, measured; but with a
   // row open the need is true whatever the chips say, so keying on the answer
   // means the map that row holds simply cannot move under it.
-  const wantCallIndex = needsCallIndex(active) || openIsToolResult;
+  const wantCallIndex = needsCallIndex(active) || openNeedsCalls;
   const callIndex = useMemo(
     () => (wantCallIndex ? toolCallsById(allEntries.map((e) => e.payload)) : undefined),
     [wantCallIndex, allEntries],
@@ -1434,7 +1447,7 @@ export function TraceView(props: {
   // it answers. It is the same index the chip row decides with, handed down
   // only while such a row is open — a closed trace passes `undefined` to the
   // row that does not use it, even on the days the chip row built one anyway.
-  const openCalls = openIsToolResult ? callIndex : undefined;
+  const openCalls = openNeedsCalls ? callIndex : undefined;
 
   // And what those calls returned, when the stream carries an importer's
   // reading of it. Built under exactly the same condition and paid for the same

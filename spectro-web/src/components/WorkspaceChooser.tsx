@@ -15,7 +15,7 @@ import { useState } from "react";
 import { useLang } from "../state/lang";
 import type { ClientMessage } from "../events";
 import type { WorkspaceInfo } from "../state/reducer";
-import { preselectedMode } from "../workspace/chooserMode";
+import { chooserFolder, preselectedMode } from "../workspace/chooserMode";
 
 type Mode = "random" | "default" | "set";
 
@@ -29,6 +29,10 @@ export function WorkspaceChooser(props: {
   const [picked, setPicked] = useState<Mode | null>(null);
   // A click wins; until then the announcement speaks.
   const chosen: Mode | null = picked ?? preselectedMode(props.workspace);
+  // The folder, named. The announcement has carried it all along and this
+  // screen printed only the word "default" — the one place that exists to say
+  // where the agent will work said everything but the folder.
+  const folder = picked === null || picked === chosen ? chooserFolder(props.workspace) : null;
 
   const pick = (mode: Mode): void => {
     setPicked(mode);
@@ -74,6 +78,14 @@ export function WorkspaceChooser(props: {
           </button>
         ))}
       </div>
+      {folder !== null && (
+        <span className="ws-chooser-folder mono" title={props.workspace?.path ?? undefined}>
+          {folder}
+          {props.workspace?.exists === false && (
+            <span className="ws-chooser-new"> · {de ? "wird angelegt" : "will be created"}</span>
+          )}
+        </span>
+      )}
     </div>
   );
 }
