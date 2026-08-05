@@ -78,6 +78,10 @@ final class TranscriptFacts {
      * @param workflowAgents agent transcripts below that, in the workflow run dirs
      * @param language {@code "de"}, {@code "en"}, or null when the prompts do not say
      * @param firstPrompt the opening user prompt, verbatim and bounded, or null
+     * @param images pictures anyone pasted into the session, counted in the same
+     *               pass as everything else — a transcript that carries screenshots
+     *               is a different kind of record to read, and 764 of the operator's
+     *               5,260 files carry them
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record Facts(
@@ -87,17 +91,18 @@ final class TranscriptFacts {
             int subagents,
             int workflowAgents,
             String language,
-            String firstPrompt) {
+            String firstPrompt,
+            int images) {
 
         /** The empty answer for a file that could not be read. */
         static Facts none(String path) {
-            return new Facts(path, List.of(), 0, 0, 0, null, null);
+            return new Facts(path, List.of(), 0, 0, 0, null, null, 0);
         }
 
         /** Re-labels a folded answer with the path the caller asked under. */
         Facts at(String path) {
             return new Facts(path, models, workflowCalls, subagents, workflowAgents, language,
-                    firstPrompt);
+                    firstPrompt, images);
         }
 
         /**
@@ -108,7 +113,7 @@ final class TranscriptFacts {
          */
         Facts withSidecars(Sidecars sidecars) {
             return new Facts(path, models, workflowCalls, sidecars.subagents(),
-                    sidecars.workflowAgents(), language, firstPrompt);
+                    sidecars.workflowAgents(), language, firstPrompt, images);
         }
     }
 
@@ -143,6 +148,7 @@ final class TranscriptFacts {
         Set<String> workflowIds = new LinkedHashSet<>();
         int idlessWorkflowCalls = 0;
         String firstPrompt = null;
+        int images = 0;
 
         try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             String line;
@@ -165,6 +171,7 @@ final class TranscriptFacts {
                 if (firstPrompt == null && isUserPrompt(record)) {
                     firstPrompt = textOf(message.path("content"));
                 }
+                images += imagesIn(message.path("content"));
             }
         } catch (IOException | RuntimeException unreadable) {
             return Facts.none(null);
@@ -177,7 +184,36 @@ final class TranscriptFacts {
                 0, // sidecar counts are ask-time facts; the caller stamps them on
                 0,
                 languageOf(firstPrompt),
-                bound(firstPrompt));
+                bound(firstPrompt),
+                images);
+    }
+
+    /**
+     * Pictures in one record's content.
+     *
+     * <p>Counted off the same shape the importer reads: a {@code base64} source
+     * with real data. A tool result carries its images the same way, so this
+     * catches a screenshot a tool returned as well as one somebody pasted, which
+     * is what a reader looking for "the session with the pictures" means.</p>
+     *
+     * @param content the record's content node
+     * @return how many pictures it carries
+     */
+    private static int imagesIn(JsonNode content) {
+        if (!content.isArray()) {
+            return 0;
+        }
+        int found = 0;
+        for (JsonNode block : content) {
+            if ("image".equals(block.path("type").asText())
+                    && "base64".equals(block.path("source").path("type").asText())
+                    && !block.path("source").path("data").asText("").isBlank()) {
+                found++;
+            }
+            // A tool_result nests its own blocks, and a screenshot comes back there.
+            found += imagesIn(block.path("content"));
+        }
+        return found;
     }
 
     /**

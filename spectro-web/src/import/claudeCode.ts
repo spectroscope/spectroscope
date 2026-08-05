@@ -369,6 +369,46 @@ function byteSize(bytes: number): string {
  *
  * @return the note, or "" for a block that is text or carries nothing to name
  */
+/**
+ * The media types an imported picture may be rendered as.
+ *
+ * An allowlist rather than a blocklist, because `mediaType` is FOREIGN input
+ * that gets interpolated into a `data:` URI. A type of
+ * `text/html,<svg onload=…>` yields a URI that is inert in an `<img src>` — it
+ * fails to decode and hits onError — and becomes live the moment the same
+ * string reaches an `<a href>`, an iframe or a fetch. One check here beats
+ * trusting every renderer that will ever exist.
+ *
+ * Measured over the store: 6,214 jpeg, 3,717 png, 134 webp — and exactly FOUR
+ * `image/svg+xml`. The list costs those four, and they are the ones worth
+ * losing: an SVG in an `<img>` runs no script, but it is still a parser and a
+ * decompression surface, and nothing in this corpus needs it. Everything off
+ * the list keeps its note exactly as before.
+ */
+const RENDERABLE_MEDIA: ReadonlySet<string> = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+/** Base64 and nothing else. The string reaches an attribute in three renderers
+ *  and an offline HTML export; one charset check at the door beats trusting
+ *  each of them to escape it. */
+const BASE64_ONLY = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/**
+ * The picture a block carries, when it is one this app may draw.
+ *
+ * The bytes are already resident — the whole file was `JSON.parse`d to get
+ * here — so carrying them retains a string and adds no read.
+ *
+ * @param b the content block
+ * @return the media type and data, or null when this block is not a renderable
+ *         picture (which leaves {@link blockNote}'s sentence in place)
+ */
+function renderableImage(b: CCBlock): { mediaType: string; dataBase64: string } | null {
+  const media = typeof b.source?.media_type === "string" ? b.source.media_type : "";
+  const data = typeof b.source?.data === "string" ? b.source.data : "";
+  if (!RENDERABLE_MEDIA.has(media) || data === "" || !BASE64_ONLY.test(data)) return null;
+  return { mediaType: media, dataBase64: data };
+}
+
 function blockNote(b: CCBlock): string {
   if (b.type === "tool_reference") return typeof b.tool_name === "string" ? safeWord(b.tool_name) : "";
   const kind = typeof b.type === "string" ? safeWord(b.type) : "";
@@ -427,6 +467,68 @@ const asText = (content: unknown): string => {
  *
  * @return the note to put in the person's bubble, or "" for any other block
  */
+/**
+ * A picture the file carried, as its own import-only frame — or its note.
+ *
+ * The note said what a block WAS and dropped what it held, which is the whole
+ * of "das war das mega bomben feature" going missing: the bytes are in the
+ * transcript and nothing put them on screen.
+ *
+ * The bytes ride in the fold rather than behind an endpoint, and that is
+ * measured. The old comment's number — 1.23 GB — is the CORPUS total, and no
+ * import ever pays a corpus. The grain an import pays is the file: of 5,260
+ * transcripts, 764 hold pictures at all, and the median such file holds 1.17 MB
+ * of base64 (p90 5.08 MB). It is also already resident — the line was
+ * JSON.parsed to reach this function — so carrying it retains a string and adds
+ * no read. And an endpoint could not serve half the imports anyway: the file
+ * picker hands over a File from anywhere on the disk, with no store path behind
+ * it.
+ *
+ * What the old comment got right is kept in full: `image_generated` is NOT
+ * emitted, because that frame means "generated here" and this was read or
+ * grabbed. This is `attachment_image`, an import-only type beside
+ * `tool_result_detail`, which `isWireEvent` keeps out of every written file.
+ *
+ * @param b the block
+ * @param ts the record's clock
+ * @param agentId who the frame belongs to
+ * @param callId the call this block answered, when it sat in a tool_result
+ * @return the frame to push, or null when the block is not a picture this app
+ *         may draw — in which case the caller falls back to its note
+ */
+/** Whether a block is words somebody actually wrote — the test for "did this
+ *  record say anything besides showing a picture". */
+function isSpokenText(b: CCBlock): boolean {
+  return b?.type === "text" && (b.text ?? "") !== "";
+}
+
+function imageFrame(
+  b: CCBlock,
+  ts: number,
+  agentId: string,
+  callId?: string,
+  standalone = false,
+): RunEvent | null {
+  const pic = renderableImage(b);
+  if (pic === null) return null;
+  return {
+    type: "attachment_image",
+    agentId,
+    mediaType: pic.mediaType,
+    dataBase64: pic.dataBase64,
+    // The file's own sentence travels too, so every surface has an alt without
+    // recomputing a size and without inventing a word.
+    note: blockNote(b),
+    ...(callId === undefined ? {} : { callId }),
+    // Nothing else in this record spoke, so the picture IS the message and
+    // gets its own bubble. Without this it waited for the next sentence and
+    // glued itself to a message it had nothing to do with — measured on the
+    // fixture, a screenshot-only prompt landed on the words that came after it.
+    ...(standalone ? { standalone: true } : {}),
+    ts,
+  } as unknown as RunEvent;
+}
+
 function attachmentNote(b: CCBlock): string {
   return b?.type === "image" || b?.type === "document" ? blockNote(b) : "";
 }
@@ -1026,6 +1128,16 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         durationMs: 0,
         ts,
       });
+      // The pictures the tool RETURNED — a screenshot from the browser, a
+      // rendered chart. Roughly 7,300 of the corpus's 8,788 image blocks sit
+      // here rather than in a person's message, so this is the bulk of what was
+      // being thrown away. They carry the callId, so the card they belong to
+      // can hold them (reducer: patchCard, the tool_result_detail idiom).
+      if (Array.isArray(b.content))
+        for (const inner of b.content as CCBlock[]) {
+          const pic = imageFrame(inner, ts, agentId, b.tool_use_id);
+          if (pic !== null) out.push(pic);
+        }
       // What the tool RETURNED, next to what the model was SHOWN. The output
       // above stays the block, byte for byte; this is the same answer
       // structured, and the card reads it where the flattened text lost
@@ -1538,7 +1650,11 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
           if (b?.type === "text") {
             if ((b.text ?? "") !== "")
               out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
-          } else emitBlock(owner, b, ts, detail, agent);
+          } else {
+            const pic = imageFrame(b, ts, owner, undefined, !blocks.some(isSpokenText));
+            if (pic !== null) out.push(pic);
+            else emitBlock(owner, b, ts, detail, agent);
+          }
         }
         return;
       }
@@ -1556,6 +1672,18 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     }
     if (r.type === "user") {
       if (!started) {
+        // The pictures the FIRST prompt came with, BEFORE the run_start they
+        // belong to. This record becomes the run_start and never enters the
+        // block loop below, so without this the commonest case of all is
+        // missed — the owner's own file carries four screenshots on its opening
+        // user record. Order is the whole of it: the reducer parks these and
+        // the run_start's bubble picks them up on the way past, the same seam a
+        // live send uses for what was attached in the composer. Pushed after,
+        // they would arrive at an empty room.
+        for (const b of blocks) {
+          const pic = imageFrame(b, ts, "main");
+          if (pic !== null) out.push(pic);
+        }
         out.push({
           type: "run_start",
           runId,
@@ -1604,6 +1732,13 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             // the file's own order — a screenshot pasted BEFORE the sentence it
             // is about reads as one message, and 298 records in the corpus are
             // exactly that. See attachmentNote for why the bytes stay behind.
+            // The picture itself when this app may draw it; the note only
+            // when it may not, so a reader never gets both.
+            const pic = imageFrame(b, ts, rootId, undefined, !blocks.some(isSpokenText));
+            if (pic !== null) {
+              out.push(pic);
+              continue;
+            }
             const note = attachmentNote(b);
             if (note !== "") out.push({ type: "user_message", text: note, ts } as unknown as RunEvent);
             else emitBlock(rootId, b, ts, detail, agent);

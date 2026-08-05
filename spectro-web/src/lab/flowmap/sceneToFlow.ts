@@ -39,10 +39,52 @@ export interface Detail {
    *  scenario) plus its prompt; a missing blob falls back to the placeholder
    *  at render time. */
   genImage: Record<string, { src: string; prompt: string } | undefined>;
+  /**
+   * The pictures an agent was HANDED, in the order they arrived — its own
+   * field, because an attachment is not a generated image. Generated is the
+   * last one and its caption is the prompt that asked for it; attached is all
+   * of them and their caption is what the file was, and the owner's own
+   * transcript opens with four at once.
+   *
+   * Bounded per agent: the map draws cards, and a session that pasted forty
+   * screenshots would otherwise draw forty on one.
+   */
+  attached: Record<string, { src: string; note: string }[] | undefined>;
 }
+
+/** How many pictures one card shows. The rest are in the chat and the trace. */
+export const MAX_CARD_SHOTS = 6;
 
 const CAP = 420;
 const tail = (s: string, add: string) => (s + add).slice(-CAP);
+
+/**
+ * An imported picture frame, or null for anything else.
+ *
+ * The bytes are already in the frame — a data: URI costs no request and works
+ * for a file the store never held, which is every imported transcript.
+ *
+ * @param event any frame the tab folded
+ * @return its parts, or null when it is not an attachment_image
+ */
+function asAttachment(
+  event: unknown,
+): { agentId: string; mediaType: string; dataBase64: string; note: string } | null {
+  const e = event as {
+    type?: string;
+    agentId?: unknown;
+    mediaType?: unknown;
+    dataBase64?: unknown;
+    note?: unknown;
+  };
+  if (e?.type !== "attachment_image" || typeof e.dataBase64 !== "string") return null;
+  return {
+    agentId: typeof e.agentId === "string" ? e.agentId : "main",
+    mediaType: typeof e.mediaType === "string" ? e.mediaType : "image/png",
+    dataBase64: e.dataBase64,
+    note: typeof e.note === "string" ? e.note : "image",
+  };
+}
 
 export function deriveDetail(applied: RunEvent[]): Detail {
   const d: Detail = {
@@ -53,8 +95,23 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     think: {},
     answer: {},
     genImage: {},
+    attached: {},
   };
   for (const e of applied) {
+    // Import-only frames are not in the RunEvent union — they never travel the
+    // wire, so they are read off the shape rather than switched on. Kept ahead
+    // of the switch for exactly that reason: the union below stays the wire's.
+    const shot = asAttachment(e);
+    if (shot !== null) {
+      const had = d.attached[shot.agentId] ?? [];
+      if (had.length < MAX_CARD_SHOTS) {
+        d.attached[shot.agentId] = [
+          ...had,
+          { src: `data:${shot.mediaType};base64,${shot.dataBase64}`, note: shot.note },
+        ];
+      }
+      continue;
+    }
     switch (e.type) {
       case "image_generated":
         d.genImage[e.agentId] = { src: imageUrl(e.blobPath), prompt: e.prompt };
@@ -591,6 +648,7 @@ export function sceneToFlow(
     systemPrompt: opts.systemPrompt ?? null,
     tool: detail.tool["main"] ?? null,
     genImage: detail.genImage["main"] ?? null,
+    attached: detail.attached["main"] ?? null,
   });
 
   // ----- OS band ----- Stations are SHARED infrastructure: disk, shell and

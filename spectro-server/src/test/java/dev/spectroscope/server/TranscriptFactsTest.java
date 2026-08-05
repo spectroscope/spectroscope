@@ -257,4 +257,30 @@ class TranscriptFactsTest {
         assertEquals(List.of(), facts.models());
         assertEquals(0, facts.workflowCalls());
     }
+
+    @Test
+    void countsPicturesWhereverTheyAre(@TempDir Path dir) throws Exception {
+        // Card 179. Two pasted on the opening prompt and one a tool handed back:
+        // a reader looking for "the session with the screenshots" means all three.
+        Path file = dir.resolve("s.jsonl");
+        Files.writeString(file, String.join("\n",
+                """
+                {"type":"user","message":{"role":"user","content":[                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"AAA"}},                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"BBB"}},                {"type":"text","text":"look at these"}]}}""",
+                """
+                {"type":"user","message":{"role":"user","content":[                {"type":"tool_result","content":[                {"type":"image","source":{"type":"base64","media_type":"image/png","data":"CCC"}}]}]}}""",
+                """
+                {"type":"user","message":{"role":"user","content":[                {"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}]}}"""));
+
+        assertEquals(3, TranscriptFacts.fold(file).images());
+    }
+
+    @Test
+    void aTranscriptWithoutPicturesSaysZero(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("s.jsonl");
+        Files.writeString(file,
+                """
+                {"type":"user","message":{"role":"user","content":"just words"}}""");
+
+        assertEquals(0, TranscriptFacts.fold(file).images());
+    }
 }

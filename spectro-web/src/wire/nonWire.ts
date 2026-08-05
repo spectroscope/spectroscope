@@ -84,6 +84,7 @@ export const IMPORT_ONLY_TYPES: ReadonlySet<string> = new Set([
   "tool_result_detail",
   "agent_detail",
   "ground_info",
+  "attachment_image",
 ]);
 
 /** Every frame type that must never reach a written session file. */

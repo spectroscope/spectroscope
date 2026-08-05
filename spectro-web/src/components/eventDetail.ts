@@ -337,6 +337,35 @@ export function describeEvent(
       break;
     }
 
+    // A picture the transcript itself carried (card 179). Same section kind the
+    // generated case uses, so the trace draws it with the machinery it already
+    // has — but the src is a data: URI rather than /api/images, because these
+    // bytes are in the frame and on no disk anywhere.
+    //
+    // The huge field is deliberately NOT `used.add`ed away silently: `path`
+    // carries the file's own note, so the row still says what it is and how big
+    // it was, exactly as it did when the picture was missing. What IS held back
+    // is `dataBase64` — two megabytes of base64 in the fall-through would make
+    // the structured face unreadable and the pane slow, and the picture above it
+    // is the honest rendering of that value.
+    case "attachment_image": {
+      const data = str(p, "dataBase64");
+      const media = str(p, "mediaType");
+      if (data !== null && media !== null) {
+        used.add("dataBase64");
+        used.add("mediaType");
+        used.add("note");
+        named.push({
+          kind: "image",
+          field: "attachment",
+          src: `data:${media};base64,${data}`,
+          alt: str(p, "note") ?? media,
+          path: str(p, "note") ?? media,
+        });
+      }
+      break;
+    }
+
     case "context_info": {
       const parts = p["parts"];
       if (Array.isArray(parts)) {

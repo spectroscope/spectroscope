@@ -33,7 +33,7 @@ const typeOf = (event: unknown): string => (event as { type: string }).type;
 
 describe("what a written jsonl may contain", () => {
   it("names every frame that is ours rather than the wire's", () => {
-    // The seven the app builds for its own screen, plus the seven an import
+    // The seven the app builds for its own screen, plus the nine an import
     // reads. Written out by hand on purpose, so removing one goes red here;
     // ADDING one is what wireOnly.drift.test.ts catches, by reading
     // SessionConnection and the RunEvent union off disk. This list alone missed
@@ -55,10 +55,11 @@ describe("what a written jsonl may contain", () => {
       "tool_result_detail",
       "agent_detail",
       "ground_info",
+      "attachment_image",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    expect(NON_WIRE_TYPES.size).toBe(15);
+    expect(NON_WIRE_TYPES.size).toBe(16);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {
@@ -158,6 +159,45 @@ describe("what a written jsonl may contain", () => {
       for (const type of NON_WIRE_TYPES) {
         expect(written, type).not.toContain(type);
       }
+    }
+  });
+});
+
+// Card 179: an imported picture must never reach a written file.
+//
+// It is the heaviest import-only frame by far — the median transcript that has
+// pictures holds 1.17 MB of base64, and the largest single block in the store is
+// 2.29 MB — so a leak here would not be a cosmetic one. It rides in the fold
+// because the bytes are already resident and no endpoint could serve a file the
+// picker handed over from outside the store; it stays out of every export for
+// the same reason `tool_result_detail` does: it is the importer's reading, not
+// the wire's record.
+describe("an imported picture stays in the browser", () => {
+  const withShots = [
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+          { type: "text", text: "look at this" },
+        ],
+      },
+      uuid: "u1",
+      timestamp: "2026-08-05T10:00:00.000Z",
+    }),
+  ].join("\n");
+
+  it("emits the frame on import", () => {
+    expect(imported(withShots).map(typeOf)).toContain("attachment_image");
+  });
+
+  it("and no writer carries it, in any of the three formats", () => {
+    const events = imported(withShots);
+    for (const written of [toJsonl(events), toClaudeCodeJsonl(events), toVscodeAgentJsonl(events)]) {
+      expect(written).not.toContain("attachment_image");
+      // And not the payload either, which is the part that would actually hurt.
+      expect(written).not.toContain("iVBORw0KGgo=");
     }
   });
 });

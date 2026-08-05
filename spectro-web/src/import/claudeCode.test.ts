@@ -1585,6 +1585,15 @@ describe("claudeCode adapter (blocks that are not text)", () => {
     expect(outputOf("t3")).toBe("Took a screenshot of the page.\n[image/jpeg · 6 B]");
   });
 
+  it("hands a tool's own screenshot to the card that answered (card 179)", () => {
+    // Roughly 7,300 of the corpus's 8,788 image blocks sit in a tool_result
+    // rather than in a person's message, so this is the bulk of what was lost.
+    const state = reduceAll(initialState, events);
+    const carded = Object.values(state.cards).filter((c) => (c.images?.length ?? 0) > 0);
+    expect(carded.length).toBeGreaterThan(0);
+    expect(carded[0].images?.[0].dataBase64.length).toBeGreaterThan(0);
+  });
+
   it("keeps a text-only result byte-identical", () => {
     const linear = parseTranscript(ccLinear);
     const call = linear.find((e) => e.type === "tool_result") as { output: string };
@@ -1592,19 +1601,41 @@ describe("claudeCode adapter (blocks that are not text)", () => {
     expect(call.output).not.toContain("\n[");
   });
 
-  it("stops a prompt that was nothing but a screenshot from vanishing", () => {
-    expect(userSaid).toContain("[image/png · 11 B]");
+  it("carries the picture itself, not a sentence about it (card 179)", () => {
+    // This is what changed, and it is the whole point: the bytes were in the
+    // file all along and the importer measured them and threw them away.
+    const shots = events.filter(
+      (e) => (e as unknown as { type: string }).type === "attachment_image",
+    ) as unknown as { mediaType: string; dataBase64: string; note: string }[];
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.some((s) => s.mediaType === "image/png")).toBe(true);
+    expect(shots.every((s) => s.dataBase64.length > 0)).toBe(true);
+    // The file's own sentence rides along, so every surface has an alt without
+    // recomputing a size or inventing a word.
+    expect(shots.some((s) => s.note === "[image/png · 11 B]")).toBe(true);
   });
 
-  it("puts the attachment and the words in the person's bubble, in the file's order", () => {
+  it("does not ALSO print the note for a picture it drew", () => {
+    // A reader must not get the picture and "[image/png · 11 B]" beside it.
+    expect(userSaid).not.toContain("[image/png · 11 B]");
+  });
+
+  it("puts the picture and the words in the person's bubble, in the file's order", () => {
     const state = reduceAll(initialState, events);
-    const said = state.turns.filter((t) => t.kind === "user").map((t) => t.text);
-    expect(said).toContain("[image/jpeg · 6 B]");
-    expect(said).toContain("this is the frame I meant");
-    expect(said.indexOf("[image/jpeg · 6 B]")).toBeLessThan(said.indexOf("this is the frame I meant"));
+    const withShot = state.turns.find(
+      (t) => t.kind === "user" && (t as { text?: string }).text === "this is the frame I meant",
+    ) as { text: string; attachments?: { mediaType: string; dataBase64: string }[] } | undefined;
+    expect(withShot).toBeDefined();
+    expect(withShot?.attachments?.[0].mediaType).toBe("image/jpeg");
+    expect(withShot?.attachments?.[0].dataBase64.length).toBeGreaterThan(0);
+    // A screenshot pasted BEFORE the sentence it is about reads as one message,
+    // which is why it joins the bubble rather than standing alone.
+    expect(withShot?.text).toBe("this is the frame I meant");
   });
 
   it("names a document by the media type the file gave it", () => {
+    // Off the renderable allowlist, so the note is still the whole answer —
+    // which is the honest one: this app has no PDF renderer.
     expect(userSaid).toContain("[application/pdf · 6 B]");
   });
 
@@ -2519,5 +2550,39 @@ describe("the ground under an imported run", () => {
     ]);
     expect(ground(events)).toHaveLength(1); // it is emitted …
     expect(events.filter(isWireEvent).some((e) => typeOf(e) === "ground_info")).toBe(false); // … and unwritable
+  });
+});
+
+// Card 179, the commonest shape of all: the pictures a session OPENS with.
+// The first user record becomes the run_start and never enters the block loop,
+// so this is the case that would have been missed while every other one worked.
+describe("a session that opens with a screenshot", () => {
+  const opening = [
+    JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+          { type: "image", source: { type: "base64", media_type: "image/jpeg", data: "/9j/4AAQ" } },
+          { type: "text", text: "why is this broken" },
+        ],
+      },
+      uuid: "u1",
+      timestamp: "2026-08-05T10:00:00.000Z",
+    }),
+  ].join("\n");
+
+  it("puts both pictures in the opening bubble, with the prompt", () => {
+    const state = reduceAll(initialState, parseTranscript(opening));
+    const first = state.turns.find((t) => t.kind === "user") as
+      { text: string; attachments?: { mediaType: string }[] } | undefined;
+    expect(first?.text).toContain("why is this broken");
+    expect(first?.attachments?.map((a) => a.mediaType)).toEqual(["image/png", "image/jpeg"]);
+  });
+
+  it("emits them BEFORE the run_start, or they arrive at an empty room", () => {
+    const types = parseTranscript(opening).map((e) => (e as unknown as { type: string }).type);
+    expect(types.indexOf("attachment_image")).toBeLessThan(types.indexOf("run_start"));
   });
 });

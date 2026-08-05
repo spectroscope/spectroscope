@@ -42,6 +42,12 @@ export interface TranscriptFacts {
    * send it, and absent means "did not say", not zero.
    */
   workflowAgents?: number;
+  /**
+   * Pictures in the transcript — pasted into a prompt, or handed back by a
+   * tool. Optional for the same reason as {@link workflowAgents}: an older
+   * server does not send it, and absent means "did not say", not zero.
+   */
+  images?: number;
   language?: string;
   firstPrompt?: string;
 }

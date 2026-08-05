@@ -21,8 +21,12 @@ import type { TranscriptFacts } from "./transcriptFacts";
  *   "no fan-out" on exactly the sessions with the most fan-out; the chip
  *   treats both populations as agent activity, and the row label keeps them
  *   apart because they remain different facts.
+ * - `images`: somebody pasted a picture into the session, or a tool handed one
+ *   back. 764 of the operator's 5,260 transcripts carry one, and they are the
+ *   sessions a reader most often means when he is looking for a particular one:
+ *   a screenshot is what a bug report looks like.
  */
-export type FilterProp = "workflow" | "subagents";
+export type FilterProp = "workflow" | "subagents" | "images";
 
 /** What the operator has selected. Within an axis: any-of. Across axes: AND. */
 export interface FactsFilter {
@@ -83,7 +87,14 @@ function agentActivity(facts: TranscriptFacts): number {
 }
 
 function holdsProp(facts: TranscriptFacts, prop: FilterProp): boolean {
-  return prop === "workflow" ? facts.workflowCalls > 0 : agentActivity(facts) > 0;
+  switch (prop) {
+    case "workflow":
+      return facts.workflowCalls > 0;
+    case "images":
+      return (facts.images ?? 0) > 0;
+    default:
+      return agentActivity(facts) > 0;
+  }
 }
 
 function verdictFor(row: TranscriptRow, facts: TranscriptFacts | undefined, filter: FactsFilter): Verdict {
@@ -171,6 +182,8 @@ export interface SelectionStats {
   workflowCalls: number;
   subagents: number;
   workflowAgents: number;
+  /** Pictures across the selection. */
+  images: number;
   /** Selected rows whose facts are not in — the totals above do not include them. */
   unread: number;
 }
@@ -195,6 +208,7 @@ export function selectionStats(rows: TranscriptRow[], factsFor: FactsLookup): Se
   let workflowCalls = 0;
   let subagents = 0;
   let workflowAgents = 0;
+  let images = 0;
   let unread = 0;
 
   for (const row of rows) {
@@ -212,8 +226,19 @@ export function selectionStats(rows: TranscriptRow[], factsFor: FactsLookup): Se
     workflowCalls += facts.workflowCalls;
     subagents += facts.subagents;
     workflowAgents += facts.workflowAgents ?? 0;
+    images += facts.images ?? 0;
   }
 
   const models = [...families.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-  return { count: rows.length, newest, oldest, models, workflowCalls, subagents, workflowAgents, unread };
+  return {
+    count: rows.length,
+    newest,
+    oldest,
+    models,
+    workflowCalls,
+    subagents,
+    workflowAgents,
+    images,
+    unread,
+  };
 }
