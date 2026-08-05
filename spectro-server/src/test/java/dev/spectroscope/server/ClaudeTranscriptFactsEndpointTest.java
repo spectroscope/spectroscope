@@ -71,6 +71,32 @@ class ClaudeTranscriptFactsEndpointTest {
                         .value("please read the card and say what is missing"));
     }
 
+    /**
+     * The stage-1 defect the adversarial check proved live: agents accrue in
+     * the sidecar folder while a workflow runs, but the parent transcript may
+     * not move until the tool result lands. A count cached under the
+     * transcript's stamp answered yesterday's number for as long as the
+     * transcript sat still. Sidecar counts are therefore taken at ask time,
+     * every time — they cost a directory listing, not a read.
+     */
+    @Test
+    void sidecarCountsAreFreshEvenWhenTheTranscriptDidNotMove() throws Exception {
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/facts")
+                        .param("path", "-Users-x-repo/s1.jsonl"))
+                .andExpect(jsonPath("$.facts[0].subagents").value(1))
+                .andExpect(jsonPath("$.facts[0].workflowAgents").value(0));
+
+        // The sidecar moves; the transcript does not.
+        Files.writeString(base.resolve("s1/subagents/agent-bbb.jsonl"), "{}\n");
+        Path run = Files.createDirectories(base.resolve("s1/subagents/workflows/wf_1"));
+        Files.writeString(run.resolve("agent-001.jsonl"), "{}\n");
+
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/facts")
+                        .param("path", "-Users-x-repo/s1.jsonl"))
+                .andExpect(jsonPath("$.facts[0].subagents").value(2))
+                .andExpect(jsonPath("$.facts[0].workflowAgents").value(1));
+    }
+
     /** An unknown fact produces nothing at all, so the row can stay blank. */
     @Test
     void aTranscriptWithoutAPromptOmitsTheFieldEntirely() throws Exception {

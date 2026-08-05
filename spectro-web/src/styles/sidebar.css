@@ -71,7 +71,96 @@
 .lang-toggle:hover { color: var(--text); border-color: var(--accent); }
 
 /* Import dialog — paste/pick a .jsonl (spectroscope session or Claude Code transcript). */
-.import-modal { width: min(560px, 92vw); }
+/* The import dialog is a full-screen surface (owner: "das import fenster
+   vollbild machen"): 300 rows, a two-axis filter and a statistics line do not
+   fit a 560px modal. Flex column, and ONLY the row list scrolls — the filter,
+   the stats and the paste box stay reachable at every scroll position. */
+.import-modal {
+  width: calc(100vw - var(--sp-5));
+  height: calc(100vh - var(--sp-5));
+  max-height: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.import-modal h2 { margin-bottom: 0; }
+.import-head-close { margin-left: auto; }
+/* The filter bar: one row, both axes visible at once — a model chip AND a
+   property chip is the owner's conjunction, one glance and two clicks, never
+   a menu. Wraps on a narrow window instead of clipping. */
+.import-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+  margin: var(--sp-2) 0;
+}
+.import-search {
+  flex: 1 1 220px;
+  min-width: 160px;
+  background: var(--shade);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  padding: var(--sp-1) var(--sp-2);
+}
+.import-search:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.import-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1);
+}
+.import-filter-label { font-size: var(--fs-11); color: var(--text-dim); }
+.import-chip {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  line-height: 1.4;
+  padding: 1px var(--sp-2);
+  text-transform: lowercase;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+}
+.import-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.import-chip.is-on { color: var(--accent); border-color: var(--accent); background: var(--shade); }
+/* The statistics line: what the current filter selects, numbers only. */
+.import-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: var(--sp-1) 0;
+  margin-bottom: var(--sp-2);
+}
+.import-stats .tabular { color: var(--text); }
+.import-store-facts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.import-fact-model { color: var(--accent); }
+.import-store-prompt {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.import-bottom { flex: 0 0 auto; }
+.import-modal .import-paste { min-height: 52px; }
 .import-hint { font-size: var(--fs-12); color: var(--text-dim); margin: var(--sp-2) 0 var(--sp-3); }
 .import-paste {
   width: 100%; resize: vertical; min-height: 110px;
@@ -96,7 +185,8 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 180px;
+  flex: 1 1 auto;
+  min-height: 80px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);

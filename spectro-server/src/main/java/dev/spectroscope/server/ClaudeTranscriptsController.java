@@ -273,7 +273,13 @@ public class ClaudeTranscriptsController {
         for (String rel : paths.subList(0, Math.min(paths.size(), MAX_FACT_BATCH))) {
             Path file = insideStore(rel);
             if (file != null) {
-                rows.add(facts.facts(file).at(rel));
+                // Sidecar counts are taken NOW, not from the cache: the agent
+                // folder fills up while the parent transcript sits unchanged,
+                // and a count cached under the transcript's stamp was measured
+                // answering yesterday's number for as long as it sat still.
+                rows.add(facts.facts(file)
+                        .withSidecars(TranscriptFacts.sidecarsBeside(file))
+                        .at(rel));
             }
         }
         return ResponseEntity.ok(new FactsResponse(MAX_FACT_BATCH, List.copyOf(rows)));

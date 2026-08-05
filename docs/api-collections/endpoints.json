@@ -493,7 +493,7 @@
       "path": "/api/claude/transcripts/facts",
       "area": "import",
       "name": "what listed transcripts contain",
-      "description": "What a bounded batch of listed transcripts contains, so the import dialog can label a row without reading the store. Answers {maxBatch, facts: [{path, models, workflowCalls, subagents, language?, firstPrompt?}]}. Models are listed in the order they first spoke; subagents are counted from the session's sidecar folder, not the transcript. Unknown facts are omitted rather than sent as a placeholder. At most 24 paths per call; a path outside the store, a non-.jsonl name and a missing file all yield no row.",
+      "description": "What a bounded batch of listed transcripts contains, so the import dialog can label a row without reading the store. Answers {maxBatch, facts: [{path, models, workflowCalls, subagents, workflowAgents, language?, firstPrompt?}]}. Models are listed in the order they first spoke. subagents counts agent files directly in the session's sidecar folder and workflowAgents the ones in the workflow run dirs below it — different populations, counted apart, and counted fresh at ask time because the sidecar moves while the transcript sits still. Unknown facts are omitted rather than sent as a placeholder. At most 24 paths per call; a path outside the store, a non-.jsonl name and a missing file all yield no row.",
       "fence": "host",
       "writes": false,
       "pathVars": [],

@@ -81,6 +81,27 @@ export const dict: Record<string, { de: string; en: string }> = {
   "imp.err.read": { de: "Der Browser konnte „{name}“ nicht lesen. Liegt die Datei noch da, und darf er sie sehen?", en: "Could not read \u201C{name}\u201D. Is the file still there, and may the browser see it?" },
   "imp.err.fetch": { de: "Der Server gab {status} zurück, als er die Datei holen sollte.", en: "The server answered {status} when asked for that file." },
   "imp.load": { de: "Laden", en: "Load" },
+  // The full-screen dialog's filter and statistics line. The chips carry wire
+  // vocabulary — the lowercase words the data itself uses — so they read the
+  // same in both languages on purpose; the labels around them translate.
+  "imp.filter.text": {
+    de: "tippen zum Filtern — Datei, Projekt, Modell, Prompt",
+    en: "type to filter — file, project, model, prompt",
+  },
+  "imp.filter.model": { de: "modell", en: "model" },
+  "imp.filter.with": { de: "mit", en: "with" },
+  "imp.chip.workflow": { de: "workflow", en: "workflow" },
+  "imp.chip.subagents": { de: "subagents", en: "subagents" },
+  "imp.stats.transcripts": { de: "{n} Transkripte", en: "{n} transcripts" },
+  "imp.stats.workflow": { de: "workflow-Aufrufe {n}", en: "workflow calls {n}" },
+  "imp.stats.subagents": { de: "Subagenten {n}", en: "subagents {n}" },
+  "imp.stats.workflowAgents": { de: "Workflow-Agenten {n}", en: "workflow agents {n}" },
+  "imp.stats.unread": { de: "{n} noch ungelesen", en: "{n} not read yet" },
+  "imp.pendingNote": {
+    de: "{n} Transkripte sind noch nicht gelesen — sie erscheinen hier, sobald ihre Fakten da sind.",
+    en: "{n} transcripts not read yet — they appear here as their facts arrive.",
+  },
+  "imp.close": { de: "Schließen", en: "Close" },
   // Shown for EVERY import, not only the VS Code one. The counts are the file's
   // own: how many lines arrived, how many frames this view is built from, and
   // how many lines hold no part of the conversation (the pointer records a

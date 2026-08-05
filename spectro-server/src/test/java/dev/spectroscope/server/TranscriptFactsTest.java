@@ -125,16 +125,46 @@ class TranscriptFactsTest {
         Files.writeString(subagents.resolve("agent-bbb.jsonl"), "{}\n");
         Files.writeString(subagents.resolve("agent-bbb.meta.json"), "{}\n");
 
-        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+        TranscriptFacts.Sidecars sidecars = TranscriptFacts.sidecarsBeside(f);
 
-        assertEquals(2, facts.subagents(), "the .meta.json sidecar is not an agent");
+        assertEquals(2, sidecars.subagents(), "the .meta.json sidecar is not an agent");
     }
 
     @Test
     void aTranscriptWithoutASidecarFolderReportsNoSubagents() throws Exception {
         Path f = transcript("s", userPrompt("go"));
 
-        assertEquals(0, TranscriptFacts.fold(f).subagents());
+        assertEquals(0, TranscriptFacts.sidecarsBeside(f).subagents());
+        assertEquals(0, TranscriptFacts.sidecarsBeside(f).workflowAgents());
+    }
+
+    /**
+     * The stage-1 defect: on the real store 85% of all agent transcripts live
+     * under {@code subagents/workflows/<runId>/}, and a counter that only sees
+     * the direct files reports "no fan-out" on exactly the sessions with the
+     * most fan-out. The two populations are different facts — a direct subagent
+     * is a Task the session spawned, a workflow agent belongs to a Workflow run
+     * — so they travel under different names rather than one number that means
+     * neither.
+     */
+    @Test
+    void workflowAgentsAreADifferentCountThanDirectSubagents() throws Exception {
+        Path f = transcript("s", userPrompt("go"));
+        Path subagents = Files.createDirectories(store.resolve("-Users-x-repo/s/subagents"));
+        Files.writeString(subagents.resolve("agent-direct.jsonl"), "{}\n");
+        Path runA = Files.createDirectories(subagents.resolve("workflows/wf_run-a"));
+        Files.writeString(runA.resolve("agent-001.jsonl"), "{}\n");
+        Files.writeString(runA.resolve("agent-001.meta.json"), "{}\n");
+        Files.writeString(runA.resolve("agent-002.jsonl"), "{}\n");
+        Files.writeString(runA.resolve("journal.jsonl"), "{}\n");
+        Path runB = Files.createDirectories(subagents.resolve("workflows/wf_run-b"));
+        Files.writeString(runB.resolve("agent-003.jsonl"), "{}\n");
+
+        TranscriptFacts.Sidecars sidecars = TranscriptFacts.sidecarsBeside(f);
+
+        assertEquals(1, sidecars.subagents(), "direct agents only");
+        assertEquals(3, sidecars.workflowAgents(),
+                "every agent below the direct level, wherever its run dir sits");
     }
 
     @Test

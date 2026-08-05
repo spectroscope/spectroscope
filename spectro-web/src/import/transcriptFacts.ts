@@ -32,7 +32,16 @@ export interface TranscriptFacts {
   /** Every model that spoke, in the order it first spoke. */
   models: string[];
   workflowCalls: number;
+  /** Agent transcripts directly in the session's sidecar folder. */
   subagents: number;
+  /**
+   * Agent transcripts in the workflow run dirs below that. A different fact
+   * than {@link subagents} — on the owner's store it is 85% of all agent
+   * files — and a different fact than {@link workflowCalls}, which counts the
+   * calls in the transcript body. Optional because a stage-1 server does not
+   * send it, and absent means "did not say", not zero.
+   */
+  workflowAgents?: number;
   language?: string;
   firstPrompt?: string;
 }
@@ -141,16 +150,31 @@ export function createFactsStore({ load, maxBatch }: FactsStoreOptions): FactsSt
       if (pending.length === 0) {
         return;
       }
-      const batches: Promise<void>[] = [];
+      // One batch at a time, deliberately. A filter sweep hands this the whole
+      // listing — up to 300 rows, thirteen batches — and each batch is a batch
+      // of full transcript reads on the server. Serial keeps that a queue
+      // instead of thirteen concurrent store-walks, and the store announces
+      // after every landed batch, so the screen still fills in as it goes.
+      // Everything is marked in flight up front so a scroll during the sweep
+      // does not re-ask for a row a later batch already owns.
+      const batches: [string, string][][] = [];
       for (let at = 0; at < pending.length; at += maxBatch) {
-        const batch = pending.slice(at, at + maxBatch);
-        const run = fetchBatch(batch);
+        batches.push(pending.slice(at, at + maxBatch));
+      }
+      // The first batch starts NOW — synchronously, so its keys are in flight
+      // before this function ever yields; the rest are chained behind it.
+      let chain = fetchBatch(batches[0]);
+      for (const [key] of batches[0]) {
+        inFlight.set(key, chain);
+      }
+      for (const batch of batches.slice(1)) {
+        const run = chain.then(() => fetchBatch(batch));
         for (const [key] of batch) {
           inFlight.set(key, run);
         }
-        batches.push(run);
+        chain = run;
       }
-      await Promise.all(batches);
+      await chain;
     },
 
     factsFor(row) {

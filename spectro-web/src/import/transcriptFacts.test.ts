@@ -91,6 +91,30 @@ describe("createFactsStore", () => {
     expect(load.mock.calls.map((c) => c[0].length)).toEqual([3, 3, 1]);
   });
 
+  /**
+   * A filter sweep asks for all 300 rows at once. Thirteen parallel batches
+   * would put thirteen concurrent full-store reads on a single-machine server;
+   * one at a time keeps the sweep progressive — every landed batch announces —
+   * without ever stacking reads.
+   */
+  it("runs the batches of one ask one after another, not all at once", async () => {
+    let open = 0;
+    let mostOpen = 0;
+    const load = vi.fn(async (paths: string[]) => {
+      open++;
+      mostOpen = Math.max(mostOpen, open);
+      await new Promise((r) => setTimeout(r, 0));
+      open--;
+      return paths.map((p) => facts(p));
+    });
+    const store = createFactsStore({ load, maxBatch: 2 });
+
+    await store.request([1, 2, 3, 4, 5, 6].map((n) => row(`s${n}.jsonl`)));
+
+    expect(load).toHaveBeenCalledTimes(3);
+    expect(mostOpen).toBe(1);
+  });
+
   it("does not ask twice for a row whose first ask is still in flight", async () => {
     let release: (v: TranscriptFacts[]) => void = () => {};
     const load = vi.fn(() => new Promise<TranscriptFacts[]>((r) => (release = r)));

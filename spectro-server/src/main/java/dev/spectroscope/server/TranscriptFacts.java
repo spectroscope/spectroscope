@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -15,6 +14,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.stream.Stream;
 
 /**
  * Reads one Claude Code transcript into the few facts the import dialog puts on
@@ -73,7 +73,8 @@ final class TranscriptFacts {
      * @param path the base-relative path, echoed so a batched answer can be matched up
      * @param models every model that spoke, in the order it first spoke
      * @param workflowCalls Workflow tool calls in the transcript body
-     * @param subagents agent transcripts in the session's sidecar folder
+     * @param subagents agent transcripts directly in the session's sidecar folder
+     * @param workflowAgents agent transcripts below that, in the workflow run dirs
      * @param language {@code "de"}, {@code "en"}, or null when the prompts do not say
      * @param firstPrompt the opening user prompt, verbatim and bounded, or null
      */
@@ -83,22 +84,54 @@ final class TranscriptFacts {
             List<String> models,
             int workflowCalls,
             int subagents,
+            int workflowAgents,
             String language,
             String firstPrompt) {
 
         /** The empty answer for a file that could not be read. */
         static Facts none(String path) {
-            return new Facts(path, List.of(), 0, 0, null, null);
+            return new Facts(path, List.of(), 0, 0, 0, null, null);
         }
 
         /** Re-labels a folded answer with the path the caller asked under. */
         Facts at(String path) {
-            return new Facts(path, models, workflowCalls, subagents, language, firstPrompt);
+            return new Facts(path, models, workflowCalls, subagents, workflowAgents, language,
+                    firstPrompt);
+        }
+
+        /**
+         * Stamps the ask-time sidecar counts onto a folded answer. The fold is
+         * cached under the transcript's file state; the sidecar folder is a
+         * different filesystem object that moves while the transcript sits
+         * still, so its counts never travel through that cache.
+         */
+        Facts withSidecars(Sidecars sidecars) {
+            return new Facts(path, models, workflowCalls, sidecars.subagents(),
+                    sidecars.workflowAgents(), language, firstPrompt);
         }
     }
 
     /**
-     * Folds one transcript, sidecars included.
+     * The two agent populations in one session's sidecar folder. They are
+     * different facts and are counted apart: a direct file under
+     * {@code subagents/} is an agent this session spawned itself; everything
+     * deeper belongs to a workflow run under {@code subagents/workflows/<runId>/}.
+     * On the operator's real store the deep population is 85% of all agent
+     * transcripts, which is why a counter that saw only the direct files read
+     * "no fan-out" on exactly the sessions with the most fan-out.
+     *
+     * @param subagents {@code agent-*.jsonl} directly under {@code subagents/}
+     * @param workflowAgents {@code agent-*.jsonl} anywhere below that
+     */
+    record Sidecars(int subagents, int workflowAgents) {
+        static final Sidecars NONE = new Sidecars(0, 0);
+    }
+
+    /**
+     * Folds one transcript body. Sidecar counts are deliberately NOT in here:
+     * this result is what the cache stores under the transcript's file state,
+     * and the sidecar folder moves independently of that state. The caller
+     * stamps them on with {@link Facts#withSidecars} at ask time.
      *
      * @param file the absolute transcript path
      * @return the facts; never null, never throwing
@@ -138,7 +171,8 @@ final class TranscriptFacts {
                 null,
                 List.copyOf(models),
                 workflowCalls,
-                subagentsBeside(file),
+                0, // sidecar counts are ask-time facts; the caller stamps them on
+                0,
                 languageOf(firstPrompt),
                 bound(firstPrompt));
     }
@@ -208,34 +242,59 @@ final class TranscriptFacts {
     }
 
     /**
-     * Agent transcripts in the session's sidecar folder, which sits beside the
-     * transcript under its own name. Only {@code agent-*.jsonl} counts: each
-     * agent also writes a {@code .meta.json}, and counting that would double
-     * every number.
+     * How deep below {@code subagents/} the walk looks for workflow agents.
+     * The real layout is {@code subagents/workflows/<runId>/agent-*.jsonl},
+     * three levels; one more is headroom for a nested run dir, and a hard
+     * ceiling because this store is somebody else's and a pathological tree
+     * must cost a bounded listing, not a crawl.
+     */
+    private static final int SIDECAR_DEPTH = 4;
+
+    /**
+     * Both agent populations in the session's sidecar folder, which sits beside
+     * the transcript under its own name. Only {@code agent-*.jsonl} counts:
+     * each agent also writes a {@code .meta.json}, and a workflow run keeps a
+     * {@code journal.jsonl}; counting either would inflate every number.
+     *
+     * <p>Called at ask time, never from the fold, because these counts must not
+     * be cached under the transcript's stamp: agents accrue in this folder
+     * while the parent transcript sits unchanged, and the stale answer was a
+     * live-proven defect. The price is a directory walk per ask, which is the
+     * cheap kind of filesystem work the whole facts endpoint exists to protect.</p>
      *
      * @param file the transcript path
-     * @return how many agents this session spawned, 0 when it spawned none
+     * @return both counts, {@link Sidecars#NONE} when there is no sidecar folder
      */
-    private static int subagentsBeside(Path file) {
+    static Sidecars sidecarsBeside(Path file) {
         String name = file.getFileName().toString();
         Path parent = file.getParent();
         if (parent == null || !name.endsWith(".jsonl")) {
-            return 0;
+            return Sidecars.NONE;
         }
         Path folder = parent.resolve(name.substring(0, name.length() - ".jsonl".length()))
                 .resolve("subagents");
         if (!Files.isDirectory(folder)) {
-            return 0;
+            return Sidecars.NONE;
         }
-        int agents = 0;
-        try (DirectoryStream<Path> entries = Files.newDirectoryStream(folder, "agent-*.jsonl")) {
-            for (Path ignored : entries) {
-                agents++;
+        int direct = 0;
+        int workflow = 0;
+        try (Stream<Path> walk = Files.walk(folder, SIDECAR_DEPTH)) {
+            for (Path entry : (Iterable<Path>) walk::iterator) {
+                String base = entry.getFileName().toString();
+                if (!base.startsWith("agent-") || !base.endsWith(".jsonl")
+                        || !Files.isRegularFile(entry)) {
+                    continue;
+                }
+                if (folder.equals(entry.getParent())) {
+                    direct++;
+                } else {
+                    workflow++;
+                }
             }
         } catch (IOException unreadable) {
-            return 0;
+            return Sidecars.NONE;
         }
-        return agents;
+        return new Sidecars(direct, workflow);
     }
 
     /** German function words that rarely survive into an English sentence. */
