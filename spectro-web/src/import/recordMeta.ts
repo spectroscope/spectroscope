@@ -235,10 +235,20 @@ function contentRows(content: unknown): MetaRow[] {
     for (const [key, value] of Object.entries(block)) {
       if (key === "type") continue;
       if (WORDS_OF_THE_ANSWER.has(key)) {
-        // Sized only when it IS a run of words. A tool_result whose content is
-        // a list of blocks is a shape, and shapes print as shapes.
+        // Named and sized at ANY size. A run of words is sized; a tool_result
+        // whose `content` is a list of blocks — 20,085 of 152,172 in the
+        // corpus, 2,123 of them under the inline ceiling — is shaped, and
+        // shaped HERE: handed to render(), a small list would come back
+        // printed whole, words and all, next to the tool card that already
+        // shows them. An empty value stays silent either way, the same rule
+        // render() applies everywhere.
         if (typeof value === "string") {
           if (value !== "") rows.push({ key: `${at}.${key}`, value: sized(value.length) });
+          continue;
+        }
+        if (value !== null && typeof value === "object") {
+          const empty = Array.isArray(value) ? value.length === 0 : Object.keys(value).length === 0;
+          if (!empty) rows.push({ key: `${at}.${key}`, value: shapeOf(value) });
           continue;
         }
       }
@@ -247,6 +257,12 @@ function contentRows(content: unknown): MetaRow[] {
       if (typeof value === "string" && OPAQUE_BLOCK_KEYS.has(key)) {
         rows.push({ key: `${at}.${key}`, value: text, block: "hidden" });
       } else if (key === "thinking" && typeof value === "string") {
+        rows.push({ key: `${at}.${key}`, value: text, block: "text" });
+      } else if (typeof value === "string" && value.length > INLINE_CHARS) {
+        // A long string nobody named is still a run of language. The plain
+        // row has no ceiling at all, so past the inline ceiling the marking
+        // hands it to the pane that caps and says so — the value itself
+        // stays whole, as the rule above the type demands.
         rows.push({ key: `${at}.${key}`, value: text, block: "text" });
       } else {
         rows.push({ key: `${at}.${key}`, value: text });

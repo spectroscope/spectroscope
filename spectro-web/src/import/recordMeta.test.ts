@@ -121,6 +121,60 @@ describe("readRecordMeta over the content blocks", () => {
     expect(result["[0].tool_use_id"]).toBe("t1");
   });
 
+  it("names a block-list answer by its shape, never reprinting the words", () => {
+    // Real tool_result blocks routinely carry `content` as a small list —
+    // measured, 20,085 of 152,172 in the corpus are array-shaped, 2,123 of
+    // them under the inline ceiling. Small or not, the words inside are the
+    // tool card's words, so the shape is all this panel says.
+    const listy = groupsOf(
+      JSON.stringify({
+        message: {
+          content: [
+            { type: "tool_result", tool_use_id: "t9", content: [{ type: "text", text: "the words" }] },
+          ],
+        },
+      }),
+    );
+    expect(listy["message.content"]["[0].content"]).toBe("[1 item]");
+    expect(JSON.stringify(listy)).not.toContain("the words");
+  });
+
+  it("names a block-list answer past the inline ceiling the same way", () => {
+    const long = { type: "text", text: "w".repeat(INLINE_CHARS * 2) };
+    const listy = groupsOf(
+      JSON.stringify({ message: { content: [{ type: "tool_result", content: [long, long] }] } }),
+    );
+    expect(listy["message.content"]["[0].content"]).toBe("[2 items]");
+  });
+
+  it("says nothing about an answer whose block list is empty", () => {
+    // The same rule render() applies everywhere: an empty value is not an
+    // answer, and "[0 items]" would be a row about nothing.
+    const empty = groupsOf(
+      JSON.stringify({ message: { content: [{ type: "tool_result", tool_use_id: "t9", content: [] }] } }),
+    );
+    expect(empty["message.content"]).toEqual({ "[0].type": "tool_result", "[0].tool_use_id": "t9" });
+  });
+
+  it("paints a long unnamed string as a block, so the pane's ceiling applies", () => {
+    // The fall-through row is a plain <dd> with no ceiling of its own; a
+    // future block shape with a 200,000-character string field would bypass
+    // the cap every named run of words already gets. Past the inline ceiling
+    // the value stays whole and the marking hands it to the pane that caps.
+    const long = "s".repeat(200_000);
+    const rows = contentRows(JSON.stringify({ message: { content: [{ type: "future", note: long }] } }));
+    const row = rows.find((r) => r.key === "[0].note");
+    expect(row?.value).toHaveLength(200_000);
+    expect(row?.block).toBe("text");
+  });
+
+  it("keeps a short unnamed string inline, unmarked", () => {
+    const rows = contentRows(
+      JSON.stringify({ message: { content: [{ type: "reasoning_summary", summary: "short" }] } }),
+    );
+    expect(rows.find((r) => r.key === "[0].summary")).toEqual({ key: "[0].summary", value: "short" });
+  });
+
   it("lets every other field of a block through, unnamed ones included", () => {
     const content = groupsOf(call)["message.content"];
     expect(content["[0].name"]).toBe("Bash");
