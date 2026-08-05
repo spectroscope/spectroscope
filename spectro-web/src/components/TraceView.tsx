@@ -141,8 +141,18 @@ export function categoryOf(type: string): Category {
 /** The wire prefix every tool served over MCP carries in its name. The chip is
  *  spelled for what a reader recognises; THIS is the rule underneath it. */
 const MCP_NAME_PREFIX = "mcp__";
-/** The background-workflow tool, by its wire name. */
-const WORKFLOW_TOOL_NAME = "Workflow";
+/**
+ * The tools that launch a background task, by their wire names.
+ *
+ * Two, not one. The importer has always known both — `Workflow` announces
+ * "launched in background. Task ID: x" and `Monitor` announces "started (task
+ * x, …)", and `receiptTaskId` matches either — so a chip that knew only the
+ * first would hide 17 of the 196 launch receipts in the owner's own corpus, and
+ * their joined outcomes with them. Pressing `workflow` to study background work
+ * and getting most of it is worse than getting none, because nothing says which
+ * part is missing.
+ */
+const BACKGROUND_TASK_TOOLS = new Set(["Workflow", "Monitor"]);
 
 /**
  * Which of the three tool chips a tool NAME answers to.
@@ -155,7 +165,7 @@ const WORKFLOW_TOOL_NAME = "Workflow";
  * @param name the tool's wire name, or null when the frame recorded none
  */
 export function toolCategory(name: string | null): Category {
-  if (name === WORKFLOW_TOOL_NAME) return "workflow";
+  if (name !== null && BACKGROUND_TASK_TOOLS.has(name)) return "workflow";
   if (name !== null && name.startsWith(MCP_NAME_PREFIX)) return "mcp";
   return "tool";
 }
@@ -191,9 +201,13 @@ export function categoryOfRow(
   if (row.type === "tool_call") return toolCategory(payloadStr(row.payload, "name"));
   const callId = payloadStr(row.payload, "callId");
   const call = callId === null ? undefined : calls?.get(callId);
-  // A result whose call is not in the stream — a truncated import, or an index
-  // that was never built — falls back to plain `tool`. It has nothing to
-  // inherit, and a row that answered nobody must never drop out of the trace.
+  // A result whose call is not in the stream falls back to plain `tool`: it has
+  // nothing to inherit, and a row that answered nobody must never drop out of
+  // the trace. A truncated import and an index that was never built are the two
+  // ways that happens at rest. On a LIVE stream `windowTrace` (reducer.ts, 5000
+  // rows) can evict a call while its result is still on screen — but only for
+  // as many frames as separated them, 3 at p90, right at the window's oldest
+  // edge, on a row the window is about to delete anyway.
   return call === undefined ? "tool" : toolCategory(call.name);
 }
 
@@ -1311,12 +1325,17 @@ export function TraceView(props: {
   // array on every frame batch of a live session, so an unconditional memo here
   // would re-walk the whole stream per batch for a trace nobody has filtered;
   // the two readers were both already conditional, and this keeps them so.
+  //
+  // The memo turns on the ANSWER, never on `active` itself. `active` is a new
+  // Set on every chip click, so depending on it would rebuild the map — and
+  // re-run the open row's `describeEvent` — each time a reader pressed an
+  // unrelated chip on a resting import. Cheap either way, measured; but with a
+  // row open the need is true whatever the chips say, so keying on the answer
+  // means the map that row holds simply cannot move under it.
+  const wantCallIndex = needsCallIndex(active) || openIsToolResult;
   const callIndex = useMemo(
-    () =>
-      needsCallIndex(active) || openIsToolResult
-        ? toolCallsById(allEntries.map((e) => e.payload))
-        : undefined,
-    [active, openIsToolResult, allEntries],
+    () => (wantCallIndex ? toolCallsById(allEntries.map((e) => e.payload)) : undefined),
+    [wantCallIndex, allEntries],
   );
 
   const visible = useMemo(() => {

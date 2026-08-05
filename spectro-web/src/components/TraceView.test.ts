@@ -160,6 +160,13 @@ describe("the client category", () => {
 describe("the tool chips", () => {
   it("reads the tool name, and the prefix is the rule for mcp", () => {
     expect(toolCategory("Workflow")).toBe("workflow");
+    // Monitor is the other background-task launcher, and the importer has
+    // always known both: `receiptTaskId` matches "launched in background" and
+    // "started (task …)" alike. Measured over the owner's 39 transcripts, 196
+    // launch receipts — 179 Workflow and 17 Monitor. A chip that knew only the
+    // first hid those 17 and their joined outcomes from a reader who pressed
+    // `workflow` precisely to find them.
+    expect(toolCategory("Monitor")).toBe("workflow");
     expect(toolCategory("mcp__Claude_Browser__javascript_tool")).toBe("mcp");
     expect(toolCategory("mcp__ccd_session__mark_chapter")).toBe("mcp");
     // Everything else is still plain tool, including the names that merely
@@ -167,6 +174,7 @@ describe("the tool chips", () => {
     expect(toolCategory("Bash")).toBe("tool");
     expect(toolCategory("Read")).toBe("tool");
     expect(toolCategory("WorkflowStatus")).toBe("tool");
+    expect(toolCategory("MonitorPanel")).toBe("tool");
     expect(toolCategory("run_mcp__thing")).toBe("tool");
   });
 
