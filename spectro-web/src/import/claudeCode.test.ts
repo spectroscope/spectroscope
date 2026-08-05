@@ -2586,3 +2586,86 @@ describe("a session that opens with a screenshot", () => {
     expect(types.indexOf("attachment_image")).toBeLessThan(types.indexOf("run_start"));
   });
 });
+
+// Card 179, found by looking at the screen rather than at a test: the note is a
+// stand-in for a picture, and once the picture itself travels, printing both put
+// "[image/png · 31.0 KB]" directly above the thing it describes — and made that
+// string the session's title.
+describe("the text stand-in for a picture", () => {
+  const opening = JSON.stringify({
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+        { type: "text", text: "warum ist das kaputt" },
+      ],
+    },
+    uuid: "u1",
+    timestamp: "2026-08-05T10:00:00.000Z",
+  });
+
+  it("is gone from the prompt, because the picture is right there", () => {
+    const start = parseTranscript(opening).find(
+      (e) => (e as unknown as { type: string }).type === "run_start",
+    ) as unknown as { prompt: string };
+    expect(start.prompt).toBe("warum ist das kaputt");
+    expect(start.prompt).not.toContain("[image/");
+  });
+
+  it("stays for a picture we cannot render, which is then the only record of it", () => {
+    const odd = JSON.stringify({
+      type: "user",
+      message: {
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: "image/svg+xml", data: "PHN2Zz4=" } },
+          { type: "text", text: "und das hier" },
+        ],
+      },
+      uuid: "u1",
+      timestamp: "2026-08-05T10:00:00.000Z",
+    });
+    const events = parseTranscript(odd);
+    expect(events.some((e) => (e as unknown as { type: string }).type === "attachment_image")).toBe(false);
+    const start = events.find((e) => (e as unknown as { type: string }).type === "run_start") as unknown as {
+      prompt: string;
+    };
+    expect(start.prompt).toContain("[image/svg+xml");
+  });
+});
+
+// The SAME hole the main path had, in the sidechain: the root's first record
+// becomes the run_start and returns before its blocks are ever read.
+describe("a subagent file that opens with a screenshot", () => {
+  const side = JSON.stringify({
+    type: "user",
+    isSidechain: true,
+    // A real agent-*.jsonl names its agent on every line, and that is what the
+    // file is recognised by — the shape, never the filename.
+    agentId: "agent-7f",
+    sessionId: "sess-1",
+    message: {
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+        { type: "text", text: "read this shot" },
+      ],
+    },
+    uuid: "s1",
+    timestamp: "2026-08-05T10:00:00.000Z",
+  });
+
+  it("brings its picture, and before the run_start it belongs to", () => {
+    const types = parseTranscript(side).map((e) => (e as unknown as { type: string }).type);
+    expect(types).toContain("attachment_image");
+    expect(types.indexOf("attachment_image")).toBeLessThan(types.indexOf("run_start"));
+  });
+
+  it("does not print the stand-in beside it", () => {
+    const start = parseTranscript(side).find(
+      (e) => (e as unknown as { type: string }).type === "run_start",
+    ) as unknown as { prompt: string };
+    expect(start.prompt).toBe("read this shot");
+  });
+});
