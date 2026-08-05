@@ -25,6 +25,7 @@ import { rowState, formatBytes, listingNotice } from "../import/rowState";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
 import type { SubagentTranscript } from "../import/subagentFile";
 import { useTranscriptFacts } from "../import/useTranscriptFacts";
+import { missingGists, useGists } from "../import/useGists";
 import {
   applyFilter,
   emptyFilter,
@@ -169,6 +170,12 @@ export function ImportDialog(props: {
 
   const verdict = useMemo(() => applyFilter(transcripts, factsFor, filter), [transcripts, factsFor, filter]);
   const stats = useMemo(() => selectionStats(verdict.rows, factsFor), [verdict, factsFor]);
+  // Card 179 stage 3. The buttons act on what is ON SCREEN, so a filter is also
+  // how an operator says "only gist these" — pressing with 300 rows showing and
+  // pressing with 6 are different prices, and the label says which one this is.
+  const gists = useGists();
+  const shownPaths = useMemo(() => verdict.rows.map((r) => r.path), [verdict]);
+  const gistsMissing = useMemo(() => missingGists(shownPaths, gists.byPath), [shownPaths, gists.byPath]);
 
   // The model axis offers what the data holds: every family seen in the facts
   // so far, plus whatever is already selected so a chip cannot vanish from
@@ -296,6 +303,36 @@ export function ImportDialog(props: {
 
         {transcripts.length > 0 && (
           <>
+            <div className="import-gists">
+              {/* A press, never a side effect of opening: this is the one thing
+                  on the row that costs a model call. The plain button does the
+                  ones that have none — pressing it again after adding
+                  transcripts is cheap by construction. */}
+              <button
+                type="button"
+                className="import-gist-run"
+                disabled={gists.working || gistsMissing.length === 0}
+                onClick={() => gists.run(gistsMissing)}
+                title={t(lang, "imp.gist.runWhat")}
+              >
+                {gists.working
+                  ? t(lang, "imp.gist.working")
+                  : t(lang, "imp.gist.run", { n: gistsMissing.length })}
+              </button>
+              <button
+                type="button"
+                className="import-gist-all"
+                disabled={gists.working || shownPaths.length === 0}
+                onClick={() => gists.runAll(shownPaths)}
+                title={t(lang, "imp.gist.allWhat")}
+              >
+                {t(lang, "imp.gist.all")}
+              </button>
+              {gists.error !== null && <span className="import-gist-bad">{gists.error}</span>}
+              {gists.error === null && gists.written !== null && (
+                <span className="import-gist-note">{t(lang, "imp.gist.wrote", { n: gists.written })}</span>
+              )}
+            </div>
             <div className="import-filter">
               <input
                 type="search"
@@ -383,6 +420,20 @@ export function ImportDialog(props: {
                     {facts?.firstPrompt !== undefined && (
                       <span className="import-store-prompt" title={facts.firstPrompt}>
                         {facts.firstPrompt}
+                      </span>
+                    )}
+                    {gists.byPath.get(tr.path) !== undefined && (
+                      /* Marked as written by a model, with which one. It is a
+                         reading of the opening prompt, not a fact off the file,
+                         and the row says so rather than letting it pass as one. */
+                      <span
+                        className="import-store-gist"
+                        title={`${gists.byPath.get(tr.path)?.model ?? ""}${
+                          gists.byPath.get(tr.path)?.stale ? " · the file has changed since" : ""
+                        }`}
+                      >
+                        {gists.byPath.get(tr.path)?.stale ? "≈ " : "~ "}
+                        {gists.byPath.get(tr.path)?.text}
                       </span>
                     )}
                     <span className="import-store-meta">

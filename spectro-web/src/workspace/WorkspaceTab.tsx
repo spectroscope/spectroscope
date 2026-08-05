@@ -383,6 +383,23 @@ export function WorkspaceTab({
 
   const pane = paneState(workspace, outcome, lang);
   const beforeTheRun = pane.kind === "tree" && pane.scope === "prospective";
+  // Whether this install has a terminal at all, read once from /api/config.
+  const [shell, setShell] = useState<"ready" | "off" | "unavailable" | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetch("/api/config")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((c: { shell?: string } | null) => {
+        if (!alive || c == null) return;
+        // An older server says nothing here; treat silence as "ready" so this
+        // pane keeps behaving exactly as it did against one.
+        setShell(c.shell === "off" || c.shell === "unavailable" ? c.shell : "ready");
+      })
+      .catch(() => setShell("ready"));
+    return () => {
+      alive = false;
+    };
+  }, []);
   if (pane.kind === "unreachable") return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
   if (pane.kind === "loading") return <p className="ctx-empty">{pane.message}</p>;
   if (pane.kind === "pending") {
@@ -437,7 +454,29 @@ export function WorkspaceTab({
             this pane exists to avoid.
             Inline bilingual pair rather than an i18n key: a sibling owns
             i18n.ts this run, and card 64 folds these ternaries back in. */}
-        {!beforeTheRun && (
+        {!beforeTheRun && shell !== "ready" && (
+          /* Say WHY before the press. The toggle used to be offered on every
+             install and then print "the server refused the connection" when the
+             socket closed — true, and useless. A plain `java -jar` has no
+             terminal by construction: the spectro-pty helper rides the signed
+             desktop bundle and is not in the jar. Same rule as the fleet
+             lobby's spawn button. */
+          <span
+            className="ws-term-toggle ws-term-toggle--absent"
+            title={
+              shell === "off"
+                ? lang === "de"
+                  ? "Shells sind in diesem Prozess abgeschaltet (SPECTRO_SHELL)."
+                  : "shells are switched off in this process (SPECTRO_SHELL)"
+                : lang === "de"
+                  ? "Dieser Build hat keinen Terminal-Helfer. Das Terminal kommt mit der Desktop-App."
+                  : "this build has no terminal helper — the terminal ships with the desktop app"
+            }
+          >
+            {lang === "de" ? "kein terminal" : "no terminal"}
+          </span>
+        )}
+        {!beforeTheRun && shell === "ready" && (
           <button
             type="button"
             className="ws-term-toggle"
@@ -502,7 +541,7 @@ export function WorkspaceTab({
           </>
         )}
       </div>
-      {termOpen && !beforeTheRun && (
+      {termOpen && !beforeTheRun && shell === "ready" && (
         <>
           <div
             className="ws-divider"
