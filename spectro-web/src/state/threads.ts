@@ -44,7 +44,14 @@ function ownerOf(turn: Turn, cards: Record<string, ToolCard>, root: string): str
       return turn.agentId;
     case "tool":
       return cards[turn.callId]?.agentId ?? root;
+    // An error turn owns exactly like an info turn does. Both arrived here
+    // separately — main gave `error` its own case, this branch replaced every
+    // `?? "main"` with `?? root` — and keeping main's line verbatim would have
+    // left one fallback behind: in a standalone transcript there IS no "main",
+    // so an unattributed error would own to an agent the roster does not have,
+    // fail the owner === root spine and draw a thread chip for nobody.
     case "info":
+    case "error":
       return turn.agentId ?? root;
     default:
       return root;

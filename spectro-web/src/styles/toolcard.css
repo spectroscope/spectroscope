@@ -403,6 +403,10 @@
 .tv-task { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .tv-task-head { display: flex; align-items: baseline; gap: var(--sp-2); min-width: 0; flex-wrap: wrap; }
 .tv-task-id { font-size: var(--fs-12); color: var(--accent); white-space: nowrap; }
+/* The state a task moved OUT of (card 167). Dimmed, because it is the one that
+   is over; the arrow between the two is the whole point of drawing it. */
+.tv-task-from { opacity: 0.6; }
+.tv-task-arrow { font-size: var(--fs-12); color: var(--text-faint); }
 .tv-task-subject { flex: 1; min-width: 0; font-size: var(--fs-13); color: var(--text); overflow-wrap: anywhere; }
 
 /* A question put to a person: the header as a chip, the question as its text,

@@ -64,6 +64,24 @@ describe("groupTurns", () => {
     expect(thread.items[2].index).toBe(4);
   });
 
+  it("threads a child's failure with the rest of its burst", () => {
+    // An outage inside a subagent is the child's, and the importer says whose
+    // it was; without the owner it broke the burst in two and drew the failure
+    // in the main transcript.
+    const blocksWithError = groupTurns(
+      [
+        { kind: "assistant", agentId: "worker-1", text: "", thinking: "planning" },
+        { kind: "error", text: "You've hit your session limit", agentId: "worker-1" },
+      ],
+      {},
+      [worker],
+    );
+    expect(blocksWithError).toHaveLength(1);
+    const thread = blocksWithError[0] as Extract<ChatBlock, { kind: "thread" }>;
+    expect(thread.agentId).toBe("worker-1");
+    expect(thread.items.map((it) => it.turn.kind)).toEqual(["assistant", "error"]);
+  });
+
   it("an unknown child still threads, with an empty task", () => {
     const blocks2 = groupTurns([{ kind: "assistant", agentId: "ghost-9", text: "hi", thinking: "" }], {}, []);
     const th = blocks2[0] as Extract<ChatBlock, { kind: "thread" }>;

@@ -14,6 +14,7 @@
 
 import type { RunEvent } from "../events";
 import type { ImportSource } from "../import/detect";
+import { IMPORT_ONLY_TYPES } from "../wire/nonWire";
 
 /** What the import bar states about a loaded file. */
 export interface SourceStats {
@@ -91,6 +92,16 @@ export function attachSources<Row extends { payload: unknown }>(
  * is about; otherwise the line's first frame takes it, which is where a user
  * record's reading belongs (a run_start, a tool_result, an agent_message).
  *
+ * A frame the importer read AROUND the conversation comes last, because it is
+ * not what the note is about. The ground row (card 168) is emitted in front of
+ * everything a record produced, so without this it took the chip: measured over
+ * the 167 transcripts under ~/.claude/projects, 10 lines had a "written by
+ * task-notification" chip land beside "cwd A -> B", and the file says no such
+ * thing about the move. IMPORT_ONLY_TYPES is the list this reads, rather than a
+ * second one written from memory, for the reason nonWire.ts states about
+ * itself. A line whose only row is such a reading keeps it: one row is still
+ * where that line's notes belong.
+ *
  * @param rows the trace rows, in the order the view holds them
  * @return line index -> the seq of the row that shows that line's notes; empty
  *         for a session with no imported source
@@ -99,15 +110,16 @@ export function noteAnchors(
   rows: readonly { seq: number; type: string; sourceLine?: number }[],
 ): ReadonlyMap<number, number> {
   const anchor = new Map<number, number>();
-  const isTurn = new Set<number>();
+  const rank = new Map<number, number>();
+  // First of a rank wins, so "the line's first frame" still holds within one.
+  const rankOf = (type: string) => (type === "turn_start" ? 2 : IMPORT_ONLY_TYPES.has(type) ? 0 : 1);
   for (const row of rows) {
     if (row.sourceLine === undefined) continue;
-    if (row.type === "turn_start" && !isTurn.has(row.sourceLine)) {
-      anchor.set(row.sourceLine, row.seq);
-      isTurn.add(row.sourceLine);
-    } else if (!anchor.has(row.sourceLine)) {
-      anchor.set(row.sourceLine, row.seq);
-    }
+    const r = rankOf(row.type);
+    const held = rank.get(row.sourceLine);
+    if (held !== undefined && r <= held) continue;
+    anchor.set(row.sourceLine, row.seq);
+    rank.set(row.sourceLine, r);
   }
   return anchor;
 }

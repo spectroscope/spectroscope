@@ -211,6 +211,9 @@
 .agent-dot--in_progress { background: var(--accent); animation: spectroscope-pulse 1.2s ease-in-out infinite; }
 .agent-card-name { font-size: var(--fs-12); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-role-tag { font-size: var(--fs-11); color: var(--sand); border: 1px solid var(--border-strong); border-radius: 999px; padding: 0 var(--sp-1); }
+/* The model the child ran on, when the file named one (card 167). Faint and
+   truncating: it qualifies the row, it does not compete with the agent's name. */
+.agent-model { font-size: var(--fs-11); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-badge { margin-left: auto; font-size: var(--fs-11); color: var(--text-faint); white-space: nowrap; }
 .agent-badge--working { color: var(--warn); }
 .agent-badge--completed { color: var(--ok); }
@@ -546,15 +549,19 @@
 /* Chips first, then the text. The text is what ellipsizes: a clipped chip would
    show half a fact with no sign that the other half exists. */
 .trace-col--summary { display: flex; align-items: center; gap: var(--sp-2); overflow: hidden; color: var(--text-dim); }
-/* Base 0 so the text gives up its width first; the chips only start shrinking
-   once it has none left, and then they ellipsize VISIBLY rather than being cut
-   off at the cell edge with no sign that more was there. */
-.trace-summary-text { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The text gives up its width first, but never all of it. Measured in Chrome
+   against this stylesheet, with the corpus's widest chip run: at a 1280 px
+   panel TWO chips took the summary to 0 px, and 18,190 rows of the 167
+   transcripts under ~/.claude/projects carry two (4,657 carry three). A row
+   whose summary is gone no longer says what the frame IS, which is worse than a
+   chip that ends in an ellipsis and keeps its full value in the title. So: a
+   floor here, a ceiling on each chip, and both ellipsize visibly. */
+.trace-summary-text { flex: 1 1 auto; min-width: 10ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* What the imported line says beyond its frame (effort, and the rest of that
    family). A quiet outline chip: it must read as a note ON the row, never as
    the row's own content, so it borrows the type pill's shape and stays a step
    fainter. Sand marks it as a reading of the file rather than a wire fact. */
-.trace-note { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); white-space: nowrap; }
+.trace-note { flex: 0 1 auto; min-width: 0; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; border: 1px solid color-mix(in srgb, var(--sand) 40%, var(--border)); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--sand); white-space: nowrap; }
 
 .trace-type { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; padding: 0 var(--sp-2); font-size: var(--fs-11); line-height: 1.7; color: var(--text-dim); vertical-align: bottom; }
 

@@ -165,6 +165,32 @@ describe("which row wears a line's notes", () => {
     expect(anchors.get(4)).toBe(1);
   });
 
+  // The ground row is a reading of WHERE the run stood, not of what the record
+  // says, and it is emitted in front of everything the line produced. Measured
+  // over the 167 session transcripts under ~/.claude/projects, 10 lines had
+  // their chip taken by it, all of them "written by task-notification" moving
+  // onto a row that reads "cwd A -> B": the file nowhere says the directory
+  // move was written by a task-notification.
+  it("does not let the ground row take the chip from the line's own frame", () => {
+    const anchors = noteAnchors([
+      row(1, "ground_info", 9),
+      row(2, "tool_result", 9),
+      row(3, "text_delta", 9),
+    ]);
+    expect(anchors.get(9)).toBe(2);
+  });
+
+  it("still prefers the turn_start over both", () => {
+    const anchors = noteAnchors([row(1, "ground_info", 3), row(2, "turn_start", 3), row(3, "usage", 3)]);
+    expect(anchors.get(3)).toBe(2);
+  });
+
+  // A ground move on a line that produced nothing else is the one place the
+  // reading may wear the chip: it is the only row that line has.
+  it("keeps the reading when it is the line's only row", () => {
+    expect(noteAnchors([row(1, "ground_info", 5)]).get(5)).toBe(1);
+  });
+
   it("keeps each line's anchor apart", () => {
     const anchors = noteAnchors([row(1, "turn_start", 1), row(2, "usage", 1), row(3, "turn_start", 2)]);
     expect([...anchors.entries()]).toEqual([

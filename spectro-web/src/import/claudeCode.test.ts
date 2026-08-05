@@ -15,6 +15,10 @@ import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
 import ccStandalone from "./fixtures/cc-standalone-subagent.jsonl?raw";
 import ccStandaloneNested from "./fixtures/cc-standalone-nested.jsonl?raw";
 import ccOrphanSidechain from "./fixtures/cc-orphan-sidechain.jsonl?raw";
+import ccBlankCards from "./fixtures/cc-blank-cards.jsonl?raw";
+import ccToolResult from "./fixtures/cc-tool-result.jsonl?raw";
+import ccCompaction from "./fixtures/cc-compaction.jsonl?raw";
+import ccApiError from "./fixtures/cc-api-error.jsonl?raw";
 import {
   claudeCodeToRunEvents,
   claudeCodeWithOrigin,
@@ -26,6 +30,7 @@ import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
 import { sourceStats } from "../state/traceSource";
 import { buildTextFeed } from "../state/textFeed";
+import { isWireEvent } from "../wire/nonWire";
 
 describe("claudeCode adapter (linear)", () => {
   const events = parseTranscript(ccLinear);
@@ -1036,10 +1041,14 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
     expect("origin" in frames[1]).toBe(false);
   });
 
-  it("reads a queued command whose prompt is a block array", () => {
+  it("reads a queued command whose prompt is a block array, image included", () => {
     // 159 of the 1,213 prompts are arrays, 142 of them with a text block; the
     // rest is a pasted image. String concatenation would render "[object
     // Object]" into the trace.
+    //
+    // The image line is card 167: this used to read "hold on" and nothing else,
+    // and on the 17 array prompts that are an image ALONE it read as no prompt
+    // at all. A queued command with a screenshot in it now says so.
     const frames = framesOfType(
       [
         attachment({
@@ -1054,7 +1063,7 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
       "queued_command",
     );
     expect(frames.length).toBe(1);
-    expect(frames[0].prompt).toBe("hold on");
+    expect(frames[0].prompt).toBe("[image/png · 3 B]\nhold on");
   });
 
   it("says less about a queue operation that carries no content", () => {
@@ -1361,6 +1370,87 @@ describe("claudeCode adapter (a standalone subagent transcript)", () => {
     expect(events.filter((e) => e.type === "turn_start").every((e) => e.agentId === AGENT)).toBe(true);
   });
 
+  // THE TESTS THAT WOULD HAVE CAUGHT A BAD MERGE.
+  //
+  // This branch and card 167 rewrote the same sidechain branch hours apart, and
+  // both test files conflicted too — so the merged suite could not catch a bad
+  // resolution by itself. The specific trap: `emitBlock` gained two OPTIONAL
+  // parameters on main, `detail` and `agent`. A resolution that keeps this
+  // branch's three-argument call sites compiles, and nothing fails; the import
+  // just quietly renders less. On a standalone transcript that would be EVERY
+  // tool result losing its detail, and an outage record announcing a model
+  // named `<synthetic>` — the exact defect card 167 had just removed.
+  //
+  // So the arguments are pinned here, where they can only be dropped loudly.
+  it("carries what the tool returned, the way a session file does", () => {
+    const detail = events.find(
+      (e) => (e as unknown as { type: string }).type === "tool_result_detail",
+    ) as unknown as { callId: string; detail: { numLines?: number; startLine?: number } } | undefined;
+    expect(detail).toBeDefined();
+    expect(detail?.callId).toBe("call_read");
+    // The record's own reading of the read: which slice of the file it was.
+    expect(detail?.detail).toMatchObject({ numLines: 1, startLine: 42 });
+  });
+
+  it("never announces the model an outage record names", () => {
+    // `isApiErrorMessage` records carry model "<synthetic>". Announcing it made
+    // the trace claim the run had switched to a model by that name.
+    const outage = parseTranscript(
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "do the thing" },
+          uuid: "u1",
+          isSidechain: true,
+          agentId: "a0b476c3c018",
+          timestamp: "2026-08-03T09:00:00.000Z",
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            role: "assistant",
+            id: "m1",
+            model: "<synthetic>",
+            content: [{ type: "text", text: "API Error: Connection error." }],
+          },
+          uuid: "a1",
+          parentUuid: "u1",
+          isSidechain: true,
+          agentId: "a0b476c3c018",
+          isApiErrorMessage: true,
+          timestamp: "2026-08-03T09:00:01.000Z",
+        }),
+      ].join("\n"),
+    );
+    const models = outage
+      .filter((e) => (e as unknown as { model?: string }).model !== undefined)
+      .map((e) => (e as unknown as { model: string }).model);
+    expect(models).not.toContain("<synthetic>");
+    // And the outage still reaches the reader, as an error rather than as prose
+    // the model is credited with.
+    expect(outage.some((e) => e.type === "error")).toBe(true);
+  });
+
+  it("bills the file's own agent once per response, not twice", () => {
+    // Both paths existed for a moment: this branch pushed a usage frame for the
+    // root itself, and main bills every sidechain owner generically. The
+    // reducer folds usage ADDITIVELY, so keeping both would have doubled the
+    // footer, the agents panel and the context ring with nothing to fail.
+    const usage = events.filter((e) => e.type === "usage" && e.agentId === AGENT) as unknown as {
+      ts: number;
+      outputTokens: number;
+    }[];
+    // The file records its cost on two responses, so two frames — and each
+    // response appears once. A second path would repeat a (ts, tokens) pair
+    // rather than add a new one, which is why the pairs are what is pinned.
+    expect(usage).toHaveLength(2);
+    expect(usage.map((e) => `${e.ts}:${e.outputTokens}`)).toEqual([
+      `${usage[0].ts}:140`,
+      `${usage[1].ts}:220`,
+    ]);
+    expect(new Set(usage.map((e) => e.ts)).size).toBe(usage.length);
+  });
+
   it("closes on the file's own stop reason", () => {
     expect(events.at(-1)).toMatchObject({ type: "run_end", runId: "cc-import", stopReason: "end_turn" });
   });
@@ -1453,5 +1543,981 @@ describe("claudeCode adapter (an orphan inside a main transcript is still skippe
     expect(events.some((e) => e.type === "text_delta" && e.text === "Three headline changes.")).toBe(true);
     // The orphan's line is the one line nothing was read from.
     expect(sourceStats(source).zeroLines).toBe(1);
+  });
+});
+
+// A card that came up blank (card 167, finding 4). The importer's asText read
+// only `.text`, so every block that was not text mapped to the empty string and
+// the card it belonged to showed nothing at all. Measured over the transcripts
+// in ~/.claude/projects: 6,789 tool_result BLOCKS flatten to nothing (5,269
+// image-or-document, 1,520 `tool_reference`), but 5,240 of them are in
+// `agent-*.jsonl` sidechain files that produce no tool cards — so what a reader
+// can open blank is 1,546 CARDS, 1,348 with only an image and 201 ToolSearch
+// results that dropped the 439 tool names they consisted of. Blocks are the
+// bigger number and cards are the honest one; both are stated so neither gets
+// borrowed for the other. On the person's own side, 196 user records whose
+// body is nothing but attachments produced NO frame at all — the prompt vanished
+// from the transcript — and 298 more imported as the words with the screenshot
+// they were about removed.
+//
+// The bytes are NOT carried, and that is a measurement, not a shrug: the corpus
+// holds 1.23 GB of base64 image data, an import is a browser-side File.text()
+// read with no server blob behind it, and events.ts holds no frame that could
+// carry it without claiming the picture was generated here. So the card says
+// what was there, in the file's own words for the type and a stated size.
+describe("claudeCode adapter (blocks that are not text)", () => {
+  const events = parseTranscript(ccBlankCards);
+  const outputOf = (callId: string): string =>
+    (events.find((e) => e.type === "tool_result" && e.callId === callId) as { output: string }).output;
+  const userSaid = events
+    .filter((e) => (e as unknown as { type: string }).type === "user_message")
+    .map((e) => (e as unknown as { text: string }).text);
+
+  it("names the tools a ToolSearch result loaded instead of returning nothing", () => {
+    expect(outputOf("t1")).toBe("WebFetch\nWebSearch");
+  });
+
+  it("says an image came back rather than showing an empty card", () => {
+    expect(outputOf("t2")).toBe("[image/png · 11 B]");
+  });
+
+  it("keeps the text verbatim and adds the screenshot beside it, in the file's order", () => {
+    expect(outputOf("t3")).toBe("Took a screenshot of the page.\n[image/jpeg · 6 B]");
+  });
+
+  it("keeps a text-only result byte-identical", () => {
+    const linear = parseTranscript(ccLinear);
+    const call = linear.find((e) => e.type === "tool_result") as { output: string };
+    expect(call.output).not.toMatch(/^\[/);
+    expect(call.output).not.toContain("\n[");
+  });
+
+  it("stops a prompt that was nothing but a screenshot from vanishing", () => {
+    expect(userSaid).toContain("[image/png · 11 B]");
+  });
+
+  it("puts the attachment and the words in the person's bubble, in the file's order", () => {
+    const state = reduceAll(initialState, events);
+    const said = state.turns.filter((t) => t.kind === "user").map((t) => t.text);
+    expect(said).toContain("[image/jpeg · 6 B]");
+    expect(said).toContain("this is the frame I meant");
+    expect(said.indexOf("[image/jpeg · 6 B]")).toBeLessThan(said.indexOf("this is the frame I meant"));
+  });
+
+  it("names a document by the media type the file gave it", () => {
+    expect(userSaid).toContain("[application/pdf · 6 B]");
+  });
+
+  it("never puts an attachment note in the model's mouth", () => {
+    const state = reduceAll(initialState, events);
+    const answered = state.turns.filter((t) => t.kind === "assistant").map((t) => t.text);
+    expect(answered.join("\n")).not.toContain("[image/");
+  });
+});
+
+// The tool's own return value, carried to the card it belongs to (card 167,
+// finding 5). 44,208 records in the corpus hold a `toolUseResult` and the
+// importer read none of it, so a Read card showed the body with the line-number
+// gutter welded on, a Bash card ran stdout and stderr together, an Edit card
+// never said where the change landed and a TaskUpdate card could not draw the
+// state it came from. It rides an IMPORT-ONLY frame: nothing in events.ts gains
+// a field, and wire/nonWire.ts keeps it out of every file this app writes.
+describe("claudeCode adapter (what the tool actually returned)", () => {
+  const events = parseTranscript(ccToolResult);
+  const detailOf = (callId: string): Record<string, unknown> | undefined =>
+    (
+      events.find(
+        (e) =>
+          (e as unknown as { type: string }).type === "tool_result_detail" &&
+          (e as unknown as { callId: string }).callId === callId,
+      ) as unknown as { detail: Record<string, unknown> } | undefined
+    )?.detail;
+
+  it("carries the file body without the gutter the block welded on", () => {
+    expect(detailOf("r1")?.fileContent).toBe("# Heading\n\n- one");
+    // The block itself is untouched: the output is what the model was shown.
+    const result = events.find((e) => e.type === "tool_result" && e.callId === "r1") as { output: string };
+    expect(result.output).toBe("1\t# Heading\n2\t\n3\t- one");
+  });
+
+  it("carries the page the read returned, and that it stopped at the cap", () => {
+    expect(detailOf("r1")).toMatchObject({ startLine: 1, numLines: 3, totalLines: 611, truncated: true });
+  });
+
+  it("keeps the two Bash streams apart", () => {
+    expect(detailOf("b1")).toMatchObject({
+      stdout: " 66M\tapp.asar\n",
+      stderr: "\nShell cwd was reset to /tmp\n",
+    });
+  });
+
+  it("carries where an edit landed", () => {
+    expect(detailOf("e1")?.patch).toEqual([{ oldStart: 51, oldLines: 20, newStart: 51, newLines: 21 }]);
+  });
+
+  it("carries the state an update moved out of", () => {
+    expect(detailOf("k1")).toMatchObject({ statusFrom: "in_progress", statusTo: "completed" });
+  });
+
+  it("says nothing for a call whose record carried no toolUseResult", () => {
+    const linear = parseTranscript(ccLinear);
+    expect(linear.some((e) => (e as unknown as { type: string }).type === "tool_result_detail")).toBe(false);
+  });
+
+  it("puts the detail on the card the reducer built", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.cards["r1"].detail).toMatchObject({ fileContent: "# Heading\n\n- one" });
+    expect(state.cards["b1"].detail).toMatchObject({ stderr: "\nShell cwd was reset to /tmp\n" });
+  });
+
+  it("never lets the detail frame into a file this app writes", () => {
+    const detail = events.find((e) => (e as unknown as { type: string }).type === "tool_result_detail");
+    expect(detail).toBeTruthy();
+    expect(isWireEvent(detail as unknown as { type: string })).toBe(false);
+  });
+});
+
+// COMPACTION, WHICH THE IMPORTER USED TO PASS OVER IN SILENCE (card 167,
+// finding 2). events.ts has carried `compaction` all along and five consumers
+// render it — the reducer's warn line, the text feed's "[compaction −N turns]",
+// the graph's compact node, LabTrace and TraceView — and the importer emitted
+// none: measured over the 5,120 transcripts in ~/.claude/projects, 21 boundaries
+// in 17 files produced 0 frames. Worse, each boundary is followed one line later
+// by the machine's own summary, and all 21 imported as a plain user_message:
+// 391,308 characters of the model's prose rendered as the person's words.
+describe("claudeCode adapter (compaction)", () => {
+  const imported = claudeCodeWithOrigin(
+    ccCompaction
+      .split(/\r?\n/)
+      .filter((l) => l.trim())
+      .map((l) => JSON.parse(l)),
+  );
+  const events = imported.events;
+  const compactions = events.filter((e) => e.type === "compaction");
+  const summaries = ccCompaction
+    .split(/\r?\n/)
+    .filter((l) => l.trim())
+    .map((l) => JSON.parse(l) as { isCompactSummary?: boolean; message?: { content?: string } })
+    .filter((r) => r.isCompactSummary === true)
+    .map((r) => r.message?.content ?? "");
+
+  it("marks every boundary whose record names the messages that survived", () => {
+    // Three boundaries in the fixture; the third names no survivors, so there
+    // is nothing to count and nothing is claimed.
+    expect(compactions).toHaveLength(2);
+    expect(compactions.every((e) => e.type === "compaction" && e.agentId === "main")).toBe(true);
+  });
+
+  it("counts only the turns THIS boundary dropped", () => {
+    // Three turns before the first boundary, one preserved: two went. The
+    // second boundary preserves the turn after the summary, so the one turn
+    // that survived the first boundary is the only one it drops — a count that
+    // kept the whole history would say three.
+    expect((compactions[0] as { removedTurns: number }).removedTurns).toBe(2);
+    expect((compactions[1] as { removedTurns: number }).removedTurns).toBe(1);
+  });
+
+  it("states the size of the summary the boundary was followed by", () => {
+    expect((compactions[0] as { summaryChars: number }).summaryChars).toBe(summaries[0].length);
+    expect((compactions[1] as { summaryChars: number }).summaryChars).toBe(summaries[1].length);
+  });
+
+  it("never puts the machine's summary in the person's mouth", () => {
+    const said = events.filter((e) => (e as unknown as { type: string }).type === "user_message");
+    for (const summary of summaries)
+      expect(said.some((e) => (e as unknown as { text: string }).text === summary)).toBe(false);
+    // and the boundary that named no survivors does not restore the bubble
+    expect(said).toHaveLength(0);
+  });
+
+  it("charges the frame to the boundary's own line, where the numbers are", () => {
+    const at = imported.origin[events.indexOf(compactions[0])];
+    const line = JSON.parse(ccCompaction.split(/\r?\n/).filter((l) => l.trim())[at]);
+    expect(line).toMatchObject({ subtype: "compact_boundary", uuid: "s1" });
+  });
+
+  it("leaves the summary's words in the file and in no face of the app", () => {
+    // The honest half of dropping the bubble: every face of the trace hangs off
+    // a ROW (sourcePane reads row.sourceLine, the structured face reads
+    // sourceLines[entry.sourceLine]), so a line that produces no frame is
+    // reachable from nowhere. The size on the compaction frame is all that
+    // survives into the app; the words stay in the transcript on disk.
+    // Measured over ~/.claude/projects: 21 frames were charged to an
+    // isCompactSummary line before this, 0 after.
+    const lines = ccCompaction.split(/\r?\n/).filter((l) => l.trim());
+    const summaryLines = new Set(
+      lines
+        .map((l, i) => [JSON.parse(l) as { isCompactSummary?: boolean }, i] as const)
+        .filter(([r]) => r.isCompactSummary === true)
+        .map(([, i]) => i),
+    );
+    // three summaries, one of them behind the boundary that produced no frame
+    expect(summaryLines.size).toBe(3);
+    expect(events.every((_, k) => !summaryLines.has(imported.origin[k]))).toBe(true);
+    // and no frame of any type carries the prose, under any field
+    for (const summary of summaries)
+      expect(events.some((e) => JSON.stringify(e).includes(summary.slice(0, 24)))).toBe(false);
+  });
+
+  it("says nothing about a boundary whose turns the file never named", () => {
+    // The module's own rule, applied where the count comes from: a transcript
+    // whose records carry no uuid gives preservedMessages nothing to match, so
+    // `removedTurns` would be 0 — "nothing was dropped" about a session that
+    // was cut in half. A boundary that cannot be counted produces no frame,
+    // the same way one that names no survivors does. 0 such files in
+    // ~/.claude/projects, so this holds a latch rather than a live bug.
+    const nameless = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" } },
+      { type: "assistant", message: { role: "assistant", id: "m1", model: "claude-opus-5", content: [] } },
+      {
+        type: "system",
+        subtype: "compact_boundary",
+        compactMetadata: { trigger: "auto", preservedMessages: { allUuids: ["gone"] } },
+      },
+    ]);
+    expect(nameless.some((e) => e.type === "compaction")).toBe(false);
+  });
+
+  it("reaches the reader through the consumers that were already there", () => {
+    const state = reduceAll(initialState, events);
+    // With a summary in the window the chat line names its size too — all 21
+    // boundaries in ~/.claude/projects carry one, 391,308 characters in total,
+    // and `summaryChars` had no surface until it did.
+    expect(state.turns.some((t) => t.kind === "info" && t.infoKey === "info.compactedInto")).toBe(true);
+    expect(buildTextFeed(events).some((l) => l.text === "[compaction −2 turns]")).toBe(true);
+  });
+
+  it("stays out of every file this app writes", () => {
+    // `compaction` IS on the wire, so this one travels — the point of using it.
+    expect(isWireEvent(compactions[0] as unknown as { type: string })).toBe(true);
+  });
+});
+
+// AN OUTAGE READ AS AN ANSWER (card 167, finding 3). Measured over the same
+// 5,120 transcripts: 67 `system[subtype=api_error]` records produced no frame at
+// all, so a retry ladder was a silent gap in the clock, and 350
+// `isApiErrorMessage` records imported their outage text as a `text_delta` — 83
+// of them reachable in a session import, each costing a turn and each announcing
+// a switch to a model called "<synthetic>". Both are the `error` event that
+// events.ts has carried since the beginning.
+describe("claudeCode adapter (API failures)", () => {
+  const events = parseTranscript(ccApiError);
+  const errors = events.filter((e) => e.type === "error");
+
+  it("frames the failure the client recorded, in the file's own words", () => {
+    expect(errors).toHaveLength(4);
+    expect(errors[0]).toMatchObject({ type: "error", agentId: "main" });
+    // formatted first, verbatim; the retry the client then made rides in the
+    // same sentence, because `error` has no field for it and inventing one
+    // would put a reading of somebody else's file on our wire.
+    expect((errors[0] as { message: string }).message).toBe("429 Rate limited · retry 1/10");
+  });
+
+  it("says nothing about a retry the record did not record", () => {
+    // No `formatted`, no retryAttempt: the message is the one string there is.
+    expect((errors[1] as { message: string }).message).toBe("Connection error.");
+  });
+
+  it("reads the outage as an error and not as the assistant answering", () => {
+    expect((errors[2] as { message: string }).message).toBe("API Error: Overloaded");
+    expect(events.some((e) => e.type === "text_delta" && e.text === "API Error: Overloaded")).toBe(false);
+  });
+
+  it("keeps the turn the run attempted", () => {
+    // The request was made and it failed; the clock and the turn count say so.
+    const turns = events.filter((e) => e.type === "turn_start" && e.agentId === "main");
+    expect(turns.map((e) => (e as { turn: number }).turn)).toEqual([1, 2, 3, 4, 5]);
+  });
+
+  it("does not announce a switch to a model called <synthetic>", () => {
+    const synthetic = events.filter((e) => {
+      const frame = e as unknown as { type: string; model?: string };
+      return frame.type === "provider_info" && frame.model === "<synthetic>";
+    });
+    // Exactly one, and it is the record that is NOT an error: the flag says
+    // "this synthetic message is an error", and only the true case is read.
+    expect(synthetic).toHaveLength(1);
+    expect(events.some((e) => e.type === "text_delta" && e.text === "No response requested.")).toBe(true);
+  });
+
+  it("does not open the file on <synthetic> either", () => {
+    // The up-front announcement takes the file's FIRST model, and 121 of the
+    // corpus's transcripts open on an outage record — so the run announced a
+    // model called "<synthetic>" before a word was said, and run_start.model
+    // carried it too.
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      {
+        type: "assistant",
+        isApiErrorMessage: true,
+        message: {
+          role: "assistant",
+          id: "e0",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "API Error: Overloaded" }],
+        },
+        uuid: "a0",
+        parentUuid: "u1",
+      },
+      {
+        type: "assistant",
+        message: {
+          role: "assistant",
+          id: "m0",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "back" }],
+        },
+        uuid: "a1",
+        parentUuid: "a0",
+      },
+    ]);
+    expect(events.some((e) => (e as unknown as { model?: string }).model === "<synthetic>")).toBe(false);
+    expect(events[0]).toMatchObject({ type: "provider_info", model: "claude-opus-5" });
+  });
+
+  it("still opens on a synthetic model the file does not call an error", () => {
+    // Where the skip stops, measured rather than assumed. The filter follows
+    // the file's own flag, so a record marked isApiErrorMessage:false is read
+    // as what it says even when its model is the literal "<synthetic>".
+    // Over ~/.claude/projects the skip takes the up-front announcement from 122
+    // to 1 and every "<synthetic>" announcement from 191 to 29, and it leaves
+    // run_start.model exactly where it was: 1 file before, the same 1 after
+    // (6b9d11d3-4fea-4964-99f3-6c3aea453b59). The 28 announcements that remain
+    // sit on records reading "No response requested.". Guessing from the model
+    // string instead would be us deciding what somebody else's record meant.
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+      {
+        type: "assistant",
+        isApiErrorMessage: false,
+        message: {
+          role: "assistant",
+          id: "n0",
+          model: "<synthetic>",
+          content: [{ type: "text", text: "No response requested." }],
+        },
+        uuid: "a0",
+        parentUuid: "u1",
+      },
+    ]);
+    expect(events[0]).toMatchObject({ type: "provider_info", model: "<synthetic>" });
+    expect(
+      events.some((e) => e.type === "run_start" && (e as { model?: string }).model === "<synthetic>"),
+    ).toBe(true);
+  });
+
+  it("leaves a subagent's outage under the subagent", () => {
+    expect(errors[3]).toMatchObject({
+      type: "error",
+      agentId: "t1",
+      message: "You've hit your session limit - resets 3:20pm (Europe/Berlin)",
+    });
+  });
+
+  it("reaches the reader through the consumers that were already there", () => {
+    const state = reduceAll(initialState, events);
+    expect(state.turns.filter((t) => t.kind === "error").map((t) => t.text)).toContain(
+      "429 Rate limited · retry 1/10",
+    );
+    expect(buildTextFeed(events).some((l) => l.text === "[error] API Error: Overloaded")).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Card 167, findings 1 and 6: the subagent's own numbers.
+//
+// A modern transcript never holds its children: measured over the 5,132 files
+// in ~/.claude/projects on 2026-08-04, 0 of 311,332 sidechain records resolve
+// an owner in their own file, and 4,674 files are sidechain-only. What a
+// session file DOES hold is the launch record, and its toolUseResult carries
+// the child's model, its token bill and whether it ever reported back.
+// ---------------------------------------------------------------------------
+
+/** A parent session that launches two children: one reported back, one did not. */
+const launches: unknown[] = [
+  { type: "user", message: { role: "user", content: "fan out" }, uuid: "u1", parentUuid: null },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      id: "m1",
+      model: "claude-opus-5",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_done",
+          name: "Agent",
+          input: { description: "review the diff", subagent_type: "code-reviewer" },
+        },
+      ],
+    },
+    uuid: "a1",
+    parentUuid: "u1",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [{ type: "tool_result", tool_use_id: "toolu_done", content: "three findings" }],
+    },
+    toolUseResult: {
+      status: "completed",
+      resolvedModel: "claude-haiku-4-5-20251001",
+      totalDurationMs: 420972,
+      totalTokens: 60607,
+      usage: {
+        input_tokens: 2,
+        cache_creation_input_tokens: 3536,
+        cache_read_input_tokens: 54290,
+        output_tokens: 2779,
+      },
+    },
+    uuid: "u2",
+    parentUuid: "a1",
+  },
+  {
+    type: "assistant",
+    message: {
+      role: "assistant",
+      id: "m2",
+      model: "claude-opus-5",
+      content: [
+        {
+          type: "tool_use",
+          id: "toolu_async",
+          name: "Agent",
+          input: { description: "translate the pitch", subagent_type: "Explore" },
+        },
+      ],
+    },
+    uuid: "a2",
+    parentUuid: "u2",
+  },
+  {
+    type: "user",
+    message: {
+      role: "user",
+      content: [
+        { type: "tool_result", tool_use_id: "toolu_async", content: "Async agent launched successfully." },
+      ],
+    },
+    toolUseResult: {
+      isAsync: true,
+      status: "async_launched",
+      resolvedModel: "claude-opus-4-8[1m]",
+      outputFile: "/private/tmp/tasks/afa7775.output",
+    },
+    uuid: "u3",
+    parentUuid: "a2",
+  },
+];
+
+describe("claudeCode adapter (the subagent's own numbers)", () => {
+  const events = claudeCodeToRunEvents(launches);
+  const roster = reduceAll(initialState, events).agents;
+
+  it("counts the child's tokens, under the child", () => {
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "usage",
+        agentId: "toolu_done",
+        inputTokens: 2,
+        outputTokens: 2779,
+        cacheReadTokens: 54290,
+        cacheCreationTokens: 3536,
+      }),
+    );
+  });
+
+  it("puts those tokens on the child's roster row and in the session total", () => {
+    expect(roster.find((a) => a.id === "toolu_done")?.outTokens).toBe(2779);
+    expect(reduceAll(initialState, events).usage.outputTokens).toBe(2779);
+  });
+
+  it("names the model the child actually ran on, not the parent's", () => {
+    expect(roster.find((a) => a.id === "toolu_done")?.model).toBe("claude-haiku-4-5-20251001");
+    expect(roster.find((a) => a.id === "toolu_async")?.model).toBe("claude-opus-4-8[1m]");
+  });
+
+  it("does not announce the child's model as the run's own", () => {
+    // provider_info is latest-wins for the whole run: a child announcement
+    // would tell the reader the session had switched models.
+    const announced = (events as unknown as { type: string; model?: string }[])
+      .filter((e) => e.type === "provider_info")
+      .map((e) => e.model);
+    expect(announced).toEqual(["claude-opus-5"]);
+  });
+
+  it("does not draw a launch that never reported back as finished", () => {
+    expect(roster.find((a) => a.id === "toolu_async")?.state).toBe("working");
+    expect(roster.find((a) => a.id === "toolu_async")?.launched).toBe(true);
+  });
+
+  it("still finishes the child that did report back", () => {
+    expect(roster.find((a) => a.id === "toolu_done")?.state).toBe("completed");
+    expect(roster.find((a) => a.id === "toolu_done")?.launched).toBeUndefined();
+  });
+
+  it("keeps the receipt on the parent's card either way", () => {
+    const outputs = events
+      .filter((e) => e.type === "tool_result")
+      .map((e) => (e as unknown as { output: string }).output);
+    expect(outputs).toContain("three findings");
+    expect(outputs).toContain("Async agent launched successfully.");
+  });
+
+  it("says nothing about a launch whose record carries none of it", () => {
+    const bare = claudeCodeToRunEvents([
+      launches[0],
+      launches[1],
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "toolu_done", content: "ok" }],
+        },
+        uuid: "u2",
+        parentUuid: "a1",
+      },
+    ]);
+    expect((bare as unknown as { type: string }[]).some((e) => e.type === "agent_detail")).toBe(false);
+    expect(bare.some((e) => e.type === "usage" && (e as { agentId: string }).agentId !== "main")).toBe(false);
+    expect(reduceAll(initialState, bare).agents.find((a) => a.id === "toolu_done")?.state).toBe("completed");
+  });
+
+  it("keeps the child reading out of a session file", () => {
+    // agent_detail is a reading of somebody else's transcript, never a frame
+    // the wire carries: a writer that let it through would produce a file the
+    // Java reader drops without a word.
+    expect(events.filter((e) => !isWireEvent(e)).map((e) => e.type)).toContain("agent_detail");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A launched child that DID report back, in the same file.
+//
+// "launched, never reported back" is the app's claim about somebody else's
+// transcript, and measured over ~/.claude/projects on 2026-08-04 the
+// transcript refutes it on 365 of the 394 async launches: a later
+// <task-notification> names the same <tool-use-id> and carries a terminal
+// <status>. 218 of those sit in the user record this importer already parses;
+// the other 147 sit in the `queue-operation` and `queued_command` records it
+// already frames. The same import then drew the outcome a second time, as a
+// parentless roster row under the task id.
+//
+// One rule covers all of it: a notification whose <tool-use-id> names a launch
+// this file made IS that child reporting back, whichever record carries it.
+// ---------------------------------------------------------------------------
+const NOTE = (status: string | null, result: string): string =>
+  [
+    "<task-notification>",
+    "<task-id>a1758523bf8ddf207</task-id>",
+    "<tool-use-id>toolu_async</tool-use-id>",
+    "<output-file>/private/tmp/tasks/a1758523bf8ddf207.output</output-file>",
+    ...(status === null ? [] : [`<status>${status}</status>`]),
+    '<summary>Agent "translate the pitch" completed</summary>',
+    `<result>${result}</result>`,
+    "</task-notification>",
+  ].join("\n");
+
+/** The notification as a user record — the channel the importer already read. */
+const asUser = (text: string): unknown => ({
+  type: "user",
+  message: { role: "user", content: text },
+  uuid: "u4",
+  parentUuid: "u3",
+});
+
+describe("a launched child that reported back later in the same file", () => {
+  const fold = (note: unknown) => {
+    const events = claudeCodeToRunEvents([...launches, note]);
+    return { events, roster: reduceAll(initialState, events).agents };
+  };
+  const { events, roster } = fold(asUser(NOTE("completed", "Saved 11 lines.")));
+  const child = roster.find((a) => a.id === "toolu_async");
+
+  it("finishes the child the notification finished", () => {
+    expect(child?.state).toBe("completed");
+  });
+
+  it("takes the badge back off — the file says it reported back", () => {
+    expect(child?.launched).toBeUndefined();
+  });
+
+  it("does not draw the same child a second time, parentless, under its task id", () => {
+    expect(roster.map((a) => a.id)).not.toContain("a1758523bf8ddf207");
+    expect(roster.filter((a) => a.parentId !== null).map((a) => a.id)).toEqual(["toolu_done", "toolu_async"]);
+  });
+
+  it("lands the notification's own words, under the child", () => {
+    const msg = events.find(
+      (e) => e.type === "agent_message" && (e as { from?: string }).from === "toolu_async",
+    ) as unknown as { role: string; state: string; to: string; text: string } | undefined;
+    expect(msg).toMatchObject({ role: "result", state: "completed", to: "main" });
+    expect(msg?.text).toContain("Saved 11 lines.");
+    // The join keys and the machine-local path are not words about the run.
+    expect(msg?.text).not.toContain("/private/tmp/tasks");
+  });
+
+  it("keeps the model the launch record named", () => {
+    expect(child?.model).toBe("claude-opus-4-8[1m]");
+  });
+
+  it("does not turn the launch receipt into the child's answer", () => {
+    const results = events.filter(
+      (e) => e.type === "agent_message" && (e as { role?: string }).role === "result",
+    ) as unknown as { from: string; text: string }[];
+    expect(results.find((m) => m.from === "toolu_async")?.text).not.toContain("launched successfully");
+  });
+
+  it("reads the same block out of a queue-operation record", () => {
+    const { roster: r } = fold({
+      type: "queue-operation",
+      operation: "enqueue",
+      content: NOTE("completed", "Saved 11 lines."),
+    });
+    expect(r.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(r.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+  });
+
+  it("reads the same block out of a queued_command attachment", () => {
+    const { roster: r } = fold({
+      type: "attachment",
+      attachment: { type: "queued_command", prompt: NOTE("completed", "Saved 11 lines.") },
+      uuid: "u4",
+      parentUuid: "u3",
+    });
+    expect(r.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(r.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+  });
+
+  it("lands the same block once when two records carry it", () => {
+    const text = NOTE("completed", "Saved 11 lines.");
+    const events2 = claudeCodeToRunEvents([
+      ...launches,
+      { type: "queue-operation", operation: "enqueue", content: text },
+      { type: "attachment", attachment: { type: "queued_command", prompt: text }, uuid: "u4" },
+      asUser(text),
+    ]);
+    expect(
+      events2.filter((e) => e.type === "agent_message" && (e as { from?: string }).from === "toolu_async"),
+    ).toHaveLength(1);
+  });
+
+  it("fails the child a failed report failed", () => {
+    const { roster: r } = fold(asUser(NOTE("failed", "the sandbox died")));
+    expect(r.find((a) => a.id === "toolu_async")?.state).toBe("failed");
+    expect(r.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+  });
+
+  it("leaves a progress report as progress — reported, not finished", () => {
+    const { roster: r } = fold(asUser(NOTE(null, "still reading")));
+    const c = r.find((a) => a.id === "toolu_async");
+    // It reported in, so the badge's sentence is false; it did not end, so the
+    // row is not completed either.
+    expect(c?.state).toBe("working");
+    expect(c?.launched).toBeUndefined();
+    expect(c?.lastStatus).toContain("still reading");
+  });
+
+  it("holds a report the file wrote down BEFORE the launch it answers", () => {
+    // 4 rows in ~/.claude/projects: a compaction replayed the launch after the
+    // queue-operation that had already taken the notification. Landing the
+    // outcome where it sits would put the ending in front of the spawn, and
+    // the task message right after it would reset the row to "submitted" — the
+    // file says completed, and the app would have said not started.
+    const events = claudeCodeToRunEvents([
+      launches[0],
+      { type: "queue-operation", operation: "enqueue", content: NOTE("completed", "Saved 11 lines.") },
+      launches[3],
+      launches[4],
+    ]);
+    const roster = reduceAll(initialState, events).agents;
+    expect(roster.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(roster.find((a) => a.id === "toolu_async")?.launched).toBeUndefined();
+    const kinds = (events as unknown as { type: string; from?: string; role?: string }[])
+      .filter((e) => (e.type === "agent_spawn" && e.from === undefined) || e.from === "toolu_async")
+      .map((e) => `${e.type}${e.role === undefined ? "" : `:${e.role}`}`);
+    expect(kinds).toEqual(["agent_spawn", "agent_message:result"]);
+  });
+
+  it("does not un-finish a child whose launch a compaction replayed", () => {
+    // 1 row in ~/.claude/projects: the launch record comes back 926 records
+    // later, and the task message riding with it says "submitted". A child the
+    // file had already reported completed went back to not-started.
+    const events = claudeCodeToRunEvents([...launches, asUser(NOTE("completed", "done")), launches[3]]);
+    const roster = reduceAll(initialState, events).agents;
+    expect(roster.find((a) => a.id === "toolu_async")?.state).toBe("completed");
+    expect(roster.filter((a) => a.id === "toolu_async")).toHaveLength(1);
+    expect(events.filter((e) => e.type === "agent_spawn")).toHaveLength(2);
+  });
+
+  it("still says nothing about a launch this file never mentions again", () => {
+    const { roster: r } = fold(asUser(NOTE("completed", "done").replace("toolu_async", "toolu_other")));
+    expect(r.find((a) => a.id === "toolu_async")).toMatchObject({ state: "working", launched: true });
+  });
+});
+
+describe("claudeCode adapter (a subagent that IS in the file)", () => {
+  // The older layout, and the one the child-run machinery was built for: the
+  // child's own records live in the parent's file. 0 of today's corpus does
+  // this, and the branch has to count tokens anyway or a file that does will
+  // silently drop them again.
+  const withChild: unknown[] = [
+    { type: "user", message: { role: "user", content: "go" }, uuid: "u1", parentUuid: null },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        id: "m1",
+        model: "claude-opus-5",
+        content: [{ type: "tool_use", id: "task1", name: "Task", input: { description: "read it" } }],
+      },
+      uuid: "a1",
+      parentUuid: "u1",
+    },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        id: "c1",
+        model: "claude-opus-5",
+        content: [{ type: "text", text: "read" }],
+        usage: { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 33 },
+      },
+      uuid: "s1",
+      parentUuid: "task1",
+      isSidechain: true,
+    },
+  ];
+
+  it("charges a sidechain response to the subagent that produced it", () => {
+    const events = claudeCodeToRunEvents(withChild);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "usage",
+        agentId: "task1",
+        inputTokens: 11,
+        outputTokens: 22,
+        cacheReadTokens: 33,
+      }),
+    );
+  });
+
+  it("leaves the context ring alone — the child has its own window", () => {
+    const state = reduceAll(initialState, claudeCodeToRunEvents(withChild));
+    expect(state.lastInputTokens).toBe(0);
+    expect(state.usage.outputTokens).toBe(22);
+  });
+
+  it("charges the response ONCE when both the child and the launch record bill it", () => {
+    // The launch record's `usage` is the child's whole run — `totalTokens` on
+    // the real records is exactly its four counters added up. A file that also
+    // holds the child's own records therefore says the same bill twice, and
+    // charging both paths doubled the child and the session total. The child's
+    // own records win: they are the per-response grain, and the summary is the
+    // same money counted again.
+    const mixed = [
+      ...withChild,
+      {
+        type: "user",
+        message: {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "task1", content: "read" }],
+        },
+        toolUseResult: {
+          status: "completed",
+          resolvedModel: "claude-haiku-4-5-20251001",
+          totalTokens: 66,
+          usage: { input_tokens: 11, output_tokens: 22, cache_read_input_tokens: 33 },
+        },
+        uuid: "u2",
+        parentUuid: "a1",
+      },
+    ];
+    const events = claudeCodeToRunEvents(mixed);
+    expect(
+      events.filter((e) => e.type === "usage" && (e as { agentId: string }).agentId === "task1"),
+    ).toHaveLength(1);
+    const state = reduceAll(initialState, events);
+    expect(state.agents.find((a) => a.id === "task1")?.outTokens).toBe(22);
+    expect(state.usage.outputTokens).toBe(22);
+    // The rest of the launch record's reading is unaffected.
+    expect(state.agents.find((a) => a.id === "task1")?.model).toBe("claude-haiku-4-5-20251001");
+  });
+});
+
+// WHERE THE RUN STOOD, AND WHEN IT MOVED (card 167, finding 8).
+//
+// Every user, assistant, system and attachment record stamps the working
+// directory, the git branch and the client version. Measured over the 167
+// session transcripts in ~/.claude/projects: 104 of them (62%) carry more than
+// one cwd, 32 more than one gitBranch, 12 more than one version. A run that
+// walked from a repo root into a worktree and back is a fact about every
+// relative path in every tool result after it, and the app said nothing.
+//
+// The importer already has the shape: provider_info is announced once up front
+// and again at each model switch. ground_info is the same announcement about
+// the ground under the run, and it is IMPORT-ONLY — a reading of somebody
+// else's file, never a frame our wire carries.
+describe("the ground under an imported run", () => {
+  // ground_info is IMPORT-ONLY, so it is deliberately not in the RunEvent
+  // union and the compiler is right to refuse a direct comparison. Same read
+  // as the four card-141 kinds get everywhere else in this file.
+  const typeOf = (e: RunEvent): string => (e as unknown as { type: string }).type;
+  const ground = (events: RunEvent[]): unknown[] => events.filter((e) => typeOf(e) === "ground_info");
+
+  it("announces where the run stood, once, off the first line that says so", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "queue-operation", operation: "enqueue" },
+      {
+        type: "user",
+        cwd: "/Users/x/repo",
+        gitBranch: "main",
+        version: "2.1.170",
+        message: { role: "user", content: "go" },
+      },
+      {
+        type: "assistant",
+        cwd: "/Users/x/repo",
+        gitBranch: "main",
+        version: "2.1.170",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    expect(ground(events)).toEqual([
+      expect.objectContaining({
+        type: "ground_info",
+        cwd: "/Users/x/repo",
+        gitBranch: "main",
+        version: "2.1.170",
+      }),
+    ]);
+    // No `from` on the opening announcement: nothing was left behind.
+    expect(ground(events)[0]).not.toHaveProperty("from");
+  });
+
+  it("says nothing at all about a file that records no ground", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", message: { role: "user", content: "go" } },
+      {
+        type: "assistant",
+        message: { role: "assistant", id: "m1", content: [{ type: "text", text: "ok" }] },
+      },
+    ]);
+    expect(ground(events)).toEqual([]);
+  });
+
+  it("carries only the fields the file recorded", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/Users/x/repo", message: { role: "user", content: "go" } },
+    ]);
+    expect(ground(events)).toEqual([expect.objectContaining({ cwd: "/Users/x/repo" })]);
+    expect(ground(events)[0]).not.toHaveProperty("gitBranch");
+    expect(ground(events)[0]).not.toHaveProperty("version");
+  });
+
+  it("marks a move, naming what it left and what it landed on", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/Users/x/repo", gitBranch: "main", message: { role: "user", content: "go" } },
+      {
+        type: "assistant",
+        cwd: "/Users/x/repo/worktrees/wt",
+        gitBranch: "main",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    const moves = ground(events);
+    expect(moves).toHaveLength(2);
+    expect(moves[1]).toMatchObject({
+      type: "ground_info",
+      cwd: "/Users/x/repo/worktrees/wt",
+      from: { cwd: "/Users/x/repo" },
+    });
+    // The branch did not move, so the move frame says nothing about it.
+    expect(moves[1]).not.toHaveProperty("gitBranch");
+  });
+
+  it("puts two fields that moved together on one frame", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/a", gitBranch: "main", message: { role: "user", content: "go" } },
+      {
+        type: "assistant",
+        cwd: "/b",
+        gitBranch: "feature",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      },
+    ]);
+    expect(ground(events)[1]).toMatchObject({
+      cwd: "/b",
+      gitBranch: "feature",
+      from: { cwd: "/a", gitBranch: "main" },
+    });
+  });
+
+  // 3,221 of the corpus's 3,692 cwd moves return to a directory the session
+  // already stood in (measured 2026-08-04). A move back is exactly as real as a move away — the
+  // relative paths in the tool results after it mean what they meant before —
+  // so it is announced, and it is announced as a move rather than as a repeat
+  // of the opening.
+  it("announces a move back to where it came from", () => {
+    const at = (cwd: string, id: string): unknown => ({
+      type: "assistant",
+      cwd,
+      message: { role: "assistant", id, model: "claude-opus-5", content: [{ type: "text", text: "x" }] },
+    });
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/a", message: { role: "user", content: "go" } },
+      at("/b", "m1"),
+      at("/a", "m2"),
+    ]);
+    const moves = ground(events);
+    expect(moves).toHaveLength(3);
+    expect(moves[2]).toMatchObject({ cwd: "/a", from: { cwd: "/b" } });
+  });
+
+  // A ground frame is a reading of the record's own line, so the source face
+  // opens on the line that recorded the move.
+  it("charges each ground frame to the line that recorded it", () => {
+    const text = [
+      JSON.stringify({ type: "user", cwd: "/a", message: { role: "user", content: "go" } }),
+      JSON.stringify({
+        type: "assistant",
+        cwd: "/b",
+        message: {
+          role: "assistant",
+          id: "m1",
+          model: "claude-opus-5",
+          content: [{ type: "text", text: "ok" }],
+        },
+      }),
+    ].join("\n");
+    const { events, source } = detectAndLoad(text);
+    const at = events.map((e, n) => (typeOf(e) === "ground_info" ? n : -1)).filter((n) => n >= 0);
+    expect(at).toHaveLength(2);
+    expect([source.origin[at[0]], source.origin[at[1]]]).toEqual([0, 1]);
+  });
+
+  it("never reaches a written session file", () => {
+    const events = claudeCodeToRunEvents([
+      { type: "user", cwd: "/a", message: { role: "user", content: "go" } },
+    ]);
+    expect(ground(events)).toHaveLength(1); // it is emitted …
+    expect(events.filter(isWireEvent).some((e) => typeOf(e) === "ground_info")).toBe(false); // … and unwritable
   });
 });
