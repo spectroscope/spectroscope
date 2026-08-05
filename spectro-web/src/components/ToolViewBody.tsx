@@ -13,6 +13,7 @@
 
 import { useMemo, useState } from "react";
 import type { AskedQuestion, QuestionOption, ToolView, WorkflowRun } from "./toolViews";
+import { breakShellChain } from "./shellChain";
 import { describeTool, runStats, splitInput } from "./toolViews";
 import type { ToolResultDetail } from "../import/toolResultDetail";
 import { bodyFace, markdownBody } from "./bodyFace";
@@ -380,7 +381,11 @@ function Structured({ view, name, lang }: { view: ToolView; name: string; lang: 
               <span className="tv-prompt" aria-hidden="true">
                 $
               </span>
-              {highlight(view.command, "shell")}
+              {/* One line per joint. 77% of the Bash cards in the store are
+                  chained, and the browser wraps them at whatever column the card
+                  happens to be — so the steps of a five-part command had no
+                  visual edge. Display only: the record keeps its own bytes. */}
+              {highlight(breakShellChain(view.command), "shell")}
             </div>
           </Region>
           {view.output !== "" && (

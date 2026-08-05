@@ -36,6 +36,7 @@
 //     reader came to check and nothing here can hand them back.
 
 import type { Lang } from "../i18n/i18n";
+import { breakShellChain } from "../components/shellChain";
 import type {
   AskedQuestion,
   QuestionOption,
@@ -339,7 +340,8 @@ export const TOOL_HTML: Writers = {
   command: (view, { lang }) =>
     head(label(lang, "command")) +
     `<pre class="x-tv-cmd"><code><span class="x-tv-prompt" aria-hidden="true">$ </span>` +
-    `${codeHtml(view.command, "shell")}</code></pre>` +
+    // The same break the app draws — the export exists to BE the view.
+    `${codeHtml(breakShellChain(view.command), "shell")}</code></pre>` +
     outputHtml(view.output, lang, `x-tv-term${view.failed ? " x-tv-term--failed" : ""}`) +
     // The other stream, on its own — the flattened text runs the two together.
     (view.stderr === null
