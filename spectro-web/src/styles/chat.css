@@ -497,3 +497,11 @@
 /* Disabled mid-run. Dimmed as well as inert: an unexplained click that does
    nothing reads as a broken control rather than a locked one. */
 .tr-check:has(input:disabled) { color: var(--text-faint); cursor: not-allowed; }
+
+/* The workspace chooser names the folder it is about (card 179). Basename as
+   text, full path in the title: the pattern the Files pane already uses. */
+.ws-chooser-folder {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.ws-chooser-new { color: var(--text-faint); }

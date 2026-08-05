@@ -49,10 +49,17 @@ export function Sidebar(props: {
   onSpawnNode: () => void;
   /** Remove a DONE fleet from the list (only offered when 0 nodes online). */
   onRemoveFleet?: (contextId: string) => void;
+  /** Which segment is showing. Lifted out of this component (card 179): while
+   *  it was a private useState, pressing `fleets` re-rendered the sidebar's own
+   *  list and NOTHING else — App was never told, so the whole right-hand side
+   *  stood still until something was loaded. */
+  nav: "sessions" | "fleets";
+  /** Switch segment. App owns the state so the surface can answer the press. */
+  onNav: (next: "sessions" | "fleets") => void;
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
-  const [nav, setNav] = useState<"sessions" | "fleets">("sessions");
+  const nav = props.nav;
   /** Piles the reader has unfolded, by group key. Piles start folded: the
    *  reason a pile exists is that its rows do not repay the space. */
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
@@ -192,7 +199,7 @@ export function Sidebar(props: {
             role="tab"
             aria-selected={nav === "sessions"}
             className={`sidebar-seg-btn${nav === "sessions" ? " active" : ""}`}
-            onClick={() => setNav("sessions")}
+            onClick={() => props.onNav("sessions")}
           >
             Sessions
           </button>
@@ -201,7 +208,7 @@ export function Sidebar(props: {
             role="tab"
             aria-selected={nav === "fleets"}
             className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
-            onClick={() => !props.fleetsLocked && setNav("fleets")}
+            onClick={() => !props.fleetsLocked && props.onNav("fleets")}
             aria-disabled={props.fleetsLocked ? true : undefined}
           >
             {t(lang, "nav.fleets")}

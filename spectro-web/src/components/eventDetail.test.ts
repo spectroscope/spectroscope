@@ -472,3 +472,61 @@ describe("describeEvent — nothing is dropped", () => {
     });
   }
 });
+
+// Card 179: a body is never printed inside JSON.
+//
+// The owner opened a `tool_result_detail` row in the structured face and got a
+// wurst: `detail.fileContent` is a whole markdown document, and JSON.stringify
+// spells every real newline in it as the two characters \ and n. What he saw
+// was the formatting the text already carried, written out instead of shown.
+describe("a body is lifted out of the object that held it", () => {
+  const detailFrame = (detail: unknown): unknown => ({
+    type: "tool_result_detail",
+    callId: "toolu_01A",
+    detail,
+    ts: 1,
+  });
+
+  it("gives a multi-line field its own section, under its own path", () => {
+    const secs = describeEvent("tool_result_detail", detailFrame({ fileContent: "# Title\n\nBody line." }));
+    const prose = secs.find((s) => s.kind === "prose") as { field: string; text: string } | undefined;
+    expect(prose?.field).toBe("detail.fileContent");
+    expect(prose?.text).toBe("# Title\n\nBody line.");
+  });
+
+  it("does not print the body inside a json blob any more", () => {
+    const secs = describeEvent("tool_result_detail", detailFrame({ fileContent: "# Title\n\nBody line." }));
+    const json = secs.filter((s) => s.kind === "json");
+    // Nothing left over here, so no skeleton at all — never a blob still
+    // holding the escaped body.
+    expect(JSON.stringify(json)).not.toContain("Body line.");
+  });
+
+  it("keeps the rest of the object as a skeleton, so nothing is dropped", () => {
+    const secs = describeEvent(
+      "tool_result_detail",
+      detailFrame({ fileContent: "a\nb", numLines: 2, filePath: "/tmp/x.md" }),
+    );
+    const json = secs.find((s) => s.kind === "json") as { value: unknown } | undefined;
+    expect(json?.value).toEqual({ numLines: 2, filePath: "/tmp/x.md" });
+    expect(secs.some((s) => s.kind === "prose" && s.field === "detail.fileContent")).toBe(true);
+  });
+
+  it("leaves a single-line value exactly where it was", () => {
+    // The test is a line break, not a length. A one-line string inside an
+    // object is a field, and a field belongs in the skeleton.
+    const secs = describeEvent("tool_result_detail", detailFrame({ note: "all on one line" }));
+    expect(secs.some((s) => s.kind === "prose")).toBe(false);
+    const json = secs.find((s) => s.kind === "json") as { value: unknown } | undefined;
+    expect(json?.value).toEqual({ note: "all on one line" });
+  });
+
+  it("never unescapes: a literal backslash-n stays a literal backslash-n", () => {
+    // 1,412 Bash commands in the corpus carry \n as CONTENT (tr '\n' ' ').
+    // Treating this rendering bug as a data bug would rewrite them.
+    const secs = describeEvent("tool_result_detail", detailFrame({ command: "tr '\\n' ' '" }));
+    expect(secs.some((s) => s.kind === "prose")).toBe(false);
+    const json = secs.find((s) => s.kind === "json") as { value: Record<string, string> } | undefined;
+    expect(json?.value.command).toBe("tr '\\n' ' '");
+  });
+});

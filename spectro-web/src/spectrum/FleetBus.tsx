@@ -292,19 +292,18 @@ export function FleetBus({
       )
     ) : null;
 
-  if (ordered.length === 0) {
-    return (
-      <div className="bus-canvas bus-canvas--empty">
-        <p className="bus-empty">{t(lang, "bus.empty")}</p>
-        {spawnSlot}
-      </div>
-    );
-  }
+  // No early return for an empty fleet. The rail IS the thing the reader came
+  // to see — "ich will den Bus vielleicht schon sehen" — and replacing it with
+  // a sentence meant the one surface that explains this app only appeared once
+  // it no longer needed explaining. Nothing below requires a node: railWidth
+  // measures the scroller on mount, and both maps yield nothing on an empty
+  // list, so the rail draws and the sentence sits on it beside the dock button.
 
   return (
     <div className="bus-canvas">
       <div className="bus-scroll" ref={scrollRef}>
-        <div className="bus-cards">
+        <div className={`bus-cards${ordered.length === 0 ? " bus-cards--empty" : ""}`}>
+          {ordered.length === 0 && <p className="bus-empty">{t(lang, "bus.empty")}</p>}
           {ordered.map((n) => {
             const card = cardById.get(n.id);
             if (card === undefined) return null;

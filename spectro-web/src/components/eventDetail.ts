@@ -141,6 +141,40 @@ export function toolResultDetailsById(payloads: Iterable<unknown>): Map<string, 
  *  "nothing is dropped" checkable instead of hopeful. */
 type Used = Set<string>;
 
+/**
+ * A body lifted out of an object, so it is never printed inside JSON.
+ *
+ * `JSON.stringify` turns every real newline inside a string value into the two
+ * characters `\` and `n`. So a nested object holding a whole markdown document
+ * — the importer's `tool_result_detail.detail.fileContent` is the one the owner
+ * hit — came out as one escaped wurst running across a dozen wrapped lines,
+ * with the formatting it already carried spelled out rather than shown.
+ *
+ * Measured over the whole store: of 3,192 `fileContent` frames, exactly ONE
+ * carries mostly literal backslash-n. The other 3,191 hold real newlines on
+ * disk. So this is a rendering defect, and the fix is to lift the string out
+ * before the stringify — never to unescape it. Unescaping would be treating a
+ * rendering bug as a data bug, and 1,412 Bash commands in this corpus carry a
+ * literal backslash-n as CONTENT (`tr '\n' ' '`), which a blind replace would
+ * rewrite. That law is `readable.ts`'s and it is not reopened here.
+ *
+ * @param value the object about to be stringified
+ * @return the multi-line string fields, and what is left once they are gone
+ */
+function liftBodies(value: unknown): { bodies: [string, string][]; rest: unknown } {
+  const record = asRecord(value);
+  if (record === null) return { bodies: [], rest: value };
+  const bodies: [string, string][] = [];
+  const rest: Record<string, unknown> = {};
+  for (const [key, inner] of Object.entries(record)) {
+    // A line break is the whole test. It is the text saying, in its own bytes,
+    // that it was written to be read on more than one line.
+    if (typeof inner === "string" && inner.includes("\n")) bodies.push([key, inner]);
+    else rest[key] = inner;
+  }
+  return { bodies, rest };
+}
+
 /** Every remaining field, in payload order: scalars as one block of rows, long
  *  text as prose, string arrays as lists, anything else as json. */
 function genericSections(p: Record<string, unknown>, used: Used): DetailSection[] {
@@ -167,7 +201,14 @@ function genericSections(p: Record<string, unknown>, used: Used): DetailSection[
         );
       } else blocks.push({ kind: "json", field: key, value });
     } else {
-      blocks.push({ kind: "json", field: key, value });
+      // The bodies come out first, each under its own path, and the skeleton
+      // follows so nothing is dropped: a reader still sees which fields the
+      // object had, and the ones worth reading are readable.
+      const { bodies, rest } = liftBodies(value);
+      for (const [inner, text] of bodies)
+        blocks.push({ kind: "prose", field: `${key}.${inner}`, text, markdown: false });
+      if (bodies.length === 0 || Object.keys(rest as object).length > 0)
+        blocks.push({ kind: "json", field: key, value: rest });
     }
   }
   return rows.length > 0 ? [{ kind: "rows", field: "", rows }, ...blocks] : blocks;

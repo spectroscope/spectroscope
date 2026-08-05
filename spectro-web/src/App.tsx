@@ -94,6 +94,7 @@ import { FleetBus } from "./spectrum/FleetBus";
 import { FleetBar } from "./spectrum/FleetBar";
 import { AgentFeed } from "./spectrum/AgentFeed";
 import { FleetHome } from "./spectrum/FleetHome";
+import { FleetLobby } from "./spectrum/FleetLobby";
 import { FleetSpawnForm } from "./spectrum/FleetSpawn";
 import {
   backToLive as labBackToLive,
@@ -107,6 +108,7 @@ import {
   knownFleet,
   useFleet,
   useFleetHubPort,
+  useFleets,
   fleetPending,
   removeFleet,
 } from "./state/fleetStore";
@@ -154,6 +156,17 @@ export function App() {
   // The third event source (parallel to replay): a contextId when a fleet is
   // entered, feeding the tabs that fleet's events instead of the own session.
   const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
+  /**
+   * Which sidebar segment is showing — App's, not the sidebar's.
+   *
+   * It lived as a private `useState` inside Sidebar, so pressing `fleets`
+   * re-rendered one list body and told nothing else. The whole right-hand side
+   * stood still until the reader loaded something, which is what "wenn ich in
+   * den Fleet Modus gehe, dann bleibt alles so, wie es ist" describes. Up here
+   * the surface can answer the press: `fleets` with nothing entered opens the
+   * lobby instead of leaving the last session standing.
+   */
+  const [nav, setNav] = useState<"sessions" | "fleets">("sessions");
   const [conn, setConn] = useState<ConnState>({ status: "connecting", retryAt: null });
   // Queue-while-running (card 78 #3): messages submitted during a run wait
   // here as chips and auto-send on run_end. Session-local — a new chat or a
@@ -767,6 +780,10 @@ export function App() {
     setReplay(null);
     setEnteredFleet(contextId);
     setTraceAgent(null);
+    // The sidebar follows the surface. A pasted #/fleet/{id} used to enter the
+    // fleet while the segment still read "Sessions", because the segment was a
+    // useState inside the sidebar that nothing outside could reach.
+    setNav("fleets");
     setTab("spectrum");
   };
 
@@ -833,6 +850,10 @@ export function App() {
       leaveToLiveCore();
       commitUrl({ kind: "live", tab: null }, "apply");
     }
+    // A home that locks fleets late must not strand the reader in a segment it
+    // will not let him open. Leaving the segment is separate from leaving a
+    // fleet: a locked home with nothing entered still has to come back.
+    if (fleetsLocked) setNav("sessions");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fleetsLocked, enteredFleet]);
 
@@ -1248,6 +1269,8 @@ export function App() {
   // Stop a fleet node from the canvas — best-effort, confirmed once (the node
   // leaves the roster when it actually ends; re-click if a lost stop stranded it).
   const fleetHubPort = useFleetHubPort();
+  // The lobby says how many fleets are already listed rather than implying none.
+  const fleets = useFleets();
   // useCallback so the reference stays stable across App re-renders (a live
   // socket batch, say): otherwise it would re-key FleetCanvas's layout memo and
   // re-run dagre on every render while a fleet is open.
@@ -1379,6 +1402,8 @@ export function App() {
       <ParticleField design={designPrefs.design} enabled={designPrefs.particles} />
       {sidebarOpen && (
         <Sidebar
+          nav={nav}
+          onNav={setNav}
           fleetsLocked={leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false}
           activeId={replay === null ? null : replay.id}
           refreshToken={refreshToken}
@@ -1461,7 +1486,7 @@ export function App() {
         {/* Brand voice: tab labels are lowercase wire vocabulary. */}
         {/* Variant B (0.7 A/B): an entered fleet swaps the whole nav for its
             own bar — [bus] [one tab per agent] [+]. */}
-        {enteredFleet !== null ? (
+        {nav === "fleets" && enteredFleet === null ? null : enteredFleet !== null ? (
           <FleetBar
             model={enteredFleetModel}
             active={fleetTab}
@@ -1566,7 +1591,18 @@ export function App() {
         {/* Variant B: the entered fleet's surface answers to ITS bar, not to
             the app tabs — bus = the ESB reading, anything else = that agent's
             feed. The tab ternaries below never see an entered fleet. */}
-        {enteredFleet !== null ? (
+        {/* The fleets segment with nothing entered: the lobby, not the last
+            session left standing. This branch sits ABOVE the entered-fleet one
+            because "which segment" outranks "which fleet" — the reader pressed
+            fleets, so fleets is what answers. */}
+        {nav === "fleets" && enteredFleet === null ? (
+          <FleetLobby
+            fleetCount={fleets.length}
+            hubPort={fleetHubPort}
+            onSelectScenario={openScenario}
+            onSpawn={() => setSpawnDialogOpen(true)}
+          />
+        ) : enteredFleet !== null ? (
           fleetTab === "bus" ? (
             <FleetBus
               model={enteredFleetModel}
