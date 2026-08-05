@@ -544,6 +544,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.cat.text": { de: "text", en: "text" },
   "trace.cat.thinking": { de: "thinking", en: "thinking" },
   "trace.cat.tool": { de: "tool", en: "tool" },
+  // The two chips that ask what the tool was. Same word in both languages for
+  // the same reason as their neighbours: it IS the wire vocabulary. "workflow"
+  // is the tool's own name, and "mcp" is the prefix every tool served over MCP
+  // wears, which is also what a reader recognises on the row.
+  "trace.cat.workflow": { de: "workflow", en: "workflow" },
+  "trace.cat.mcp": { de: "mcp", en: "mcp" },
   "trace.cat.permission": { de: "permission", en: "permission" },
   "trace.cat.usage": { de: "usage", en: "usage" },
   "trace.cat.image": { de: "image", en: "image" },
