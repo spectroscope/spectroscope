@@ -50,6 +50,18 @@ export interface Detail {
    * screenshots would otherwise draw forty on one.
    */
   attached: Record<string, { src: string; note: string }[] | undefined>;
+  /**
+   * The agent this stream is rooted at.
+   *
+   * "main" for a session file, but a standalone subagent transcript roots at
+   * its OWN id (claudeCode.ts sets `rootId = subagentRoot`), and the map read
+   * the literal "main" everywhere. 66% of the corpus's pictures sit in sidecar
+   * files, so on two thirds of them the agent card asked for an agent that is
+   * not in the stream and got nothing — not just the pictures: the prompt, the
+   * reasoning, the answer and the in-flight tool as well. Card 179's panel
+   * inherited that shape rather than causing it.
+   */
+  root: string;
 }
 
 /** How many pictures one card shows. The rest are in the chat and the trace. */
@@ -96,7 +108,9 @@ export function deriveDetail(applied: RunEvent[]): Detail {
     answer: {},
     genImage: {},
     attached: {},
+    root: "main",
   };
+  let rootSeen = false;
   for (const e of applied) {
     // Import-only frames are not in the RunEvent union — they never travel the
     // wire, so they are read off the shape rather than switched on. Kept ahead
@@ -117,12 +131,17 @@ export function deriveDetail(applied: RunEvent[]): Detail {
         d.genImage[e.agentId] = { src: imageUrl(e.blobPath), prompt: e.prompt };
         break;
       case "run_start":
+        // The FIRST run_start names the root. Later ones are children.
+        if (!rootSeen) {
+          d.root = e.agentId;
+          rootSeen = true;
+        }
         d.think[e.agentId] = "";
         d.answer[e.agentId] = "";
-        if (e.agentId === "main") d.prompt = e.prompt;
+        if (e.agentId === d.root) d.prompt = e.prompt;
         break;
       case "context_info":
-        if (e.agentId === "main") {
+        if (e.agentId === d.root) {
           d.ctxParts = e.parts;
           d.ctxTotals = { messages: e.messages, estimatedTokens: e.estimatedTokens, threshold: e.threshold };
         }
@@ -646,9 +665,9 @@ export function sceneToFlow(
     ctxTotals: detail.ctxTotals,
     prompt: detail.prompt,
     systemPrompt: opts.systemPrompt ?? null,
-    tool: detail.tool["main"] ?? null,
-    genImage: detail.genImage["main"] ?? null,
-    attached: detail.attached["main"] ?? null,
+    tool: detail.tool[detail.root] ?? null,
+    genImage: detail.genImage[detail.root] ?? null,
+    attached: detail.attached[detail.root] ?? null,
   });
 
   // ----- OS band ----- Stations are SHARED infrastructure: disk, shell and
@@ -686,7 +705,7 @@ export function sceneToFlow(
   // so it animates and streams for whichever agent is at it right now)
   const llmBusy = scene.focus === "llm" || scene.subagents.some((c) => c.focus === "llm");
   const streamsOf = (rec: Record<string, string>): AgentStream[] =>
-    ["main", ...scene.subagents.map((c) => c.id)]
+    [detail.root, ...scene.subagents.map((c) => c.id)]
       .map((id) => ({ agent: id, text: rec[id] ?? "" }))
       .filter((s) => s.text.length > 0);
   N("llm", "llm", {

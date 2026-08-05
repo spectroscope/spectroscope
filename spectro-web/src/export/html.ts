@@ -506,6 +506,20 @@ function toolHtml(card: ToolCard, lang: Lang, open: boolean): string {
     "</summary>",
     `<div class="x-body">`,
     toolViewHtml(view, { name: card.name, lang }),
+    // What the tool HANDED BACK as a picture (card 179). The user bubble above
+    // has rendered its attachments as data: URIs since it was written; a card
+    // never did, and 7,325 of the corpus's 8,782 imported pictures — 83% — sit
+    // on a card. Two files in the heaviest twelve are total losses: 34 and 58
+    // pictures, all on cards, exporting a document that looks like the app and
+    // holds none of them. The export exists to BE the view.
+    (card.images ?? [])
+      .map(
+        (a) =>
+          `<img alt="${escapeHtml(a.name)}" title="${escapeHtml(a.name)}"` +
+          ` style="max-width:100%;border-radius:7px;margin:6px 0 0"` +
+          ` src="data:${escapeHtml(a.mediaType)};base64,${escapeHtml(a.dataBase64)}">`,
+      )
+      .join(""),
     "</div></details>",
   ].join("");
 }

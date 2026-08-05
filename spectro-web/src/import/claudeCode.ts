@@ -1422,7 +1422,23 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         // says otherwise: 0 of the 555 appear as a user record with the same
         // text and only 21 share a task id with any user record in their own
         // file, so dropping them would lose the report entirely.
-        const prompt = asText(a.prompt);
+        // The pictures a person pasted into a queued prompt (card 179). This
+        // is the ONE block-reading path in the file with no imageFrame call,
+        // and it is not a rare one: 212 blocks over 177 records, every single
+        // one commandMode "prompt" — a person's own paste, never a task
+        // notification. 145 of those records have their words nowhere else in
+        // the file and 17 carry no words at all, so this frame is the only
+        // trace of the whole message.
+        //
+        // standalone always: the words of a queued command go into the frame
+        // below and never into a user bubble, so a parked picture would glue
+        // itself to the next message, which it had nothing to do with.
+        if (Array.isArray(a.prompt))
+          for (const b of a.prompt as CCBlock[]) {
+            const pic = imageFrame(b, ts, "main", undefined, true);
+            if (pic !== null) out.push(pic);
+          }
+        const prompt = asText(a.prompt, true);
         out.push({
           type: "queued_command",
           ...(prompt !== "" ? { prompt } : {}),

@@ -260,6 +260,11 @@ export interface UiState {
    *  next bubble, exactly as `outboxAttachments` is for a live send. Its own
    *  field because the two mean different things and run_start clears that one. */
   importedAttachments?: UserAttachment[];
+  /** Pictures whose tool_call has not arrived yet, by callId. A compaction
+   *  replays a tool_result ahead of the tool_use it answers, and then the
+   *  picture would reach a card that does not exist and be dropped without a
+   *  trace. `tool_call` drains this into the card it builds. */
+  orphanCardImages?: Record<string, UserAttachment[]>;
   /** Session-wide agent roster (main + every subagent), persisted across runs. */
   agents: AgentInfo[];
   /** Latest `plan` snapshot (additive) — latest-wins, null until the
@@ -707,6 +712,10 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     }
 
     case "tool_call": {
+      // Pictures that arrived before this call did (a compaction replay) are
+      // waiting under its id. Draining them here is what makes the hold above
+      // safe: the card is built once, with what was held already on it.
+      const held = state.orphanCardImages?.[event.callId];
       const card: ToolCard = {
         callId: event.callId,
         agentId: event.agentId,
@@ -714,9 +723,17 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         input: event.input,
         status: "pending",
         startedAt: event.ts,
+        ...(held !== undefined ? { images: held } : {}),
       };
+      const orphans = { ...(state.orphanCardImages ?? {}) };
+      delete orphans[event.callId];
       return addTurn(
-        { ...state, thinkingActive: false, cards: { ...state.cards, [card.callId]: card } },
+        {
+          ...state,
+          thinkingActive: false,
+          cards: { ...state.cards, [card.callId]: card },
+          ...(held !== undefined ? { orphanCardImages: orphans } : {}),
+        },
         { kind: "tool", callId: card.callId },
       );
     }
@@ -924,7 +941,22 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         };
         if (typeof raw.callId === "string" && raw.callId !== "") {
           const card = state.cards[raw.callId];
-          return patchCard(state, raw.callId, { images: [...(card?.images ?? []), shot] });
+          // A compaction replays a tool_result AHEAD of the assistant record
+          // holding the tool_use it answers, so the picture can arrive before
+          // its card exists. patchCard no-ops on a missing card and the
+          // tool_call below would then build a fresh one over it: the picture
+          // gone, silently, which is the exact failure this whole card exists
+          // to end. Held by callId instead, and tool_call drains it. NOT a stub
+          // card — one whose tool_call never arrives would render with an empty
+          // name.
+          if (card === undefined) {
+            const held = state.orphanCardImages ?? {};
+            return {
+              ...state,
+              orphanCardImages: { ...held, [raw.callId]: [...(held[raw.callId] ?? []), shot] },
+            };
+          }
+          return patchCard(state, raw.callId, { images: [...(card.images ?? []), shot] });
         }
         // Nothing else in that record spoke, so the picture IS the message.
         // Parking it would glue it to whatever was said next, which is a
