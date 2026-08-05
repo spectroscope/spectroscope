@@ -190,4 +190,11 @@ describe("the zoom is stepless", () => {
     // for "is there an instrument here": on a 123-event session nothing showed.
     expect(view).not.toContain("needsViewport(");
   });
+
+  it("is simply always there, on any stream with a lane", () => {
+    // Owner: "die scrubbing zoom ui bitte immer einblenden. auch wenn es nur
+    // eine kurze interaktion ist". A control that moves depending on how much
+    // happened is one a reader cannot build a habit around.
+    expect(view).toContain("const zoomable = model.lanes.length > 0;");
+  });
 });

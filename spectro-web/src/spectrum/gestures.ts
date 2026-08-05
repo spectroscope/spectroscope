@@ -205,12 +205,70 @@ export function followMark(win: Window, x: number, minW: number): Window {
   return x < win.a ? normalize(x, x + w, minW) : normalize(x - w, x, minW);
 }
 
-/** Drag on the overview strip: put the current window over the pointer.
+/** Which part of the strip's window a pointer is on. */
+export type StripGrip = "start" | "end" | "body";
+
+/**
+ * What the pointer would grab: an end of the window, or the window itself.
  *
- *  Width never changes, so the strip pans and never zooms. Edge handles would be
- *  the obvious addition and are deliberately absent: at the zoom floor the
- *  window box is a fraction of a pixel wide, and the usual fix is a minimum
- *  drawn width, which then lies about the window it represents. */
+ * The ends ARE grabbable now (owner, 2026-08-05: "die anfasser sind immernoch
+ * nicht da"), and the objection that kept them out for a while is answered
+ * rather than overruled. It was: at the zoom floor the window box is a fraction
+ * of a pixel wide, and the usual fix — a minimum DRAWN width — makes the box lie
+ * about the window it stands for.
+ *
+ * So the drawing keeps telling the truth and the HIT ZONE is what gets the
+ * generosity. A grab zone is not a claim about anything; it is how close a
+ * finger has to be. And where the window is genuinely too narrow to have two
+ * distinguishable ends, there are none: everything is `body`, which pans, which
+ * is what a reader wants at that depth anyway.
+ *
+ * @param win the current window
+ * @param px the pointer, in strip pixels from its left edge
+ * @param widthPx the strip's drawn width
+ * @param grabPx how close counts as an end
+ * @return which grip the pointer is on
+ */
+export function stripGripAt(win: Window, px: number, widthPx: number, grabPx: number): StripGrip {
+  if (!Number.isFinite(px) || widthPx <= 0) return "body";
+  const startPx = win.a * widthPx;
+  const endPx = win.b * widthPx;
+  // Two zones need room to be two. Below that the window is one thing, and a
+  // reader reaching for it means the whole of it.
+  if (endPx - startPx < grabPx * 3) return "body";
+  if (Math.abs(px - startPx) <= grabPx) return "start";
+  if (Math.abs(px - endPx) <= grabPx) return "end";
+  return "body";
+}
+
+/**
+ * Drag an END of the window: the other end stays where it is.
+ *
+ * This is the stepless zoom the owner asked for, in its second form — the wheel
+ * zooms around a point, this sets a span directly. Dragging one end past the
+ * other does not flip the window: it stops at the floor, because a window whose
+ * start is after its end is not a thing this app can show.
+ *
+ * @param win the current window
+ * @param grip which end is being dragged; `body` returns the window untouched
+ * @param px the pointer, in strip pixels from its left edge
+ * @param widthPx the strip's drawn width
+ * @param minW the zoom floor as a fraction of the whole
+ * @return the resized window
+ */
+export function stripResize(win: Window, grip: StripGrip, px: number, widthPx: number, minW: number): Window {
+  if (grip === "body") return win;
+  const at = fromScreen(px, { a: 0, b: 1 }, widthPx);
+  if (at === null) return win;
+  return grip === "start"
+    ? normalize(Math.min(at, win.b - minW), win.b, minW)
+    : normalize(win.a, Math.max(at, win.a + minW), minW);
+}
+
+/** Drag the BODY of the strip's window: put it over the pointer.
+ *
+ *  Width never changes here, so this pans and never zooms; the ends above are
+ *  what changes a span. */
 export function stripWindowFromPointer(win: Window, px: number, widthPx: number, minW: number): Window {
   const centre = fromScreen(px, { a: 0, b: 1 }, widthPx);
   if (centre === null) return win;

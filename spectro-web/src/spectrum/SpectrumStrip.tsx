@@ -13,10 +13,10 @@
 // Dumb wiring. The bins, the heights and the drag arithmetic are all pure and
 // pinned in overview.ts, gestures.ts and viewport.ts.
 
-import { useMemo, useRef, type PointerEvent } from "react";
+import { useMemo, useRef, useState, type PointerEvent } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { stripWindowFromPointer } from "./gestures";
+import { stripGripAt, stripResize, stripWindowFromPointer, type StripGrip } from "./gestures";
 import { useWheelZoom } from "./useWheelZoom";
 import { barHeight, densityProfile } from "./overview";
 import { TICK_COLOR } from "./SpectrumBand";
@@ -24,6 +24,10 @@ import type { LaneTick } from "./spectrumModel";
 import type { Window } from "./viewport";
 
 const STRIP_W = 1000;
+/** How close a pointer has to be to an end to take hold of it. Six device
+ *  pixels: the same order as a window-edge grab anywhere else, and small enough
+ *  that the middle of a modest window is still a pan. */
+const GRAB_PX = 6;
 const STRIP_H = 30;
 
 export function SpectrumStrip({
@@ -51,21 +55,46 @@ export function SpectrumStrip({
   const latest = useRef({ win, minW, onWindow });
   latest.current = { win, minW, onWindow };
 
-  const drag = (e: PointerEvent<HTMLDivElement>) => {
+  /** Which end this drag took hold of, for as long as it lasts. Held rather
+   *  than recomputed per move: a fast drag outruns its own grab zone, and
+   *  re-asking mid-gesture would drop the end and start panning instead. */
+  const held = useRef<StripGrip>("body");
+  /** What the pointer WOULD grab, so the cursor can say so before the press. */
+  const [hover, setHover] = useState<StripGrip>("body");
+
+  const drag = (e: PointerEvent<HTMLDivElement>, grip: StripGrip) => {
     const rect = ref.current?.getBoundingClientRect();
     if (!rect) return;
     const now = latest.current;
-    now.onWindow(stripWindowFromPointer(now.win, e.clientX - rect.left, rect.width, now.minW));
+    const px = e.clientX - rect.left;
+    now.onWindow(
+      grip === "body"
+        ? stripWindowFromPointer(now.win, px, rect.width, now.minW)
+        : stripResize(now.win, grip, px, rect.width, now.minW),
+    );
   };
 
   // Pointer capture, so a drag that leaves the strip keeps steering it instead
   // of stopping dead at the edge, which is where a reader is usually heading.
   const onDown = (e: PointerEvent<HTMLDivElement>) => {
+    const rect = ref.current?.getBoundingClientRect();
+    held.current = rect
+      ? stripGripAt(latest.current.win, e.clientX - rect.left, rect.width, GRAB_PX)
+      : "body";
     e.currentTarget.setPointerCapture(e.pointerId);
-    drag(e);
+    drag(e, held.current);
   };
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) drag(e);
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      drag(e, held.current);
+      return;
+    }
+    // Not dragging: just say what this spot does. The ends are invisible on
+    // purpose — no knobs are drawn, because a knob would have to be wider than
+    // the window it sits on once the window is a hairline — so the cursor is
+    // the whole of the affordance and it has to be right.
+    const rect = ref.current?.getBoundingClientRect();
+    setHover(rect ? stripGripAt(latest.current.win, e.clientX - rect.left, rect.width, GRAB_PX) : "body");
   };
 
   // The wheel gesture, the SAME one the lanes have (owner, 2026-08-05: "das cmd
@@ -97,10 +126,11 @@ export function SpectrumStrip({
 
   return (
     <div
-      className="spectrum-strip"
+      className={`spectrum-strip${hover === "body" ? "" : " spectrum-strip--grip"}`}
       ref={ref}
       onPointerDown={onDown}
       onPointerMove={onMove}
+      onPointerLeave={() => setHover("body")}
       role="img"
       aria-label={t(lang, "sp.stripAria")}
     >
