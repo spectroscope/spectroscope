@@ -74,17 +74,22 @@ class SessionFoldersTest {
     }
 
     /**
-     * The scratchpad root is the literal {@code /tmp}, not {@code java.io.tmpdir}.
+     * The scratchpad root is the literal {@code /tmp}.
      *
-     * <p>On macOS that property is a per-process folder under
-     * {@code /var/folders} and the scratchpad is not in it. Measured on the
-     * machine this was written on: the harness writes {@code /tmp/claude-501/…}
-     * while the property read {@code /var/folders/88/…/T/}. This pins the
-     * distinction rather than the existence of any particular folder, so it
-     * holds on a machine that has never run the harness.</p>
+     * <p>The first version of this test also asserted the root is NOT
+     * {@code java.io.tmpdir}, and that assertion was wrong — not about the code,
+     * about the world. On macOS the property is a per-process folder under
+     * {@code /var/folders} and the two genuinely differ, which is the reason the
+     * literal is here at all; on Linux the property IS {@code /tmp}, so the
+     * negative could never hold and the CI runner said so within a minute of a
+     * merge. A macOS-only fact was pinned as a universal one, and a gate that
+     * runs only on macOS can never catch that.</p>
+     *
+     * <p>So the positive claim is asserted always, and the distinction only
+     * where a distinction exists.</p>
      */
     @Test
-    void theScratchpadIsUnderTmpAndNotUnderTheProcessTempDir(@TempDir Path store) throws Exception {
+    void theScratchpadIsUnderTmp(@TempDir Path store) throws Exception {
         Path project = Files.createDirectories(store.resolve("-Users-me-Repo"));
         Path file = Files.writeString(project.resolve("abc-123.jsonl"), "{}");
 
@@ -94,7 +99,13 @@ class SessionFoldersTest {
         }
         assertTrue(pad.startsWith("/tmp"), pad.toString());
         assertTrue(pad.toString().endsWith("/-Users-me-Repo/abc-123/scratchpad"), pad.toString());
-        assertFalse(pad.startsWith(System.getProperty("java.io.tmpdir")), pad.toString());
+
+        // Only where the two really are different places — which is the whole
+        // reason the literal is not the property.
+        String processTemp = System.getProperty("java.io.tmpdir");
+        if (!Path.of(processTemp).normalize().equals(Path.of("/tmp"))) {
+            assertFalse(pad.startsWith(processTemp), pad.toString());
+        }
     }
 
     @Test
