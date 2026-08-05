@@ -92,10 +92,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the owner looking for a parsing bug that was not there (card 141). The
   // number is smaller now as well, because four of the kinds it counted became
   // frames; what is left really does carry nothing.
+  // Card 152 corrected the last of it. "110 lines carry no conversation" is a
+  // claim about the FILE, and on a subagent transcript it was flatly false: all
+  // 110 of those lines held a conversation, and the importer could not
+  // attribute them. The number is a measurement of what this importer read, so
+  // the sentence says that instead. What the reader does with it is the same
+  // either way; what it no longer does is describe somebody else's file as
+  // empty.
   "imp.bar": {
-    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen tragen kein Gespräch. Nichts wurde auf die Platte geschrieben.",
-    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines carry no conversation. Nothing was written to disk.",
+    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, aus {zero} Zeilen wurde nichts gelesen. Nichts wurde auf die Platte geschrieben.",
+    en: "Imported from {file}. {lines} lines, {frames} frames, nothing read from {zero} of them. Nothing was written to disk.",
   },
+  // What a standalone subagent transcript is, said in three clauses so that a
+  // file which names only its agent says only that. See importBar.ts.
+  "imp.subagent": {
+    de: "Das ist das Transkript eines Subagenten, keine Sitzung: Agent {agent}.",
+    en: "This is a subagent transcript, not a session: agent {agent}.",
+  },
+  "imp.subagentKind": { de: "Art: {kind}.", en: "Kind: {kind}." },
+  "imp.subagentSession": { de: "Er lief in Sitzung {session}.", en: "It ran in session {session}." },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },

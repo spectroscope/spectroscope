@@ -12,6 +12,9 @@ import ccWorkflow from "./fixtures/cc-workflow.jsonl?raw";
 import ccFollowup from "./fixtures/cc-followup.jsonl?raw";
 import ccUserBlocks from "./fixtures/cc-user-blocks.jsonl?raw";
 import ccSplit from "./fixtures/cc-split-message.jsonl?raw";
+import ccStandalone from "./fixtures/cc-standalone-subagent.jsonl?raw";
+import ccStandaloneNested from "./fixtures/cc-standalone-nested.jsonl?raw";
+import ccOrphanSidechain from "./fixtures/cc-orphan-sidechain.jsonl?raw";
 import ccBlankCards from "./fixtures/cc-blank-cards.jsonl?raw";
 import ccToolResult from "./fixtures/cc-tool-result.jsonl?raw";
 import ccCompaction from "./fixtures/cc-compaction.jsonl?raw";
@@ -25,6 +28,7 @@ import {
 import { detectAndLoad } from "./detect";
 import { advanceScene, initialScene } from "../lab/labScene";
 import { initialState, reduceAll } from "../state/reducer";
+import { sourceStats } from "../state/traceSource";
 import { buildTextFeed } from "../state/textFeed";
 import { isWireEvent } from "../wire/nonWire";
 
@@ -1318,6 +1322,227 @@ describe("claudeCode adapter (text blocks in a user record)", () => {
         (e as unknown as { text: string }).text === "[Request interrupted by user]",
     );
     expect(source.origin[at]).toBe(3); // the fourth line of the file, counted from zero
+  });
+});
+
+// A standalone subagent transcript is a session (card 152).
+//
+// ~/.claude/projects holds far more subagent transcripts than session
+// transcripts, and every one of them imported to nothing: the per-record rule
+// at the top of the sidechain branch drops a sidechain record whose owner is
+// not in the file, and in one of these files no record has an owner in the
+// file, because the owner is in another file entirely.
+//
+// The rule stays right where it is right. What was missing is the question one
+// level up: a file whose records are ALL sidechain is not a session with
+// orphans in it, it is one agent's transcript, and it names that agent on every
+// line. Reading that name is reading. The parent is the part that really is
+// absent, and run_start.parentId was already optional, so the root can stand
+// without one.
+describe("claudeCode adapter (a standalone subagent transcript)", () => {
+  const events = parseTranscript(ccStandalone);
+  const AGENT = "a0b476c3c018";
+
+  it("opens a root run under the agent the file names, with no parent", () => {
+    expect(events[0]).toMatchObject({ type: "provider_info" });
+    const start = events.find((e) => e.type === "run_start");
+    expect(start).toMatchObject({ type: "run_start", runId: "cc-import", agentId: AGENT });
+    // The absence is the claim: a parentId here would point at a `main` this
+    // file does not hold.
+    expect(start).not.toHaveProperty("parentId");
+  });
+
+  it("takes the prompt from the first record, which is the task it was given", () => {
+    const start = events.find((e) => e.type === "run_start") as { prompt: string };
+    expect(start.prompt).toBe(
+      "Build ONE large dark poster and a deterministic stdlib Python generator for it.",
+    );
+  });
+
+  it("gives the reader the thinking, the tools and the usage under that agent", () => {
+    expect(events.some((e) => e.type === "thinking_delta" && e.agentId === AGENT)).toBe(true);
+    expect(events.some((e) => e.type === "tool_call" && e.agentId === AGENT && e.name === "Read")).toBe(true);
+    expect(events.some((e) => e.type === "tool_result" && e.agentId === AGENT)).toBe(true);
+    expect(events.some((e) => e.type === "text_delta" && e.agentId === AGENT)).toBe(true);
+    expect(events.some((e) => e.type === "usage" && e.agentId === AGENT && e.outputTokens === 220)).toBe(
+      true,
+    );
+    expect(events.filter((e) => e.type === "turn_start").every((e) => e.agentId === AGENT)).toBe(true);
+  });
+
+  // THE TESTS THAT WOULD HAVE CAUGHT A BAD MERGE.
+  //
+  // This branch and card 167 rewrote the same sidechain branch hours apart, and
+  // both test files conflicted too — so the merged suite could not catch a bad
+  // resolution by itself. The specific trap: `emitBlock` gained two OPTIONAL
+  // parameters on main, `detail` and `agent`. A resolution that keeps this
+  // branch's three-argument call sites compiles, and nothing fails; the import
+  // just quietly renders less. On a standalone transcript that would be EVERY
+  // tool result losing its detail, and an outage record announcing a model
+  // named `<synthetic>` — the exact defect card 167 had just removed.
+  //
+  // So the arguments are pinned here, where they can only be dropped loudly.
+  it("carries what the tool returned, the way a session file does", () => {
+    const detail = events.find(
+      (e) => (e as unknown as { type: string }).type === "tool_result_detail",
+    ) as unknown as { callId: string; detail: { numLines?: number; startLine?: number } } | undefined;
+    expect(detail).toBeDefined();
+    expect(detail?.callId).toBe("call_read");
+    // The record's own reading of the read: which slice of the file it was.
+    expect(detail?.detail).toMatchObject({ numLines: 1, startLine: 42 });
+  });
+
+  it("never announces the model an outage record names", () => {
+    // `isApiErrorMessage` records carry model "<synthetic>". Announcing it made
+    // the trace claim the run had switched to a model by that name.
+    const outage = parseTranscript(
+      [
+        JSON.stringify({
+          type: "user",
+          message: { role: "user", content: "do the thing" },
+          uuid: "u1",
+          isSidechain: true,
+          agentId: "a0b476c3c018",
+          timestamp: "2026-08-03T09:00:00.000Z",
+        }),
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            role: "assistant",
+            id: "m1",
+            model: "<synthetic>",
+            content: [{ type: "text", text: "API Error: Connection error." }],
+          },
+          uuid: "a1",
+          parentUuid: "u1",
+          isSidechain: true,
+          agentId: "a0b476c3c018",
+          isApiErrorMessage: true,
+          timestamp: "2026-08-03T09:00:01.000Z",
+        }),
+      ].join("\n"),
+    );
+    const models = outage
+      .filter((e) => (e as unknown as { model?: string }).model !== undefined)
+      .map((e) => (e as unknown as { model: string }).model);
+    expect(models).not.toContain("<synthetic>");
+    // And the outage still reaches the reader, as an error rather than as prose
+    // the model is credited with.
+    expect(outage.some((e) => e.type === "error")).toBe(true);
+  });
+
+  it("bills the file's own agent once per response, not twice", () => {
+    // Both paths existed for a moment: this branch pushed a usage frame for the
+    // root itself, and main bills every sidechain owner generically. The
+    // reducer folds usage ADDITIVELY, so keeping both would have doubled the
+    // footer, the agents panel and the context ring with nothing to fail.
+    const usage = events.filter((e) => e.type === "usage" && e.agentId === AGENT) as unknown as {
+      ts: number;
+      outputTokens: number;
+    }[];
+    // The file records its cost on two responses, so two frames — and each
+    // response appears once. A second path would repeat a (ts, tokens) pair
+    // rather than add a new one, which is why the pairs are what is pinned.
+    expect(usage).toHaveLength(2);
+    expect(usage.map((e) => `${e.ts}:${e.outputTokens}`)).toEqual([
+      `${usage[0].ts}:140`,
+      `${usage[1].ts}:220`,
+    ]);
+    expect(new Set(usage.map((e) => e.ts)).size).toBe(usage.length);
+  });
+
+  it("closes on the file's own stop reason", () => {
+    expect(events.at(-1)).toMatchObject({ type: "run_end", runId: "cc-import", stopReason: "end_turn" });
+  });
+
+  it("lets a mid-run message to the agent reach the stream", () => {
+    // The coordinator writing to a working subagent arrives as a plain string
+    // in the user channel. A string yields no blocks, so the block loop turned
+    // a real turn of the conversation into silence.
+    const said = events.filter((e) => (e as unknown as { type: string }).type === "user_message");
+    expect(said.map((e) => (e as unknown as { text: string }).text)).toEqual([
+      "The coordinator sent a message while you were working: make the accent amber.",
+      "[Request interrupted by user]",
+    ]);
+  });
+
+  it("stops reading an interruption back as the model's own words", () => {
+    // A `text` block in the user channel was emitted as a text_delta under the
+    // agent, so the trace showed the model announcing its own interruption.
+    // This is what card 141 fixed on the main path, one branch over.
+    const spoken = events
+      .filter((e) => e.type === "text_delta")
+      .map((e) => (e as unknown as { text: string }).text);
+    expect(spoken).not.toContain("[Request interrupted by user]");
+  });
+
+  it("leaves no line of the file on the no-conversation pile", () => {
+    const { source } = detectAndLoad(ccStandalone);
+    const stats = sourceStats(source);
+    expect(stats.lines).toBe(7);
+    expect(stats.zeroLines).toBe(0);
+    expect(stats.frames).toBeGreaterThan(10);
+  });
+
+  it("hands the reader what the file says it is, and nothing it does not", () => {
+    const { subagent } = detectAndLoad(ccStandalone);
+    expect(subagent).toEqual({
+      agentId: AGENT,
+      sessionId: "902488ae-c4cf-49ef-a57c-cd914740bee2",
+      attributionAgent: "general-purpose",
+    });
+  });
+
+  it("says nothing of the kind about an ordinary session", () => {
+    expect(detectAndLoad(ccLinear).subagent).toBeUndefined();
+    expect(detectAndLoad(ccSubagent).subagent).toBeUndefined();
+  });
+
+  it("folds to a session whose root is that agent", () => {
+    const state = reduceAll(initialState, events);
+    const root = state.agents.find((a) => a.parentId === null);
+    expect(root?.id).toBe(AGENT);
+    expect(state.turns[0]).toMatchObject({ kind: "user" });
+  });
+});
+
+describe("claudeCode adapter (a subagent transcript with a spawn inside it)", () => {
+  const events = parseTranscript(ccStandaloneNested);
+
+  it("renders both levels, the inner one under its spawner", () => {
+    const spawn = events.find((e) => e.type === "agent_spawn");
+    expect(spawn).toMatchObject({ type: "agent_spawn", agentId: "nested1", parentId: "root-agent" });
+    const inner = events.find((e) => e.type === "run_start" && e.runId === "cc-nested1");
+    expect(inner).toMatchObject({ agentId: "nested1", parentId: "root-agent" });
+    expect(events.some((e) => e.type === "text_delta" && e.agentId === "nested1")).toBe(true);
+  });
+
+  it("keeps the root without a parent while the child has one", () => {
+    const root = events.find((e) => e.type === "run_start" && e.runId === "cc-import");
+    expect(root).toMatchObject({ agentId: "root-agent" });
+    expect(root).not.toHaveProperty("parentId");
+    expect(events.some((e) => e.type === "text_delta" && e.agentId === "root-agent")).toBe(true);
+  });
+});
+
+describe("claudeCode adapter (an orphan inside a main transcript is still skipped)", () => {
+  // The case this must not break. Here the file really is silent about who ran
+  // that record: it is a main transcript, the spawn was compacted away, and
+  // there is nothing to read. Inventing an owner would be the opposite defect.
+  const { events, source } = detectAndLoad(ccOrphanSidechain);
+
+  it("emits nothing for the record whose spawn the file does not hold", () => {
+    expect(events.some((e) => (e as unknown as { text?: string }).text?.includes("ghost"))).toBe(false);
+    expect(events.some((e) => (e as unknown as { text?: string }).text?.includes("does not contain"))).toBe(
+      false,
+    );
+  });
+
+  it("imports the rest of the session exactly as before", () => {
+    expect(events.find((e) => e.type === "run_start")).toMatchObject({ agentId: "main" });
+    expect(events.some((e) => e.type === "text_delta" && e.text === "Three headline changes.")).toBe(true);
+    // The orphan's line is the one line nothing was read from.
+    expect(sourceStats(source).zeroLines).toBe(1);
   });
 });
 

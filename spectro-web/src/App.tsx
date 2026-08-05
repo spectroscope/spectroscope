@@ -110,9 +110,10 @@ import {
 } from "./state/fleetStore";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
+import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
-import { shownImportBar, type ImportBarState } from "./components/importBar";
+import { shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
 import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
@@ -844,6 +845,7 @@ export function App() {
     label: string,
     kind: "spectroscope" | "claude-code" | "vscode-agent",
     source: ImportSource,
+    subagent?: SubagentTranscript,
   ): void => {
     navNonce.issue(); // an import supersedes any in-flight session open
     setReplay({
@@ -865,7 +867,15 @@ export function App() {
       sessionId: `import:${kind}:${label}`,
       file: label,
       stats: sourceStats(source),
-      note: kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
+      // Two different sentences, and a file can want both: the VS Code note is
+      // about a FORMAT's limits, the subagent note is about what THIS file is.
+      // Only one of them can ever apply at a time today, and joining them here
+      // keeps that an accident of the formats rather than a rule the bar
+      // depends on.
+      note:
+        [kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null, subagentNote(lang, subagent)]
+          .filter((line): line is string => line !== null)
+          .join(" ") || null,
     });
   };
 

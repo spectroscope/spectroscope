@@ -19,6 +19,7 @@ import { useLang } from "../state/lang";
 import { relativeTime } from "../format";
 import { rowState, formatBytes, listingNotice } from "../import/rowState";
 import type { TranscriptRow, StoreLimits } from "../import/rowState";
+import type { SubagentTranscript } from "../import/subagentFile";
 
 export function ImportDialog(props: {
   onLoad: (
@@ -26,6 +27,9 @@ export function ImportDialog(props: {
     label: string,
     kind: "spectroscope" | "claude-code" | "vscode-agent",
     source: ImportSource,
+    /** What the file said about itself when it was one agent's transcript
+     *  rather than a session's (card 152); absent for every other file. */
+    subagent?: SubagentTranscript,
   ) => void;
   onClose: () => void;
 }) {
@@ -85,12 +89,12 @@ export function ImportDialog(props: {
   const load = (raw: string, label: string): void => {
     setError(null);
     try {
-      const { events, kind, source } = detectAndLoad(raw);
+      const { events, kind, source, subagent } = detectAndLoad(raw);
       // The VS Code export records that a tool ran and whether it succeeded,
       // never what it returned. Say that once, here, rather than leaving the
       // reader to infer it from a screen of empty tool bodies.
       setNote(kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null);
-      props.onLoad(events, label, kind, source);
+      props.onLoad(events, label, kind, source, subagent);
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       setError(message);
