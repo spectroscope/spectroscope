@@ -49,7 +49,7 @@ class WorkspaceControllerTest {
         Files.writeString(root.resolve(".env"), "SECRET=1");
 
         WorkspaceController.FilesResponse res =
-                (WorkspaceController.FilesResponse) controller().files(session, local()).getBody();
+                (WorkspaceController.FilesResponse) controller().files(session, null, local()).getBody();
 
         assertThat(res.truncated()).isFalse();
         assertThat(res.entries()).extracting(WorkspaceController.FileNode::name)
@@ -69,7 +69,7 @@ class WorkspaceControllerTest {
             Files.writeString(root.resolve("f" + i + ".txt"), "x");
         }
         WorkspaceController.FilesResponse res =
-                (WorkspaceController.FilesResponse) controller().files(session, local()).getBody();
+                (WorkspaceController.FilesResponse) controller().files(session, null, local()).getBody();
         assertThat(res.truncated()).isTrue();
         assertThat(countNodes(res.entries())).isLessThanOrEqualTo(2000);
     }
@@ -86,7 +86,7 @@ class WorkspaceControllerTest {
     void servesTextWithCspSandboxHeader() throws Exception {
         Files.writeString(root.resolve("notes.txt"), "hello workspace");
 
-        ResponseEntity<byte[]> res = controller().file("notes.txt", session, local());
+        ResponseEntity<byte[]> res = controller().file("notes.txt", session, null, local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(new String(res.getBody())).contains("hello workspace");
@@ -98,7 +98,7 @@ class WorkspaceControllerTest {
     void servesHtmlAsTextHtmlSandboxed() throws Exception {
         Files.writeString(root.resolve("page.html"), "<h1>hi</h1><script>1</script>");
 
-        ResponseEntity<byte[]> res = controller().file("page.html", session, local());
+        ResponseEntity<byte[]> res = controller().file("page.html", session, null, local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getHeaders().getContentType().toString()).startsWith("text/html");
@@ -109,7 +109,7 @@ class WorkspaceControllerTest {
     void servesImagesWithTheirContentType() throws Exception {
         Files.write(root.resolve("dot.png"), new byte[] {(byte) 0x89, 'P', 'N', 'G', 0, 1, 2});
 
-        ResponseEntity<byte[]> res = controller().file("dot.png", session, local());
+        ResponseEntity<byte[]> res = controller().file("dot.png", session, null, local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getHeaders().getContentType().toString()).isEqualTo("image/png");
@@ -121,9 +121,9 @@ class WorkspaceControllerTest {
         Files.createDirectories(root.resolve("node_modules"));
         Files.writeString(root.resolve("node_modules/pkg.json"), "{}");
 
-        assertThat(controller().file("../outside.txt", session, local()).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file(".env", session, local()).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file("node_modules/pkg.json", session, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("../outside.txt", session, null, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file(".env", session, null, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("node_modules/pkg.json", session, null, local()).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
@@ -133,19 +133,19 @@ class WorkspaceControllerTest {
         java.util.Arrays.fill(big, (byte) 'a');
         Files.write(root.resolve("big.txt"), big);
 
-        assertThat(controller().file("blob.bin", session, local()).getStatusCode().value()).isEqualTo(415);
-        assertThat(controller().file("big.txt", session, local()).getStatusCode().value()).isEqualTo(413);
+        assertThat(controller().file("blob.bin", session, null, local()).getStatusCode().value()).isEqualTo(415);
+        assertThat(controller().file("big.txt", session, null, local()).getStatusCode().value()).isEqualTo(413);
     }
 
     @Test
     void missingFileIs404() {
-        assertThat(controller().file("nope.txt", session, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("nope.txt", session, null, local()).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
     void aMalformedSessionIdIs400() {
-        assertThat(controller().files("../evil", local()).getStatusCode().value()).isEqualTo(400);
-        assertThat(controller().file("x.txt", "a/b", local()).getStatusCode().value()).isEqualTo(400);
+        assertThat(controller().files("../evil", null, local()).getStatusCode().value()).isEqualTo(400);
+        assertThat(controller().file("x.txt", "a/b", null, local()).getStatusCode().value()).isEqualTo(400);
     }
 
     @Test
@@ -156,7 +156,7 @@ class WorkspaceControllerTest {
         String gone = "ws-test-gone-" + System.nanoTime();
         SessionWorkspaces.resolved(gone, root.resolve("never-created").toString());
 
-        assertThat(controller().files(gone, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().files(gone, null, local()).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
@@ -166,7 +166,7 @@ class WorkspaceControllerTest {
         // handed the browser this repository: a browsing surface nobody
         // designed. There is no session behind such a request, so there is no
         // workspace to serve.
-        ResponseEntity<?> res = controller().files(null, local());
+        ResponseEntity<?> res = controller().files(null, null, local());
 
         assertThat(res.getStatusCode().value()).isNotEqualTo(200);
     }
@@ -176,7 +176,7 @@ class WorkspaceControllerTest {
         // Distinct from "the folder is not there yet" (404) and from a dead
         // server (no response at all): the pane must be able to say "no folder
         // yet" instead of "server unreachable".
-        ResponseEntity<?> res = controller().files(null, local());
+        ResponseEntity<?> res = controller().files(null, null, local());
 
         assertThat(res.getStatusCode().value()).isEqualTo(409);
         assertThat(String.valueOf(res.getBody())).contains("no-workspace");
@@ -188,7 +188,7 @@ class WorkspaceControllerTest {
         // the session id, so with one configured ANY id used to answer with that
         // folder as though it were the session's. A session that never resolved
         // a workspace has none, configured or not.
-        ResponseEntity<?> res = controller().files("never-was-a-session-" + System.nanoTime(), local());
+        ResponseEntity<?> res = controller().files("never-was-a-session-" + System.nanoTime(), null, local());
 
         assertThat(res.getStatusCode().value()).isNotEqualTo(200);
         assertThat(res.getStatusCode().value()).isEqualTo(409);
@@ -203,14 +203,14 @@ class WorkspaceControllerTest {
         Files.writeString(elsewhere.resolve("made-by-agent.py"), "print('hi')");
         Files.writeString(root.resolve("belongs-to-the-first-session.txt"), "mine");
 
-        var res = controller().files(other, local());
+        var res = controller().files(other, null, local());
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(((WorkspaceController.FilesResponse) res.getBody()).entries())
                 .extracting(WorkspaceController.FileNode::name)
                 .contains("made-by-agent.py")
                 .doesNotContain("belongs-to-the-first-session.txt");
 
-        var content = controller().file("made-by-agent.py", other, local());
+        var content = controller().file("made-by-agent.py", other, null, local());
         assertThat(content.getStatusCode().value()).isEqualTo(200);
         assertThat(new String(content.getBody())).contains("print('hi')");
     }
@@ -227,17 +227,17 @@ class WorkspaceControllerTest {
         Files.createSymbolicLink(root.resolve("escape.txt"), outside.resolve("secret.txt"));
         Files.createSymbolicLink(root.resolve("uplink"), outside);
 
-        assertThat(controller().file("escape.txt", session, local()).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file("uplink/secret.txt", session, local()).getStatusCode().value())
+        assertThat(controller().file("escape.txt", session, null, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("uplink/secret.txt", session, null, local()).getStatusCode().value())
                 .isEqualTo(404);
     }
 
     @Test
     void theLexicalEscapesStayClosed() {
         // The regression half: canonicalizing must not lose what already worked.
-        assertThat(controller().file("../secret.txt", session, local()).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file("%2e%2e/secret.txt", session, local()).getStatusCode().value()).isEqualTo(404);
-        assertThat(controller().file("/etc/passwd", session, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("../secret.txt", session, null, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("%2e%2e/secret.txt", session, null, local()).getStatusCode().value()).isEqualTo(404);
+        assertThat(controller().file("/etc/passwd", session, null, local()).getStatusCode().value()).isEqualTo(404);
     }
 
     @Test
@@ -247,7 +247,7 @@ class WorkspaceControllerTest {
         // would refuse every ordinary read on this machine, so both sides are
         // canonicalized and this test is what says so.
         Files.writeString(root.resolve("ordinary.txt"), "just a file");
-        var res = controller().file("ordinary.txt", session, local());
+        var res = controller().file("ordinary.txt", session, null, local());
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(new String(res.getBody())).isEqualTo("just a file");
     }

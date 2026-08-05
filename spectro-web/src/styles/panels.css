@@ -622,6 +622,11 @@
 .ed-rows > div { display: flex; flex-wrap: wrap; gap: var(--sp-2); font-size: var(--fs-12); }
 .ed-rows dt { flex-shrink: 0; min-width: 116px; color: var(--text-faint); }
 .ed-rows dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+/* A row whose value is a run of the file's own bytes (a thought, a signature):
+   the label sits above it and the value gets the full width, because a wrapped
+   paragraph beside a 116px term column is a column of two words. */
+.ed-rows > div.ed-row--block { flex-direction: column; gap: 2px; }
+.ed-row--block dd { width: 100%; min-width: 0; }
 .ed-note { color: var(--text-faint); margin-left: var(--sp-2); }
 .ed-more { margin: 2px 0 0; font-size: var(--fs-11); color: var(--text-faint); }
 .ed-empty { margin: 0; font-size: var(--fs-12); color: var(--text-faint); }
