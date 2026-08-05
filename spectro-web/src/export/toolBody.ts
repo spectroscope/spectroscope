@@ -262,6 +262,10 @@ const TASK_HEAD: Record<TaskOp, string> = { create: "taskCreated", update: "task
 function taskRowHtml(row: TaskRow, lang: Lang): string {
   const parts = [
     row.id === null ? "" : `<span class="x-tv-task-id">#${escapeHtml(row.id)}</span>`,
+    row.fromStatus === null
+      ? ""
+      : `<span class="x-tv-status x-tv-status--from">${escapeHtml(row.fromStatus)}</span>` +
+        `<span class="x-tv-arrow" aria-hidden="true">&#8594;</span>`,
     row.status === null ? "" : `<span class="x-tv-status">${escapeHtml(row.status)}</span>`,
     row.subject === null ? "" : `<span class="x-tv-task-subject">${escapeHtml(row.subject)}</span>`,
   ].join("");
@@ -294,6 +298,7 @@ export const TOOL_HTML: Writers = {
       view.range ?? (view.lineCount > 0 ? label(lang, "lines", { n: view.lineCount }) : ""),
     ) +
     pathLine(view.path) +
+    (view.truncated ? `<p class="x-tv-note">${escapeHtml(label(lang, "truncatedCap"))}</p>` : "") +
     (view.body === "" ? "" : head(label(lang, "content")) + well(view.body, hlLangForPath(view.path))),
 
   // The content of a write is a file body too, and the one about to be on disk
@@ -311,6 +316,9 @@ export const TOOL_HTML: Writers = {
   edit: (view, { lang }) =>
     head(label(lang, "edited"), view.result) +
     pathLine(view.path) +
+    (view.at === null
+      ? ""
+      : `<p class="x-tv-note">${escapeHtml(label(lang, "landed", { at: view.at }))}</p>`) +
     `<div class="x-tv-diff">` +
     `<div class="x-tv-side x-tv-side--before">${head(label(lang, "before"))}${well(view.before)}</div>` +
     `<div class="x-tv-side x-tv-side--after">${head(label(lang, "after"))}${well(view.after)}</div>` +
@@ -332,7 +340,11 @@ export const TOOL_HTML: Writers = {
     head(label(lang, "command")) +
     `<pre class="x-tv-cmd"><code><span class="x-tv-prompt" aria-hidden="true">$ </span>` +
     `${codeHtml(view.command, "shell")}</code></pre>` +
-    outputHtml(view.output, lang, `x-tv-term${view.failed ? " x-tv-term--failed" : ""}`),
+    outputHtml(view.output, lang, `x-tv-term${view.failed ? " x-tv-term--failed" : ""}`) +
+    // The other stream, on its own — the flattened text runs the two together.
+    (view.stderr === null
+      ? ""
+      : head(label(lang, "stderr")) + well(view.stderr, null, "x-tv-term x-tv-term--failed")),
 
   // No <img>: the store is behind /api/images and this file has to open with the
   // network unplugged. The path is the record; the absence is stated rather than
@@ -519,6 +531,8 @@ export const TOOL_CSS = `
 .x-tv-step-text{flex:1;min-width:0;font-size:13px;color:var(--text-dim);overflow-wrap:anywhere}
 .x-tv-status{border:1px solid var(--border-strong);border-radius:7px;padding:0 6px;
   font-family:var(--font-mono);font-size:11px;color:var(--text-dim);white-space:nowrap}
+.x-tv-status--from{opacity:.6}
+.x-tv-arrow{font-family:var(--font-mono);font-size:11px;color:var(--text-faint)}
 .x-tv-tasks{margin:0;padding:0;list-style:none}
 .x-tv-tasks>li+li{margin-top:6px}
 .x-tv-task-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;min-width:0}

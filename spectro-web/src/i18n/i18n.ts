@@ -500,6 +500,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.toEnd": { de: "Zum Ende springen", en: "Jump to the end" },
   "trace.protoTitle": { de: "Auf welchem Draht die Payload fährt: SSE (Claude/OpenAI-Stream), NDJSON (Ollama), JSON-RPC (MCP/stdio), HTTP (web_fetch/web_search/browse_page, Bilder), local (Datei-Tools), — (harness-intern)", en: "The wire the payload rides: SSE (Claude/OpenAI stream), NDJSON (Ollama), JSON-RPC (MCP/stdio), HTTP (web_fetch/web_search/browse_page, images), local (file tools), — (harness-internal)" },
   "trace.hostTitle": { de: "Die Gegenstelle im Netz: api.anthropic.com, localhost:11434 (Ollama), der MCP-Server, der web_fetch/browse_page-Host — live aus dem provider_info-Frame; Replays kennen nur den Provider", en: "The network counterpart: api.anthropic.com, localhost:11434 (Ollama), the MCP server, the web_fetch/browse_page host — live from the provider_info frame; replays only know the provider" },
+  "trace.note.skill": { de: "Skill", en: "skill" },
+  "trace.note.skillTitle": { de: "Diesen Turn trieb ein Skill. Der Name steht wörtlich so in der importierten Datei, Plugin-Präfix inklusive; spectroscope schlägt nichts nach. Steht nichts da, sagt die Datei nichts dazu.", en: "A skill was driving this turn. The name is verbatim from the imported file, plugin prefix and all; spectroscope looks nothing up. No chip means the file says nothing about it." },
+  "trace.note.mcp": { de: "MCP", en: "mcp" },
+  "trace.note.mcpTitle": { de: "Was dieser Turn tut, geht auf die Ausgabe eines MCP-Tools zurück — Server und Tool, wie die Datei sie schreibt. Der Marker bleibt über mehrere Turns stehen: er gehört dem TURN, nicht dem einzelnen Aufruf.", en: "What this turn is doing goes back to an MCP tool's output — the server and the tool, spelled as the file spells them. The marker stays for several turns: it belongs to the TURN, not to one call." },
   "trace.note.effort": { de: "Aufwand", en: "effort" },
   "trace.note.effortTitle": { de: "Wie stark dieser Turn denken sollte, wie die importierte Datei es aufgezeichnet hat. Die Stufe steht wörtlich da; spectroscope deutet sie nicht. Zeilen ohne dieses Feld tragen den Chip nicht.", en: "How hard this turn was told to think, as the imported file recorded it. The level is verbatim; spectroscope does not interpret it. A line without the field wears no chip." },
   "trace.note.origin": { de: "geschrieben von", en: "written by" },
@@ -607,6 +611,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   // agents tab
   "agents.empty": { de: "Noch kein Lauf. Sobald du etwas schickst, erscheint hier der Haupt-Agent — und jeder Subagent, den er spawnt, bleibt für die Session sichtbar.", en: "No run yet. As soon as you send something, the main agent appears here — and every subagent it spawns stays visible for the session." },
   "agents.main": { de: "Haupt", en: "Main" },
+  "agents.launched": { de: "gestartet, ohne Rückmeldung", en: "launched, never reported back" },
 
   // work panel + chat v2 (branch chat-v2, prototype)
   "rp.work": { de: "Arbeit", en: "Work" },
@@ -900,6 +905,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   "chat.historyAria": { de: "Verlauf des Agenten-Laufs", en: "Agent run history" },
   "info.spawned": { de: "Subagent {id} gestartet: {task}", en: "Subagent {id} spawned: {task}" },
   "info.compacted": { de: "Verlauf kompaktiert: {n} Turns zusammengefasst", en: "History compacted: {n} turns summarized" },
+  "info.compactedInto": {
+    de: "Verlauf kompaktiert: {n} Turns zu {chars} Zeichen zusammengefasst",
+    en: "History compacted: {n} turns summarized into {chars} characters",
+  },
 
   // built-in model first-use notice (card 91; per-model since the catalogue)
   "lmn.title": { de: "eingebautes modell — läuft auf dieser maschine", en: "built-in model — runs on this machine" },
@@ -978,6 +987,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tv.image": { de: "Bild", en: "Image" },
   "tv.skill": { de: "Skill", en: "Skill" },
   "tv.lines": { de: "{n} Zeilen", en: "{n} lines" },
+  // Card 167: three things a Claude Code transcript records beside the text the
+  // model was shown, and the card had no way to know before.
+  "tv.truncatedCap": {
+    de: "am Token-Limit abgeschnitten \u2014 das ist nicht die ganze Datei",
+    en: "cut off at the token cap \u2014 this is not the whole file",
+  },
+  "tv.stderr": { de: "Standardfehler", en: "stderr" },
+  "tv.landed": { de: "ge\u00e4ndert bei {at}", en: "changed at {at}" },
   "tv.entries": { de: "{n} Einträge", en: "{n} entries" },
   "tv.hits": { de: "{n} Treffer", en: "{n} hits" },
   "tv.workflow": { de: "Workflow", en: "Workflow" },
@@ -1165,6 +1182,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   // usage footer
   "footer.run": { de: "Lauf", en: "run" },
   "footer.session": { de: "Session", en: "session" },
+  "footer.subagent": { de: "inkl. 1 Subagent", en: "incl. 1 subagent" },
+  "footer.subagents": { de: "inkl. {n} Subagenten", en: "incl. {n} subagents" },
+  "footer.subagentsTitle": {
+    de: "Der Session-Wert enthält die Subagenten: {out} out stammen von ihnen.",
+    en: "The session figure includes the subagents: {out} out came from them.",
+  },
+  "footer.runSubagentsTitle": {
+    de: "Der Lauf-Wert enthält die Subagenten: {out} out stammen von ihnen.",
+    en: "The run figure includes the subagents: {out} out came from them.",
+  },
   "footer.runActive": { de: "Lauf aktiv", en: "run active" },
   "footer.stopped": { de: "gestoppt · {r}", en: "stopped · {r}" },
   "footer.ready": { de: "bereit", en: "ready" },

@@ -271,3 +271,50 @@ describe("the todo row's summary", () => {
     expect(summarize(q, "en")).toBe('{"operation":"enqueue"}');
   });
 });
+
+// Where the run stood, and when it moved (card 167, finding 8). The frame is
+// import-only and it belongs beside the other four: the busiest transcript in
+// the corpus stood in 16 different directories and carries 273 of these rows
+// (measured 2026-08-04, `3e010de0…`), and a reader who
+// wants the conversation must be able to put them away in one click.
+describe("the ground row", () => {
+  const ground = (payload: unknown): TraceEntry => ({
+    seq: 1,
+    dir: "in",
+    ts: 0,
+    type: "ground_info",
+    payload,
+  });
+
+  it("sits in the client chip with the rest of what the file recorded", () => {
+    expect(categoryOf("ground_info")).toBe("client");
+  });
+
+  it("reads the opening announcement as the ground itself", () => {
+    expect(summarize(ground({ cwd: "/Users/x/repo", gitBranch: "main", version: "2.1.181" }), "en")).toBe(
+      "cwd /Users/x/repo · gitBranch main · version 2.1.181",
+    );
+  });
+
+  it("reads a move as what it left and what it landed on", () => {
+    expect(summarize(ground({ cwd: "/Users/x/repo/wt", from: { cwd: "/Users/x/repo" } }), "en")).toBe(
+      "cwd /Users/x/repo → /Users/x/repo/wt",
+    );
+  });
+
+  it("names only the fields the frame carries", () => {
+    expect(summarize(ground({ gitBranch: "feature", from: { gitBranch: "main" } }), "en")).toBe(
+      "gitBranch main → feature",
+    );
+  });
+
+  // The field names are the file's own words, so they are not translated: the
+  // same rule recordMeta.ts labels its groups by.
+  it("spells the fields the way the file spells them, in either language", () => {
+    expect(summarize(ground({ cwd: "/a" }), "de")).toBe("cwd /a");
+  });
+
+  it("falls back to the raw frame when the payload says none of it", () => {
+    expect(summarize(ground({ note: "x" }), "en")).toBe('{"note":"x"}');
+  });
+});

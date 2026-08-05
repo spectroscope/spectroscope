@@ -48,8 +48,20 @@ export function AgentsTab({
                   {a.id}
                 </span>
                 {isMain && <span className="agent-role-tag">{t(lang, "agents.main")}</span>}
+                {/* The model the child ACTUALLY ran on, when a transcript said
+                    so (card 167). It is not the parent's: measured over
+                    ~/.claude/projects, 617 launch records name one across seven
+                    ids, and a haiku child under an opus parent is a normal
+                    line. Verbatim, "[1m]" suffix and all. */}
+                {a.model !== undefined && <span className="agent-model mono">{a.model}</span>}
+                {/* "launched, never reported back" is a claim about the file,
+                    so the importer only sets `launched` when the file says
+                    nothing further: measured over ~/.claude/projects on
+                    2026-08-04, 365 of the 394 background launches ARE answered
+                    by a later task-notification in the same transcript, and 28
+                    rows are left carrying this badge. */}
                 <span className={`agent-badge agent-badge--${a.state}`}>
-                  {t(lang, `map.life.${a.state}`)}
+                  {a.launched === true ? t(lang, "agents.launched") : t(lang, `map.life.${a.state}`)}
                 </span>
               </span>
               {a.task !== "" && <span className="agent-card-task">{a.task}</span>}
