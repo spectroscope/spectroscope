@@ -61,3 +61,16 @@ describe("navDepth", () => {
     expect(canGoForward(first)).toBe(true);
   });
 });
+
+// Found live, not by reading: the entry the app BOOTS on is written with a
+// replace, and while that carried no stamp, returning to it looked like landing
+// on somebody else's entry — so the depth never moved and forward stayed dark
+// on exactly the step that had just created one.
+describe("the entry the app booted on", () => {
+  it("counts as a place, so coming back to it lights forward", () => {
+    const pushed = afterPush(NAV_START); // boot entry -> one push
+    const home = afterPop(pushed, stampFor(NAV_START));
+    expect(canGoBack(home)).toBe(false);
+    expect(canGoForward(home)).toBe(true);
+  });
+});
