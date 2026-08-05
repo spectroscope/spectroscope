@@ -36,7 +36,8 @@ import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { setBeaconSink } from "./state/levelingBeacon";
 import { formatRoute, parseAppRoute, type Route, type SettingsSection, type ViewTab } from "./state/route";
-import { writeRoute, type NavCause, type NavIntent } from "./state/history";
+import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
+import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
 import {
   createNavNonce,
   pinAfterNavigation,
@@ -172,6 +173,19 @@ export function App() {
    * lobby instead of leaving the last session standing.
    */
   const [nav, setNav] = useState<"sessions" | "fleets">("sessions");
+  /**
+   * How far back and forward this app can go — for the two buttons in the bar.
+   *
+   * The desktop shell has no URL bar, so it has no back button either: the one
+   * control every browser view of this app has always had for free. Giving
+   * imports an address (card 179) made the absence sharp, because a reader who
+   * opens a workflow's agent from the work panel had nowhere to return to.
+   */
+  const [depth, setDepth] = useState<NavDepth>(NAV_START);
+  // The hotkey handler is bound once, so it reads the depth through a ref
+  // rather than closing over the first one.
+  const depthRef = useRef(depth);
+  depthRef.current = depth;
   const [conn, setConn] = useState<ConnState>({ status: "connecting", retryAt: null });
   // Queue-while-running (card 78 #3): messages submitted during a run wait
   // here as chips and auto-send on run_end. Session-local — a new chat or a
@@ -285,6 +299,22 @@ export function App() {
           el.tagName === "TEXTAREA" ||
           el.tagName === "SELECT" ||
           el.isContentEditable);
+      // The browser's own back/forward, for the shell that draws no chrome for
+      // them. Checked BEFORE the modifier bail below, because the modifier is
+      // the point — and only when the app has somewhere to go, so a reader at
+      // the start of his history keeps whatever else Cmd+← means to him.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && !typing) {
+        if (e.key === "ArrowLeft" && canGoBack(depthRef.current)) {
+          e.preventDefault();
+          window.history.back();
+          return;
+        }
+        if (e.key === "ArrowRight" && canGoForward(depthRef.current)) {
+          e.preventDefault();
+          window.history.forward();
+          return;
+        }
+      }
       if (typing || e.metaKey || e.ctrlKey || e.altKey) return;
       if (e.key === "?") {
         e.preventDefault();
@@ -705,6 +735,9 @@ export function App() {
   // The one writer: every write also stamps lastApplied, so a later back onto
   // this very entry is recognized as a route to apply, not an echo to skip.
   const commitUrl = (route: Route, cause: NavCause): NavIntent => {
+    // Reading the depth AFTER the write: writeRoute is the only thing that
+    // pushes, so it is the only thing that can move us.
+    queueMicrotask(() => setDepth(navDepth()));
     lastApplied.current = formatRoute(route);
     return writeRoute(route, cause);
   };
@@ -1137,7 +1170,10 @@ export function App() {
   const applyRouteRef = useRef(applyRoute);
   applyRouteRef.current = applyRoute;
   useEffect(() => {
-    const follow = (): void => {
+    const follow = (event?: Event): void => {
+      // A popstate carries the entry's own stamp; a hashchange does not, and
+      // reading history.state is right for both.
+      if (event?.type === "popstate") setDepth(navLanded(window.history.state));
       const route = parseAppRoute(window.location.hash);
       const key = formatRoute(route);
       // One back-press between hash entries fires hashchange AND popstate;
@@ -1553,6 +1589,56 @@ export function App() {
           />
         ) : (
           <nav className="tab-nav" role="tablist" aria-label="View">
+            {/* Back and forward, because the desktop shell has no URL bar and
+                therefore no browser chrome to supply them. Dark when there is
+                genuinely nothing there — the app stamps every entry it writes
+                and counts, since the DOM reports no forward availability. */}
+            <span className="tab-nav-history">
+              <button
+                type="button"
+                className="tab-nav-step"
+                disabled={!canGoBack(depth)}
+                onClick={() => window.history.back()}
+                title={t(lang, "nav.back")}
+                aria-label={t(lang, "nav.back")}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M10 3.5 5.5 8l4.5 4.5" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="tab-nav-step"
+                disabled={!canGoForward(depth)}
+                onClick={() => window.history.forward()}
+                title={t(lang, "nav.forward")}
+                aria-label={t(lang, "nav.forward")}
+              >
+                <svg
+                  viewBox="0 0 16 16"
+                  width="13"
+                  height="13"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  <path d="M6 3.5 10.5 8 6 12.5" />
+                </svg>
+              </button>
+            </span>
             <button
               type="button"
               role="tab"

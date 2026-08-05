@@ -5,7 +5,6 @@
 //
 //   structured  the frame rendered as the thing it is (the pre-master default)
 //   insight     the collapsible tree
-//   compact     the wire line highlighted and wrapped, all of it on screen
 //   wire        plain text, one row per wire line, scrolling sideways
 //   source      the line of the imported file this frame was read from
 //
@@ -37,7 +36,10 @@ import { createFaceStore, overrideFace, useFaceStore, type FaceOverride, type Fa
 export const TRACE_FACES = ["structured", ...DETAIL_MODES] as const;
 
 /** The one word this store used to write, and what it is called now. */
-const LEGACY_TRACE_FACES: Readonly<Record<string, TraceFace>> = { raw: "wire" };
+/** Faces that used to exist, and where a reader who saved one now lands.
+ *  `compact` was the wire line wrapped; Wire's readable reading is that same
+ *  text with the escapes undone, so wire is where it belongs. */
+const LEGACY_TRACE_FACES: Readonly<Record<string, TraceFace>> = { raw: "wire", compact: "wire" };
 
 export type TraceFace = "structured" | DetailMode;
 

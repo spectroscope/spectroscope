@@ -109,6 +109,11 @@ const GROUPS: Group[] = [
     rows: [
       { keys: ["?"], icon: "keys", label: { en: "this keymap", de: "diese keymap" } },
       { keys: ["esc"], icon: "close", label: { en: "close", de: "schließen" } },
+      // The desktop shell draws no URL bar, so these two are the only way back
+      // there. They are the browser's own keys, deliberately: a reader does not
+      // learn a second vocabulary for the thing he already knows.
+      { keys: ["⌘", "←"], icon: "back", label: { en: "back", de: "zurück" } },
+      { keys: ["⌘", "→"], icon: "step", label: { en: "forward", de: "vorwärts" } },
     ],
   },
   {

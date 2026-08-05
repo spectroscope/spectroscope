@@ -136,9 +136,9 @@ describe("the lab store next to the trace store", () => {
   });
 
   it("keeps its epochs to itself", () => {
-    const traceOverride = { face: "compact" as const, epoch: currentTraceFace().epoch };
+    const traceOverride = { face: "wire" as const, epoch: currentTraceFace().epoch };
     setLabFace("structured");
-    expect(rowFace(currentTraceFace(), traceOverride)).toBe("compact");
+    expect(rowFace(currentTraceFace(), traceOverride)).toBe("wire");
     const labOverride = { face: "structured" as const, epoch: currentLabFace().epoch };
     setTraceFace("insight");
     expect(panelFace(currentLabFace(), labOverride)).toBe("structured");

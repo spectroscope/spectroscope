@@ -21,9 +21,21 @@ import type { RunEvent } from "../events";
 import type { WithSource } from "../state/traceSource";
 import { NON_WIRE_TYPES } from "../wire/nonWire";
 
-export type DetailMode = "insight" | "compact" | "wire" | "source";
+/**
+ * The faces a frame opens in. `compact` was here and is gone (owner, 2026-08-05).
+ *
+ * It was the wire line, wrapped. What made it a face of its own was that Wire
+ * did NOT wrap — one text, two names, distinguished by a stylesheet. Since Wire
+ * grew its verbatim/readable reading, the readable one is the same wrapped text
+ * with the escapes undone, so `compact` had become the strictly worse of two
+ * things one click apart. A face nobody can tell from its neighbour is a face
+ * that costs a reader a decision and returns nothing.
+ *
+ * A stored `compact` maps to `wire`; see LEGACY_TRACE_FACES.
+ */
+export type DetailMode = "insight" | "wire" | "source";
 
-export const DETAIL_MODES: readonly DetailMode[] = ["insight", "compact", "wire", "source"];
+export const DETAIL_MODES: readonly DetailMode[] = ["insight", "wire", "source"];
 
 /** How a pane renders what it was given. Verbatim is the bytes; readable is
  *  openly an interpretation of them (see readable.ts). Readable is what the pane
