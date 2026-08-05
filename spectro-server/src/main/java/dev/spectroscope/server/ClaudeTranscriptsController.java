@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -224,7 +225,12 @@ public class ClaudeTranscriptsController {
                     .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
                     .contentLength(size)
                     .body(new FileSystemResource(real));
-        } catch (IOException missing) {
+        } catch (IOException | InvalidPathException missing) {
+            // InvalidPathException too: `resolve` throws it, unchecked, for a
+            // name this filesystem cannot even spell (a NUL byte). Uncaught it
+            // left the handler as a 500 with Spring's default body — which
+            // hands a prober their own string back and, worse, tells them this
+            // path was DIFFERENT from the ones that answer 404.
             return ResponseEntity.notFound().build();
         }
     }
@@ -307,7 +313,12 @@ public class ClaudeTranscriptsController {
                 return null;
             }
             return real;
-        } catch (IOException missing) {
+        } catch (IOException | InvalidPathException missing) {
+            // Unchecked, and thrown by `resolve` before any I/O happens: a NUL
+            // byte in the parameter. It used to leave this method, escape the
+            // batch loop above — abandoning every row queued behind it — and
+            // answer 500, against this endpoint's own promise that everything
+            // untrusted gets the same nothing.
             return null;
         }
     }

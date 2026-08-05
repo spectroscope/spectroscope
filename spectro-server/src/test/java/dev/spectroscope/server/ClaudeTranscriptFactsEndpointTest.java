@@ -150,6 +150,41 @@ class ClaudeTranscriptFactsEndpointTest {
                 .andExpect(jsonPath("$.facts.length()").value(0));
     }
 
+    // A path a java.nio.file.Path cannot hold at all. The endpoint's javadoc
+    // promises one answer for everything untrusted — "a path outside the store,
+    // a non-.jsonl name and a file that is not there are all the same answer —
+    // nothing — because a request parameter is untrusted input and a refusal
+    // that distinguishes them tells a prober what exists". A 500 distinguishes,
+    // and Spring's default error body hands the prober their own string back.
+    @Test
+    void aPathTheFilesystemCannotEvenSpellIsTheSameNothing() throws Exception {
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/facts")
+                        .param("path", "-Users-x-repo/s\u0000.jsonl"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.facts.length()").value(0));
+    }
+
+    @Test
+    void oneUnspellablePathDoesNotTakeTheRestOfTheBatchWithIt() throws Exception {
+        // The batch is a loop: an exception out of one row abandons every row
+        // after it, so a single bad parameter blanks a whole screen of them.
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/facts")
+                        .param("path", "-Users-x-repo/s\u0000.jsonl")
+                        .param("path", "-Users-x-repo/s2.jsonl"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.facts.length()").value(1))
+                .andExpect(jsonPath("$.facts[0].path").value("-Users-x-repo/s2.jsonl"));
+    }
+
+    @Test
+    void theContentEndpointSpellsItTheSameWay() throws Exception {
+        // Same resolution, same catch, one endpoint over: content() answers 404
+        // for everything it cannot reach, and must not answer 500 for this.
+        mvc.perform(get("http://127.0.0.1/api/claude/transcripts/content")
+                        .param("path", "-Users-x-repo/s\u0000.jsonl"))
+                .andExpect(status().isNotFound());
+    }
+
     @Test
     void askingForNothingIsNotAnError() throws Exception {
         mvc.perform(get("http://127.0.0.1/api/claude/transcripts/facts"))
