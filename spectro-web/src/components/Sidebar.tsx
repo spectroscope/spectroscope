@@ -56,6 +56,9 @@ export function Sidebar(props: {
   nav: "sessions" | "fleets";
   /** Switch segment. App owns the state so the surface can answer the press. */
   onNav: (next: "sessions" | "fleets") => void;
+  /** Fold the sidebar away. Offered here as well as in the header because the
+   *  header's own control is the first thing a narrow window takes away. */
+  onCollapse?: () => void;
 }) {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
@@ -148,6 +151,33 @@ export function Sidebar(props: {
           <rect x="49.35" y="14" width="1.3" height="36" rx="0.7" fill="var(--text-faint)" />
         </svg>
         spectroscope
+        {/* The collapse control lives HERE as well as in the header, and the
+            reason is a small circular joke the owner named: the header's burger
+            scrolls out of reach on a narrow window, so the one button that would
+            give you room back is only reachable once you already have room. A
+            control for hiding a thing belongs on the thing. */}
+        {props.onCollapse !== undefined && (
+          <button
+            type="button"
+            className="brand-collapse"
+            onClick={props.onCollapse}
+            title={t(lang, "hdr.sidebarHide")}
+            aria-label={t(lang, "hdr.sidebarHide")}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="14"
+              height="14"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
+            >
+              <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* One wrapper so the three actions carry their OWN gap; the sidebar's column

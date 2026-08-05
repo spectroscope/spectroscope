@@ -1493,6 +1493,7 @@ export function App() {
         <Sidebar
           nav={nav}
           onNav={setNav}
+          onCollapse={() => setSidebarOpen(false)}
           fleetsLocked={leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false}
           activeId={replay === null ? null : replay.id}
           refreshToken={refreshToken}
