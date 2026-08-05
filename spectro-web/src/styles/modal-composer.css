@@ -245,6 +245,9 @@
   color: var(--text-dim);
 }
 .usage { font-family: var(--font-mono); }
+/* Card 167: the session figure now counts subagents, so it says so. Dimmer
+   than the number it qualifies — it is a caption, not a second total. */
+.usage-subagents { color: var(--text-faint); }
 .footer-diamond {
   color: var(--sand);
   font-size: var(--fs-11);

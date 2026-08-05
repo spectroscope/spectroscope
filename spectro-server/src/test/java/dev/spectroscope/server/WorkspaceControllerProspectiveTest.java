@@ -2,13 +2,19 @@ package dev.spectroscope.server;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.mock.web.MockFilterChain;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -87,23 +93,157 @@ class WorkspaceControllerProspectiveTest {
         servingConfigured(configured.toString())
                 .perform(get("http://localhost/api/files").param("scope", "everything"))
                 .andExpect(status().isBadRequest());
+        servingConfigured(configured.toString())
+                .perform(get("http://localhost/api/file").param("path", "notes.md").param("scope", "everything"))
+                .andExpect(status().isBadRequest());
     }
 
     @Test
-    void aReboundHostGetsNoProspectiveTreeEither() throws Exception {
-        // The fence is the floor under every read here (card 74). A new read
-        // endpoint inherits it; a test says so rather than trusting it.
+    void anEmptyScopeIsNoScopeAtAll() throws Exception {
+        // `?scope=` has named nothing, so it reads as the session default and
+        // lands on the same 409 an absent scope does. Refusing it would make the
+        // empty field of a form a different endpoint, which is a trap and not a
+        // check; every value that IS a word and is not one of ours still 400s.
+        servingConfigured(configured.toString())
+                .perform(get("http://localhost/api/files").param("scope", ""))
+                .andExpect(status().isConflict());
+        servingConfigured(configured.toString())
+                .perform(get("http://localhost/api/file").param("path", "notes.md").param("scope", ""))
+                .andExpect(status().isConflict());
+    }
+
+    // ---- the preview, on the same folder the tree just listed -----------------
+
+    @Test
+    void thePreviewOpensAFileFromTheFolderTheTreeListed() throws Exception {
+        // The half that shipped without a test. A tree that lists a file and an
+        // endpoint that will not open it is half an answer, and before the first
+        // run the tree is the ONLY thing the pane has.
         Files.writeString(configured.resolve("notes.md"), "already here");
+
         servingConfigured(configured.toString())
-                .perform(get("http://evil.example/api/files").param("scope", "prospective"))
+                .perform(get("http://localhost/api/file")
+                        .param("path", "notes.md")
+                        .param("scope", "prospective"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("already here"));
+    }
+
+    @Test
+    void thePreviewsSandboxHoldsOnTheProspectiveRootToo() throws Exception {
+        // Same root, same sandbox: the prospective read is a different way of
+        // NAMING the folder, never a different set of rules inside it.
+        Files.writeString(configured.resolve("notes.md"), "already here");
+        Files.writeString(configured.resolve(".secret"), "hidden");
+        Path outside = Files.createTempDirectory("outside-the-workspace");
+        Files.writeString(outside.resolve("stolen.txt"), "not yours");
+        Files.createSymbolicLink(configured.resolve("escape.txt"), outside.resolve("stolen.txt"));
+
+        MockMvc mvc = servingConfigured(configured.toString());
+        for (String path : new String[] {"../stolen.txt", "escape.txt", ".secret", "nothing-here.md"}) {
+            mvc.perform(get("http://localhost/api/file").param("path", path).param("scope", "prospective"))
+                    .andExpect(status().isNotFound());
+        }
+    }
+
+    @Test
+    void theSessionParameterCannotSteerTheProspectiveRead() throws Exception {
+        // The tree's rule, applied to the bytes: prospective takes nothing from
+        // the caller, so an id riding along must not redirect which file opens.
+        Files.writeString(configured.resolve("notes.md"), "already here");
+        Path elsewhereDir = Files.createTempDirectory("elsewhere");
+        Files.writeString(elsewhereDir.resolve("notes.md"), "the other folder");
+        String elsewhere = "prospective-file-" + System.nanoTime();
+        SessionWorkspaces.resolved(elsewhere, elsewhereDir.toString());
+
+        servingConfigured(configured.toString())
+                .perform(get("http://localhost/api/file")
+                        .param("path", "notes.md")
+                        .param("scope", "prospective")
+                        .param("session", elsewhere))
+                .andExpect(status().isOk())
+                .andExpect(content().string("already here"));
+    }
+
+    @Test
+    void withNoConfiguredWorkspaceThereIsNoFileToOpenEither() throws Exception {
+        servingConfigured(null)
+                .perform(get("http://localhost/api/file").param("path", "notes.md").param("scope", "prospective"))
+                .andExpect(status().isConflict());
+    }
+
+    // ---- the fence ------------------------------------------------------------
+
+    @Test
+    void aReboundHostGetsNoProspectiveTreeOrFileEither() throws Exception {
+        // The handler's own check, which is the second of the two layers.
+        Files.writeString(configured.resolve("notes.md"), "already here");
+        MockMvc mvc = servingConfigured(configured.toString());
+        mvc.perform(get("http://evil.example/api/files").param("scope", "prospective"))
                 .andExpect(status().isNotFound());
-        servingConfigured(configured.toString())
-                .perform(get("http://localhost/api/files")
+        mvc.perform(get("http://evil.example/api/file").param("path", "notes.md").param("scope", "prospective"))
+                .andExpect(status().isNotFound());
+        mvc.perform(get("http://localhost/api/files")
                         .param("scope", "prospective")
                         .with(request -> {
                             request.setRemoteAddr("203.0.113.7"); // TEST-NET, not loopback
                             return request;
                         }))
                 .andExpect(status().isNotFound());
+        mvc.perform(get("http://localhost/api/file")
+                        .param("path", "notes.md")
+                        .param("scope", "prospective")
+                        .with(request -> {
+                            request.setRemoteAddr("203.0.113.7");
+                            return request;
+                        }))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void bothReadsSitBehindTheContainerFenceAndNotOnlyBehindTheirOwnCheck() throws Exception {
+        // The claim "these sit behind ApiLocalFence" cannot be made by the tests
+        // above: a standalone MockMvc has no filter chain, so they only ever
+        // exercised the handler's own isLocalOrigin. That is exactly the shape
+        // that let /%61pi/config through in v0.6.1 while the MockMvc tests stayed
+        // green — the fence lives in the container, so the container is where it
+        // has to be asked.
+        Files.writeString(configured.resolve("notes.md"), "already here");
+        MockMvc fenced = MockMvcBuilders.standaloneSetup(new WorkspaceController(() -> configured.toString()))
+                .addFilters(new ApiLocalFence())
+                .build();
+
+        fenced.perform(get("http://evil.example/api/files").param("scope", "prospective"))
+                .andExpect(status().isNotFound());
+        fenced.perform(get("http://evil.example/api/file").param("path", "notes.md").param("scope", "prospective"))
+                .andExpect(status().isNotFound());
+        // And a loopback caller still travels through it to the real answer, so
+        // the refusal above is the fence and not a filter that swallows all four.
+        fenced.perform(get("http://127.0.0.1/api/files").param("scope", "prospective"))
+                .andExpect(status().isOk());
+        fenced.perform(get("http://127.0.0.1/api/file").param("path", "notes.md").param("scope", "prospective"))
+                .andExpect(status().isOk())
+                .andExpect(content().string("already here"));
+    }
+
+    @Test
+    void anEncodedPrefixDoesNotWalkPastTheFenceIntoTheWorkspace() throws Exception {
+        // The v0.6.1 attack aimed at this endpoint. It cannot be staged through
+        // MockMvc at all (standalone never decodes the target), so the filter is
+        // driven directly, the way ApiLocalFenceTest drives it for /api/config.
+        for (String uri : new String[] {"/%61pi/files", "/%61pi/file"}) {
+            MockFilterChain chain = new MockFilterChain();
+            MockHttpServletResponse response = new MockHttpServletResponse();
+            MockHttpServletRequest rebound = new MockHttpServletRequest("GET", uri);
+            rebound.setRequestURI(uri);
+            rebound.setRemoteAddr("127.0.0.1"); // a rebound page really does reach loopback
+            rebound.addHeader("Host", "evil.example");
+            rebound.addParameter("scope", "prospective");
+
+            new ApiLocalFence().doFilter(rebound, response, chain);
+
+            assertEquals(404, response.getStatus(), uri);
+            assertNull(chain.getRequest(), uri + " must not reach the chain at all");
+        }
     }
 }

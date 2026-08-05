@@ -27,10 +27,12 @@ import java.util.function.Supplier;
  * preview pane. Both require a session that has actually resolved a workspace
  * and answer 409 otherwise, see {@link #rootFor}.
  *
- * <p>{@code GET /api/files?scope=prospective} is the one read that needs no
- * session: the folder a run started right now would use, for the pane that has
- * been told its path on connect and could not ask about it, see
- * {@link #prospectiveRoot}. It takes no path from the caller.</p>
+ * <p>{@code ?scope=prospective} is the one read that needs no session: the
+ * folder a run started right now would use, for the pane that has been told its
+ * path on connect and could not ask about it, see {@link #prospectiveRoot}. It
+ * takes no path from the caller. BOTH endpoints take it, decided by the one
+ * {@link #scopeOf} rule — a tree that lists a file and a preview that will not
+ * open it is half an answer.</p>
  *
  * <p>Sandbox rules, same maxim as the tools ("tool inputs are model output and
  * therefore untrusted" — and URL parameters are user/model input too): the
@@ -116,9 +118,44 @@ public class WorkspaceController {
 
     // ---- the tree -------------------------------------------------------------
 
-    /** The two questions {@code GET /api/files} answers. */
+    /** The two questions the reads answer. */
     private static final String SCOPE_SESSION = "session";
     private static final String SCOPE_PROSPECTIVE = "prospective";
+
+    /** Which root a read asks for. */
+    private enum Scope {
+        /** That session's resolved workspace. */
+        SESSION,
+        /** The folder a run started right now would use. */
+        PROSPECTIVE
+    }
+
+    /**
+     * The root a read asks for.
+     *
+     * <p>One rule for both endpoints rather than a copy in each: a tree that
+     * lists a file and a preview that reads a different folder is the drift
+     * this shape rules out.</p>
+     *
+     * <p>Absent and blank both mean {@link Scope#SESSION}. A caller that sends
+     * {@code ?scope=} has named nothing, and making that a different endpoint
+     * from sending no scope at all would be a trap rather than a check. Every
+     * other unrecognised value is refused: a typo must never quietly read a
+     * different folder than the one it asked for.</p>
+     *
+     * <p>{@code prospective} wins over a {@code session} sent alongside it. The
+     * prospective root takes nothing from the caller — the client sends one or
+     * the other and never both — and where they do collide, the answer is the
+     * more constrained of the two roots, never the one an id could steer.</p>
+     *
+     * @param scope the raw {@code scope} parameter, possibly {@code null}
+     * @return the root asked for, or {@code null} when the value is unknown
+     */
+    private static Scope scopeOf(String scope) {
+        if (scope == null || scope.isBlank() || SCOPE_SESSION.equals(scope)) return Scope.SESSION;
+        if (SCOPE_PROSPECTIVE.equals(scope)) return Scope.PROSPECTIVE;
+        return null;
+    }
 
     /**
      * {@code GET /api/files}: the whole workspace tree in one response — hidden
@@ -141,13 +178,13 @@ public class WorkspaceController {
         if (!FleetController.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
-        boolean prospective = SCOPE_PROSPECTIVE.equals(scope);
-        if (!prospective && scope != null && !scope.isBlank() && !SCOPE_SESSION.equals(scope)) {
+        Scope wanted = scopeOf(scope);
+        if (wanted == null) {
             return ResponseEntity.badRequest().build();
         }
         Path base;
         try {
-            base = prospective ? prospectiveRoot() : rootFor(session);
+            base = wanted == Scope.PROSPECTIVE ? prospectiveRoot() : rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
         } catch (NoWorkspaceResolved none) {
@@ -326,13 +363,13 @@ public class WorkspaceController {
         if (!FleetController.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
-        boolean prospective = SCOPE_PROSPECTIVE.equals(scope);
-        if (!prospective && scope != null && !scope.isBlank() && !SCOPE_SESSION.equals(scope)) {
+        Scope wanted = scopeOf(scope);
+        if (wanted == null) {
             return ResponseEntity.badRequest().build();
         }
         Path base;
         try {
-            base = prospective ? prospectiveRoot() : rootFor(session);
+            base = wanted == Scope.PROSPECTIVE ? prospectiveRoot() : rootFor(session);
         } catch (IllegalArgumentException badId) {
             return ResponseEntity.badRequest().build();
         } catch (NoWorkspaceResolved none) {

@@ -6,6 +6,8 @@
 import type { ClientMessage, RunEvent } from "../events";
 import type { WorkspaceMode } from "../workspace/paneState";
 
+import type { ToolResultDetail } from "../import/toolResultDetail";
+
 export interface ToolCard {
   callId: string;
   agentId: string;
@@ -13,6 +15,10 @@ export interface ToolCard {
   input: unknown;
   status: "pending" | "ok" | "error";
   output?: string;
+  /** What the tool RETURNED, when an import read it beside the flattened text
+   *  (card 167). UI state only: it comes off an import-only frame, nothing in
+   *  events.ts carries it, and a card built from a live run never has one. */
+  detail?: ToolResultDetail;
   durationMs?: number;
   permission?: "pending" | "allowed" | "denied";
   /** ts of the tool_call event — drives the live duration count-up. */
@@ -60,7 +66,10 @@ export type Turn =
       infoKey?: string;
       infoVars?: Record<string, string | number>;
     }
-  | { kind: "error"; text: string };
+  /** agentId marks a failure that belongs to a subagent's thread — `error` has
+   *  carried the field on the wire all along, and a session import sets it for
+   *  an outage recorded inside a child. Absent is the run's own failure. */
+  | { kind: "error"; text: string; agentId?: string };
 
 export interface PendingPermission {
   callId: string;
@@ -72,6 +81,13 @@ export interface PendingPermission {
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
+}
+
+/** The children inside one run's token figure. `ids` is in first-billed order
+ *  and holds each child once, so its length is a count of agents rather than of
+ *  responses. */
+export interface RunSubagents extends TokenUsage {
+  ids: readonly string[];
 }
 
 /** One frame in the wire view (trace tab): dir "in" for RunEvents from the
@@ -132,6 +148,16 @@ export interface AgentInfo {
   lastStatus: string | null;
   inTokens: number;
   outTokens: number;
+  /** The model this agent ran on, when something said so. Only an import ever
+   *  does: a live subagent runs on the run's own model, and a transcript names
+   *  the child's model on the launch record (card 167). Absent, not null —
+   *  every live session and every older transcript says nothing here, and a
+   *  row with no chip is exactly a row nothing was said about. */
+  model?: string;
+  /** The child was launched into the background and never reported back inside
+   *  the transcript. Only ever true; a child that did report back says so by
+   *  its state. */
+  launched?: true;
 }
 
 /** One step of the agent's plan (from the additive `plan` event). Wire status
@@ -183,6 +209,12 @@ export interface UiState {
   usage: TokenUsage;
   /** The current (or most recently finished) run only. */
   runUsage: TokenUsage;
+  /** Which children billed inside that same run, and for how much. The run
+   *  figure counts a subagent exactly the way the session figure does (card
+   *  167), and a total that changes meaning has to say so on BOTH lines — the
+   *  session line reads its share off the roster, which is session-wide, so the
+   *  run needs its own. Reset with `runUsage` at run_start. */
+  runSubagents: RunSubagents;
   running: boolean;
   /** Internal: only the root run's run_end may end "running". */
   rootRunId: string | null;
@@ -243,6 +275,7 @@ export const initialState: UiState = {
   pendingPermissions: [],
   usage: { inputTokens: 0, outputTokens: 0 },
   runUsage: { inputTokens: 0, outputTokens: 0 },
+  runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
   running: false,
   rootRunId: null,
   provider: null,
@@ -574,6 +607,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           running: true,
           rootRunId: event.runId,
           runUsage: { inputTokens: 0, outputTokens: 0 },
+          runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
           provider: event.provider ?? state.provider,
           runModel: event.model ?? state.providerInfo?.model ?? state.runModel,
           lastStopReason: null,
@@ -690,11 +724,23 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       });
 
     case "compaction":
+      // The size of the summary is the other half of the boundary: an import
+      // drops that machine prose out of the chat rather than draw it as the
+      // person's words (card 167), and until now `summaryChars` rode on the
+      // frame with no surface reading it — so the line said turns went away
+      // without saying what replaced them. A 0 is a boundary whose summary is
+      // not in the window; "into 0 characters" would be a count nobody wrote.
       return addTurn(state, {
         kind: "info",
-        text: `History compacted: ${event.removedTurns} turns summarized`,
-        infoKey: "info.compacted",
-        infoVars: { n: event.removedTurns },
+        text:
+          event.summaryChars > 0
+            ? `History compacted: ${event.removedTurns} turns summarized into ${event.summaryChars} characters`
+            : `History compacted: ${event.removedTurns} turns summarized`,
+        infoKey: event.summaryChars > 0 ? "info.compactedInto" : "info.compacted",
+        infoVars:
+          event.summaryChars > 0
+            ? { n: event.removedTurns, chars: event.summaryChars }
+            : { n: event.removedTurns },
         tone: "warn",
       });
 
@@ -727,6 +773,19 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           inputTokens: state.runUsage.inputTokens + event.inputTokens,
           outputTokens: state.runUsage.outputTokens + event.outputTokens,
         },
+        // "main" is this reducer's own word for the run's own agent — the same
+        // sentinel the context ring uses two lines down. Everything else that
+        // bills is a child, and the run line has to be able to say so.
+        runSubagents:
+          event.agentId === "main"
+            ? state.runSubagents
+            : {
+                ids: state.runSubagents.ids.includes(event.agentId)
+                  ? state.runSubagents.ids
+                  : [...state.runSubagents.ids, event.agentId],
+                inputTokens: state.runSubagents.inputTokens + event.inputTokens,
+                outputTokens: state.runSubagents.outputTokens + event.outputTokens,
+              },
         // The context ring reads the LAST request size of the main agent —
         // subagent usage has its own window and must not move the gauge.
         // With Anthropic prompt caching, inputTokens is only the UNCACHED
@@ -750,7 +809,14 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       };
 
     case "error":
-      return addTurn(state, { kind: "error", text: event.message });
+      // Whose failure it was, when the frame says so: an outage inside a
+      // subagent groups into that child's thread, the way its spawn line does.
+      // A frame without the field is the run's own and stays flat.
+      return addTurn(state, {
+        kind: "error",
+        text: event.message,
+        ...(event.agentId !== undefined ? { agentId: event.agentId } : {}),
+      });
 
     case "image_generated": {
       // Idempotent per callId — a reconnect replays the session history and
@@ -788,10 +854,40 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // like context_info.
       return { ...state, plan: event.steps };
 
-    default:
-      // Unknown event types are ignored — forward compatibility. Frontends
+    default: {
+      // An import-only frame the wire union does not know (card 167): what the
+      // tool RETURNED, beside the flattened text the model was shown. It lands
+      // on the card its call built and nowhere else, so a card that never got
+      // one is exactly a card whose record did not carry the field.
+      const raw = event as unknown as {
+        type: string;
+        callId?: unknown;
+        detail?: unknown;
+        agentId?: unknown;
+        model?: unknown;
+        launched?: unknown;
+      };
+      if (raw.type === "tool_result_detail" && typeof raw.callId === "string" && !!raw.detail)
+        return patchCard(state, raw.callId, { detail: raw.detail as ToolResultDetail });
+      // What a transcript's launch record says about the child it launched
+      // (card 167, finding 6): the model the child ACTUALLY ran on, which is
+      // not the parent's, and whether it went into the background. A launched
+      // child is held open until something in the file finishes it. 394 of the
+      // 624 launches in the measured corpus are async, and every one of them
+      // used to read as finished; 365 of the 394 are finished later by a
+      // task-notification in the same file, so only 28 rows end up held open.
+      if (raw.type === "agent_detail" && typeof raw.agentId === "string" && raw.agentId !== "")
+        return {
+          ...state,
+          agents: upsertAgent(state.agents, raw.agentId, {
+            ...(typeof raw.model === "string" && raw.model !== "" ? { model: raw.model } : {}),
+            ...(raw.launched === true ? { launched: true as const, state: "working" as const } : {}),
+          }),
+        };
+      // Everything else unknown is ignored — forward compatibility. Frontends
       // never crash because the core learned a new event.
       return state;
+    }
   }
 }
 

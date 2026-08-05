@@ -6,7 +6,7 @@
 // may vanish behind a prettier rendering.
 
 import { describe, expect, it } from "vitest";
-import { describeEvent, toolCallsById } from "./eventDetail";
+import { describeEvent, toolCallsById, toolResultDetailsById } from "./eventDetail";
 import type { DetailSection } from "./eventDetail";
 
 /** The payload keys a section accounts for — the drop check's ledger. */
@@ -92,6 +92,50 @@ describe("describeEvent — tool frames", () => {
     const rows = s.find((x) => x.kind === "rows");
     if (rows?.kind !== "rows") throw new Error("rows");
     expect(rows.rows).toContainEqual({ key: "isError", value: "true" });
+  });
+
+  // The trace opens the SAME body the chat card draws (TraceView hands the
+  // section to ToolViewBody), so the two must be handed the same evidence. A
+  // trace showing the line-number gutter beside a chat card that had dropped it
+  // would be one call read two ways in one app.
+  it("carries what the tool returned, when the stream recorded it beside the block", () => {
+    const calls = toolCallsById([
+      { type: "tool_call", callId: "c1", name: "Read", input: { file_path: "/a.md" } },
+    ]);
+    const details = toolResultDetailsById([
+      { type: "tool_result_detail", callId: "c1", detail: { fileContent: "# Heading", numLines: 1 } },
+    ]);
+    const s = describeEvent(
+      "tool_result",
+      { callId: "c1", output: "     1\t# Heading", isError: false, ts: 2 },
+      calls,
+      details,
+    );
+    const tool = s.find((x) => x.kind === "tool");
+    if (tool?.kind !== "tool") throw new Error("kind");
+    expect(tool.detail?.fileContent).toBe("# Heading");
+  });
+
+  it("leaves the section with no detail when the stream carried none", () => {
+    const calls = toolCallsById([
+      { type: "tool_call", callId: "c1", name: "Read", input: { file_path: "/a.md" } },
+    ]);
+    const s = describeEvent("tool_result", { callId: "c1", output: "body", isError: false, ts: 2 }, calls);
+    const tool = s.find((x) => x.kind === "tool");
+    if (tool?.kind !== "tool") throw new Error("kind");
+    expect(tool.detail).toBeUndefined();
+  });
+
+  it("reads only the frames that are detail frames, and the first per call", () => {
+    const details = toolResultDetailsById([
+      { type: "tool_call", callId: "c1", name: "Read", input: {} },
+      { type: "tool_result_detail", callId: "c1", detail: { stdout: "first" } },
+      { type: "tool_result_detail", callId: "c1", detail: { stdout: "second" } },
+      { type: "tool_result_detail", callId: "c2" },
+    ]);
+    expect(details.get("c1")?.stdout).toBe("first");
+    expect(details.has("c2")).toBe(false);
+    expect(details.size).toBe(1);
   });
 
   it("shows a tool_result verbatim when its call is not in the stream", () => {
