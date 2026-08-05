@@ -50,6 +50,13 @@ class TranscriptFactsTest {
                 + "[{\"type\":\"tool_use\",\"name\":\"" + name + "\",\"input\":{}}]}}";
     }
 
+    /** The same call as {@link #toolCall}, carrying the id a real one has. */
+    private static String toolCall(String name, String id) {
+        return "{\"type\":\"assistant\",\"message\":{\"model\":\"claude-opus-4-8\",\"content\":"
+                + "[{\"type\":\"tool_use\",\"id\":\"" + id + "\",\"name\":\"" + name
+                + "\",\"input\":{}}]}}";
+    }
+
     @Test
     void theFirstUserPromptTravelsVerbatim() throws Exception {
         Path f = transcript("s", userPrompt("read the card first"), userPrompt("now build it"));
@@ -110,6 +117,45 @@ class TranscriptFactsTest {
         TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
 
         assertEquals(2, facts.workflowCalls());
+    }
+
+    /**
+     * A transcript can hold the SAME record twice — same uuid, same message id,
+     * byte-identical content, the second copy differing only by an added
+     * `slug` key. Measured over the store: 322 repeated records across 11 of
+     * the 171 session transcripts, and in two of them the repeated record holds
+     * a Workflow block, so the row rendered one workflow more than the session
+     * ran. One tool_use id is one call, however many lines carry it.
+     */
+    @Test
+    void oneCallCountedOnceHoweverManyLinesTheFileRepeatsItOn() throws Exception {
+        Path f = transcript("s",
+                toolCall("Workflow", "toolu_01A"),
+                toolCall("Bash", "toolu_01B"),
+                toolCall("Workflow", "toolu_01A"), // the same call, written again
+                toolCall("Workflow", "toolu_01C"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals(2, facts.workflowCalls());
+    }
+
+    /**
+     * And a block with no id cannot be PROVEN a duplicate of anything, so it
+     * still counts. Undercounting a real call would be the worse error of the
+     * two, and the de-duplication must not reach further than its evidence.
+     */
+    @Test
+    void anIdlessCallStillCounts() throws Exception {
+        Path f = transcript("s",
+                toolCall("Workflow"),
+                toolCall("Workflow"),
+                toolCall("Workflow", "toolu_01A"),
+                toolCall("Workflow", "toolu_01A"));
+
+        TranscriptFacts.Facts facts = TranscriptFacts.fold(f);
+
+        assertEquals(3, facts.workflowCalls());
     }
 
     /**

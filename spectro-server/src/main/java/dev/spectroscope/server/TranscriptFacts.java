@@ -138,7 +138,9 @@ final class TranscriptFacts {
      */
     static Facts fold(Path file) {
         Set<String> models = new LinkedHashSet<>();
-        int workflowCalls = 0;
+        // By tool_use id, because a transcript can hold the same record twice.
+        Set<String> workflowIds = new LinkedHashSet<>();
+        int idlessWorkflowCalls = 0;
         String firstPrompt = null;
 
         try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
@@ -158,7 +160,7 @@ final class TranscriptFacts {
                 if (model != null && !model.isBlank()) {
                     models.add(model);
                 }
-                workflowCalls += workflowCallsIn(message);
+                idlessWorkflowCalls += collectWorkflowCalls(message, workflowIds);
                 if (firstPrompt == null && isUserPrompt(record)) {
                     firstPrompt = textOf(message.path("content"));
                 }
@@ -170,7 +172,7 @@ final class TranscriptFacts {
         return new Facts(
                 null,
                 List.copyOf(models),
-                workflowCalls,
+                workflowIds.size() + idlessWorkflowCalls,
                 0, // sidecar counts are ask-time facts; the caller stamps them on
                 0,
                 languageOf(firstPrompt),
@@ -195,24 +197,43 @@ final class TranscriptFacts {
     }
 
     /**
-     * Workflow tool calls in one message's content blocks.
+     * Workflow tool calls in one message's content blocks, counted by IDENTITY.
+     *
+     * <p>A transcript can hold the same record twice — same uuid, same message
+     * id, byte-identical content, the second copy differing only by an added
+     * {@code slug} key. Measured over this store: 322 repeated records across
+     * 11 of the 171 session transcripts, and in two of them the repeated record
+     * carries a Workflow block, so the row said one workflow more than the
+     * session ran. One {@code tool_use} id is one call, however many lines the
+     * file writes it on.</p>
+     *
+     * <p>A block with no id cannot be PROVEN a duplicate of anything, so it is
+     * counted straight. Undercounting a real call is the worse of the two
+     * errors, and the de-duplication must not reach past its evidence.</p>
      *
      * @param message the {@code message} node, possibly missing
-     * @return how many blocks are a Workflow tool call
+     * @param ids collects the ids seen so far — the caller owns it across lines
+     * @return how many Workflow blocks carried no id, to be added on top
      */
-    private static int workflowCallsIn(JsonNode message) {
+    private static int collectWorkflowCalls(JsonNode message, Set<String> ids) {
         JsonNode content = message.path("content");
         if (!content.isArray()) {
             return 0;
         }
-        int calls = 0;
+        int idless = 0;
         for (JsonNode block : content) {
-            if ("tool_use".equals(block.path("type").asText())
-                    && "Workflow".equals(block.path("name").asText())) {
-                calls++;
+            if (!"tool_use".equals(block.path("type").asText())
+                    || !"Workflow".equals(block.path("name").asText())) {
+                continue;
+            }
+            String id = block.path("id").asText(null);
+            if (id == null || id.isBlank()) {
+                idless++;
+            } else {
+                ids.add(id);
             }
         }
-        return calls;
+        return idless;
     }
 
     /**

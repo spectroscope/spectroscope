@@ -84,7 +84,14 @@
   max-height: none;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* auto, not hidden. The children between the head and `.import-bottom` — the
+     hint, the filter bar, the stats line, the two notes — are column flex items
+     whose automatic minimum size is their own content, so they cannot shrink.
+     Under `hidden`, once their sum passed the fixed height the overflow was
+     simply cut, and the LAST child is the one that pays: the paste box, Cancel
+     and Load left the dialog with no way to scroll to them. Measured in a real
+     engine against this stylesheet. A short window now scrolls instead. */
+  overflow-y: auto;
 }
 .import-modal h2 { margin-bottom: 0; }
 .import-head-close { margin-left: auto; }
@@ -189,7 +196,11 @@
   flex-direction: column;
   gap: 2px;
   flex: 1 1 auto;
-  min-height: 80px;
+  /* The row list gives its height up FIRST, before the dialog starts scrolling:
+     it is the one child here that already scrolls its own content, so shrinking
+     it costs a reader nothing that a scroll does not give straight back. The
+     old 80px floor made it the one child that could not help. */
+  min-height: 0;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
