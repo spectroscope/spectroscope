@@ -16,6 +16,7 @@
 // plain Node with no jsdom and swaps in an in-memory bar).
 
 import { formatRoute, parseAppRoute, type Route } from "./route";
+import { afterPop, afterPush, NAV_START, stampFor, type NavDepth } from "./navDepth";
 
 /** What a navigation does to history. */
 export type NavIntent = "push" | "replace" | "none";
@@ -63,9 +64,29 @@ let hashGet: () => string = () => {
     return "";
   }
 };
+/**
+ * Where the app stands in its own history, so the bar's back and forward can be
+ * dark when there is genuinely nothing there (card 179). The desktop shell draws
+ * no chrome for history and the DOM reports no forward availability, so the app
+ * stamps each entry it writes and counts.
+ */
+let depth: NavDepth = NAV_START;
+
+/** The current depth — read by the bar's two buttons. */
+export function navDepth(): NavDepth {
+  return depth;
+}
+
+/** Told by the app when the browser landed on another entry. */
+export function navLanded(state: unknown): NavDepth {
+  depth = afterPop(depth, state);
+  return depth;
+}
+
 let hashPush: (hash: string) => void = (hash) => {
   if (typeof history !== "undefined") {
-    history.pushState(null, "", hash);
+    depth = afterPush(depth);
+    history.pushState(stampFor(depth), "", hash);
   }
 };
 let hashReplace: (hash: string) => void = (hash) => {

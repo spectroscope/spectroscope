@@ -1183,17 +1183,6 @@ function TraceDetail({
         // nested {…} (e.g. a plan's steps, a context_info's parts). Real events
         // never nest anywhere near this deep, so 99 reads as "all".
         <JsonTree value={entry.payload} defaultDepth={99} />
-      ) : mode === "compact" ? (
-        // WRAPPED (owner 2026-08-03): the whole record on screen, no sideways
-        // scrolling. Wire below is the same text and does NOT wrap, which is
-        // what finally makes the two names mean two different things.
-        <div className="trace-detail-lines">
-          {lines.map((ln, i) => (
-            <div key={i} className="trace-detail-line">
-              <SummaryLine text={ln} />
-            </div>
-          ))}
-        </div>
       ) : pane !== null ? (
         <SourceBody pane={pane} reading={reading} lang={lang} translated={translated} />
       ) : reading === "readable" ? (

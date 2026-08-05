@@ -24,3 +24,38 @@
 @import "./styles/terminal.css"; /* Files tab: the PTY terminal pane + its tab strip (card 93) */
 @import "./styles/work.css"; /* Chat v2 (branch chat-v2): the work panel + its chip */
 @import "./styles/about.css"; /* About: the licence notice panel + its footer entry */
+
+/* Back and forward in the tab bar (card 179). The desktop shell draws no URL
+   bar, so these are the only way back there. Same weight as a tab, set apart by
+   a hairline rather than a box: they are navigation, not a view. */
+.tab-nav-history {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-right: var(--sp-2);
+  padding-right: var(--sp-2);
+  border-right: 1px solid var(--border);
+}
+.tab-nav-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.tab-nav-step:hover:not(:disabled) {
+  color: var(--accent);
+}
+/* Dark because there is genuinely nothing there — the app counts its own
+   entries, so this is a fact rather than a guess. */
+.tab-nav-step:disabled {
+  opacity: 0.3;
+  cursor: default;
+}

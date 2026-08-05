@@ -15,6 +15,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.unreachable": { de: "Server nicht erreichbar · Session-Liste nicht verfügbar.", en: "Server unreachable · session list unavailable." },
   "nav.importTitle": { de: "Eine .jsonl laden — spectroscope-Session oder Claude-Code-Transkript", en: "Load a .jsonl — spectroscope session or Claude Code transcript" },
   "nav.history": { de: "Verlauf", en: "History" },
+  "nav.back": { de: "zurück (⌘←)", en: "back (⌘←)" },
+  "nav.forward": { de: "vorwärts (⌘→)", en: "forward (⌘→)" },
   "nav.fleets": { de: "Flotten", en: "Fleets" },
   "nav.navMode": { de: "Sessions oder Flotten", en: "Sessions or fleets" },
   "nav.noFleets": { de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.", en: "No running fleets. Start nodes against the hub and they appear here." },

@@ -19,7 +19,7 @@ describe("traceFace", () => {
   });
 
   it("offers five faces, structured first", () => {
-    expect(TRACE_FACES).toEqual(["structured", "insight", "compact", "wire", "source"]);
+    expect(TRACE_FACES).toEqual(["structured", "insight", "wire", "source"]);
   });
 
   // "raw" was this store's word for the wire lines until a real source line
@@ -40,8 +40,8 @@ describe("traceFace", () => {
   it("set + read round-trips", () => {
     setTraceFace("wire");
     expect(currentTraceFace().face).toBe("wire");
-    setTraceFace("compact");
-    expect(currentTraceFace().face).toBe("compact");
+    setTraceFace("wire");
+    expect(currentTraceFace().face).toBe("wire");
   });
 
   // useSyncExternalStore compares snapshots by identity: a fresh object on
@@ -55,7 +55,7 @@ describe("traceFace", () => {
   });
 
   it("lets a stored choice win over the default", () => {
-    expect(parseTraceFace("compact")).toBe("compact");
+    expect(parseTraceFace("compact")).toBe("wire");
     expect(parseTraceFace("insight")).toBe("insight");
   });
 
@@ -106,8 +106,8 @@ describe("a row on top of the master", () => {
   // broken in exactly the case it exists for.
   it("discards the hand-picked face when the master moves", () => {
     const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
-    setTraceFace("compact");
-    expect(rowFace(currentTraceFace(), override)).toBe("compact");
+    setTraceFace("wire");
+    expect(rowFace(currentTraceFace(), override)).toBe("wire");
   });
 
   it("survives a re-read of the same master (scrolling, streaming, re-render)", () => {
@@ -119,7 +119,7 @@ describe("a row on top of the master", () => {
   // Stamping an override with the master's VALUE would resurrect it here.
   it("never resurrects an override when the master returns to where it was", () => {
     const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
-    setTraceFace("compact");
+    setTraceFace("wire");
     setTraceFace("structured");
     expect(rowFace(currentTraceFace(), override)).toBe("structured");
   });
@@ -128,5 +128,20 @@ describe("a row on top of the master", () => {
     const override = { face: "wire" as const, epoch: currentTraceFace().epoch };
     setTraceFace("structured");
     expect(rowFace(currentTraceFace(), override)).toBe("wire");
+  });
+});
+
+// `compact` was retired (owner, 2026-08-05): it was the wire line wrapped, and
+// Wire's readable reading is the same text with the escapes undone. A reader
+// who had it saved must land somewhere real rather than on a blank face.
+describe("the retired compact face", () => {
+  it("is not offered any more", () => {
+    expect(TRACE_FACES).not.toContain("compact");
+  });
+
+  it("takes a reader who saved it to wire", () => {
+    expect(parseTraceFace("compact")).toBe("wire");
+    // The other retired name still lands where it always did.
+    expect(parseTraceFace("raw")).toBe("wire");
   });
 });

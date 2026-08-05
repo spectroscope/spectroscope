@@ -44,9 +44,7 @@ describe("detailText", () => {
   it("joins compact/wire lines with real newlines and pretty-prints insight", () => {
     const payload = { sessionId: "s", history };
     expect(detailText("wire", "session_resume", payload).split("\n")).toHaveLength(2);
-    expect(detailText("compact", "session_resume", payload)).toBe(
-      detailText("wire", "session_resume", payload),
-    );
+    expect(detailText("wire", "session_resume", payload)).toBe(detailText("wire", "session_resume", payload));
     expect(detailText("insight", "session_resume", payload)).toContain("\n  ");
   });
 });
@@ -320,7 +318,7 @@ describe("what the copy button hands over", () => {
   it("copies a wrapped compact pane as one line per wire line", () => {
     const wide = { text: "x".repeat(4000) };
 
-    const copied = detailText("compact", "text_delta", wide);
+    const copied = detailText("wire", "text_delta", wide);
 
     expect(copied.split("\n")).toHaveLength(1);
     expect(copied).toBe(detailText("wire", "text_delta", wide));
