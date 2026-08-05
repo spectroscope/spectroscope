@@ -78,6 +78,8 @@ export const CATEGORIES = [
   "text",
   "thinking",
   "tool",
+  "workflow",
+  "mcp",
   "permission",
   "usage",
   "image",
@@ -136,6 +138,100 @@ export function categoryOf(type: string): Category {
   }
 }
 
+/** The wire prefix every tool served over MCP carries in its name. The chip is
+ *  spelled for what a reader recognises; THIS is the rule underneath it. */
+const MCP_NAME_PREFIX = "mcp__";
+/**
+ * The tools that launch a background task, by their wire names.
+ *
+ * Two, not one. The importer has always known both — `Workflow` announces
+ * "launched in background. Task ID: x" and `Monitor` announces "started (task
+ * x, …)", and `receiptTaskId` matches either — so a chip that knew only the
+ * first would hide 17 of the 196 launch receipts in the owner's own corpus, and
+ * their joined outcomes with them. Pressing `workflow` to study background work
+ * and getting most of it is worse than getting none, because nothing says which
+ * part is missing.
+ */
+const BACKGROUND_TASK_TOOLS = new Set(["Workflow", "Monitor"]);
+
+/**
+ * Which of the three tool chips a tool NAME answers to.
+ *
+ * Measured over the owner's 37 recorded Claude Code transcripts (16774 tool
+ * calls): 2609 mcp__*, of which browser javascript_tool 916 and browser
+ * computer 897, and 172 Workflow. Every one of them read as bare `tool` before
+ * this, which is the whole of what the owner asked to end.
+ *
+ * @param name the tool's wire name, or null when the frame recorded none
+ */
+export function toolCategory(name: string | null): Category {
+  if (name !== null && BACKGROUND_TASK_TOOLS.has(name)) return "workflow";
+  if (name !== null && name.startsWith(MCP_NAME_PREFIX)) return "mcp";
+  return "tool";
+}
+
+/** A payload's string field, or null — the chip rule reads two of them and has
+ *  no business trusting anything else it finds in there. */
+function payloadStr(payload: unknown, key: string): string | null {
+  if (typeof payload !== "object" || payload === null) return null;
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" ? value : null;
+}
+
+/**
+ * Which chip a ROW answers to — the wire type, and for a tool row the tool.
+ *
+ * The type alone cannot answer this: a tool_call keeps its name in the payload,
+ * and a tool_result keeps no name at all, only the callId pointing back at the
+ * call it answers. So a result INHERITS its call's category through the index.
+ * Without that, a reader who presses `workflow` sees the launch and loses the
+ * answer, which is the one thing a workflow row is read for.
+ *
+ * @param row    the frame's wire type and its payload
+ * @param calls  callId → call, built once per stream ({@link toolCallsById})
+ */
+export function categoryOfRow(
+  row: { type: string; payload?: unknown },
+  calls?: ReadonlyMap<string, ToolCallRef>,
+): Category {
+  // Only the tool group splits. A permission_request names a tool too and is
+  // indexed by callId alongside the calls, but the gate is its own group and
+  // the tool chips do not reach into it.
+  if (categoryOf(row.type) !== "tool") return categoryOf(row.type);
+  if (row.type === "tool_call") return toolCategory(payloadStr(row.payload, "name"));
+  const callId = payloadStr(row.payload, "callId");
+  const call = callId === null ? undefined : calls?.get(callId);
+  // A result whose call is not in the stream falls back to plain `tool`: it has
+  // nothing to inherit, and a row that answered nobody must never drop out of
+  // the trace. A truncated import and an index that was never built are the two
+  // ways that happens at rest. On a LIVE stream `windowTrace` (reducer.ts, 5000
+  // rows) can evict a call while its result is still on screen — but only for
+  // as many frames as separated them, 3 at p90, right at the window's oldest
+  // edge, on a row the window is about to delete anyway.
+  return call === undefined ? "tool" : toolCategory(call.name);
+}
+
+/** The three chips the tool group splits into. A `tool_call` carries the name
+ *  that decides between them; a `tool_result` inherits it through the index. */
+const TOOL_CHIPS: readonly Category[] = ["tool", "workflow", "mcp"];
+
+/**
+ * Whether the callId index can change what the chip row shows.
+ *
+ * Building it is one walk of the whole stream, and on a LIVE session the stream
+ * grows under it — an eager index pays that walk again on every frame batch,
+ * for a trace nobody has filtered. It only earns that while the three tool
+ * chips DISAGREE: with all three pressed (the state a trace opens in) or all
+ * three released, a `tool_result` lands on the same side of the filter whether
+ * it inherited its call's chip or fell back to plain `tool`.
+ *
+ * @param active the categories whose chips are pressed
+ */
+export function needsCallIndex(active: ReadonlySet<string>): boolean {
+  const on = TOOL_CHIPS.filter((c) => active.has(c)).length;
+  return on !== 0 && on !== TOOL_CHIPS.length;
+}
+
 /**
  * Whether a frame survives the chip row.
  *
@@ -143,11 +239,20 @@ export function categoryOf(type: string): Category {
  * rule that decides what a reader can see, and it was untestable while it sat
  * in a closure over component state.
  *
- * @param type   the frame's wire type
+ * Takes the ROW rather than the wire type, because since the tool group split
+ * into tool/workflow/mcp the type no longer carries the answer. A caller with
+ * nothing but a type still gets the old behaviour by passing `{ type }`.
+ *
+ * @param row    the frame's wire type and its payload
  * @param active the categories whose chips are pressed
+ * @param calls  callId → call, so a result inherits its call's chip
  */
-export function inCategories(type: string, active: ReadonlySet<string>): boolean {
-  return active.has(categoryOf(type));
+export function inCategories(
+  row: { type: string; payload?: unknown },
+  active: ReadonlySet<string>,
+  calls?: ReadonlyMap<string, ToolCallRef>,
+): boolean {
+  return active.has(categoryOfRow(row, calls));
 }
 
 /** Event-type color (fixed brand vocabulary, tokens.css --ev-*). The bar in
@@ -158,7 +263,12 @@ function categoryColor(c: Category): string {
       return "var(--ev-token)";
     case "thinking":
       return "var(--ev-reasoning)";
+    // workflow and mcp are tool rows read by a finer question; they get the
+    // tool mark and no colour of their own. A chip is a filter, not a fifth
+    // brand colour, and the palette is what it was before this split.
     case "tool":
+    case "workflow":
+    case "mcp":
     case "image":
       return "var(--ev-tool)";
     case "permission":
@@ -1243,6 +1353,34 @@ export function TraceView(props: {
     return seen;
   }, [entries]);
 
+  const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
+  // Whether a tool_result row is open — the second reader of the index below,
+  // and the condition openDetails has always been paid for under.
+  const openIsToolResult = openSeq !== null && bySeq.get(openSeq)?.type === "tool_result";
+
+  // callId -> the call it belongs to: one pass over the whole stream, shared by
+  // the two readers that need it. The chip row decides every tool_result with
+  // it (a result carries no tool name, only the id of the call it answers), and
+  // the open row's structured face renders the call it answers from it.
+  //
+  // Built only when it can change something — while the tool chips disagree
+  // ({@link needsCallIndex}) or while such a row is open. `allEntries` is a new
+  // array on every frame batch of a live session, so an unconditional memo here
+  // would re-walk the whole stream per batch for a trace nobody has filtered;
+  // the two readers were both already conditional, and this keeps them so.
+  //
+  // The memo turns on the ANSWER, never on `active` itself. `active` is a new
+  // Set on every chip click, so depending on it would rebuild the map — and
+  // re-run the open row's `describeEvent` — each time a reader pressed an
+  // unrelated chip on a resting import. Cheap either way, measured; but with a
+  // row open the need is true whatever the chips say, so keying on the answer
+  // means the map that row holds simply cannot move under it.
+  const wantCallIndex = needsCallIndex(active) || openIsToolResult;
+  const callIndex = useMemo(
+    () => (wantCallIndex ? toolCallsById(allEntries.map((e) => e.payload)) : undefined),
+    [wantCallIndex, allEntries],
+  );
+
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     return allEntries.filter((e) => {
@@ -1250,11 +1388,11 @@ export function TraceView(props: {
       if (e.type === "otlp_export" && !otelOn) return false;
       if (agentFilter !== null && e.agentId !== undefined && e.agentId !== agentFilter) return false;
       if (llmDir !== "all" && llmDirection(e.type) !== llmDir) return false;
-      if (!inCategories(e.type, active)) return false;
+      if (!inCategories(e, active, callIndex)) return false;
       if (q === "") return true;
       return `${e.type} ${e.agentId ?? ""} ${compactJson(e.payload)}`.toLowerCase().includes(q);
     });
-  }, [allEntries, query, llmDir, active, agentFilter, capSeq, otelOn]);
+  }, [allEntries, query, llmDir, active, agentFilter, capSeq, otelOn, callIndex]);
 
   // Timeline lens: waits normalized over the VISIBLE rows (filters change what
   // "the largest gap" means — the bars answer the question for what you see).
@@ -1282,7 +1420,6 @@ export function TraceView(props: {
     () => (lensOn ? reasoningReach(allEntries) : new Map<number, number>()),
     [lensOn, allEntries],
   );
-  const bySeq = useMemo(() => new Map(allEntries.map((e) => [e.seq, e])), [allEntries]);
   const hasThinking = useMemo(() => allEntries.some((e) => e.type === "thinking_delta"), [allEntries]);
 
   // The open row's causal chain (spectro-explain feature 2) — computed here
@@ -1294,21 +1431,19 @@ export function TraceView(props: {
   }, [openSeq, bySeq, allEntries]);
 
   // A tool_result names only its callId, so the structured face needs the call
-  // it answers. Built only while such a row is open — a closed trace, and every
-  // other frame, pays nothing for it.
-  const openCalls = useMemo(() => {
-    if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
-    return toolCallsById(allEntries.map((e) => e.payload));
-  }, [openSeq, bySeq, allEntries]);
+  // it answers. It is the same index the chip row decides with, handed down
+  // only while such a row is open — a closed trace passes `undefined` to the
+  // row that does not use it, even on the days the chip row built one anyway.
+  const openCalls = openIsToolResult ? callIndex : undefined;
 
   // And what those calls returned, when the stream carries an importer's
   // reading of it. Built under exactly the same condition and paid for the same
   // way: only while a tool_result row is open, and never for a live stream that
   // has no such frame in it at all.
-  const openDetails = useMemo(() => {
-    if (openSeq === null || bySeq.get(openSeq)?.type !== "tool_result") return undefined;
-    return toolResultDetailsById(allEntries.map((e) => e.payload));
-  }, [openSeq, bySeq, allEntries]);
+  const openDetails = useMemo(
+    () => (openIsToolResult ? toolResultDetailsById(allEntries.map((e) => e.payload)) : undefined),
+    [openIsToolResult, allEntries],
+  );
 
   // What the source face reads: the file's lines, and the frames the open row
   // stands among so it can count the ones that share its line. Counted over the

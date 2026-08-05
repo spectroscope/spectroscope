@@ -529,6 +529,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tf.explainFailed": { de: "Deutung fehlgeschlagen: {msg}", en: "The reading failed: {msg}" },
   "ws.perSession": { de: "Session-Workspace", en: "session workspace" },
   "ws.pinned": { de: "fester Workspace", en: "pinned workspace" },
+  // The tree drawn before any run: the folder the first run WILL work in. It
+  // is not a session workspace, and there is no session yet to call it one.
+  "ws.firstRunFolder": { de: "Ordner des ersten Laufs", en: "the first run's folder" },
   // The type chips. The nine that predate card 141 kept the exact lowercase
   // word they rendered before, in both languages, because that word is the
   // wire's own vocabulary and translating it would break the link between the
@@ -541,6 +544,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.cat.text": { de: "text", en: "text" },
   "trace.cat.thinking": { de: "thinking", en: "thinking" },
   "trace.cat.tool": { de: "tool", en: "tool" },
+  // The two chips that ask what the tool was. Same word in both languages for
+  // the same reason as their neighbours: it IS the wire vocabulary. "workflow"
+  // is the tool's own name, and "mcp" is the prefix every tool served over MCP
+  // wears, which is also what a reader recognises on the row.
+  "trace.cat.workflow": { de: "workflow", en: "workflow" },
+  "trace.cat.mcp": { de: "mcp", en: "mcp" },
   "trace.cat.permission": { de: "permission", en: "permission" },
   "trace.cat.usage": { de: "usage", en: "usage" },
   "trace.cat.image": { de: "image", en: "image" },
