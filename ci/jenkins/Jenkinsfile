@@ -74,7 +74,17 @@ pipeline {
         // `junit` on a failed stage is what turns "it broke" into "these four
         // broke, here".
         always {
-          junit allowEmptyResults: true, testResults: '**/build/test-results/test/TEST-*.xml'
+          // dir(), and it matters more than it looks: `post` runs in the JOB'S
+          // WORKSPACE, not in the directory the steps above used. Build #5 went
+          // green and recorded "None of the test reports contained any result" —
+          // a passing build with no evidence, which is the gate that lies this
+          // whole file is written against.
+          //
+          // allowEmptyResults is FALSE on purpose. If the reports are missing,
+          // that is the thing to find out about, not to wave through.
+          dir(env.REPO) {
+            junit allowEmptyResults: false, testResults: '**/build/test-results/test/TEST-*.xml'
+          }
         }
       }
     }
@@ -102,8 +112,12 @@ pipeline {
       }
       post {
         success {
-          archiveArtifacts artifacts: 'spectro-server/build/libs/*.jar,spectro-cli/build/distributions/*.zip',
-                           fingerprint: true, allowEmptyArchive: true
+          // Same reason as the junit step above: the artefacts are under the
+          // mounted repo, not under the job's own workspace.
+          dir(env.REPO) {
+            archiveArtifacts artifacts: 'spectro-server/build/libs/*.jar,spectro-cli/build/distributions/*.zip',
+                             fingerprint: true, allowEmptyArchive: false
+          }
         }
       }
     }
