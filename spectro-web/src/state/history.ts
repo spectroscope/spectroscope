@@ -91,7 +91,12 @@ let hashPush: (hash: string) => void = (hash) => {
 };
 let hashReplace: (hash: string) => void = (hash) => {
   if (typeof history !== "undefined") {
-    history.replaceState(null, "", hash);
+    // Stamped too, with the CURRENT depth: a replace re-labels where we stand,
+    // it does not move us. Without this the entry the app boots on carries no
+    // stamp at all, so coming back to it read as "no move" and the forward
+    // button stayed dark on the very step that had just created a forward.
+    // Measured live before it was written: back worked, forward never lit.
+    history.replaceState(stampFor(depth), "", hash);
   }
 };
 
