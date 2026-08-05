@@ -171,6 +171,29 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
             denied={denied}
             detail={card.detail}
           />
+          {/* What the tool RETURNED as a picture, out of the transcript itself
+              (card 179). Roughly 7,300 of the corpus's 8,788 image blocks sit in
+              a tool_result rather than in a person's message — a screenshot from
+              the browser, a rendered chart — and every one of them used to read
+              as "[image/png · 31.0 KB]".
+
+              Deliberately not the gallery: `state.images` means generated HERE,
+              and this was read or grabbed. An <img src> and nothing else, so the
+              data: URI the transcript supplied can never reach a navigation. */}
+          {card.images !== undefined && card.images.length > 0 && (
+            <div className="tool-card-shots">
+              {card.images.map((a, i) => (
+                <img
+                  key={i}
+                  className="tool-card-shot"
+                  src={`data:${a.mediaType};base64,${a.dataBase64}`}
+                  alt={a.name}
+                  title={a.name}
+                  loading="lazy"
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

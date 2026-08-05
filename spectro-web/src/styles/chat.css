@@ -505,3 +505,21 @@
   color: var(--text-dim);
 }
 .ws-chooser-new { color: var(--text-faint); }
+
+/* Pictures a tool RETURNED, carried out of an imported transcript (card 179).
+   Bounded on screen and openable at full size by the browser's own image view —
+   the bytes are already in the page, so nothing is fetched to enlarge one. */
+.tool-card-shots {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.tool-card-shot {
+  max-width: 100%;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  object-fit: contain;
+  background: var(--shade);
+}

@@ -178,6 +178,7 @@ export function AgentNode({ data }: NodeProps) {
     systemPrompt: string | null;
     tool: { name: string; input: unknown } | null;
     genImage: { src: string; prompt: string } | null;
+    attached: { src: string; note: string }[] | null;
   };
   const lang = useLang();
   const expandAll = useContext(ExpandAllContext);
@@ -283,6 +284,24 @@ export function AgentNode({ data }: NodeProps) {
         </div>
       </div>
     ) : null;
+  // What the agent was HANDED. Separate from the generated panel above on
+  // purpose: same shelf, different provenance, and the label says which.
+  const attachedPanel =
+    d.attached && d.attached.length > 0 ? (
+      <div className="pf-panelbox pf-genimg-panel">
+        <div className="pf-panelbox__label">
+          {t(lang, "map.ctx.attached")} · {d.attached.length}
+        </div>
+        <div className="pf-shots">
+          {d.attached.map((shot, i) => (
+            <figure className="pf-shot" key={`${shot.note}-${i}`}>
+              <img className="pf-genimg" src={shot.src} alt={shot.note} />
+              <figcaption className="pf-genimg-cap">{shot.note}</figcaption>
+            </figure>
+          ))}
+        </div>
+      </div>
+    ) : null;
   // Two-faced since card 120: the insight tree or the call as the thing it is,
   // under the map's master face with a per-panel strip on top.
   const toolPanel = d.tool && !isGenImage ? <ToolCallPanel tool={d.tool} /> : null;
@@ -293,6 +312,7 @@ export function AgentNode({ data }: NodeProps) {
       {sysPanel}
       {ctxBarsPanel}
       {genImagePanel}
+      {attachedPanel}
       {toolPanel}
       {noToolPanel}
     </>
@@ -321,7 +341,12 @@ export function AgentNode({ data }: NodeProps) {
               {noToolPanel}
             </div>
           </div>
-          {genImagePanel && <div className="pf-agent__genfull">{genImagePanel}</div>}
+          {(genImagePanel || attachedPanel) && (
+            <div className="pf-agent__genfull">
+              {genImagePanel}
+              {attachedPanel}
+            </div>
+          )}
         </>
       ) : (
         <>

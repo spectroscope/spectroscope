@@ -279,6 +279,7 @@ export function ImportDialog(props: {
         {facts.workflowCalls > 0 && <span>workflow ×{facts.workflowCalls}</span>}
         {facts.subagents > 0 && <span>subagents ×{facts.subagents}</span>}
         {(facts.workflowAgents ?? 0) > 0 && <span>workflow-agents ×{facts.workflowAgents}</span>}
+        {(facts.images ?? 0) > 0 && <span>images ×{facts.images}</span>}
         {facts.language !== undefined && <span>{facts.language}</span>}
       </span>
     );
@@ -359,7 +360,7 @@ export function ImportDialog(props: {
               )}
               <span className="import-filter-group" role="group" aria-label={t(lang, "imp.filter.with")}>
                 <span className="import-filter-label">{t(lang, "imp.filter.with")}</span>
-                {(["workflow", "subagents"] as const).map((prop) => (
+                {(["workflow", "subagents", "images"] as const).map((prop) => (
                   <button
                     key={prop}
                     type="button"
@@ -393,6 +394,7 @@ export function ImportDialog(props: {
                   <span className="tabular">
                     {t(lang, "imp.stats.workflowAgents", { n: stats.workflowAgents })}
                   </span>
+                  <span className="tabular">{t(lang, "imp.stats.images", { n: stats.images })}</span>
                 </>
               )}
               {stats.unread > 0 && (

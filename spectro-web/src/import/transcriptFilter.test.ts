@@ -161,3 +161,29 @@ describe("selectionStats", () => {
     expect(selectionStats([], factsFor(known)).count).toBe(0);
   });
 });
+
+// Card 179. The picture axis: it holds off the fold's own count, and an older
+// server that does not send the field must read as "did not say" rather than
+// as a transcript with no pictures — otherwise the chip quietly hides rows.
+describe("the images property", () => {
+  const withImages: TranscriptFacts = { path: "a", models: [], workflowCalls: 0, subagents: 0, images: 3 };
+  const without: TranscriptFacts = { path: "b", models: [], workflowCalls: 0, subagents: 0, images: 0 };
+  const older: TranscriptFacts = { path: "a", models: [], workflowCalls: 0, subagents: 0 };
+
+  it("keeps only the transcripts that carry pictures", () => {
+    const rows = [row("a"), row("b")];
+    const facts = (r: TranscriptRow) => (r.path === "a" ? withImages : without);
+    const out = applyFilter(rows, facts, { models: [], props: ["images"], text: "" });
+    expect(out.rows.map((r) => r.path)).toEqual(["a"]);
+  });
+
+  it("does not claim a silent server means no pictures", () => {
+    const out = applyFilter([row("a")], () => older, { models: [], props: ["images"], text: "" });
+    expect(out.rows).toEqual([]);
+  });
+
+  it("adds them up across the selection", () => {
+    const rows = [row("a"), row("b")];
+    expect(selectionStats(rows, (r) => (r.path === "a" ? withImages : without)).images).toBe(3);
+  });
+});

@@ -19,6 +19,11 @@ export interface ToolCard {
    *  (card 167). UI state only: it comes off an import-only frame, nothing in
    *  events.ts carries it, and a card built from a live run never has one. */
   detail?: ToolResultDetail;
+  /** Pictures the tool returned, carried out of the transcript itself — a
+   *  screenshot, a rendered chart. Import-only, same as `detail`: a live run's
+   *  images go through the gallery and `/api/images`, and these are neither
+   *  generated here nor on disk anywhere. */
+  images?: UserAttachment[];
   durationMs?: number;
   permission?: "pending" | "allowed" | "denied";
   /** ts of the tool_call event — drives the live duration count-up. */
@@ -251,6 +256,10 @@ export interface UiState {
    *  bubble is created by the reducer, so there is no local echo to hang the
    *  thumbnails on. */
   outboxAttachments: UserAttachment[] | null;
+  /** Pictures an IMPORT carried that belong to no tool card — parked for the
+   *  next bubble, exactly as `outboxAttachments` is for a live send. Its own
+   *  field because the two mean different things and run_start clears that one. */
+  importedAttachments?: UserAttachment[];
   /** Session-wide agent roster (main + every subagent), persisted across runs. */
   agents: AgentInfo[];
   /** Latest `plan` snapshot (additive) — latest-wins, null until the
@@ -299,6 +308,7 @@ export const initialState: UiState = {
   rootAgentId: null,
   thinkingActive: false,
   outboxAttachments: null,
+  importedAttachments: undefined,
   agents: [],
   plan: null,
   workspace: null,
@@ -553,7 +563,17 @@ export function reduce(state: UiState, event: RunEvent): UiState {
   // run or resetting the usage on one would be a claim the file never made.
   if (raw.type === "user_message") {
     const text = (event as unknown as { text?: unknown }).text;
-    return typeof text === "string" && text !== "" ? addTurn(traced, { kind: "user", text }) : traced;
+    if (typeof text !== "string" || text === "") return traced;
+    // A picture the transcript carried just before these words goes IN this
+    // bubble, in the file's own order: a screenshot pasted before the sentence
+    // it is about reads as one message, and 298 records in the corpus are
+    // exactly that (the reason attachmentNote put its note here to begin with).
+    const carried = traced.importedAttachments;
+    return addTurn(carried?.length ? { ...traced, importedAttachments: undefined } : traced, {
+      kind: "user",
+      text,
+      ...(carried?.length ? { attachments: carried } : {}),
+    });
   }
   // Same boundary rule for permission_mode_info: connect + every switch
   // announce the active mode; the composer gear follows wire truth.
@@ -606,7 +626,10 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       // Live: the root run picks up the thumbnails parked on send.
       // Replay has no bytes (the event carries only blobPath/sha256): one text
       // placeholder per attachment suffices; no blob route exists on purpose.
-      const attachments = state.outboxAttachments ?? undefined;
+      // Live: what was parked on send. Import: what the transcript carried
+      // before its first prompt, which is where the owner's four screenshots
+      // sit. Never both — a live send and an import cannot be the same run.
+      const attachments = state.outboxAttachments ?? state.importedAttachments ?? undefined;
       const placeholder =
         !attachments?.length && event.attachments?.length
           ? "\n" +
@@ -626,6 +649,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           runModel: event.model ?? state.providerInfo?.model ?? state.runModel,
           lastStopReason: null,
           outboxAttachments: null,
+          importedAttachments: undefined,
         },
         {
           kind: "user",
@@ -880,9 +904,38 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
         agentId?: unknown;
         model?: unknown;
         launched?: unknown;
+        mediaType?: unknown;
+        dataBase64?: unknown;
+        note?: unknown;
+        standalone?: unknown;
       };
       if (raw.type === "tool_result_detail" && typeof raw.callId === "string" && !!raw.detail)
         return patchCard(state, raw.callId, { detail: raw.detail as ToolResultDetail });
+      // A picture the transcript itself carried (card 179). Two homes, decided
+      // by whether the block sat inside a tool_result: the card it answered, or
+      // the next thing the person said. Deliberately NOT `state.images` — that
+      // is the gallery, and the gallery means "generated here", which a
+      // screenshot somebody grabbed was not.
+      if (raw.type === "attachment_image" && typeof raw.dataBase64 === "string") {
+        const shot: UserAttachment = {
+          name: String(raw.note ?? "image"),
+          mediaType: String(raw.mediaType ?? "image/png"),
+          dataBase64: raw.dataBase64,
+        };
+        if (typeof raw.callId === "string" && raw.callId !== "") {
+          const card = state.cards[raw.callId];
+          return patchCard(state, raw.callId, { images: [...(card?.images ?? []), shot] });
+        }
+        // Nothing else in that record spoke, so the picture IS the message.
+        // Parking it would glue it to whatever was said next, which is a
+        // different message.
+        if (raw.standalone === true) return addTurn(state, { kind: "user", text: "", attachments: [shot] });
+        // Otherwise parked for the bubble it belongs to. Its own field rather
+        // than `outboxAttachments`: that one means "what I just sent" and
+        // run_start clears it, so a live send interleaving with an import would
+        // cross.
+        return { ...state, importedAttachments: [...(state.importedAttachments ?? []), shot] };
+      }
       // What a transcript's launch record says about the child it launched
       // (card 167, finding 6): the model the child ACTUALLY ran on, which is
       // not the parent's, and whether it went into the background. A launched

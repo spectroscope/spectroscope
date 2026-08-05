@@ -4,6 +4,7 @@ import { advanceScene, initialScene } from "../labScene";
 import {
   deriveDetail,
   EXPANDED_CARD,
+  MAX_CARD_SHOTS,
   EXP_GAP,
   reportOversizeCards,
   sceneToFlow,
@@ -455,5 +456,49 @@ describe("deriveDetail — the generated image (real blob, card 42 follow-up)", 
 
   it("is empty when no image was generated", () => {
     expect(deriveDetail([]).genImage).toEqual({});
+  });
+});
+
+// Card 179. The lab's expanded view was the "mega bomben feature" and it never
+// went away — it was only ever fed by image_generated, which no import emits.
+describe("pictures handed to an agent", () => {
+  const shot = (agentId: string, note: string) =>
+    ({
+      type: "attachment_image",
+      agentId,
+      mediaType: "image/png",
+      dataBase64: "AAA",
+      note,
+      ts: 1,
+    }) as unknown as RunEvent;
+
+  it("rides as a data URI, so a store that never held the file still shows it", () => {
+    const d = deriveDetail([shot("main", "[image/png · 31.0 KB]")]);
+    expect(d.attached["main"]).toEqual([{ src: "data:image/png;base64,AAA", note: "[image/png · 31.0 KB]" }]);
+  });
+
+  it("keeps all of them in order — the owner's own file opens with four", () => {
+    const d = deriveDetail([
+      shot("main", "one"),
+      shot("main", "two"),
+      shot("main", "three"),
+      shot("main", "four"),
+    ]);
+    expect(d.attached["main"]?.map((s) => s.note)).toEqual(["one", "two", "three", "four"]);
+  });
+
+  it("bounds one card, because a card is drawn into a reserved seat", () => {
+    const many = Array.from({ length: MAX_CARD_SHOTS + 4 }, (_, i) => shot("main", `s${i}`));
+    expect(deriveDetail(many).attached["main"]).toHaveLength(MAX_CARD_SHOTS);
+  });
+
+  it("does not put one agent's pictures on another's card", () => {
+    const d = deriveDetail([shot("main", "a"), shot("sub-1", "b")]);
+    expect(d.attached["main"]?.length).toBe(1);
+    expect(d.attached["sub-1"]?.length).toBe(1);
+  });
+
+  it("leaves the generated slot alone — different provenance, different label", () => {
+    expect(deriveDetail([shot("main", "a")]).genImage["main"]).toBeUndefined();
   });
 });
