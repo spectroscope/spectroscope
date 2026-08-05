@@ -162,6 +162,15 @@ export function App() {
   const [enteredFleet, setEnteredFleet] = useState<string | null>(null);
   /** The agent transcripts beside the imported session (card 177). */
   const [sidecars, setSidecars] = useState<SidecarIndex>(NO_SIDECARS);
+  // The store address of the session on screen, when it has one. Card 177 uses
+  // the same fact to find the sidecar agents; the folder buttons use it to ask
+  // which of this session's directories exist. A paste or a picked file carries
+  // no address and gets no buttons, which is honest: there is no folder.
+  //
+  // STAMPED WITH THE SESSION, like the import bar beside it: the reader can
+  // leave an imported file without anything clearing this, and folder buttons
+  // pointing at the previous session's directories would be worse than none.
+  const [importedPath, setImportedPath] = useState<{ sessionId: string; path: string } | null>(null);
   /**
    * Which sidebar segment is showing — App's, not the sidebar's.
    *
@@ -906,6 +915,10 @@ export function App() {
   // live: import a transcript, click a stored session, and the bar kept naming
   // the import while the header already said archive.
   const shownBar = shownImportBar(importBar, replay?.id ?? null);
+  // Same rule as the bar above: the address belongs to ONE session, and a
+  // reader who moved on must not be offered its folders.
+  const shownStorePath =
+    importedPath !== null && importedPath.sessionId === (replay?.id ?? null) ? importedPath.path : null;
 
   /**
    * Open one agent's own transcript, from beside the session (card 177).
@@ -949,10 +962,12 @@ export function App() {
     // picked file) has nothing to ask about and keeps the empty index, which
     // is also what every failure answers: a panel that cannot reach the store
     // must say what it always said, never that a session has no agents.
+    const sessionId = `import:${kind}:${label}`;
     setSidecars(NO_SIDECARS);
+    setImportedPath(storePath === undefined ? null : { sessionId, path: storePath });
     if (storePath !== undefined) void loadSidecarAgents(storePath).then(setSidecars);
     setReplay({
-      id: `import:${kind}:${label}`,
+      id: sessionId,
       state: foldArchive(events),
       events,
       source,
@@ -1827,6 +1842,7 @@ export function App() {
                   state: view,
                   events: tabEvents,
                   sessionLabel: shownSessionId,
+                  storePath: shownStorePath,
                   viewKey,
                   liveView: viewingLive,
                   onSend: send,
@@ -1982,6 +1998,7 @@ export function App() {
             onFocusHandled={() => setFocusEvent(null)}
             langfuseUrl={langfuseUrl}
             otlpFailure={otlpFailure}
+            storePath={shownStorePath}
             sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
             /* An entered fleet's rows are not the replay's rows, so its file is
                taken away above. The sentence the pane then says is not "there

@@ -26,6 +26,7 @@ import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
 import { TranslatePanel } from "./TranslatePanel";
 import { ExportMenu } from "./ExportMenu";
+import { SessionFolderButtons } from "./SessionFolderButtons";
 import { chatTools } from "./chatTools";
 import { useTranslation } from "../state/translate";
 import { useChatWidth } from "../state/chatWidth";
@@ -56,6 +57,10 @@ export function Chat(props: {
   /** Names an export file. The live session id or the replay id — exportId is
    *  not it, since that is only set for resumable archives. */
   sessionLabel?: string | null;
+  /** The imported transcript's store-relative path, when this session came from
+   *  the store. A paste or a picked file has no address, and therefore no
+   *  folders to offer. */
+  storePath?: string | null;
   /** true when this is the live socket view, false for a replayed archive. */
   liveView: boolean;
   onSend: (text: string, attachments?: PendingAttachment[]) => void;
@@ -389,6 +394,10 @@ export function Chat(props: {
         <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} viewKey={vk} />
       )}
       {tools.translateControl && <TranslatePanel events={props.events ?? []} viewKey={vk} />}
+      {/* The session's own files on disk. Same component as the trace's, so the
+          two bars cannot drift; it draws nothing at all for a live session or a
+          pasted file, which have no folder to point at. */}
+      <SessionFolderButtons storePath={props.storePath ?? null} />
     </div>
   );
 

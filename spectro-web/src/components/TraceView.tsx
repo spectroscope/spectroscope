@@ -15,6 +15,7 @@ import { Markdown } from "./Markdown";
 import { highlight } from "./Highlighted";
 import { ToolViewBody } from "./ToolViewBody";
 import { describeEvent, toolCallsById, toolResultDetailsById } from "./eventDetail";
+import { SessionFolderButtons } from "./SessionFolderButtons";
 import type { DetailSection, ToolCallRef } from "./eventDetail";
 import type { ToolResultDetail } from "../import/toolResultDetail";
 import {
@@ -1234,6 +1235,8 @@ export function TraceView(props: {
    *  browser from the session id. null whenever no link can work: nothing
    *  exported yet, or the backend is not Langfuse. */
   langfuseUrl?: string | null;
+  /** The imported transcript's store-relative path, for the folder buttons. */
+  storePath?: string | null;
   /** The message of a failed export, but only while NOTHING has landed yet.
    *  null keeps the toolbar silent. */
   otlpFailure?: string | null;
@@ -1880,6 +1883,10 @@ export function TraceView(props: {
             {t(lang, "trace.langfuse")}
           </a>
         )}
+        {/* The session's own files on disk, beside the one link that already
+            leaves the app for this session's stuff elsewhere. Same component the
+            chat's tools row mounts. */}
+        <SessionFolderButtons storePath={props.storePath ?? null} className="trace-folders" />
         {linkState === "failed" && (
           /* Static, not an anchor: there is nothing to open. Endpoint neutral,
              because a failing Jaeger export reads the same way. */

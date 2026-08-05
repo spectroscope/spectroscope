@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
 
 /**
@@ -405,6 +406,108 @@ public class ClaudeTranscriptsController {
         }
         return ResponseEntity.ok(new SidecarsResponse(TranscriptFacts.sidecarAgentsBeside(file, base)));
     }
+
+    /**
+     * {@code GET /api/claude/transcripts/folders}: which of a session's three
+     * folders are really on disk.
+     *
+     * <p>The store lives under a dot-folder Finder hides and the scratchpad
+     * under a temp path nobody would guess, so a session's own files are
+     * unreachable from the app that is reading them. This says which of the
+     * three exist; the UI offers a button only for those, because a button that
+     * opens nothing is a small lie.</p>
+     *
+     * <p>Asked per request rather than cached: a scratchpad appears when a run
+     * makes one and a temp sweep takes it away again.</p>
+     *
+     * @param rel the session transcript, store-relative
+     * @param request the servlet request, for the local-origin fence
+     * @return which folders are there, and their absolute paths so the button
+     *         can say where it goes; empty for anything that is not a transcript
+     */
+    @GetMapping("/api/claude/transcripts/folders")
+    public ResponseEntity<FoldersResponse> folders(
+            @RequestParam(name = "path") String rel, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build();
+        }
+        Path file = insideStore(rel);
+        if (file == null) {
+            return ResponseEntity.ok(new FoldersResponse(List.of()));
+        }
+        List<FolderInfo> found = new ArrayList<>();
+        for (SessionFolders.Kind kind : SessionFolders.Kind.values()) {
+            Path folder = SessionFolders.locate(file, kind);
+            if (SessionFolders.isThere(folder)) {
+                found.add(new FolderInfo(kind.name().toLowerCase(Locale.ROOT), folder.toString()));
+            }
+        }
+        return ResponseEntity.ok(new FoldersResponse(List.copyOf(found)));
+    }
+
+    /**
+     * {@code POST /api/claude/transcripts/folders/open}: show one of them.
+     *
+     * <p><b>The path is never the caller's.</b> The body names a transcript and
+     * a KIND; the server resolves the transcript through the same fence every
+     * read here uses and derives the folder itself. An endpoint that opened a
+     * path off the wire would be a way to run the machine's file manager on any
+     * file on the disk, from any page the browser happens to be showing — and
+     * the fence in front of it is a fence, not a guarantee, which is exactly
+     * what {@code /%61pi/config} demonstrated in v0.6.1.</p>
+     *
+     * @param body the transcript and which folder
+     * @param request the servlet request, for the local-origin fence
+     * @return what happened, so the UI can say "not there" rather than nothing
+     */
+    @PostMapping(value = "/api/claude/transcripts/folders/open",
+            consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<OpenResponse> openFolder(
+            @RequestBody OpenRequest body, HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build();
+        }
+        Path file = body == null ? null : insideStore(body.path());
+        SessionFolders.Kind kind = kindOf(body == null ? null : body.what());
+        if (file == null || kind == null) {
+            return ResponseEntity.ok(new OpenResponse("missing"));
+        }
+        FolderOpener.Result result = FolderOpener.open(SessionFolders.locate(file, kind));
+        return ResponseEntity.ok(new OpenResponse(result.name().toLowerCase(Locale.ROOT)));
+    }
+
+    /**
+     * The kind a caller named, or null for anything else.
+     *
+     * <p>{@code valueOf} would throw on a name that is not one of ours, and an
+     * unknown kind is a caller error rather than a server one.</p>
+     *
+     * @param what the wire word
+     * @return the kind, or null
+     */
+    private static SessionFolders.Kind kindOf(String what) {
+        if (what == null) {
+            return null;
+        }
+        for (SessionFolders.Kind kind : SessionFolders.Kind.values()) {
+            if (kind.name().equalsIgnoreCase(what)) {
+                return kind;
+            }
+        }
+        return null;
+    }
+
+    /** One folder that exists, and where it is. */
+    record FolderInfo(String kind, String path) {}
+
+    /** Which of a session's folders are on disk. */
+    record FoldersResponse(List<FolderInfo> folders) {}
+
+    /** Which folder of which session to show. */
+    record OpenRequest(String path, String what) {}
+
+    /** {@code opened}, {@code missing} or {@code unsupported}. */
+    record OpenResponse(String result) {}
 
     /**
      * Resolves a caller-supplied path to a real transcript inside the store, or
