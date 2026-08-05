@@ -1419,3 +1419,55 @@ describe("reduce — agent_detail (import-only, card 167)", () => {
     expect(s.agents.map((a) => a.id)).toEqual(["main", "t1"]);
   });
 });
+
+// Card 179, adversarial pass. A compaction replays a tool_result AHEAD of the
+// assistant record holding the tool_use it answers, so the picture can reach a
+// card that does not exist yet. patchCard no-ops on a missing card and the
+// tool_call would then build a fresh one over it: the bytes gone, silently,
+// which is the exact failure this whole card exists to end.
+describe("a picture that arrives before its tool call", () => {
+  const shot = (callId: string, note: string) =>
+    ({
+      type: "attachment_image",
+      agentId: "main",
+      callId,
+      mediaType: "image/png",
+      dataBase64: "AAA",
+      note,
+      ts: 1,
+    }) as unknown as RunEvent;
+  const call = (callId: string): RunEvent => ({
+    type: "tool_call",
+    agentId: "main",
+    callId,
+    name: "Read",
+    input: {},
+    ts: 2,
+  });
+
+  it("waits for the card instead of being thrown away", () => {
+    const state = reduceAll(initialState, [shot("t1", "a"), call("t1")]);
+    expect(state.cards["t1"]?.images?.map((i) => i.name)).toEqual(["a"]);
+  });
+
+  it("keeps the card's real name — a held picture never invents one", () => {
+    const state = reduceAll(initialState, [shot("t1", "a"), call("t1")]);
+    expect(state.cards["t1"]?.name).toBe("Read");
+    expect(state.turns.filter((t) => t.kind === "tool")).toHaveLength(1);
+  });
+
+  it("keeps every one of them, in order", () => {
+    const state = reduceAll(initialState, [shot("t1", "a"), shot("t1", "b"), call("t1")]);
+    expect(state.cards["t1"]?.images?.map((i) => i.name)).toEqual(["a", "b"]);
+  });
+
+  it("does not leave the hold behind once the card has them", () => {
+    const state = reduceAll(initialState, [shot("t1", "a"), call("t1")]);
+    expect(state.orphanCardImages?.["t1"]).toBeUndefined();
+  });
+
+  it("still works the ordinary way round", () => {
+    const state = reduceAll(initialState, [call("t1"), shot("t1", "a")]);
+    expect(state.cards["t1"]?.images?.map((i) => i.name)).toEqual(["a"]);
+  });
+});

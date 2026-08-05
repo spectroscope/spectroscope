@@ -113,8 +113,15 @@ export function categoryOf(type: string): Category {
       return "permission";
     case "usage":
       return "usage";
+    // attachment_image belongs here: a picture an imported transcript carried
+    // is a picture. Without it the row answered to `other`, so the one gesture
+    // a reader makes to find the pictures — pressing `image` — hid all of them,
+    // and pressing `other` off to clear the plumbing rows took every picture
+    // with it. Nothing looked broken until the filter was used, and then the
+    // pane confidently showed zero pictures for a file with 140.
     case "image_generated":
     case "set_image_provider":
+    case "attachment_image":
       return "image";
     case "context_info":
     case "system_context":
@@ -401,6 +408,18 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
       // list. A list this cannot read falls back to the raw frame.
       const items = readTodoItems(p["items"]);
       return items === null ? compactJson(entry.payload) : todoSummary(items, lang);
+    }
+    // The picture an imported transcript carried. The frame holds the BYTES,
+    // and a collapsed row must not print them: compactJson of this payload is
+    // up to 600 KB of base64 — measured 19.87 MB across one 140-picture file —
+    // in the DOM and, worse, in the row's own search text, where it made Cmd+F
+    // match base64 noise ("deny" hit 15 of 140 picture rows, none of them
+    // because the frame said so). This is the same reason eventDetail holds
+    // `dataBase64` back from the OPEN row. The file's own note is what the row
+    // says instead; the picture itself is in the detail below.
+    case "attachment_image": {
+      const note = String(p["note"] ?? "");
+      return note !== "" ? note : `[${String(p["mediaType"] ?? "image")}]`;
     }
     default:
       return compactJson(entry.payload);

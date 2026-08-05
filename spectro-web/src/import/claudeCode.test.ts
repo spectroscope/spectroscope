@@ -1046,9 +1046,12 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
     // rest is a pasted image. String concatenation would render "[object
     // Object]" into the trace.
     //
-    // The image line is card 167: this used to read "hold on" and nothing else,
-    // and on the 17 array prompts that are an image ALONE it read as no prompt
-    // at all. A queued command with a screenshot in it now says so.
+    // The image line WAS card 167: this used to read "hold on" and nothing
+    // else, and on the 17 array prompts that are an image ALONE it read as no
+    // prompt at all. Card 167 gave it the note "[image/png · 3 B]"; card 179
+    // gives it the picture, so the note steps aside — but only for a picture
+    // that really travels. An image the app cannot render keeps its note here,
+    // exactly as card 167 left it.
     const frames = framesOfType(
       [
         attachment({
@@ -1063,7 +1066,7 @@ describe("claudeCode adapter (the lines that carry no conversation)", () => {
       "queued_command",
     );
     expect(frames.length).toBe(1);
-    expect(frames[0].prompt).toBe("[image/png · 3 B]\nhold on");
+    expect(frames[0].prompt).toBe("hold on");
   });
 
   it("says less about a queue operation that carries no content", () => {
@@ -2667,5 +2670,46 @@ describe("a subagent file that opens with a screenshot", () => {
       (e) => (e as unknown as { type: string }).type === "run_start",
     ) as unknown as { prompt: string };
     expect(start.prompt).toBe("read this shot");
+  });
+
+  // Card 179, adversarial pass. emitNoConversation was the ONE block-reading path
+  // in this file with no imageFrame call, and it is not a rare one: 212 blocks
+  // over 177 records, every single one commandMode "prompt" — a person's own
+  // paste. 145 of those records have their words nowhere else in the file.
+  describe("a screenshot pasted into a queued prompt", () => {
+    const queued = JSON.stringify({
+      type: "attachment",
+      attachment: {
+        type: "queued_command",
+        commandMode: "prompt",
+        prompt: [
+          { type: "image", source: { type: "base64", media_type: "image/png", data: "iVBORw0KGgo=" } },
+          { type: "text", text: "und spectrum ist auch kaputt" },
+        ],
+      },
+      uuid: "q1",
+      timestamp: "2026-08-05T10:00:00.000Z",
+    });
+
+    it("brings the picture instead of only its size", () => {
+      const pic = parseTranscript(queued).find(
+        (e) => (e as unknown as { type: string }).type === "attachment_image",
+      ) as unknown as { dataBase64: string; standalone: boolean };
+      expect(pic?.dataBase64).toBe("iVBORw0KGgo=");
+    });
+
+    it("stands alone — a queued command never reaches a user bubble", () => {
+      const pic = parseTranscript(queued).find(
+        (e) => (e as unknown as { type: string }).type === "attachment_image",
+      ) as unknown as { standalone: boolean };
+      expect(pic?.standalone).toBe(true);
+    });
+
+    it("leaves the words alone and drops the stand-in", () => {
+      const q = parseTranscript(queued).find(
+        (e) => (e as unknown as { type: string }).type === "queued_command",
+      ) as unknown as { prompt: string };
+      expect(q.prompt).toBe("und spectrum ist auch kaputt");
+    });
   });
 });

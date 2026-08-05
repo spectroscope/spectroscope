@@ -502,3 +502,44 @@ describe("pictures handed to an agent", () => {
     expect(deriveDetail([shot("main", "a")]).genImage["main"]).toBeUndefined();
   });
 });
+
+// Card 179, adversarial pass. The map read the literal "main" for the agent
+// card's prompt, reasoning, answer, in-flight tool AND pictures — but a
+// standalone subagent transcript roots at its OWN id, and 66% of the corpus's
+// pictures live in those files. On two thirds of them the card asked for an
+// agent that was not in the stream.
+describe("a stream that is not rooted at main", () => {
+  const T0 = 1700000000000;
+  const events = [
+    { type: "run_start", runId: "r", agentId: "a9075ad4", prompt: "read this shot", ts: T0 },
+    {
+      type: "attachment_image",
+      agentId: "a9075ad4",
+      mediaType: "image/png",
+      dataBase64: "AAA",
+      note: "[image/png · 1 KB]",
+      ts: T0,
+    },
+  ] as unknown as RunEvent[];
+
+  it("names its root off the first run_start", () => {
+    expect(deriveDetail(events).root).toBe("a9075ad4");
+  });
+
+  it("still says main for an ordinary session file", () => {
+    expect(
+      deriveDetail([
+        { type: "run_start", runId: "r", agentId: "main", prompt: "hi", ts: T0 },
+      ] as unknown as RunEvent[]).root,
+    ).toBe("main");
+  });
+
+  it("gives the root's prompt to the card rather than an empty string", () => {
+    expect(deriveDetail(events).prompt).toBe("read this shot");
+  });
+
+  it("puts the root's pictures where the card looks for them", () => {
+    const d = deriveDetail(events);
+    expect(d.attached[d.root]).toHaveLength(1);
+  });
+});

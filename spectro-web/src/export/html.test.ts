@@ -457,3 +457,36 @@ describe("exportFilename", () => {
     expect(exportFilename("chat", undefined, NOW)).toBe("spectroscope-chat-20260727-1203.html");
   });
 });
+
+// Card 179, adversarial pass. The user bubble has rendered its attachments as
+// data: URIs since the file was written; a tool card never did — and 83% of the
+// imported pictures sit on a card. Two of the heaviest files exported a
+// document that looks like the app and holds none of their pictures.
+describe("pictures a tool handed back, in the exported file", () => {
+  const T0 = 1700000000000;
+  const png = "iVBORw0KGgoAAAANSUhEUg==";
+  const events = [
+    { type: "run_start", runId: "r", agentId: "main", prompt: "shoot it", ts: T0 },
+    { type: "tool_call", agentId: "main", callId: "t1", name: "screenshot", input: {}, ts: T0 },
+    {
+      type: "attachment_image",
+      agentId: "main",
+      callId: "t1",
+      mediaType: "image/png",
+      dataBase64: png,
+      note: "[image/png · 18 B]",
+      ts: T0,
+    },
+    { type: "tool_result", agentId: "main", callId: "t1", output: "ok", ts: T0 + 1 },
+    { type: "run_end", runId: "r", agentId: "main", reason: "completed", ts: T0 + 2 },
+  ] as unknown as RunEvent[];
+
+  it("carries the bytes into the document", () => {
+    const html = chatToHtml(events, { now: NOW });
+    expect(html).toContain(`data:image/png;base64,${png}`);
+  });
+
+  it("names it, so a reader knows what he is looking at", () => {
+    expect(chatToHtml(events, { now: NOW })).toContain("[image/png · 18 B]");
+  });
+});

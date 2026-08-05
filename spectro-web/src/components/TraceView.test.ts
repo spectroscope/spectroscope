@@ -397,3 +397,39 @@ describe("what the callId index is worth", () => {
     expect(needsCallIndex(new Set(["text", "thinking", "permission"]))).toBe(false);
   });
 });
+
+// Card 179, adversarial pass. A picture frame carries its BYTES, and the
+// collapsed row is the one place that must never print them.
+describe("an imported picture in the trace", () => {
+  const big = "A".repeat(60_000);
+  const shot: TraceEntry = {
+    seq: 5,
+    dir: "in",
+    ts: 0,
+    type: "attachment_image",
+    payload: { agentId: "main", mediaType: "image/png", note: "[image/png · 31.0 KB]", dataBase64: big },
+  };
+
+  it("says the file's own note, not 600 KB of base64", () => {
+    const line = summarize(shot, "en");
+    expect(line).toBe("[image/png · 31.0 KB]");
+    expect(line).not.toContain(big);
+  });
+
+  it("falls back to the media type when the file gave no note", () => {
+    expect(summarize({ ...shot, payload: { mediaType: "image/webp", dataBase64: big } }, "en")).toBe(
+      "[image/webp]",
+    );
+  });
+
+  // Measured before this was written: on a 140-picture file the summaries
+  // totalled 19.87 MB and Cmd+F for "deny" matched 15 picture rows, none of
+  // them because the frame said so.
+  it("keeps the base64 out of the row's search text", () => {
+    expect(summarize(shot, "en").length).toBeLessThan(200);
+  });
+
+  it("answers to the chip a reader presses to find pictures", () => {
+    expect(categoryOf("attachment_image")).toBe("image");
+  });
+});

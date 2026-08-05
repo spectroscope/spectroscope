@@ -43,12 +43,24 @@ import type { ExportKind } from "../export/kinds";
 import { saveHtml } from "../export/html";
 import "../styles/export-dialog.css";
 
-/** Above this the preview is generated from a slice and SAYS so. Measured:
- *  chatToHtml runs 41 ms and produces 3.2 MB at 6042 events, so the cost that
+/** Above this the preview is generated from a slice and SAYS so. The cost that
  *  matters is not the string building — it is asking a browser to lay out a
  *  multi-megabyte document on every keystroke-sized option change. */
 const MAX_PREVIEW_BYTES = 2_000_000;
-/** How much of the stream a bounded preview shows. */
+/**
+ * Where a bounded preview STARTS. It is a starting point rather than the bound,
+ * because a count cannot bound bytes.
+ *
+ * The old calibration — "41 ms and 3.2 MB at 6042 events" — assumed bytes per
+ * event were roughly even, and card 179 ended that: one pasted screenshot puts
+ * 275 KB on a single event. Re-measured on the same code, the same file now
+ * builds 15.13 MB at 8346 events, 4.7x the bytes and 13x the time. A 1,742-event
+ * file with 66 pictures kept 43 of them inside a 1,200-event slice and handed
+ * the iframe 4.45 MB — 2.2x the ceiling this constant exists to enforce.
+ *
+ * So the slice halves until the BUILT string fits. Measured worst case: four
+ * builds, 100 ms, landing at 150 events and 1.69 MB.
+ */
 const PREVIEW_EVENTS = 1200;
 /** Option changes settle before the document is rebuilt. */
 const PREVIEW_DEBOUNCE_MS = 150;
@@ -72,6 +84,9 @@ const bytes = (n: number, lang: Lang): string => {
 };
 
 interface Preview {
+  /** How many events the shown document actually holds — the note says this
+   *  number, not the constant, or the sheet misreports what it dropped. */
+  shown: number;
   html: string;
   fullBytes: number;
   ms: number;
@@ -153,12 +168,20 @@ export function ExportDialog(props: ExportDialogProps) {
       const full = build(request);
       const ms = performance.now() - started;
       const over = full.length > MAX_PREVIEW_BYTES;
-      setPreview({
-        html: over ? build(request, PREVIEW_EVENTS) : full,
-        fullBytes: full.length,
-        ms,
-        bounded: over,
-      });
+      // Shrink until the BUILT document fits. Bounding by event count trusted
+      // an average that pictures broke; this trusts the only number that
+      // matters, which is the one the iframe is handed.
+      let shown = props.events.length;
+      let html = full;
+      if (over) {
+        shown = PREVIEW_EVENTS;
+        html = build(request, shown);
+        while (html.length > MAX_PREVIEW_BYTES && shown > 1) {
+          shown = Math.floor(shown / 2);
+          html = build(request, shown);
+        }
+      }
+      setPreview({ html, shown, fullBytes: full.length, ms, bounded: over });
     }, PREVIEW_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -377,8 +400,8 @@ export function ExportDialog(props: ExportDialogProps) {
                   {preview.bounded && (
                     <span className="xd-bounded">
                       {de
-                        ? `zeigt die ersten ${PREVIEW_EVENTS} Events — die Datei trägt alle ${props.events.length}`
-                        : `showing the first ${PREVIEW_EVENTS} events — the file carries all ${props.events.length}`}
+                        ? `zeigt die ersten ${preview.shown} Events — die Datei trägt alle ${props.events.length}`
+                        : `showing the first ${preview.shown} events — the file carries all ${props.events.length}`}
                     </span>
                   )}
                 </>
