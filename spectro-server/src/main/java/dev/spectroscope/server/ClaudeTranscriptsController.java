@@ -13,7 +13,9 @@ import org.springframework.web.bind.annotation.RestController;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -100,7 +102,28 @@ public class ClaudeTranscriptsController {
      */
     private static final long MAX_CONTENT_BYTES = 128L * 1024 * 1024;
 
+    /**
+     * The most transcripts one facts call will fold.
+     *
+     * <p>This is the bound on work per request, and it is deliberately about a
+     * screen rather than a store. The dialog asks for the rows it is showing,
+     * so a batch is a viewport: about a dozen rows, asked again as the operator
+     * scrolls. Twenty-four leaves headroom for a tall window and a prefetch
+     * either side of it without ever letting one request walk the whole listing.
+     *
+     * <p>What that costs, measured on the operator's real store: a transcript
+     * folds at about 719 MB/s, so the 8.4 MB average costs roughly 12 ms and a
+     * full batch of average rows about 280 ms. A batch of the largest files in
+     * the store would cost near 2.8 s, which is the honest worst case and the
+     * reason the client asks per visible row instead of for everything at once.
+     * Every one of those reads is then cached, so the second look is free.
+     */
+    static final int MAX_FACT_BATCH = 24;
+
     private final Path base;
+
+    /** Folded transcripts, kept between calls. */
+    private final TranscriptFactsCache facts = new TranscriptFactsCache();
 
     /** Spring wiring: the real transcript store under {@code ~/.claude/projects}. */
     public ClaudeTranscriptsController() {
@@ -202,8 +225,101 @@ public class ClaudeTranscriptsController {
                     .contentType(new MediaType(MediaType.TEXT_PLAIN, StandardCharsets.UTF_8))
                     .contentLength(size)
                     .body(new FileSystemResource(real));
-        } catch (IOException missing) {
+        } catch (IOException | InvalidPathException missing) {
+            // InvalidPathException too: `resolve` throws it, unchecked, for a
+            // name this filesystem cannot even spell (a NUL byte). Uncaught it
+            // left the handler as a 500 with Spring's default body — which
+            // hands a prober their own string back and, worse, tells them this
+            // path was DIFFERENT from the ones that answer 404.
             return ResponseEntity.notFound().build();
+        }
+    }
+
+    /**
+     * The facts batch and the cap that governs it.
+     *
+     * @param maxBatch the most paths one call folds, published so the client
+     *                 does not have to hardcode the server's number
+     * @param facts one row per path that named a real transcript inside the
+     *              store, in the order asked; a path that named anything else
+     *              yields no row at all
+     */
+    public record FactsResponse(int maxBatch, List<TranscriptFacts.Facts> facts) {}
+
+    /**
+     * What the listed transcripts contain, for a bounded batch of them.
+     *
+     * <p>Separate from the listing on purpose. The listing is a directory walk
+     * and answers in milliseconds; this reads transcript bodies. Folding them
+     * into one call would make the dialog wait for the second before it could
+     * draw the first, and a dialog that waits for an index is worse than one
+     * without facts. So the list renders from {@link #transcripts} immediately
+     * and the facts arrive per visible row, blank until they do.</p>
+     *
+     * @param paths base-relative transcript paths from the listing, at most
+     *              {@link #MAX_FACT_BATCH} of which are honoured
+     * @param request the servlet request, for the local-origin fence
+     * @return 404 for a non-local caller or a rebound Host; else one row per
+     *         readable path. A path outside the store, a non-{@code .jsonl}
+     *         name and a file that is not there are all the same answer —
+     *         nothing — because a request parameter is untrusted input and a
+     *         refusal that distinguishes them tells a prober what exists
+     */
+    @GetMapping("/api/claude/transcripts/facts")
+    public ResponseEntity<FactsResponse> facts(
+            @RequestParam(name = "path", required = false) List<String> paths,
+            HttpServletRequest request) {
+        if (!FleetController.isLocalOrigin(request)) {
+            return ResponseEntity.status(404).build(); // no fingerprint in the refusal
+        }
+        if (paths == null || paths.isEmpty()) {
+            return ResponseEntity.ok(new FactsResponse(MAX_FACT_BATCH, List.of()));
+        }
+        List<TranscriptFacts.Facts> rows = new ArrayList<>();
+        for (String rel : paths.subList(0, Math.min(paths.size(), MAX_FACT_BATCH))) {
+            Path file = insideStore(rel);
+            if (file != null) {
+                // Sidecar counts are taken NOW, not from the cache: the agent
+                // folder fills up while the parent transcript sits unchanged,
+                // and a count cached under the transcript's stamp was measured
+                // answering yesterday's number for as long as it sat still.
+                rows.add(facts.facts(file)
+                        .withSidecars(TranscriptFacts.sidecarsBeside(file))
+                        .at(rel));
+            }
+        }
+        return ResponseEntity.ok(new FactsResponse(MAX_FACT_BATCH, List.copyOf(rows)));
+    }
+
+    /**
+     * Resolves a caller-supplied path to a real transcript inside the store, or
+     * to nothing.
+     *
+     * <p>The same canonical check {@link #content} makes, for the same reason:
+     * the path came off the wire, so {@code ..} and a symlink pointing out of
+     * the store are both things a caller can write. The real location is
+     * resolved before anything reads it.</p>
+     *
+     * @param rel the base-relative path as asked
+     * @return the absolute file, or null when it is not a transcript in the store
+     */
+    private Path insideStore(String rel) {
+        if (rel == null || !rel.endsWith(".jsonl")) {
+            return null;
+        }
+        try {
+            Path real = base.resolve(rel).normalize().toRealPath();
+            if (!real.startsWith(base.toRealPath()) || !Files.isRegularFile(real)) {
+                return null;
+            }
+            return real;
+        } catch (IOException | InvalidPathException missing) {
+            // Unchecked, and thrown by `resolve` before any I/O happens: a NUL
+            // byte in the parameter. It used to leave this method, escape the
+            // batch loop above — abandoning every row queued behind it — and
+            // answer 500, against this endpoint's own promise that everything
+            // untrusted gets the same nothing.
+            return null;
         }
     }
 
