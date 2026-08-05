@@ -1,0 +1,87 @@
+# Jenkins as a CONTROLLER and a separate AGENT, because the owner asked to see
+# the split: "bei jenkins gerne einen master und einen worker node um es zu lernen".
+#
+# The split is the thing worth learning. The controller schedules and stores; it
+# runs no build of ours at all (`numExecutors: 0` in casc/jenkins.yaml). The agent
+# is a second container that dials OUT to the controller over JNLP and does the
+# work. That direction matters: nothing has to be able to reach the agent, which
+# is why this same shape works when the agent is on another machine — or, later,
+# on this Mac itself, which is the only way the DMG can ever be signed.
+#
+# EVERYTHING IS CONFIGURED AS CODE. The setup wizard is off and casc/jenkins.yaml
+# is the whole configuration, so this stack can be deleted and recreated and come
+# back identical. Nothing here is ever clicked. That is also what makes it
+# reviewable: a change to CI is a diff.
+#
+# Images verified on 2026-08-05 by `docker manifest inspect`: jenkins/jenkins and
+# jenkins/inbound-agent both publish linux/arm64, so nothing emulates on this Mac.
+services:
+  controller:
+    build:
+      context: .
+      dockerfile: Dockerfile.controller
+    container_name: spectro-jenkins
+    restart: unless-stopped
+    environment:
+      # The wizard would otherwise hold the first boot hostage for a password
+      # read out of the container log.
+      JAVA_OPTS: >-
+        -Djenkins.install.runSetupWizard=false
+        -Dhudson.model.DownloadService.noSignatureCheck=true
+      CASC_JENKINS_CONFIG: /var/jenkins_home/casc/jenkins.yaml
+      # Read by casc/jenkins.yaml. Change them here, not in the UI.
+      JENKINS_ADMIN_ID: admin
+      JENKINS_ADMIN_PASSWORD: spectro-local-dev
+    ports:
+      - "8881:8080" # 8080 is taken on this machine; the container keeps its own
+      - "50000:50000" # the JNLP port the agent dials
+    volumes:
+      - jenkins_home:/var/jenkins_home
+      - ./casc:/var/jenkins_home/casc:ro
+      # The repo, so a build can run against the LOCAL working copy rather than
+      # a push. Read-write because Gradle and npm write build/, node_modules and
+      # test reports; the agent mounts the same path at the same place, so a
+      # path means the same thing on both.
+      #
+      # UNDER THE AGENT'S HOME, not at /workspace. Jenkins' `dir()` step creates
+      # a SIBLING directory called `<path>@tmp`, so a job in /workspace tries to
+      # mkdir /workspace@tmp — at the filesystem root, which nobody may write.
+      # Build #2 died there with AccessDeniedException: /workspace@tmp.
+      - ${REPO_DIR:-../..}:/home/jenkins/repo
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/login"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: spectro-jenkins-agent
+    restart: unless-stopped
+    depends_on:
+      controller:
+        condition: service_healthy
+    environment:
+      JENKINS_URL: http://controller:8080
+      JENKINS_AGENT_NAME: builder
+      JENKINS_AGENT_WORKDIR: /home/jenkins/agent
+      # The agent reads its own secret off the controller at startup — Jenkins
+      # DERIVES it and JCasC cannot set it. See agent-entrypoint.sh.
+      JENKINS_ADMIN_ID: admin
+      JENKINS_ADMIN_PASSWORD: spectro-local-dev
+    volumes:
+      - agent_work:/home/jenkins/agent
+      - ${REPO_DIR:-../..}:/home/jenkins/repo
+      # Gradle and npm caches survive a container rebuild, or every run
+      # re-downloads the world and the comparison measures the network.
+      - gradle_cache:/home/jenkins/.gradle
+      - npm_cache:/home/jenkins/.npm
+
+volumes:
+  jenkins_home:
+  agent_work:
+  gradle_cache:
+  npm_cache:

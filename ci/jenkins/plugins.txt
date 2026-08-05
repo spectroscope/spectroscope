@@ -1,0 +1,30 @@
+# What the controller needs, and nothing else. jenkins-plugin-cli pulls each
+# one's dependencies, so this list stays short and readable.
+
+# Configuration as Code — the reason nothing here is ever clicked.
+configuration-as-code
+
+# Declarative pipelines, and reading a Jenkinsfile out of the workspace.
+workflow-aggregator
+pipeline-stage-view
+
+# The agent half: the inbound (JNLP) protocol the second container speaks.
+# Without this the node declared in JCasC has no launcher to declare.
+instance-identity
+
+# The `jobs:` block in casc/jenkins.yaml is Job DSL, and without this plugin
+# JCasC does not merely ignore it — it refuses to boot with
+# "No configurator found for the following root element: jobs".
+job-dsl
+
+# Reading a Jenkinsfile out of a local path rather than a remote.
+git
+
+# `timestamps()` in the Jenkinsfile is this plugin, and without it the pipeline
+# does not merely lose timestamps — it fails to COMPILE with
+# "Invalid option type timestamps". A declarative option is a plugin extension.
+timestamper
+
+# Test results and artefacts — a build that says "passed" and shows nothing is
+# the failure mode this whole exercise exists to end.
+junit

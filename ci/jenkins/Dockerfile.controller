@@ -1,0 +1,16 @@
+# The controller. Only two things are added to the official image: the plugins
+# JCasC needs, and curl for the healthcheck.
+#
+# lts-jdk21, verified on 2026-08-05: the LTS line (2.576 is the weekly), and the
+# tag publishes linux/arm64 so nothing emulates on this Mac.
+FROM jenkins/jenkins:lts-jdk21
+
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends curl \
+ && rm -rf /var/lib/apt/lists/*
+USER jenkins
+
+# --plugin-file installs the transitive closure too, so plugins.txt only names
+# what we actually want.
+COPY plugins.txt /usr/share/jenkins/ref/plugins.txt
+RUN jenkins-plugin-cli --plugin-file /usr/share/jenkins/ref/plugins.txt --latest false

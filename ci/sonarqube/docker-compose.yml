@@ -1,0 +1,68 @@
+# SonarQube Community, over both halves of this repo.
+#
+# 26.8.0-community, read from Docker Hub on 2026-08-05; the tag publishes
+# linux/arm64, verified by `docker manifest inspect`, so it runs natively here.
+#
+# ⚠️ PORT. Sonar's own default is 9000, and 9000 is ALREADY TAKEN on this machine
+# (measured 2026-08-05). It is published on 8882 instead — which also means
+# `sonar.host.url` must say 8882 everywhere, or the scanner reports into whatever
+# else is on 9000.
+#
+# ⚠️ MEMORY. Sonar embeds Elasticsearch and wants roughly 4 GiB to itself. Docker
+# Desktop had 7.7 GiB here, so Sonar plus Dependency-Track will not both fit.
+# That is what ./ci/spectro-ci's per-stack switch is for.
+#
+# The vm.max_map_count advice everywhere on the internet is for Linux hosts. On
+# Docker Desktop for Mac the Linux VM already sets it high enough and there is no
+# sysctl on the Mac to change — if Elasticsearch still refuses, raise Docker's
+# memory rather than hunting for a sysctl that is not there.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: spectro-sonar-db
+    environment:
+      POSTGRES_USER: sonar
+      POSTGRES_PASSWORD: sonar
+      POSTGRES_DB: sonar
+    volumes:
+      - sonar_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  sonarqube:
+    image: sonarqube:26.8.0.126808-community
+    container_name: spectro-sonar
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8882:9000"
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://db:5432/sonar
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: sonar
+    volumes:
+      - sonar_data:/opt/sonarqube/data
+      - sonar_extensions:/opt/sonarqube/extensions
+      - sonar_logs:/opt/sonarqube/logs
+    # Elasticsearch will not start under a low file-descriptor limit, and the
+    # error it gives points at the wrong thing.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/api/system/status | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
+volumes:
+  sonar_db:
+  sonar_data:
+  sonar_extensions:
+  sonar_logs:

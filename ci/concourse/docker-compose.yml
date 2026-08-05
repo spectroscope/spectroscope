@@ -1,0 +1,99 @@
+# Concourse: the flow-shaped one. Its whole model is different from Jenkins and
+# that is the reason to run both — a pipeline here is a YAML document describing
+# resources and jobs, every step runs in its own container, and there is no
+# persistent workspace at all. Nothing is stateful except what you declare.
+#
+# Concourse 8.2.5 (read from Docker Hub 2026-08-03); concourse/concourse publishes
+# linux/arm64, verified by `docker manifest inspect` on 2026-08-05.
+#
+# THREE PROCESSES, and they are worth naming because the split is the design:
+#   db      Postgres — Concourse keeps every build's state here, nothing on disk
+#   web     the ATC (scheduler + API + web UI) and the TSA (the worker gateway)
+#   worker  where containers actually run
+#
+# ⚠️ The worker needs `privileged: true`. It creates containers itself — it runs
+# its own containerd inside the container — and that needs capabilities Docker
+# does not grant by default. On Docker Desktop for Mac this is privileged inside
+# the Linux VM, not on macOS, so the blast radius is the VM. It is still the one
+# line in this whole directory worth understanding before running it.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: spectro-concourse-db
+    environment:
+      POSTGRES_DB: concourse
+      POSTGRES_USER: concourse
+      POSTGRES_PASSWORD: concourse
+      PGDATA: /database
+    volumes:
+      - concourse_db:/database
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U concourse"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  web:
+    image: concourse/concourse:8.2.5
+    container_name: spectro-concourse-web
+    command: web
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8880:8080"
+    volumes:
+      - ./keys/web:/concourse-keys:ro
+    environment:
+      CONCOURSE_POSTGRES_HOST: db
+      CONCOURSE_POSTGRES_USER: concourse
+      CONCOURSE_POSTGRES_PASSWORD: concourse
+      CONCOURSE_POSTGRES_DATABASE: concourse
+      # The address the web UI hands out. Wrong, and `fly` logs in to a host
+      # that does not exist from your Mac.
+      CONCOURSE_EXTERNAL_URL: http://localhost:8880
+      CONCOURSE_ADD_LOCAL_USER: admin:spectro-local-dev
+      CONCOURSE_MAIN_TEAM_LOCAL_USER: admin
+      # Local only. Without it Concourse insists on TLS for the cluster.
+      CONCOURSE_CLUSTER_NAME: spectro-local
+
+  worker:
+    image: concourse/concourse:8.2.5
+    container_name: spectro-concourse-worker
+    command: worker
+    privileged: true # see the note at the top — it runs containers itself
+    # SIGUSR2 is the worker's RETIRE signal: it drains, unregisters from the TSA
+    # and exits. A plain SIGTERM leaves a stale worker row behind that the ATC
+    # keeps trying to schedule onto for minutes after the stack is down.
+    stop_signal: SIGUSR2
+    stop_grace_period: 60s
+    depends_on:
+      - web
+    volumes:
+      - ./keys/worker:/concourse-keys:ro
+      - concourse_worker:/worker-state
+    environment:
+      CONCOURSE_TSA_HOST: web:2222
+      CONCOURSE_WORK_DIR: /worker-state
+      CONCOURSE_RUNTIME: containerd
+      # A real volume, never the container's overlayfs: the overlay
+      # baggageclaim driver cannot stack an overlay mount on Docker's own
+      # overlay2.
+      CONCOURSE_BAGGAGECLAIM_DRIVER: overlay
+
+      # ⚠️ DNS. The worker's /etc/resolv.conf points at Docker's embedded
+      # resolver on 127.0.0.11, which is unreachable from a NESTED container's
+      # network namespace — so every task resolves nothing and `npm ci` and
+      # Gradle die with "Temporary failure in name resolution". This is the
+      # single setting that decides whether any build here works at all, and the
+      # earlier CONCOURSE_GARDEN_DNS_PROXY_ENABLE was the wrong knob entirely:
+      # it belongs to the garden runtime, and this worker runs containerd.
+      CONCOURSE_CONTAINERD_DNS_SERVER: "1.1.1.1"
+      # Lets a task reach the other containers on this compose network. A
+      # deliberate choice rather than a default, because it also opens the rest
+      # of the VM's network to task containers.
+      CONCOURSE_CONTAINERD_ALLOW_HOST_ACCESS: "true"
+
+volumes:
+  concourse_db:
+  concourse_worker:

@@ -1,0 +1,43 @@
+# The worker. The stock inbound-agent has a JDK and nothing else; this repo needs
+# Node as well, because half its gate is vitest.
+#
+# Pinned to the same JDK the CI gate uses. The build-server survey found that
+# this machine's only JDK is 25 while GitHub Actions pins Temurin 21 — so a local
+# gate on the host is not the same gate. Inside this container it is.
+FROM jenkins/inbound-agent:latest-jdk21
+
+USER root
+
+# Node 22 LTS from NodeSource, plus git and the tools a Gradle build shells out
+# to. --no-install-recommends keeps the image from doubling.
+#
+# build-essential is here for a reason the first run of this stack found: the
+# PTY helper is C, built by scripts/build-spectro-pty.sh OUTSIDE Gradle, and
+# without it six SpectroPtyHelperTest cases fail. Build #4 was 500 of 506, and
+# those six were the whole difference. A gate that quietly skipped them would
+# have been a gate that lies.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl gnupg git unzip \
+      build-essential \
+ && mkdir -p /etc/apt/keyrings \
+ && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+      | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+ && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
+      > /etc/apt/sources.list.d/nodesource.list \
+ && apt-get update && apt-get install -y --no-install-recommends nodejs \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY agent-entrypoint.sh /usr/local/bin/spectro-agent-entrypoint.sh
+RUN chmod +x /usr/local/bin/spectro-agent-entrypoint.sh
+
+# The cache directories must EXIST IN THE IMAGE, owned by jenkins. Docker copies
+# a named volume's initial ownership from the image path it covers — and when
+# that path does not exist, it creates the volume owned by ROOT, and the build
+# dies with "Could not create parent directory for lock file
+# /home/jenkins/.gradle/…". That was build #3.
+RUN mkdir -p /home/jenkins/.gradle /home/jenkins/.npm /home/jenkins/agent \
+ && chown -R jenkins:jenkins /home/jenkins
+
+USER jenkins
+RUN java -version && node --version && npm --version
+ENTRYPOINT ["/usr/local/bin/spectro-agent-entrypoint.sh"]

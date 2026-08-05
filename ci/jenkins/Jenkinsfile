@@ -1,0 +1,119 @@
+// The gate, as Jenkins runs it.
+//
+// Deliberately the SAME two commands .github/workflows/gate.yml runs, in the
+// same order, with the same flags. The point of a local build server is not a
+// different gate — it is the same gate, watched, before anything is pushed.
+//
+// `--rerun-tasks --no-build-cache` is not belt and braces. A plain
+// `./gradlew test` on this tree returns green in half a second having run
+// NOTHING, and that has cost this project real time more than once. It is
+// written down in CLAUDE.md as a house rule and it is why the numbers below are
+// read from the XML reports rather than from "BUILD SUCCESSFUL".
+
+pipeline {
+  // `builder` is the node declared in casc/jenkins.yaml. The controller has zero
+  // executors, so a stage that forgot this label would queue forever — which is
+  // the lesson the controller/agent split is here to teach.
+  agent { label 'builder' }
+
+  options {
+    timestamps()
+    timeout(time: 45, unit: 'MINUTES')
+    // The working copy is a bind mount shared with the host. Two runs at once
+    // would have Gradle and npm writing the same build directories.
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    // The mounted working copy, at the same path in both containers. Under the
+    // agent's HOME rather than at /workspace: `dir()` creates a sibling
+    // `<path>@tmp`, and /workspace@tmp is at the filesystem root where nobody
+    // may write. That is what build #2 died of.
+    REPO = '/home/jenkins/repo'
+    GRADLE_USER_HOME = '/home/jenkins/.gradle'
+    // Gradle's daemon is a liability in a container that may be reaped: it
+    // outlives the build and holds file locks on the shared mount.
+    GRADLE_OPTS = '-Dorg.gradle.daemon=false'
+  }
+
+  stages {
+    stage('what we are building') {
+      steps {
+        dir(env.REPO) {
+          sh '''
+            set -eu
+            echo "commit:  $(git rev-parse --short HEAD 2>/dev/null || echo '(not a checkout)')"
+            echo "branch:  $(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo '?')"
+            java -version 2>&1 | head -1
+            node --version
+          '''
+        }
+      }
+    }
+
+    // The PTY helper is C and lives outside the Gradle build, so nothing else
+    // builds it. Found by running this stack: build #4 came back 500 of 506,
+    // and all six failures were SpectroPtyHelperTest looking for a helper that
+    // was not there. The fix is to build it, not to skip them.
+    stage('the native helper') {
+      steps {
+        dir(env.REPO) {
+          sh 'scripts/build-spectro-pty.sh --force && ls -l spectro-desktop/bin/spectro-pty'
+        }
+      }
+    }
+
+    stage('java gate') {
+      steps {
+        dir(env.REPO) {
+          sh './gradlew test --rerun-tasks --no-build-cache'
+        }
+      }
+      post {
+        // always: a RED gate is exactly when the report matters most, and
+        // `junit` on a failed stage is what turns "it broke" into "these four
+        // broke, here".
+        always {
+          junit allowEmptyResults: true, testResults: '**/build/test-results/test/TEST-*.xml'
+        }
+      }
+    }
+
+    stage('web gate') {
+      steps {
+        dir("${env.REPO}/spectro-web") {
+          // tsc, eslint, prettier --check, vitest, vite build — one script, the
+          // same one CI runs. Piping it anywhere would swallow the exit code:
+          // that mistake hid a failing prettier for two rounds in this project.
+          sh '''
+            set -eu
+            npm ci --no-audit --no-fund
+            npm run gate
+          '''
+        }
+      }
+    }
+
+    stage('the artefacts') {
+      steps {
+        dir(env.REPO) {
+          sh './gradlew :spectro-server:bootJar :spectro-cli:distZip'
+        }
+      }
+      post {
+        success {
+          archiveArtifacts artifacts: 'spectro-server/build/libs/*.jar,spectro-cli/build/distributions/*.zip',
+                           fingerprint: true, allowEmptyArchive: true
+        }
+      }
+    }
+  }
+
+  post {
+    always {
+      // The one number that is allowed to be quoted. Everything else in this
+      // project says where it was measured, and so does this.
+      echo "gate finished — read the test counts from the JUnit report, never from BUILD SUCCESSFUL"
+    }
+  }
+}

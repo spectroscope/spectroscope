@@ -1,0 +1,108 @@
+# The whole Jenkins configuration, as a file.
+#
+# Configuration as Code reads this at boot and makes the instance match it. So
+# this stack can be destroyed and recreated and come back identical, a change to
+# CI is a diff somebody can review, and nothing depends on remembering which
+# checkbox was ticked eighteen months ago.
+#
+# THE STEP EVERYBODY GETS STUCK ON is the agent secret, and this file is where
+# you find out why. In a clicked Jenkins you create a node, Jenkins GENERATES a
+# secret for it, and you copy that secret out of the web page into the agent.
+# JCasC cannot set it: the first attempt here wrote a `security.agentSecret`
+# block and the controller refused to boot —
+#
+#   UnknownAttributesException: security: Invalid configuration elements for
+#   type: GlobalConfigurationCategory$Security : agentSecret
+#
+# The secret is derived by Jenkins from the node's name and the instance
+# identity, so it is not ours to choose. What IS possible is to declare the node
+# here and let the agent FETCH its own secret at startup — the controller serves
+# it at /computer/<name>/jenkins-agent.jnlp. That is what agent-entrypoint.sh
+# does, and it is the piece the tutorials leave out.
+
+jenkins:
+  systemMessage: >-
+    spectroscope's local Jenkins. Everything here comes from ci/jenkins/casc/jenkins.yaml —
+    if you change it in the UI, the next boot forgets it.
+
+  # ZERO executors on the controller. This is the point of the exercise: the
+  # controller schedules and stores, the agent builds. A controller that also
+  # builds is the arrangement that hides the difference.
+  numExecutors: 0
+  mode: EXCLUSIVE
+
+  securityRealm:
+    local:
+      allowsSignup: false
+      users:
+        - id: "${JENKINS_ADMIN_ID}"
+          password: "${JENKINS_ADMIN_PASSWORD}"
+
+  authorizationStrategy:
+    loggedInUsersCanDoAnything:
+      allowAnonymousRead: false
+
+  # The port the agent dials. Fixed rather than random, because the compose file
+  # publishes it and a random port cannot be published.
+  slaveAgentPort: 50000
+
+  # The agent, declared. `builder` is the label a Jenkinsfile asks for.
+  nodes:
+    - permanent:
+        name: "builder"
+        labelString: "linux docker jdk21 node22"
+        nodeDescription: "the worker container — JDK 21 and Node 22, the same pair CI pins"
+        numExecutors: 2
+        remoteFS: "/home/jenkins/agent"
+        # NORMAL, not EXCLUSIVE: with the controller at zero executors this node
+        # takes everything anyway, and EXCLUSIVE here would mean a job without a
+        # label never runs at all.
+        mode: NORMAL
+        retentionStrategy: "always"
+        launcher:
+          # The inbound (JNLP) launcher: the AGENT dials the CONTROLLER. Nothing
+          # needs to be able to reach the agent, which is why the same shape
+          # works when the agent moves to another machine — or onto this Mac,
+          # which is the only way the DMG will ever be signed.
+          #
+          # `webSocket: false` keeps the plain TCP protocol on 50000, which is
+          # what the compose file publishes.
+          inbound:
+            webSocket: false
+
+unclassified:
+  location:
+    # Jenkins builds absolute links off this. Left wrong, every link in an email
+    # or a build page points somewhere that does not exist.
+    url: "http://localhost:8881/"
+    adminAddress: "chris@spectroscope.ai"
+
+jobs:
+  # The pipeline, also as code — and read straight off the mounted working copy,
+  # so this local server needs no git remote and no push. That is the whole point
+  # of a local build server: run the gate BEFORE anybody sees it.
+  #
+  # Not `cpsScmFlowDefinition`: pointing Job DSL at an SCM would reintroduce the
+  # clone this is meant to avoid, and its `scmGit` closure changed shape between
+  # plugin versions — the first attempt here died with
+  # "No signature of method: remotes()".
+  #
+  # ⚠️ THE TRADE-OFF, stated rather than discovered: the Jenkinsfile is read at
+  # BOOT. Editing it means reloading the configuration (Manage Jenkins →
+  # Configuration as Code → Reload) or restarting the stack. In exchange there is
+  # one Jenkinsfile, in the repo, under review, and no remote.
+  - script: |
+      pipelineJob('spectroscope-gate') {
+        description('Both gates against the mounted working copy at /home/jenkins/repo. Read from ci/jenkins/Jenkinsfile at boot.')
+        definition {
+          cps {
+            script(new File('/home/jenkins/repo/ci/jenkins/Jenkinsfile').text)
+            // sandbox(true), and it matters: with the sandbox OFF the pipeline
+            // needs an administrator to approve the script by hand, and build #1
+            // here died with "script not yet approved for use". A DECLARATIVE
+            // pipeline runs inside the sandbox without approval, so this is both
+            // the working setting and the safer one.
+            sandbox(true)
+          }
+        }
+      }

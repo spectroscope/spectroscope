@@ -1,0 +1,27 @@
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    repository: node
+    tag: 22-bookworm-slim
+
+inputs:
+  - name: repo
+
+caches:
+  - path: npm-cache
+
+run:
+  path: bash
+  args:
+    - -c
+    - |
+      set -eu
+      cd repo/spectro-web
+      npm config set cache "$PWD/../../npm-cache"
+      npm ci --no-audit --no-fund
+      # tsc && eslint && prettier --check && vitest && vite build. NEVER piped:
+      # a pipe hands back the exit code of the LAST stage, and that mistake hid
+      # a failing prettier in this project for two rounds.
+      npm run gate

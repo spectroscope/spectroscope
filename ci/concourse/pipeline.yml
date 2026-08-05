@@ -1,0 +1,40 @@
+# The gate as Concourse reads it — the same two commands, in a shape that could
+# not look less like the Jenkinsfile. That contrast IS the comparison.
+#
+# What is different, and worth noticing while comparing:
+#   - there is no workspace. Each task gets a fresh container and declares its
+#     INPUTS by name; anything not declared is not there.
+#   - there is no agent label. A task names an IMAGE, and Concourse fetches it.
+#   - state lives in resources, not on a disk somebody has to remember to clean.
+#
+# HOW A LOCAL WORKING COPY GETS IN. Concourse's git resource clones a URL, and
+# this repo's point is to run the gate BEFORE pushing. So the local copy arrives
+# as an input on the command line:
+#
+#   fly -t local execute -c ci/concourse/task-java-gate.yml -i repo=.
+#
+# `fly execute` uploads the working tree and runs one task against it — the
+# fastest honest loop, and the one to use day to day. `set-pipeline` below is for
+# watching the whole thing run on a schedule against the pushed repo.
+resources:
+  - name: repo
+    type: git
+    icon: git
+    source:
+      uri: https://github.com/spectroscope/spectroscope.git
+      branch: main
+
+jobs:
+  - name: gate
+    public: true
+    plan:
+      - get: repo
+        trigger: true
+      # IN PARALLEL, which Concourse makes trivial and which is the one place it
+      # is plainly nicer than the Jenkinsfile: two independent gates, two
+      # containers, no executor arithmetic.
+      - in_parallel:
+          - task: java
+            file: repo/ci/concourse/task-java-gate.yml
+          - task: web
+            file: repo/ci/concourse/task-web-gate.yml

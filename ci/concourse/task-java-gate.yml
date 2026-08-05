@@ -1,0 +1,42 @@
+# One task = one container = one image. No agent, no label, no node.
+platform: linux
+
+image_resource:
+  type: registry-image
+  source:
+    # The SAME JDK the GitHub gate pins. This machine's only host JDK is 25, so
+    # a gate run on the host is not the gate CI runs — inside here it is.
+    repository: eclipse-temurin
+    tag: 21-jdk
+
+inputs:
+  - name: repo
+
+# The caches Concourse will keep between runs of this task. Without them every
+# run downloads the whole Gradle distribution and measures the network.
+caches:
+  - path: repo/.gradle
+  - path: gradle-home
+
+run:
+  path: bash
+  args:
+    - -c
+    - |
+      set -eu
+      cd repo
+      export GRADLE_USER_HOME="$PWD/../gradle-home"
+      export GRADLE_OPTS="-Dorg.gradle.daemon=false"
+      java -version
+      # --rerun-tasks --no-build-cache, always. A plain `./gradlew test` on this
+      # tree goes green in half a second having run nothing.
+      ./gradlew test --rerun-tasks --no-build-cache
+      # The count, read from the XML rather than from "BUILD SUCCESSFUL".
+      python3 - <<'PY'
+      import glob, xml.etree.ElementTree as ET
+      t = f = s = 0
+      for p in glob.glob('*/build/test-results/test/TEST-*.xml'):
+          r = ET.parse(p).getroot()
+          t += int(r.get('tests')); f += int(r.get('failures')) + int(r.get('errors')); s += int(r.get('skipped'))
+      print(f'JUnit {t} · failures {f} · skipped {s}')
+      PY

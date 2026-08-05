@@ -1,0 +1,27 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "description": "A DRY-RUN config for the local laboratory. It mirrors what .github/dependabot.yml already does, so the two can be compared on the same repo rather than on different rules.",
+  "enabledManagers": ["gradle", "npm", "github-actions", "dockerfile", "docker-compose"],
+  "timezone": "Europe/Berlin",
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "Patch and minor together — twelve separate PRs for patch bumps is how a bot becomes noise nobody reads.",
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "non-major"
+    },
+    {
+      "description": "Never the JDK. CI pins Temurin 21 deliberately and a bump here would silently make the local gate a different gate.",
+      "matchPackageNames": ["eclipse-temurin", "temurin"],
+      "enabled": false
+    },
+    {
+      "description": "The CI laboratory's own images update on their own schedule — they are not the product.",
+      "matchFileNames": ["ci/**"],
+      "groupName": "ci laboratory",
+      "automerge": false
+    }
+  ],
+  "vulnerabilityAlerts": { "labels": ["security"] }
+}

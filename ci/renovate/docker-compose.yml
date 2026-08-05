@@ -1,0 +1,45 @@
+# Dependency updates, on demand.
+#
+# ⚠️ FIRST, THE HONEST PART. The owner asked for "ein dependabot" in the local
+# stack. Dependabot is a GitHub-hosted service; there is no server you can run.
+# `dependabot-core` is open source and the `dependabot` CLI can run an update in
+# Docker, but standalone it PRINTS the update plan — it does not open pull
+# requests, because the PR half is the hosted service.
+#
+# RENOVATE is the self-hostable equivalent that does the whole job, and it is
+# what this stack runs. Both are here as `profiles`, so neither starts by
+# accident and each is one command.
+#
+# AND: this repo already HAS Dependabot switched on — PRs #11 and #12 landed from
+# it. So what running an updater locally adds is not "updates". It is a DRY RUN:
+# see the plan before anybody opens twelve pull requests, and test a config
+# change without committing it.
+#
+# renovate/renovate publishes linux/arm64, verified 2026-08-05.
+services:
+  renovate:
+    image: renovate/renovate:latest
+    container_name: spectro-renovate
+    profiles: ["manual"] # never started by `up`; run it explicitly
+    environment:
+      # A dry run by default. It reads the repo and prints exactly what it WOULD
+      # do, and touches nothing. Set RENOVATE_DRY_RUN= (empty) to let it act.
+      RENOVATE_DRY_RUN: ${RENOVATE_DRY_RUN:-full}
+      RENOVATE_PLATFORM: github
+      RENOVATE_REPOSITORIES: spectroscope/spectroscope
+      RENOVATE_TOKEN: ${GITHUB_TOKEN:-}
+      RENOVATE_CONFIG_FILE: /usr/src/app/renovate-config.json
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - ./renovate-config.json:/usr/src/app/renovate-config.json:ro
+
+  # The other one, for comparison rather than for use. It prints a plan and
+  # stops, which is the whole point of having it here: you can see what
+  # Dependabot's own engine thinks, next to what Renovate thinks.
+  dependabot:
+    image: ghcr.io/dependabot/dependabot-updater-npm-and-yarn:latest
+    container_name: spectro-dependabot
+    profiles: ["manual"]
+    environment:
+      LOCAL_GITHUB_ACCESS_TOKEN: ${GITHUB_TOKEN:-}
+    command: ["bash", "-lc", "echo 'run via ci/renovate/dependabot-dry-run.sh — see the note there'"]

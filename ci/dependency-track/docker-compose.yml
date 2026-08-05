@@ -1,0 +1,56 @@
+# Dependency-Track: what our dependencies are actually made of.
+#
+# 5.0.4, read from Docker Hub 2026-07-30; both images publish linux/arm64,
+# verified by `docker manifest inspect` on 2026-08-05.
+#
+# It answers a question neither Dependabot nor Sonar does. Dependabot says "a
+# newer version exists"; Sonar reads our own code. This reads an SBOM — the full
+# transitive bill of materials, including the dependencies of our dependencies
+# that no build file names — and tells you which of them have known
+# vulnerabilities, and which licences came along.
+#
+# ⚠️ MEMORY. The API server is a JVM and the project asks for 4 GiB. With Docker
+# Desktop at 7.7 GiB it will not sit beside SonarQube. Run them one at a time.
+#
+# TWO CONTAINERS: an API server that holds everything, and a frontend that is
+# only static files talking to it from the BROWSER — which is why the frontend
+# needs the API's URL as the browser sees it (localhost:8884), not as the
+# container sees it.
+services:
+  apiserver:
+    image: dependencytrack/apiserver:5.0.4
+    container_name: spectro-deptrack-api
+    ports:
+      - "8884:8080"
+    environment:
+      # Its default is an embedded database, which is fine for a laboratory and
+      # keeps this to two containers instead of three.
+      ALPINE_DATA_DIRECTORY: /data
+    deploy:
+      resources:
+        limits:
+          memory: 4g
+    volumes:
+      - deptrack_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/version || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 40
+      start_period: 120s
+
+  frontend:
+    image: dependencytrack/frontend:5.0.4
+    container_name: spectro-deptrack-ui
+    depends_on:
+      - apiserver
+    ports:
+      - "8883:8080"
+    environment:
+      # As the BROWSER reaches it. `http://apiserver:8080` would be correct
+      # inside the network and useless from your Mac — this is the setting people
+      # get wrong and then see an empty UI with no error.
+      API_BASE_URL: http://localhost:8884
+
+volumes:
+  deptrack_data:
