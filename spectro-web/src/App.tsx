@@ -21,7 +21,8 @@ import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
 import { ChatV2 } from "./components/ChatV2";
-import { useChatView } from "./state/chatView";
+import { isFlipIntoV2, useChatView } from "./state/chatView";
+import type { ChatViewMode } from "./state/chatView";
 import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
@@ -109,9 +110,10 @@ import {
 } from "./state/fleetStore";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
+import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
-import { shownImportBar, type ImportBarState } from "./components/importBar";
+import { shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
 import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
@@ -843,6 +845,7 @@ export function App() {
     label: string,
     kind: "spectroscope" | "claude-code" | "vscode-agent",
     source: ImportSource,
+    subagent?: SubagentTranscript,
   ): void => {
     navNonce.issue(); // an import supersedes any in-flight session open
     setReplay({
@@ -864,7 +867,15 @@ export function App() {
       sessionId: `import:${kind}:${label}`,
       file: label,
       stats: sourceStats(source),
-      note: kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null,
+      // Two different sentences, and a file can want both: the VS Code note is
+      // about a FORMAT's limits, the subagent note is about what THIS file is.
+      // Only one of them can ever apply at a time today, and joining them here
+      // keeps that an accident of the formats rather than a rule the bar
+      // depends on.
+      note:
+        [kind === "vscode-agent" ? t(lang, "imp.vscodeNote") : null, subagentNote(lang, subagent)]
+          .filter((line): line is string => line !== null)
+          .join(" ") || null,
     });
   };
 
@@ -1177,8 +1188,18 @@ export function App() {
   // Choosing v2 opens the panel it is half of: a reading whose right column is
   // collapsed is v1 with the children missing. Only on the flip INTO v2 — a
   // reader who then closes the panel is not fought with.
+  //
+  // The effect said that and did not do it. Keyed on chatView alone, it also
+  // ran on MOUNT, and v2 is the default reading, so every start reopened the
+  // panel on Work — which a session with no run in it fills with "Nothing
+  // yet.". The previous value is what tells a flip from a mount, and only a ref
+  // carries it across renders. The layout store persists both the panel's open
+  // state and its tab, so a start now lands where the reader left it.
+  const lastChatView = useRef<ChatViewMode | null>(null);
   useEffect(() => {
-    if (chatView !== "v2") return;
+    const previous = lastChatView.current;
+    lastChatView.current = chatView;
+    if (!isFlipIntoV2(previous, chatView)) return;
     openRightPanel();
     setActiveRightTab("work");
   }, [chatView]);

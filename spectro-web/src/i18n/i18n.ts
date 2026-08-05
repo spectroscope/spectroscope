@@ -113,10 +113,25 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the owner looking for a parsing bug that was not there (card 141). The
   // number is smaller now as well, because four of the kinds it counted became
   // frames; what is left really does carry nothing.
+  // Card 152 corrected the last of it. "110 lines carry no conversation" is a
+  // claim about the FILE, and on a subagent transcript it was flatly false: all
+  // 110 of those lines held a conversation, and the importer could not
+  // attribute them. The number is a measurement of what this importer read, so
+  // the sentence says that instead. What the reader does with it is the same
+  // either way; what it no longer does is describe somebody else's file as
+  // empty.
   "imp.bar": {
-    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, {zero} Zeilen tragen kein Gespräch. Nichts wurde auf die Platte geschrieben.",
-    en: "Imported from {file}. {lines} lines, {frames} frames, {zero} lines carry no conversation. Nothing was written to disk.",
+    de: "Importiert aus {file}. {lines} Zeilen, {frames} Frames, aus {zero} Zeilen wurde nichts gelesen. Nichts wurde auf die Platte geschrieben.",
+    en: "Imported from {file}. {lines} lines, {frames} frames, nothing read from {zero} of them. Nothing was written to disk.",
   },
+  // What a standalone subagent transcript is, said in three clauses so that a
+  // file which names only its agent says only that. See importBar.ts.
+  "imp.subagent": {
+    de: "Das ist das Transkript eines Subagenten, keine Sitzung: Agent {agent}.",
+    en: "This is a subagent transcript, not a session: agent {agent}.",
+  },
+  "imp.subagentKind": { de: "Art: {kind}.", en: "Kind: {kind}." },
+  "imp.subagentSession": { de: "Er lief in Sitzung {session}.", en: "It ran in session {session}." },
 
   // common
   "common.cancel": { de: "Abbrechen", en: "Cancel" },
@@ -550,6 +565,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "tf.explainFailed": { de: "Deutung fehlgeschlagen: {msg}", en: "The reading failed: {msg}" },
   "ws.perSession": { de: "Session-Workspace", en: "session workspace" },
   "ws.pinned": { de: "fester Workspace", en: "pinned workspace" },
+  // The tree drawn before any run: the folder the first run WILL work in. It
+  // is not a session workspace, and there is no session yet to call it one.
+  "ws.firstRunFolder": { de: "Ordner des ersten Laufs", en: "the first run's folder" },
   // The type chips. The nine that predate card 141 kept the exact lowercase
   // word they rendered before, in both languages, because that word is the
   // wire's own vocabulary and translating it would break the link between the
@@ -562,6 +580,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.cat.text": { de: "text", en: "text" },
   "trace.cat.thinking": { de: "thinking", en: "thinking" },
   "trace.cat.tool": { de: "tool", en: "tool" },
+  // The two chips that ask what the tool was. Same word in both languages for
+  // the same reason as their neighbours: it IS the wire vocabulary. "workflow"
+  // is the tool's own name, and "mcp" is the prefix every tool served over MCP
+  // wears, which is also what a reader recognises on the row.
+  "trace.cat.workflow": { de: "workflow", en: "workflow" },
+  "trace.cat.mcp": { de: "mcp", en: "mcp" },
   "trace.cat.permission": { de: "permission", en: "permission" },
   "trace.cat.usage": { de: "usage", en: "usage" },
   "trace.cat.image": { de: "image", en: "image" },
@@ -826,6 +850,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.source.notJson": { de: "Diese Zeile ist kein JSON. Sie steht unverändert da.", en: "This line is not JSON. It stands here unchanged." },
   "trace.source.capped": { de: "{shown} von {total} Zeichen im Bild. Kopieren nimmt immer die ganze Zeile.", en: "Showing {shown} of {total} characters. Copying always takes the whole line." },
   "trace.source.showAll": { de: "Rest laden", en: "Load the rest" },
+  // The same ceiling and the same two numbers one face over, where the copy
+  // button hands over the payload rather than the line — so the second half is
+  // the escape that is actually next to it. Measured over 83,214 thinking
+  // blocks in ~/.claude/projects, exactly one is long enough to read this.
+  "trace.meta.capped": { de: "{shown} von {total} Zeichen im Bild. Der ganze Wert ist einen Klick entfernt.", en: "Showing {shown} of {total} characters. The whole value is one click away." },
   // A signature or a base64 body: carried whole, collapsed on screen, and never
   // dropped without saying so.
   // The two collapsed kinds (readable.ts HIDDEN_KINDS), which are two claims

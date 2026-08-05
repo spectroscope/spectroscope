@@ -229,9 +229,21 @@ export interface UiState {
   trace: TraceEntry[];
   /** Latest context_info snapshot — latest wins, null until the first one. */
   context: ContextSnapshot | null;
-  /** inputTokens of the LAST usage event of the main agent — the context
+  /** inputTokens of the LAST usage event of the run's own agent — the context
    *  ring's live value (the provider reports the true request size). */
   lastInputTokens: number;
+  /**
+   * The agent the root run opened under, or null before one has.
+   *
+   * For every session file this is the literal `"main"`, which is why the two
+   * readers below spelled it that way for a long time. A standalone subagent
+   * transcript (card 152) has no `"main"` in it at all — the run's own agent is
+   * the id the file names on every line — and against the literal both readers
+   * were wrong about it at once: the context ring never moved off zero, so the
+   * header never drew it, on a file that recorded its window fill on every
+   * response; and the run line counted the root as a subagent of itself.
+   */
+  rootAgentId: string | null;
   /** True while thinking_delta is streaming for the current turn and no answer
    *  text or tool call has arrived yet — drives the live "thinking…" indicator. */
   thinkingActive: boolean;
@@ -284,6 +296,7 @@ export const initialState: UiState = {
   trace: [],
   context: null,
   lastInputTokens: 0,
+  rootAgentId: null,
   thinkingActive: false,
   outboxAttachments: null,
   agents: [],
@@ -606,6 +619,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           ...state,
           running: true,
           rootRunId: event.runId,
+          rootAgentId: event.agentId,
           runUsage: { inputTokens: 0, outputTokens: 0 },
           runSubagents: { ids: [], inputTokens: 0, outputTokens: 0 },
           provider: event.provider ?? state.provider,
@@ -773,11 +787,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           inputTokens: state.runUsage.inputTokens + event.inputTokens,
           outputTokens: state.runUsage.outputTokens + event.outputTokens,
         },
-        // "main" is this reducer's own word for the run's own agent — the same
-        // sentinel the context ring uses two lines down. Everything else that
+        // The run's own agent, read off the root run rather than assumed to be
+        // spelled "main" ({@link RunState.rootAgentId}). Everything else that
         // bills is a child, and the run line has to be able to say so.
         runSubagents:
-          event.agentId === "main"
+          event.agentId === (state.rootAgentId ?? "main")
             ? state.runSubagents
             : {
                 ids: state.runSubagents.ids.includes(event.agentId)
@@ -786,12 +800,12 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
                 inputTokens: state.runSubagents.inputTokens + event.inputTokens,
                 outputTokens: state.runSubagents.outputTokens + event.outputTokens,
               },
-        // The context ring reads the LAST request size of the main agent —
-        // subagent usage has its own window and must not move the gauge.
+        // The context ring reads the LAST request size of the run's own agent —
+        // a child's usage has its own window and must not move the gauge.
         // With Anthropic prompt caching, inputTokens is only the UNCACHED
         // remainder; the additive cache counts complete the true window fill.
         lastInputTokens:
-          event.agentId === "main"
+          event.agentId === (state.rootAgentId ?? "main")
             ? event.inputTokens + (event.cacheReadTokens ?? 0) + (event.cacheCreationTokens ?? 0)
             : state.lastInputTokens,
       };

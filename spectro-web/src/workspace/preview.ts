@@ -20,10 +20,23 @@ export function previewKind(path: string): PreviewKind {
   return "text";
 }
 
-/** The sandboxed content endpoint for a workspace-relative path. */
-export function fileUrl(path: string, sessionId?: string): string {
-  const session = sessionId === undefined ? "" : `&session=${encodeURIComponent(sessionId)}`;
-  return `/api/file?path=${encodeURIComponent(path)}${session}`;
+/**
+ * The sandboxed content endpoint for a workspace-relative path.
+ *
+ * @param path the root-relative path from the tree
+ * @param sessionId the session whose resolved workspace holds the file
+ * @param prospective true when the tree above is the folder the first run will
+ *   use, so the preview must read from the same root; a session always wins,
+ *   because once a run resolves a folder that folder is the answer
+ */
+export function fileUrl(path: string, sessionId?: string, prospective = false): string {
+  const root =
+    sessionId !== undefined
+      ? `&session=${encodeURIComponent(sessionId)}`
+      : prospective
+        ? "&scope=prospective"
+        : "";
+  return `/api/file?path=${encodeURIComponent(path)}${root}`;
 }
 
 export function formatBytes(bytes: number): string {

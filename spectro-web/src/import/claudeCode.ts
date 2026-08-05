@@ -11,6 +11,7 @@
 // Ported from the LLM_Simulator; keep the two in sync.
 
 import type { RunEvent } from "../events";
+import { readSubagentTranscript, type SubagentTranscript } from "./subagentFile";
 import { readToolResultDetail, type ToolResultDetail } from "./toolResultDetail";
 import { readAgentResult, type AgentRunResult } from "./agentResult";
 
@@ -54,6 +55,9 @@ interface CCRecord {
    *  85,369 multi-piece runs in the corpus, so demanding both costs nothing and
    *  refuses to fuse a file that ever reuses an id. */
   requestId?: string;
+  /** The agent that wrote this record, on a subagent transcript. Read only by
+   *  import/subagentFile.ts, and only at the level of the whole file. */
+  agentId?: string;
   /** The tool's own return value, beside the tool_result block that carries
    *  the flattened text. Read by import/toolResultDetail.ts, never rendered as
    *  itself. Present on 44,208 records of 496,675 — absent-first, always. */
@@ -494,6 +498,10 @@ const SUMMARY_LOOKAHEAD = 3;
 export interface ImportedEvents {
   events: RunEvent[];
   origin: Int32Array;
+  /** Present only when the file was one agent's transcript rather than a
+   *  session's (card 152). The import bar says so; absent means an ordinary
+   *  session and the bar says nothing of the kind. */
+  subagent?: SubagentTranscript;
 }
 
 export function claudeCodeToRunEvents(records: unknown[], base = 1_783_500_000_000): RunEvent[] {
@@ -527,6 +535,18 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
   };
   const runId = "cc-import";
   let started = false;
+
+  // WHOSE TRANSCRIPT IS THIS (card 152).
+  //
+  // A file whose records are ALL sidechain is one agent's transcript, and that
+  // agent is the root of this stream: its owner lives in another file, which is
+  // exactly why run_start.parentId is left off rather than pointed at a `main`
+  // this file does not hold. `subagentRoot` is null for every session file, so
+  // `rootId` is the literal "main" everywhere else and every path below reads
+  // identically to how it read before.
+  const subagent = readSubagentTranscript(recs);
+  const subagentRoot = subagent?.agentId ?? null;
+  const rootId = subagentRoot ?? "main";
 
   // Task tool_use ids double as the child agentIds. A sidechain record finds
   // its owning Task by walking parentUuid up: the chain roots either directly
@@ -1110,7 +1130,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     if (emitLaunchOutcome(n, ts)) return;
     const callId = n.callId !== null && calls.has(n.callId) ? n.callId : (launchOf.get(n.taskId) ?? null);
     if (callId !== null && calls.has(callId)) {
-      const card = results.get(callId) ?? { ts, text: "", agentId: "main" };
+      const card = results.get(callId) ?? { ts, text: "", agentId: rootId };
       card.text = card.text === "" ? outcomeSection(n) : `${card.text}\n\n${outcomeSection(n)}`;
       results.set(callId, card);
       const p = promised.get(callId);
@@ -1132,7 +1152,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     out.push({
       type: "agent_message",
       from: n.taskId,
-      to: "main",
+      to: rootId,
       // No status is a progress report, not an ending.
       role: n.status === null ? "status" : "result",
       state: n.status ?? "working",
@@ -1414,14 +1434,38 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     const detail = readToolResultDetail(r.toolUseResult);
     const agent = readAgentResult(r.toolUseResult);
     if (r.isSidechain) {
-      const owner = ownerOf(r);
+      // The owner IN THE FILE first: a spawn nested inside a subagent
+      // transcript still resolves the ordinary way, so the gate is additive and
+      // never displaces the existing path. `subagentRoot` catches what is left
+      // over, and only in a file that is entirely one agent's.
+      const owner = ownerOf(r) ?? subagentRoot;
       if (!owner) return; // orphaned sidechain: skip, never crash
-      if (!childStarted.has(owner)) {
+      if (owner === subagentRoot) {
+        // The file's own agent. It is the root of this stream, so it opens the
+        // run this import closes, and it carries NO parentId: the spawn that
+        // named it lives in another file, and pointing at a `main` that is not
+        // here would be the invention this whole path exists to avoid.
+        if (!started) {
+          out.push({
+            type: "run_start",
+            runId,
+            agentId: owner,
+            prompt: r.type === "user" ? asText(content) : "",
+            ...(firstModel !== undefined ? { model: firstModel } : {}),
+            ts,
+          });
+          started = true;
+          // The first record is the task the agent was given, and it has now
+          // been read as the prompt. Reading it twice would put it on screen
+          // twice, once as the prompt and once as a message.
+          if (r.type === "user") return;
+        }
+      } else if (!childStarted.has(owner)) {
         out.push({
           type: "run_start",
           runId: `cc-${owner}`,
           agentId: owner,
-          parentId: spawnedBy.get(owner) ?? "main",
+          parentId: spawnedBy.get(owner) ?? rootId,
           prompt: taskOf.get(owner) ?? "subtask",
           ts,
         });
@@ -1434,6 +1478,69 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         noteStop(owner, r);
         // Only the piece that OPENED the response opens a turn; see startsTurn.
         if (startsTurn(i)) out.push({ type: "turn_start", agentId: owner, turn: nextTurn(owner), ts });
+        // No blocks and no usage here: both are the shared tail below.
+        //
+        // This branch briefly emitted and billed its own and returned, written
+        // against a rule that had since stopped existing — back when a
+        // subagent's usage became no frame at all, the file's own agent needed
+        // a hand-rolled one or the footer read zero. Card 167 changed that: the
+        // tail bills EVERY sidechain owner through emitUsage + billedOwn, and
+        // `owner === subagentRoot` is an owner like any other. Keeping both
+        // would have been two usage frames for one response, and the reducer
+        // folds usage additively — the footer, the agents panel and the context
+        // ring would each have doubled, with nothing anywhere to fail.
+      }
+      if (r.type === "user") {
+        // THE SIDECHAIN BRANCH GETS THE MAIN BRANCH'S USER HANDLING (card 152).
+        //
+        // Card 141 fixed both halves of this fifty lines below and never
+        // carried either across. A string body went straight to the block loop,
+        // where a string yields an empty array and the turn vanished — and 51 of
+        // those in the corpus are a coordinator sending a working subagent the
+        // revision it asked for, a real turn no trace has ever shown. An array
+        // body sent every block through emitBlock, so a `text` block became a
+        // text_delta under the agent: all 253 of them read "[Request
+        // interrupted by user]", which is the trace telling the reader the
+        // model said something the model did not say.
+        //
+        // The sender here is the parent rather than a person, and `user_message`
+        // is still the right frame: what it means on our wire is "these words
+        // are not the model's", which is exactly the claim being corrected. One
+        // rule on both branches beats a second vocabulary for the same fact.
+        //
+        // Measured over ~/.claude/projects on 2026-08-04: 5,739 string bodies
+        // and 253 text blocks, ALL of them in files the gate above claims, and
+        // ZERO in a session file. So this reads identically on every session
+        // file in the corpus, and the byte-compare confirms it rather than
+        // being asked to trust it.
+        //
+        // Card 141 has a THIRD half, and it is the one the copy left behind:
+        // the notification join runs BEFORE the string rule. A
+        // `<task-notification>` rides in the user channel as plain text, so the
+        // string rule would swallow it into a chat bubble, the launch's promise
+        // would never settle, and its tool card would read "no result by the
+        // end of the transcript" while the file recorded `completed`. Measured:
+        // no sidechain record in the store carries a parseable notification
+        // today — a subagent transcript closes when the agent returns, and
+        // notifications inject into the live top-level channel. So this is a
+        // gap rather than a defect anyone has hit; the promise machinery does
+        // arm on real files, which is why it is closed here and not later.
+        const n = typeof content === "string" ? parseTaskNotification(content) : null;
+        if (n !== null) {
+          emitNotification(n, ts);
+          return;
+        }
+        if (typeof content === "string") {
+          if (content !== "") out.push({ type: "user_message", text: content, ts } as unknown as RunEvent);
+          return;
+        }
+        for (const b of blocks) {
+          if (b?.type === "text") {
+            if ((b.text ?? "") !== "")
+              out.push({ type: "user_message", text: b.text, ts } as unknown as RunEvent);
+          } else emitBlock(owner, b, ts, detail, agent);
+        }
+        return;
       }
       if (apiError) emitApiErrorMessage(owner, blocks, ts);
       else for (const b of blocks) emitBlock(owner, b, ts, detail, agent);
@@ -1499,7 +1606,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
             // exactly that. See attachmentNote for why the bytes stay behind.
             const note = attachmentNote(b);
             if (note !== "") out.push({ type: "user_message", text: note, ts } as unknown as RunEvent);
-            else emitBlock("main", b, ts, detail, agent);
+            else emitBlock(rootId, b, ts, detail, agent);
           }
       }
     } else if (r.type === "assistant") {
@@ -1507,14 +1614,14 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
       // see startsTurn. A long session is hundreds of them, and the graph draws
       // a node per turn_start.
       if (!apiError) announce(modelOf(r), ts); // never "<synthetic>"; see emitApiErrorMessage
-      noteStop("main", r);
+      noteStop(rootId, r);
       if (startsTurn(i)) {
-        out.push({ type: "turn_start", agentId: "main", turn: nextTurn("main"), ts });
+        out.push({ type: "turn_start", agentId: rootId, turn: nextTurn(rootId), ts });
         mainTurnsStanding++;
         if (typeof r.uuid === "string") mainTurnUuids.push(r.uuid);
       }
-      if (apiError) emitApiErrorMessage("main", blocks, ts);
-      else for (const b of blocks) emitBlock("main", b, ts, detail, agent);
+      if (apiError) emitApiErrorMessage(rootId, blocks, ts);
+      else for (const b of blocks) emitBlock(rootId, b, ts, detail, agent);
       // The response's tokens, once, off the piece that finished the accounting.
       if (usageAt.has(i) && r.message?.usage) emitUsage("main", r.message.usage, ts);
     }
@@ -1537,7 +1644,7 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
     // the LAUNCH did succeed; it is the outcome that is unknown.
     for (const [callId, p] of promised) {
       if (p.settled) continue;
-      const card = results.get(callId) ?? { ts: last, text: "", agentId: "main" };
+      const card = results.get(callId) ?? { ts: last, text: "", agentId: rootId };
       const text = card.text === "" ? UNFINISHED(p.taskId) : `${card.text}\n\n${UNFINISHED(p.taskId)}`;
       out.push({
         type: "tool_result",
@@ -1549,11 +1656,15 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
         ts: last,
       });
     }
-    out.push({ type: "run_end", runId, stopReason: stopOf("main"), ts: last });
+    out.push({ type: "run_end", runId, stopReason: stopOf(rootId), ts: last });
   }
   // The closing frames belong to the file as a whole, not to its last line.
   chargeTo(-1);
-  return { events: out, origin: Int32Array.from(origin) };
+  return {
+    events: out,
+    origin: Int32Array.from(origin),
+    ...(subagent !== null ? { subagent } : {}),
+  };
 }
 
 export function parseTranscript(text: string): RunEvent[] {

@@ -818,6 +818,42 @@ describe("reduce — lastInputTokens (context ring)", () => {
     expect(state.lastInputTokens).toBe(1713);
     expect(state.usage.inputTokens).toBe(13); // totals stay raw (billing view)
   });
+
+  // A standalone subagent transcript (card 152) has no "main" in it at all: the
+  // run's own agent is the id the file names. `"main"` was this reducer's word
+  // for "the run's own agent", which is true of every session file and of
+  // nothing else — so on one of these files the ring stayed empty and, since
+  // the header only draws it above zero, never appeared, on a file that
+  // recorded its window fill on every single response. The same sentinel also
+  // counted the root as a subagent of itself.
+  it("reads the run's own agent from the root run, not from the word main", () => {
+    const standalone = reduceAll(initialState, [
+      { type: "run_start", runId: "cc-import", agentId: "a0b476c3", prompt: "build the poster", ts: 1 },
+      { type: "usage", agentId: "a0b476c3", inputTokens: 1400, outputTokens: 220, ts: 2 },
+    ]);
+    expect(standalone.lastInputTokens).toBe(1400);
+    // And it is the run's agent, not a subagent of itself.
+    expect(standalone.runSubagents).toEqual({ ids: [], inputTokens: 0, outputTokens: 0 });
+  });
+
+  it("still calls a nested child a child, in that same file", () => {
+    const nested = reduceAll(initialState, [
+      { type: "run_start", runId: "cc-import", agentId: "a0b476c3", prompt: "build the poster", ts: 1 },
+      { type: "usage", agentId: "a0b476c3", inputTokens: 1400, outputTokens: 220, ts: 2 },
+      { type: "usage", agentId: "nested-1", inputTokens: 9999, outputTokens: 7, ts: 3 },
+    ]);
+    expect(nested.lastInputTokens).toBe(1400); // the child's window is its own
+    expect(nested.runSubagents).toEqual({ ids: ["nested-1"], inputTokens: 9999, outputTokens: 7 });
+  });
+
+  // No run_start yet — an archive opened straight into its usage frames, or a
+  // fold that starts mid-stream. "main" is still the honest default.
+  it("falls back to main before any root run has opened", () => {
+    const early = reduceAll(initialState, [
+      { type: "usage", agentId: "main", inputTokens: 2411, outputTokens: 186, ts: 1 },
+    ]);
+    expect(early.lastInputTokens).toBe(2411);
+  });
 });
 
 describe("replay — same reducer as live", () => {
