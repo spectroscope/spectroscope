@@ -21,7 +21,7 @@ import {
   readStoredTermSplit,
 } from "./shellPrefs";
 import type { WorkspaceInfo } from "../state/reducer";
-import { paneState } from "./paneState";
+import { listableBeforeTheFirstRun, paneState } from "./paneState";
 import type { FetchOutcome } from "./paneState";
 
 interface FileNode {
@@ -110,7 +110,15 @@ function HighlightedText({ path, text }: { path: string; text: string }) {
   );
 }
 
-function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
+function Preview({
+  path,
+  sessionId,
+  prospective,
+}: {
+  path: string;
+  sessionId?: string;
+  prospective: boolean;
+}) {
   const lang = useLang();
   const kind = previewKind(path);
   const [text, setText] = useState<string | null>(null);
@@ -121,7 +129,7 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
     setError(null);
     if (kind !== "text" && kind !== "markdown") return;
     let alive = true;
-    fetch(fileUrl(path, sessionId))
+    fetch(fileUrl(path, sessionId, prospective))
       .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
       .then((body) => {
         if (alive) setText(body);
@@ -132,19 +140,24 @@ function Preview({ path, sessionId }: { path: string; sessionId?: string }) {
     return () => {
       alive = false;
     };
-  }, [path, kind, sessionId]);
+  }, [path, kind, sessionId, prospective]);
 
   if (kind === "html") {
     // The iframe sandbox plus the server's CSP sandbox header: scripts may
     // run, but in an opaque origin — no cookies, no /api, no parent access.
     return (
-      <iframe className="ws-frame" sandbox="allow-scripts" src={fileUrl(path, sessionId)} title={path} />
+      <iframe
+        className="ws-frame"
+        sandbox="allow-scripts"
+        src={fileUrl(path, sessionId, prospective)}
+        title={path}
+      />
     );
   }
   if (kind === "image") {
     return (
       <div className="ws-image">
-        <img src={fileUrl(path, sessionId)} alt={path} />
+        <img src={fileUrl(path, sessionId, prospective)} alt={path} />
       </div>
     );
   }
@@ -293,18 +306,23 @@ export function WorkspaceTab({
   };
 
   const sessionId = workspace?.sessionId;
+  // Before the first run there is no session, but there may still be a folder:
+  // a configured workspace the announcement named and reported as existing.
+  // The server names it again from its own config — the query carries no path.
+  const prospective = listableBeforeTheFirstRun(workspace);
   // Auto-refresh dedupe (card 89): identical payloads never re-render the
   // tree — the 5 s safety poll must not make the panel flicker.
   const lastJson = useRef("");
   const load = useCallback((): void => {
-    // No session, no request. The sessionless call used to be answered with the
-    // server's own working directory; there is nothing to ask for until a
-    // workspace has been resolved.
-    if (sessionId === undefined) {
+    // No session and no named folder, no request. The sessionless call used to
+    // be answered with the server's own working directory; there is nothing to
+    // ask for until one of the two exists.
+    if (sessionId === undefined && !prospective) {
       setOutcome(null);
       return;
     }
-    fetch(`/api/files?session=${encodeURIComponent(sessionId)}`)
+    const query = sessionId !== undefined ? `session=${encodeURIComponent(sessionId)}` : "scope=prospective";
+    fetch(`/api/files?${query}`)
       .then((r) => {
         if (!r.ok) {
           setOutcome({ kind: "status", status: r.status });
@@ -324,7 +342,7 @@ export function WorkspaceTab({
       // A throw is the network, not a status: a dead server and a folder that
       // does not exist yet are different things and must read differently.
       .catch(() => setOutcome({ kind: "offline" }));
-  }, [sessionId]);
+  }, [sessionId, prospective]);
 
   useEffect(load, [load]);
 
@@ -364,6 +382,7 @@ export function WorkspaceTab({
   };
 
   const pane = paneState(workspace, outcome, lang);
+  const beforeTheRun = pane.kind === "tree" && pane.scope === "prospective";
   if (pane.kind === "unreachable") return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
   if (pane.kind === "loading") return <p className="ctx-empty">{pane.message}</p>;
   if (pane.kind === "pending") {
@@ -390,8 +409,15 @@ export function WorkspaceTab({
           {tree.root}/
         </span>
         {workspace !== null && (
+          // Which folder this is, said out loud. A tree drawn before any run is
+          // the folder the first run WILL use, and calling it a session
+          // workspace would claim a session that has not started.
           <span className="ws-session-note" title={workspace.path}>
-            {workspace.configured ? t(lang, "ws.pinned") : t(lang, "ws.perSession")}
+            {beforeTheRun
+              ? t(lang, "ws.firstRunFolder")
+              : workspace.configured
+                ? t(lang, "ws.pinned")
+                : t(lang, "ws.perSession")}
           </span>
         )}
         {onPickFolder !== undefined && (
@@ -405,21 +431,27 @@ export function WorkspaceTab({
             {t(lang, "ws.pick")}
           </button>
         )}
-        {/* Inline bilingual pair rather than an i18n key: a sibling owns
+        {/* A shell belongs to a session (ShellCwd refuses a request without
+            one), so the toggle stays away while the tree is the first run's
+            folder — offering a button that can only fail is the dishonesty
+            this pane exists to avoid.
+            Inline bilingual pair rather than an i18n key: a sibling owns
             i18n.ts this run, and card 64 folds these ternaries back in. */}
-        <button
-          type="button"
-          className="ws-term-toggle"
-          aria-pressed={termOpen}
-          title={
-            lang === "de"
-              ? "ein terminal im ordner des agenten, mit deinen eigenen rechten"
-              : "a terminal in the agent's folder, running with your own privileges"
-          }
-          onClick={() => setTermOpen((open) => !open)}
-        >
-          {lang === "de" ? "terminal" : "terminal"}
-        </button>
+        {!beforeTheRun && (
+          <button
+            type="button"
+            className="ws-term-toggle"
+            aria-pressed={termOpen}
+            title={
+              lang === "de"
+                ? "ein terminal im ordner des agenten, mit deinen eigenen rechten"
+                : "a terminal in the agent's folder, running with your own privileges"
+            }
+            onClick={() => setTermOpen((open) => !open)}
+          >
+            {lang === "de" ? "terminal" : "terminal"}
+          </button>
+        )}
         <button type="button" className="ws-refresh" onClick={load} title={t(lang, "ws.refresh")}>
           ⟳
         </button>
@@ -466,11 +498,11 @@ export function WorkspaceTab({
                 {selected}
               </span>
             </div>
-            <Preview path={selected} sessionId={sessionId} />
+            <Preview path={selected} sessionId={sessionId} prospective={beforeTheRun} />
           </>
         )}
       </div>
-      {termOpen && (
+      {termOpen && !beforeTheRun && (
         <>
           <div
             className="ws-divider"

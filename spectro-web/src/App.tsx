@@ -21,7 +21,8 @@ import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
 import { ChatV2 } from "./components/ChatV2";
-import { useChatView } from "./state/chatView";
+import { isFlipIntoV2, useChatView } from "./state/chatView";
+import type { ChatViewMode } from "./state/chatView";
 import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
@@ -1177,8 +1178,18 @@ export function App() {
   // Choosing v2 opens the panel it is half of: a reading whose right column is
   // collapsed is v1 with the children missing. Only on the flip INTO v2 — a
   // reader who then closes the panel is not fought with.
+  //
+  // The effect said that and did not do it. Keyed on chatView alone, it also
+  // ran on MOUNT, and v2 is the default reading, so every start reopened the
+  // panel on Work — which a session with no run in it fills with "Nothing
+  // yet.". The previous value is what tells a flip from a mount, and only a ref
+  // carries it across renders. The layout store persists both the panel's open
+  // state and its tab, so a start now lands where the reader left it.
+  const lastChatView = useRef<ChatViewMode | null>(null);
   useEffect(() => {
-    if (chatView !== "v2") return;
+    const previous = lastChatView.current;
+    lastChatView.current = chatView;
+    if (!isFlipIntoV2(previous, chatView)) return;
     openRightPanel();
     setActiveRightTab("work");
   }, [chatView]);

@@ -20,6 +20,27 @@ import { useSyncExternalStore } from "react";
 
 export type ChatViewMode = "v1" | "v2";
 
+/**
+ * Whether a render is the FLIP into v2 rather than a mount that merely finds v2
+ * already chosen.
+ *
+ * <p>App opens the right panel on Work when a reader chooses v2, because a v2
+ * reading whose right column is collapsed is v1 with the children missing. That
+ * effect was keyed on the mode itself, so it also ran on mount — and v2 is the
+ * default, so it ran on every start for everyone, reopening the panel on a Work
+ * tab that a session with no run in it fills with "Nothing yet.". A reader who
+ * closed the panel, or left it on another tab, was overruled at the next
+ * launch. The previous value is the whole difference, and only the caller has
+ * it, so it is passed in.</p>
+ *
+ * @param previous the mode the last render saw, null on the first one
+ * @param next the mode this render sees
+ * @return true only for a real v1 to v2 transition
+ */
+export function isFlipIntoV2(previous: ChatViewMode | null, next: ChatViewMode): boolean {
+  return next === "v2" && previous !== null && previous !== "v2";
+}
+
 export const CHAT_VIEW_MODES: ChatViewMode[] = ["v1", "v2"];
 
 const KEY = "spectroscope:chat.view";
