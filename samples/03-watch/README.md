@@ -25,8 +25,8 @@ in the cockpit's session list next to every CLI and server run.
 ## Build and run (offline)
 
 ```bash
-gradle build
-gradle run
+./gradlew build
+./gradlew run
 ```
 
 No key, no network: the model is a scripted provider (in this directory)

@@ -56,7 +56,7 @@ the exporter is off — the sample then runs JSONL-only and says so.
 Run it:
 
 ```bash
-gradle build
+./gradlew build
 SPECTRO_OTLP_ENDPOINT=http://localhost:4318/v1/traces gradle run
 ```
 

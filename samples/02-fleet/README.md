@@ -30,8 +30,8 @@ implementation("dev.spectroscope:spectro-orchestrator:0.4.1")
 ## Build and run (offline)
 
 ```bash
-gradle build
-gradle run
+./gradlew build
+./gradlew run
 ```
 
 This main needs no key and no network: each lane runs on a scripted

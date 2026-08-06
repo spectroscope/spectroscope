@@ -22,7 +22,7 @@ is the whole consumption model.
 ## Build
 
 ```bash
-gradle build
+./gradlew build
 ```
 
 The dependency is `dev.spectroscope:spectro-core:0.4.1` from Maven Central.
@@ -34,7 +34,7 @@ Java 21 or newer.
 
 ```bash
 export ANTHROPIC_API_KEY=sk-ant-...
-gradle run
+./gradlew run
 ```
 
 The key can also live in `~/.spectro/.env`; the provider reads it when the
@@ -52,7 +52,7 @@ server:
 
 ```bash
 ollama pull qwen3        # any tool-capable model works
-gradle run -PmainClass=dev.spectroscope.samples.fivelines.FiveLinesLocal
+./gradlew run -PmainClass=dev.spectroscope.samples.fivelines.FiveLinesLocal
 ```
 
 `OLLAMA_MODEL=<name>` overrides the model. The verbatim class stays
