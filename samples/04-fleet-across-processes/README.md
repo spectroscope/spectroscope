@@ -63,7 +63,7 @@ that hub as well, so an embedded fleet shows up in the cockpit next to the
 node fleets.
 
 ```bash
-gradle build
+./gradlew build
 SPECTRO_HUB=127.0.0.1:7700 gradle run
 ```
 

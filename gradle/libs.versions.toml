@@ -2,7 +2,23 @@
 # module build scripts reference typed accessors (libs.anthropic.java, ...).
 [versions]
 anthropic = "2.34.0"
-jackson = "2.17.2"
+# Pinned to what anthropic-java ALREADY brings, not to a number of our own.
+#
+# The owner hit this from the outside: our published POM declared
+# jackson-databind 2.17.2 while anthropic-java 2.34.0 pulls the jackson 2.18.2
+# family through its BOM. Gradle resolves highest-wins and lands everything on
+# 2.18.2, which is why every build in this repo passed and why a fresh terminal
+# run of the five-lines sample works. A resolver that does NOT pick highest —
+# Maven's nearest-wins, Eclipse JDT, the classpath an IDE extension assembles —
+# can end up with databind and core from different families, and a databind
+# newer than its own core throws NoSuchMethodError on
+# ParserMinimalBase.<init>(StreamReadConstraints) the first time anything is
+# deserialised.
+#
+# We publish a library. What our POM SAYS is the contract, and it said something
+# our own dependency contradicts. Aligning costs nothing and removes the split
+# for every consumer, whatever resolves it.
+jackson = "2.18.2"
 picocli = "4.7.6"
 junit = "5.10.2"
 spring = "6.2.8"

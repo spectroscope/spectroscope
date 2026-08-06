@@ -38,10 +38,10 @@ OpenAI-compatible provider).
 ## Build and run
 
 ```bash
-gradle build                     # no services needed
+./gradlew build                     # no services needed
 
 ollama pull qwen3                # any chat model works
-gradle run                       # needs Ollama on localhost:11434
+./gradlew run                       # needs Ollama on localhost:11434
 OLLAMA_MODEL=<name> gradle run   # pick a different model
 ```
 
