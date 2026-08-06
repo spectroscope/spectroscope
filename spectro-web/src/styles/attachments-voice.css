@@ -228,3 +228,118 @@
   font-size: var(--fs-11);
   color: var(--text-faint);
 }
+
+/* The lightbox's three faces. A segmented row in the trace's own idiom: the one
+   showing is pressed, and they sit together so the switch reads as one control
+   rather than three buttons that happen to be adjacent. */
+.img-faces {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.img-faces button {
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  color: var(--text-dim);
+  font: inherit;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.img-faces button:last-child {
+  border-right: none;
+}
+.img-faces button.is-on {
+  background: var(--bg);
+  color: var(--text);
+}
+.img-faces button:hover {
+  color: var(--text);
+}
+
+/* The two text faces share a frame: a head that says what you are looking at,
+   and a body that scrolls. */
+.img-text {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(1100px, 88vw);
+  max-height: calc(94vh - 110px);
+  min-height: 0;
+}
+.img-text-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+}
+.img-blob {
+  margin: 0;
+  overflow: auto;
+  /* The one place a 600 KB string is allowed on screen, because it is what the
+     reader asked to see. Breaking anywhere keeps it inside the box. */
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: var(--fs-11);
+  line-height: 1.45;
+  color: var(--text-dim);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 10px 12px;
+}
+.img-file {
+  overflow: auto;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 8px 0;
+  font-size: var(--fs-11);
+  line-height: 1.6;
+}
+.img-line {
+  display: flex;
+  gap: 12px;
+  padding: 1px 12px;
+}
+.img-line.is-target {
+  background: var(--bg-raise);
+  /* The mark is on the LINE, in the accent, because this is the answer to
+     "where exactly in the file". */
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.img-lineno {
+  flex: none;
+  width: 5ch;
+  text-align: right;
+  color: var(--text-faint);
+  user-select: none;
+}
+.img-linetext {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  color: var(--text-dim);
+}
+.img-line.is-target .img-linetext {
+  color: var(--text);
+}
+/* The blob, as a measured absence you can click to open. */
+.img-blobmark {
+  display: inline-block;
+  margin: 0 2px;
+  padding: 0 6px;
+  background: none;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-chip);
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-11);
+  cursor: pointer;
+}
+.img-blobmark:hover {
+  background: var(--bg-raise);
+}
