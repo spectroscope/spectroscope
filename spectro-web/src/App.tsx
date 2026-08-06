@@ -122,7 +122,7 @@ import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
 import { shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
-import { collectImages, indexOf } from "./state/sessionImages";
+import { collectImages, imageLines, indexOf, withSourceLines } from "./state/sessionImages";
 import { useImageRequest } from "./state/imageViewer";
 import { ImageLightbox } from "./components/ImageLightbox";
 import { TranslateToggle } from "./components/TranslatePanel";
@@ -1304,7 +1304,15 @@ export function App() {
   // The session's pictures, in stream order, and which one the lightbox has
   // open. Derived from the folded view rather than kept as a second list: a
   // gallery with its own copy goes stale the moment a delta lands.
-  const gallery = useMemo(() => collectImages(view), [view]);
+  // Each picture also carries WHICH LINE of the imported file brought it in, so
+  // the lightbox's file face can show the record around it. The import already
+  // holds both halves — the file's lines and `origin[i]` per event — so this is
+  // a join, not a second read.
+  const gallery = useMemo(() => {
+    const shots = collectImages(view);
+    const src = replay?.source;
+    return src === undefined ? shots : withSourceLines(shots, imageLines(replay!.events, src.origin));
+  }, [view, replay]);
   const [lightboxAt, setLightboxAt] = useState<number | null>(null);
   // Any picture anywhere can ask to be opened; only this component owns the
   // lightbox, because it is the only one that can walk from a chat bubble to a
@@ -1534,6 +1542,7 @@ export function App() {
         onClose={() => setLightboxAt(null)}
         onGo={setLightboxAt}
         storePath={shownStorePath}
+        sourceLines={replay?.source?.lines ?? null}
       />
       {sidebarOpen && (
         <Sidebar

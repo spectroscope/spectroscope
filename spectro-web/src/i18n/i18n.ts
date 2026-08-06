@@ -134,6 +134,33 @@ export const dict: Record<string, { de: string; en: string }> = {
   "shot.prev": { de: "vorheriges Bild", en: "previous picture" },
   "shot.next": { de: "nächstes Bild", en: "next picture" },
   "shot.keys": { de: "← → blättern · Esc schließt", en: "← → to walk · Esc closes" },
+  // The three faces. The owner asked to see the base64 AND the file it sits in,
+  // once he learned the picture is not a file: "wäre cool einen schalter zu
+  // haben das base64 jpeg zu sehen und eben DIE DATEI, wo der string drinne
+  // steht … WO genau in der datei mit highlight das steht".
+  "shot.faces": { de: "Ansicht", en: "face" },
+  "shot.face.picture": { de: "Bild", en: "picture" },
+  "shot.face.base64": { de: "base64", en: "base64" },
+  "shot.face.file": { de: "Datei", en: "file" },
+  "shot.base64Head": { de: "{media} · {chars} Zeichen", en: "{media} · {chars} characters" },
+  "shot.copy": { de: "kopieren", en: "copy" },
+  "shot.copied": { de: "kopiert", en: "copied" },
+  "shot.fileHead": { de: "Zeile {line} von {total}", en: "line {line} of {total}" },
+  // A record often carries several pictures — the owner's own opening one has
+  // four — and saying so is what explains the extra blob marks on the line.
+  "shot.fileHeadN": {
+    de: "Zeile {line} von {total} · dieser eine Record trägt {n} Bilder",
+    en: "line {line} of {total} · this one record carries {n} pictures",
+  },
+  "shot.fileUnknown": {
+    de: "Diese Zeile trägt keinen base64-Block — die Datei sagt nicht, woher das Bild kam.",
+    en: "That line carries no base64 block — the file does not say where this picture came from.",
+  },
+  "shot.blob": { de: "◀ {chars} Zeichen base64 ▶", en: "◀ {chars} characters of base64 ▶" },
+  "shot.blobTitle": {
+    de: "Hier steht das Bild. Klick zeigt den String selbst.",
+    en: "This is where the picture is. Click to see the string itself.",
+  },
   "folder.failedTitle": {
     de: "Der Ordner ist weg, oder diese Maschine hat keinen Dateimanager, den wir kennen.",
     en: "The folder is gone, or this machine has no file manager we know.",

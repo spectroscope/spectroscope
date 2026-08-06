@@ -24,6 +24,9 @@ export interface GalleryImage extends UserAttachment {
   toolName?: string;
   /** The turn's index, so a click can find its own picture again. */
   turn: number;
+  /** Which line of the imported file carried it, zero-based, or undefined for a
+   *  live session and for a paste — neither has a file behind it. */
+  sourceLine?: number;
 }
 
 /**
@@ -83,4 +86,47 @@ export function indexOf(images: readonly GalleryImage[], shot: UserAttachment): 
 export function step(at: number, count: number, step: -1 | 1): number {
   if (count === 0) return 0;
   return (at + step + count) % count;
+}
+
+/**
+ * Which line of the file each picture came from.
+ *
+ * The import already knows: `origin[i]` is the line index behind `events[i]`,
+ * the same array the trace's source face reads. This only turns it into a
+ * lookup the gallery can use, keyed on the bytes — the same key a click uses,
+ * and the only one that survives the fold.
+ *
+ * @param events the recorded stream, in file order
+ * @param origin `origin[i]` for `events[i]`, negative for a frame with no line
+ * @returns base64 → line index, first occurrence winning; a duplicated picture
+ *          points at where it FIRST appeared, which is where a reader looking
+ *          for "the record that brought this in" wants to land
+ */
+export function imageLines(events: readonly unknown[], origin: ArrayLike<number>): Map<string, number> {
+  const out = new Map<string, number>();
+  const n = Math.min(events.length, origin.length);
+  for (let i = 0; i < n; i++) {
+    const e = events[i] as { type?: string; dataBase64?: unknown };
+    if (e?.type !== "attachment_image" || typeof e.dataBase64 !== "string") continue;
+    const at = origin[i];
+    if (at >= 0 && !out.has(e.dataBase64)) out.set(e.dataBase64, at);
+  }
+  return out;
+}
+
+/**
+ * The gallery with each picture's line stamped on it.
+ *
+ * @param images the gallery
+ * @param lines the lookup from {@link imageLines}
+ * @returns the same pictures, each carrying its line when the file had one
+ */
+export function withSourceLines(
+  images: readonly GalleryImage[],
+  lines: ReadonlyMap<string, number>,
+): GalleryImage[] {
+  return images.map((g) => {
+    const at = lines.get(g.dataBase64);
+    return at === undefined ? g : { ...g, sourceLine: at };
+  });
 }
