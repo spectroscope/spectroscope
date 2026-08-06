@@ -31,10 +31,14 @@ export const SETTINGS_SECTIONS = [
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
+/** The state inside a view — see viewState.ts for what is worth writing. */
+import { formatViewState, parseViewState, type ViewState } from "./viewState";
+export type { ViewState };
+
 /** Everything a hash can address. */
 export type Route =
-  | { kind: "live"; tab: ViewTab | null }
-  | { kind: "session"; sessionId: string; eventIndex: number | null; tab: ViewTab | null }
+  | { kind: "live"; tab: ViewTab | null; view?: ViewState }
+  | { kind: "session"; sessionId: string; eventIndex: number | null; tab: ViewTab | null; view?: ViewState }
   | { kind: "fleet"; contextId: string }
   /**
    * A transcript from the store, by its store-relative path.
@@ -46,7 +50,7 @@ export type Route =
    * in it, and has no way back, because the thing he came from was never an
    * address either. So the ones that CAN be addressed now are.
    */
-  | { kind: "import"; path: string }
+  | { kind: "import"; path: string; tab: ViewTab | null; view?: ViewState }
   | { kind: "settings"; section: SettingsSection | null };
 
 /** A parsed session route — the card-81 shape, kept for its callers. */
@@ -72,7 +76,13 @@ export function parseAppRoute(hash: string | null | undefined): Route {
   if (!hash) {
     return liveDefault();
   }
-  const path = hash.startsWith("#") ? hash.slice(1) : hash;
+  const whole = hash.startsWith("#") ? hash.slice(1) : hash;
+  // The query is split off BEFORE anything else looks at the path, so no parser
+  // below has to know it exists — and a `?` inside an encoded store path is
+  // %3F, so this cannot cut one in half.
+  const q = whole.indexOf("?");
+  const path = q < 0 ? whole : whole.slice(0, q);
+  const view = parseViewState(q < 0 ? undefined : whole.slice(q + 1));
   if (!path.startsWith("/")) {
     return liveDefault();
   }
@@ -81,16 +91,16 @@ export function parseAppRoute(hash: string | null | undefined): Route {
     return liveDefault();
   }
   if (isViewTab(rest)) {
-    return { kind: "live", tab: rest };
+    return withView({ kind: "live", tab: rest }, view);
   }
   if (rest.startsWith(SESSION)) {
-    return sessionRouteOf(rest.slice(SESSION.length));
+    return withView(sessionRouteOf(rest.slice(SESSION.length)), view);
   }
   if (rest.startsWith(FLEET)) {
     return fleetRouteOf(rest.slice(FLEET.length));
   }
   if (rest.startsWith(IMPORT)) {
-    return importRouteOf(rest.slice(IMPORT.length));
+    return withView(importRouteOf(rest.slice(IMPORT.length)), view);
   }
   if (rest === SETTINGS) {
     return { kind: "settings", section: null };
@@ -102,6 +112,27 @@ export function parseAppRoute(hash: string | null | undefined): Route {
 }
 
 /**
+ * Stamps view state onto a route that can carry it.
+ *
+ * A fleet landing and the settings page cannot: neither has a view whose state
+ * would mean anything, and a query on them would be an address that promises
+ * something nothing reads.
+ */
+function withView(route: Route, view: ViewState): Route {
+  if (isEmpty(view)) return route;
+  switch (route.kind) {
+    case "live":
+    case "session":
+    case "import":
+      return { ...route, view };
+    default:
+      return route;
+  }
+}
+
+const isEmpty = (v: ViewState): boolean => v.row === undefined && v.only === undefined && v.win === undefined;
+
+/**
  * Builds the hash for a route, always with its leading `#`.
  *
  * Replay-only ids (scenario:*, import:*) come back as `#/` — a scenario or an
@@ -110,7 +141,7 @@ export function parseAppRoute(hash: string | null | undefined): Route {
 export function formatRoute(route: Route): string {
   switch (route.kind) {
     case "live":
-      return route.tab === null ? "#/" : `#/${route.tab}`;
+      return (route.tab === null ? "#/" : `#/${route.tab}`) + formatViewState(route.view);
     case "session": {
       if (isReplayOnlyId(route.sessionId)) {
         return "#/";
@@ -122,12 +153,20 @@ export function formatRoute(route: Route): string {
       if (route.tab !== null) {
         hash += `/${route.tab}`;
       }
-      return hash;
+      return hash + formatViewState(route.view);
     }
     case "fleet":
       return isReplayOnlyId(route.contextId) ? "#/" : `#/${FLEET}${encodeURIComponent(route.contextId)}`;
-    case "import":
-      return route.path === "" ? "#/" : `#/${IMPORT}${encodeURIComponent(route.path)}`;
+    case "import": {
+      if (route.path === "") {
+        return "#/";
+      }
+      // The path is URL-ENCODED, so its own slashes are %2F and the only bare
+      // slash left is the one this appends. That is what makes the tab suffix
+      // unambiguous for a path that happens to end in a tab's name.
+      const hash = `#/${IMPORT}${encodeURIComponent(route.path)}`;
+      return (route.tab === null ? hash : `${hash}/${route.tab}`) + formatViewState(route.view);
+    }
     case "settings":
       return route.section === null ? `#/${SETTINGS}` : `#/${SETTINGS}/${route.section}`;
   }
@@ -145,14 +184,28 @@ export function formatRoute(route: Route): string {
  * @return the import route, or the live default for an empty one
  */
 function importRouteOf(raw: string): Route {
+  // A trailing `/{tab}` is a tab only when the literal matches AND a path
+  // remains. The path itself arrives percent-encoded, so a bare slash here
+  // cannot have come from inside it — which is why a transcript whose own path
+  // ends in "trace" still parses as a path and not as a tab.
+  let rest = raw;
+  let tab: ViewTab | null = null;
+  const cut = rest.lastIndexOf("/");
+  if (cut > 0) {
+    const maybe = rest.slice(cut + 1);
+    if (isViewTab(maybe)) {
+      tab = maybe;
+      rest = rest.slice(0, cut);
+    }
+  }
   let path: string;
   try {
-    path = decodeURIComponent(raw);
+    path = decodeURIComponent(rest);
   } catch {
     // A hand-typed hash with a stray % is not an address; it is a typo.
     return liveDefault();
   }
-  return path === "" ? liveDefault() : { kind: "import", path };
+  return path === "" ? liveDefault() : { kind: "import", path, tab };
 }
 
 /**

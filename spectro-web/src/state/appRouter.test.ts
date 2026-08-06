@@ -20,12 +20,13 @@ import {
   viewIdentity,
   type Place,
 } from "./appRouter";
-import type { Route } from "./route";
+import { formatRoute, type Route } from "./route";
 
 const openGuards = { fleetsLocked: false, fleetKnown: true };
 
 const at = (over: Partial<Place> = {}): Place => ({
   replayId: null,
+  importPath: null,
   enteredFleet: null,
   tab: "chat",
   settingsOpen: false,
@@ -232,5 +233,60 @@ describe("the trace pin across navigations (card 147)", () => {
 
   it("clears on a new or resumed chat: same view key, new connection", () => {
     expect(pinAfterNavigation(viewIdentity(1, "live"), viewIdentity(2, "live"), "worker-2")).toBe(null);
+  });
+});
+
+// Card 181's first line, and it is a BUG rather than a missing feature: the
+// owner, "die trace view verliert die deep links und zwar auch für immer wenn
+// man zurück geht."
+//
+// An imported transcript has an address. Its replayId does not: `import:<kind>:
+// <label>` is refused by formatRoute, which answers "#/". So every place that
+// derived an address from the replayId alone wrote the empty one — and since
+// that write REPLACED the entry `back` returns to, the link was gone for good.
+describe("the address of an imported transcript", () => {
+  const path = "-Users-me-Repo/abc-123.jsonl";
+  const imported = { replayId: "import:claude-code:abc-123.jsonl", importPath: path };
+
+  it("is the import address, not the empty one", () => {
+    expect(routeOfPlace(at({ ...imported }))).toEqual({ kind: "import", path, tab: null });
+  });
+
+  it("survives a tab flip, which is where it used to die", () => {
+    expect(routeOfPlace(at({ ...imported, tab: "trace" }))).toEqual({
+      kind: "import",
+      path,
+      tab: "trace",
+    });
+  });
+
+  it("formats to something a reader can paste", () => {
+    expect(formatRoute(routeOfPlace(at({ ...imported, tab: "spectrum" })))).toBe(
+      `#/import/${encodeURIComponent(path)}/spectrum`,
+    );
+  });
+
+  // The distinction that makes it safe: a paste and a picked file have no path,
+  // and must keep saying so rather than inventing one.
+  it("stays empty for an import with no address behind it", () => {
+    expect(formatRoute(routeOfPlace(at({ replayId: "import:claude-code:pasted", importPath: null })))).toBe(
+      "#/",
+    );
+  });
+
+  it("does not shadow a fleet, which is a different place entirely", () => {
+    expect(routeOfPlace(at({ ...imported, enteredFleet: "ctx-1" }))).toEqual({
+      kind: "fleet",
+      contextId: "ctx-1",
+    });
+  });
+
+  it("leaves an ordinary stored session alone", () => {
+    expect(routeOfPlace(at({ replayId: "20260805-1200", tab: "trace" }))).toEqual({
+      kind: "session",
+      sessionId: "20260805-1200",
+      eventIndex: null,
+      tab: "trace",
+    });
   });
 });

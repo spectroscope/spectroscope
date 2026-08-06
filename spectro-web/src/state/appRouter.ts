@@ -22,6 +22,20 @@ import type { Route, SettingsSection, ViewTab } from "./route";
 export interface Place {
   /** The shown archive/scenario/import id, or null in the live view. */
   replayId: string | null;
+  /**
+   * The store path an IMPORT was opened from, when it has one.
+   *
+   * `replayId` cannot answer this: an import's id is `import:<kind>:<label>`,
+   * which formatRoute refuses as a session address and answers "#/" for. So a
+   * tab flip on an imported transcript wrote the empty address and the deep
+   * link was gone — and gone for good, because the entry it overwrote is the
+   * one `back` returns to. That is card 181's first line, and it is a bug
+   * rather than a missing feature.
+   *
+   * Null for a live session, a scenario, a paste and a picked file: those
+   * genuinely have no address.
+   */
+  importPath: string | null;
   enteredFleet: string | null;
   tab: ViewTab;
   settingsOpen: boolean;
@@ -140,6 +154,10 @@ export function routeOfPlace(place: Place): Route {
   const tab = place.tab === "chat" ? null : place.tab;
   if (place.enteredFleet !== null) {
     return { kind: "fleet", contextId: place.enteredFleet };
+  }
+  // BEFORE the replayId branch: an import has both, and only this one formats.
+  if (place.importPath !== null) {
+    return { kind: "import", path: place.importPath, tab };
   }
   if (place.replayId !== null) {
     return { kind: "session", sessionId: place.replayId, eventIndex: null, tab };
