@@ -113,6 +113,27 @@ export const dict: Record<string, { de: string; en: string }> = {
   "folder.workflows": { de: "Workflows", en: "workflows" },
   "folder.scratchpad": { de: "Scratchpad", en: "scratchpad" },
   "folder.failed": { de: "ging nicht auf", en: "did not open" },
+  // The lightbox for pictures a transcript CARRIED. Its own `shot.*` namespace
+  // rather than `img.*`, which already belongs to the generated-image panel —
+  // two different things that would otherwise share a key and silently win
+  // over each other by file order.
+  // "folder" is deliberately the TRANSCRIPT's folder: the picture
+  // is base64 inside the .jsonl and is not a file on disk, so there is no
+  // folder it lies in. Saying otherwise on a button would be a small lie.
+  "shot.title": { de: "Bild", en: "picture" },
+  "shot.fromMessage": { de: "aus einer Nachricht", en: "from a message" },
+  "shot.fromTool": { de: "von {tool}", en: "from {tool}" },
+  "shot.save": { de: "speichern", en: "save" },
+  "shot.saved": { de: "gespeichert", en: "saved" },
+  "shot.folder": { de: "Ordner", en: "folder" },
+  "shot.folderTitle": {
+    de: "Zeigt den Ordner des TRANSKRIPTS. Das Bild selbst ist keine Datei auf der Platte — es steckt als base64 in der .jsonl.",
+    en: "Shows the TRANSCRIPT's folder. The picture itself is not a file on disk — it is base64 inside the .jsonl.",
+  },
+  "shot.close": { de: "schließen", en: "close" },
+  "shot.prev": { de: "vorheriges Bild", en: "previous picture" },
+  "shot.next": { de: "nächstes Bild", en: "next picture" },
+  "shot.keys": { de: "← → blättern · Esc schließt", en: "← → to walk · Esc closes" },
   "folder.failedTitle": {
     de: "Der Ordner ist weg, oder diese Maschine hat keinen Dateimanager, den wir kennen.",
     en: "The folder is gone, or this machine has no file manager we know.",

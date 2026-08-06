@@ -5,6 +5,7 @@
 // button. Status is always dot + text, never color alone.
 
 import { useEffect, useState } from "react";
+import { openImage } from "../state/imageViewer";
 import type { CSSProperties } from "react";
 import type { ToolCard as ToolCardModel } from "../state/reducer";
 import { agentAccent, formatDuration } from "../format";
@@ -185,11 +186,12 @@ export function ToolCard(props: { card: ToolCardModel; live: boolean; inThread?:
               {card.images.map((a, i) => (
                 <img
                   key={i}
-                  className="tool-card-shot"
+                  className="tool-card-shot is-openable"
                   src={`data:${a.mediaType};base64,${a.dataBase64}`}
                   alt={a.name}
                   title={a.name}
                   loading="lazy"
+                  onClick={() => openImage(a)}
                 />
               ))}
             </div>

@@ -26,6 +26,7 @@ import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
 import { TranslatePanel } from "./TranslatePanel";
 import { ExportMenu } from "./ExportMenu";
+import { openImage } from "../state/imageViewer";
 import { SessionFolderButtons } from "./SessionFolderButtons";
 import { chatTools } from "./chatTools";
 import { useTranslation } from "../state/translate";
@@ -262,10 +263,11 @@ export function Chat(props: {
                 {turn.attachments.map((a, j) => (
                   <img
                     key={j}
-                    className="user-attachment-thumb"
+                    className="user-attachment-thumb is-openable"
                     src={`data:${a.mediaType};base64,${a.dataBase64}`}
                     alt={a.name}
                     title={a.name}
+                    onClick={() => openImage(a)}
                   />
                 ))}
               </div>

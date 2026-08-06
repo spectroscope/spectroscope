@@ -124,3 +124,107 @@
   color: var(--accent);
 }
 
+
+/* Card 179, the gallery. A picture that opens says so before it is clicked —
+   the cursor and a hairline on hover, nothing louder. Colour stays on the
+   spectral lines; this is chrome. */
+.is-openable {
+  cursor: zoom-in;
+  transition: outline-color 0.15s ease;
+  outline: 1px solid transparent;
+  outline-offset: 2px;
+}
+.is-openable:hover {
+  outline-color: var(--accent);
+}
+
+/* The lightbox. It sits on the app's own backdrop class so a reader who knows
+   how every other modal here closes already knows how this one does. */
+.img-backdrop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.img-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: min(1400px, 96vw);
+  max-height: 94vh;
+  background: var(--bg-raise);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px 10px;
+}
+.img-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: var(--fs-12);
+}
+.img-where {
+  color: var(--text);
+}
+.img-note {
+  color: var(--text-dim);
+}
+.img-spacer {
+  flex: 1 1 auto;
+}
+.img-count {
+  color: var(--text-dim);
+}
+.img-stage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* min-height 0 lets the picture shrink inside the column instead of pushing
+     the bar and the footer off the screen — the same flex rule card 178 was
+     about. */
+  min-height: 0;
+  flex: 1 1 auto;
+}
+.img-full {
+  max-width: 100%;
+  /* The stage's own height minus the bar and footer, so a tall screenshot fits
+     without a scrollbar. */
+  max-height: calc(94vh - 96px);
+  object-fit: contain;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+}
+.img-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 40px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26px;
+  line-height: 1;
+  background: var(--bg);
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  cursor: pointer;
+}
+.img-arrow:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+.img-arrow--prev {
+  left: -8px;
+}
+.img-arrow--next {
+  right: -8px;
+}
+.img-foot {
+  text-align: center;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
