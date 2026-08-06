@@ -17,6 +17,9 @@ repositories {
 dependencies {
     // Plain Jackson only — an MCP server is just a program that answers
     // tools/call over stdin/stdout. No heavy MCP SDK, no Lucene.
+    // The BOM travels with the artifact — see spectro-core for why it is a BOM
+    // and not a number.
+    implementation(platform(libs.jackson.bom))
     implementation(libs.jackson.databind)
 
     testImplementation(libs.junit.jupiter)

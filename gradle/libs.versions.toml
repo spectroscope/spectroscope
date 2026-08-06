@@ -30,7 +30,10 @@ logback = "1.5.38"
 
 [libraries]
 anthropic-java = { module = "com.anthropic:anthropic-java", version.ref = "anthropic" }
-jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-bom = { module = "com.fasterxml.jackson:jackson-bom", version.ref = "jackson" }
+# No version.ref: the BOM above governs it, and a second number here is a second
+# thing to keep in step.
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind" }
 picocli = { module = "info.picocli:picocli", version.ref = "picocli" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
 # Spring Framework as a LIBRARY (no Boot, no container): RestClient + declarative
