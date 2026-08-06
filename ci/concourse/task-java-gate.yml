@@ -31,12 +31,21 @@ run:
       # --rerun-tasks --no-build-cache, always. A plain `./gradlew test` on this
       # tree goes green in half a second having run nothing.
       ./gradlew test --rerun-tasks --no-build-cache
-      # The count, read from the XML rather than from "BUILD SUCCESSFUL".
-      python3 - <<'PY'
-      import glob, xml.etree.ElementTree as ET
-      t = f = s = 0
-      for p in glob.glob('*/build/test-results/test/TEST-*.xml'):
-          r = ET.parse(p).getroot()
-          t += int(r.get('tests')); f += int(r.get('failures')) + int(r.get('errors')); s += int(r.get('skipped'))
-      print(f'JUnit {t} · failures {f} · skipped {s}')
-      PY
+      # The count, read from the XML rather than from "BUILD SUCCESSFUL" — in
+      # awk, not python: eclipse-temurin carries a JDK and nothing else, and the
+      # first triggered build died at exit 127 right here proving it. The four
+      # numbers live as attributes on each file's <testsuite> root, so one
+      # match() per attribute is the whole parse.
+      awk '
+        /<testsuite / && !seen[FILENAME]++ {
+          t += attr($0, "tests")
+          f += attr($0, "failures") + attr($0, "errors")
+          s += attr($0, "skipped")
+        }
+        function attr(line, name,    m) {
+          m = match(line, name "=\"[0-9]+\"")
+          if (!m) return 0
+          return substr(line, RSTART + length(name) + 2, RLENGTH - length(name) - 3) + 0
+        }
+        END { printf "JUnit %d, failures %d, skipped %d\n", t, f, s }
+      ' */build/test-results/test/TEST-*.xml
