@@ -16,6 +16,17 @@ repositories {
 dependencies {
     // api: JsonNode appears in the public contracts (Tool.inputSchema(),
     // RunEvent.ToolCall.input, ...) — consumers compile against Jackson types.
+    // The BOM, not a bare version. MEASURED, which is the only reason this is
+    // here rather than a number: ParserMinimalBase(StreamReadConstraints) exists
+    // in jackson-core 2.18.2 and NOT in 2.17.2, so a consumer whose classpath
+    // pairs databind 2.18 with core 2.17 gets NoSuchMethodError on the first
+    // deserialisation — which is the stack the owner sent from outside this repo.
+    //
+    // Declaring one artifact's version leaves the rest of the family to whatever
+    // resolves them. The BOM pins the whole family together, so no resolver can
+    // pick them apart, and that guarantee travels to every consumer in the POM
+    // rather than only holding inside this build.
+    api(platform(libs.jackson.bom))
     api(libs.jackson.databind)
 
     // implementation: the Anthropic SDK is an internal detail of
