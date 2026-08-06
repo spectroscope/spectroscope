@@ -114,6 +114,17 @@ tasks.named<JavaExec>("bootRun") {
 // Card 90: the repo's own skills ride every artifact (jar, DMG) — seeded into
 // ~/.spectro/skills on first start by BundledSkills, absent-only + ledgered.
 tasks.processResources {
+    // The CATALOGUE rides too, and it is deliberately a different destination.
+    //
+    // `bundled-skills` is SEEDED into ~/.spectro/skills on first boot and every
+    // skill there is appended to the agent's system prompt. Putting 57 foreign
+    // skills in that folder would push all of them into every run's context,
+    // which is not a gift. The catalogue is carried and NOT seeded: it is the
+    // shelf a marketplace install copies FROM (card 182), so nothing reaches an
+    // agent until somebody chooses it.
+    from(rootProject.layout.projectDirectory.dir(".spectro/skills-catalogue")) {
+        into("skills-catalogue")
+    }
     from(rootProject.layout.projectDirectory.dir(".spectro/skills")) {
         into("bundled-skills")
     }
