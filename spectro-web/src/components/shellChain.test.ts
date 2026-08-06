@@ -79,3 +79,52 @@ describe("a command that already has newlines", () => {
     expect(breakShellChain("&& weird")).toBe("&& weird");
   });
 });
+
+// The owner: "mache auch eine newline bei einem ; wie bei && weil das auch eine
+// bash new line ist". He is right — 2,503 of 5,444 measured commands carry one.
+describe("a semicolon is a newline too", () => {
+  it("breaks AFTER itself, because it closes the step rather than opening one", () => {
+    expect(breakShellChain("ls -la; echo done")).toBe("ls -la;\necho done");
+  });
+
+  it("swallows the space the separator used to need", () => {
+    expect(breakShellChain("a ;   b")).toBe("a ;\nb");
+  });
+
+  it("mixes with && the way the shell reads them", () => {
+    expect(breakShellChain("cd /x && ls; echo done")).toBe("cd /x \n&& ls;\necho done");
+  });
+
+  // 400 of the measured commands are a loop header. `for f in a b c\n; do`
+  // is not a statement boundary and does not read as one.
+  it("leaves a loop header alone", () => {
+    expect(breakShellChain("for f in a b; do echo $f; done")).toBe("for f in a b; do echo $f; done");
+    expect(breakShellChain("while read x; do echo $x; done")).toBe("while read x; do echo $x; done");
+  });
+
+  it("leaves an if header alone", () => {
+    expect(breakShellChain("if [ -f x ]; then echo yes; fi")).toBe("if [ -f x ]; then echo yes; fi");
+  });
+
+  it("does not split a case terminator down the middle", () => {
+    expect(breakShellChain("case $x in a) ls;; esac")).toBe("case $x in a) ls;; esac");
+  });
+
+  it("leaves a trailing semicolon where it is, rather than opening an empty line", () => {
+    expect(breakShellChain("ls;")).toBe("ls;");
+    expect(breakShellChain("ls;   ")).toBe("ls;   ");
+  });
+
+  it("is not fooled by a quoted or escaped one", () => {
+    expect(breakShellChain('echo "a; b"; ls')).toBe('echo "a; b";\nls');
+    // Two backslashes in the SOURCE so ONE reaches the function. The first
+    // version of this line wrote `\;`, which JavaScript reads as a plain `;`,
+    // so the test asserted about a string the code never saw — and failed
+    // correctly, on a command that really does have three statements.
+    expect(breakShellChain("echo a\\; b; ls")).toBe("echo a\\; b;\nls");
+  });
+
+  it("leaves one inside a substitution to the inner command", () => {
+    expect(breakShellChain("echo $(a; b); ls")).toBe("echo $(a; b);\nls");
+  });
+});
