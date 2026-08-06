@@ -1,4 +1,4 @@
-// Break a chained shell command before each `&&`, so it can be read.
+// Break a chained shell command at each joint, so it can be read.
 //
 // The owner, looking at a tool card: "kannst du bei einem tool call einfach
 // immer vor einem && einen zeilenumbruch machen? weil das passiert ja am ende
@@ -30,6 +30,42 @@
 
 /** Where a break may go, and what it precedes. */
 const OPERATORS = ["&&", "||"] as const;
+
+/**
+ * The words a `;` may NOT be broken before, because there it is grammar rather
+ * than a separator.
+ *
+ * The owner asked for `;` too — "weil das auch eine bash new line ist" — and he
+ * is right about the common case: 2,503 of 5,444 measured commands carry one.
+ * But 400 of those are `for … ; do` or `while … ; do`, where the semicolon
+ * closes a loop HEADER. Breaking there gives
+ *
+ *     for f in a b c
+ *     ; do
+ *
+ * which is not a statement boundary and does not read as one. Every word here
+ * is a place the shell requires the semicolon and a reader does not want a line.
+ */
+const GLUE_AFTER_SEMICOLON = ["do", "then", "done", "fi", "esac", "else", "elif"];
+
+/**
+ * Whether the `;` at `i` separates two statements, or merely closes a header.
+ *
+ * @param s the whole command
+ * @param i the index of the `;`
+ * @return true when a line break belongs before it
+ */
+function semicolonBreaks(s: string, i: number): boolean {
+  // `;;` ends a case branch and is one token. Only 3 commands in the corpus
+  // have one, and none of them wants to be split down the middle.
+  if (s[i + 1] === ";") return false;
+  let j = i + 1;
+  while (j < s.length && (s[j] === " " || s[j] === "\t")) j++;
+  const word = s.slice(j).match(/^[a-z]+/)?.[0] ?? "";
+  if (GLUE_AFTER_SEMICOLON.includes(word)) return false;
+  // A trailing `;` ends the command; a line holding nothing but it is noise.
+  return s.slice(j).trim() !== "";
+}
 
 /**
  * The chained command, one operator per line.
@@ -134,6 +170,19 @@ export function breakShellChain(command: string): string {
         out += op;
         i += op.length;
         atLineStart = false;
+        continue;
+      }
+      // A `;` is a statement separator too, and the shell reads it exactly as a
+      // newline. It breaks AFTER itself rather than before: `&&` opens the next
+      // step and belongs at the head of its line, while `;` closes the one just
+      // finished and belongs at the tail of its own.
+      if (c === ";" && semicolonBreaks(command, i)) {
+        out += ";";
+        if (!out.endsWith("\n")) out += "\n";
+        i++;
+        // Whatever spacing followed the separator is now the newline's job.
+        while (i < command.length && (command[i] === " " || command[i] === "\t")) i++;
+        atLineStart = true;
         continue;
       }
     }

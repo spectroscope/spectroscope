@@ -45,7 +45,26 @@ dependencies {
 }
 
 java {
-    sourceCompatibility = JavaVersion.VERSION_21
+    // A TOOLCHAIN, not just sourceCompatibility. The two answer different
+    // questions, and only one of them was answered before.
+    //
+    // `options.release = 21` below already guarantees the ARTEFACT: it compiles
+    // against Java 21's class library, so a post-21 API cannot slip into a jar
+    // that Maven Central promises is "java 21+". Measured on this machine's
+    // JDK 25 on 2026-08-06: class file major 65, which is Java 21.
+    //
+    // What it does NOT govern is which JVM RUNS the tests. On the developer's
+    // Mac that was 25 while CI and the build container used 21, so the local
+    // gate and the real gate were not the same gate — and this project has now
+    // been bitten twice by exactly that shape of difference: a test that only
+    // held on macOS, and six PTY tests that only ran outside a container.
+    //
+    // A toolchain closes it. Gradle resolves a Java 21 JDK for compiling AND
+    // for the test JVM, and downloads one if the machine has none, so nobody
+    // has to install a version manager for the build to be reproducible.
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(21)
+    }
 }
 
 tasks.withType<JavaCompile>().configureEach {

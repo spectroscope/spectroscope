@@ -75,6 +75,25 @@ services:
     volumes:
       - agent_work:/home/jenkins/agent
       - ${REPO_DIR:-../..}:/home/jenkins/repo
+      # ⚠️ THE CONTAINER GETS ITS OWN node_modules, and this is not tidiness.
+      # The bind mount above is the operator's real working copy, and `npm ci`
+      # inside a LINUX container installs linux binaries over it — so the next
+      # `npm run gate` on the Mac died with "Cannot find module
+      # @rollup/rollup-darwin-arm64". The build server broke the machine it was
+      # meant to relieve. A volume mounted OVER that one path keeps the two
+      # installs apart; the host's node_modules is never touched again.
+      #
+      # Same reasoning for build/: Gradle writes class files and test reports
+      # there, and a Linux JDK's output has no business in the host's tree.
+      - web_node_modules:/home/jenkins/repo/spectro-web/node_modules
+      - gradle_build:/home/jenkins/repo/spectro-server/build
+      # And the native helper, for the same reason and a worse symptom: the
+      # pipeline builds spectro-pty from C, and in here that produces an ELF for
+      # Linux. It overwrote the Mach-O the Mac uses, so the host's own gate then
+      # failed the six PTY tests with no visible cause — the file looked present
+      # and was simply the wrong operating system. Found by running the host
+      # gate after a container build, not by reading.
+      - desktop_bin:/home/jenkins/repo/spectro-desktop/bin
       # Gradle and npm caches survive a container rebuild, or every run
       # re-downloads the world and the comparison measures the network.
       - gradle_cache:/home/jenkins/.gradle
@@ -83,5 +102,8 @@ services:
 volumes:
   jenkins_home:
   agent_work:
+  web_node_modules:
+  gradle_build:
+  desktop_bin:
   gradle_cache:
   npm_cache:
