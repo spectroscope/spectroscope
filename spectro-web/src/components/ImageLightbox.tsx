@@ -203,10 +203,15 @@ export function ImageLightbox(props: LightboxProps) {
           {face === "base64" && (
             <div className="img-text">
               <div className="img-text-head mono">
-                {t(lang, "shot.base64Head", {
-                  media: shot.mediaType,
-                  chars: shot.dataBase64.length.toLocaleString(),
-                })}
+                {/* In a span, not as a bare text node: flex `gap` applies
+                    between ELEMENTS, so the button rendered flush against the
+                    last word — "42,264 characterscopy". */}
+                <span>
+                  {t(lang, "shot.base64Head", {
+                    media: shot.mediaType,
+                    chars: shot.dataBase64.length.toLocaleString(),
+                  })}
+                </span>
                 <button type="button" className="ghost" onClick={copyBase64}>
                   {copied ? t(lang, "shot.copied") : t(lang, "shot.copy")}
                 </button>
@@ -221,13 +226,15 @@ export function ImageLightbox(props: LightboxProps) {
           {face === "file" && (
             <div className="img-text">
               <div className="img-text-head mono">
-                {win?.target
-                  ? t(lang, win.target.blobs > 1 ? "shot.fileHeadN" : "shot.fileHead", {
-                      line: win.target.number,
-                      total: win.total,
-                      n: win.target.blobs,
-                    })
-                  : t(lang, "shot.fileUnknown")}
+                <span>
+                  {win?.target
+                    ? t(lang, win.target.blobs > 1 ? "shot.fileHeadN" : "shot.fileHead", {
+                        line: win.target.number,
+                        total: win.total,
+                        n: win.target.blobs,
+                      })
+                    : t(lang, "shot.fileUnknown")}
+                </span>
               </div>
               <div className="img-file mono">
                 {win?.above.map((l) => (
