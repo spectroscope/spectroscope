@@ -7,7 +7,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { RunEvent } from "../events";
-import type { TraceEntry } from "../state/reducer";
+import type { TraceEntry, UserAttachment } from "../state/reducer";
 import { agentAccent, compactJson, formatTokens, prettyJson } from "../format";
 import { CopyButton } from "./CopyButton";
 import { JsonTree } from "./JsonTree";
@@ -15,6 +15,7 @@ import { Markdown } from "./Markdown";
 import { highlight } from "./Highlighted";
 import { ToolViewBody } from "./ToolViewBody";
 import { describeEvent, toolCallsById, toolResultDetailsById } from "./eventDetail";
+import { openImage } from "../state/imageViewer";
 import { SessionFolderButtons } from "./SessionFolderButtons";
 import type { DetailSection, ToolCallRef } from "./eventDetail";
 import type { ToolResultDetail } from "../import/toolResultDetail";
@@ -663,15 +664,38 @@ function SectionLabel({ field }: { field: string }) {
   return field === "" ? null : <span className="ed-label mono">{field}</span>;
 }
 
-/** A generated image, shown as the image. When the blob is gone the picture
- *  drops out and the path stays — a placeholder here would be a claim. */
+/**
+ * The bytes behind a section's `src`, when it HAS bytes.
+ *
+ * An imported picture rides as a `data:` URI and can be handed to the gallery
+ * whole. A generated one is a `/api/images/<file>` URL — the store holds those
+ * bytes, this page does not — so it stays a picture in the row and is not
+ * clickable. A click that opened an empty lightbox would be worse than no click.
+ *
+ * @param src the section's src attribute
+ * @return the attachment, or null when the bytes are not here
+ */
+function bytesOf(src: string, name: string): UserAttachment | null {
+  const m = /^data:([^;,]+);base64,(.+)$/.exec(src);
+  return m === null ? null : { name, mediaType: m[1], dataBase64: m[2] };
+}
+
+/** A picture in a row, shown as the picture. When the blob is gone it drops out
+ *  and the path stays — a placeholder here would be a claim. */
 function ImageSection({ section }: { section: Extract<DetailSection, { kind: "image" }> }) {
   const [broken, setBroken] = useState(false);
+  const shot = bytesOf(section.src, section.alt || section.field);
   return (
     <div className="ed-sec">
       <SectionLabel field={section.field} />
       {!broken && (
-        <img className="ed-img" src={section.src} alt={section.alt} onError={() => setBroken(true)} />
+        <img
+          className={shot === null ? "ed-img" : "ed-img is-openable"}
+          src={section.src}
+          alt={section.alt}
+          onError={() => setBroken(true)}
+          {...(shot === null ? {} : { onClick: () => openImage(shot) })}
+        />
       )}
       <div className="ed-path mono">{section.path}</div>
     </div>

@@ -122,6 +122,9 @@ import type { SubagentTranscript } from "./import/subagentFile";
 import { attachSources, sourceStats } from "./state/traceSource";
 import { traceProvenance } from "./components/traceDetail";
 import { shownImportBar, subagentNote, type ImportBarState } from "./components/importBar";
+import { collectImages, indexOf } from "./state/sessionImages";
+import { useImageRequest } from "./state/imageViewer";
+import { ImageLightbox } from "./components/ImageLightbox";
 import { TranslateToggle } from "./components/TranslatePanel";
 import { useDesignPrefs } from "./state/designPrefs";
 import { useScrollReveal } from "./effects/scrollReveal";
@@ -1298,6 +1301,24 @@ export function App() {
   // of a dam this app seeded. So it is handed the translated stream as the
   // stream it steps, which restarts its scrub. An archive re-seeds itself off
   // this new object; the live dam has no such prop and gets the effect below.
+  // The session's pictures, in stream order, and which one the lightbox has
+  // open. Derived from the folded view rather than kept as a second list: a
+  // gallery with its own copy goes stale the moment a delta lands.
+  const gallery = useMemo(() => collectImages(view), [view]);
+  const [lightboxAt, setLightboxAt] = useState<number | null>(null);
+  // Any picture anywhere can ask to be opened; only this component owns the
+  // lightbox, because it is the only one that can walk from a chat bubble to a
+  // tool card three turns down.
+  const imageRequest = useImageRequest();
+  useEffect(() => {
+    if (imageRequest.shot !== null) setLightboxAt(indexOf(gallery, imageRequest.shot));
+    // `seq` and not the shot: clicking the SAME picture again after closing has
+    // to reopen it, and a value-only dependency would see nothing change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [imageRequest.seq]);
+  // A session change closes it — the picture that was open is not in this one.
+  useEffect(() => setLightboxAt(null), [replay?.id, enteredFleet]);
+
   const labReplay = useMemo(
     () => (replay === null ? null : { id: replay.id, events: shownEvents }),
     [replay, shownEvents],
@@ -1504,6 +1525,16 @@ export function App() {
       style={{ "--sidebar-w": `${layout.sidebarW}px` } as CSSProperties}
     >
       <ParticleField design={designPrefs.design} enabled={designPrefs.particles} />
+      {/* At the app level rather than inside the chat: the gallery walks from a
+          bubble to a tool card three turns down, and a modal that lives in one
+          of them cannot be walked out of. */}
+      <ImageLightbox
+        images={gallery}
+        at={lightboxAt}
+        onClose={() => setLightboxAt(null)}
+        onGo={setLightboxAt}
+        storePath={shownStorePath}
+      />
       {sidebarOpen && (
         <Sidebar
           nav={nav}
