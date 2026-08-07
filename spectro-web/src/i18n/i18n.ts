@@ -740,6 +740,16 @@ export const dict: Record<string, { de: string; en: string }> = {
   // toggle: "back to default" has to mean the pane as it opened, folds a reader
   // touched by hand included, and a toggle that left those open would not be a
   // way back at all.
+  "set.secStt": { de: "Spracheingabe", en: "Speech to text" },
+  "set.sttHint": { de: "Zwei Dinge werden gebraucht: das Whisper-Modell, das diese App laden kann, und zwei Programme, die sie NICHT installieren darf — sie werden gesucht und ehrlich gemeldet.", en: "Two things are needed: the whisper model, which this app can fetch, and two binaries it must NOT install — those are probed and reported honestly." },
+  "set.sttPresent": { de: "da", en: "present" },
+  "set.sttAbsent": { de: "fehlt", en: "absent" },
+  "set.sttMissing": { de: "nicht gefunden", en: "not found" },
+  "set.sttDownload": { de: "Modell laden ({size})", en: "download the model ({size})" },
+  "set.sttDownloading": { de: "lädt … {done} von {total}", en: "downloading … {done} of {total}" },
+  "set.sttBinaryHint": { de: "Zum Nachinstallieren, außerhalb dieser App:", en: "To install them, outside this app:" },
+  "set.sttReady": { de: "Spracheingabe ist einsatzbereit.", en: "Speech input is ready." },
+  "set.sttNotReady": { de: "Spracheingabe ist noch nicht einsatzbereit — der Mikrofon-Knopf bleibt aus.", en: "Speech input is not ready yet — the microphone button stays off." },
   "trace.llm.expandAll": { de: "alles aufklappen", en: "expand all" },
   "trace.llm.expandDefault": { de: "Standard", en: "default" },
   "trace.llm.expandAria": { de: "Wie weit der Austausch aufgeklappt ist", en: "How far the exchange is unfolded" },

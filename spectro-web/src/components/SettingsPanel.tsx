@@ -21,6 +21,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DESIGNS, applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
 import type { SettingsSection } from "../state/route";
+import { SttSettings } from "./SttSettings";
 import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
@@ -689,6 +690,9 @@ export function SettingsPanel({
 
               {/* ---- Fleet: the two switches that were env-only (owner ask) ---- */}
               <FleetSettings anchorId={sectionAnchorId("fleet")} />
+
+              {/* ---- Speech to text: what it needs, and the half we may fetch ---- */}
+              <SttSettings anchorId={sectionAnchorId("stt")} />
 
               {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
               <div className="settings-label" id={sectionAnchorId("observability")}>
