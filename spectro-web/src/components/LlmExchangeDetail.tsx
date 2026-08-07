@@ -314,10 +314,16 @@ function ResponseFacts({
   side,
   durationMs,
   lang,
+  showLines = false,
+  expandAll = false,
 }: {
   side: LlmExchangeSide;
   durationMs: number;
   lang: Lang;
+  /** Whether the received lines belong in THIS pane. On a response row they are
+   *  the subject; under a request they would bury it. */
+  showLines?: boolean;
+  expandAll?: boolean;
 }) {
   const facts: string[] = [];
   if (side.status !== 0) facts.push(String(side.status));
@@ -326,10 +332,28 @@ function ResponseFacts({
   if (side.bodyBytes > 0) facts.push(formatBytes(side.bodyBytes));
   if (durationMs > 0) facts.push(formatDuration(durationMs));
   if (side.aborted) facts.push(t(lang, "trace.llm.res.aborted"));
+  const cap = expandAll ? side.lines.length : Math.min(side.lines.length, 20);
   return (
     <>
       {facts.length > 0 && <div className="ed-path mono">{facts.join(" · ")}</div>}
       <p className="trace-source-note">{t(lang, "trace.llm.res.noReassembly")}</p>
+      {showLines && side.body !== null && <SegmentedText text={side.body} lang={lang} />}
+      {showLines &&
+        side.body === null &&
+        side.lines.slice(0, cap).map((line, i) => (
+          <div key={i} className="lw-line">
+            <span className="lw-line-no mono">{i + 1}</span>
+            <SegmentedText text={line} lang={lang} />
+          </div>
+        ))}
+      {showLines && side.body === null && cap < side.lines.length && (
+        <p className="trace-source-cap">
+          {t(lang, "trace.llm.linesCap", {
+            shown: counted(cap, lang),
+            total: counted(side.lines.length, lang),
+          })}
+        </p>
+      )}
     </>
   );
 }
@@ -517,26 +541,30 @@ export function LlmExchangeDetail({
     return (
       <div className="ed">
         <ExpandStrip all={expandAll} onChange={setExpand} lang={lang} />
-        <div className="ed-sec" key={`req-${expandEpoch}`}>
-          <span className="ed-label mono">request</span>
-          {sentenceOf(bodies.request, lang)}
-          {bodies.request.body === null ? (
-            emptyNote(bodies.request, false, lang)
-          ) : (
-            <JsonTree value={safeParse(bodies.request.body)} defaultDepth={depth} />
-          )}
-        </div>
-        <div className="ed-sec" key={`res-${expandEpoch}`}>
-          <span className="ed-label mono">response</span>
-          {sentenceOf(bodies.response, lang)}
-          {bodies.response.body !== null ? (
-            <JsonTree value={safeParse(bodies.response.body)} defaultDepth={depth} />
-          ) : bodies.response.lines.length > 0 ? (
-            <JsonTree value={parseLines(bodies.response.lines)} defaultDepth={expandAll ? 99 : 3} />
-          ) : (
-            emptyNote(bodies.response, true, lang)
-          )}
-        </div>
+        {half !== "response" && (
+          <div className="ed-sec" key={`req-${expandEpoch}`}>
+            <span className="ed-label mono">request</span>
+            {sentenceOf(bodies.request, lang)}
+            {bodies.request.body === null ? (
+              emptyNote(bodies.request, false, lang)
+            ) : (
+              <JsonTree value={safeParse(bodies.request.body)} defaultDepth={depth} />
+            )}
+          </div>
+        )}
+        {half !== "request" && (
+          <div className="ed-sec" key={`res-${expandEpoch}`}>
+            <span className="ed-label mono">response</span>
+            {sentenceOf(bodies.response, lang)}
+            {bodies.response.body !== null ? (
+              <JsonTree value={safeParse(bodies.response.body)} defaultDepth={depth} />
+            ) : bodies.response.lines.length > 0 ? (
+              <JsonTree value={parseLines(bodies.response.lines)} defaultDepth={expandAll ? 99 : 3} />
+            ) : (
+              emptyNote(bodies.response, true, lang)
+            )}
+          </div>
+        )}
       </div>
     );
   }
@@ -544,22 +572,35 @@ export function LlmExchangeDetail({
   return (
     <div className="ed">
       <ExpandStrip all={expandAll} onChange={setExpand} lang={lang} />
-      <div className="ed-sec" key={`parts-${expandEpoch}`}>
-        <span className="ed-label mono">request</span>
-        {sentenceOf(bodies.request, lang)}
-        {bodies.request.body === null ? (
-          emptyNote(bodies.request, false, lang)
-        ) : (
-          <RequestParts parts={parts} body={bodies.request.body} lang={lang} expandAll={expandAll} />
-        )}
-      </div>
+      {half !== "response" && (
+        <div className="ed-sec" key={`parts-${expandEpoch}`}>
+          <span className="ed-label mono">request</span>
+          {sentenceOf(bodies.request, lang)}
+          {bodies.request.body === null ? (
+            emptyNote(bodies.request, false, lang)
+          ) : (
+            <RequestParts parts={parts} body={bodies.request.body} lang={lang} expandAll={expandAll} />
+          )}
+        </div>
+      )}
       <div className="ed-sec">
         <span className="ed-label mono">response</span>
         {sentenceOf(bodies.response, lang)}
         {bodies.response.lines.length === 0 && bodies.response.body === null ? (
           emptyNote(bodies.response, true, lang)
         ) : (
-          <ResponseFacts side={bodies.response} durationMs={meta.durationMs} lang={lang} />
+          <ResponseFacts
+            side={bodies.response}
+            durationMs={meta.durationMs}
+            lang={lang}
+            /* On the RESPONSE row the answer is the subject, not a footnote
+               under the request (owner 2026-08-07: "die llm response legt noch
+               zu viel Wert auf den Request"). So the lines it received are
+               shown here rather than only one face away. Still not reassembled:
+               these are the lines as they arrived. */
+            showLines={half === "response"}
+            expandAll={expandAll}
+          />
         )}
       </div>
     </div>

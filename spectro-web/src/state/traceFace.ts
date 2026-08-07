@@ -95,7 +95,7 @@ export function useTraceFace(): TraceFacePref {
  *  pane used to answer that with a riddle, "the stored session does not contain
  *  this frame", while the frame's own file lay right beside the session. A face
  *  with nothing behind it is not offered. */
-const WITHOUT_SOURCE: ReadonlySet<string> = new Set(["llm_exchange"]);
+const WITHOUT_SOURCE: ReadonlySet<string> = new Set(["llm_exchange", "llm_request", "llm_response"]);
 
 /**
  * Which faces one row offers, in the toolbar's own order so the buttons never

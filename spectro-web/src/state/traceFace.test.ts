@@ -161,9 +161,14 @@ describe("which faces a row offers", () => {
     expect(facesFor("tool_call")).toEqual([...TRACE_FACES]);
   });
 
-  it("does not offer source for a recorded LLM exchange", () => {
-    expect(facesFor("llm_exchange")).not.toContain("source");
-    expect(facesFor("llm_exchange")).toEqual(["structured", "insight", "wire"]);
+  it("does not offer source for ANY row of a recorded LLM exchange", () => {
+    // All three, not just the summary: the split into request and response rows
+    // (leg 2) gave the same fileless frame two more shapes, and a face offered
+    // on one of them and not the others would be a riddle in a new place.
+    for (const type of ["llm_exchange", "llm_request", "llm_response"]) {
+      expect(facesFor(type)).not.toContain("source");
+      expect(facesFor(type)).toEqual(["structured", "insight", "wire"]);
+    }
   });
 
   it("keeps the order the toolbar uses, so the buttons never reshuffle", () => {
