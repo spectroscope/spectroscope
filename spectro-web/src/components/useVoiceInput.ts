@@ -8,6 +8,31 @@ import { useEffect, useRef, useState } from "react";
 import type { MicPhase } from "./voiceButton";
 import { noteVoiceExchange } from "../state/voiceWire";
 import { micErrorOf, silencesTheButton, type VoiceError } from "./voiceError";
+import { levelOf, mayClick } from "./micLevel";
+import { audioConstraint, readMicDevices, useMicDevice, type MicChoice } from "../state/micDevice";
+
+/** Whether the platform asked for no incidental effects. */
+function prefersReducedMotion(): boolean {
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
+/** The arming click: a short synthesized tick, so there is no asset to ship and
+ *  nothing to load before it can be heard. Quiet on purpose — it is a
+ *  confirmation, not an alert. */
+function playArmClick(ctx: AudioContext): void {
+  const osc = ctx.createOscillator();
+  const gain = ctx.createGain();
+  osc.frequency.value = 880;
+  gain.gain.setValueAtTime(0.06, ctx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.06);
+  osc.connect(gain).connect(ctx.destination);
+  osc.start();
+  osc.stop(ctx.currentTime + 0.07);
+}
 
 /** How often the recording timer refreshes — fast enough to read as live. */
 const RECORDING_TIMER_TICK_MS = 250;
@@ -21,6 +46,12 @@ export interface VoiceInput {
   micAvailable: boolean;
   /** Why the last attempt failed, or null. The sentence is `voice.err.<reason>`. */
   micError: VoiceError | null;
+  /** How loud it is hearing you, 0…1, while recording; 0 otherwise. */
+  level: number;
+  /** What the browser is willing to say about the inputs, refreshed on demand. */
+  choice: MicChoice;
+  /** Ask the browser for the device list again (after permission, it has names). */
+  refreshDevices: () => Promise<void>;
   /** Milliseconds since the recording began — drives the mm:ss timer. */
   recordMs: number;
   /** First press records; second press stops and transcribes. */
@@ -38,6 +69,12 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
   // both read as "this machine has no microphone" — a vanished button and no
   // sentence anywhere.
   const [micError, setMicError] = useState<VoiceError | null>(null);
+  // The meter (card 187 step 3). Kept here rather than in the button so the
+  // analyser lives exactly as long as the stream it listens to.
+  const [level, setLevel] = useState(0);
+  const [choice, setChoice] = useState<MicChoice>({ devices: [], unnamed: false });
+  const deviceId = useMicDevice();
+  const audioRef = useRef<{ ctx: AudioContext; raf: number } | null>(null);
   const [recordMs, setRecordMs] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
 
@@ -55,6 +92,16 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
   // hands the transcript to the caller, exactly like the CLI's /voice. The
   // core never sees audio; a 503 means STT is not installed (button then
   // disabled, its tooltip carries the setup hint).
+  /** Ask the browser what inputs it has. Callable before permission, where it
+   *  answers with ids and no names — which the pane says rather than paints. */
+  async function refreshDevices(): Promise<void> {
+    try {
+      setChoice(readMicDevices(await navigator.mediaDevices.enumerateDevices()));
+    } catch {
+      setChoice({ devices: [], unnamed: false });
+    }
+  }
+
   async function toggleMic(): Promise<void> {
     if (micPhase === "recording") {
       recorderRef.current?.stop(); // onstop takes over
@@ -63,7 +110,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
     setMicError(null); // a fresh attempt is not the last one's failure
     let stream: MediaStream;
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraint(deviceId) });
     } catch (refused) {
       const reason = micErrorOf(refused);
       setMicError(reason);
@@ -73,11 +120,42 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       if (silencesTheButton(reason)) setMicAvailable(false);
       return;
     }
+    // Permission has just been granted, so the browser will name the devices
+    // now — this is the one moment the list stops being blank.
+    void refreshDevices();
+    // The meter: an analyser on the same stream, alive exactly as long as it is.
+    try {
+      const ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const samples = new Uint8Array(analyser.frequencyBinCount);
+      const tick = (): void => {
+        analyser.getByteTimeDomainData(samples);
+        setLevel(levelOf(samples));
+        if (audioRef.current !== null) audioRef.current.raf = requestAnimationFrame(tick);
+      };
+      audioRef.current = { ctx, raf: 0 };
+      audioRef.current.raf = requestAnimationFrame(tick);
+      // The click that says it is armed. After the analyser, so a browser that
+      // refuses audio output costs the sound and not the meter.
+      if (mayClick(prefersReducedMotion(), true)) playArmClick(ctx);
+    } catch {
+      // No Web Audio: the meter stays flat and everything else works. A missing
+      // decoration must never cost the feature it decorates.
+    }
     const recorder = new MediaRecorder(stream);
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => chunks.push(e.data);
     recorder.onstop = async () => {
       stream.getTracks().forEach((track) => track.stop());
+      // The meter dies with the stream it was listening to.
+      if (audioRef.current !== null) {
+        cancelAnimationFrame(audioRef.current.raf);
+        void audioRef.current.ctx.close();
+        audioRef.current = null;
+      }
+      setLevel(0);
       setMicPhase("transcribing");
       try {
         const res = await fetch("/api/transcribe", { method: "POST", body: new Blob(chunks) });
@@ -110,5 +188,5 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
     setMicPhase("recording");
   }
 
-  return { micPhase, micAvailable, micError, recordMs, toggleMic };
+  return { micPhase, micAvailable, micError, level, choice, refreshDevices, recordMs, toggleMic };
 }

@@ -20,6 +20,7 @@ import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { voiceErrorKey } from "./voiceError";
+import { meterBars } from "./micLevel";
 import { formatTimer, micButtonState } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
 import type { QueuedMessage } from "../state/sendQueue";
@@ -599,6 +600,15 @@ export function Chat(props: {
               </div>
             )}
             <AttachmentPreview attachments={attachments.pending} onRemove={attachments.removeAt} />
+            {voice.micPhase === "recording" && (
+              /* The level meter (card 187 step 3): it moves with the voice, so
+                 "it hears you" is answered by looking rather than by trying. */
+              <span className="mic-meter" aria-hidden="true">
+                {meterBars(voice.level).map((h, i) => (
+                  <i key={i} style={{ transform: `scaleY(${h.toFixed(3)})` }} />
+                ))}
+              </span>
+            )}
             {mic.recording && (
               <div className="recording-indicator" aria-live="polite">
                 <span className="dot accent pulse" aria-hidden="true" />
@@ -672,6 +682,12 @@ export function Chat(props: {
                 disabled={mic.disabled}
                 onClick={() => void voice.toggleMic()}
               >
+                {voice.micPhase === "recording" && (
+                  /* The LED: it is listening. A dot rather than a word, beside
+                     the glyph, because the answer to "does it hear me" has to
+                     be readable without reading (card 187 step 5). */
+                  <span className="mic-led" aria-hidden="true" />
+                )}
                 {mic.recording ? (
                   <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                     <rect x="3" y="3" width="10" height="10" rx="1.5" />

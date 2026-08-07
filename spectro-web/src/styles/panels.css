@@ -941,3 +941,20 @@
 .lw-line { display: flex; gap: var(--sp-2); min-width: 0; }
 .lw-line-no { flex-shrink: 0; min-width: 3ch; text-align: right; font-size: var(--fs-11); color: var(--text-faint); }
 .lw-line > pre { flex: 1; min-width: 0; margin: 0; }
+
+/* ---------- The microphone's own signals (card 187) ----------
+   A meter that moves with the voice and a dot that says it is listening. Both
+   beside the glyph, both aria-hidden: they repeat what the button's label
+   already says, and a screen reader should hear it once. */
+.mic-meter { display: inline-flex; align-items: center; gap: 2px; height: 14px; margin-right: var(--sp-2); }
+.mic-meter i { display: block; width: 2px; height: 14px; border-radius: 1px;
+  background: var(--accent); transform-origin: center; transition: transform 60ms linear; }
+/* The LED. It pulses while listening and is the one place a colour means a
+   STATE rather than a kind — so it borrows the accent and never invents one. */
+.mic-led { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); margin-right: 4px; animation: mic-led-pulse 1.4s ease-in-out infinite; }
+@keyframes mic-led-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .mic-led { animation: none; }
+  .mic-meter i { transition: none; }
+}
