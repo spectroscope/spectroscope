@@ -65,8 +65,16 @@ public class ExplainController {
      */
     static final int MAX_BODY_BYTES = 4 * MAX_DIGEST_CHARS;
 
-    /** Seam: build the provider from config (real: {@link ProviderFactory}). */
-    interface ProviderBuilder {
+    /**
+     * Seam: build the provider from config (real: {@link ProviderFactory}).
+     *
+     * <p>Public because {@code GistWriter} holds one as a field and takes one in
+     * its constructor, so that both spend the operator's key through a single
+     * seam — and {@code GistWriter} now lives in {@code .transcripts}. This is
+     * the only declaration the {@code .transcripts} and {@code .observability}
+     * moves had to widen.</p>
+     */
+    public interface ProviderBuilder {
         LlmProvider build(SpectroConfig config);
     }
 
