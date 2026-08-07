@@ -1,0 +1,23 @@
+meta {
+  name: sidecar agents of a transcript
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/claude/transcripts/sidecars
+  body: none
+  auth: none
+}
+
+params:query {
+  ~path: 
+}
+
+docs {
+  The agents that ran beside a session, as a LISTING: one directory walk, not the thousands of file reads a full join would be. Bodies come one at a time from /content when a reader opens a row. Empty for a session that spawned nothing.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

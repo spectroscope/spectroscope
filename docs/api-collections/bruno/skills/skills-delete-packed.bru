@@ -1,17 +1,17 @@
 meta {
-  name: delete a user skill
+  name: delete a skill inside a pack
   type: http
-  seq: 4
+  seq: 5
 }
 
 delete {
-  url: {{baseUrl}}/api/skills/{{skillName}}
+  url: {{baseUrl}}/api/skills/{{skillPack}}/{{skillName}}
   body: none
   auth: none
 }
 
 docs {
-  Delete a USER-root skill for good (seeding ledger keeps it away). 409 for a project skill, 404 unknown. Traversal-guarded.
+  The two-segment form, for a skill installed from the catalogue. Deletes the USER-root copy for good; an emptied pack folder goes with it. 409 for a project skill, 404 unknown. Both segments are traversal-guarded.
   
   CAUTION: Deletion is permanent — the seeding ledger will not re-seed it.
   

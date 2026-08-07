@@ -1,5 +1,5 @@
 docs {
-  The whole REST surface of spectro-server — 49 endpoints in 16 folders, one per area.
+  The whole REST surface of spectro-server — 59 endpoints in 16 folders, one per area.
   
   Every request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.
   
@@ -26,7 +26,8 @@ docs {
   - `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.
   - `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.
   - `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.
-  - `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills.
+  - `{{skillPack}}` = `superpowers` — A pack folder from the catalogue rows of GET /api/skills — set only for a skill installed from the catalogue.
+  - `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills — the folder, not the display name: a packed skill shows as <pack>:<skill> and its folder is the part after the colon.
   - `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.
   - `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.
   - `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.
@@ -38,8 +39,13 @@ docs {
   
   - **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.
   - **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.
+  - **POST /api/settings/env** — Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.
   - **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.
+  - **DELETE /api/skills/{pack}/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.
+  - **POST /api/skills/install** — Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.
   - **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.
+  - **POST /api/claude/transcripts/folders/open** — Opens a native file-manager window on the operator's screen.
+  - **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.
   - **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.
   - **POST /api/explain** — Spends the operator's API key on every call.
 }

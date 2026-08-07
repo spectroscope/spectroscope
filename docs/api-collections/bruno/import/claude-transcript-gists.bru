@@ -1,0 +1,19 @@
+meta {
+  name: stored transcript gists
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{baseUrl}}/api/claude/transcripts/gists
+  body: none
+  auth: none
+}
+
+docs {
+  Every gist already on disk, each marked stale when its transcript has changed since it was written. Free — no model call, no transcript read.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

@@ -1,0 +1,23 @@
+meta {
+  name: which of a session's folders exist
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/claude/transcripts/folders
+  body: none
+  auth: none
+}
+
+params:query {
+  path: {{transcriptPath}}
+}
+
+docs {
+  Which of a session's three folders (store, scratchpad, subagents) are really on disk, with their absolute paths: {folders:[{kind,path}]}. Asked per request rather than cached, because a scratchpad appears when a run makes one and a temp sweep takes it away again. Anything that is not a transcript in the store answers an empty list.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

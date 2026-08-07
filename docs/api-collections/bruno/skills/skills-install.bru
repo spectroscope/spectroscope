@@ -1,0 +1,33 @@
+meta {
+  name: install a catalogue skill
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/skills/install
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "skill": "superpowers/brainstorming"
+  }
+}
+
+docs {
+  Copy one skill from the bundled catalogue into ~/.spectro/skills: the whole leaf directory that holds SKILL.md, plus the pack's LICENSE and PROVENANCE.json and a generated spectro-install.json. The id is matched against the enumerated catalogue by string equality and is never resolved as a path. 400 no id, 404 unknown id, 409 name taken (user or project root), 413 over the ceiling. Answers {name,pack,files,bytes,licence,commit}.
+  
+  Body: {skill: "<pack>/<name>"} — one of the ids from the catalogue rows of GET /api/skills.
+  
+  CAUTION: Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

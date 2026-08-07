@@ -21,6 +21,7 @@ add the entries below as its variables, and select it:
   "baseUrl": "http://localhost:8080",
   "sessionId": "20260730-120000-abcdef12",
   "nodeId": "node-1",
+  "skillPack": "superpowers",
   "skillName": "brainstorming",
   "bundleId": "five-lines",
   "localModelId": "qwen3-4b",

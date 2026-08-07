@@ -1,0 +1,19 @@
+meta {
+  name: read the operator settings
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/settings/env
+  body: none
+  auth: none
+}
+
+docs {
+  The operator settings the UI may save, and for each one whether the value came from the process environment (which the UI cannot change) or from ~/.spectro/.env. Only the writable allow-list is ever read or reported.
+  
+  Fence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.
+  
+  Writes state: no
+}

@@ -130,14 +130,24 @@ def scan_source_tree(src_root: Path) -> tuple[set, list]:
                 continue
             named = _NAMED_PATH.search(arg)
             if named:
-                path = named.group(1)
+                paths = [named.group(1)]
             else:
-                literals = re.findall(r'"([^"]+)"', _MEDIA_KW.sub("", arg))
-                if len(literals) != 1:
-                    problems.append(f"{where} — expected exactly one path literal, found {literals}")
+                bare = _MEDIA_KW.sub("", arg)
+                literals = re.findall(r'"([^"]+)"', bare)
+                # A braced list is Spring's way of mapping one handler onto
+                # several patterns — card 182 gives every skill route a
+                # one-segment and a two-segment form, since a packed skill
+                # lives one directory deeper. Both are real endpoints and both
+                # belong in the table; anything else stays a single literal.
+                if len(literals) > 1 and not bare.lstrip().startswith("{"):
+                    problems.append(f"{where} — expected one path literal or a braced list, found {literals}")
                     continue
-                path = literals[0]
-            found.add((verb.upper(), path))
+                if not literals:
+                    problems.append(f"{where} — no path literal")
+                    continue
+                paths = literals
+            for path in paths:
+                found.add((verb.upper(), path))
     return found, problems
 
 

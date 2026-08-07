@@ -1,0 +1,34 @@
+meta {
+  name: show one of them in the file manager
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/claude/transcripts/folders/open
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "path": "{{transcriptPath}}",
+    "what": "store"
+  }
+}
+
+docs {
+  Reveal one of a session's folders in the desktop file manager. The body names a transcript and a KIND; the server resolves the transcript through the same fence every read here uses and derives the folder itself, so no path off the wire is ever opened. Answers {result} — 'missing' covers an unknown kind and a path outside the store alike.
+  
+  Body: what is one of store | scratchpad | subagents.
+  
+  CAUTION: Opens a native file-manager window on the operator's screen.
+  
+  Fence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: no
+}

@@ -16,6 +16,7 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Skill loading and progressive disclosure: frontmatter, fallbacks, layering, use_skill. */
@@ -138,6 +139,138 @@ class SkillLibraryTest {
         assertEquals("Body line.", skill.body());
     }
 
+    @Test
+    void aBlockScalarDescriptionIsFoldedIntoOneLine() throws IOException {
+        // Card 182: the marketplace catalogue carries skills written by other
+        // people, and a YAML block scalar is how several of them spell a long
+        // description. Splitting at the first colon turned that into the literal
+        // one-character string "|", which would ride into the agent's system
+        // prompt as "- humanizer: |" — a skill the model can never choose. The
+        // shape below is humanizer's own frontmatter, colon-bearing line included.
+        Path root = skillIn(tempDir.resolve("skills"), "humanizer", """
+                ---
+                name: humanizer
+                description: |
+                  Remove signs of AI-generated writing from text. Use when editing or reviewing
+                  text to make it sound more natural and human-written. Based on Wikipedia's
+                  comprehensive "Signs of AI writing" guide. Detects and fixes patterns including:
+                  inflated symbolism, promotional language, superficial -ing analyses, vague
+                  attributions, em dash overuse, rule of three, AI vocabulary words, passive
+                  voice, negative parallelisms, and filler phrases.
+                license: MIT
+                ---
+
+                # Humanizer
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        Skill skill = library.find("humanizer").orElseThrow();
+        assertNotEquals("|", skill.description(), "the block marker is not the description");
+        assertTrue(skill.description().startsWith("Remove signs of AI-generated writing"));
+        assertTrue(skill.description().length() > 100, "the whole block travels, not its first line");
+        assertFalse(skill.description().contains("\n"), "one bullet, one line");
+        assertTrue(skill.description().endsWith("filler phrases."));
+        // The continuation line ending in "including:" must not be read as a key:
+        // that is how the old split-at-the-first-colon loop mangled the map.
+        assertEquals("humanizer", skill.name());
+        assertTrue(skill.body().startsWith("# Humanizer"));
+    }
+
+    @Test
+    void aQuotedDescriptionLosesItsQuotes() throws IOException {
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "double", """
+                ---
+                name: double
+                description: "UI/UX design intelligence for web and mobile."
+                ---
+                body
+                """);
+        skillIn(root, "single", """
+                ---
+                name: single
+                description: 'Quoted the other way.'
+                ---
+                body
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertEquals("UI/UX design intelligence for web and mobile.",
+                library.find("double").orElseThrow().description());
+        assertEquals("Quoted the other way.", library.find("single").orElseThrow().description());
+    }
+
+    @Test
+    void aPlainScalarIsUnchanged() throws IOException {
+        // The regression pin for the four skills this repo seeds: none of them
+        // uses a block scalar or quotes, so the parser change must be invisible
+        // to them, quotation marks inside a plain value included.
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "brainstorming", """
+                ---
+                name: brainstorming
+                description: Turn a vague idea into an agreed design before any code is written - one question at a time, real alternatives on the table, decisions recorded.
+                ---
+                # Brainstorming
+                """);
+        skillIn(root, "test-driven-development", """
+                ---
+                name: test-driven-development
+                description: Red-green-refactor discipline for every change - write the failing test first, watch it fail for the right reason, make it pass minimally, then clean up.
+                ---
+                # Test-driven development
+                """);
+        skillIn(root, "verification", """
+                ---
+                name: verification
+                description: Evidence before claims - run it, read the output, and only then say whether it works. A tester changes nothing and reports what actually happened.
+                ---
+                # Verification
+                """);
+        skillIn(root, "writing-plans", """
+                ---
+                name: writing-plans
+                description: Turn an agreed design into a step-by-step implementation plan a fresh engineer could execute - exact files, verifiable steps, no open questions.
+                ---
+                # Writing plans
+                """);
+        skillIn(root, "quoting", """
+                ---
+                name: quoting
+                description: Says "hello" in the middle, and that pair must survive.
+                ---
+                body
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertEquals("Turn a vague idea into an agreed design before any code is written - one question"
+                + " at a time, real alternatives on the table, decisions recorded.",
+                library.find("brainstorming").orElseThrow().description());
+        assertEquals("Red-green-refactor discipline for every change - write the failing test first,"
+                + " watch it fail for the right reason, make it pass minimally, then clean up.",
+                library.find("test-driven-development").orElseThrow().description());
+        assertEquals("Evidence before claims - run it, read the output, and only then say whether it"
+                + " works. A tester changes nothing and reports what actually happened.",
+                library.find("verification").orElseThrow().description());
+        assertEquals("Turn an agreed design into a step-by-step implementation plan a fresh engineer"
+                + " could execute - exact files, verifiable steps, no open questions.",
+                library.find("writing-plans").orElseThrow().description());
+        assertEquals("Says \"hello\" in the middle, and that pair must survive.",
+                library.find("quoting").orElseThrow().description());
+    }
+
+    @Test
+    void parsingARawStringNeedsNoFileOnDisk() throws IOException {
+        // The catalogue reads SKILL.md out of the jar, where there is no Path to
+        // hand the file-taking overload.
+        Skill skill = SkillLibrary.parse("---\nname: shelf\ndescription: From a stream.\n---\nbody",
+                "shelf", tempDir.resolve("shelf/SKILL.md"));
+
+        assertEquals("shelf", skill.name());
+        assertEquals("From a stream.", skill.description());
+        assertEquals("body", skill.body());
+    }
+
     // ---- loading and layering ----------------------------------------------------------
 
     @Test
@@ -196,6 +329,170 @@ class SkillLibraryTest {
         assertTrue(section.indexOf("- alpha:") < section.indexOf("- zeta:"), "bullets must be sorted by name");
     }
 
+    // ---- packs and namespaces (card 182) -------------------------------------------------
+
+    @Test
+    void aPackAdvertisesItsSkillsUnderPackColonName() throws IOException {
+        // The marketplace installs into <root>/<pack>/<skill>/, so a folder that
+        // holds no SKILL.md of its own but does hold skills is a pack, and its
+        // skills carry its name. That is the convention Claude Code already uses
+        // for plugin skills, and the one the vendored superpowers texts spell in
+        // their own cross-references.
+        Path root = tempDir.resolve("skills");
+        skillIn(root.resolve("superpowers"), "writing-plans", """
+                ---
+                name: writing-plans
+                description: Turn a spec into steps.
+                ---
+                pack body
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertEquals(List.of("superpowers:writing-plans"),
+                library.skills().stream().map(Skill::name).toList());
+        assertEquals("pack body", library.find("superpowers:writing-plans").orElseThrow().body());
+    }
+
+    @Test
+    void thePackWinsOverTheFrontmatterNameAsTheKey() throws IOException {
+        // The blocker the namespace design had to clear: loading keyed on the
+        // FRONTMATTER name with the folder only as a fallback, so a namespaced
+        // folder still went into the map — and into the prompt, and into
+        // use_skill — under its bare name, and collided exactly as before.
+        Path root = tempDir.resolve("skills");
+        skillIn(root.resolve("superpowers"), "brainstorming", """
+                ---
+                name: brainstorming
+                description: Explore before building.
+                ---
+                pack body
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertTrue(library.find("brainstorming").isEmpty(), "the bare name must not resolve");
+        assertEquals("Explore before building.",
+                library.find("superpowers:brainstorming").orElseThrow().description());
+    }
+
+    @Test
+    void aTopLevelSkillKeepsItsBareNameAndItsFrontmatterRule() throws IOException {
+        // The regression pin. Every skill installed before this change sits at
+        // level 1, and none of them may move or be renamed by the pack rule.
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "review", """
+                ---
+                name: code-review
+                description: Reviews diffs.
+                ---
+                top body
+                """);
+        skillIn(root, "plain", "# plain\nno frontmatter here");
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertEquals(List.of("code-review", "plain"),
+                library.skills().stream().map(Skill::name).toList());
+    }
+
+    @Test
+    void aPackSkillAndATopLevelSkillOfTheSameNameCoexist() throws IOException {
+        // The whole point of the namespace: the richer vendored version installs
+        // beside a seeded one of the same name instead of being refused, and the
+        // model can tell the two apart because they are spelled differently.
+        Path root = tempDir.resolve("skills");
+        skillIn(root, "brainstorming", """
+                ---
+                name: brainstorming
+                description: Ours.
+                ---
+                ours
+                """);
+        skillIn(root.resolve("superpowers"), "brainstorming", """
+                ---
+                name: brainstorming
+                description: Theirs.
+                ---
+                theirs
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertEquals(List.of("brainstorming", "superpowers:brainstorming"),
+                library.skills().stream().map(Skill::name).toList());
+        assertEquals("ours", library.find("brainstorming").orElseThrow().body());
+        assertEquals("theirs", library.find("superpowers:brainstorming").orElseThrow().body());
+    }
+
+    @Test
+    void aDisabledMarkerInsideAPackHidesOnlyThatSkill() throws IOException {
+        Path pack = tempDir.resolve("skills").resolve("superpowers");
+        skillIn(pack, "loud", "---\nname: loud\ndescription: d\n---\nbody");
+        skillIn(pack, "quiet", "---\nname: quiet\ndescription: d\n---\nbody");
+        Files.writeString(pack.resolve("quiet").resolve(".disabled"), "");
+        SkillLibrary library = SkillLibrary.load(List.of(tempDir.resolve("skills")));
+
+        assertEquals(List.of("superpowers:loud"), library.skills().stream().map(Skill::name).toList());
+    }
+
+    @Test
+    void aDisabledMarkerOnThePackHidesAllOfIt() throws IOException {
+        // The same marker one level up. Without this rule a `.disabled` on a pack
+        // folder would read as "off" and quietly do nothing, which is the worse
+        // surprise of the two.
+        Path root = tempDir.resolve("skills");
+        Path pack = root.resolve("superpowers");
+        skillIn(pack, "one", "---\nname: one\ndescription: d\n---\nbody");
+        skillIn(pack, "two", "---\nname: two\ndescription: d\n---\nbody");
+        skillIn(root, "kept", "---\nname: kept\ndescription: d\n---\nbody");
+        Files.writeString(pack.resolve(".disabled"), "");
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertEquals(List.of("kept"), library.skills().stream().map(Skill::name).toList());
+    }
+
+    @Test
+    void theRuleAddsExactlyOneLevelAndNoMore() throws IOException {
+        // The loader's contract was one level, no recursion; this adds packs and
+        // stops. A category folder inside a pack is not searched — the installer
+        // flattens the catalogue's two nesting depths on the way in, so nothing
+        // that lands here is ever deeper than <pack>/<skill>.
+        Path root = tempDir.resolve("skills");
+        skillIn(root.resolve("pack").resolve("category"), "buried", "---\nname: buried\ndescription: d\n---\nb");
+        Files.createDirectories(root.resolve("empty"));
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertTrue(library.skills().isEmpty(), "nothing three levels down, and an empty folder is not a pack");
+    }
+
+    @Test
+    void packsLayerLikeEverythingElse() throws IOException {
+        Path userRoot = tempDir.resolve("user");
+        Path projectRoot = tempDir.resolve("project");
+        skillIn(userRoot.resolve("superpowers"), "deploy", "---\nname: deploy\ndescription: d\n---\nuser body");
+        skillIn(projectRoot.resolve("superpowers"), "deploy", "---\nname: deploy\ndescription: d\n---\nproject body");
+        SkillLibrary library = SkillLibrary.load(List.of(userRoot, projectRoot));
+
+        assertEquals(1, library.skills().size());
+        assertEquals("project body", library.find("superpowers:deploy").orElseThrow().body());
+    }
+
+    @Test
+    void useSkillAndThePromptSpellTheNamespace() throws IOException {
+        Path root = tempDir.resolve("skills");
+        skillIn(root.resolve("superpowers"), "tdd", """
+                ---
+                name: tdd
+                description: Red then green.
+                ---
+                Write the failing test first.
+                """);
+        SkillLibrary library = SkillLibrary.load(List.of(root));
+
+        assertTrue(library.systemPromptSection().contains("- superpowers:tdd: Red then green."));
+        Tool tool = library.useSkillTool();
+        assertEquals("Write the failing test first.", tool.execute(nameInput("superpowers:tdd"), context()));
+        assertEquals("ERROR: unknown skill 'tdd'. Available: superpowers:tdd",
+                tool.execute(nameInput("tdd"), context()));
+    }
+
     // ---- use_skill tool ------------------------------------------------------------------
 
     @Test
@@ -246,7 +543,7 @@ class SkillLibraryTest {
         assertEquals("ERROR: no skills are installed.", tool.execute(nameInput("anything"), context()));
     }
 
-    // ---- the two shipped skills ----------------------------------------------------------
+    // ---- the shipped skills ---------------------------------------------------------------
 
     /**
      * The real skills checked into the repo must parse. The Gradle test working
@@ -261,11 +558,29 @@ class SkillLibraryTest {
                 + System.getProperty("user.dir"));
 
         SkillLibrary library = SkillLibrary.load(List.of(shipped.orElseThrow()));
-        for (String name : List.of("brainstorming", "test-driven-development")) {
-            Skill skill = library.find(name).orElseThrow(
-                    () -> new AssertionError("shipped skill missing: " + name));
-            assertFalse(skill.description().isBlank());
-            assertFalse(skill.body().isBlank());
+        assertFalse(library.skills().isEmpty(), "the repo ships at least one skill");
+        for (Skill skill : library.skills()) {
+            assertFalse(skill.description().isBlank(), skill.name() + " has no description");
+            assertFalse(skill.body().isBlank(), skill.name() + " has no body");
+        }
+        assertTrue(library.find("verification").isPresent(), "shipped skill missing: verification");
+    }
+
+    /**
+     * Card 182 dropped brainstorming, test-driven-development and writing-plans
+     * from the seed set: the vendored superpowers versions are three to five
+     * times richer, they cross-reference each other as {@code superpowers:…},
+     * and a description costs the same in the prompt whatever the body weighs.
+     * Seeding a thin twin of an installable skill only gives the model two
+     * entries to choose between. They are one press away in the catalogue.
+     */
+    @Test
+    void theSeedSetCarriesNoTwinOfACatalogueSkill() {
+        SkillLibrary library = SkillLibrary.load(List.of(shippedSkillsRoot().orElseThrow()));
+
+        for (String dropped : List.of("brainstorming", "test-driven-development", "writing-plans")) {
+            assertTrue(library.find(dropped).isEmpty(),
+                    dropped + " is seeded again — the catalogue's version is the richer one");
         }
     }
 

@@ -5,18 +5,25 @@ import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.server.starter.BundleController;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -40,6 +47,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class ApiLocalFenceTest {
 
     private MockMvc mvc;
+
+    /** A skills root that is not the operator's — card 182's install writes files. */
+    @TempDir
+    Path skillRoots;
 
     /** A session that really exists on disk — the Gradle test task points
      *  {@code user.home} into the build directory, so this never touches the
@@ -210,6 +221,58 @@ class ApiLocalFenceTest {
         // The desktop shell polls it before the UI exists, and being reachable
         // IS the whole answer — there is nothing here to read.
         mvc.perform(get("http://evil.example/api/health")).andExpect(status().isOk());
+    }
+
+    @Test
+    void anEncodedPrefixCannotReachInstall() throws Exception {
+        // Card 182 adds a write endpoint that copies files onto the disk, so it
+        // inherits the v0.6.1 attack: a rebound page asking for /%61pi/... carries
+        // no literal "/api/" for a raw match to see, while the container decodes
+        // and dispatches it. Staged through the filter directly, because a
+        // standalone MockMvc never decodes the target and would pass regardless.
+        MockFilterChain chain = new MockFilterChain();
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/%61pi/skills/install");
+        request.setRequestURI("/%61pi/skills/install");
+        request.setRemoteAddr("127.0.0.1");
+        request.addHeader("Host", "evil.example");
+        request.setContentType("application/json");
+        request.setContent("{\"skill\":\"superpowers/brainstorming\"}".getBytes(StandardCharsets.UTF_8));
+
+        new ApiLocalFence().doFilter(request, response, chain);
+
+        assertEquals(404, response.getStatus());
+        assertNull(chain.getRequest(), "the request must not reach the chain at all");
+    }
+
+    @Test
+    void aReboundHostCannotInstall() throws Exception {
+        // The claim "install sits behind the container fence" cannot be made by a
+        // handler test: standalone MockMvc has no filter chain, so those only ever
+        // exercise the controller's own check. The fence lives in the container.
+        Path userRoot = skillRoots.resolve("user");
+        Path projectRoot = skillRoots.resolve("project");
+        Files.createDirectories(userRoot);
+        Files.createDirectories(projectRoot);
+        MockMvc skills = MockMvcBuilders.standaloneSetup(new SkillsController(userRoot, projectRoot))
+                .addFilters(new ApiLocalFence())
+                .build();
+
+        skills.perform(post("http://attacker.example/api/skills/install")
+                        .contentType("application/json")
+                        .content("{\"skill\":\"superpowers/brainstorming\"}"))
+                .andExpect(status().isNotFound());
+
+        try (Stream<Path> left = Files.list(userRoot)) {
+            assertEquals(List.of(), left.toList(), "nothing was copied");
+        }
+        // And the same request from loopback travels all the way through, so the
+        // refusal above is the fence rather than a route that was never mapped.
+        skills.perform(post("http://127.0.0.1/api/skills/install")
+                        .contentType("application/json")
+                        .content("{\"skill\":\"superpowers/brainstorming\"}"))
+                .andExpect(status().isOk());
+        assertTrue(Files.isRegularFile(userRoot.resolve("superpowers/brainstorming/SKILL.md")));
     }
 
     @Test
