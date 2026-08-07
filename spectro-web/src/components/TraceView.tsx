@@ -68,6 +68,13 @@ import {
   setTraceFace,
   useTraceFace,
 } from "../state/traceFace";
+import {
+  activeCategories,
+  setTraceCategories,
+  setTraceLlmDir,
+  toggleTraceCategory,
+  useTraceFilter,
+} from "../state/traceFilter";
 import type { RowFace } from "../state/traceFace";
 import { reportCount, useSearch } from "../state/search";
 import { traceHits, traceRowText } from "./traceSearch";
@@ -693,6 +700,18 @@ function chainLabel(e: TraceEntry): string {
       return `turn ${String(p["turn"] ?? "?")}`;
     case "tool_call":
       return `tool_call ${String(p["name"] ?? "")}`;
+    // The packet, named by the endpoint it went to — which is what a reader
+    // standing anywhere in the chain recognises (`/v1/messages`), not the xid.
+    case "llm_exchange": {
+      const url = String(p["url"] ?? "");
+      let path = url;
+      try {
+        path = new URL(url).pathname;
+      } catch {
+        /* not a URL: print what was recorded */
+      }
+      return `LLM ${path}`;
+    }
     case "permission_request":
       return "gate asked";
     case "permission_decision":
@@ -1363,8 +1382,20 @@ export function TraceView(props: {
   const agentFilter = props.agentFilter ?? null;
   const lang = useLang();
   const [query, setQuery] = useState("");
-  const [llmDir, setLlmDir] = useState<"all" | LlmDir>("all");
-  const [active, setActive] = useState<ReadonlySet<Category>>(() => new Set(CATEGORIES));
+  // The direction segment and the category chips are PERSISTED preferences,
+  // not view state (card 184, owner: "ein filter auf solche messages wäre
+  // cool"). Both used to live in useState here, and both of App's mount sites
+  // unmount this component on every tab change, so isolating the LLM traffic
+  // and walking to chat put every chip straight back on. The free-text query
+  // above deliberately does NOT persist: a selection is a reading stance, a
+  // search is about one file.
+  const filter = useTraceFilter();
+  const llmDir = filter.llmDir;
+  const setLlmDir = setTraceLlmDir;
+  const active = useMemo<ReadonlySet<Category>>(
+    () => activeCategories(filter.categories, CATEGORIES) as ReadonlySet<Category>,
+    [filter.categories],
+  );
   const [openSeq, setOpenSeq] = useState<number | null>(null);
   const [freshCount, setFreshCount] = useState(0);
   // Reasoning lens (card 13): a persisted preference, not view state — it
@@ -1429,14 +1460,7 @@ export function TraceView(props: {
   const pinnedRef = useRef(false);
   const prevLen = useRef(entries.length);
 
-  const toggleCat = (c: Category): void => {
-    setActive((prev) => {
-      const next = new Set(prev);
-      if (next.has(c)) next.delete(c);
-      else next.add(c);
-      return next;
-    });
-  };
+  const toggleCat = (c: Category): void => toggleTraceCategory(c, CATEGORIES);
 
   // Prepend the synthetic system_context frame once, at the top, when a run has
   // started and the context is loaded. It is display-only — never in the reducer,
@@ -1881,7 +1905,7 @@ export function TraceView(props: {
             type="button"
             className="trace-chip trace-chip--action"
             title={t(lang, "trace.selectAll")}
-            onClick={() => setActive(new Set(CATEGORIES))}
+            onClick={() => setTraceCategories(CATEGORIES)}
           >
             {t(lang, "trace.all")}
           </button>
@@ -1889,7 +1913,7 @@ export function TraceView(props: {
             type="button"
             className="trace-chip trace-chip--action"
             title={t(lang, "trace.selectNone")}
-            onClick={() => setActive(new Set())}
+            onClick={() => setTraceCategories([])}
           >
             {t(lang, "trace.none")}
           </button>
