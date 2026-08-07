@@ -736,6 +736,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.llm.res.lines": { de: "{n} Zeilen", en: "{n} lines" },
   "trace.llm.res.aborted": { de: "abgebrochen", en: "aborted" },
   "trace.llm.res.noReassembly": { de: "Die Antwort wird hier NICHT zusammengesetzt: der zusammengesetzte Text ist der Chat, und ein zweiter Zusammenbau im Browser wäre eine zweite Wahrheit. Was ankam, steht Zeile für Zeile auf dem wire-Gesicht.", en: "The answer is NOT reassembled here: the reassembled text is the chat, and a second reassembly in the browser would be a second truth. What arrived is on the wire face, line by line." },
+  // Open everything at once, and back (owner 2026-08-07). Two buttons and not a
+  // toggle: "back to default" has to mean the pane as it opened, folds a reader
+  // touched by hand included, and a toggle that left those open would not be a
+  // way back at all.
+  "trace.llm.expandAll": { de: "alles aufklappen", en: "expand all" },
+  "trace.llm.expandDefault": { de: "Standard", en: "default" },
+  "trace.llm.expandAria": { de: "Wie weit der Austausch aufgeklappt ist", en: "How far the exchange is unfolded" },
   "trace.llm.wire.noHeaders": { de: "keine Header aufgezeichnet — das SDK besitzt hier den Socket.", en: "no headers recorded — the SDK owns the socket here." },
 
   // system-context tab

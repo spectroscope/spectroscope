@@ -153,6 +153,36 @@ function Fold({
   );
 }
 
+/** Open everything at once, and back (owner 2026-08-07). Two buttons rather
+ *  than a toggle: "default" has to mean the pane as it OPENED — folds a reader
+ *  clicked open since included — and a toggle that left those standing would
+ *  not be a way back. The epoch is what makes that true: it remounts the panes,
+ *  so every fold and every tree node returns to the state it is born in. */
+function ExpandStrip({
+  all,
+  onChange,
+  lang,
+}: {
+  all: boolean;
+  onChange: (all: boolean) => void;
+  lang: Lang;
+}) {
+  return (
+    <div
+      className="trace-detail-modes trace-reading"
+      role="group"
+      aria-label={t(lang, "trace.llm.expandAria")}
+    >
+      <button type="button" aria-pressed={all} onClick={() => onChange(true)}>
+        {t(lang, "trace.llm.expandAll")}
+      </button>
+      <button type="button" aria-pressed={!all} onClick={() => onChange(false)}>
+        {t(lang, "trace.llm.expandDefault")}
+      </button>
+    </div>
+  );
+}
+
 /** One content block of one message. A blob is a measurement and never its
  *  bytes; a text is the text, capped like every other pane here. */
 function Block({ block, lang }: { block: LlmBlock; lang: Lang }) {
@@ -173,12 +203,25 @@ function Block({ block, lang }: { block: LlmBlock; lang: Lang }) {
 /** The request as its parts. The one rule that keeps this honest: a body in a
  *  shape this reader does not know says so and hands over to the tree, because
  *  an empty pane would read as "the request was empty". */
-function RequestParts({ parts, body, lang }: { parts: LlmRequestParts; body: string; lang: Lang }) {
+function RequestParts({
+  parts,
+  body,
+  lang,
+  expandAll,
+}: {
+  parts: LlmRequestParts;
+  body: string;
+  lang: Lang;
+  /** Owner 2026-08-07: open every fold at once. The container is remounted on
+   *  each change (see the key in the caller), so "default" really is the pane
+   *  as it opened rather than whatever a reader had clicked open since. */
+  expandAll: boolean;
+}) {
   if (parts.empty) {
     return (
       <>
         <p className="trace-source-note">{t(lang, "trace.llm.parts.unknownShape")}</p>
-        <JsonTree value={safeParse(body)} defaultDepth={3} />
+        <JsonTree value={safeParse(body)} defaultDepth={expandAll ? 99 : 3} />
       </>
     );
   }
@@ -200,6 +243,7 @@ function RequestParts({ parts, body, lang }: { parts: LlmRequestParts; body: str
         <Fold
           label={t(lang, "trace.llm.parts.system")}
           note={t(lang, "trace.llm.parts.chars", { chars: counted(parts.system.length, lang) })}
+          open={expandAll}
         >
           <CappedText text={parts.system} lang={lang} />
         </Fold>
@@ -208,7 +252,7 @@ function RequestParts({ parts, body, lang }: { parts: LlmRequestParts; body: str
         <Fold
           label={t(lang, "trace.llm.parts.messages")}
           note={counted(parts.messages.length, lang)}
-          open={parts.messages.length <= 3}
+          open={expandAll || parts.messages.length <= 3}
         >
           {messages.map((m, i) => (
             <Fold
@@ -219,7 +263,7 @@ function RequestParts({ parts, body, lang }: { parts: LlmRequestParts; body: str
                   ? t(lang, "trace.llm.parts.block1")
                   : t(lang, "trace.llm.parts.blocks", { n: counted(m.blocks.length, lang) })
               }
-              open={parts.messages.length <= 3}
+              open={expandAll || parts.messages.length <= 3}
             >
               {m.blocks.map((b, j) => (
                 <Block key={j} block={b} lang={lang} />
@@ -237,9 +281,13 @@ function RequestParts({ parts, body, lang }: { parts: LlmRequestParts; body: str
         </Fold>
       )}
       {parts.tools.length > 0 && (
-        <Fold label={t(lang, "trace.llm.parts.tools")} note={counted(parts.tools.length, lang)}>
+        <Fold
+          label={t(lang, "trace.llm.parts.tools")}
+          note={counted(parts.tools.length, lang)}
+          open={expandAll}
+        >
           {tools.map((tool, i) => (
-            <Fold key={i} label={tool.name} note={tool.description}>
+            <Fold key={i} label={tool.name} note={tool.description} open={expandAll}>
               <JsonTree value={tool.schema} defaultDepth={99} />
             </Fold>
           ))}
@@ -408,6 +456,15 @@ export function LlmExchangeDetail({
     };
   }, [sessionId, xid]);
 
+  // How far the two rendered faces are unfolded. The epoch remounts them, so
+  // "default" is the pane as it opened rather than whatever was clicked since.
+  const [expandAll, setExpandAll] = useState(false);
+  const [expandEpoch, setExpandEpoch] = useState(0);
+  const setExpand = (all: boolean): void => {
+    setExpandAll(all);
+    setExpandEpoch((e) => e + 1);
+  };
+
   const bodies = state.kind === "loaded" ? state.bodies : null;
   const parts = useMemo(() => (bodies === null ? null : readRequestParts(bodies.request.body)), [bodies]);
 
@@ -439,24 +496,26 @@ export function LlmExchangeDetail({
   if (face === "insight") {
     // The tree over the PARSED bodies, which is what the face promises. Over
     // the frame it would be the postmark again.
+    const depth = expandAll ? 99 : 4;
     return (
       <div className="ed">
-        <div className="ed-sec">
+        <ExpandStrip all={expandAll} onChange={setExpand} lang={lang} />
+        <div className="ed-sec" key={`req-${expandEpoch}`}>
           <span className="ed-label mono">request</span>
           {sentenceOf(bodies.request, lang)}
           {bodies.request.body === null ? (
             emptyNote(bodies.request, false, lang)
           ) : (
-            <JsonTree value={safeParse(bodies.request.body)} defaultDepth={4} />
+            <JsonTree value={safeParse(bodies.request.body)} defaultDepth={depth} />
           )}
         </div>
-        <div className="ed-sec">
+        <div className="ed-sec" key={`res-${expandEpoch}`}>
           <span className="ed-label mono">response</span>
           {sentenceOf(bodies.response, lang)}
           {bodies.response.body !== null ? (
-            <JsonTree value={safeParse(bodies.response.body)} defaultDepth={4} />
+            <JsonTree value={safeParse(bodies.response.body)} defaultDepth={depth} />
           ) : bodies.response.lines.length > 0 ? (
-            <JsonTree value={parseLines(bodies.response.lines)} defaultDepth={3} />
+            <JsonTree value={parseLines(bodies.response.lines)} defaultDepth={expandAll ? 99 : 3} />
           ) : (
             emptyNote(bodies.response, true, lang)
           )}
@@ -467,13 +526,14 @@ export function LlmExchangeDetail({
 
   return (
     <div className="ed">
-      <div className="ed-sec">
+      <ExpandStrip all={expandAll} onChange={setExpand} lang={lang} />
+      <div className="ed-sec" key={`parts-${expandEpoch}`}>
         <span className="ed-label mono">request</span>
         {sentenceOf(bodies.request, lang)}
         {bodies.request.body === null ? (
           emptyNote(bodies.request, false, lang)
         ) : (
-          <RequestParts parts={parts} body={bodies.request.body} lang={lang} />
+          <RequestParts parts={parts} body={bodies.request.body} lang={lang} expandAll={expandAll} />
         )}
       </div>
       <div className="ed-sec">
