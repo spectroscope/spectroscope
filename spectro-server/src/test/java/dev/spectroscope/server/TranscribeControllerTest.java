@@ -56,7 +56,7 @@ class TranscribeControllerTest {
         TranscribeController controller =
                 new TranscribeController(new FakeRunner(), presentModel(dir), true);
 
-        ResponseEntity<Map<String, String>> response =
+        ResponseEntity<Map<String, Object>> response =
                 controller.transcribe("webm bytes".getBytes());
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
@@ -70,12 +70,12 @@ class TranscribeControllerTest {
         TranscribeController controller =
                 new TranscribeController(new FakeRunner(), presentModel(dir), false);
 
-        ResponseEntity<Map<String, String>> response =
+        ResponseEntity<Map<String, Object>> response =
                 controller.transcribe("webm bytes".getBytes());
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode(),
                 "STT is optional infrastructure — 503, not 500");
-        assertTrue(response.getBody().get("error").contains("scripts/setup-stt.sh"),
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("scripts/setup-stt.sh"),
                 "the body must point the user at the setup script: " + response.getBody());
     }
 
@@ -87,11 +87,11 @@ class TranscribeControllerTest {
         TranscribeController controller =
                 new TranscribeController(new FakeRunner(), absentModel, true);
 
-        ResponseEntity<Map<String, String>> response =
+        ResponseEntity<Map<String, Object>> response =
                 controller.transcribe("webm bytes".getBytes());
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
-        assertTrue(response.getBody().get("error").contains("scripts/setup-stt.sh"),
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("scripts/setup-stt.sh"),
                 response.getBody().toString());
     }
 }

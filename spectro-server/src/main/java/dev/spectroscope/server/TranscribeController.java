@@ -108,12 +108,20 @@ public class TranscribeController {
      * Browser sends webm/opus bytes -&gt; WAV -&gt; whisper-cli -&gt; {@code { "text": ... }}.
      *
      * @param audio the recording exactly as the browser's MediaRecorder produced it
-     * @return 200 with the transcript (possibly empty); 503 with a setup hint when
+     * <p>The answer also names its own llm-wire record (card 184 leg 2b) under
+     * {@code wire}, because voice happens before any session exists and there is
+     * therefore no session socket to mirror the exchange onto. Without it the
+     * spoken bytes and the transcript were recorded byte-exactly and appeared in
+     * no trace anywhere. A run that never got as far as an exchange carries no
+     * {@code wire} at all rather than an empty one, which would read as a record
+     * that got lost.</p>
+     *
+     * @return 200 with the transcript (possibly empty) and its wire record; 503 with a setup hint when
      *         STT is missing or the pipeline fails readably; 500 only for temp-dir
      *         failure or interruption
      */
     @PostMapping("/api/transcribe")
-    public ResponseEntity<Map<String, String>> transcribe(@RequestBody byte[] audio) {
+    public ResponseEntity<Map<String, Object>> transcribe(@RequestBody byte[] audio) {
         if (!sttAvailable) {
             // 503, not 500: STT is optional infrastructure. The hint mirrors the CLI's.
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
@@ -133,8 +141,19 @@ public class TranscribeController {
         // rides the llm-wire record verbatim (base64), the transcript comes back
         // as the response. Voice happens BEFORE any session exists, so the
         // record lives in a shared day file, agent "composer", kind "stt".
+        // Voice happens BEFORE any session exists, so the record lives in a
+        // shared day file — and that is also why the browser cannot learn about
+        // it the way it learns about a chat turn. There is no session socket to
+        // mirror onto (card 184 leg 2b). So the exchange announces itself in
+        // THIS response, to the one caller that certainly wants it: the browser
+        // that just spoke. It builds its own trace rows from this, and asks the
+        // gated endpoint for the bytes under the day file's id.
+        String wireSession = "stt-" + LocalDate.now();
         LlmWireRecorder recorder = wireRecorder != null ? wireRecorder
-                : LlmWireRecorder.forSession("stt-" + LocalDate.now());
+                : LlmWireRecorder.forSession(wireSession);
+        java.util.concurrent.atomic.AtomicReference<LlmWireRecorder.ExchangeMeta> recorded =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        recorder.onExchange(recorded::set);
         // Fidelity "encoded", not "bytes": the base64 is the RECORDING'S OWN
         // encoding of the real input bytes — no socket ever carried this string.
         // Method stays null for the same reason: a child-process pipeline has none.
@@ -154,7 +173,32 @@ public class TranscribeController {
             // not socket bytes, and the label says so.
             exchange.end(new LlmWireTap.WireOutcome(200, "process-output",
                     text.orElse(""), false, null, System.currentTimeMillis()));
-            return ResponseEntity.ok(Map.of("text", text.orElse("")));
+            LlmWireRecorder.ExchangeMeta meta = recorded.get();
+            if (meta == null) {
+                // No record to point at: say the transcript and nothing more,
+                // rather than an empty `wire` object that looks like a lost one.
+                return ResponseEntity.ok(Map.of("text", text.orElse("")));
+            }
+            Map<String, Object> wire = new java.util.LinkedHashMap<>();
+            wire.put("session", wireSession);
+            wire.put("xid", meta.xid());
+            wire.put("agentId", meta.agentId());
+            wire.put("kind", meta.kind());
+            wire.put("provider", meta.provider());
+            wire.put("model", meta.model());
+            wire.put("url", meta.url());
+            wire.put("status", meta.status());
+            wire.put("requestBytes", meta.requestBytes());
+            wire.put("responseBytes", meta.responseBytes());
+            wire.put("responseLines", meta.responseLines());
+            wire.put("aborted", meta.aborted());
+            wire.put("fidelity", meta.fidelity());
+            wire.put("durationMs", meta.durationMs());
+            wire.put("ts", meta.ts());
+            Map<String, Object> answer = new java.util.LinkedHashMap<>();
+            answer.put("text", text.orElse(""));
+            answer.put("wire", wire);
+            return ResponseEntity.ok(answer);
         } catch (IOException failure) {
             // Missing binary/model surfaces here as a readable message → 503 with the hint.
             exchange.end(new LlmWireTap.WireOutcome(503, "process-output", null, false,

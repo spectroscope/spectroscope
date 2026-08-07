@@ -95,4 +95,66 @@ class TranscribeWireTest {
         assertTrue(response.get("error").asText().contains("setup-stt"),
                 "the record carries the readable cause: " + response.get("error"));
     }
+
+    /**
+     * Leg 2b. The record existed and was invisible: voice happens before any
+     * session exists, so it lands in a shared day file and there is no session
+     * socket to mirror onto. The transcript alone reached the browser, and the
+     * whole exchange — the spoken bytes, the model, how long it took — showed up
+     * in no trace anywhere.
+     *
+     * <p>So the exchange announces itself in THIS response, to the one caller
+     * that certainly wants it: the browser that just spoke. What it needs is the
+     * pair of ids that let it build its rows and then ask for the bytes.</p>
+     */
+    @Test
+    void theTranscribeAnswerCarriesTheRecordTheBrowserCouldNotOtherwiseKnowAbout(@TempDir Path dir)
+            throws Exception {
+        Path model = dir.resolve("ggml-small.bin");
+        Files.writeString(model, "present");
+        try (LlmWireRecorder recorder = new LlmWireRecorder(dir.resolve("s.llm.jsonl"), 1_000_000)) {
+            TranscribeController controller =
+                    new TranscribeController(new FakeRunner(), model, true, recorder);
+
+            Object body = controller.transcribe("webm opus bytes".getBytes()).getBody();
+
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> answer = (java.util.Map<String, Object>) body;
+            assertEquals("hallo spectroscope", answer.get("text"), "the transcript still leads");
+
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> wire = (java.util.Map<String, Object>) answer.get("wire");
+            assertTrue(wire != null, "the answer names its own record");
+            // The two ids that make the record reachable: the day file to ask,
+            // and the exchange within it.
+            assertTrue(String.valueOf(wire.get("session")).startsWith("stt-"),
+                    "the day file the bytes live in, got " + wire.get("session"));
+            assertTrue(!String.valueOf(wire.get("xid")).isBlank(), "the exchange to ask for");
+            assertEquals("stt", wire.get("kind"));
+            assertEquals("whisper-cpp", wire.get("provider"));
+            assertEquals("ggml-small.bin", wire.get("model"));
+            assertEquals(200, wire.get("status"));
+            // A size the row can print without fetching anything.
+            assertTrue((Long) wire.get("requestBytes") > 0, "the spoken bytes were measured");
+        }
+    }
+
+    /** A run that never got as far as an exchange says the transcript and stops.
+     *  An empty `wire` object would read as a record that got lost. */
+    @Test
+    void anAnswerWithNoRecordBehindItClaimsNone(@TempDir Path dir) throws Exception {
+        Path absentModel = dir.resolve("gone").resolve("ggml-small.bin");
+        try (LlmWireRecorder recorder = new LlmWireRecorder(dir.resolve("f.llm.jsonl"), 1_000_000)) {
+            TranscribeController controller =
+                    new TranscribeController(new FakeRunner(), absentModel, true, recorder);
+            Object body = controller.transcribe("bytes".getBytes()).getBody();
+            @SuppressWarnings("unchecked")
+            java.util.Map<String, Object> answer = (java.util.Map<String, Object>) body;
+            // Either it failed before any exchange (no wire at all), or it
+            // recorded one and says so honestly. What it must never do is carry
+            // an empty shell.
+            Object wire = answer.get("wire");
+            assertTrue(wire == null || !((java.util.Map<?, ?>) wire).isEmpty());
+        }
+    }
 }
