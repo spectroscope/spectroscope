@@ -2,7 +2,7 @@
 // attempt failed" and "this feature is not here".
 
 import { describe, expect, it } from "vitest";
-import { micErrorOf, silencesTheButton, voiceErrorKey } from "./voiceError";
+import { VOICE_ERRORS, micErrorOf, silencesTheButton, voiceErrorKey } from "./voiceError";
 import { dict } from "../i18n/i18n";
 
 describe("what the browser said, read as a reason", () => {
@@ -37,23 +37,18 @@ describe("which failures take the button away", () => {
     expect(silencesTheButton("sttMissing")).toBe(true);
   });
 
-  it("keeps it for the ones a person can act on right now", () => {
-    for (const reason of ["denied", "deviceBusy", "requestFailed", "unknown"] as const) {
-      expect(silencesTheButton(reason)).toBe(false);
+  it("keeps it for every other one, including any added later", () => {
+    for (const reason of VOICE_ERRORS.filter((r) => r !== "noDevice" && r !== "sttMissing")) {
+      expect(silencesTheButton(reason), reason).toBe(false);
     }
   });
 });
 
 describe("every reason has something to say", () => {
   it("has a sentence in both languages, so no failure is mute", () => {
-    for (const reason of [
-      "denied",
-      "noDevice",
-      "deviceBusy",
-      "sttMissing",
-      "requestFailed",
-      "unknown",
-    ] as const) {
+    // Walks the real set: a reason added without a sentence fails here rather
+    // than showing a blank tooltip to whoever hits it first.
+    for (const reason of VOICE_ERRORS) {
       const entry = dict[voiceErrorKey(reason)];
       expect(entry, `no sentence for ${reason}`).toBeTruthy();
       expect(entry.de.length).toBeGreaterThan(0);

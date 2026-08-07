@@ -11,7 +11,7 @@ const wire = (over: Record<string, unknown> = {}) => ({
   kind: "stt",
   provider: "whisper-cpp",
   model: "ggml-small.bin",
-  url: "process://ffmpeg+whisper-cli",
+  url: "process://whisper-cli",
   status: 200,
   requestBytes: 40120,
   responseBytes: 18,

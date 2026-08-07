@@ -3,6 +3,7 @@ package dev.spectroscope.server;
 import dev.spectroscope.cli.voice.CommandRunner;
 import dev.spectroscope.cli.voice.ProcessCommandRunner;
 import dev.spectroscope.cli.voice.Transcriber;
+import dev.spectroscope.cli.voice.WavAudio;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.core.wire.LlmWireTap;
@@ -13,7 +14,6 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.util.Base64;
 import java.util.Comparator;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
@@ -24,25 +24,35 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * The web face of voice input: the browser records with MediaRecorder and POSTs the
- * webm/opus bytes here; the server converts them to 16 kHz mono WAV (an ffmpeg child
- * process) and runs the SAME {@link Transcriber} the CLI uses. The transcript comes
- * back as {@code { "text": ... }} and lands in the composer input — never directly at
- * the agent (the same boundary the CLI draws: an STT error is reviewable text, not an
- * agent instruction).
+ * The web face of voice input: the browser records with MediaRecorder, converts the
+ * recording to 16 kHz mono WAV itself, and POSTs that here; the server runs the SAME
+ * {@link Transcriber} the CLI uses. The transcript comes back as {@code { "text": ... }}
+ * and lands in the composer input — never directly at the agent (the same boundary the
+ * CLI draws: an STT error is reviewable text, not an agent instruction).
+ *
+ * <p><b>One child process, not two</b> (card 187 step 5.4). This endpoint used to write
+ * the webm/opus body to a temp file and run ffmpeg over it to produce the WAV whisper
+ * wants. The browser already had the audio, and Web Audio can hand over exactly that
+ * format, so the conversion moved into the page that recorded it. What the server gains
+ * is not speed: it is that the local path needs ONE binary, whisper.cpp, which is MIT —
+ * the licence question ffmpeg raised leaves with the dependency, and so does half the
+ * bundling job if the offline case ever wants it.</p>
+ *
+ * <p>What arrives is therefore CHECKED rather than converted ({@link WavAudio}). Card 184
+ * is the reason: an unreadable body once went down this pipeline, ffmpeg failed, its exit
+ * code was ignored, and whisper's help text came back as a 200 "transcript".</p>
  *
  * <p>Reuse note: {@code Transcriber} lives in spectro-cli, which spectro-server already
  * depends on for the embedded interactive mode, so it is on the classpath here.</p>
  *
  * <p>The process boundary sits behind a {@link CommandRunner} exactly as in the CLI, so
- * this endpoint is testable with a fake runner — no ffmpeg, no whisper-cli, no model on
- * the machine. If STT is not installed the endpoint answers a clean {@code 503} with the
+ * this endpoint is testable with a fake runner — no whisper-cli and no model on the
+ * machine. If STT is not installed the endpoint answers a clean {@code 503} with the
  * setup hint (the composer's mic button shows a tooltip); never a stack trace.</p>
  */
 @RestController
 public class TranscribeController {
 
-    private final CommandRunner runner;
     private final Transcriber transcriber;
     /** Fast, process-free readiness probe: the pinned model must be present. */
     /** Whether transcription can run RIGHT NOW. A supplier and not a boolean:
@@ -66,7 +76,7 @@ public class TranscribeController {
     /**
      * Seam for tests: inject a runner, a model path, and the readiness flag.
      *
-     * @param runner the process boundary — a fake keeps ffmpeg/whisper out of tests
+     * @param runner the process boundary — a fake keeps whisper-cli out of tests
      * @param modelPath the whisper model file the transcriber is pointed at
      * @param sttAvailable {@code false} pins the endpoint to 503; {@code true} means
      *                     "probe the model file on every call"
@@ -79,7 +89,7 @@ public class TranscribeController {
      * The full seam (card 184): also inject the llm-wire recorder the spoken
      * bytes are recorded through.
      *
-     * @param runner the process boundary — a fake keeps ffmpeg/whisper out of tests
+     * @param runner the process boundary — a fake keeps whisper-cli out of tests
      * @param modelPath the whisper model file the transcriber is pointed at
      * @param sttAvailable readiness override — {@code false} makes the endpoint answer 503
      * @param wireRecorder the recorder to write the stt exchange to; null opens
@@ -87,7 +97,6 @@ public class TranscribeController {
      */
     TranscribeController(CommandRunner runner, Path modelPath, boolean sttAvailable,
                          LlmWireRecorder wireRecorder) {
-        this.runner = runner;
         this.transcriber = new Transcriber(runner, modelPath);
         // `true` from the production path means "probe the file, every time";
         // an explicit false is a test saying STT is not there at all.
@@ -116,9 +125,9 @@ public class TranscribeController {
     }
 
     /**
-     * Browser sends webm/opus bytes -&gt; WAV -&gt; whisper-cli -&gt; {@code { "text": ... }}.
+     * Browser sends a 16 kHz mono WAV -&gt; whisper-cli -&gt; {@code { "text": ... }}.
      *
-     * @param audio the recording exactly as the browser's MediaRecorder produced it
+     * @param audio the converted recording, exactly as the browser encoded it
      * <p>The answer also names its own llm-wire record (card 184 leg 2b) under
      * {@code wire}, because voice happens before any session exists and there is
      * therefore no session socket to mirror the exchange onto. Without it the
@@ -127,9 +136,10 @@ public class TranscribeController {
      * {@code wire} at all rather than an empty one, which would read as a record
      * that got lost.</p>
      *
-     * @return 200 with the transcript (possibly empty) and its wire record; 503 with a setup hint when
-     *         STT is missing or the pipeline fails readably; 500 only for temp-dir
-     *         failure or interruption
+     * @return 200 with the transcript (possibly empty) and its wire record; 400 when the
+     *         body is not audio whisper can read; 503 with a setup hint when STT is
+     *         missing or the pipeline fails readably; 500 only for temp-dir failure or
+     *         interruption
      */
     @PostMapping("/api/transcribe")
     public ResponseEntity<Map<String, Object>> transcribe(@RequestBody byte[] audio) {
@@ -139,6 +149,12 @@ public class TranscribeController {
                     .body(Map.of("error",
                             "Speech-to-text is not installed — run bash scripts/setup-stt.sh."));
         }
+        // Before anything is spawned and before an exchange is opened: a body no model
+        // can read never reached a model, so it must not leave a record claiming it did.
+        Optional<String> unreadable = WavAudio.problem(audio);
+        if (unreadable.isPresent()) {
+            return ResponseEntity.badRequest().body(Map.of("error", unreadable.get()));
+        }
 
         final Path dir;
         try {
@@ -146,7 +162,6 @@ public class TranscribeController {
         } catch (IOException failure) {
             return ResponseEntity.internalServerError().body(Map.of("error", failure.getMessage()));
         }
-        Path webmPath = dir.resolve("recording.webm");
         Path wavPath = dir.resolve("recording.wav");
         // The spoken bytes are a real model exchange (card 184): the recording
         // rides the llm-wire record verbatim (base64), the transcript comes back
@@ -170,15 +185,13 @@ public class TranscribeController {
         // Method stays null for the same reason: a child-process pipeline has none.
         LlmWireTap.Exchange exchange = recorder.bound("composer", null, "stt").begin(
                 new LlmWireTap.WireRequest("whisper-cpp", modelPath.getFileName().toString(),
-                        "process", null, "process://ffmpeg+whisper-cli", null, "encoded",
+                        "process", null, "process://whisper-cli", null, "encoded",
                         Base64.getEncoder().encodeToString(audio), System.currentTimeMillis()));
         try {
-            Files.write(webmPath, audio);            // browser delivers webm/opus
-            // Convert to 16 kHz mono WAV through the SAME runner seam — reusing the
-            // drain-then-wait implementation keeps the process boundary in one place.
-            runner.runCapturingOutput(List.of(
-                    "ffmpeg", "-hide_banner", "-loglevel", "error",
-                    "-i", webmPath.toString(), "-ar", "16000", "-ac", "1", "-y", wavPath.toString()));
+            // Straight to disk: the browser already produced the 16 kHz mono WAV that
+            // whisper reads, so nothing rewrites these bytes between the microphone and
+            // the model — which is also what makes the record above the real input.
+            Files.write(wavPath, audio);
             Optional<String> text = transcriber.transcribe(wavPath);
             // "process-output": whisper's stdout as the Transcriber parsed it —
             // not socket bytes, and the label says so.

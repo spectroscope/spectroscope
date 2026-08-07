@@ -10,21 +10,37 @@
 //
 // The browser already tells us which one it was. This turns that into a key.
 
-export type VoiceError =
-  /** The user (or a policy) refused the microphone. Recoverable, and the only
-   *  one where the fix is in the browser's own hands. */
-  | "denied"
-  /** No input device at all — nothing to grant. */
-  | "noDevice"
-  /** A device was there and stopped being there, or is held by another app. */
-  | "deviceBusy"
-  /** Speech to text is not installed on the server (503 from /api/transcribe). */
-  | "sttMissing"
-  /** The request never completed: network, parse, or a server that answered
-   *  something this build cannot read. */
-  | "requestFailed"
-  /** Something else. Deliberately last, and deliberately not silent. */
-  | "unknown";
+/**
+ * Every way voice fails, as a list rather than a bare union — so the suite can
+ * walk it and prove each one has a sentence in both languages. A union type
+ * cannot be enumerated at runtime, which is how a reason could otherwise be
+ * added and stay mute.
+ *
+ * - `denied` — the user (or a policy) refused the microphone. Recoverable, and
+ *   the only one where the fix is in the browser's own hands.
+ * - `noDevice` — no input device at all; nothing to grant.
+ * - `deviceBusy` — a device was there and stopped being there, or another app
+ *   is holding it.
+ * - `sttMissing` — speech to text is not installed on the server (503).
+ * - `requestFailed` — the request never completed: network, parse, or a server
+ *   that answered something this build cannot read.
+ * - `convertFailed` — the recording could not be turned into audio the model
+ *   reads (card 187 step 5.4 moved that conversion into the browser). Its own
+ *   reason and not `requestFailed`, because nothing was ever sent and pressing
+ *   again in the same browser will do the same thing.
+ * - `unknown` — something else. Deliberately last, and deliberately not silent.
+ */
+export const VOICE_ERRORS = [
+  "denied",
+  "noDevice",
+  "deviceBusy",
+  "sttMissing",
+  "requestFailed",
+  "convertFailed",
+  "unknown",
+] as const;
+
+export type VoiceError = (typeof VOICE_ERRORS)[number];
 
 /**
  * Read a `getUserMedia` rejection into a reason.

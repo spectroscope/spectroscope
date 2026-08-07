@@ -29,7 +29,7 @@ import java.util.Map;
  *       {@link LocalModelDownload} already does for the local chat models. The
  *       pin here is not invented: it is the one the script carries, and it was
  *       measured against the installed file before it was written down.</li>
- *   <li><b>The binaries</b> (`whisper-cli`, `ffmpeg`) the script installs
+ *   <li><b>The binary</b> (`whisper-cli`) the script installs
  *       through brew or apt. This app must not drive a package manager, and a
  *       DMG user has neither. So they are PROBED and REPORTED — found at a path,
  *       or honestly not found with the one command that works on this machine.
@@ -47,8 +47,10 @@ public final class SttController {
     static final String MODEL_URL =
             "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin";
 
-    /** The binaries the pipeline shells out to, in the order it uses them. */
-    static final String[] BINARIES = {"ffmpeg", "whisper-cli"};
+    /** The binaries the pipeline shells out to. One, since card 187 step 5.4:
+     *  the browser converts its own recording, so ffmpeg left this path — with
+     *  it went the licence question, because whisper.cpp is MIT. */
+    static final String[] BINARIES = {"whisper-cli"};
 
     private final Path modelsDir;
     private final String path;
@@ -161,11 +163,11 @@ public final class SttController {
         return out;
     }
 
-    /** The install line for the binaries, per platform — a sentence, not a button. */
+    /** The install line for the binary, per platform — a sentence, not a button. */
     private static String hintFor(String osName) {
         return osName.toLowerCase(java.util.Locale.ROOT).contains("mac")
-                ? "brew install whisper-cpp ffmpeg"
-                : "sudo apt install ffmpeg  (whisper-cli: build whisper.cpp)";
+                ? "brew install whisper-cpp"
+                : "build whisper.cpp and put build/bin/whisper-cli on the PATH";
     }
 
     private static long sizeOf(Path file) {

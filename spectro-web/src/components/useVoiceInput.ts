@@ -1,14 +1,19 @@
-// The browser side of push-to-talk, as a hook: MediaRecorder ->
-// blob -> POST /api/transcribe -> the transcript goes to the caller's
-// callback (never straight at the agent). The pure label/title/disabled
-// decisions stay in voiceButton.ts; this hook owns only the DOM-bound wiring
-// (getUserMedia, MediaRecorder, the recording timer).
+// The browser side of push-to-talk, as a hook: MediaRecorder -> blob ->
+// 16 kHz mono WAV -> POST /api/transcribe -> the transcript goes to the
+// caller's callback (never straight at the agent). The conversion is the third
+// step and it is new: the server used to run ffmpeg for it, and the browser
+// already had the audio (card 187 step 5.4, encoder in wavClip.ts).
+//
+// The pure label/title/disabled decisions stay in voiceButton.ts, the meter
+// arithmetic in micLevel.ts and the encoding in wavClip.ts; this hook owns only
+// the DOM-bound wiring (getUserMedia, MediaRecorder, the recording timer).
 
 import { useEffect, useRef, useState } from "react";
 import type { MicPhase } from "./voiceButton";
 import { noteVoiceExchange } from "../state/voiceWire";
 import { micErrorOf, silencesTheButton, type VoiceError } from "./voiceError";
 import { levelOf, mayClick } from "./micLevel";
+import { MAX_CLIP_SECONDS, browserAudio, wavFromRecording } from "./wavClip";
 import { audioConstraint, readMicDevices, useMicDevice, type MicChoice } from "../state/micDevice";
 
 /** Whether the platform asked for no incidental effects. */
@@ -78,12 +83,19 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
   const [recordMs, setRecordMs] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
 
-  // Tick the recording timer while recording.
+  // Tick the recording timer while recording — and end it at the stated ceiling.
+  // The limit exists because 16 kHz PCM is 32 kB per second, so a clip has a
+  // largest size worth naming; stopping is how it costs the tail of a very long
+  // recording rather than the whole thing.
   useEffect(() => {
     if (micPhase !== "recording") return;
     const startedAt = Date.now();
     setRecordMs(0);
-    const id = window.setInterval(() => setRecordMs(Date.now() - startedAt), RECORDING_TIMER_TICK_MS);
+    const id = window.setInterval(() => {
+      const elapsed = Date.now() - startedAt;
+      setRecordMs(elapsed);
+      if (elapsed >= MAX_CLIP_SECONDS * 1000) recorderRef.current?.stop();
+    }, RECORDING_TIMER_TICK_MS);
     return () => window.clearInterval(id);
   }, [micPhase]);
 
@@ -157,11 +169,35 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       }
       setLevel(0);
       setMicPhase("transcribing");
+      // The conversion whisper used to need a child process for (card 187 step
+      // 5.4). It happens here because this is where the audio already is, and
+      // its own failure is its own sentence: nothing was sent, so calling it a
+      // failed request would point at the wrong thing.
+      let wav: Uint8Array;
       try {
-        const res = await fetch("/api/transcribe", { method: "POST", body: new Blob(chunks) });
+        wav = await wavFromRecording(await new Blob(chunks).arrayBuffer(), browserAudio);
+      } catch {
+        setMicError("convertFailed");
+        setMicPhase("idle");
+        return;
+      }
+      try {
+        const res = await fetch("/api/transcribe", {
+          method: "POST",
+          // Named on purpose: an untyped body once reached the form parser,
+          // which chewed the audio and produced a 200 with nonsense in it.
+          headers: { "Content-Type": "audio/wav" },
+          body: new Blob([wav], { type: "audio/wav" }),
+        });
         if (res.status === 503) {
           setMicError("sttMissing"); // and the sentence points at the settings pane
           setMicAvailable(false);
+          return;
+        }
+        if (res.status === 400) {
+          // The server read the header and could not use it. That is this
+          // browser's encoding, not the network, so it says so.
+          setMicError("convertFailed");
           return;
         }
         if (!res.ok) {

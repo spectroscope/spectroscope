@@ -63,20 +63,20 @@ class SttControllerTest {
     void findsABinaryOnThePathAndNamesWhereItSits(@TempDir Path dir) throws Exception {
         Path bin = dir.resolve("bin");
         Files.createDirectories(bin);
-        Path ffmpeg = bin.resolve("ffmpeg");
-        Files.writeString(ffmpeg, "#!/bin/sh\n");
-        ffmpeg.toFile().setExecutable(true);
+        Path whisper = bin.resolve("whisper-cli");
+        Files.writeString(whisper, "#!/bin/sh\n");
+        whisper.toFile().setExecutable(true);
 
-        assertEquals(ffmpeg.toString(), SttController.onPath("ffmpeg", bin.toString()));
-        assertNull(SttController.onPath("whisper-cli", bin.toString()), "absent is absent");
+        assertEquals(whisper.toString(), SttController.onPath("whisper-cli", bin.toString()));
+        assertNull(SttController.onPath("llama-server", bin.toString()), "absent is absent");
         // A file that is not executable is not a binary you can run.
-        Files.writeString(bin.resolve("whisper-cli"), "text");
-        assertNull(SttController.onPath("whisper-cli", bin.toString()));
+        Files.writeString(bin.resolve("llama-server"), "text");
+        assertNull(SttController.onPath("llama-server", bin.toString()));
     }
 
     @Test
     void ignoresEmptyPathSegmentsRatherThanSearchingTheWorkingDirectory(@TempDir Path dir) {
-        assertNull(SttController.onPath("ffmpeg", "::"));
+        assertNull(SttController.onPath("whisper-cli", "::"));
     }
 
     /** The line this card draws: the model is a button, the binaries are a
@@ -86,15 +86,20 @@ class SttControllerTest {
     void reportsTheBinariesAndOffersAnInstructionRatherThanAButton(@TempDir Path dir) {
         Map<String, Object> state = controllerIn(dir, "").state();
         Map<String, Object> bins = sub(state, "binaries");
-        assertEquals(false, sub(bins, "ffmpeg").get("found"));
         assertEquals(false, sub(bins, "whisper-cli").get("found"));
-        assertNull(sub(bins, "ffmpeg").get("path"));
+        assertNull(sub(bins, "whisper-cli").get("path"));
+        // Card 187 step 5.4: the browser converts its own recording, so this path
+        // needs ONE binary. A pane that still asked for ffmpeg would be asking a
+        // reader to install something nothing here runs.
+        assertNull(bins.get("ffmpeg"), "ffmpeg is not a requirement of this path any more");
+        assertFalse(String.valueOf(state.get("binaryHint")).contains("ffmpeg"),
+                "and the instruction must not name it either: " + state.get("binaryHint"));
         assertNotNull(state.get("binaryHint"), "it says what to run, on this machine");
         assertFalse(String.valueOf(state.get("binaryHint")).isBlank());
     }
 
     @Test
-    void staysSilentAboutTheInstructionOnceBothBinariesAreThere(@TempDir Path dir) throws Exception {
+    void staysSilentAboutTheInstructionOnceTheBinaryIsThere(@TempDir Path dir) throws Exception {
         Path bin = dir.resolve("bin");
         Files.createDirectories(bin);
         for (String name : SttController.BINARIES) {
@@ -106,7 +111,7 @@ class SttControllerTest {
 
         Map<String, Object> state = controllerIn(dir, bin.toString()).state();
         assertNull(state.get("binaryHint"), "nothing to advise when nothing is missing");
-        assertEquals(true, state.get("ready"), "model and both binaries: ready");
+        assertEquals(true, state.get("ready"), "model and binary: ready");
     }
 
     /** The digest is the script's, and the script's was measured against the

@@ -28,7 +28,8 @@ class TranscribeWireTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** Same fake as TranscribeControllerTest: ffmpeg writes the wav, whisper answers. */
+    /** Same fake as TranscribeControllerTest: whisper answers, and it is the only
+     *  child process there is since card 187 step 5.4 retired the conversion. */
     private static final class FakeRunner implements CommandRunner {
         @Override
         public long record(List<String> command, BufferedReader stopSignal) {
@@ -36,11 +37,7 @@ class TranscribeWireTest {
         }
 
         @Override
-        public List<String> runCapturingOutput(List<String> command) throws IOException {
-            if (command.contains("-i")) {
-                Files.writeString(Path.of(command.getLast()), "fake wav bytes");
-                return List.of();
-            }
+        public List<String> runCapturingOutput(List<String> command) {
             return List.of("hallo spectroscope");
         }
     }
@@ -50,7 +47,7 @@ class TranscribeWireTest {
         Path wireFile = dir.resolve("stt.llm.jsonl");
         Path model = dir.resolve("ggml-small.bin");
         Files.writeString(model, "present");
-        byte[] audio = "webm opus bytes".getBytes();
+        byte[] audio = VoiceFixtures.clip();
         try (LlmWireRecorder recorder = new LlmWireRecorder(wireFile, 1_000_000)) {
             TranscribeController controller =
                     new TranscribeController(new FakeRunner(), model, true, recorder);
@@ -70,6 +67,8 @@ class TranscribeWireTest {
         assertEquals("composer", request.get("agentId").asText());
         assertEquals("whisper-cpp", request.get("provider").asText());
         assertEquals("ggml-small.bin", request.get("model").asText());
+        // The url names the pipeline, and there is one process in it now.
+        assertEquals("process://whisper-cli", request.get("url").asText());
         // The spoken bytes ride VERBATIM, base64-encoded for the JSON line.
         assertEquals(Base64.getEncoder().encodeToString(audio), request.get("body").asText());
 
@@ -102,7 +101,7 @@ class TranscribeWireTest {
         try (LlmWireRecorder recorder = new LlmWireRecorder(wireFile, 1_000_000)) {
             TranscribeController controller =
                     new TranscribeController(breaks, model, true, recorder);
-            controller.transcribe("bytes".getBytes());
+            controller.transcribe(VoiceFixtures.clip());
         }
 
         List<String> lines = Files.readAllLines(wireFile);
@@ -133,7 +132,7 @@ class TranscribeWireTest {
             TranscribeController controller =
                     new TranscribeController(new FakeRunner(), model, true, recorder);
 
-            Object body = controller.transcribe("webm opus bytes".getBytes()).getBody();
+            Object body = controller.transcribe(VoiceFixtures.clip()).getBody();
 
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> answer = (java.util.Map<String, Object>) body;
@@ -164,7 +163,7 @@ class TranscribeWireTest {
         try (LlmWireRecorder recorder = new LlmWireRecorder(dir.resolve("f.llm.jsonl"), 1_000_000)) {
             TranscribeController controller =
                     new TranscribeController(new FakeRunner(), absentModel, true, recorder);
-            Object body = controller.transcribe("bytes".getBytes()).getBody();
+            Object body = controller.transcribe(VoiceFixtures.clip()).getBody();
             @SuppressWarnings("unchecked")
             java.util.Map<String, Object> answer = (java.util.Map<String, Object>) body;
             // Either it failed before any exchange (no wire at all), or it

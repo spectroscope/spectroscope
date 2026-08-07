@@ -25,7 +25,7 @@ export const SETTINGS_SECTIONS = [
   "leveling",
   "observability",
   "fleet",
-  // Card 184 leg 2b: speech needs a model this app can fetch and two binaries
+  // Card 184 leg 2b: speech needs a model this app can fetch and one binary
   // it must only report, so it earns a section a link can land on.
   "stt",
   "workspace",
