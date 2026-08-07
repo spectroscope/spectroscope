@@ -29,7 +29,7 @@ class LlmWireRecorderTest {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     private static WireRequest chatRequest(long ts) {
-        return new WireRequest("chat", "openai", "gpt-5.2", "http", "POST",
+        return new WireRequest("openai", "gpt-5.2", "http", "POST",
                 "https://api.openai.com/v1/chat/completions",
                 Map.of("Authorization", "Bearer sk-secret-1234567890",
                         "Content-Type", "application/json"),
@@ -81,7 +81,7 @@ class LlmWireRecorderTest {
         Path file = dir.resolve("s2.llm.jsonl");
         try (LlmWireRecorder recorder = new LlmWireRecorder(file, 1_000_000)) {
             LlmWireTap.Exchange exchange = recorder.bound("main", 1).begin(new WireRequest(
-                    "chat", "anthropic", "m", "sdk", "POST", "https://api.anthropic.com/v1/messages",
+                    "anthropic", "m", "sdk", "POST", "https://api.anthropic.com/v1/messages",
                     Map.of("x-api-key", "sk-ant-secret", "anthropic-version", "2023-06-01"),
                     "sdk-json", "{}", 1));
             exchange.end(new WireOutcome(200, "bytes", null, false, null, 2));
@@ -109,12 +109,12 @@ class LlmWireRecorderTest {
         Path file = dir.resolve("s4.llm.jsonl");
         try (LlmWireRecorder recorder = new LlmWireRecorder(file, 600)) {
             LlmWireTap tap = recorder.bound("main", 1);
-            LlmWireTap.Exchange first = tap.begin(new WireRequest("chat", "openai", "m", "http",
+            LlmWireTap.Exchange first = tap.begin(new WireRequest("openai", "m", "http",
                     "POST", "http://x/v1/chat/completions", Map.of(), "bytes",
                     "A".repeat(700), 1));
             first.line("data: hello");
             first.end(new WireOutcome(200, "bytes", null, false, null, 2));
-            LlmWireTap.Exchange second = tap.begin(new WireRequest("chat", "openai", "m", "http",
+            LlmWireTap.Exchange second = tap.begin(new WireRequest("openai", "m", "http",
                     "POST", "http://x/v1/chat/completions", Map.of(), "bytes", "small", 3));
             second.end(new WireOutcome(200, "bytes", null, false, null, 4));
 
@@ -210,8 +210,8 @@ class LlmWireRecorderTest {
     void singleBodyResponseRidesVerbatim(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("s9.llm.jsonl");
         try (LlmWireRecorder recorder = new LlmWireRecorder(file, 1_000_000)) {
-            LlmWireTap.Exchange exchange = recorder.bound("main", 1).begin(new WireRequest(
-                    "image", "openai", "gpt-image-2", "http", "POST",
+            LlmWireTap.Exchange exchange = recorder.bound("main", 1, "image").begin(new WireRequest(
+                    "openai", "gpt-image-2", "http", "POST",
                     "https://api.openai.com/v1/images/generations", Map.of(), "bytes",
                     "{\"prompt\":\"a cat on a beach\"}", 1));
             exchange.end(new WireOutcome(200, "bytes",

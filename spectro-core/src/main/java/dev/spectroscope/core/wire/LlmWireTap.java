@@ -49,10 +49,10 @@ public interface LlmWireTap {
     }
 
     /**
-     * One outgoing model call.
+     * One outgoing model call. What the call is FOR ({@code chat},
+     * {@code compaction}, {@code image}, {@code stt}) is the call site's
+     * knowledge, not the provider's — it rides on the recorder binding.
      *
-     * @param kind      what the call is for: {@code chat}, {@code compaction},
-     *                  {@code image} or {@code stt}
      * @param provider  the backend label as the session knows it (e.g. "anthropic")
      * @param model     the model id the request names
      * @param transport who owns the socket: {@code http} (our own client) or
@@ -66,7 +66,7 @@ public interface LlmWireTap {
      * @param body      the request body, verbatim
      * @param ts        epoch millis at send time
      */
-    record WireRequest(String kind, String provider, String model, String transport,
+    record WireRequest(String provider, String model, String transport,
                        String method, String url, Map<String, String> headers,
                        String fidelity, String body, long ts) {}
 

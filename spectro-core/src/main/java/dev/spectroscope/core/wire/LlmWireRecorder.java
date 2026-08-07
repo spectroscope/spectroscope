@@ -114,14 +114,26 @@ public final class LlmWireRecorder implements AutoCloseable {
 
     /**
      * Curries the session-level recorder with the calling agent's identity —
-     * the provider itself knows neither agent nor turn.
+     * the provider itself knows neither agent, turn nor purpose.
      *
      * @param agentId the agent whose call this is
      * @param turn    the 1-based turn number, or null where no turn exists (stt)
-     * @return the tap handed into one {@code ProviderRequest}
+     * @return the tap handed into one {@code ProviderRequest}, kind {@code chat}
      */
     public LlmWireTap bound(String agentId, Integer turn) {
-        return request -> new OpenExchange(agentId, turn, request);
+        return bound(agentId, turn, "chat");
+    }
+
+    /**
+     * The full binding — call sites that are not plain chat name themselves.
+     *
+     * @param agentId the agent whose call this is
+     * @param turn    the 1-based turn number, or null where no turn exists
+     * @param kind    what the call is for: chat | compaction | image | stt
+     * @return the tap handed into one provider call
+     */
+    public LlmWireTap bound(String agentId, Integer turn, String kind) {
+        return request -> new OpenExchange(agentId, turn, kind, request);
     }
 
     /** One announced request waiting for its close; buffers received lines. */
@@ -130,16 +142,18 @@ public final class LlmWireRecorder implements AutoCloseable {
         private final String xid = UUID.randomUUID().toString();
         private final String agentId;
         private final Integer turn;
+        private final String kind;
         private final WireRequest request;
         private final List<String> lines = new ArrayList<>();
         private boolean closed;
 
-        private OpenExchange(String agentId, Integer turn, WireRequest request) {
+        private OpenExchange(String agentId, Integer turn, String kind, WireRequest request) {
             this.agentId = agentId;
             this.turn = turn;
+            this.kind = kind;
             this.request = request;
             long bodyBytes = utf8Length(request.body());
-            append(new RequestLine("llm_request", xid, agentId, turn, request.kind(),
+            append(new RequestLine("llm_request", xid, agentId, turn, kind,
                     request.provider(), request.model(), request.transport(),
                     request.method(), request.url(), redact(request.headers()),
                     request.fidelity(), null, bodyBytes, null, request.ts()),
@@ -175,7 +189,7 @@ public final class LlmWireRecorder implements AutoCloseable {
                     outcome.body(), received, bodyBytes);
             Consumer<ExchangeMeta> l = listener;
             if (l != null) {
-                l.accept(new ExchangeMeta(xid, agentId, turn, request.kind(),
+                l.accept(new ExchangeMeta(xid, agentId, turn, kind,
                         request.provider(), request.model(), request.url(),
                         outcome.status(), utf8Length(request.body()), bodyBytes,
                         received.size(), outcome.aborted(), request.fidelity(),
