@@ -20,7 +20,7 @@ import { SessionFolderButtons } from "./SessionFolderButtons";
 import type { DetailSection, ToolCallRef } from "./eventDetail";
 import type { ToolResultDetail } from "../import/toolResultDetail";
 import {
-  LLM_DIR_GLYPH,
+  dirGlyph,
   SummaryLine,
   TEXT_FIELD_EVENTS,
   llmDirection,
@@ -68,6 +68,7 @@ import {
   setTraceFace,
   useTraceFace,
 } from "../state/traceFace";
+import { frameLayer } from "./frameLayer";
 import {
   activeCategories,
   setTraceCategories,
@@ -547,6 +548,10 @@ const TraceRow = memo(function TraceRow(props: {
   // The DIR flag now reads as the LLM direction (derived from the type); the
   // socket direction moves into the tooltip.
   const ld = llmDirection(entry.type);
+  // The arrow is a fact about THIS row's wire: vertical only when the row
+  // really left this machine for a model (card 184). The LLM reading below is
+  // still in the tooltip, labelled as the reading it is.
+  const glyph = dirGlyph(entry.type, entry.dir);
   const socket = entry.dir === "out" ? "client→server" : "server→client";
   const dirLabel: Record<LlmDir, string> = {
     to: t(lang, "trace.dirTo"),
@@ -574,7 +579,7 @@ const TraceRow = memo(function TraceRow(props: {
         <span className="trace-col tabular">{clock(entry.ts)}</span>
         <span className="trace-col trace-col--dt tabular">{dt === null ? "" : `+${dt}`}</span>
         <span className={`trace-col trace-col--llm trace-col--llm-${ld}`} title={dirTitle}>
-          {LLM_DIR_GLYPH[ld]}
+          {glyph}
         </span>
         <span className="trace-col trace-col--proto" title={t(lang, "trace.protoTitle")}>
           {proto}
@@ -1644,6 +1649,21 @@ export function TraceView(props: {
   // each run_start AND each provider_info frame), the current LLM host (from
   // provider_info — socket-only, so replays fall back to what the provider
   // name implies), and resolves a tool_result's tool/url through its callId.
+  // Where our own frames really came from. A session produced HERE rode the
+  // socket of the page that is showing it; an import rode somebody else's, and
+  // this browser has no record of which — so it says so instead of guessing.
+  const appOrigin = useMemo(() => {
+    // An imported file carries its own lines; its frames rode a socket this
+    // browser never saw and whose host is nowhere in the record.
+    if (props.sourceLines !== undefined && props.sourceLines !== null && props.sourceLines.length > 0) {
+      return null;
+    }
+    try {
+      return window.location.host || null;
+    } catch {
+      return null; // no window (tests)
+    }
+  }, [props.sourceLines]);
   const metaBySeq = useMemo(() => {
     const bySeq = new Map<number, { proto: string; host: string }>();
     const nameByCall = new Map<string, string>();
@@ -1688,15 +1708,20 @@ export function TraceView(props: {
         toolName = nameByCall.get(p["callId"] as string) ?? null;
         url = urlByCall.get(p["callId"] as string) ?? null;
       }
+      // The recorded exchange carries its OWN url, which is the fact the host
+      // column should print rather than anything inferred from the provider.
+      if (frameLayer(e.type) === "llm" && typeof p["url"] === "string") {
+        url = p["url"] as string;
+      }
       const imageProvider =
         typeof p["provider"] === "string" && e.type === "image_generated" ? (p["provider"] as string) : null;
       bySeq.set(e.seq, {
         proto: wireProtocol(e.type, provider, toolName),
-        host: wireHost(e.type, provider, llmHost, toolName, url, imageProvider),
+        host: wireHost(e.type, provider, llmHost, toolName, url, imageProvider, appOrigin),
       });
     }
     return bySeq;
-  }, [allEntries]);
+  }, [allEntries, appOrigin]);
 
   // A column this session cannot fill is taken away: a VS Code export records
   // neither host nor model, and a pre-0.4.0 archive no model, so holding those
