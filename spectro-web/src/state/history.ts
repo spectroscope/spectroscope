@@ -39,7 +39,7 @@ export function navigationIntent(current: Route, next: Route, cause: NavCause): 
     // Follow and boot are readers; they may correct the bar, never grow it.
     return "replace";
   }
-  if (isSameSessionSeek(current, next)) {
+  if (isSameSessionSeek(current, next) || isSameViewReading(current, next)) {
     return "replace";
   }
   return "push";
@@ -53,6 +53,36 @@ function isSameSessionSeek(current: Route, next: Route): boolean {
     current.sessionId === next.sessionId &&
     current.tab === next.tab
   );
+}
+
+/**
+ * A move that changes only HOW the same view is being read (card 181): the
+ * selected trace row, the filter set, the spectrum window.
+ *
+ * The seek argument, applied one level in. Dragging a zoom end emits a window
+ * per frame and reading down a trace is one row after another; an entry each
+ * would bury the place the reader actually came from under fifty entries of
+ * that same place looked at slightly differently. So the address keeps up, and
+ * history does not grow.
+ *
+ * Deliberately not folded into {@link isSameSessionSeek}: that one is about a
+ * position in a stored session, this one holds for a live run and an opened
+ * store transcript too, and the two rules answer different questions.
+ */
+function isSameViewReading(current: Route, next: Route): boolean {
+  return formatRoute(withoutView(current)) === formatRoute(withoutView(next));
+}
+
+/** The same address with nothing said about how it was being looked at. */
+function withoutView(route: Route): Route {
+  switch (route.kind) {
+    case "live":
+    case "session":
+    case "import":
+      return { ...route, view: undefined };
+    default:
+      return route;
+  }
 }
 
 // Side-effect seams — the real bar by default, swappable in tests. Guarded so
