@@ -736,8 +736,30 @@ export function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSection | null>(null);
   // What is on screen, as the planner needs it — a ref because follow() runs
   // outside the render (hash events) and after awaits.
-  const placeRef = useRef<Place>({ replayId: null, enteredFleet: null, tab: "chat", settingsOpen: false });
-  placeRef.current = { replayId: replay?.id ?? null, enteredFleet, tab, settingsOpen };
+  const placeRef = useRef<Place>({
+    replayId: null,
+    importPath: null,
+    enteredFleet: null,
+    tab: "chat",
+    settingsOpen: false,
+  });
+  // The address of the transcript on screen, when it has one. Derived here
+  // rather than lower down because placeRef needs it: without it a tab flip on
+  // an imported session writes a session route carrying `import:<kind>:<label>`,
+  // which formatRoute refuses, and the deep link is gone.
+  //
+  // Stamped with the session, like the import bar beside it: a reader can leave
+  // an imported file without anything clearing this, and an address pointing at
+  // the previous transcript is worse than none.
+  const shownStorePath =
+    importedPath !== null && importedPath.sessionId === (replay?.id ?? null) ? importedPath.path : null;
+  placeRef.current = {
+    replayId: replay?.id ?? null,
+    importPath: shownStorePath,
+    enteredFleet,
+    tab,
+    settingsOpen,
+  };
   const fleetsLocked = leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false;
   const fleetsLockedRef = useRef(fleetsLocked);
   fleetsLockedRef.current = fleetsLocked;
@@ -852,15 +874,10 @@ export function App() {
   // a fleet landing (the write is a no-op there).
   const changeTab = (next: ViewTab): void => {
     setTab(next);
-    const wire = next === "chat" ? null : next;
-    commitUrl(
-      enteredFleet !== null
-        ? { kind: "fleet", contextId: enteredFleet }
-        : replay !== null
-          ? { kind: "session", sessionId: replay.id, eventIndex: null, tab: wire }
-          : { kind: "live", tab: wire },
-      "gesture",
-    );
+    // routeOfPlace already knows every one of these cases, INCLUDING the import
+    // one that this branch got wrong. Writing the rule twice is how they came
+    // apart: the planner's copy learned about imports and this one did not.
+    commitUrl(routeOfPlace({ ...placeRef.current, tab: next }), "gesture");
   };
 
   // Settings open/close, with history manners (card 131). Open pushes one
@@ -918,10 +935,6 @@ export function App() {
   // live: import a transcript, click a stored session, and the bar kept naming
   // the import while the header already said archive.
   const shownBar = shownImportBar(importBar, replay?.id ?? null);
-  // Same rule as the bar above: the address belongs to ONE session, and a
-  // reader who moved on must not be offered its folders.
-  const shownStorePath =
-    importedPath !== null && importedPath.sessionId === (replay?.id ?? null) ? importedPath.path : null;
 
   /**
    * Open one agent's own transcript, from beside the session (card 177).
@@ -983,7 +996,9 @@ export function App() {
     // workflow's agent, landed in it, and had no way back — because the thing
     // he came from had never been an address either. Now both are.
     commitUrl(
-      storePath === undefined ? { kind: "live", tab: null } : { kind: "import", path: storePath },
+      // No tab: an import OPENS in the chat, and the address says so by leaving
+      // the segment off. A tab flip afterwards writes it.
+      storePath === undefined ? { kind: "live", tab: null } : { kind: "import", path: storePath, tab: null },
       cause,
     );
     // The dialog is gone by the time this bar matters, so it belongs to the
