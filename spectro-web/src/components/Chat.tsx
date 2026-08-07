@@ -21,6 +21,7 @@ import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { formatTimer, micButtonState } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
+import { useSlashPicker } from "./SlashPicker";
 import type { QueuedMessage } from "../state/sendQueue";
 import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
@@ -210,6 +211,20 @@ export function Chat(props: {
 
   // Card 78 #3: running no longer blocks — App queues the message and sends
   // it when the run ends (the chips above the composer show the waiting line).
+  // Card 183: `/` at the start of the composer completes an installed skill.
+  // The picker gets first refusal on every key, because it owns Enter while its
+  // list is open and the composer owns it the rest of the time.
+  const slash = useSlashPicker(draft, liveView, (text) => {
+    setDraft(text);
+    const el = textareaRef.current;
+    if (el !== null) {
+      el.focus();
+      // The caret lands after the sentence, so the reader carries straight on
+      // with what they actually wanted.
+      requestAnimationFrame(() => el.setSelectionRange(text.length, text.length));
+    }
+  });
+
   const submit = (): void => {
     const text = draft.trim();
     if (text === "" || !liveView) return;
@@ -596,6 +611,10 @@ export function Chat(props: {
               </div>
             )}
             <div className={attachments.dragOver ? "composer-inner drag-over" : "composer-inner"}>
+              {/* Card 183: anchored to the composer row, which is why that row
+                  is the positioned ancestor. It opens UPWARD like the
+                  disclosure menu beside it — there is nothing below. */}
+              {slash.node}
               <input
                 ref={attachments.fileInputRef}
                 type="file"
@@ -643,6 +662,7 @@ export function Chat(props: {
                   autosize();
                 }}
                 onKeyDown={(e) => {
+                  if (slash.handleKey(e)) return;
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
                     submit();

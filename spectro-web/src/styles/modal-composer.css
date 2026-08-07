@@ -132,6 +132,67 @@
   gap: var(--sp-2);
   max-width: var(--content-max);
   margin: 0 auto;
+  /* The slash picker (card 183) anchors here. Nothing else in this row is
+     positioned, so without it the popover would climb to the page. */
+  position: relative;
+}
+
+/* Card 183: the skill completion. Compound selector for the same reason
+   .disc-pop documents — workspace-gear.css loads after this file, so a bare
+   .slash-pop would lose the cascade to .wsg-pop and take its right:0. */
+.wsg-pop.slash-pop {
+  width: min(520px, 100%);
+  left: 0;
+  right: auto;
+  gap: var(--sp-2);
+}
+
+.slash-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.slash-row {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  padding: 6px var(--sp-2);
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.slash-row--on {
+  background: var(--surface-2);
+}
+
+.slash-name {
+  flex: none;
+  color: var(--text);
+}
+
+/* One line, so a long description ends in an ellipsis rather than pushing the
+   name out of the row. The whole text is in the title. */
+.slash-desc {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--fs-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.slash-hint {
+  margin: 0;
 }
 
 .composer textarea {
