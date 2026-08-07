@@ -81,10 +81,27 @@ class TranscribeWireTest {
     @Test
     void aFailedPipelineRecordsTheErrorNotSilence(@TempDir Path dir) throws Exception {
         Path wireFile = dir.resolve("stt-fail.llm.jsonl");
-        Path absentModel = dir.resolve("gone").resolve("ggml-small.bin");
+        // The model is PRESENT and the child process is what fails. Since leg 2b
+        // readiness is probed on every call, an absent model is refused before
+        // the pipeline runs at all — which is the honest answer to "stt is not
+        // installed" and is a different situation from "the pipeline broke".
+        // This test is about the second, so it has to produce the second.
+        Path model = dir.resolve("ggml-small.bin");
+        Files.writeString(model, "present");
+        CommandRunner breaks = new CommandRunner() {
+            @Override
+            public long record(List<String> command, BufferedReader stopSignal) {
+                throw new UnsupportedOperationException("the server never records");
+            }
+
+            @Override
+            public List<String> runCapturingOutput(List<String> command) throws IOException {
+                throw new IOException("whisper-cli exited 1: model load failed — see setup-stt");
+            }
+        };
         try (LlmWireRecorder recorder = new LlmWireRecorder(wireFile, 1_000_000)) {
             TranscribeController controller =
-                    new TranscribeController(new FakeRunner(), absentModel, true, recorder);
+                    new TranscribeController(breaks, model, true, recorder);
             controller.transcribe("bytes".getBytes());
         }
 

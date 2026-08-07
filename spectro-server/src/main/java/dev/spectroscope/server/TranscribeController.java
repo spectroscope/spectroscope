@@ -45,7 +45,12 @@ public class TranscribeController {
     private final CommandRunner runner;
     private final Transcriber transcriber;
     /** Fast, process-free readiness probe: the pinned model must be present. */
-    private final boolean sttAvailable;
+    /** Whether transcription can run RIGHT NOW. A supplier and not a boolean:
+     *  readiness used to be decided in the constructor, so a model that appeared
+     *  while the server ran was invisible until a restart — which is exactly
+     *  what the UI's download produces (card 184 leg 2b). Measured on every
+     *  call now, like SttController's status. */
+    private final java.util.function.BooleanSupplier sttReady;
     /** Named on the llm-wire record so the file says which model transcribed. */
     private final Path modelPath;
     /** Test seam; null means one day-file recorder per request (see {@link #transcribe}). */
@@ -53,7 +58,9 @@ public class TranscribeController {
 
     /** Spring wiring: real child processes, the pinned model under ~/.spectro/models. */
     public TranscribeController() {
-        this(new ProcessCommandRunner(), defaultModelPath(), Files.exists(defaultModelPath()));
+        // No snapshot: the probe below runs per request, so a model downloaded
+        // through the UI works without restarting the server.
+        this(new ProcessCommandRunner(), defaultModelPath(), true);
     }
 
     /**
@@ -61,7 +68,8 @@ public class TranscribeController {
      *
      * @param runner the process boundary — a fake keeps ffmpeg/whisper out of tests
      * @param modelPath the whisper model file the transcriber is pointed at
-     * @param sttAvailable readiness override — {@code false} makes the endpoint answer 503
+     * @param sttAvailable {@code false} pins the endpoint to 503; {@code true} means
+     *                     "probe the model file on every call"
      */
     TranscribeController(CommandRunner runner, Path modelPath, boolean sttAvailable) {
         this(runner, modelPath, sttAvailable, null);
@@ -81,7 +89,10 @@ public class TranscribeController {
                          LlmWireRecorder wireRecorder) {
         this.runner = runner;
         this.transcriber = new Transcriber(runner, modelPath);
-        this.sttAvailable = sttAvailable;
+        // `true` from the production path means "probe the file, every time";
+        // an explicit false is a test saying STT is not there at all.
+        Path probed = modelPath;
+        this.sttReady = sttAvailable ? () -> Files.exists(probed) : () -> false;
         this.modelPath = modelPath;
         this.wireRecorder = wireRecorder;
     }
@@ -122,7 +133,7 @@ public class TranscribeController {
      */
     @PostMapping("/api/transcribe")
     public ResponseEntity<Map<String, Object>> transcribe(@RequestBody byte[] audio) {
-        if (!sttAvailable) {
+        if (!sttReady.getAsBoolean()) {
             // 503, not 500: STT is optional infrastructure. The hint mirrors the CLI's.
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error",
