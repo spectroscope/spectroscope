@@ -135,6 +135,8 @@ function entryOf(x: LlmExchangeMeta): Omit<TraceEntry, "seq"> {
  *         identity (and React its referential calm)
  */
 export function mergeLlmExchanges(trace: TraceEntry[], exchanges: readonly LlmExchangeMeta[]): TraceEntry[] {
+  // Keyed by xid AND side: one exchange is more than one row now, and a key of
+  // xid alone would fold the group back into one on every archive reopen.
   const seen = new Set<string>();
   for (const row of trace) {
     if (row.type !== "llm_exchange") continue;
@@ -149,12 +151,116 @@ export function mergeLlmExchanges(trace: TraceEntry[], exchanges: readonly LlmEx
   }
   if (fresh.length === 0) return trace;
   const out: Omit<TraceEntry, "seq">[] = [...trace];
-  for (const x of fresh) {
+  const place = (row: Omit<TraceEntry, "seq">): void => {
     let at = out.length;
-    while (at > 0 && out[at - 1].ts > x.ts) at--;
-    out.splice(at, 0, entryOf(x));
+    while (at > 0 && out[at - 1].ts > row.ts) at--;
+    out.splice(at, 0, row);
+  };
+  for (const x of fresh) {
+    // The request row an archive has to get back. Its moment is derivable and
+    // exact: the recorder's durationMs IS close minus send, so ts - durationMs
+    // is the instant the POST left — the one the live frame carries directly.
+    if (x.durationMs > 0) {
+      place({
+        dir: "out",
+        ts: x.ts - x.durationMs,
+        type: "llm_request",
+        ...(x.agentId !== "" ? { agentId: x.agentId } : {}),
+        ...(x.model !== "" ? { model: x.model } : {}),
+        payload: {
+          type: "llm_request",
+          xid: x.xid,
+          agentId: x.agentId,
+          turn: x.turn,
+          kind: x.kind,
+          provider: x.provider,
+          model: x.model,
+          transport: "",
+          method: "POST",
+          url: x.url,
+          requestBytes: x.requestBytes,
+          fidelity: x.fidelity,
+          ts: x.ts - x.durationMs,
+        },
+      });
+    }
+    place(entryOf(x));
   }
   return out.map((row, i) => ({ ...row, seq: i + 1 }));
+}
+
+/** The `llm_request` frame: what is known the moment a call LEAVES. Deliberately
+ *  without status, duration or response size — at that instant those facts do
+ *  not exist, and a zero standing in for them would be a claim (card 184). */
+export interface LlmRequestMeta {
+  xid: string;
+  agentId: string;
+  turn: number;
+  kind: string;
+  provider: string;
+  model: string;
+  transport: string;
+  method: string;
+  url: string;
+  requestBytes: number;
+  fidelity: string;
+  ts: number;
+}
+
+export function readRequestFrame(value: unknown): LlmRequestMeta | null {
+  if (typeof value !== "object" || value === null) return null;
+  const v = value as Record<string, unknown>;
+  if (typeof v.xid !== "string" || v.xid === "" || typeof v.ts !== "number") return null;
+  return {
+    xid: v.xid,
+    agentId: str(v.agentId),
+    turn: num(v.turn),
+    kind: str(v.kind) || "chat",
+    provider: str(v.provider),
+    model: str(v.model),
+    transport: str(v.transport),
+    method: str(v.method) || "POST",
+    url: str(v.url),
+    requestBytes: num(v.requestBytes),
+    fidelity: str(v.fidelity),
+    ts: v.ts,
+  };
+}
+
+/** The leaving call in one line: the verb, the path, the size that went out. */
+export function llmRequestSummary(r: LlmRequestMeta): string {
+  const head = r.kind === "chat" ? "" : `${r.kind} · `;
+  return `${head}${r.method} ${pathOf(r.url)} · ${r.provider} · ${formatBytes(r.requestBytes)}`;
+}
+
+/** The closing call in one line: how it went, how much came back, how long. */
+export function llmResponseSummary(x: LlmExchangeMeta): string {
+  const outcome = x.aborted ? "aborted" : x.status ? String(x.status) : "—";
+  const lines = x.responseLines > 0 ? ` · ${x.responseLines} lines` : "";
+  return `${outcome}${lines} · ${formatBytes(x.responseBytes)} · ${formatDuration(x.durationMs)}`;
+}
+
+/**
+ * The two display rows one closing exchange stands for: the response at the
+ * instant it closed, and the summary that closes the group (owner 2026-08-07 —
+ * "die will ich so sehen mit request und response und dann eine
+ * Zusammenfassung"). Display-only, like TraceView's synthetic system_context
+ * row: neither is in the reducer and neither is in any JSONL.
+ *
+ * @param rows the trace as the reducer built it
+ * @return the same array when there is nothing to expand, so React keeps its
+ *         referential calm
+ */
+export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {
+  if (!rows.some((r) => r.type === "llm_exchange")) return rows;
+  const out: TraceEntry[] = [];
+  for (const row of rows) {
+    if (row.type === "llm_exchange") {
+      out.push({ ...row, type: "llm_response" });
+    }
+    out.push(row);
+  }
+  return out.map((r, i) => ({ ...r, seq: i + 1 }));
 }
 
 /** The sentences the detail pane may claim about a recording, per recorded

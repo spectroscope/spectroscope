@@ -108,16 +108,38 @@ const row = (seq: number, ts: number, type = "turn_start"): TraceEntry => ({
 });
 
 describe("mergeLlmExchanges", () => {
-  it("inserts each exchange at its ts and renumbers the rows", () => {
+  // REPLACED, not loosened: an archive has to get the REQUEST row back too, at
+  // the moment the call really left. That moment is exact rather than guessed —
+  // the recorder's durationMs IS close minus send, so ts - durationMs is the
+  // instant the POST went out, the same one the live frame carries directly.
+  // Without it a reopened session shows the answer with no call in front of it,
+  // which is the causally impossible story leg 2 exists to end.
+  it("inserts BOTH rows of each exchange, at their own moments, and renumbers", () => {
     const trace = [row(1, 500), row(2, 1500), row(3, 2500)];
-    const merged = mergeLlmExchanges(trace, [meta({ ts: 2000, xid: "a" })]);
-    expect(merged.map((r) => r.type)).toEqual(["turn_start", "turn_start", "llm_exchange", "turn_start"]);
-    expect(merged.map((r) => r.seq)).toEqual([1, 2, 3, 4]);
-    const inserted = merged[2];
+    const merged = mergeLlmExchanges(trace, [meta({ ts: 2000, xid: "a", durationMs: 700 })]);
+    expect(merged.map((r) => r.type)).toEqual([
+      "turn_start",
+      "llm_request",
+      "turn_start",
+      "llm_exchange",
+      "turn_start",
+    ]);
+    expect(merged.map((r) => r.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(merged[1].ts).toBe(1300); // 2000 - 700: when it LEFT
+    expect(merged[3].ts).toBe(2000); // when it closed
+    expect(merged[1].dir).toBe("out"); // it went TO the provider
+    const inserted = merged[3];
     expect(inserted.dir).toBe("in");
     expect(inserted.agentId).toBe("main");
     expect(inserted.model).toBe("claude-sonnet-5");
     expect((inserted.payload as { xid?: string }).xid).toBe("a");
+  });
+
+  // A duration of zero means the recorder never measured one (an exchange that
+  // never closed), and a request row stamped at the close would be a claim.
+  it("adds no request row when there is no measured duration to place it by", () => {
+    const merged = mergeLlmExchanges([row(1, 500)], [meta({ ts: 2000, xid: "a", durationMs: 0 })]);
+    expect(merged.map((r) => r.type)).toEqual(["turn_start", "llm_exchange"]);
   });
 
   it("dedupes by xid against rows already in the trace", () => {

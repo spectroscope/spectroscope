@@ -66,6 +66,8 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // trace, and a session file that carried it would be a line the Java reader
   // drops as torn.
   "llm_exchange",
+  "llm_request",
+  "llm_response",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

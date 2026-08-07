@@ -80,7 +80,14 @@ import type { RowFace } from "../state/traceFace";
 import { reportCount, useSearch } from "../state/search";
 import { traceHits, traceRowText } from "./traceSearch";
 import type { TraceHitRow } from "./traceSearch";
-import { llmExchangeSummary, readExchange } from "../wire/llmWire";
+import {
+  llmExchangeSummary,
+  llmRequestSummary,
+  llmResponseSummary,
+  readExchange,
+  readRequestFrame,
+  withResponseRows,
+} from "../wire/llmWire";
 import { LlmExchangeDetail } from "./LlmExchangeDetail";
 
 /** agent_message summaries clip their text to this width (CLI parity). */
@@ -151,6 +158,8 @@ export function categoryOf(type: string): Category {
     // `other` off to clear the plumbing rows must not take the one row that
     // says what actually left for the model.
     case "llm_exchange":
+    case "llm_request":
+    case "llm_response":
       return "llm";
     // What an imported transcript recorded around the conversation: the todo
     // list, the prompt queue, the file somebody edited (card 141). Their own
@@ -455,6 +464,17 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
       const x = readExchange(entry.payload);
       return x === null ? compactJson(entry.payload) : llmExchangeSummary(x);
     }
+    // The call leaving. No status, no duration, no response size: at this
+    // moment those facts do not exist, and printing a zero would be a claim.
+    case "llm_request": {
+      const r = readRequestFrame(entry.payload);
+      return r === null ? compactJson(entry.payload) : llmRequestSummary(r);
+    }
+    // The call closing, derived from the summary frame at the same instant.
+    case "llm_response": {
+      const x = readExchange(entry.payload);
+      return x === null ? compactJson(entry.payload) : llmResponseSummary(x);
+    }
     default:
       return compactJson(entry.payload);
   }
@@ -469,9 +489,12 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
  */
 export function searchText(e: TraceEntry): string {
   let body: string;
-  if (e.type === "llm_exchange") {
+  if (e.type === "llm_exchange" || e.type === "llm_response") {
     const x = readExchange(e.payload);
     body = x === null ? compactJson(e.payload) : llmExchangeSummary(x);
+  } else if (e.type === "llm_request") {
+    const r = readRequestFrame(e.payload);
+    body = r === null ? compactJson(e.payload) : llmRequestSummary(r);
   } else {
     body = compactJson(e.payload);
   }
@@ -1196,7 +1219,7 @@ function TraceDetail({
   // line is card 184's repair: the rejected version routed only `structured`
   // here, so insight, wire and source went on reading the metadata frame while
   // the recorded bytes sat one fetch away.
-  const isExchange = entry.type === "llm_exchange";
+  const isExchange = frameLayer(entry.type) === "llm";
   // How the pane reads what it was given. Readable opens first (owner call,
   // 2026-08-03): a source line is escaped JSON inside escaped JSON, and the
   // verbatim form is unreadable at a glance, so opening on it makes the pane
@@ -1313,6 +1336,9 @@ function TraceDetail({
           payload={entry.payload}
           sessionId={llmWireSessionId}
           face={mode === "insight" || mode === "wire" ? mode : "structured"}
+          half={
+            entry.type === "llm_request" ? "request" : entry.type === "llm_response" ? "response" : "both"
+          }
         />
       ) : mode === "structured" ? (
         <EventStructured
@@ -1470,7 +1496,13 @@ export function TraceView(props: {
   // Prepend the synthetic system_context frame once, at the top, when a run has
   // started and the context is loaded. It is display-only — never in the reducer,
   // never in the JSONL.
+  // Every closing exchange also stands for the moment it CLOSED. The response
+  // row is display-only, exactly like the synthetic system_context row below:
+  // never in the reducer, never in any JSONL, and it carries the same payload
+  // so the detail pane reads one shape wherever a row came from.
+  const withPairs = useMemo(() => withResponseRows(entries), [entries]);
   const allEntries = useMemo<TraceEntry[]>(() => {
+    const entries = withPairs;
     if (ctx === null || entries.length === 0) return entries;
     const sys: TraceEntry = {
       seq: 0,
@@ -1486,7 +1518,7 @@ export function TraceView(props: {
       },
     };
     return [sys, ...entries];
-  }, [ctx, entries, lang]);
+  }, [withPairs, ctx, lang]);
 
   // Agents seen in this stream, first-seen order — the chip row's catalog.
   const agents = useMemo(() => {

@@ -359,56 +359,68 @@ function parseLines(lines: readonly string[]): unknown[] {
 }
 
 /** The literal exchange, in the order it happened on the socket. */
-function WireFace({ bodies, lang }: { bodies: ExchangeBodies; lang: Lang }) {
+function WireFace({
+  bodies,
+  lang,
+  half,
+}: {
+  bodies: ExchangeBodies;
+  lang: Lang;
+  half: "request" | "response" | "both";
+}) {
   const { request, response } = bodies;
   const [allLines, setAllLines] = useState(false);
   const shown = allLines ? response.lines : response.lines.slice(0, RESPONSE_LINES_SHOWN);
   const headers = Object.entries(request.headers);
   return (
     <div className="ed">
-      <div className="ed-sec">
-        <span className="ed-label mono">request</span>
-        {sentenceOf(request, lang)}
-        {/* The request line as HTTP writes it, then the headers as recorded,
+      {half !== "response" && (
+        <div className="ed-sec">
+          <span className="ed-label mono">request</span>
+          {sentenceOf(request, lang)}
+          {/* The request line as HTTP writes it, then the headers as recorded,
             then a blank line and the body: the shape of the thing that left. */}
-        <pre className="trace-detail-raw trace-detail-raw--wrap lw-http">
-          {[request.method, request.url].filter((s) => s !== "").join(" ")}
-        </pre>
-        {headers.length > 0 ? (
           <pre className="trace-detail-raw trace-detail-raw--wrap lw-http">
-            {headers.map(([k, v]) => `${k}: ${v}`).join("\n")}
+            {[request.method, request.url].filter((s) => s !== "").join(" ")}
           </pre>
-        ) : (
-          <p className="trace-source-note">{t(lang, "trace.llm.wire.noHeaders")}</p>
-        )}
-        {request.body !== null && <SegmentedText text={request.body} lang={lang} />}
-        {emptyNote(request, false, lang)}
-      </div>
-      <div className="ed-sec">
-        <span className="ed-label mono">response</span>
-        {sentenceOf(response, lang)}
-        {response.error !== "" && <p className="trace-source-note">{response.error}</p>}
-        {response.body !== null && <SegmentedText text={response.body} lang={lang} />}
-        {response.body === null &&
-          shown.map((line, i) => (
-            <div key={i} className="lw-line">
-              <span className="lw-line-no mono">{i + 1}</span>
-              <SegmentedText text={line} lang={lang} />
-            </div>
-          ))}
-        {response.body === null && response.lines.length > RESPONSE_LINES_SHOWN && !allLines && (
-          <p className="trace-source-cap">
-            {t(lang, "trace.llm.linesCap", {
-              shown: counted(shown.length, lang),
-              total: counted(response.lines.length, lang),
-            })}{" "}
-            <button type="button" className="trace-source-more" onClick={() => setAllLines(true)}>
-              {t(lang, "trace.source.showAll")}
-            </button>
-          </p>
-        )}
-        {emptyNote(response, true, lang)}
-      </div>
+          {headers.length > 0 ? (
+            <pre className="trace-detail-raw trace-detail-raw--wrap lw-http">
+              {headers.map(([k, v]) => `${k}: ${v}`).join("\n")}
+            </pre>
+          ) : (
+            <p className="trace-source-note">{t(lang, "trace.llm.wire.noHeaders")}</p>
+          )}
+          {request.body !== null && <SegmentedText text={request.body} lang={lang} />}
+          {emptyNote(request, false, lang)}
+        </div>
+      )}
+      {half !== "request" && (
+        <div className="ed-sec">
+          <span className="ed-label mono">response</span>
+          {sentenceOf(response, lang)}
+          {response.error !== "" && <p className="trace-source-note">{response.error}</p>}
+          {response.body !== null && <SegmentedText text={response.body} lang={lang} />}
+          {response.body === null &&
+            shown.map((line, i) => (
+              <div key={i} className="lw-line">
+                <span className="lw-line-no mono">{i + 1}</span>
+                <SegmentedText text={line} lang={lang} />
+              </div>
+            ))}
+          {response.body === null && response.lines.length > RESPONSE_LINES_SHOWN && !allLines && (
+            <p className="trace-source-cap">
+              {t(lang, "trace.llm.linesCap", {
+                shown: counted(shown.length, lang),
+                total: counted(response.lines.length, lang),
+              })}{" "}
+              <button type="button" className="trace-source-more" onClick={() => setAllLines(true)}>
+                {t(lang, "trace.source.showAll")}
+              </button>
+            </p>
+          )}
+          {emptyNote(response, true, lang)}
+        </div>
+      )}
     </div>
   );
 }
@@ -427,6 +439,7 @@ export function LlmExchangeDetail({
   payload,
   sessionId,
   face,
+  half = "both",
 }: {
   /** The row's own frame — the xid to fetch by is read out of it. */
   payload: unknown;
@@ -435,6 +448,10 @@ export function LlmExchangeDetail({
   sessionId: string | null;
   /** Which face this row is showing. Every face reads the SAME fetch. */
   face: "structured" | "insight" | "wire";
+  /** Which half of the exchange this row IS. A request row shows the request
+   *  and says nothing about an answer it cannot have seen yet; a response row
+   *  shows what came back; the summary row shows both, as it always did. */
+  half?: "request" | "response" | "both";
 }) {
   const lang = useLang();
   const meta = useMemo(() => readExchange(payload), [payload]);
@@ -490,7 +507,7 @@ export function LlmExchangeDetail({
   }
 
   if (face === "wire") {
-    return <WireFace bodies={bodies} lang={lang} />;
+    return <WireFace bodies={bodies} lang={lang} half={half} />;
   }
 
   if (face === "insight") {
