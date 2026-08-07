@@ -18,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
  * does it accept our auth? Probes with an EMPTY resourceSpans batch — a valid
  * OTLP request that ingests nothing — so a green light means "a real run's
  * spans will land". Never echoes the auth value, and wears the full local
- * fence ({@link FleetController#isLocalOrigin} + Origin check): the answer
+ * fence ({@link LocalOrigin#isLocalOrigin} + Origin check): the answer
  * fingerprints a running spectro and names the configured endpoint, neither
  * of which a foreign page may read. No {@code @CrossOrigin} — the UI is
  * same-origin (one jar) and the vite dev server proxies {@code /api}.
@@ -58,8 +58,8 @@ public class OtlpProbeController {
      */
     @GetMapping("/api/otlp/probe")
     public ResponseEntity<Map<String, Object>> probe(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         SpectroConfig config = configLoader.get();

@@ -21,7 +21,7 @@ import java.util.regex.Pattern;
  * ({@code ~/.spectro/images/<sha256>.<ext>}) into a session's workspace — the
  * gallery's "copy to workspace" button. This is a filesystem WRITE, so it wears
  * the full local-origin fence like every other write endpoint (the key writer,
- * the settings PUTs, fleet control): {@link FleetController#isLocalOrigin}
+ * the settings PUTs, fleet control): {@link LocalOrigin#isLocalOrigin}
  * against a DNS-rebound Host plus the Origin check, and {@code consumes=json}
  * to force the preflight a foreign page cannot pass. Then defense in depth on
  * the inputs: the image name must be exactly a store name (64 hex + image
@@ -82,8 +82,8 @@ public class ImageCopyController {
      */
     @PostMapping(value = "/api/images/copy-to-workspace", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> copy(@RequestBody CopyRequest req, HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         if (req.file() == null || !IMAGE_FILE.matcher(req.file()).matches()) {

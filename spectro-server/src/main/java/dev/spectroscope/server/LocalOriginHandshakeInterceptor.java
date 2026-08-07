@@ -17,8 +17,8 @@ import java.util.Map;
  * setAllowedOrigins("*")} with no check — so any page the operator had open in
  * a browser could connect and drive the local agent (user_message +
  * self-approved permission_response = RCE). This applies the SAME fence
- * ({@link FleetController#isLocalOrigin} + {@link
- * FleetController#originIsLoopbackOrAbsent}) to the handshake, one source of
+ * ({@link LocalOrigin#isLocalOrigin} + {@link
+ * LocalOrigin#originIsLoopbackOrAbsent}) to the handshake, one source of
  * truth. It is port-agnostic: the Origin check keys on the HOST, so every dev
  * port (vite 5173, server 8080/8090/8098) passes, an origin-less local tool
  * passes (it keeps reading every event), and only a foreign browser origin is
@@ -31,8 +31,8 @@ public class LocalOriginHandshakeInterceptor implements HandshakeInterceptor {
             WebSocketHandler wsHandler, Map<String, Object> attributes) {
         if (request instanceof ServletServerHttpRequest servlet) {
             HttpServletRequest req = servlet.getServletRequest();
-            boolean local = FleetController.isLocalOrigin(req)
-                    && FleetController.originIsLoopbackOrAbsent(req);
+            boolean local = LocalOrigin.isLocalOrigin(req)
+                    && LocalOrigin.originIsLoopbackOrAbsent(req);
             if (!local) {
                 response.setStatusCode(HttpStatus.FORBIDDEN);
                 return false;

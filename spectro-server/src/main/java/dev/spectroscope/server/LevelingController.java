@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
  * The ladder over REST: read the state, report a visited surface, switch mode,
  * restart, and tick a criterion by hand.
  *
- * <p>Every endpoint wears the full local fence ({@link FleetController#isLocalOrigin}
+ * <p>Every endpoint wears the full local fence ({@link LocalOrigin#isLocalOrigin}
  * plus the Origin check) and refuses with a blank 404, the house answer for
  * "not for you". The reads are fenced too, because the state names sessions
  * this operator has worked in.</p>
@@ -155,8 +155,8 @@ public class LevelingController {
     }
 
     private static boolean refused(HttpServletRequest request) {
-        return !FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request);
+        return !LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request);
     }
 
     /** Strict on purpose: a typo becomes a 400, never a silent fallback to a different mode. */

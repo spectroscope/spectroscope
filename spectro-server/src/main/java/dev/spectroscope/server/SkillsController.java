@@ -61,8 +61,8 @@ public class SkillsController {
     }
 
     private static boolean fenced(HttpServletRequest request) {
-        return FleetController.isLocalOrigin(request)
-                && FleetController.originIsLoopbackOrAbsent(request);
+        return LocalOrigin.isLocalOrigin(request)
+                && LocalOrigin.originIsLoopbackOrAbsent(request);
     }
 
     /** All skills of both roots, disabled ones included, plus the catalogue shelf.

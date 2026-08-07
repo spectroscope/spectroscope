@@ -175,7 +175,7 @@ public class WorkspaceController {
             @RequestParam(value = "session", required = false) String session,
             @RequestParam(value = "scope", required = false) String scope,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         Scope wanted = scopeOf(scope);
@@ -360,7 +360,7 @@ public class WorkspaceController {
             @RequestParam(value = "session", required = false) String session,
             @RequestParam(value = "scope", required = false) String scope,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         Scope wanted = scopeOf(scope);

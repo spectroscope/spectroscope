@@ -93,8 +93,8 @@ public class SessionsController {
      */
     @GetMapping("/api/sessions/{id}/export")
     public ResponseEntity<String> exportSession(@PathVariable String id, HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request)
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)
                 || !SESSION_ID.matcher(id).matches()) {
             return ResponseEntity.status(404).build();
         }
@@ -219,7 +219,7 @@ public class SessionsController {
     /**
      * Save an API key from the onboarding UI — LOCAL browsers only. Security:
      * {@code consumes=json} makes a cross-origin POST a CORS preflight the policy
-     * rejects, and a non-local {@code Host} answers 404 ({@link FleetController#isLocalOrigin});
+     * rejects, and a non-local {@code Host} answers 404 ({@link LocalOrigin#isLocalOrigin});
      * both together block a malicious page from writing the key. It lands in
      * {@code ~/.spectro/.env} at 0600, which the provider build reads on the next
      * fresh chat — no restart. Presence-only: the value is never echoed back and
@@ -237,7 +237,7 @@ public class SessionsController {
         // braces even though the controller-wide @CrossOrigin(*) is now gone: a
         // same-origin page and the Vite dev proxy send a loopback Origin; a
         // non-browser client sends none; a cross-site page is refused.
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         String keyEnv = body == null ? null : SpectroConfig.keyEnvFor(body.provider());
@@ -270,7 +270,7 @@ public class SessionsController {
      */
     @GetMapping("/api/settings/env")
     public ResponseEntity<Map<String, Object>> operatorSettings(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build();
         }
         Map<String, Object> fromFile = DotEnvSettings.read(SpectroConfig.dotEnvPath());
@@ -314,7 +314,7 @@ public class SessionsController {
     @PostMapping(value = "/api/settings/env", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> saveSetting(@RequestBody(required = false) SettingBody body,
                                                            HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         String name = body == null ? null : body.name();
@@ -607,7 +607,7 @@ public class SessionsController {
      */
     @GetMapping("/api/images/{file}")
     public ResponseEntity<byte[]> image(@PathVariable String file, HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build();
         }
         if (!IMAGE_NAME.matcher(file).matches()) {

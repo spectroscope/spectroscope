@@ -40,7 +40,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  * or {@code {error}}. The client parses line-wise off a fetch reader.</p>
  *
  * <p>Security: this endpoint spends the operator's API key, so it wears BOTH
- * fences the key-write endpoint wears — {@link FleetController#isLocalOrigin}
+ * fences the key-write endpoint wears — {@link LocalOrigin#isLocalOrigin}
  * against remote/rebound callers and a loopback-or-absent Origin check against
  * cross-site pages (CSRF). No {@code @CrossOrigin}: a wildcard CORS policy let a
  * foreign page deliver a large JSON body (the digest) that Spring materializes
@@ -105,7 +105,7 @@ public class ExplainController {
     @PostMapping(value = "/api/explain", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StreamingResponseBody> explain(@RequestBody(required = false) ExplainBody body,
                                                          HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         if (body == null || body.digest() == null || body.digest().isBlank()) {

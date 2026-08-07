@@ -45,7 +45,7 @@ import java.util.regex.Pattern;
  * policy on writes that can change what the agent is allowed to do was
  * needless exposure with no matching need — narrowed per the final review.</p>
  *
- * <p>Beyond CORS, the whole API wears {@link FleetController#isLocalOrigin}
+ * <p>Beyond CORS, the whole API wears {@link LocalOrigin#isLocalOrigin}
  * against DNS rebinding — a rebound page's requests are same-origin to the
  * browser, so CORS never applies, and only the Host header betrays them. The
  * read side matters too: it echoes the effective config and the raw layers,
@@ -225,8 +225,8 @@ public class SettingsController {
      * @throws ResponseStatusException 404 when the fence refuses
      */
     private static void requireLocal(HttpServletRequest request, boolean write) {
-        boolean allowed = FleetController.isLocalOrigin(request)
-                && (!write || FleetController.originIsLoopbackOrAbsent(request));
+        boolean allowed = LocalOrigin.isLocalOrigin(request)
+                && (!write || LocalOrigin.originIsLoopbackOrAbsent(request));
         if (!allowed) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND);
         }
