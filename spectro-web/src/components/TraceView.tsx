@@ -445,6 +445,24 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
   }
 }
 
+/**
+ * The text the chip-row filter searches a row by: type, agent, and the frame
+ * itself — except for llm_exchange, which is searched by its SUMMARY. The
+ * frame contract carries no body, but that must be client structure, not
+ * server discipline: a widened frame's extra field would otherwise ride
+ * compactJson straight into the filter text. Exported for the tests.
+ */
+export function searchText(e: TraceEntry): string {
+  let body: string;
+  if (e.type === "llm_exchange") {
+    const x = readExchange(e.payload);
+    body = x === null ? compactJson(e.payload) : llmExchangeSummary(x);
+  } else {
+    body = compactJson(e.payload);
+  }
+  return `${e.type} ${e.agentId ?? ""} ${body}`;
+}
+
 /** Rows are memoized: during a delta flood only the appended rows render. */
 const TraceRow = memo(function TraceRow(props: {
   entry: TraceEntry;
@@ -1473,7 +1491,7 @@ export function TraceView(props: {
       if (llmDir !== "all" && llmDirection(e.type) !== llmDir) return false;
       if (!inCategories(e, active, callIndex)) return false;
       if (q === "") return true;
-      return `${e.type} ${e.agentId ?? ""} ${compactJson(e.payload)}`.toLowerCase().includes(q);
+      return searchText(e).toLowerCase().includes(q);
     });
   }, [allEntries, query, llmDir, active, agentFilter, capSeq, otelOn, callIndex]);
 

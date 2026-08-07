@@ -160,7 +160,7 @@ export function mergeLlmExchanges(trace: TraceEntry[], exchanges: readonly LlmEx
 /** The sentences the detail pane may claim about a recording, per recorded
  *  fidelity. A fidelity nobody wrote a sentence for maps to null and the pane
  *  prints the word itself — the bare word is honest, a borrowed sentence is not. */
-const FIDELITY_KEYS: ReadonlySet<string> = new Set(["bytes", "sdk-json", "sdk-events"]);
+const FIDELITY_KEYS: ReadonlySet<string> = new Set(["bytes", "sdk-json", "sdk-events", "encoded"]);
 
 export function fidelityKey(fidelity: string): string | null {
   return FIDELITY_KEYS.has(fidelity) ? `trace.llm.fid.${fidelity}` : null;
@@ -169,11 +169,15 @@ export function fidelityKey(fidelity: string): string | null {
 /** One side of a fetched exchange, read tolerantly off the endpoint's answer. */
 export interface LlmExchangeSide {
   fidelity: string;
-  /** The single payload, verbatim — the request always, the response when it
-   *  was not streamed. */
+  /** The single payload, verbatim — the request unless the recorder dropped
+   *  it at its ceiling, the response when it was not streamed. */
   body: string | null;
   /** The streamed response's lines, verbatim, in wire order. */
   lines: readonly string[];
+  /** "ceiling" when the recorder dropped the body at its size ceiling — the
+   *  ledger row still carries the measured size. Empty when nothing was
+   *  dropped, so the pane can tell a dropped body from a missing one. */
+  omitted: string;
   method: string;
   url: string;
   status: number;
@@ -192,6 +196,7 @@ function readSide(value: unknown): LlmExchangeSide {
     fidelity: str(v.fidelity),
     body: typeof v.body === "string" ? v.body : null,
     lines: Array.isArray(v.lines) ? v.lines.filter((l): l is string => typeof l === "string") : [],
+    omitted: str(v.omitted),
     method: str(v.method),
     url: str(v.url),
     status: num(v.status),

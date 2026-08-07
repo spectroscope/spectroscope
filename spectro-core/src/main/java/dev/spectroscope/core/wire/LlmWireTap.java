@@ -9,12 +9,15 @@ import java.util.Map;
  * (card 184). A provider that gets no tap records nothing and behaves
  * byte-identically to before.
  *
- * <p>Fidelity is part of the record, never implied: {@code "bytes"} means the
- * recorded string IS what went over the socket (our own HTTP providers post the
- * exact string they hand the tap); {@code "sdk-json"}/{@code "sdk-events"} mean
- * the SDK owned the socket and the record is the SDK's own serialization of the
- * same payload — measured equal to the received bytes in the loopback tests,
- * but labeled for what it is.</p>
+ * <p>Fidelity is part of the record, never implied, and each label is a
+ * separately MEASURED promise: {@code "bytes"} — the recorded string IS what
+ * went over the socket (our own HTTP providers post the exact string they hand
+ * the tap); {@code "sdk-json"} — the SDK owned the socket and the recorded
+ * request body is byte-equal to what it posts (loopback-proven);
+ * {@code "sdk-events"} — the stream reconstructed from the SDK's typed events,
+ * content-equal per event, field order not guaranteed, keep-alives absent;
+ * {@code "encoded"} — the recording's own base64 of real input bytes that
+ * never rode a socket as a string (the stt audio).</p>
  */
 public interface LlmWireTap {
 
@@ -32,7 +35,11 @@ public interface LlmWireTap {
 
         /**
          * One received stream line, exactly as read off the connection
-         * (SSE {@code data:} payloads, keep-alives, NDJSON lines).
+         * (SSE {@code data:} payloads, keep-alives, NDJSON lines). On an
+         * aborted exchange the record holds the lines CONSUMED before the
+         * teardown; bytes the server had sent but nothing had read are
+         * deliberately dropped — draining them would resurrect the slow-cancel
+         * bug (card 78).
          *
          * @param rawLine the line verbatim, without the trailing newline
          */

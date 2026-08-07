@@ -445,8 +445,14 @@ public final class OpenAiCompatProvider implements LlmProvider {
         private final CancelSignal signal;
         private final BufferedReader lines;
         private final Runnable closeResponse;
+        /** The status the server actually answered — endWire records it, never a literal. */
+        private final int httpStatus;
         // The open llm-wire exchange, or null when the request carries no tap.
         private final LlmWireTap.Exchange wire;
+        /** One end() per exchange, whatever path closes it — the HTTP-error
+         *  path ends inside the callback AND rethrows into the transport
+         *  catch, and a record with two closings would lie twice. */
+        private boolean wireEnded;
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         // Raw inline <think> tags in content (server-side reasoning parsing off)
         // are split into thinking/answer — shared with the Ollama provider.
@@ -476,36 +482,49 @@ public final class OpenAiCompatProvider implements LlmProvider {
                             model, "http", "POST", url, requestHeaders(), "bytes",
                             bodyJson, System.currentTimeMillis()));
             this.wire = wire;
-            var open = http.post()
-                    .uri(url)
-                    .contentType(MediaType.APPLICATION_JSON)
-                    .body(bodyJson)
-                    .exchange((clientRequest, clientResponse) -> {
-                        if (clientResponse.getStatusCode().isError()) {
-                            String detail = new String(clientResponse.getBody().readAllBytes(),
-                                    StandardCharsets.UTF_8);
-                            clientResponse.close();
-                            if (wire != null) {
-                                wire.end(new LlmWireTap.WireOutcome(
+            final OpenResponse open;
+            try {
+                open = http.post()
+                        .uri(url)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .body(bodyJson)
+                        .exchange((clientRequest, clientResponse) -> {
+                            if (clientResponse.getStatusCode().isError()) {
+                                String detail = new String(clientResponse.getBody().readAllBytes(),
+                                        StandardCharsets.UTF_8);
+                                clientResponse.close();
+                                endWireOnce(new LlmWireTap.WireOutcome(
                                         clientResponse.getStatusCode().value(), "bytes",
                                         detail, false, null, System.currentTimeMillis()));
+                                throw classifyHttpFailure(
+                                        clientResponse.getStatusCode().value(), detail);
                             }
-                            throw classifyHttpFailure(
-                                    clientResponse.getStatusCode().value(), detail);
-                        }
-                        // The close handle is the RAW body stream, NEVER the Spring
-                        // response: Spring's close() DRAINS the remaining body first
-                        // (StreamUtils.drain), so a mid-generation cancel would sit on
-                        // the cancelling thread reading the model's whole remaining
-                        // output while the server never sees a disconnect (15.8 s
-                        // measured against llama-server, card 78). The raw JDK stream
-                        // close cancels the body subscription and tears the connection
-                        // down — the server notices and stops generating.
-                        InputStream bodyStream = clientResponse.getBody();
-                        return new OpenResponse(new BufferedReader(new InputStreamReader(
-                                bodyStream, StandardCharsets.UTF_8)),
-                                () -> closeBody(bodyStream));
-                    }, false);
+                            // The close handle is the RAW body stream, NEVER the Spring
+                            // response: Spring's close() DRAINS the remaining body first
+                            // (StreamUtils.drain), so a mid-generation cancel would sit on
+                            // the cancelling thread reading the model's whole remaining
+                            // output while the server never sees a disconnect (15.8 s
+                            // measured against llama-server, card 78). The raw JDK stream
+                            // close cancels the body subscription and tears the connection
+                            // down — the server notices and stops generating.
+                            InputStream bodyStream = clientResponse.getBody();
+                            return new OpenResponse(clientResponse.getStatusCode().value(),
+                                    new BufferedReader(new InputStreamReader(
+                                            bodyStream, StandardCharsets.UTF_8)),
+                                    () -> closeBody(bodyStream));
+                        }, false);
+            } catch (RuntimeException failure) {
+                // Transport failure BEFORE any byte was answered (connect refused,
+                // DNS, TLS — Spring throws before the callback runs), and the
+                // HTTP-error rethrow above. end() is idempotent, so the pair
+                // closes exactly once; the null status is the WireOutcome
+                // contract's "the connection never answered" arm — without this
+                // catch, every retry attempt left a dangling llm_request line.
+                endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, false,
+                        failure.toString(), System.currentTimeMillis()));
+                throw failure;
+            }
+            this.httpStatus = open.status();
             this.lines = open.reader();
             this.closeResponse = open.close();
             if (signal != null) {
@@ -667,30 +686,37 @@ public final class OpenAiCompatProvider implements LlmProvider {
         }
 
         /**
-         * Closes the wire exchange, when one is recording. Status is 200 because
-         * the stream had opened (the HTTP-error path closes inside the exchange
-         * callback and never reaches the iterator); teed lines stay with the
-         * record even on an abort, because a partial answer is still an answer
-         * received.
+         * Closes the wire exchange, when one is recording. The status is the one
+         * the server REALLY answered (captured in the exchange callback — a
+         * redirect or an odd 2xx must never be recorded as a fabricated 200);
+         * teed lines stay with the record even on an abort, because a partial
+         * answer is still an answer received.
          *
          * @param aborted true when a cancel tore the stream down
          * @param error   the failure in one line, null on a clean close
          */
         private void endWire(boolean aborted, String error) {
-            if (wire != null) {
-                wire.end(new LlmWireTap.WireOutcome(200, "bytes", null, aborted, error,
-                        System.currentTimeMillis()));
+            endWireOnce(new LlmWireTap.WireOutcome(httpStatus, "bytes", null, aborted, error,
+                    System.currentTimeMillis()));
+        }
+
+        /** The single closing gate every path funnels through. */
+        private void endWireOnce(LlmWireTap.WireOutcome outcome) {
+            if (wire != null && !wireEnded) {
+                wireEnded = true;
+                wire.end(outcome);
             }
         }
     }
 
     /**
-     * Reader plus close hook for a response kept open past the exchange call.
+     * Status, reader and close hook for a response kept open past the exchange call.
      *
+     * @param status the HTTP status the server actually answered
      * @param reader line reader over the still-open response body
      * @param close  releases the underlying HTTP response
      */
-    private record OpenResponse(BufferedReader reader, Runnable close) {}
+    private record OpenResponse(int status, BufferedReader reader, Runnable close) {}
 
     /** Closes the raw body stream, quietly — closing an already-broken stream is
      *  fine; the point is the prompt subscription cancel + connection teardown. */

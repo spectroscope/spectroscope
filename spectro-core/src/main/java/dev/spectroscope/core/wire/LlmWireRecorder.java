@@ -5,9 +5,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.wire.LlmWireTap.WireOutcome;
 import dev.spectroscope.core.wire.LlmWireTap.WireRequest;
 
-import java.io.BufferedWriter;
 import java.io.IOException;
-import java.io.UncheckedIOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -56,9 +56,10 @@ public final class LlmWireRecorder implements AutoCloseable {
     private final Path file;
     private final long ceilingBytes;
     private final Object lock = new Object();
-    private BufferedWriter writer;           // opened lazily on the first exchange
     private long bytesWritten;
-    private boolean truncated;
+    private boolean seeded;                  // bytesWritten primed from the existing file
+    private boolean truncated;               // latching: past the ceiling, every body is dropped
+    private boolean closed;                  // a closed recorder writes nothing, ever again
     private volatile Consumer<ExchangeMeta> listener;
 
     /**
@@ -87,12 +88,19 @@ public final class LlmWireRecorder implements AutoCloseable {
 
     /**
      * Where a session's wire file lives — shared with the read/download/delete
-     * endpoints so the path rule exists once.
+     * endpoints so the path rule exists once. An id is NEVER trusted as a path
+     * (the same jail {@code SessionStore.sessionFile} keeps): anything but a
+     * plain basename is refused, so a ws {@code ?resume=} id cannot steer the
+     * sidecar into another directory.
      *
      * @param sessionId the session file's basename
      * @return the sidecar path under {@code ~/.spectro/llm-wire/}
+     * @throws IllegalArgumentException when the id is not a plain basename
      */
     public static Path fileFor(String sessionId) {
+        if (sessionId == null || !sessionId.matches("[A-Za-z0-9][A-Za-z0-9-]*")) {
+            throw new IllegalArgumentException("not a session id: " + sessionId);
+        }
         return Path.of(System.getProperty("user.home"), ".spectro", "llm-wire",
                 sessionId + ".llm.jsonl");
     }
@@ -221,57 +229,94 @@ public final class LlmWireRecorder implements AutoCloseable {
     }
 
     /**
-     * Whether a payload of this size still fits under the ceiling; the first
-     * miss writes the single truncation marker. Caller holds the lock.
+     * Whether a payload of this size still fits under the ceiling. LATCHING:
+     * the first miss writes the single truncation marker and every later body
+     * is dropped too — the marker means "bodies stop here", exactly as the
+     * class doc promises. Caller holds the lock.
      */
     private boolean fits(long payloadBytes) {
+        seedIfNeeded();
+        if (truncated) {
+            return false;
+        }
         if (bytesWritten + payloadBytes <= ceilingBytes) {
             return true;
         }
-        if (!truncated) {
-            truncated = true;
-            writeLine(new TruncatedLine("llm_wire_truncated", bytesWritten, ceilingBytes,
-                    System.currentTimeMillis()));
-        }
+        truncated = true;
+        writeLine(new TruncatedLine("llm_wire_truncated", bytesWritten, ceilingBytes,
+                System.currentTimeMillis()));
         return false;
     }
 
-    /** Serializes one record and appends it, flushed. Caller holds the lock. */
-    private void writeLine(Object record) {
+    /**
+     * Primes the byte count from a file that already exists — a resumed session
+     * (or the shared stt day file) must not get a fresh ceiling allowance per
+     * recorder instance. A file already past the ceiling latches truncation
+     * WITHOUT a second marker: the one that crossed wrote it. Caller holds the lock.
+     */
+    private void seedIfNeeded() {
+        if (seeded) {
+            return;
+        }
+        seeded = true;
         try {
-            if (writer == null) {
-                Files.createDirectories(file.getParent());
-                writer = Files.newBufferedWriter(file, StandardCharsets.UTF_8,
-                        StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+            if (Files.exists(file)) {
+                bytesWritten = Files.size(file);
+                truncated = bytesWritten >= ceilingBytes;
             }
-            String json = JSON.writeValueAsString(record);
-            writer.write(json);
-            writer.write('\n');
-            writer.flush();
-            bytesWritten += utf8Length(json) + 1;
+        } catch (IOException unreadable) {
+            reportWriteFailureOnce(unreadable);
+        }
+    }
+
+    /**
+     * Serializes one record and appends it as ONE atomic write. No handle is
+     * held between lines: each append opens the file with {@code O_APPEND},
+     * writes the whole line in a single channel write and closes — so two
+     * recorders on the SAME file (the stt day file, a doubly-resumed session)
+     * cannot interleave fragments mid-line, and {@code close()} has nothing to
+     * leak. The pattern {@code SessionStore.append} already trusts. Caller
+     * holds the lock.
+     */
+    private void writeLine(Object record) {
+        if (closed) {
+            // A late end() after close (tab closed mid-generation) must not
+            // resurrect the file — the truth it would add is one response line;
+            // the file it could recreate is one the user may just have deleted.
+            reportWriteFailureOnce(new IOException("recording after close dropped"));
+            return;
+        }
+        try {
+            seedIfNeeded();
+            Files.createDirectories(file.getParent());
+            byte[] line = (JSON.writeValueAsString(record) + "\n")
+                    .getBytes(StandardCharsets.UTF_8);
+            try (FileChannel channel = FileChannel.open(file, StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE, StandardOpenOption.APPEND)) {
+                channel.write(ByteBuffer.wrap(line));
+            }
+            bytesWritten += line.length;
         } catch (IOException failure) {
             // The wire record is an additive mirror: it must never kill the run.
             // But it also must not fail silently forever — surface once via stderr.
-            if (!writeFailureReported) {
-                writeFailureReported = true;
-                System.err.println("spectroscope: llm-wire recording failed: " + failure);
-            }
+            reportWriteFailureOnce(failure);
         }
     }
 
     private boolean writeFailureReported;
 
+    /** One stderr line for the first failure; silence after — never a dead run. */
+    private void reportWriteFailureOnce(IOException failure) {
+        if (!writeFailureReported) {
+            writeFailureReported = true;
+            System.err.println("spectroscope: llm-wire recording failed: " + failure);
+        }
+    }
+
     @Override
     public void close() {
         synchronized (lock) {
-            if (writer != null) {
-                try {
-                    writer.close();
-                } catch (IOException ignored) {
-                    // flushed per line; a failing close loses nothing
-                }
-                writer = null;
-            }
+            closed = true; // per-line appends hold no handle; the flag is the whole close
         }
     }
 

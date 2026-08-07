@@ -237,6 +237,15 @@ class LlmWireControllerTest {
         MockHttpServletRequest remote = local();
         remote.setRemoteAddr("203.0.113.7");
         assertEquals(404, controller.download(id, remote).getStatusCode().value());
+        // The CSRF half of the fence: a cross-site Origin from a loopback
+        // address (a browser tab on evil.example calling localhost) — without
+        // this case, dropping the Origin check would stay green.
+        MockHttpServletRequest crossSite = local();
+        crossSite.addHeader("Origin", "https://evil.example");
+        assertEquals(404, controller.download(id, crossSite).getStatusCode().value());
+        assertEquals(404, controller.index(id, crossSite).getStatusCode().value());
+        assertEquals(404, controller.exchange(id, UUID.randomUUID().toString(), crossSite)
+                .getStatusCode().value());
     }
 
     private static void assertRefused(ResponseEntity<?> res, String endpoint, String input) {

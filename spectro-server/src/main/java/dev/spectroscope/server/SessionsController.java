@@ -142,15 +142,17 @@ public class SessionsController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            if (!SessionStore.deleteSession(id)) {
+            // The cascade runs UNCONDITIONALLY: "delete whatever this id left
+            // behind" is the honest contract. Gating the sidecar on the session
+            // file's existence stranded two real cases (card 184 review): the
+            // stt day files, which never have a session, and an orphaned
+            // sidecar after a half-failed earlier delete.
+            boolean hadSession = SessionStore.deleteSession(id);
+            boolean hadWire = Files.deleteIfExists(
+                    dev.spectroscope.core.wire.LlmWireRecorder.fileFor(id));
+            if (!hadSession && !hadWire) {
                 return ResponseEntity.notFound().build();
             }
-            // The llm-wire sidecar (card 184) lives OUTSIDE the sessions
-            // directory, so the store's delete cannot reach it; cascading here
-            // keeps a deleted session from leaving its recorded LLM traffic
-            // behind. The shape check above already vouched for the id, and
-            // the path rule is the recorder's own.
-            Files.deleteIfExists(dev.spectroscope.core.wire.LlmWireRecorder.fileFor(id));
             return ResponseEntity.noContent().build();
         } catch (Exception failure) {
             return ResponseEntity.internalServerError().build();

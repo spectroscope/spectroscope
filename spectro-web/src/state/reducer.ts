@@ -505,7 +505,12 @@ export function reduce(state: UiState, event: RunEvent): UiState {
     return {
       ...traced,
       workspace: {
-        sessionId: w.sessionId,
+        // Merged, not replaced: the PROSPECTIVE frame a ws auto-reconnect
+        // announces carries no sessionId (announcing a folder must not mint a
+        // session), and replacing wholesale collapsed llmWireSessionId to null
+        // mid-session — the live trace then wore the imported-provenance
+        // sentence. A frame that names a session still wins outright.
+        sessionId: w.sessionId ?? traced.workspace?.sessionId,
         path: w.path,
         configured: w.configured === true,
         // An older server sends neither field; treating that frame as resolved

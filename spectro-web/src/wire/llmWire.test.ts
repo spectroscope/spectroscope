@@ -156,6 +156,9 @@ describe("the fidelity sentence", () => {
     expect(fidelityKey("bytes")).toBe("trace.llm.fid.bytes");
     expect(fidelityKey("sdk-json")).toBe("trace.llm.fid.sdk-json");
     expect(fidelityKey("sdk-events")).toBe("trace.llm.fid.sdk-events");
+    // The stt request side: the recording's own base64 of the real input
+    // bytes — minted by the recorder, not read off a socket.
+    expect(fidelityKey("encoded")).toBe("trace.llm.fid.encoded");
   });
 
   it("refuses a fidelity nobody wrote a sentence for", () => {
@@ -172,11 +175,14 @@ describe("the dictionary carries every llm-wire sentence, both languages", () =>
       "trace.llm.fid.bytes",
       "trace.llm.fid.sdk-json",
       "trace.llm.fid.sdk-events",
+      "trace.llm.fid.encoded",
       "trace.llm.imported",
       "trace.llm.loading",
       "trace.llm.failed",
       "trace.llm.blobTitle",
       "trace.llm.linesCap",
+      "trace.llm.omittedCeiling",
+      "trace.llm.noResponse",
       "arch.llmWire",
       "arch.llmWireTitle",
     ]) {

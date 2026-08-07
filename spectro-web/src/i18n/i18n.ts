@@ -712,11 +712,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.llm.fid.bytes": { de: "bytes — aufgezeichnet, wie es gesendet wurde", en: "bytes — recorded as posted" },
   "trace.llm.fid.sdk-json": { de: "sdk-json — die eigene Serialisierung des SDK, in Tests als identisch gemessen", en: "sdk-json — the SDK's own serialization, measured equal in tests" },
   "trace.llm.fid.sdk-events": { de: "sdk-events — rekonstruiert aus den typisierten Events des SDK", en: "sdk-events — reconstructed from the SDK's typed events" },
+  "trace.llm.fid.encoded": { de: "encoded — das eigene base64 der Aufzeichnung über die echten Eingabe-Bytes", en: "encoded — the recording's own base64 of the real input bytes" },
   "trace.llm.imported": { de: "Diese Session wurde importiert — ihr eigenes Source-Gesicht ist der Draht; einen llm-wire-Mitschnitt gibt es nicht.", en: "This session was imported — its own source face is the wire; no llm-wire record exists." },
   "trace.llm.loading": { de: "der aufgezeichnete Austausch wird geladen …", en: "fetching the recorded exchange …" },
   "trace.llm.failed": { de: "Der aufgezeichnete Austausch hat nicht geantwortet — die Sidecar-Datei kann fehlen, oder der Server ist älter als diese Ansicht.", en: "The recorded exchange did not answer — the sidecar file may be missing, or the server predates this view." },
   "trace.llm.blobTitle": { de: "Ein base64-Lauf, den die Ansicht nicht druckt; die Zahl ist an der aufgezeichneten Zeile gemessen.", en: "A run of base64 the pane does not print; the count is measured on the recorded line." },
   "trace.llm.linesCap": { de: "{shown} von {total} Antwort-Zeilen gezeigt.", en: "showing {shown} of {total} response lines." },
+  "trace.llm.omittedCeiling": { de: "Der Body wurde an der Aufzeichnungs-Obergrenze verworfen — das Ledger trägt weiterhin seine gemessene Größe.", en: "body dropped at the recording ceiling — the ledger still carries its measured size." },
+  "trace.llm.noResponse": { de: "keine Antwort aufgezeichnet — der Austausch wurde nie geschlossen.", en: "no response recorded — the exchange never closed." },
 
   // system-context tab
   "ctx.unavailable": { de: "System-Kontext nicht verfügbar (Server offline?).", en: "System context unavailable (server offline?)." },
@@ -1123,7 +1126,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   // The sidecar beside the session file: offered only when its index answered
   // non-empty, so the link never promises a file that is not there.
   "arch.llmWire": { de: "llm wire", en: "llm wire" },
-  "arch.llmWireTitle": { de: "Die aufgezeichneten LLM-Austausche neben dieser Session, als NDJSON — Anfrage und Antwort wortwörtlich", en: "The LLM exchanges recorded beside this session, as NDJSON — request and response verbatim" },
+  "arch.llmWireTitle": { de: "Die neben dieser Session aufgezeichneten LLM-Austausche, als NDJSON — jede Zeile mit ihrer Aufzeichnungstreue gekennzeichnet", en: "The LLM exchanges recorded beside this session, as NDJSON — every line labeled with its fidelity" },
 
   // tool card views (card 94)
   "tv.modeAria": { de: "Darstellung des Tool-Aufrufs", en: "Tool call view" },

@@ -263,8 +263,14 @@ public final class OllamaProvider implements LlmProvider {
         private final CancelSignal signal;
         private final BufferedReader lines;
         private final Runnable closeResponse;
+        /** The status the server actually answered — endWire records it, never a literal. */
+        private final int httpStatus;
         // The open llm-wire exchange, or null when the request carries no tap.
         private final LlmWireTap.Exchange wire;
+        /** One end() per exchange, whatever path closes it — the HTTP-error
+         *  path ends inside the callback AND rethrows into the transport
+         *  catch, and a record with two closings would lie twice. */
+        private boolean wireEnded;
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         // Some models inline their reasoning as <think>…</think> in message.content
         // instead of message.thinking. The splitter routes inner text to thinking,
@@ -310,7 +316,9 @@ public final class OllamaProvider implements LlmProvider {
             this.wire = wire;
             // exchange(..., false): WE own the response lifecycle — required for
             // streaming reads; every terminal path below calls closeResponse.
-            var open = http.post()
+            final OpenResponse open;
+            try {
+                open = http.post()
                     .uri("/api/chat")
                     .contentType(MediaType.APPLICATION_JSON)
                     .body(bodyJson)
@@ -319,11 +327,9 @@ public final class OllamaProvider implements LlmProvider {
                             String detail = new String(clientResponse.getBody().readAllBytes(),
                                     StandardCharsets.UTF_8);
                             clientResponse.close();
-                            if (wire != null) {
-                                wire.end(new LlmWireTap.WireOutcome(
-                                        clientResponse.getStatusCode().value(), "bytes",
-                                        detail, false, null, System.currentTimeMillis()));
-                            }
+                            endWireOnce(new LlmWireTap.WireOutcome(
+                                    clientResponse.getStatusCode().value(), "bytes",
+                                    detail, false, null, System.currentTimeMillis()));
                             throw classifyHttpFailure(
                                     clientResponse.getStatusCode().value(), detail, hasImages);
                         }
@@ -334,10 +340,22 @@ public final class OllamaProvider implements LlmProvider {
                         // never sees a disconnect (card 78). The raw JDK stream close
                         // cancels the subscription and tears the connection down.
                         InputStream bodyStream = clientResponse.getBody();
-                        return new OpenResponse(
+                        return new OpenResponse(clientResponse.getStatusCode().value(),
                                 new BufferedReader(new InputStreamReader(bodyStream, StandardCharsets.UTF_8)),
                                 () -> closeBody(bodyStream));
                     }, false);
+            } catch (RuntimeException failure) {
+                // Transport failure BEFORE any byte was answered (connect refused,
+                // DNS, TLS — Spring throws before the callback runs), and the
+                // HTTP-error rethrow above. end() is idempotent, so the pair
+                // closes exactly once; the null status is the WireOutcome
+                // contract's "the connection never answered" arm — without this
+                // catch, every retry attempt left a dangling llm_request line.
+                endWireOnce(new LlmWireTap.WireOutcome(null, "bytes", null, false,
+                        failure.toString(), System.currentTimeMillis()));
+                throw failure;
+            }
+            this.httpStatus = open.status();
             this.lines = open.reader();
             this.closeResponse = open.close();
             if (signal != null) {
@@ -470,9 +488,15 @@ public final class OllamaProvider implements LlmProvider {
          * @param error   the failure in one line, null on a clean close
          */
         private void endWire(boolean aborted, String error) {
-            if (wire != null) {
-                wire.end(new LlmWireTap.WireOutcome(200, "bytes", null, aborted, error,
-                        System.currentTimeMillis()));
+            endWireOnce(new LlmWireTap.WireOutcome(httpStatus, "bytes", null, aborted, error,
+                    System.currentTimeMillis()));
+        }
+
+        /** The single closing gate every path funnels through. */
+        private void endWireOnce(LlmWireTap.WireOutcome outcome) {
+            if (wire != null && !wireEnded) {
+                wireEnded = true;
+                wire.end(outcome);
             }
         }
     }
@@ -483,7 +507,7 @@ public final class OllamaProvider implements LlmProvider {
      * @param reader line reader over the still-open response body
      * @param close  releases the underlying HTTP response
      */
-    private record OpenResponse(BufferedReader reader, Runnable close) {}
+    private record OpenResponse(int status, BufferedReader reader, Runnable close) {}
 
     /** Closes the raw body stream, quietly — closing an already-broken stream is
      *  fine; the point is the prompt subscription cancel + connection teardown. */

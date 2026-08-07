@@ -56,10 +56,12 @@ public final class AnthropicProvider implements LlmProvider {
     // without a client (constructing one requires ANTHROPIC_API_KEY).
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    // The SDK's own mapper serializes the wire record. That is what the
-    // "sdk-json"/"sdk-events" fidelity labels mean: the SDK owns the socket,
-    // and the record is the SDK's serialization of the same payloads —
-    // measured byte-equal to the posted body in the loopback test.
+    // The SDK's own mapper serializes the wire record. The two labels make
+    // two DIFFERENT promises, measured separately in the loopback tests:
+    // "sdk-json" (the request body) is byte-equal to what the SDK posts;
+    // "sdk-events" (the stream) is reconstructed from the SDK's typed events —
+    // content-equal per event, field order not guaranteed, keep-alive pings
+    // absent (the SDK filters them before we can see them).
     private static final JsonMapper SDK_JSON = ObjectMappers.jsonMapper();
 
     // The SDK's default API root, only needed to name the real endpoint on
@@ -102,7 +104,13 @@ public final class AnthropicProvider implements LlmProvider {
         this.promptCaching = promptCaching;
         // The wire record names the REAL endpoint: the SDK posts every
         // streaming call to <base>/v1/messages (MessageServiceImpl).
-        this.wireUrl = (baseUrl != null ? baseUrl : DEFAULT_BASE_URL) + "/v1/messages";
+        // The record must name the endpoint the SDK REALLY posts to: an
+        // explicit override wins, else the SDK's own fromEnv() honors
+        // ANTHROPIC_BASE_URL, else the default root.
+        String envBase = System.getenv("ANTHROPIC_BASE_URL");
+        this.wireUrl = (baseUrl != null ? baseUrl
+                : envBase != null && !envBase.isBlank() ? envBase.replaceAll("/$", "")
+                : DEFAULT_BASE_URL) + "/v1/messages";
         AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder().maxRetries(0);
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);

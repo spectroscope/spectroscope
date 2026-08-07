@@ -135,9 +135,12 @@ public class TranscribeController {
         // record lives in a shared day file, agent "composer", kind "stt".
         LlmWireRecorder recorder = wireRecorder != null ? wireRecorder
                 : LlmWireRecorder.forSession("stt-" + LocalDate.now());
+        // Fidelity "encoded", not "bytes": the base64 is the RECORDING'S OWN
+        // encoding of the real input bytes — no socket ever carried this string.
+        // Method stays null for the same reason: a child-process pipeline has none.
         LlmWireTap.Exchange exchange = recorder.bound("composer", null, "stt").begin(
                 new LlmWireTap.WireRequest("whisper-cpp", modelPath.getFileName().toString(),
-                        "process", "POST", "process://ffmpeg+whisper-cli", null, "bytes",
+                        "process", null, "process://ffmpeg+whisper-cli", null, "encoded",
                         Base64.getEncoder().encodeToString(audio), System.currentTimeMillis()));
         try {
             Files.write(webmPath, audio);            // browser delivers webm/opus

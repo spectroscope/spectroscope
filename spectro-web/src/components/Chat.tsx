@@ -754,8 +754,10 @@ export function Chat(props: {
                 </a>
               )}
               {/* The sidecar beside that file: the recorded LLM exchanges,
-                  request and response verbatim. Offered only when the index
-                  answered non-empty, so the link never names an empty file. */}
+                  every line labeled with its fidelity (an Anthropic response
+                  is reconstructed from sdk-events, not socket bytes). Offered
+                  only when the index answered non-empty, so the link never
+                  names an empty file. */}
               {props.llmWireId !== undefined && (
                 <a
                   className="ghost archive-export"

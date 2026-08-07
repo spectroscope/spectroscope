@@ -90,10 +90,26 @@ function SegmentedText({ text, lang }: { text: string; lang: Lang }) {
   );
 }
 
+/**
+ * The sentence key for a side that has nothing to print, or null while there
+ * is a body or lines below (or nothing honest to say). A ceiling-omitted body
+ * was measured and then dropped by the recorder — silence under the fidelity
+ * sentence would read as "recorded, and it was empty". A null response side
+ * means the exchange never closed. An empty request side without the omitted
+ * mark is an older server's shape; no sentence beats a guessed one.
+ * Exported for the test seam.
+ */
+export function emptySideKey(side: LlmExchangeSide, isResponse: boolean): string | null {
+  if (side.body !== null || side.lines.length > 0) return null;
+  if (side.omitted === "ceiling") return "trace.llm.omittedCeiling";
+  return isResponse ? "trace.llm.noResponse" : null;
+}
+
 /** One side of the exchange: its wire-word label, its fidelity sentence, and
  *  its bytes — the single body, or the streamed lines, each cut like a body. */
 function Side({ label, side, lang }: { label: string; side: LlmExchangeSide; lang: Lang }) {
   const sentence = fidelitySentence(side.fidelity, lang);
+  const emptyKey = emptySideKey(side, label === "response");
   const [allLines, setAllLines] = useState(false);
   const lines = side.lines;
   const shown = allLines ? lines : lines.slice(0, RESPONSE_LINES_SHOWN);
@@ -108,6 +124,7 @@ function Side({ label, side, lang }: { label: string; side: LlmExchangeSide; lan
         <div className="ed-path mono">{[side.method, side.url].filter((s) => s !== "").join(" ")}</div>
       )}
       {side.error !== "" && <p className="trace-source-note">{side.error}</p>}
+      {emptyKey !== null && <p className="trace-source-note">{t(lang, emptyKey)}</p>}
       {side.body !== null && <SegmentedText text={side.body} lang={lang} />}
       {side.body === null && shown.map((line, i) => <SegmentedText key={i} text={line} lang={lang} />)}
       {side.body === null && lines.length > RESPONSE_LINES_SHOWN && !allLines && (

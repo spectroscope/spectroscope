@@ -15,6 +15,7 @@ import java.util.Base64;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -62,6 +63,10 @@ class TranscribeWireTest {
         JsonNode response = JSON.readTree(lines.get(1));
 
         assertEquals("stt", request.get("kind").asText());
+        // "encoded": the base64 is the recording's own, no socket carried it —
+        // and a process pipeline has no HTTP method to claim.
+        assertEquals("encoded", request.get("fidelity").asText());
+        assertNull(request.get("method"));
         assertEquals("composer", request.get("agentId").asText());
         assertEquals("whisper-cpp", request.get("provider").asText());
         assertEquals("ggml-small.bin", request.get("model").asText());

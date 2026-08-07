@@ -1041,6 +1041,35 @@ describe("workspace_info (socket-only frame)", () => {
     expect(s.workspace?.mode).toBe("default");
     expect(s.workspace?.sessionId).toBeUndefined();
   });
+
+  it("keeps the session id when a reconnect's prospective frame carries none", () => {
+    // The ws auto-retry keeps the old rows, but the fresh connection announces
+    // a PROSPECTIVE workspace_info with no sessionId. Replacing wholesale
+    // collapsed llmWireSessionId to null and a LIVE session's llm rows then
+    // claimed the imported-transcript provenance sentence.
+    const resolved = {
+      type: "workspace_info",
+      sessionId: "s-1",
+      path: "/tmp/spectroscope-ws/s-1",
+      configured: false,
+      ts: 1,
+    } as unknown as RunEvent;
+    const prospective = {
+      type: "workspace_info",
+      resolved: false,
+      mode: "default",
+      configured: true,
+      path: "/Users/you/spectroscope-workspace",
+      exists: true,
+      ts: 2,
+    } as unknown as RunEvent;
+
+    const s = reduce(reduce(initialState, resolved), prospective);
+    expect(s.workspace?.sessionId).toBe("s-1");
+    // The rest of the frame still replaces: the announcement is wire truth.
+    expect(s.workspace?.resolved).toBe(false);
+    expect(s.workspace?.path).toBe("/Users/you/spectroscope-workspace");
+  });
 });
 
 describe("provider_info (socket-only frame)", () => {

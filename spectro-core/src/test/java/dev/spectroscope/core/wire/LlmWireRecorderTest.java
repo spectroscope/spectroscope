@@ -135,6 +135,58 @@ class LlmWireRecorderTest {
             long responses = lines.stream().filter(l -> l.contains("\"llm_response\"")).count();
             assertEquals(2, requests);
             assertEquals(2, responses);
+            // LATCHING: once past the ceiling, even a small later body is
+            // dropped — the marker means "bodies stop here", not "this one".
+            JsonNode secondRequest = JSON.readTree(lines.stream()
+                    .filter(l -> l.contains("\"llm_request\"")).skip(1).findFirst().orElseThrow());
+            assertNull(secondRequest.get("body"));
+            assertEquals("ceiling", secondRequest.get("omitted").asText());
+        }
+    }
+
+    @Test
+    void aClosedRecorderDropsLateLinesInsteadOfResurrectingTheFile(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("s10.llm.jsonl");
+        LlmWireRecorder recorder = new LlmWireRecorder(file, 1_000_000);
+        LlmWireTap.Exchange exchange = recorder.bound("main", 1).begin(chatRequest(1));
+        recorder.close();
+        Files.deleteIfExists(file); // the user deleted the session mid-run
+        exchange.end(new WireOutcome(200, "bytes", null, true, "tab closed", 2));
+        // A late end() after close() must not recreate the file the user removed.
+        assertFalse(Files.exists(file));
+    }
+
+    @Test
+    void anExistingFileCountsTowardTheCeiling(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("s11.llm.jsonl");
+        Files.writeString(file, "x".repeat(500) + "\n");
+        try (LlmWireRecorder recorder = new LlmWireRecorder(file, 600)) {
+            // A resumed session (or the shared stt day file) must not get a
+            // fresh allowance per recorder instance.
+            LlmWireTap.Exchange exchange = recorder.bound("main", 1).begin(new WireRequest(
+                    "openai", "m", "http", "POST", "http://x", Map.of(), "bytes",
+                    "B".repeat(200), 1));
+            exchange.end(new WireOutcome(200, "bytes", null, false, null, 2));
+            List<String> lines = Files.readAllLines(file);
+            JsonNode request = JSON.readTree(lines.stream()
+                    .filter(l -> l.contains("\"llm_request\"")).findFirst().orElseThrow());
+            assertNull(request.get("body"));
+            assertEquals("ceiling", request.get("omitted").asText());
+            assertEquals(1, lines.stream().filter(l -> l.contains("\"llm_wire_truncated\"")).count());
+        }
+    }
+
+    @Test
+    void aFileAlreadyPastTheCeilingGetsNoSecondMarker(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("s12.llm.jsonl");
+        Files.writeString(file, "y".repeat(700) + "\n"); // the crossing instance wrote its marker
+        try (LlmWireRecorder recorder = new LlmWireRecorder(file, 600)) {
+            LlmWireTap.Exchange exchange = recorder.bound("main", 1).begin(new WireRequest(
+                    "openai", "m", "http", "POST", "http://x", Map.of(), "bytes", "small", 1));
+            exchange.end(new WireOutcome(200, "bytes", null, false, null, 2));
+            long markers = Files.readAllLines(file).stream()
+                    .filter(l -> l.contains("\"llm_wire_truncated\"")).count();
+            assertEquals(0, markers, "the marker belongs to the instance that crossed");
         }
     }
 

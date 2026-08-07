@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -725,5 +726,28 @@ class OpenAiCompatProviderTest {
         assertEquals(new PTextDelta("Hel"), events.get(0));
         assertEquals(new PUsage(11, 4), events.get(1));
         assertEquals(new PStop(PStop.StopReason.END_TURN), events.get(2));
+    }
+
+    @Test
+    void aTransportFailureClosesTheWirePairWithNullStatus() {
+        // Connection refused: Spring throws BEFORE the exchange callback runs.
+        // The wire pair must still close — one llm_request, one llm_response
+        // with the contract's null-status "never answered" arm — or every
+        // retry attempt would leave a dangling request line (card 184 review).
+        RecordingWireTap tap = new RecordingWireTap();
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options("http://127.0.0.1:1", "m", null));
+        LlmProvider.ProviderRequest request = new LlmProvider.ProviderRequest(
+                "sys", List.of(new ProviderMessage(ProviderMessage.Role.USER,
+                        List.of(new TextContent("hi")))), List.of(),
+                100, LlmProvider.ProviderRequest.Reasoning.DEFAULT, null,
+                new CancelSignal(), tap);
+        assertThrows(RuntimeException.class,
+                () -> provider.stream(request).iterator().hasNext());
+        assertEquals(1, tap.requests.size());
+        assertEquals(1, tap.outcomes.size());
+        assertNull(tap.outcomes.getFirst().status(), "no connection ever answered");
+        assertTrue(tap.outcomes.getFirst().error() != null
+                && !tap.outcomes.getFirst().error().isBlank());
     }
 }
