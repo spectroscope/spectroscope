@@ -7,7 +7,9 @@ import { describe, expect, it, beforeEach } from "vitest";
 import {
   DEFAULT_TRACE_FACE,
   TRACE_FACES,
+  availableFace,
   currentTraceFace,
+  facesFor,
   parseTraceFace,
   rowFace,
   setTraceFace,
@@ -143,5 +145,55 @@ describe("the retired compact face", () => {
     expect(parseTraceFace("compact")).toBe("wire");
     // The other retired name still lands where it always did.
     expect(parseTraceFace("raw")).toBe("wire");
+  });
+});
+
+// Card 184: a row does not always have four faces to offer.
+//
+// A recorded LLM exchange has no SOURCE line to show. Its bytes live in the
+// sidecar, and the only endpoint that returns them re-serializes parsed nodes,
+// so "the line this frame was read from, byte for byte" does not exist for it.
+// The old pane answered that with a riddle ("the stored session does not
+// contain this frame") while the frame's file lay right beside the session.
+// A face with nothing behind it is not offered at all.
+describe("which faces a row offers", () => {
+  it("offers all four for an ordinary frame", () => {
+    expect(facesFor("tool_call")).toEqual([...TRACE_FACES]);
+  });
+
+  it("does not offer source for a recorded LLM exchange", () => {
+    expect(facesFor("llm_exchange")).not.toContain("source");
+    expect(facesFor("llm_exchange")).toEqual(["structured", "insight", "wire"]);
+  });
+
+  it("keeps the order the toolbar uses, so the buttons never reshuffle", () => {
+    const offered = facesFor("llm_exchange");
+    const order = TRACE_FACES.filter((f) => offered.includes(f));
+    expect(offered).toEqual(order);
+  });
+});
+
+// The master face is a DEFAULT for every row at once (see the store above), so
+// a reader whose master is `source` will land on rows that have no source. The
+// landing has to be somewhere real and the same every time.
+describe("a face a row cannot offer", () => {
+  it("falls back to its nearest neighbour to the left", () => {
+    // structured · insight · wire · [source] — source lands on wire.
+    expect(availableFace("source", facesFor("llm_exchange"))).toBe("wire");
+  });
+
+  it("leaves an offered face alone", () => {
+    for (const face of facesFor("llm_exchange")) {
+      expect(availableFace(face, facesFor("llm_exchange"))).toBe(face);
+    }
+  });
+
+  it("is deterministic: the same input lands on the same face every time", () => {
+    const once = availableFace("source", facesFor("llm_exchange"));
+    expect(availableFace("source", facesFor("llm_exchange"))).toBe(once);
+  });
+
+  it("falls forward when there is nothing to its left", () => {
+    expect(availableFace("structured", ["insight", "wire"])).toBe("insight");
   });
 });

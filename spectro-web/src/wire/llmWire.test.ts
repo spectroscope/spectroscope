@@ -13,6 +13,7 @@ import {
   mergeLlmExchanges,
   readExchange,
   type LlmExchangeMeta,
+  readExchangeDetail,
 } from "./llmWire";
 
 /** One frame the server would push, with room to disagree per test. */
@@ -190,5 +191,45 @@ describe("the dictionary carries every llm-wire sentence, both languages", () =>
       expect(dict[key]?.de, `${key}.de`).toBeTruthy();
       expect(dict[key]?.en, `${key}.en`).toBeTruthy();
     }
+  });
+});
+
+// Card 184's routing repair needs one field that was being dropped here: the
+// endpoint hands over the whole recorded line, headers included, and the reader
+// decided what a face could see. Without them the wire face could show a POST
+// line and a body but not the request, and a request without its headers is not
+// what went over the socket.
+describe("what a face gets to see of a recorded side", () => {
+  it("carries the recorded headers through, values already redacted by the writer", () => {
+    const detail = readExchangeDetail({
+      request: {
+        fidelity: "bytes",
+        method: "POST",
+        url: "https://api.anthropic.com/v1/messages",
+        transport: "https",
+        bodyBytes: 9162,
+        headers: { "content-type": "application/json", "x-api-key": "[redacted · 108 chars]" },
+        body: "{}",
+      },
+      response: { fidelity: "sdk-events", lines: [] },
+    });
+    expect(detail?.request.headers["content-type"]).toBe("application/json");
+    expect(detail?.request.headers["x-api-key"]).toBe("[redacted · 108 chars]");
+    expect(detail?.request.transport).toBe("https");
+    expect(detail?.request.bodyBytes).toBe(9162);
+  });
+
+  it("loses one foreign cell rather than the whole map", () => {
+    const detail = readExchangeDetail({
+      request: { headers: { good: "yes", bad: 7, worse: null } },
+      response: {},
+    });
+    expect(detail?.request.headers).toEqual({ good: "yes" });
+  });
+
+  it("has an empty map, never undefined, for a side that recorded none", () => {
+    const detail = readExchangeDetail({ request: {}, response: {} });
+    expect(detail?.response.headers).toEqual({});
+    expect(Object.keys(detail!.request.headers)).toHaveLength(0);
   });
 });

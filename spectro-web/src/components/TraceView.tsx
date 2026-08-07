@@ -60,7 +60,14 @@ import {
   useTraceColumns,
 } from "../state/traceColumns";
 import type { TraceColumns } from "../state/traceColumns";
-import { TRACE_FACES, rowFace, setTraceFace, useTraceFace } from "../state/traceFace";
+import {
+  TRACE_FACES,
+  availableFace,
+  facesFor,
+  rowFace,
+  setTraceFace,
+  useTraceFace,
+} from "../state/traceFace";
 import type { RowFace } from "../state/traceFace";
 import { reportCount, useSearch } from "../state/search";
 import { traceHits, traceRowText } from "./traceSearch";
@@ -1155,7 +1162,17 @@ function TraceDetail({
   // every closed row closed — the switch picks a face, it does not expand.
   const master = useTraceFace();
   const [override, setOverride] = useState<RowFace | null>(null);
-  const mode = rowFace(master, override);
+  // Which faces THIS row can fill, and the one it shows. A recorded LLM
+  // exchange has no source line, and the master is a default for every row at
+  // once, so a reader whose master is `source` has to land somewhere real:
+  // availableFace decides that once, deterministically (state/traceFace.ts).
+  const faces = facesFor(entry.type);
+  const mode = availableFace(rowFace(master, override), faces);
+  // The recorded exchange renders itself on EVERY face, from ONE fetch. This
+  // line is card 184's repair: the rejected version routed only `structured`
+  // here, so insight, wire and source went on reading the metadata frame while
+  // the recorded bytes sat one fetch away.
+  const isExchange = entry.type === "llm_exchange";
   // How the pane reads what it was given. Readable opens first (owner call,
   // 2026-08-03): a source line is escaped JSON inside escaped JSON, and the
   // verbatim form is unreadable at a glance, so opening on it makes the pane
@@ -1168,7 +1185,9 @@ function TraceDetail({
   // Only two panes have two readings to choose between. Structured and Insight
   // already render the parsed payload, and Compact's whole job is the wire line
   // with its escapes highlighted.
-  const hasReading = mode === "source" || mode === "wire";
+  // The exchange's wire face is OUR rendering of recorded bytes, not a line of
+  // somebody's file, so it has no verbatim/readable pair to choose between.
+  const hasReading = !isExchange && (mode === "source" || mode === "wire");
   const reading: Reading = hasReading ? chosen : "verbatim";
   const lines = detailLines(entry.type, entry.payload);
   // The line this frame was read from, or nothing. Only the source pane's copy
@@ -1189,7 +1208,11 @@ function TraceDetail({
     [metaLine],
   );
   const copyMode = mode === "structured" ? "insight" : mode;
-  const copyable = mode !== "source" || sourceText !== undefined;
+  // A copy button hands over what the pane SHOWS. For an exchange the pane
+  // shows the recorded bodies and the clipboard helper only knows the frame,
+  // so no button beats a button that copies the postmark. The whole sidecar is
+  // a download away (GET /api/sessions/{id}/llm-wire).
+  const copyable = !isExchange && (mode !== "source" || sourceText !== undefined);
   return (
     <div className="trace-detail">
       {chain.length > 1 && (
@@ -1214,7 +1237,7 @@ function TraceDetail({
         </div>
       )}
       <div className="trace-detail-modes" role="group" aria-label={t(lang, "trace.modeAria")}>
-        {TRACE_FACES.map((m) => (
+        {faces.map((m) => (
           <button
             key={m}
             type="button"
@@ -1258,11 +1281,15 @@ function TraceDetail({
           label={t(lang, `common.${copyLabel(copyMode, reading)}`)}
         />
       )}
-      {mode === "structured" && entry.type === "llm_exchange" ? (
-        /* The exchange as the thing it is: the recorded request and response,
-           fetched on this expand and never sooner. The wire face beside it
-           still shows the frame itself, one click away. */
-        <LlmExchangeDetail payload={entry.payload} sessionId={llmWireSessionId} />
+      {isExchange ? (
+        /* Every face of an exchange reads the same fetch: the parts on
+           structured, the tree over the PARSED body on insight, the literal
+           POST and its stream lines on wire. Source is not offered. */
+        <LlmExchangeDetail
+          payload={entry.payload}
+          sessionId={llmWireSessionId}
+          face={mode === "insight" || mode === "wire" ? mode : "structured"}
+        />
       ) : mode === "structured" ? (
         <EventStructured
           type={entry.type}

@@ -720,6 +720,23 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.llm.linesCap": { de: "{shown} von {total} Antwort-Zeilen gezeigt.", en: "showing {shown} of {total} response lines." },
   "trace.llm.omittedCeiling": { de: "Der Body wurde an der Aufzeichnungs-Obergrenze verworfen — das Ledger trägt weiterhin seine gemessene Größe.", en: "body dropped at the recording ceiling — the ledger still carries its measured size." },
   "trace.llm.noResponse": { de: "keine Antwort aufgezeichnet — der Austausch wurde nie geschlossen.", en: "no response recorded — the exchange never closed." },
+  // The request in its PARTS (card 184). Labels are the wire's own words where
+  // the wire has one: `system`, `messages`, `tools` are fields, not names we chose.
+  "trace.llm.parts.system": { de: "system-Prompt", en: "system prompt" },
+  "trace.llm.parts.messages": { de: "messages", en: "messages" },
+  "trace.llm.parts.tools": { de: "tools", en: "tools" },
+  "trace.llm.parts.blocks": { de: "{n} Blöcke", en: "{n} blocks" },
+  // One block is one block. The count is right beside the word in a pane whose
+  // whole promise is that it says what is there, and "1 blocks" reads as a
+  // string somebody forgot to finish.
+  "trace.llm.parts.block1": { de: "1 Block", en: "1 block" },
+  "trace.llm.parts.chars": { de: "{chars} Zeichen", en: "{chars} chars" },
+  "trace.llm.parts.more": { de: "{shown} von {total} gezeigt.", en: "showing {shown} of {total}." },
+  "trace.llm.parts.unknownShape": { de: "Diese Ansicht kennt die Form dieses Bodys nicht, also zeigt sie ihn als Baum statt in Teilen. Der Draht darunter ist unverändert.", en: "This pane does not know this body's shape, so it shows the tree instead of the parts. The wire below is unchanged." },
+  "trace.llm.res.lines": { de: "{n} Zeilen", en: "{n} lines" },
+  "trace.llm.res.aborted": { de: "abgebrochen", en: "aborted" },
+  "trace.llm.res.noReassembly": { de: "Die Antwort wird hier NICHT zusammengesetzt: der zusammengesetzte Text ist der Chat, und ein zweiter Zusammenbau im Browser wäre eine zweite Wahrheit. Was ankam, steht Zeile für Zeile auf dem wire-Gesicht.", en: "The answer is NOT reassembled here: the reassembled text is the chat, and a second reassembly in the browser would be a second truth. What arrived is on the wire face, line by line." },
+  "trace.llm.wire.noHeaders": { de: "keine Header aufgezeichnet — das SDK besitzt hier den Socket.", en: "no headers recorded — the SDK owns the socket here." },
 
   // system-context tab
   "ctx.unavailable": { de: "System-Kontext nicht verfügbar (Server offline?).", en: "System context unavailable (server offline?)." },

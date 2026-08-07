@@ -166,9 +166,25 @@ export function fidelityKey(fidelity: string): string | null {
   return FIDELITY_KEYS.has(fidelity) ? `trace.llm.fid.${fidelity}` : null;
 }
 
-/** One side of a fetched exchange, read tolerantly off the endpoint's answer. */
+/** One side of a fetched exchange, read tolerantly off the endpoint's answer.
+ *
+ *  The endpoint hands over the whole recorded line as it parsed it, so
+ *  everything the recorder wrote is already here; what a reader gets is decided
+ *  in THIS function. `headers` was the field the wire face was missing: without
+ *  it the face could show a POST line and a body but not the request, and a
+ *  request without its headers is not what went over the socket. The credential
+ *  VALUES were redacted when the line was written, so what arrives here is
+ *  already safe to paint. */
 export interface LlmExchangeSide {
   fidelity: string;
+  /** The request headers as recorded, credential values already redacted by
+   *  the writer. Empty for the response side, which records none. */
+  headers: Readonly<Record<string, string>>;
+  /** How the request travelled ("https", …), as the recorder spelled it. */
+  transport: string;
+  /** The size the recorder measured, which still stands when the body itself
+   *  was dropped at the ceiling. */
+  bodyBytes: number;
   /** The single payload, verbatim — the request unless the recorder dropped
    *  it at its ceiling, the response when it was not streamed. */
   body: string | null;
@@ -190,10 +206,24 @@ export interface LlmExchangeDetail {
   response: LlmExchangeSide;
 }
 
+/** The recorded headers, string values only — a foreign or half-written record
+ *  loses the odd cell rather than the whole map. */
+function readHeaders(value: unknown): Record<string, string> {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {};
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof v === "string") out[k] = v;
+  }
+  return out;
+}
+
 function readSide(value: unknown): LlmExchangeSide {
   const v = (typeof value === "object" && value !== null ? value : {}) as Record<string, unknown>;
   return {
     fidelity: str(v.fidelity),
+    headers: readHeaders(v.headers),
+    transport: str(v.transport),
+    bodyBytes: num(v.bodyBytes),
     body: typeof v.body === "string" ? v.body : null,
     lines: Array.isArray(v.lines) ? v.lines.filter((l): l is string => typeof l === "string") : [],
     omitted: str(v.omitted),

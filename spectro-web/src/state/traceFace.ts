@@ -86,3 +86,49 @@ export function rowFace(master: TraceFacePref, override: RowFace | null): TraceF
 export function useTraceFace(): TraceFacePref {
   return useFaceStore(store);
 }
+
+/** The frame types that have no source line to show, and never will.
+ *
+ *  A recorded LLM exchange (card 184) keeps its bytes in the sidecar, and the
+ *  endpoint that serves them re-serializes parsed nodes, so "the line this
+ *  frame was read from, byte for byte" is not a thing that exists for it. The
+ *  pane used to answer that with a riddle, "the stored session does not contain
+ *  this frame", while the frame's own file lay right beside the session. A face
+ *  with nothing behind it is not offered. */
+const WITHOUT_SOURCE: ReadonlySet<string> = new Set(["llm_exchange"]);
+
+/**
+ * Which faces one row offers, in the toolbar's own order so the buttons never
+ * reshuffle between rows.
+ *
+ * @param type the frame's type
+ * @return the faces this row can actually fill
+ */
+export function facesFor(type: string): TraceFace[] {
+  return WITHOUT_SOURCE.has(type) ? TRACE_FACES.filter((f) => f !== "source") : [...TRACE_FACES];
+}
+
+/**
+ * The face a row shows when the one it was asked for is not on offer.
+ *
+ * The master switch is a default for EVERY row at once, so a reader whose
+ * master is `source` will land on rows that have none. The landing has to be
+ * somewhere real and the same every time: the nearest neighbour to the left,
+ * which puts `source` on `wire` — the two faces that both mean "the bytes".
+ * Forward only when there is nothing to the left at all.
+ *
+ * @param chosen    the face the master or the row's own click asked for
+ * @param available what this row offers, from {@link facesFor}
+ * @return a face that is certainly on offer
+ */
+export function availableFace(chosen: TraceFace, available: readonly TraceFace[]): TraceFace {
+  if (available.includes(chosen)) return chosen;
+  const at = TRACE_FACES.indexOf(chosen);
+  for (let i = at - 1; i >= 0; i--) {
+    if (available.includes(TRACE_FACES[i])) return TRACE_FACES[i];
+  }
+  for (let i = at + 1; i < TRACE_FACES.length; i++) {
+    if (available.includes(TRACE_FACES[i])) return TRACE_FACES[i];
+  }
+  return chosen;
+}
