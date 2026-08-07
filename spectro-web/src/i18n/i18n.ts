@@ -740,6 +740,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   // toggle: "back to default" has to mean the pane as it opened, folds a reader
   // touched by hand included, and a toggle that left those open would not be a
   // way back at all.
+  // Card 187 step 1: why the microphone did not work. Both paths used to be a
+  // silent catch, so "you denied permission" and "the request failed" both read
+  // as "this machine has no microphone".
+  "voice.err.denied": { de: "Kein Zugriff aufs Mikrofon — der Browser hat ihn verweigert. In den Website-Einstellungen erlauben, dann noch einmal.", en: "No access to the microphone — the browser refused it. Allow it in the site settings, then try again." },
+  "voice.err.noDevice": { de: "Kein Mikrofon gefunden.", en: "No microphone found." },
+  "voice.err.deviceBusy": { de: "Das Mikrofon ließ sich nicht öffnen — vermutlich hält es gerade ein anderes Programm.", en: "The microphone could not be opened — another program is probably holding it." },
+  "voice.err.sttMissing": { de: "Spracheingabe ist auf diesem Server nicht eingerichtet — Einstellungen → Spracheingabe.", en: "Speech to text is not set up on this server — Settings → Speech to text." },
+  "voice.err.requestFailed": { de: "Die Aufnahme kam nicht durch. Nichts wurde übertragen; einfach noch einmal.", en: "The recording did not get through. Nothing was sent; just try again." },
+  "voice.err.unknown": { de: "Die Aufnahme ist fehlgeschlagen.", en: "The recording failed." },
   "set.secStt": { de: "Spracheingabe", en: "Speech to text" },
   "set.sttHint": { de: "Zwei Dinge werden gebraucht: das Whisper-Modell, das diese App laden kann, und zwei Programme, die sie NICHT installieren darf — sie werden gesucht und ehrlich gemeldet.", en: "Two things are needed: the whisper model, which this app can fetch, and two binaries it must NOT install — those are probed and reported honestly." },
   "set.sttPresent": { de: "da", en: "present" },

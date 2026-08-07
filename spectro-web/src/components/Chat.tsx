@@ -19,6 +19,7 @@ import type { PendingAttachment } from "./AttachmentPreview";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
+import { voiceErrorKey } from "./voiceError";
 import { formatTimer, micButtonState } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
 import type { QueuedMessage } from "../state/sendQueue";
@@ -233,7 +234,12 @@ export function Chat(props: {
   };
 
   const lastIndex = state.turns.length - 1;
-  const mic = micButtonState(voice.micPhase, voice.micAvailable, lang);
+  const micBase = micButtonState(voice.micPhase, voice.micAvailable, lang);
+  // Card 187 step 1: a failure says why, on the control that failed. The button
+  // keeps its own title while nothing has gone wrong, so the normal case reads
+  // exactly as it always did.
+  const mic =
+    voice.micError === null ? micBase : { ...micBase, title: t(lang, voiceErrorKey(voice.micError)) };
   const buttons = composerButtons(
     {
       running: liveView && state.running,

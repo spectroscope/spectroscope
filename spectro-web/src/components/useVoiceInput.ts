@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MicPhase } from "./voiceButton";
 import { noteVoiceExchange } from "../state/voiceWire";
+import { micErrorOf, silencesTheButton, type VoiceError } from "./voiceError";
 
 /** How often the recording timer refreshes — fast enough to read as live. */
 const RECORDING_TIMER_TICK_MS = 250;
@@ -14,8 +15,12 @@ const RECORDING_TIMER_TICK_MS = 250;
 export interface VoiceInput {
   /** idle | recording | transcribing — feeds micButtonState. */
   micPhase: MicPhase;
-  /** Flips to false after a 503 (STT not installed) or a denied microphone. */
+  /** Flips to false only for a STATE — no device, or a server without stt.
+   *  A denial or a failed request leaves the button, because both are events
+   *  somebody can act on and press again (card 187, `silencesTheButton`). */
   micAvailable: boolean;
+  /** Why the last attempt failed, or null. The sentence is `voice.err.<reason>`. */
+  micError: VoiceError | null;
   /** Milliseconds since the recording began — drives the mm:ss timer. */
   recordMs: number;
   /** First press records; second press stops and transcribes. */
@@ -28,6 +33,11 @@ export interface VoiceInput {
 export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput {
   const [micPhase, setMicPhase] = useState<MicPhase>("idle");
   const [micAvailable, setMicAvailable] = useState(true);
+  // Why the last attempt failed, or null. Card 187 step 1: both paths below used
+  // to swallow the cause, so "you denied permission" and "the request failed"
+  // both read as "this machine has no microphone" — a vanished button and no
+  // sentence anywhere.
+  const [micError, setMicError] = useState<VoiceError | null>(null);
   const [recordMs, setRecordMs] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
 
@@ -50,11 +60,17 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       recorderRef.current?.stop(); // onstop takes over
       return;
     }
+    setMicError(null); // a fresh attempt is not the last one's failure
     let stream: MediaStream;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    } catch {
-      setMicAvailable(false); // no microphone / permission denied — hide the feature
+    } catch (refused) {
+      const reason = micErrorOf(refused);
+      setMicError(reason);
+      // Only a STATE takes the button away. A denial is an event: someone who
+      // then allows it in the site settings must be able to press again without
+      // reloading the page.
+      if (silencesTheButton(reason)) setMicAvailable(false);
       return;
     }
     const recorder = new MediaRecorder(stream);
@@ -66,7 +82,12 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       try {
         const res = await fetch("/api/transcribe", { method: "POST", body: new Blob(chunks) });
         if (res.status === 503) {
-          setMicAvailable(false); // STT not installed — the tooltip explains the fix
+          setMicError("sttMissing"); // and the sentence points at the settings pane
+          setMicAvailable(false);
+          return;
+        }
+        if (!res.ok) {
+          setMicError("requestFailed");
           return;
         }
         const answer = (await res.json()) as { text?: string; wire?: unknown };
@@ -77,7 +98,9 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
         noteVoiceExchange(answer.wire);
         if (answer.text) onTranscript(answer.text);
       } catch {
-        // Network/parse failure: stay usable, just drop this attempt.
+        // Network or parse failure. It stays usable — but it says so now,
+        // because a recording that vanishes without a word is the defect.
+        setMicError("requestFailed");
       } finally {
         setMicPhase("idle");
       }
@@ -87,5 +110,5 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
     setMicPhase("recording");
   }
 
-  return { micPhase, micAvailable, recordMs, toggleMic };
+  return { micPhase, micAvailable, micError, recordMs, toggleMic };
 }
