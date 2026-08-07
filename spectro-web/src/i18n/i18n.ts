@@ -383,7 +383,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "bus.inlineOs": { de: "Inline-OS", en: "inline OS" },
   "bus.stopNode": { de: "diesen Knoten stoppen", en: "stop this node" },
   "bus.composerPlaceholder": { de: "Nachricht an diesen Agenten …", en: "message this agent …" },
-  "bus.composerPending": { de: "Bus-Nachrichten kommen mit dem 0.7-Wire-Verb — der Hub spricht heute stop und gate", en: "bus messaging lands with the 0.7 wire verb — the hub speaks stop and gate today" },
+  "bus.composerPending": { de: "Bus-Nachrichten brauchen ein Wire-Verb, das der Hub noch nicht hat — er spricht heute stop und gate", en: "bus messaging needs a wire verb the hub does not have yet — it speaks stop and gate today" },
   "bus.empty": { de: "Noch keine Knoten am Bus.", en: "No nodes on the bus yet." },
   "bus.spawnNode": { de: "+ Node andocken", en: "+ dock a node" },
   "bus.barAria": { de: "Flotten-Leiste", en: "Fleet bar" },

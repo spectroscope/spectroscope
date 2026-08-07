@@ -7,7 +7,7 @@
 // Traffic is read from model.frames (the envelopes buildFleet now keeps):
 // agent_message task/result marks travel the rail between the two drops.
 // The per-card composer is an HONEST mock — the wire has no message verb yet
-// (ctl knows stop and gate only); it ships with the 0.7 server leg.
+// (ctl knows stop and gate only); it ships with the server leg of card 166.
 
 import { useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type { RunEvent } from "../events";

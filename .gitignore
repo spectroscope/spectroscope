@@ -25,6 +25,18 @@ spectro-desktop/bin/
 # contaminate the macOS dirs above — scripts/build-linux-runkit.sh
 spectro-desktop/jre-linux-x64/
 spectro-desktop/bin-linux-x64/
+# Eclipse/JDT compiles the Gradle modules into a sibling bin/ of its own. Gradle
+# builds into build/, so these are a second copy of the same output and five of
+# them reached main before anyone looked.
+spectro-core/bin/
+spectro-cli/bin/
+spectro-orchestrator/bin/
+spectro-server/bin/
+spectro-mcp-notes/bin/
+# Jenkins durable-task scratch. The agent bind-mounts the real working tree, and
+# every dir() it enters gets a SIBLING <path>@tmp written next to it from inside
+# a Linux container (card 180). Three of those files were committed by PR #53.
+*@tmp/
 .gradle/
 .kotlin/
 .DS_Store
