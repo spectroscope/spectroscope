@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.observability;
 
 import dev.spectroscope.core.config.SpectroConfig;
 import org.junit.jupiter.api.Test;

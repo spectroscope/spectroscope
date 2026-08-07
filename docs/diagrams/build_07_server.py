@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """07 — spectro-server: one socket, twelve REST endpoints, one connection object.
 
-Source-verified against spectro-server/src/main/java/spectroscope/server/* on 2026-07-16.
+Source-verified against spectro-server/src/main/java/dev/spectroscope/server/**
+on 2026-07-16. The path gained a dev/ segment and, since card 186, subpackages,
+so the glob has to recurse.
+
+NOTE: "twelve REST endpoints" above is stale independently of that move -- the
+module answers 54. Left alone here on purpose: this file's drift is not what the
+package split changed, and correcting a count nobody re-verified would only look
+like it had been checked.
 """
 
 import svg_common as C

@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.observability;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
