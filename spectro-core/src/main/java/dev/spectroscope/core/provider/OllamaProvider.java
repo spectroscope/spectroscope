@@ -3,9 +3,11 @@ package dev.spectroscope.core.provider;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -20,8 +22,10 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Optional;
 
@@ -259,6 +263,8 @@ public final class OllamaProvider implements LlmProvider {
         private final CancelSignal signal;
         private final BufferedReader lines;
         private final Runnable closeResponse;
+        // The open llm-wire exchange, or null when the request carries no tap.
+        private final LlmWireTap.Exchange wire;
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         // Some models inline their reasoning as <think>…</think> in message.content
         // instead of message.thinking. The splitter routes inner text to thinking,
@@ -293,17 +299,31 @@ public final class OllamaProvider implements LlmProvider {
             if (hasImages) {
                 assertVisionModel();
             }
+            // The body is serialized HERE and posted as that exact string; the
+            // tap records the same string, so recorded == posted by construction
+            // and the record's "bytes" fidelity is true, not asserted.
+            String bodyJson = toJson(body);
+            LlmWireTap.Exchange wire = request.tap() == null ? null
+                    : request.tap().begin(new LlmWireTap.WireRequest("ollama", model,
+                            "http", "POST", baseUrl + "/api/chat", requestHeaders(),
+                            "bytes", bodyJson, System.currentTimeMillis()));
+            this.wire = wire;
             // exchange(..., false): WE own the response lifecycle — required for
             // streaming reads; every terminal path below calls closeResponse.
             var open = http.post()
                     .uri("/api/chat")
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(body)
+                    .body(bodyJson)
                     .exchange((clientRequest, clientResponse) -> {
                         if (clientResponse.getStatusCode().isError()) {
                             String detail = new String(clientResponse.getBody().readAllBytes(),
                                     StandardCharsets.UTF_8);
                             clientResponse.close();
+                            if (wire != null) {
+                                wire.end(new LlmWireTap.WireOutcome(
+                                        clientResponse.getStatusCode().value(), "bytes",
+                                        detail, false, null, System.currentTimeMillis()));
+                            }
                             throw classifyHttpFailure(
                                     clientResponse.getStatusCode().value(), detail, hasImages);
                         }
@@ -365,6 +385,9 @@ public final class OllamaProvider implements LlmProvider {
                             ? PStop.StopReason.TOOL_USE : PStop.StopReason.END_TURN));
                     return;
                 }
+                if (wire != null) {
+                    wire.line(line); // teed verbatim, BEFORE any interpretation
+                }
                 if (line.isBlank()) {
                     return;
                 }
@@ -380,6 +403,7 @@ public final class OllamaProvider implements LlmProvider {
                 }
                 finished = true;
                 closeResponse.run();
+                endWire(false, failure.getMessage());
                 throw new TransientProviderException(
                         "Ollama request failed: " + failure.getMessage(), failure);
             }
@@ -431,6 +455,25 @@ public final class OllamaProvider implements LlmProvider {
             pending.add(last);
             finished = true;
             closeResponse.run();
+            endWire(last instanceof PStop stop && stop.reason() == PStop.StopReason.ABORTED,
+                    null);
+        }
+
+        /**
+         * Closes the wire exchange, when one is recording. Status is 200 because
+         * the stream had opened (the HTTP-error path closes inside the exchange
+         * callback and never reaches the iterator); teed lines stay with the
+         * record even on an abort, because a partial answer is still an answer
+         * received.
+         *
+         * @param aborted true when a cancel tore the stream down
+         * @param error   the failure in one line, null on a clean close
+         */
+        private void endWire(boolean aborted, String error) {
+            if (wire != null) {
+                wire.end(new LlmWireTap.WireOutcome(200, "bytes", null, aborted, error,
+                        System.currentTimeMillis()));
+            }
         }
     }
 
@@ -453,6 +496,34 @@ public final class OllamaProvider implements LlmProvider {
     }
 
     // ---- request mapping ----------------------------------------------------
+
+    /**
+     * The headers one chat request actually sets. Ollama's wire is keyless,
+     * so the only header is the content type.
+     *
+     * @return the headers as posted, insertion-ordered
+     */
+    private static Map<String, String> requestHeaders() {
+        Map<String, String> headers = new LinkedHashMap<>();
+        headers.put("Content-Type", "application/json");
+        return headers;
+    }
+
+    /**
+     * Serializes a wire record with the provider's own mapper: the exact
+     * string that goes over the socket AND into the llm-wire record.
+     *
+     * @param body the typed request record
+     * @return its JSON serialization
+     */
+    private static String toJson(Object body) {
+        try {
+            return JSON.writeValueAsString(body);
+        } catch (JsonProcessingException impossible) {
+            // the wire records are plain data records; serialization cannot fail
+            throw new UncheckedIOException(impossible);
+        }
+    }
 
     /**
      * Neutral request → typed Ollama wire request.

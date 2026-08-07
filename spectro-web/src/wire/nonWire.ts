@@ -60,6 +60,12 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   "otlp_export",
   "fleet_roster",
   "fleet_event",
+  // The llm-wire mirror: metadata about one finished LLM exchange (wire/
+  // llmWire.ts). The bodies live in the sidecar next to the session file and
+  // are served on request; the frame is what the running app tells its own
+  // trace, and a session file that carried it would be a line the Java reader
+  // drops as torn.
+  "llm_exchange",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the

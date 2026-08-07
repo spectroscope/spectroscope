@@ -608,6 +608,10 @@
 /* The verbatim/readable strip sits inside the pane, a step quieter than the
    face row above it: it picks a rendering, not a view. */
 .trace-detail-modes.trace-reading { margin-left: var(--sp-2); }
+/* The llm exchange detail reuses the lightbox's blob mark, but inert: there is
+   no base64 face to open here, so the mark must not promise a click. */
+.llm-wire-mark { cursor: default; }
+.llm-wire-mark:hover { background: none; }
 .trace-detail:hover .copy,
 .trace-detail .copy:focus-visible { opacity: 1; }
 

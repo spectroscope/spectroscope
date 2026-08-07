@@ -4,6 +4,7 @@ import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.tools.ToolRegistry;
+import dev.spectroscope.core.wire.LlmWireRecorder;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -29,12 +30,25 @@ import java.util.List;
  * @param introspection       TRUE emits a {@code context_info} estimate each turn (additive)
  * @param thinking            TRUE requests the model's reasoning stream
  * @param hooks               external shell hooks around tool calls; null means no hooks
+ * @param llmWire             the session's backend-to-LLM recorder; null records nothing
  */
 public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
                            Path cwd, PermissionBroker onPermission, String agentId, String parentId,
                            List<ProviderMessage> initialMessages, String providerName,
                            Integer maxTokens, Integer compactionThreshold, Boolean introspection,
-                           Boolean thinking, HookRunner hooks) {
+                           Boolean thinking, HookRunner hooks, LlmWireRecorder llmWire) {
+
+    /** Compat: the pre-wire arity. A caller without a recorder records nothing
+     *  and behaves byte-identically to before (card 184's additive rule). */
+    public AgentOptions(LlmProvider provider, String systemPrompt, ToolRegistry registry,
+                        Path cwd, PermissionBroker onPermission, String agentId, String parentId,
+                        List<ProviderMessage> initialMessages, String providerName,
+                        Integer maxTokens, Integer compactionThreshold, Boolean introspection,
+                        Boolean thinking, HookRunner hooks) {
+        this(provider, systemPrompt, registry, cwd, onPermission, agentId, parentId,
+                initialMessages, providerName, maxTokens, compactionThreshold,
+                introspection, thinking, hooks, null);
+    }
 
     /** Entry point of the fluent wiring — chain setters, finish with {@link Builder#build()}.
      *  @return a fresh builder carrying the defaults ({@code agentId} "main", empty prompt) */
@@ -58,6 +72,7 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         private Boolean introspection;
         private Boolean thinking;
         private HookRunner hooks; // nullable → no hooks (a no-op in Agent.runGuarded)
+        private LlmWireRecorder llmWire; // nullable, records nothing without one
 
         /** The LLM backend the loop streams from — the one field without a usable default.
          *  @param value the provider implementation (real, fake, or a decorator chain) */
@@ -101,13 +116,16 @@ public record AgentOptions(LlmProvider provider, String systemPrompt, ToolRegist
         /** External shell hooks around tool calls.
          *  @param value the hook runner; null means no hooks (skipped in the guarded path) */
         public Builder hooks(HookRunner value) { this.hooks = value; return this; }
+        /** The session's backend-to-LLM wire recorder (card 184).
+         *  @param value the recorder the provider taps ride on; null records nothing */
+        public Builder llmWire(LlmWireRecorder value) { this.llmWire = value; return this; }
 
         /** Freezes the wiring.
          *  @return the immutable options record as configured so far */
         public AgentOptions build() {
             return new AgentOptions(provider, systemPrompt, registry, cwd, onPermission,
                     agentId, parentId, initialMessages, providerName, maxTokens, compactionThreshold,
-                    introspection, thinking, hooks);
+                    introspection, thinking, hooks, llmWire);
         }
     }
 }

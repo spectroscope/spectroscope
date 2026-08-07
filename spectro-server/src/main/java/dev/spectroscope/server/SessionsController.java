@@ -142,9 +142,16 @@ public class SessionsController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            return SessionStore.deleteSession(id)
-                    ? ResponseEntity.noContent().build()
-                    : ResponseEntity.notFound().build();
+            if (!SessionStore.deleteSession(id)) {
+                return ResponseEntity.notFound().build();
+            }
+            // The llm-wire sidecar (card 184) lives OUTSIDE the sessions
+            // directory, so the store's delete cannot reach it; cascading here
+            // keeps a deleted session from leaving its recorded LLM traffic
+            // behind. The shape check above already vouched for the id, and
+            // the path rule is the recorder's own.
+            Files.deleteIfExists(dev.spectroscope.core.wire.LlmWireRecorder.fileFor(id));
+            return ResponseEntity.noContent().build();
         } catch (Exception failure) {
             return ResponseEntity.internalServerError().build();
         }

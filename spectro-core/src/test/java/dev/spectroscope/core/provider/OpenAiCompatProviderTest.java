@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.wire.LlmWireTap;
 import dev.spectroscope.core.provider.LlmProvider.PStop;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
 import dev.spectroscope.core.provider.LlmProvider.PToolCall;
@@ -96,6 +97,15 @@ class OpenAiCompatProviderTest {
 
     private static ProviderRequest request(List<ProviderMessage> messages) {
         return new ProviderRequest("You are a test.", messages, List.of(), 500, new CancelSignal());
+    }
+
+    private static ProviderRequest tapped(List<ProviderMessage> messages, LlmWireTap tap) {
+        return new ProviderRequest("You are a test.", messages, List.of(), 500,
+                ProviderRequest.Reasoning.DEFAULT, null, new CancelSignal(), tap);
+    }
+
+    private static List<ProviderMessage> oneUser(String text) {
+        return List.of(new ProviderMessage(ProviderMessage.Role.USER, List.of(new TextContent(text))));
     }
 
     @Test
@@ -557,5 +567,163 @@ class OpenAiCompatProviderTest {
 
         assertEquals(new PTextDelta("hi"), events.get(0));
         assertEquals(new PStop(PStop.StopReason.END_TURN), events.get(events.size() - 1));
+    }
+
+    // ---- the llm-wire tap (card 184): recorded == posted, by construction ---
+
+    @Test
+    void tapRecordsTheRequestBodyByteEqualToWhatTheServerReceived() {
+        scriptedSse = """
+                data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+                data: [DONE]
+                """;
+        RecordingWireTap tap = new RecordingWireTap();
+        collect(tapped(oneUser("Hi"), tap));
+
+        assertEquals(1, tap.requests.size());
+        LlmWireTap.WireRequest recorded = tap.requests.getFirst();
+        assertEquals(lastBody.get(), recorded.body(),
+                "the tap must get the exact string the server received");
+        assertEquals("bytes", recorded.fidelity());
+        assertEquals("local-model", recorded.model());
+        assertEquals("POST", recorded.method());
+        assertEquals("http", recorded.transport());
+        assertEquals(baseUrl + "/v1/chat/completions", recorded.url());
+    }
+
+    @Test
+    void tapRecordsEveryStreamLineTheServerSentAndACleanOutcome() {
+        scriptedSse = """
+                data: {"choices":[{"delta":{"content":"Hel"}}]}
+
+                data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+                data: [DONE]
+                """;
+        RecordingWireTap tap = new RecordingWireTap();
+        collect(tapped(oneUser("Hi"), tap));
+
+        // EVERY line read off the connection is teed: data payloads, the
+        // blank SSE separators, and the [DONE] terminator, all verbatim.
+        assertEquals(scriptedSse.lines().toList(), tap.lines);
+        assertEquals(1, tap.outcomes.size());
+        LlmWireTap.WireOutcome outcome = tap.outcomes.getFirst();
+        assertEquals(200, outcome.status());
+        assertEquals("bytes", outcome.fidelity());
+        assertEquals(null, outcome.body(), "streamed responses ride line(), not body");
+        assertFalse(outcome.aborted());
+        assertEquals(null, outcome.error());
+    }
+
+    @Test
+    void tapCarriesRealHeaderValuesTheRecorderRedactsLater() {
+        scriptedSse = """
+                data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}
+
+                data: [DONE]
+                """;
+        RecordingWireTap tap = new RecordingWireTap();
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "local-model", "sk-real-key", "lmstudio"));
+        provider.stream(tapped(oneUser("Hi"), tap)).forEach(event -> { });
+
+        LlmWireTap.WireRequest recorded = tap.requests.getFirst();
+        assertEquals("lmstudio", recorded.provider(), "the configured dialect is the label");
+        assertEquals("Bearer sk-real-key", recorded.headers().get("Authorization"),
+                "the provider passes REAL header values; redaction is the recorder's job");
+        assertEquals("application/json", recorded.headers().get("Content-Type"));
+    }
+
+    @Test
+    void tapRecordsTheHttpErrorPathWithStatusAndDetailBody() {
+        scriptedStatus = 503;
+        scriptedErrorBody = "{\"error\":\"overloaded\"}";
+        RecordingWireTap tap = new RecordingWireTap();
+        assertThrows(TransientProviderException.class,
+                () -> collect(tapped(oneUser("Hi"), tap)));
+
+        assertEquals(1, tap.requests.size(), "the request WAS posted and must be on record");
+        assertEquals(1, tap.outcomes.size());
+        LlmWireTap.WireOutcome outcome = tap.outcomes.getFirst();
+        assertEquals(503, outcome.status());
+        assertEquals(scriptedErrorBody, outcome.body(),
+                "the error detail body is the outcome's single payload");
+        assertFalse(outcome.aborted());
+    }
+
+    @Test
+    void tapKeepsPartialLinesAndMarksAbortedOnCancel() throws Exception {
+        CountDownLatch requestArrived = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        server.removeContext("/v1/chat/completions");
+        server.createContext("/v1/chat/completions", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+            exchange.sendResponseHeaders(200, 0); // chunked: an open SSE stream
+            OutputStream out = exchange.getResponseBody();
+            try {
+                out.write("data: {\"choices\":[{\"delta\":{\"content\":\"hi \"}}]}\n\n"
+                        .getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                requestArrived.countDown();
+                release.await(8, TimeUnit.SECONDS); // then STALL
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+
+        RecordingWireTap tap = new RecordingWireTap();
+        CancelSignal signal = new CancelSignal();
+        ProviderRequest req = new ProviderRequest("sys", oneUser("go"), List.of(), 500,
+                ProviderRequest.Reasoning.DEFAULT, null, signal, tap);
+        OpenAiCompatProvider provider = new OpenAiCompatProvider(
+                new OpenAiCompatProvider.Options(baseUrl, "local-model", null));
+        Iterator<ProviderEvent> it = provider.stream(req).iterator();
+
+        assertTrue(it.hasNext());
+        it.next();
+        assertTrue(requestArrived.await(5, TimeUnit.SECONDS));
+
+        CountDownLatch done = new CountDownLatch(1);
+        Thread reader = Thread.ofVirtual().start(() -> {
+            while (it.hasNext()) {
+                it.next();
+            }
+            done.countDown();
+        });
+        Thread.sleep(300);
+        signal.cancel();
+        assertTrue(done.await(3, TimeUnit.SECONDS));
+        release.countDown();
+        reader.join(1_000);
+
+        assertEquals(1, tap.outcomes.size());
+        assertTrue(tap.outcomes.getFirst().aborted(),
+                "a cancelled stream must record aborted=true");
+        assertTrue(tap.lines.contains("data: {\"choices\":[{\"delta\":{\"content\":\"hi \"}}]}"),
+                "the partial lines received before the cancel must survive, got: " + tap.lines);
+    }
+
+    @Test
+    void aNullTapChangesNothing() {
+        scriptedSse = """
+                data: {"choices":[{"delta":{"content":"Hel"}}]}
+
+                data: {"choices":[{"delta":{},"finish_reason":"stop"}]}
+
+                data: {"usage":{"prompt_tokens":11,"completion_tokens":4},"choices":[]}
+
+                data: [DONE]
+                """;
+        // The explicit full-arity null: the stream must translate exactly as the
+        // tap-free constructors do (which the rest of this suite already pins).
+        List<ProviderEvent> events = collect(tapped(oneUser("Hi"), null));
+
+        assertEquals(new PTextDelta("Hel"), events.get(0));
+        assertEquals(new PUsage(11, 4), events.get(1));
+        assertEquals(new PStop(PStop.StopReason.END_TURN), events.get(2));
     }
 }

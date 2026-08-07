@@ -3,9 +3,11 @@ package dev.spectroscope.core.provider;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.wire.LlmWireTap;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
@@ -77,6 +79,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
     /** The provider label this endpoint answers to — decides the reasoning fields. */
     private final String dialect;
 
+    /** Kept for the wire record's headers: the tap gets the REAL value, the recorder redacts. */
+    private final String apiKey;
+
     /**
      * Builds the provider; the Bearer header is attached only when a key is configured.
      *
@@ -98,6 +103,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
         this.model = options.model();
         this.baseUrl = options.baseUrl();
         this.dialect = options.dialect();
+        this.apiKey = options.apiKey();
     }
 
     @Override
@@ -439,6 +445,8 @@ public final class OpenAiCompatProvider implements LlmProvider {
         private final CancelSignal signal;
         private final BufferedReader lines;
         private final Runnable closeResponse;
+        // The open llm-wire exchange, or null when the request carries no tap.
+        private final LlmWireTap.Exchange wire;
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
         // Raw inline <think> tags in content (server-side reasoning parsing off)
         // are split into thinking/answer — shared with the Ollama provider.
@@ -458,15 +466,30 @@ public final class OpenAiCompatProvider implements LlmProvider {
             // absolute URL, not a base-relative path: a leading-slash path would
             // REPLACE gemini's /v1beta/openai base path instead of extending it.
             String root = baseUrl.replaceAll("/$", "");
+            String url = root + compatPath(root, "/chat/completions");
+            // The body is serialized HERE and posted as that exact string; the
+            // tap records the same string, so recorded == posted by construction
+            // and the record's "bytes" fidelity is true, not asserted.
+            String bodyJson = toJson(toChatRequest(request));
+            LlmWireTap.Exchange wire = request.tap() == null ? null
+                    : request.tap().begin(new LlmWireTap.WireRequest(providerLabel(),
+                            model, "http", "POST", url, requestHeaders(), "bytes",
+                            bodyJson, System.currentTimeMillis()));
+            this.wire = wire;
             var open = http.post()
-                    .uri(root + compatPath(root, "/chat/completions"))
+                    .uri(url)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(toChatRequest(request))
+                    .body(bodyJson)
                     .exchange((clientRequest, clientResponse) -> {
                         if (clientResponse.getStatusCode().isError()) {
                             String detail = new String(clientResponse.getBody().readAllBytes(),
                                     StandardCharsets.UTF_8);
                             clientResponse.close();
+                            if (wire != null) {
+                                wire.end(new LlmWireTap.WireOutcome(
+                                        clientResponse.getStatusCode().value(), "bytes",
+                                        detail, false, null, System.currentTimeMillis()));
+                            }
                             throw classifyHttpFailure(
                                     clientResponse.getStatusCode().value(), detail);
                         }
@@ -527,6 +550,9 @@ public final class OpenAiCompatProvider implements LlmProvider {
                     finishTurn();
                     return;
                 }
+                if (wire != null) {
+                    wire.line(line); // teed verbatim, BEFORE any interpretation
+                }
                 if (line.equals("data: [DONE]")) {
                     finishTurn();
                     return;
@@ -543,6 +569,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
                 }
                 finished = true;
                 closeResponse.run();
+                endWire(false, failure.getMessage());
                 throw new TransientProviderException(
                         "OpenAI-compatible request failed: " + failure.getMessage(), failure);
             }
@@ -623,6 +650,7 @@ public final class OpenAiCompatProvider implements LlmProvider {
                             : PStop.StopReason.END_TURN));
             finished = true;
             closeResponse.run();
+            endWire(false, null);
         }
 
         /**
@@ -634,6 +662,25 @@ public final class OpenAiCompatProvider implements LlmProvider {
             pending.add(last);
             finished = true;
             closeResponse.run();
+            endWire(last instanceof PStop stop && stop.reason() == PStop.StopReason.ABORTED,
+                    null);
+        }
+
+        /**
+         * Closes the wire exchange, when one is recording. Status is 200 because
+         * the stream had opened (the HTTP-error path closes inside the exchange
+         * callback and never reaches the iterator); teed lines stay with the
+         * record even on an abort, because a partial answer is still an answer
+         * received.
+         *
+         * @param aborted true when a cancel tore the stream down
+         * @param error   the failure in one line, null on a clean close
+         */
+        private void endWire(boolean aborted, String error) {
+            if (wire != null) {
+                wire.end(new LlmWireTap.WireOutcome(200, "bytes", null, aborted, error,
+                        System.currentTimeMillis()));
+            }
         }
     }
 
@@ -656,6 +703,49 @@ public final class OpenAiCompatProvider implements LlmProvider {
     }
 
     // ---- request mapping ------------------------------------------------------
+
+    /**
+     * The wire record's provider label: the configured dialect where one is
+     * set, otherwise inferred the same way the reasoning wire infers (the
+     * cloud is "openai", any other base is an honest "openai-compat").
+     *
+     * @return the label the llm-wire record carries
+     */
+    private String providerLabel() {
+        return dialect != null ? dialect
+                : isOpenAiCloud(baseUrl) ? "openai" : "openai-compat";
+    }
+
+    /**
+     * The headers one chat request actually sets, REAL values included: the
+     * recorder redacts credential values, the provider never pre-redacts.
+     *
+     * @return the headers as posted, insertion-ordered
+     */
+    private Map<String, String> requestHeaders() {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (apiKey != null && !apiKey.isBlank()) {
+            headers.put("Authorization", "Bearer " + apiKey);
+        }
+        headers.put("Content-Type", "application/json");
+        return headers;
+    }
+
+    /**
+     * Serializes a wire record with the provider's own mapper: the exact
+     * string that goes over the socket AND into the llm-wire record.
+     *
+     * @param body the typed request record
+     * @return its JSON serialization
+     */
+    private static String toJson(Object body) {
+        try {
+            return JSON.writeValueAsString(body);
+        } catch (JsonProcessingException impossible) {
+            // the wire records are plain data records; serialization cannot fail
+            throw new UncheckedIOException(impossible);
+        }
+    }
 
     /**
      * The largest completion cap this provider ever sends. The harness default

@@ -3,7 +3,9 @@ package dev.spectroscope.core.provider;
 import com.anthropic.client.AnthropicClient;
 import com.anthropic.client.okhttp.AnthropicOkHttpClient;
 import com.anthropic.core.JsonValue;
+import com.anthropic.core.ObjectMappers;
 import com.anthropic.core.http.StreamResponse;
+import com.anthropic.errors.AnthropicServiceException;
 import com.anthropic.helpers.MessageAccumulator;
 import com.anthropic.models.messages.Base64ImageSource;
 import com.anthropic.models.messages.CacheControlEphemeral;
@@ -22,9 +24,12 @@ import com.anthropic.models.messages.ThinkingConfigEnabled;
 import com.anthropic.models.messages.Tool;
 import com.anthropic.models.messages.ToolResultBlockParam;
 import com.anthropic.models.messages.ToolUseBlockParam;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import dev.spectroscope.core.provider.LlmProvider.PStop.StopReason;
+import dev.spectroscope.core.wire.LlmWireTap;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -51,10 +56,21 @@ public final class AnthropicProvider implements LlmProvider {
     // without a client (constructing one requires ANTHROPIC_API_KEY).
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    // The SDK's own mapper serializes the wire record. That is what the
+    // "sdk-json"/"sdk-events" fidelity labels mean: the SDK owns the socket,
+    // and the record is the SDK's serialization of the same payloads —
+    // measured byte-equal to the posted body in the loopback test.
+    private static final JsonMapper SDK_JSON = ObjectMappers.jsonMapper();
+
+    // The SDK's default API root, only needed to name the real endpoint on
+    // the wire record (the SDK does not expose its resolved base URL).
+    private static final String DEFAULT_BASE_URL = "https://api.anthropic.com";
+
     // maxRetries(0): spectroscope owns retry uniformly via RetryingProvider — no layered SDK retry.
     private final AnthropicClient client;
     private final String model;
     private final boolean promptCaching;
+    private final String wireUrl;
 
     /**
      * Builds the provider with an explicit API key when one was resolved (env or
@@ -84,6 +100,9 @@ public final class AnthropicProvider implements LlmProvider {
     AnthropicProvider(String model, boolean promptCaching, String apiKey, String baseUrl) {
         this.model = model;
         this.promptCaching = promptCaching;
+        // The wire record names the REAL endpoint: the SDK posts every
+        // streaming call to <base>/v1/messages (MessageServiceImpl).
+        this.wireUrl = (baseUrl != null ? baseUrl : DEFAULT_BASE_URL) + "/v1/messages";
         AnthropicOkHttpClient.Builder builder = AnthropicOkHttpClient.builder().maxRetries(0);
         if (baseUrl != null) {
             builder.baseUrl(baseUrl);
@@ -135,20 +154,102 @@ public final class AnthropicProvider implements LlmProvider {
         private final Iterator<RawMessageStreamEvent> sdkEvents;
         private final MessageAccumulator accumulator = MessageAccumulator.create();
         private final Deque<ProviderEvent> pending = new ArrayDeque<>();
+        private final LlmWireTap.Exchange exchange; // null when the request carries no tap
+        private boolean exchangeEnded = false;
         private boolean finished = false;
 
         /**
          * Starts the streaming HTTP call and hooks the cancel signal onto it.
+         * With a tap on the request, {@code begin()} fires FIRST — the request
+         * must be on record before the socket opens, so a crash mid-stream
+         * still leaves it on file.
          *
          * @param request the neutral request to translate into SDK params
          */
         private TranslatingIterator(ProviderRequest request) {
             this.request = request;
-            this.response = client.messages().createStreaming(
-                    buildParams(model, promptCaching, request));
+            MessageCreateParams params = buildParams(model, promptCaching, request);
+            this.exchange = request.tap() == null ? null : request.tap().begin(wireRequest(params));
+            try {
+                this.response = client.messages().createStreaming(params);
+            } catch (RuntimeException openFailure) {
+                // An answered-but-refused call (HTTP 4xx/5xx) surfaces here —
+                // close the exchange with the real status before rethrowing.
+                endExchange(statusOf(openFailure), openFailure.toString(), false);
+                throw openFailure;
+            }
             // Cancellation: closing the StreamResponse aborts the underlying HTTP stream.
             request.signal().onCancel(response::close);
             this.sdkEvents = response.stream().iterator();
+        }
+
+        /**
+         * The wire record of this call: the built params' body plus the
+         * {@code stream:true} flag, serialized with the SDK's own mapper —
+         * exactly how the SDK's MessageService builds the streaming POST, so
+         * the recorded string equals the posted bytes (fidelity "sdk-json").
+         * Headers are NOT recorded: the SDK owns them and the record does not
+         * fabricate what it cannot see.
+         *
+         * @param params the fully built SDK params about to be posted
+         * @return the request record handed to {@code begin()}
+         */
+        private LlmWireTap.WireRequest wireRequest(MessageCreateParams params) {
+            String body;
+            try {
+                body = SDK_JSON.writeValueAsString(params._body().toBuilder()
+                        .putAdditionalProperty("stream", JsonValue.from(true))
+                        .build());
+            } catch (JsonProcessingException unserializable) {
+                // The SDK would fail posting this same object; the record
+                // stays honest with no body rather than killing the call here.
+                body = null;
+            }
+            return new LlmWireTap.WireRequest("anthropic", model, "sdk", "POST",
+                    wireUrl, null, "sdk-json", body, System.currentTimeMillis());
+        }
+
+        /**
+         * Mirrors one SDK stream event into the wire record as reconstructed
+         * SSE lines: {@code event: <name>} then {@code data: <payload>}. The
+         * name IS the payload's own type field — that is the Messages API's
+         * SSE contract. Fidelity "sdk-events": the SDK consumed the socket,
+         * these lines are its serialization of the same events. (SSE pings
+         * never surface from the SDK, so they cannot appear on the record.)
+         *
+         * @param sdkEvent the stream event as the SDK delivered it
+         */
+        private void teeToWire(RawMessageStreamEvent sdkEvent) {
+            if (exchange == null) {
+                return;
+            }
+            try {
+                String data = SDK_JSON.writeValueAsString(sdkEvent);
+                exchange.line("event: " + SDK_JSON.readTree(data).path("type").asText("unknown"));
+                exchange.line("data: " + data);
+            } catch (JsonProcessingException skipped) {
+                // The wire record is an additive mirror: a line that cannot
+                // serialize is dropped, never fatal to the run.
+            }
+        }
+
+        /**
+         * Closes the wire exchange exactly once. The status is honest: the
+         * SDK's {@code StreamResponse} exposes no status accessor, so a
+         * natural finish records null — only an {@code
+         * AnthropicServiceException} carries a real code onto the record.
+         *
+         * @param status  the HTTP status when the SDK exposed one, else null
+         * @param error   the failure in one line, null on a clean close
+         * @param aborted true when a cancel tore the stream down
+         */
+        private void endExchange(Integer status, String error, boolean aborted) {
+            if (exchange == null || exchangeEnded) {
+                return;
+            }
+            exchangeEnded = true;
+            exchange.end(new LlmWireTap.WireOutcome(status, "sdk-events", null,
+                    aborted, error, System.currentTimeMillis()));
         }
 
         /** Pulls SDK events until at least one neutral event is pending (or the stream ends). */
@@ -174,6 +275,7 @@ public final class AnthropicProvider implements LlmProvider {
             try {
                 if (sdkEvents.hasNext()) {
                     RawMessageStreamEvent sdkEvent = sdkEvents.next();
+                    teeToWire(sdkEvent);
                     accumulator.accumulate(sdkEvent);
                     sdkEvent.contentBlockDelta()
                             .flatMap(delta -> delta.delta().text())
@@ -200,16 +302,20 @@ public final class AnthropicProvider implements LlmProvider {
                         message.usage().cacheCreationInputTokens()));
                 pending.add(new PStop(mapStopReason(message)));
                 finished = true;
+                endExchange(null, null, false);
                 response.close();
             } catch (RuntimeException streamError) {
                 finished = true;
                 closeQuietly();
                 if (request.signal().isCancelled()) {
                     // A cancel that closed the stream surfaces as an SDK runtime error —
-                    // report it as a clean abort, not a crash.
+                    // report it as a clean abort, not a crash. The wire record
+                    // keeps the partial lines received before the teardown.
+                    endExchange(null, null, true);
                     pending.add(new PStop(StopReason.ABORTED));
                     return;
                 }
+                endExchange(statusOf(streamError), streamError.toString(), false);
                 throw streamError; // real errors propagate; the loop turns them into `error` events
             }
         }
@@ -518,6 +624,18 @@ public final class AnthropicProvider implements LlmProvider {
      */
     private static JsonValue toJsonValue(JsonNode node) {
         return JsonValue.from(JSON.convertValue(node, Object.class));
+    }
+
+    /**
+     * The HTTP status a failure carries, when the SDK exposed one — service
+     * exceptions (4xx/5xx answers) do; transport and parse failures do not.
+     *
+     * @param failure the runtime error the SDK surfaced
+     * @return the status code, or null when the failure names none
+     */
+    private static Integer statusOf(RuntimeException failure) {
+        return failure instanceof AnthropicServiceException service
+                ? service.statusCode() : null;
     }
 
     /**

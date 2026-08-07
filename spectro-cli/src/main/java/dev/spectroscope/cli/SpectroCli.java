@@ -21,6 +21,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
+import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.core.trace.OtlpSink;
 import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.skills.SkillLibrary;
@@ -137,6 +138,8 @@ public final class SpectroCli implements Runnable {
     // bus/OTel consumers can dock without touching the drain loop. Rebuilt
     // wherever the store is — the sink holds the store it writes.
     private TracingPorts tracing;
+    // The backend-to-LLM record (card 184) — opened with the store, same id.
+    private LlmWireRecorder llmWire;
     // Live-toggleable via /think on|off; seeded from config. Applied by rebuilding
     // the agent (the flag is a build-time AgentOptions input), preserving history.
     private boolean thinking;
@@ -200,6 +203,7 @@ public final class SpectroCli implements Runnable {
         // The store first: the auto workspace is keyed by the session id, so a
         // resume lands in the SAME folder it worked in before.
         store = new SessionStore(resume);
+        llmWire = LlmWireRecorder.forSession(store.id()); // the second JSONL (card 184)
         tracing = new TracingPorts().require(new JsonlSink(store));
         // The OTel exporter rides as a REGISTERED port (isolated, warn-once):
         // off unless the config names an OTLP endpoint.
@@ -333,7 +337,8 @@ public final class SpectroCli implements Runnable {
         // the provider is created lazily per call — a missing API key only
         // matters (and errors readably) when the model actually asks for an image.
         registry.register(new GenerateImageTool(config::imageProviderFromConfig,
-                ImageStore.inUserHome()));
+                ImageStore.inUserHome(),
+                llmWire)); // image calls land on the session's llm-wire record (card 184)
         // Real tool: fetch a web page as readable text. Network egress is a side
         // effect on untrusted input, so it is permission-gated like run_command; the
         // RestClient seam (DefaultHttpFetcher) is injectable so tests stay network-free.
@@ -499,6 +504,7 @@ public final class SpectroCli implements Runnable {
                 .introspection(true) // additive: context introspection — feeds the web ring, lands in the JSONL
                 .thinking(thinking)  // reasoning visibility; toggled live by /think on|off
                 .hooks(hooks)        // external pre/post_tool_use shell hooks (config-only)
+                .llmWire(llmWire)    // the backend-to-LLM record rides the session's recorder (card 184)
                 .onPermission(askOnTerminal)
                 .build());
     }
@@ -573,6 +579,10 @@ public final class SpectroCli implements Runnable {
                 // the prompt, and rebuild the tool world so subagents inherit it.
                 // MCP is reloaded by registerTools — release the old processes first.
                 store = new SessionStore(null);
+                if (llmWire != null) {
+                    llmWire.close(); // the old session's writer; lines are flushed
+                }
+                llmWire = LlmWireRecorder.forSession(store.id());
                 tracing = new TracingPorts().require(new JsonlSink(store));
                 workspace = WorkspaceResolver.resolve(config.workspace(), store.id());
                 composeSystemPrompt();

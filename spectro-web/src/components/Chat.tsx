@@ -89,6 +89,10 @@ export function Chat(props: {
   stopRequested?: boolean;
   /** The stored session id when this archive can be exported (card 95). */
   exportId?: string;
+  /** The stored session id when its llm-wire sidecar answered non-empty: the
+   *  recorded exchanges as an NDJSON download beside the session's own. Absent
+   *  whenever the index named nothing — a link to an empty file is a claim. */
+  llmWireId?: string;
   /** Which grouping the scroll uses (branch chat-v2). Default "v1" — every
    *  existing caller keeps the recorded rendering, subagent turns and all.
    *  "v2" lifts the child turns out and asks {@link renderChip} for the marker
@@ -747,6 +751,19 @@ export function Chat(props: {
                   title={t(lang, "arch.exportTitle")}
                 >
                   {t(lang, "arch.export")}
+                </a>
+              )}
+              {/* The sidecar beside that file: the recorded LLM exchanges,
+                  request and response verbatim. Offered only when the index
+                  answered non-empty, so the link never names an empty file. */}
+              {props.llmWireId !== undefined && (
+                <a
+                  className="ghost archive-export"
+                  href={`/api/sessions/${encodeURIComponent(props.llmWireId)}/llm-wire`}
+                  download={`${props.llmWireId}.llm.jsonl`}
+                  title={t(lang, "arch.llmWireTitle")}
+                >
+                  {t(lang, "arch.llmWire")}
                 </a>
               )}
               {props.onDelete !== undefined && <DeleteButton onDelete={props.onDelete} />}

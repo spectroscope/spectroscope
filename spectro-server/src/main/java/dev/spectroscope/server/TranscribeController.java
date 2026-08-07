@@ -4,10 +4,14 @@ import dev.spectroscope.cli.voice.CommandRunner;
 import dev.spectroscope.cli.voice.ProcessCommandRunner;
 import dev.spectroscope.cli.voice.Transcriber;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.core.wire.LlmWireRecorder;
+import dev.spectroscope.core.wire.LlmWireTap;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +46,10 @@ public class TranscribeController {
     private final Transcriber transcriber;
     /** Fast, process-free readiness probe: the pinned model must be present. */
     private final boolean sttAvailable;
+    /** Named on the llm-wire record so the file says which model transcribed. */
+    private final Path modelPath;
+    /** Test seam; null means one day-file recorder per request (see {@link #transcribe}). */
+    private final LlmWireRecorder wireRecorder;
 
     /** Spring wiring: real child processes, the pinned model under ~/.spectro/models. */
     public TranscribeController() {
@@ -56,9 +64,26 @@ public class TranscribeController {
      * @param sttAvailable readiness override — {@code false} makes the endpoint answer 503
      */
     TranscribeController(CommandRunner runner, Path modelPath, boolean sttAvailable) {
+        this(runner, modelPath, sttAvailable, null);
+    }
+
+    /**
+     * The full seam (card 184): also inject the llm-wire recorder the spoken
+     * bytes are recorded through.
+     *
+     * @param runner the process boundary — a fake keeps ffmpeg/whisper out of tests
+     * @param modelPath the whisper model file the transcriber is pointed at
+     * @param sttAvailable readiness override — {@code false} makes the endpoint answer 503
+     * @param wireRecorder the recorder to write the stt exchange to; null opens
+     *                     the shared day file per request
+     */
+    TranscribeController(CommandRunner runner, Path modelPath, boolean sttAvailable,
+                         LlmWireRecorder wireRecorder) {
         this.runner = runner;
         this.transcriber = new Transcriber(runner, modelPath);
         this.sttAvailable = sttAvailable;
+        this.modelPath = modelPath;
+        this.wireRecorder = wireRecorder;
     }
 
     /**
@@ -104,6 +129,16 @@ public class TranscribeController {
         }
         Path webmPath = dir.resolve("recording.webm");
         Path wavPath = dir.resolve("recording.wav");
+        // The spoken bytes are a real model exchange (card 184): the recording
+        // rides the llm-wire record verbatim (base64), the transcript comes back
+        // as the response. Voice happens BEFORE any session exists, so the
+        // record lives in a shared day file, agent "composer", kind "stt".
+        LlmWireRecorder recorder = wireRecorder != null ? wireRecorder
+                : LlmWireRecorder.forSession("stt-" + LocalDate.now());
+        LlmWireTap.Exchange exchange = recorder.bound("composer", null, "stt").begin(
+                new LlmWireTap.WireRequest("whisper-cpp", modelPath.getFileName().toString(),
+                        "process", "POST", "process://ffmpeg+whisper-cli", null, "bytes",
+                        Base64.getEncoder().encodeToString(audio), System.currentTimeMillis()));
         try {
             Files.write(webmPath, audio);            // browser delivers webm/opus
             // Convert to 16 kHz mono WAV through the SAME runner seam — reusing the
@@ -112,15 +147,26 @@ public class TranscribeController {
                     "ffmpeg", "-hide_banner", "-loglevel", "error",
                     "-i", webmPath.toString(), "-ar", "16000", "-ac", "1", "-y", wavPath.toString()));
             Optional<String> text = transcriber.transcribe(wavPath);
+            // "process-output": whisper's stdout as the Transcriber parsed it —
+            // not socket bytes, and the label says so.
+            exchange.end(new LlmWireTap.WireOutcome(200, "process-output",
+                    text.orElse(""), false, null, System.currentTimeMillis()));
             return ResponseEntity.ok(Map.of("text", text.orElse("")));
         } catch (IOException failure) {
             // Missing binary/model surfaces here as a readable message → 503 with the hint.
+            exchange.end(new LlmWireTap.WireOutcome(503, "process-output", null, false,
+                    failure.getMessage(), System.currentTimeMillis()));
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", failure.getMessage()));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
+            exchange.end(new LlmWireTap.WireOutcome(500, "process-output", null, false,
+                    "transcription interrupted", System.currentTimeMillis()));
             return ResponseEntity.internalServerError().body(Map.of("error", "transcription interrupted"));
         } finally {
+            if (wireRecorder == null) {
+                recorder.close(); // per-request day-file handle; flushed per line
+            }
             deleteRecursively(dir);
         }
     }

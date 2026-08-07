@@ -65,6 +65,8 @@ import type { RowFace } from "../state/traceFace";
 import { reportCount, useSearch } from "../state/search";
 import { traceHits, traceRowText } from "./traceSearch";
 import type { TraceHitRow } from "./traceSearch";
+import { llmExchangeSummary, readExchange } from "../wire/llmWire";
+import { LlmExchangeDetail } from "./LlmExchangeDetail";
 
 /** agent_message summaries clip their text to this width (CLI parity). */
 const AGENT_MESSAGE_PREVIEW_CHARS = 60;
@@ -85,6 +87,7 @@ export const CATEGORIES = [
   "permission",
   "usage",
   "image",
+  "llm",
   "context",
   "client",
   "other",
@@ -128,6 +131,12 @@ export function categoryOf(type: string): Category {
     case "context_info":
     case "system_context":
       return "context";
+    // The recorded LLM exchange (wire/llmWire.ts). Its own chip, not `other`:
+    // a type this switch does not know gets no chip (card 179), and pressing
+    // `other` off to clear the plumbing rows must not take the one row that
+    // says what actually left for the model.
+    case "llm_exchange":
+      return "llm";
     // What an imported transcript recorded around the conversation: the todo
     // list, the prompt queue, the file somebody edited (card 141). Their own
     // group rather than `other`, so a reader can bring them in or put them
@@ -423,6 +432,14 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
       const note = String(p["note"] ?? "");
       return note !== "" ? note : `[${String(p["mediaType"] ?? "image")}]`;
     }
+    // The recorded exchange: path, provider, sizes, status, duration — and
+    // structurally nothing else, because the frame carries metadata only and
+    // the line is built from the read record alone (wire/llmWire.ts). The
+    // bodies are fetched by the open row and never enter the search text.
+    case "llm_exchange": {
+      const x = readExchange(entry.payload);
+      return x === null ? compactJson(entry.payload) : llmExchangeSummary(x);
+    }
     default:
       return compactJson(entry.payload);
   }
@@ -485,6 +502,11 @@ const TraceRow = memo(function TraceRow(props: {
    *  `provenance`, and required for the same reason: it decides whether the
    *  pane may promise the wire line beside it is the stored line. */
   translated: boolean;
+  /** Where an llm_exchange row may fetch its recorded bodies from: the session
+   *  the sidecar sits beside, or null when there is none to ask — an import, a
+   *  scenario, a fleet. Session-wide like `provenance`, and one stable string,
+   *  so it rides every row without waking the memo. */
+  llmWireSessionId: string | null;
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -627,6 +649,7 @@ const TraceRow = memo(function TraceRow(props: {
           sourceLines={props.source?.lines ?? null}
           provenance={props.provenance}
           translated={props.translated}
+          llmWireSessionId={props.llmWireSessionId}
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
@@ -1084,6 +1107,7 @@ function TraceDetail({
   sourceLines,
   provenance,
   translated,
+  llmWireSessionId,
   onJump,
 }: {
   entry: TraceEntry;
@@ -1104,6 +1128,8 @@ function TraceDetail({
   provenance: TraceProvenance;
   /** Whether the payload on the wire face is a translated one. */
   translated: boolean;
+  /** The session whose llm-wire sidecar an exchange row may ask, or null. */
+  llmWireSessionId: string | null;
   onJump: (seq: number) => void;
 }) {
   // The row subscribes to the master itself: only the OPEN row renders a
@@ -1214,7 +1240,12 @@ function TraceDetail({
           label={t(lang, `common.${copyLabel(copyMode, reading)}`)}
         />
       )}
-      {mode === "structured" ? (
+      {mode === "structured" && entry.type === "llm_exchange" ? (
+        /* The exchange as the thing it is: the recorded request and response,
+           fetched on this expand and never sooner. The wire face beside it
+           still shows the frame itself, one click away. */
+        <LlmExchangeDetail payload={entry.payload} sessionId={llmWireSessionId} />
+      ) : mode === "structured" ? (
         <EventStructured
           type={entry.type}
           payload={entry.payload}
@@ -1278,6 +1309,10 @@ export function TraceView(props: {
    *  payload when a translation is applied, so the wire face is then a rebuilt
    *  record and the source pane may not call it the stored line. */
   translated?: boolean;
+  /** The session whose llm-wire sidecar an expanded llm_exchange row may
+   *  fetch from. Absent or null means there is none to ask — an import, a
+   *  scenario, an entered fleet — and the detail says so instead of fetching. */
+  llmWireSessionId?: string | null;
 }) {
   const { entries } = props;
   const agentFilter = props.agentFilter ?? null;
@@ -2072,6 +2107,7 @@ export function TraceView(props: {
                     source={openSeq === e.seq ? openSource : undefined}
                     provenance={provenance}
                     translated={props.translated ?? false}
+                    llmWireSessionId={props.llmWireSessionId ?? null}
                     onJump={jumpTo}
                     onToggle={onToggle}
                   />

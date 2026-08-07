@@ -280,6 +280,7 @@ public final class SubagentManager {
                 .registry(registryFor(type, childId, parentQueue)) // + report_status; NEVER the spawn tools
                 .onPermission(config.onPermission())  // same broker; request.agentId() names the asker
                 .hooks(config.hooks())                // same guard — delegation must not bypass a blocking hook
+                .llmWire(config.llmWire())            // same wire record; the child binds its own agentId
                 .cwd(config.cwd())
                 .agentId(childId)
                 .parentId(config.parentAgentId())     // the tree edge — the graph tab draws exactly this
