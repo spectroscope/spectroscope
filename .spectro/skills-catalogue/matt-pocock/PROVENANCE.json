@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/mattpocock/skills",
+  "commit": "84fdeffd12f2ee307994d1eb6feb48173b6e0502",
+  "licence": "MIT",
+  "copyright": "Copyright (c) 2026 Matt Pocock",
+  "vendoredOn": "2026-08-06",
+  "vendoredFrom": "skills",
+  "note": "Copied verbatim under MIT. The LICENSE beside this file is the upstream one and travels with every copy, which is what MIT requires."
+}

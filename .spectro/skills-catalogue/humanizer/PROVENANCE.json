@@ -1,0 +1,9 @@
+{
+  "repo": "https://github.com/blader/humanizer",
+  "commit": "523374dee72d67c7b2b5f858ea0094ffda49c3ac",
+  "licence": "MIT",
+  "copyright": "Copyright (c) 2025 Siqi Chen",
+  "vendoredOn": "2026-08-06",
+  "vendoredFrom": "repo root (a single skill, not a collection)",
+  "note": "Copied verbatim under MIT. The LICENSE beside this file is the upstream one and travels with every copy, which is what MIT requires."
+}
