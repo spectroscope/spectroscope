@@ -1191,6 +1191,18 @@ export const dict: Record<string, { de: string; en: string }> = {
   "skset.disable": { de: "ausschalten", en: "disable" },
   "skset.deleteTitle": { de: "Skill löschen (nur eigene)", en: "Delete skill (user skills only)" },
   "skset.deleteConfirm": { de: "wirklich?", en: "sure?" },
+
+  // the bundled skill catalogue (card 182)
+  "skset.catalogue": { de: "Katalog", en: "Catalogue" },
+  "skset.catalogueNote": { de: "57 Skills aus vier Sammlungen, in dieser App mitgeliefert — ohne Netz. Ein Klick kopiert einen davon samt LICENSE nach ~/.spectro/skills/<Sammlung>/, der Agent ruft ihn als <Sammlung>:<Skill>. Es wird nichts ausgeführt, und ein eigener Skill gleichen Namens bleibt unangetastet.", en: "57 skills from four collections, carried inside this app — no network needed. One click copies one of them, with its LICENSE, into ~/.spectro/skills/<pack>/, and the agent calls it <pack>:<skill>. Nothing is executed, and a skill of your own with the same name is left alone." },
+  "skset.catalogueEmpty": { de: "Dieser Build trägt keinen Katalog.", en: "This build carries no catalogue." },
+  "skset.install": { de: "installieren", en: "install" },
+  "skset.installing": { de: "kopiere …", en: "copying ..." },
+  "skset.installed": { de: "installiert", en: "installed" },
+  "skset.installTitle": { de: "Aus {pack}, Lizenz {licence} — LICENSE und PROVENANCE.json werden mitkopiert", en: "From {pack}, licensed {licence} — LICENSE and PROVENANCE.json travel with it" },
+  "skset.installFailed": { de: "Installation fehlgeschlagen: {error}", en: "Install failed: {error}" },
+  "skset.nameTaken": { de: "Dieser Skill ist schon installiert. Zum Neu-Installieren erst löschen — ein Kopieren darüber würde eigene Änderungen und den Aus-Schalter verlieren.", en: "This skill is already installed. Delete it first to install it again — copying over it would lose your edits and its off switch." },
+
   "mcpset.title": { de: "MCP-Server", en: "MCP servers" },
   "mcpset.note": { de: "Externe MCP-Server (User-Ebene). Greifen beim nächsten Chat; der rohe JSON-Editor im Composer-Zahnrad bleibt für die Projekt-Ebene.", en: "External MCP servers (user scope). Apply to the next chat; the raw JSON editor in the composer gear stays for the project scope." },
   "mcpset.empty": { de: "Keine MCP-Server konfiguriert.", en: "No MCP servers configured." },

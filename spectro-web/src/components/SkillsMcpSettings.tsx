@@ -8,11 +8,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { fetchSettings, putSettings } from "../state/serverSettings";
+import { installSkill, skillPath, useInstallState, type CatalogueRow } from "../state/skillInstall";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 interface SkillRow {
+  /** As the agent reads it: `<pack>:<skill>` for a catalogue install, bare otherwise. */
   name: string;
+  /** The skill's own folder — the display name is not a path. */
+  folder: string;
+  /** The pack folder, null for a skill installed at the top level. */
+  pack: string | null;
   description: string;
   source: "user" | "project";
   disabled: boolean;
@@ -24,12 +30,20 @@ const DELETE_ARM_TIMEOUT_MS = 4000;
 export function SkillsSettings() {
   const lang = useLang();
   const [skills, setSkills] = useState<SkillRow[] | null | "failed">(null);
+  const [catalogue, setCatalogue] = useState<CatalogueRow[] | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
+  const { pending: installing, refused } = useInstallState();
 
   const load = useCallback((): void => {
     fetch("/api/skills")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((res) => setSkills((res as { skills: SkillRow[] }).skills))
+      .then((res) => {
+        const body = res as { skills: SkillRow[]; catalogue?: CatalogueRow[] };
+        setSkills(body.skills);
+        // A build without the catalogue resource answers without the field;
+        // that is an empty shelf, not a failure of the whole panel.
+        setCatalogue(body.catalogue ?? []);
+      })
       .catch(() => setSkills("failed"));
   }, []);
   useEffect(load, [load]);
@@ -41,7 +55,7 @@ export function SkillsSettings() {
   }, [armed]);
 
   const toggle = (row: SkillRow): void => {
-    fetch(`/api/skills/${encodeURIComponent(row.name)}/disabled`, {
+    fetch(`${skillPath(row.pack, row.folder)}/disabled`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ disabled: !row.disabled }),
@@ -56,10 +70,19 @@ export function SkillsSettings() {
       return;
     }
     setArmed(null);
-    fetch(`/api/skills/${encodeURIComponent(row.name)}`, { method: "DELETE" })
-      .then(load)
-      .catch(load);
+    fetch(skillPath(row.pack, row.folder), { method: "DELETE" }).then(load).catch(load);
   };
+
+  // The install itself lives in state/skillInstall — it is the one call in this
+  // panel that may NOT be swallowed, and the rules that make it honest (one at
+  // a time, a refusal is said, a refusal does not reload) are pinned there.
+  const install = (row: CatalogueRow): void => void installSkill(row, load);
+  const installMessage =
+    refused === null
+      ? null
+      : refused.status === 409
+        ? t(lang, "skset.nameTaken")
+        : t(lang, "skset.installFailed", { error: refused.reason });
 
   return (
     <div className="skset">
@@ -105,6 +128,45 @@ export function SkillsSettings() {
             </li>
           ))}
         </ul>
+      )}
+      {catalogue !== null && (
+        <>
+          <div className="settings-label">{t(lang, "skset.catalogue")}</div>
+          <p className="settings-note">{t(lang, "skset.catalogueNote")}</p>
+          {catalogue.length === 0 ? (
+            <p className="settings-note">{t(lang, "skset.catalogueEmpty")}</p>
+          ) : (
+            <ul className="skset-list">
+              {catalogue.map((row) => (
+                <li key={row.id} className="skset-row">
+                  <span className="skset-name mono">{row.name}</span>
+                  {/* The pack is not decoration: it is half the name the agent
+                      calls, and the folder the copy lands in. */}
+                  <span className="wsg-scope-tag">{row.pack}</span>
+                  <span className="skset-desc" title={row.description}>
+                    {row.description}
+                  </span>
+                  {row.installed ? (
+                    <span className="skset-desc">{t(lang, "skset.installed")}</span>
+                  ) : (
+                    <button
+                      type="button"
+                      className="skset-install"
+                      // The row is one line of nowrap text, so the provenance
+                      // rides in the tooltip rather than pushing the name out.
+                      title={t(lang, "skset.installTitle", { pack: row.pack, licence: row.licence })}
+                      disabled={installing !== null}
+                      onClick={() => install(row)}
+                    >
+                      {installing === row.id ? t(lang, "skset.installing") : t(lang, "skset.install")}
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {installMessage !== null && <p className="settings-error">{installMessage}</p>}
+        </>
       )}
     </div>
   );

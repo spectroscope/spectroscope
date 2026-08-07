@@ -1,0 +1,31 @@
+meta {
+  name: disable / enable a skill inside a pack
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/skills/{{skillPack}}/{{skillName}}/disabled
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "disabled": true
+  }
+}
+
+docs {
+  The two-segment form: a skill installed from the catalogue lives at <root>/<pack>/<skill> and the agent calls it <pack>:<skill>. The colon is a display name, not a path, so the pack travels as its own segment. Flip the .disabled marker (user root wins when both roots carry it). 404 unknown.
+  
+  Body: {disabled: boolean} — false re-enables.
+  
+  Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
+  
+  Writes state: yes
+}

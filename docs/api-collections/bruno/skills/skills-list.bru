@@ -11,7 +11,7 @@ get {
 }
 
 docs {
-  All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}.
+  All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}. Card 182 adds catalogue:[{id,name,pack,description,licence,repo,commit,files,bytes,installed}] — the vendored shelf POST /api/skills/install copies from. A build without the catalogue resource answers catalogue:[].
   
   Fence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.
   

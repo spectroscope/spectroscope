@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "3c9061cd-742f-5c32-a0be-58a7fdb43d25",
     "name": "spectroscope REST API",
-    "description": "The whole REST surface of spectro-server — 49 endpoints in 16 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server built from this tree (port 8236, 2026-08-04). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL. GET /api/health is the one path deliberately left open.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/health | none | 200 | 200 | 200 | 200 |\n| GET /api/sessions | host | 200 | 200 | 200 | 404 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.",
+    "description": "The whole REST surface of spectro-server — 59 endpoints in 16 folders, one per area.\n\nEvery request targets {{baseUrl}} = http://{{host}}:{{port}} — change host/port once in the collection variables to re-target everything.\n\nThe chat/run stream (/ws) and the PTY shell (/ws/shell) are WebSocket endpoints, origin-checked at handshake time. They are not REST and are not part of this collection.\n\n## The fences, measured\n\nMeasured with curl from loopback against a live spectro-server built from this tree (port 8236, 2026-08-04). A browserless REST client (no Origin header) passes every fence as long as it connects to loopback and targets localhost/127.0.0.1 in the URL. GET /api/health is the one path deliberately left open.\n\n| endpoint | fence | no Origin | localhost Origin | evil Origin | evil Host |\n|---|---|---|---|---|---|\n| GET /api/health | none | 200 | 200 | 200 | 200 |\n| GET /api/sessions | host | 200 | 200 | 200 | 404 |\n| GET /api/settings | host | 200 | 200 | 200 | 404 |\n| GET /api/leveling | host+origin | 200 | 200 | 404 | 404 |\n| POST /api/leveling/tick | host+origin | 200 | 200 | 404 | 404 |\n\nEvery fence refusal is a blank 404, never a 403, so a refused caller cannot fingerprint the server.\n\n## Variables\n\n- `{{host}}` = `localhost` — Server host. The host fences require localhost/127.0.0.1/::1 here — a LAN IP answers 404 on every host-fenced endpoint.\n- `{{port}}` = `8080` — spectro-server port. 8080 is the default; change once to re-target every request.\n- `{{baseUrl}}` = `http://{{host}}:{{port}}` — Composed base URL. Every request targets {{baseUrl}}.\n- `{{sessionId}}` = `20260730-120000-abcdef12` — A stored session id, shape [A-Za-z0-9][A-Za-z0-9-]*. Take a real one from GET /api/sessions.\n- `{{nodeId}}` = `node-1` — A fleet node id. Take a real one from GET /api/fleet.\n- `{{skillPack}}` = `superpowers` — A pack folder from the catalogue rows of GET /api/skills — set only for a skill installed from the catalogue.\n- `{{skillName}}` = `brainstorming` — A skill name from GET /api/skills — the folder, not the display name: a packed skill shows as <pack>:<skill> and its folder is the part after the colon.\n- `{{bundleId}}` = `five-lines` — A starter-bundle id from GET /api/bundles: five-lines | fleet | multi-agent.\n- `{{localModelId}}` = `qwen3-4b` — A built-in model id from GET /api/local-model/catalog: qwen3-1-7b | qwen3-4b | qwen2-5-coder-7b | qwen3-8b | vibethinker-3b.\n- `{{imageFile}}` = `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef.png` — A content-addressed image name, [0-9a-f]{64}.(png|jpg|webp). Take a real one from a generate_image tool result.\n- `{{transcriptPath}}` = `-Users-you-project/session.jsonl` — A Claude Code transcript path from GET /api/claude/transcripts.\n- `{{workspaceFilePath}}` = `README.md` — Root-relative file path inside the workspace, for GET /api/file.\n- `{{scaffoldDir}}` = `/tmp/spectro-scaffold` — An existing target folder for POST /api/bundles/{id}/scaffold.\n\n## Handle with care\n\n- **DELETE /api/sessions/{id}** — This really deletes the session, and it is the one destructive endpoint without an ORIGIN fence — the host fence and the id shape check are the guards, a foreign Origin from a local page is not refused here. Point it at a throwaway home before replaying the whole collection.\n- **POST /api/local-model/download** — Downloads are gigabytes — do not include this in an automated replay.\n- **POST /api/settings/env** — Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.\n- **DELETE /api/skills/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **DELETE /api/skills/{pack}/{name}** — Deletion is permanent — the seeding ledger will not re-seed it.\n- **POST /api/skills/install** — Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.\n- **POST /api/pick-workspace** — Blocks until a human answers the dialog on the server machine — exclude it from automated replays.\n- **POST /api/claude/transcripts/folders/open** — Opens a native file-manager window on the operator's screen.\n- **POST /api/claude/transcripts/gists** — Spends the operator key — one model call per transcript that is not already current.\n- **POST /api/fleet/nodes** — Requires the server to run with SPECTRO_ALLOW_SPAWN set AND a running hub — otherwise every answer is 404, by design.\n- **POST /api/explain** — Spends the operator's API key on every call.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -556,6 +556,60 @@
             }
           },
           "response": []
+        },
+        {
+          "name": "save one operator setting",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/env",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "env"
+              ]
+            },
+            "description": "Write one named setting into ~/.spectro/.env (0600). 404 for a refused caller, 400 for an unknown name or a value that is not the shape that name takes.\n\nBody: {name, value} — one setting per call.\n\nCAUTION: Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"SPECTRO_OTLP_ENDPOINT\",\n  \"value\": \"http://localhost:4318\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "read the operator settings",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/settings/env",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "settings",
+                "env"
+              ]
+            },
+            "description": "The operator settings the UI may save, and for each one whether the value came from the process environment (which the UI cannot change) or from ~/.spectro/.env. Only the writable allow-list is ever read or reported.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
         }
       ]
     },
@@ -578,7 +632,7 @@
                 "skills"
               ]
             },
-            "description": "All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
+            "description": "All skills of both roots (user ~/.spectro/skills + project <cwd>/.spectro/skills), disabled ones included: {skills:[{name,description,source,disabled}]}. Card 182 adds catalogue:[{id,name,pack,description,licence,repo,commit,files,bytes,installed}] — the vendored shelf POST /api/skills/install copies from. A build without the catalogue resource answers catalogue:[].\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         },
@@ -618,6 +672,42 @@
           "response": []
         },
         {
+          "name": "disable / enable a skill inside a pack",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/skills/{{skillPack}}/{{skillName}}/disabled",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skills",
+                "{{skillPack}}",
+                "{{skillName}}",
+                "disabled"
+              ]
+            },
+            "description": "The two-segment form: a skill installed from the catalogue lives at <root>/<pack>/<skill> and the agent calls it <pack>:<skill>. The colon is a display name, not a path, so the pack travels as its own segment. Flip the .disabled marker (user root wins when both roots carry it). 404 unknown.\n\nBody: {disabled: boolean} — false re-enables.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"disabled\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
           "name": "delete a user skill",
           "request": {
             "method": "DELETE",
@@ -634,6 +724,61 @@
               ]
             },
             "description": "Delete a USER-root skill for good (seeding ledger keeps it away). 409 for a project skill, 404 unknown. Traversal-guarded.\n\nCAUTION: Deletion is permanent — the seeding ledger will not re-seed it.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes"
+          },
+          "response": []
+        },
+        {
+          "name": "delete a skill inside a pack",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/skills/{{skillPack}}/{{skillName}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skills",
+                "{{skillPack}}",
+                "{{skillName}}"
+              ]
+            },
+            "description": "The two-segment form, for a skill installed from the catalogue. Deletes the USER-root copy for good; an emptied pack folder goes with it. 409 for a project skill, 404 unknown. Both segments are traversal-guarded.\n\nCAUTION: Deletion is permanent — the seeding ledger will not re-seed it.\n\nFence: host+origin — Loopback fence plus Origin check: an Origin header, if present, must be loopback. REST clients send no Origin header, which counts as safe — requests pass. A manually added foreign Origin answers a blank 404.\n\nWrites state: yes"
+          },
+          "response": []
+        },
+        {
+          "name": "install a catalogue skill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/skills/install",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skills",
+                "install"
+              ]
+            },
+            "description": "Copy one skill from the bundled catalogue into ~/.spectro/skills: the whole leaf directory that holds SKILL.md, plus the pack's LICENSE and PROVENANCE.json and a generated spectro-install.json. The id is matched against the enumerated catalogue by string equality and is never resolved as a path. 400 no id, 404 unknown id, 409 name taken (user or project root), 413 over the ceiling. Answers {name,pack,files,bytes,licence,commit}.\n\nBody: {skill: \"<pack>/<name>\"} — one of the ids from the catalogue rows of GET /api/skills.\n\nCAUTION: Copies files into ~/.spectro/skills. It never overwrites; a taken name answers 409.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skill\": \"superpowers/brainstorming\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
           },
           "response": []
         }
@@ -873,6 +1018,155 @@
               ]
             },
             "description": "What a bounded batch of listed transcripts contains, so the import dialog can label a row without reading the store. Answers {maxBatch, facts: [{path, models, workflowCalls, subagents, workflowAgents, language?, firstPrompt?}]}. Models are listed in the order they first spoke. subagents counts agent files directly in the session's sidecar folder and workflowAgents the ones in the workflow run dirs below it — different populations, counted apart, and counted fresh at ask time because the sidecar moves while the transcript sits still. Unknown facts are omitted rather than sent as a placeholder. At most 24 paths per call; a path outside the store, a non-.jsonl name and a missing file all yield no row.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "which of a session's folders exist",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts/folders?path={{transcriptPath}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts",
+                "folders"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "{{transcriptPath}}",
+                  "description": "required. base-relative, canonicalized, .jsonl only"
+                }
+              ]
+            },
+            "description": "Which of a session's three folders (store, scratchpad, subagents) are really on disk, with their absolute paths: {folders:[{kind,path}]}. Asked per request rather than cached, because a scratchpad appears when a run makes one and a temp sweep takes it away again. Anything that is not a transcript in the store answers an empty list.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "show one of them in the file manager",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts/folders/open",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts",
+                "folders",
+                "open"
+              ]
+            },
+            "description": "Reveal one of a session's folders in the desktop file manager. The body names a transcript and a KIND; the server resolves the transcript through the same fence every read here uses and derives the folder itself, so no path off the wire is ever opened. Answers {result} — 'missing' covers an unknown kind and a path outside the store alike.\n\nBody: what is one of store | scratchpad | subagents.\n\nCAUTION: Opens a native file-manager window on the operator's screen.\n\nFence: host+json — Loopback fence, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: no",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"path\": \"{{transcriptPath}}\",\n  \"what\": \"store\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "sidecar agents of a transcript",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts/sidecars",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts",
+                "sidecars"
+              ],
+              "query": [
+                {
+                  "key": "path",
+                  "value": "",
+                  "description": "optional. the session transcript, store-relative",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "The agents that ran beside a session, as a LISTING: one directory walk, not the thousands of file reads a full join would be. Bodies come one at a time from /content when a reader opens a row. Empty for a session that spawned nothing.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
+          },
+          "response": []
+        },
+        {
+          "name": "write transcript gists",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts/gists",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts",
+                "gists"
+              ]
+            },
+            "description": "Summarise transcripts and store the gists. Only the ones that need it: a path whose stored gist still matches the file stamp is skipped. {all: true} clears the store first and re-reads everything.\n\nBody: {paths: [store-relative transcript paths], all: boolean} — all:true re-reads the lot.\n\nCAUTION: Spends the operator key — one model call per transcript that is not already current.\n\nFence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.\n\nWrites state: yes",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"paths\": [\n    \"project/session.jsonl\"\n  ],\n  \"all\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "stored transcript gists",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/claude/transcripts/gists",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "claude",
+                "transcripts",
+                "gists"
+              ]
+            },
+            "description": "Every gist already on disk, each marked stale when its transcript has changed since it was written. Free — no model call, no transcript read.\n\nFence: host — Loopback fence: the TCP peer must be loopback AND the Host header must be localhost/127.0.0.1/::1. A REST client passes automatically when it targets http://localhost:<port>. A LAN IP or rebound DNS name in the URL answers a blank 404.\n\nWrites state: no"
           },
           "response": []
         }
@@ -1459,10 +1753,16 @@
       "description": "A fleet node id. Take a real one from GET /api/fleet."
     },
     {
+      "key": "skillPack",
+      "value": "superpowers",
+      "type": "string",
+      "description": "A pack folder from the catalogue rows of GET /api/skills — set only for a skill installed from the catalogue."
+    },
+    {
       "key": "skillName",
       "value": "brainstorming",
       "type": "string",
-      "description": "A skill name from GET /api/skills."
+      "description": "A skill name from GET /api/skills — the folder, not the display name: a packed skill shows as <pack>:<skill> and its folder is the part after the colon."
     },
     {
       "key": "bundleId",

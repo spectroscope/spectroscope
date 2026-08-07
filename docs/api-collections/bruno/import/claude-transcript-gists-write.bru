@@ -1,0 +1,36 @@
+meta {
+  name: write transcript gists
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/claude/transcripts/gists
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "paths": [
+      "project/session.jsonl"
+    ],
+    "all": false
+  }
+}
+
+docs {
+  Summarise transcripts and store the gists. Only the ones that need it: a path whose stored gist still matches the file stamp is skipped. {all: true} clears the store first and re-reads everything.
+  
+  Body: {paths: [store-relative transcript paths], all: boolean} — all:true re-reads the lot.
+  
+  CAUTION: Spends the operator key — one model call per transcript that is not already current.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}

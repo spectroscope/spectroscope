@@ -30,6 +30,11 @@ import java.util.stream.Stream;
  * ({@code ~/.spectro/skills}) is scanned first, the project layer
  * ({@code <cwd>/.spectro/skills}) second, so a project skill with the same name
  * wins. A broken SKILL.md is skipped with a warning — it must not kill the harness.
+ *
+ * <p>A folder that holds skills rather than being one is a PACK, and its skills
+ * are advertised as {@code <pack>:<name>} (card 182). That is how a marketplace
+ * copy of somebody else's {@code brainstorming} lands beside a locally written
+ * one instead of on top of it.
  */
 public final class SkillLibrary {
 
@@ -64,11 +69,22 @@ public final class SkillLibrary {
                 cwd.resolve(".spectro").resolve("skills"));
     }
 
+    /** Separates a pack from the skill it holds, in the name the model reads. */
+    public static final String NAMESPACE_SEPARATOR = ":";
+
     /**
-     * Scans each root in order for direct subdirectories containing a SKILL.md.
-     * Later roots override earlier ones by skill name (project over user, same
-     * philosophy as the settings hierarchy). Nonexistent roots are silently fine;
-     * an unreadable or broken skill is skipped with one warning line on stderr.
+     * Scans each root in order for direct subdirectories containing a SKILL.md,
+     * and for PACKS — a subdirectory that holds no SKILL.md of its own but does
+     * hold skills, whose skills are then advertised as {@code <pack>:<name>}
+     * (card 182). Later roots override earlier ones by that name (project over
+     * user, same philosophy as the settings hierarchy). Nonexistent roots are
+     * silently fine; an unreadable or broken skill is skipped with one warning
+     * line on stderr.
+     *
+     * <p>The pack rule adds exactly one level and stops there. Anything installed
+     * before it sits at level 1 and keeps its bare name unchanged, which is what
+     * lets a marketplace copy land beside a skill of the same name instead of
+     * over it.</p>
      *
      * @param roots skill roots in precedence order, lowest first
      * @return the merged library — possibly empty, never a failure
@@ -79,27 +95,60 @@ public final class SkillLibrary {
             if (!Files.isDirectory(root)) {
                 continue; // absent layer — as unremarkable as a missing config file
             }
-            try (Stream<Path> entries = Files.list(root)) {
-                entries.filter(Files::isDirectory).sorted().forEach(dir -> {
-                    Path skillFile = dir.resolve("SKILL.md");
-                    if (!Files.isRegularFile(skillFile)) {
-                        return; // a folder without SKILL.md is not a skill
+            for (Path dir : childDirectories(root)) {
+                if (Files.isRegularFile(dir.resolve("SKILL.md"))) {
+                    loadSkill(dir, null, byName);
+                } else if (!Files.exists(dir.resolve(".disabled"))) {
+                    // A folder with neither a SKILL.md nor skills below it simply
+                    // contributes nothing — the loop is the whole "is it a pack?"
+                    // test, so there is no shape to guess wrong about.
+                    for (Path skill : childDirectories(dir)) {
+                        loadSkill(skill, dir.getFileName().toString(), byName);
                     }
-                    if (Files.exists(dir.resolve(".disabled"))) {
-                        return; // the skill manager's per-skill off switch (card 90)
-                    }
-                    try {
-                        Skill skill = parse(skillFile, dir.getFileName().toString());
-                        byName.put(skill.name(), skill); // later roots win by name
-                    } catch (IOException | RuntimeException broken) {
-                        LOG.warn("skipping broken skill {}: {}", skillFile, broken.getMessage());
-                    }
-                });
-            } catch (IOException unreadable) {
-                LOG.warn("skipping unreadable skill root {}: {}", root, unreadable.getMessage());
+                }
             }
         }
         return new SkillLibrary(byName);
+    }
+
+    /** Direct subdirectories, sorted; an unreadable directory yields none. */
+    private static List<Path> childDirectories(Path dir) {
+        try (Stream<Path> entries = Files.list(dir)) {
+            return entries.filter(Files::isDirectory).sorted().toList();
+        } catch (IOException unreadable) {
+            LOG.warn("skipping unreadable skill directory {}: {}", dir, unreadable.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Parses one skill folder into the map, under its pack when it has one.
+     *
+     * <p>The namespace is applied to the KEY, not merely printed next to it. The
+     * name a skill carries is the one the system prompt lists and the one
+     * {@code use_skill} answers to, so a pack skill that kept its bare name
+     * would still collide with a top-level skill of that name — silently, since
+     * the map would simply hold whichever loaded last.</p>
+     *
+     * @param dir    the folder holding SKILL.md
+     * @param pack   the pack folder's name, or null for a top-level skill
+     * @param byName the map being built; later roots win by name
+     */
+    private static void loadSkill(Path dir, String pack, Map<String, Skill> byName) {
+        Path skillFile = dir.resolve("SKILL.md");
+        if (!Files.isRegularFile(skillFile)) {
+            return; // a folder without SKILL.md is not a skill
+        }
+        if (Files.exists(dir.resolve(".disabled"))) {
+            return; // the skill manager's per-skill off switch (card 90)
+        }
+        try {
+            Skill skill = parse(skillFile, dir.getFileName().toString());
+            String name = pack == null ? skill.name() : pack + NAMESPACE_SEPARATOR + skill.name();
+            byName.put(name, new Skill(name, skill.description(), skill.body(), skill.source()));
+        } catch (IOException | RuntimeException broken) {
+            LOG.warn("skipping broken skill {}: {}", skillFile, broken.getMessage());
+        }
     }
 
     /** All loaded skills, sorted by name for stable prompts and listings. */
@@ -200,7 +249,20 @@ public final class SkillLibrary {
      *  @return the parsed skill
      *  @throws IOException when unreadable */
     public static Skill parse(Path skillFile, String folderName) throws IOException {
-        String raw = Files.readString(skillFile, StandardCharsets.UTF_8);
+        return parse(Files.readString(skillFile, StandardCharsets.UTF_8), folderName, skillFile);
+    }
+
+    /**
+     * The same parse over text that never touched this disk — the marketplace
+     * catalogue (card 182) reads SKILL.md out of the jar, where there is no
+     * {@link Path} to open.
+     *
+     * @param raw        the whole SKILL.md as text
+     * @param folderName name of the containing folder — the skill-name fallback
+     * @param source     where the text came from, carried through onto the skill
+     * @return the parsed skill with all fallbacks applied
+     */
+    public static Skill parse(String raw, String folderName, Path source) {
         // \R matches \n, \r\n and \r alike — a CRLF-edited SKILL.md parses the same.
         List<String> lines = List.of(raw.split("\\R", -1));
 
@@ -210,10 +272,22 @@ public final class SkillLibrary {
         if (first >= 0 && lines.get(first).strip().equals("---")) {
             int i = first + 1;
             while (i < lines.size() && !lines.get(i).strip().equals("---")) {
-                int colon = lines.get(i).indexOf(':');
+                String line = lines.get(i);
+                int colon = line.indexOf(':');
                 if (colon > 0) {
-                    frontmatter.put(lines.get(i).substring(0, colon).strip(),
-                            lines.get(i).substring(colon + 1).strip());
+                    String key = line.substring(0, colon).strip();
+                    String value = line.substring(colon + 1).strip();
+                    if (BLOCK_MARKERS.contains(value)) {
+                        // A YAML block scalar: the value is the indented lines that
+                        // follow, and the marker itself is not text. Reading only the
+                        // marker gave the catalogue's foreign skills a description of
+                        // "|", and the continuation lines — one of which ends in a
+                        // colon — were then read as further keys (card 182).
+                        int blockEnd = endOfBlock(lines, i + 1, indentOf(line));
+                        value = fold(lines.subList(i + 1, blockEnd));
+                        i = blockEnd - 1;
+                    }
+                    frontmatter.put(key, unquote(value));
                 }
                 i++;
             }
@@ -227,7 +301,76 @@ public final class SkillLibrary {
         String description = Optional.ofNullable(frontmatter.get("description"))
                 .filter(value -> !value.isBlank())
                 .orElseGet(() -> descriptionFromBody(body));
-        return new Skill(name, description, body, skillFile);
+        return new Skill(name, description, body, source);
+    }
+
+    /**
+     * The block-scalar markers this parser recognises. Literal ({@code |}) and
+     * folded ({@code >}) are both here, with and without the chomping suffix,
+     * because both appear in the vendored catalogue.
+     */
+    private static final List<String> BLOCK_MARKERS = List.of("|", "|-", ">", ">-");
+
+    /**
+     * Where a block scalar stops: the first line at or left of the key's own
+     * indentation. Blank lines belong to the block wherever they sit, since a
+     * paragraph break inside a description is not the end of it.
+     *
+     * @param lines    the whole file, already split
+     * @param from     the first line after the marker
+     * @param keyIndent leading-whitespace width of the line carrying the key
+     * @return the exclusive end index of the block
+     */
+    private static int endOfBlock(List<String> lines, int from, int keyIndent) {
+        int i = from;
+        while (i < lines.size() && (lines.get(i).isBlank() || indentOf(lines.get(i)) > keyIndent)) {
+            i++;
+        }
+        return i;
+    }
+
+    /** Leading-whitespace width, the only indentation measure a block scalar needs. */
+    private static int indentOf(String line) {
+        int i = 0;
+        while (i < line.length() && Character.isWhitespace(line.charAt(i))) {
+            i++;
+        }
+        return i;
+    }
+
+    /**
+     * Folds a block scalar into one line. YAML would keep the newlines of a
+     * literal block, but both readers of this map put the value on a single
+     * line — the system prompt's one-bullet-per-skill list and the settings
+     * row, which is {@code white-space: nowrap}. A description that wrapped
+     * would break the bullet list it lives in.
+     *
+     * @param block the lines of the block, indentation included
+     * @return the block as one stripped line
+     */
+    private static String fold(List<String> block) {
+        return block.stream()
+                .map(String::strip)
+                .filter(line -> !line.isEmpty())
+                .collect(Collectors.joining(" "));
+    }
+
+    /**
+     * Removes one matching pair of surrounding quotes. YAML treats them as
+     * delimiters; keeping them printed {@code "…"} inside prompt bullets and
+     * settings rows for the seven catalogue skills that quote their value. A
+     * quote elsewhere in the line is content and stays.
+     *
+     * @param value the raw value after the colon, already stripped
+     * @return the value without its wrapping quote pair
+     */
+    private static String unquote(String value) {
+        if (value.length() >= 2
+                && (value.charAt(0) == '"' || value.charAt(0) == '\'')
+                && value.charAt(value.length() - 1) == value.charAt(0)) {
+            return value.substring(1, value.length() - 1);
+        }
+        return value;
     }
 
     /**

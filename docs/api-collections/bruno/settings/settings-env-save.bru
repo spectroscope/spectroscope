@@ -1,0 +1,34 @@
+meta {
+  name: save one operator setting
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/settings/env
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "name": "SPECTRO_OTLP_ENDPOINT",
+    "value": "http://localhost:4318"
+  }
+}
+
+docs {
+  Write one named setting into ~/.spectro/.env (0600). 404 for a refused caller, 400 for an unknown name or a value that is not the shape that name takes.
+  
+  Body: {name, value} — one setting per call.
+  
+  CAUTION: Writes ~/.spectro/.env. Only names on the writable allow-list are accepted.
+  
+  Fence: host+origin+json — Loopback fence plus Origin check, and the request must carry Content-Type: application/json — anything else is 415.
+  
+  Writes state: yes
+}
