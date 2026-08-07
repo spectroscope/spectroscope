@@ -6,6 +6,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { MicPhase } from "./voiceButton";
+import { noteVoiceExchange } from "../state/voiceWire";
 
 /** How often the recording timer refreshes — fast enough to read as live. */
 const RECORDING_TIMER_TICK_MS = 250;
@@ -68,8 +69,13 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
           setMicAvailable(false); // STT not installed — the tooltip explains the fix
           return;
         }
-        const { text } = (await res.json()) as { text?: string };
-        if (text) onTranscript(text);
+        const answer = (await res.json()) as { text?: string; wire?: unknown };
+        // The exchange this call left behind. Voice has no session socket to
+        // mirror it on (card 184 leg 2b), so this answer is the only place the
+        // browser ever hears about its own record — and without it the spoken
+        // bytes and the transcript show up in no trace anywhere.
+        noteVoiceExchange(answer.wire);
+        if (answer.text) onTranscript(answer.text);
       } catch {
         // Network/parse failure: stay usable, just drop this attempt.
       } finally {

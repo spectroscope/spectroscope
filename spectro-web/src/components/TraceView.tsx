@@ -69,6 +69,7 @@ import {
   useTraceFace,
 } from "../state/traceFace";
 import { frameLayer } from "./frameLayer";
+import { useVoiceExchanges } from "../state/voiceWire";
 import {
   activeCategories,
   setTraceCategories,
@@ -86,6 +87,7 @@ import {
   llmResponseSummary,
   readExchange,
   readRequestFrame,
+  voiceRows,
   withResponseRows,
 } from "../wire/llmWire";
 import { LlmExchangeDetail } from "./LlmExchangeDetail";
@@ -1334,7 +1336,10 @@ function TraceDetail({
            POST and its stream lines on wire. Source is not offered. */
         <LlmExchangeDetail
           payload={entry.payload}
-          sessionId={llmWireSessionId}
+          sessionId={
+            ((entry.payload as { wireSession?: unknown } | null)?.wireSession as string | undefined) ??
+            llmWireSessionId
+          }
           face={mode === "insight" || mode === "wire" ? mode : "structured"}
           half={
             entry.type === "llm_request" ? "request" : entry.type === "llm_response" ? "response" : "both"
@@ -1500,7 +1505,16 @@ export function TraceView(props: {
   // row is display-only, exactly like the synthetic system_context row below:
   // never in the reducer, never in any JSONL, and it carries the same payload
   // so the detail pane reads one shape wherever a row came from.
-  const withPairs = useMemo(() => withResponseRows(entries), [entries]);
+  // What this browser was told about its own voice calls (card 184 leg 2b).
+  // They never rode the session socket, so they are folded in here at their own
+  // moments rather than arriving through the reducer.
+  const voice = useVoiceExchanges();
+  const withPairs = useMemo(() => {
+    const rows = withResponseRows(entries);
+    if (voice.length === 0) return rows;
+    const merged = [...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts);
+    return merged.map((r, i) => ({ ...r, seq: i + 1 }));
+  }, [entries, voice]);
   const allEntries = useMemo<TraceEntry[]>(() => {
     const entries = withPairs;
     if (ctx === null || entries.length === 0) return entries;

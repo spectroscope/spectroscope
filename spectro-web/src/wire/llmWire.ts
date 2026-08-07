@@ -251,6 +251,53 @@ export function llmResponseSummary(x: LlmExchangeMeta): string {
  * @return the same array when there is nothing to expand, so React keeps its
  *         referential calm
  */
+export function voiceRows(list: readonly { wireSession: string }[]): TraceEntry[] {
+  const out: TraceEntry[] = [];
+  for (const v of list as readonly (LlmExchangeMeta & { wireSession: string })[]) {
+    const common = {
+      ...(v.agentId !== "" ? { agentId: v.agentId } : {}),
+      ...(v.model !== "" ? { model: v.model } : {}),
+    };
+    if (v.durationMs > 0) {
+      out.push({
+        seq: 0,
+        dir: "out",
+        ts: v.ts - v.durationMs,
+        type: "llm_request",
+        ...common,
+        payload: {
+          type: "llm_request",
+          xid: v.xid,
+          agentId: v.agentId,
+          turn: v.turn,
+          kind: v.kind,
+          provider: v.provider,
+          model: v.model,
+          transport: "process",
+          method: "",
+          url: v.url,
+          requestBytes: v.requestBytes,
+          fidelity: v.fidelity,
+          ts: v.ts - v.durationMs,
+          // The sidecar this row's bytes live in — the DAY file, not the
+          // session's. Carried on the row because it differs per row, which is
+          // exactly what the session-wide prop cannot express.
+          wireSession: v.wireSession,
+        },
+      });
+    }
+    out.push({
+      seq: 0,
+      dir: "in",
+      ts: v.ts,
+      type: "llm_exchange",
+      ...common,
+      payload: { type: "llm_exchange", ...v },
+    });
+  }
+  return out;
+}
+
 export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {
   if (!rows.some((r) => r.type === "llm_exchange")) return rows;
   const out: TraceEntry[] = [];
