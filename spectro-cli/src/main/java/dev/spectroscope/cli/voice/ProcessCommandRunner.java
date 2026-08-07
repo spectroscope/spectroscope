@@ -55,7 +55,10 @@ public final class ProcessCommandRunner implements CommandRunner {
     /**
      * Runs the one-shot child process and drains its merged output COMPLETELY before
      * {@code waitFor()} — the order that avoids the classic full-pipe-buffer deadlock.
-     * A missing binary throws with a hint at the setup script.
+     * A missing binary throws with a hint at the setup script; a NON-ZERO exit throws
+     * with the child's own words. Found live (card 184): ffmpeg failed to convert,
+     * the exit code was ignored, and whisper-cli's help text became a 200
+     * "transcript" — a child that failed must never hand its noise onward as a result.
      *
      * @param command the argv to execute — element 0 is the binary named in the missing-binary hint
      * @return every line the process printed, stdout and stderr merged
@@ -81,7 +84,14 @@ public final class ProcessCommandRunner implements CommandRunner {
                 lines.add(line);
             }
         }
-        process.waitFor();
+        int exit = process.waitFor();
+        if (exit != 0) {
+            // The tail carries the actual error (ffmpeg prints it last); the whole
+            // output would bury it under banner noise.
+            List<String> tail = lines.subList(Math.max(0, lines.size() - 5), lines.size());
+            throw new IOException(command.getFirst() + " exited " + exit
+                    + (tail.isEmpty() ? "" : ": " + String.join(" | ", tail)));
+        }
         return lines;
     }
 }

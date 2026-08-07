@@ -97,7 +97,10 @@ function pathOf(url: string): string {
  */
 export function llmExchangeSummary(x: LlmExchangeMeta): string {
   const head = x.kind === "chat" ? "" : `${x.kind} · `;
-  const outcome = x.aborted ? "aborted" : String(x.status);
+  // status 0 is the normalized "never answered / not exposed" (the Anthropic
+  // SDK exposes none on a natural finish) — print the empty-column glyph, not
+  // a fabricated code.
+  const outcome = x.aborted ? "aborted" : x.status ? String(x.status) : "—";
   return (
     `${head}${pathOf(x.url)} · ${x.provider} · ` +
     `${formatBytes(x.requestBytes)} → ${formatBytes(x.responseBytes)} · ` +

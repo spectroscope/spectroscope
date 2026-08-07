@@ -72,6 +72,13 @@ describe("llmExchangeSummary", () => {
     );
   });
 
+  it("prints the empty glyph when no status was exposed, never a fabricated 0", () => {
+    // The Anthropic SDK exposes no status on a natural finish (card 184).
+    expect(llmExchangeSummary(meta({ status: 0 }))).toBe(
+      "/v1/messages · anthropic · 48 kB → 12 kB · — · 3.4 s",
+    );
+  });
+
   it("names a kind that is not chat, so a compaction row says so", () => {
     expect(llmExchangeSummary(meta({ kind: "compaction" }))).toMatch(/^compaction · /);
     expect(llmExchangeSummary(meta())).not.toMatch(/^chat/);
