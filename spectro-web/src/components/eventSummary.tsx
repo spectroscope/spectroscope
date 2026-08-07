@@ -179,14 +179,30 @@ export const LLM_DIR_LABEL: Record<LlmDir, string> = {
  * (stdio), web_fetch/generate_image leave over plain HTTP, the standard tools
  * stay local. Everything harness-internal (gate, plan, introspection, A2A)
  * never leaves the process: "—".
+ *
+ * @param type the frame type
+ * @param provider the provider this row belongs to, when known
+ * @param toolName the tool a tool row is about, when known
+ * @param url the url the exchange RECORDED, when it has one — the fact that
+ *            settles it, exactly as the host column already uses it
  */
-export function wireProtocol(type: string, provider: string | null, toolName: string | null): string {
+export function wireProtocol(
+  type: string,
+  provider: string | null,
+  toolName: string | null,
+  url: string | null = null,
+): string {
   const layer = frameLayer(type);
   // An app frame rode the WebSocket. It may be ABOUT the model's output; it is
   // not the model's output arriving, and printing the provider's streaming
   // protocol on it was the trace claiming a wire this row never touched.
   if (layer === "app") return "WebSocket";
   if (layer === "llm") {
+    // Speech is the one model call that never opens a socket: whisper runs as a
+    // child process and the record says `process://…`. Reading the recorded url
+    // keeps this row describing its OWN wire rather than borrowing the shape of
+    // every other llm row.
+    if (url !== null && url.startsWith("process://")) return "process";
     return provider === "ollama" ? "HTTPS/NDJSON" : provider === null ? "HTTPS" : "HTTPS/SSE";
   }
   const llmStream = provider === "ollama" ? "NDJSON" : provider === null ? "—" : "SSE";

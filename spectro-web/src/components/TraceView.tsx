@@ -87,8 +87,7 @@ import {
   llmResponseSummary,
   readExchange,
   readRequestFrame,
-  voiceRows,
-  withResponseRows,
+  traceWithVoice,
 } from "../wire/llmWire";
 import { LlmExchangeDetail } from "./LlmExchangeDetail";
 
@@ -1509,12 +1508,7 @@ export function TraceView(props: {
   // They never rode the session socket, so they are folded in here at their own
   // moments rather than arriving through the reducer.
   const voice = useVoiceExchanges();
-  const withPairs = useMemo(() => {
-    const rows = withResponseRows(entries);
-    if (voice.length === 0) return rows;
-    const merged = [...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts);
-    return merged.map((r, i) => ({ ...r, seq: i + 1 }));
-  }, [entries, voice]);
+  const withPairs = useMemo(() => traceWithVoice(entries, voice), [entries, voice]);
   const allEntries = useMemo<TraceEntry[]>(() => {
     const entries = withPairs;
     if (ctx === null || entries.length === 0) return entries;
@@ -1762,7 +1756,7 @@ export function TraceView(props: {
       const imageProvider =
         typeof p["provider"] === "string" && e.type === "image_generated" ? (p["provider"] as string) : null;
       bySeq.set(e.seq, {
-        proto: wireProtocol(e.type, provider, toolName),
+        proto: wireProtocol(e.type, provider, toolName, url),
         host: wireHost(e.type, provider, llmHost, toolName, url, imageProvider, appOrigin),
       });
     }

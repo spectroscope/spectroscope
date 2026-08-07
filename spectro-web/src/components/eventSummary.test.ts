@@ -108,6 +108,22 @@ describe("wireProtocol", () => {
     expect(wireProtocol("llm_exchange", null, null)).toBe("HTTPS");
   });
 
+  // Speech is the one llm row that is not an HTTP call at all: whisper runs as a
+  // child process, and the recorded url says so. Printing HTTPS/SSE on it was the
+  // trace claiming a wire the row never touched — the same defect the app frames
+  // were fixed for, surviving in the one place it could still hide.
+  it("names a child process rather than claiming a network protocol", () => {
+    expect(wireProtocol("llm_request", "whisper-cpp", null, "process://whisper-cli")).toBe("process");
+    expect(wireProtocol("llm_response", "whisper-cpp", null, "process://whisper-cli")).toBe("process");
+    expect(wireProtocol("llm_exchange", "whisper-cpp", null, "process://whisper-cli")).toBe("process");
+  });
+
+  it("still says SSE when the recorded url really is an https call", () => {
+    expect(wireProtocol("llm_exchange", "anthropic", null, "https://api.anthropic.com/v1/messages")).toBe(
+      "HTTPS/SSE",
+    );
+  });
+
   it("shows a tool row's EXECUTION transport, not the LLM stream", () => {
     expect(wireProtocol("tool_call", "ollama", "mcp__notes__search_notes")).toBe("JSON-RPC");
     expect(wireProtocol("tool_result", "anthropic", "mcp__notes__add_note")).toBe("JSON-RPC");

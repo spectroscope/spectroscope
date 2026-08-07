@@ -14,6 +14,7 @@ import {
   readExchange,
   type LlmExchangeMeta,
   readExchangeDetail,
+  traceWithVoice,
 } from "./llmWire";
 
 /** One frame the server would push, with room to disagree per test. */
@@ -253,5 +254,67 @@ describe("what a face gets to see of a recorded side", () => {
     const detail = readExchangeDetail({ request: {}, response: {} });
     expect(detail?.response.headers).toEqual({});
     expect(Object.keys(detail!.request.headers)).toHaveLength(0);
+  });
+});
+
+// Every exchange stands for three rows: it left, it came back, and here is the
+// summary. That was true for a chat turn and NOT for a voice call — the response
+// row was inserted before the voice rows were folded in, so speech drew two rows
+// where everything else drew three. Found by counting them in the app.
+describe("the rows an exchange stands for, wherever it came from", () => {
+  const voiceExchange = {
+    wireSession: "stt-2026-08-07",
+    xid: "v1",
+    agentId: "composer",
+    turn: 0,
+    kind: "stt",
+    provider: "whisper-cpp",
+    model: "ggml-small.bin",
+    url: "process://whisper-cli",
+    status: 200,
+    requestBytes: 99884,
+    responseBytes: 46,
+    responseLines: 1,
+    aborted: false,
+    fidelity: "encoded",
+    durationMs: 8446,
+    ts: 3000,
+  };
+
+  const chatRow: TraceEntry = {
+    seq: 1,
+    dir: "in",
+    ts: 9000,
+    type: "llm_exchange",
+    payload: { type: "llm_exchange", ...readExchange(frame()) },
+  };
+
+  it("gives a voice call the same three rows a chat turn gets", () => {
+    const types = traceWithVoice([chatRow], [voiceExchange]).map((r) => r.type);
+
+    expect(types.filter((t) => t.startsWith("llm_"))).toEqual([
+      "llm_request", // the recording left, at ts - durationMs
+      "llm_response", // it came back
+      "llm_exchange", // and the summary closes the group
+      "llm_response",
+      "llm_exchange",
+    ]);
+  });
+
+  it("keeps every row in time order and numbers them from one", () => {
+    const rows = traceWithVoice([chatRow], [voiceExchange]);
+
+    expect(rows.map((r) => r.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect(rows.map((r) => r.ts)).toEqual([
+      voiceExchange.ts - voiceExchange.durationMs,
+      voiceExchange.ts,
+      voiceExchange.ts,
+      chatRow.ts,
+      chatRow.ts,
+    ]);
+  });
+
+  it("leaves a trace with no voice in it exactly as it was", () => {
+    expect(traceWithVoice([chatRow], []).map((r) => r.type)).toEqual(["llm_response", "llm_exchange"]);
   });
 });

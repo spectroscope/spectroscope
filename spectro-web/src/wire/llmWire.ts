@@ -298,6 +298,26 @@ export function voiceRows(list: readonly { wireSession: string }[]): TraceEntry[
   return out;
 }
 
+/**
+ * The trace as a reader sees it: the reducer's rows, this browser's own voice
+ * calls folded in at their real moments, and every exchange — from either
+ * source — standing for its three rows.
+ *
+ * <p>The order matters and it was wrong. The response row used to be inserted
+ * BEFORE the voice rows were merged in, so a chat turn drew request, response
+ * and summary while a recording drew only request and summary. Same kind of
+ * event, two different shapes, and the one that lost a row was the one that had
+ * no session socket to arrive on in the first place.</p>
+ *
+ * @param rows the trace as the reducer built it
+ * @param voice what this browser was told about its own transcribe calls
+ * @return the merged, expanded, renumbered rows
+ */
+export function traceWithVoice(rows: TraceEntry[], voice: readonly { wireSession: string }[]): TraceEntry[] {
+  if (voice.length === 0) return withResponseRows(rows);
+  return withResponseRows([...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts));
+}
+
 export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {
   if (!rows.some((r) => r.type === "llm_exchange")) return rows;
   const out: TraceEntry[] = [];
