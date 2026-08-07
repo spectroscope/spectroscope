@@ -278,10 +278,19 @@ class SpectroServerIntegrationTest {
         assertTrue(workspaceInfo.path("path").asText()
                         .endsWith(workspaceInfo.path("sessionId").asText()),
                 "the auto workspace is keyed by the session id");
-        assertEquals("run_start", types.get(6), "sequence starts with run_start, got " + types);
-        assertTrue(types.contains("text_delta"), "text must stream, got " + types);
-        assertTrue(types.contains("usage"), "usage must arrive, got " + types);
-        assertEquals("run_end", types.getLast());
+        // The llm layer's frames are socket-only announcements, not run events,
+        // and since card 184 leg 2 the request one arrives the moment the call
+        // LEAVES — which with a scripted provider is before the run events have
+        // finished draining. So the run sequence is asserted over the run
+        // events, exactly as this test always meant it. (Their own ordering is
+        // pinned where it belongs, on the recorder.)
+        List<String> runTypes = types.stream()
+                .filter(t -> !t.startsWith("llm_"))
+                .toList();
+        assertEquals("run_start", runTypes.get(6), "sequence starts with run_start, got " + runTypes);
+        assertTrue(runTypes.contains("text_delta"), "text must stream, got " + runTypes);
+        assertTrue(runTypes.contains("usage"), "usage must arrive, got " + runTypes);
+        assertEquals("run_end", runTypes.getLast());
 
         // The streamed text is the mock's answer — end to end through core+server.
         String text = events.stream()
@@ -461,8 +470,11 @@ class SpectroServerIntegrationTest {
         assertEquals("permission_mode_info", types.get(5),
                 "...and permission_mode_info right after it, got " + types);
         assertEquals("workspace_info", types.get(6));
-        assertEquals("run_start", types.get(7),
-                "the ONLY run events come from the second, valid message: " + types);
+        // Same reason as the canonical-sequence test above: the llm layer's
+        // frames announce a call leaving and a call closing, not a run event.
+        List<String> runTypes = types.stream().filter(t -> !t.startsWith("llm_")).toList();
+        assertEquals("run_start", runTypes.get(7),
+                "the ONLY run events come from the second, valid message: " + runTypes);
     }
 
     @Test

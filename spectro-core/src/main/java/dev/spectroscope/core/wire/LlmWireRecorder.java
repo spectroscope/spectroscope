@@ -61,6 +61,7 @@ public final class LlmWireRecorder implements AutoCloseable {
     private boolean truncated;               // latching: past the ceiling, every body is dropped
     private boolean closed;                  // a closed recorder writes nothing, ever again
     private volatile Consumer<ExchangeMeta> listener;
+    private volatile Consumer<RequestMeta> requestListener;
 
     /**
      * A recorder onto an explicit file — the seam tests use.
@@ -121,6 +122,25 @@ public final class LlmWireRecorder implements AutoCloseable {
     }
 
     /**
+     * Registers the SEND-time listener (card 184 leg 2). Without it the socket
+     * hears about an exchange exactly once, when the stream closes, so a request
+     * that is still in flight is invisible and the finished row lands AFTER its
+     * own text deltas — measured on a real turn: the POST left at 48.291, the
+     * first token arrived at 50.035, the stream closed at 50.138, and only the
+     * last of those reached the screen. The trace showed the answer above the
+     * request.
+     *
+     * <p>Bodies never travel through here either: the sidecar keeps them and the
+     * gated endpoint serves them on the gesture that asks.</p>
+     *
+     * @param listener receives each request's metadata once its line is written,
+     *                 which is BEFORE the provider has answered anything
+     */
+    public void onRequest(Consumer<RequestMeta> listener) {
+        this.requestListener = listener;
+    }
+
+    /**
      * Curries the session-level recorder with the calling agent's identity —
      * the provider itself knows neither agent, turn nor purpose.
      *
@@ -166,6 +186,12 @@ public final class LlmWireRecorder implements AutoCloseable {
                     request.method(), request.url(), redact(request.headers()),
                     request.fidelity(), null, bodyBytes, null, request.ts()),
                     request.body(), bodyBytes);
+            Consumer<RequestMeta> sent = requestListener;
+            if (sent != null) {
+                sent.accept(new RequestMeta(xid, agentId, turn, kind, request.provider(), request.model(),
+                        request.transport(), request.method(), request.url(), bodyBytes,
+                        request.fidelity(), request.ts()));
+            }
         }
 
         @Override
@@ -365,6 +391,14 @@ public final class LlmWireRecorder implements AutoCloseable {
      * @param durationMs    send-to-close wall clock
      * @param ts            epoch millis at close time
      */
+    /** What is known the moment a request leaves, which is everything except
+     *  how it went. No status, no duration, no response size: those are facts
+     *  that do not exist yet, and a zero in their place would be a claim. */
+    public record RequestMeta(String xid, String agentId, Integer turn, String kind,
+                              String provider, String model, String transport,
+                              String method, String url, long requestBytes,
+                              String fidelity, long ts) {}
+
     public record ExchangeMeta(String xid, String agentId, Integer turn, String kind,
                                String provider, String model, String url, Integer status,
                                long requestBytes, long responseBytes, int responseLines,

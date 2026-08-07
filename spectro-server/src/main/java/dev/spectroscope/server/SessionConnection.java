@@ -671,6 +671,7 @@ public final class SessionConnection {
     private void openLlmWire() {
         llmWire = LlmWireRecorder.forSession(store.id());
         llmWire.onExchange(this::sendLlmExchange);
+        llmWire.onRequest(this::sendLlmRequest);
     }
 
     /**
@@ -1143,6 +1144,42 @@ public final class SessionConnection {
      * serve them on demand. Runs on the exchange's closing thread and holds
      * the connection monitor like every send.
      */
+    /**
+     * Mirrors ONE request the moment it leaves, before the provider has answered
+     * anything (card 184 leg 2). Without this the socket heard about an exchange
+     * only at close, so a call in flight was invisible and the finished row
+     * landed after its own text deltas: measured on a real turn, the POST left
+     * at 48.291, the first token arrived at 50.035, the stream closed at 50.138,
+     * and only the last of those was ever on screen.
+     *
+     * <p>No status, no duration, no response size: those facts do not exist yet
+     * and a zero would be a claim. The bodies stay in the sidecar as always.</p>
+     */
+    private synchronized void sendLlmRequest(LlmWireRecorder.RequestMeta meta) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("type", "llm_request");
+            payload.put("xid", meta.xid());
+            payload.put("agentId", meta.agentId());
+            payload.put("turn", meta.turn());
+            payload.put("kind", meta.kind());
+            payload.put("provider", meta.provider());
+            payload.put("model", meta.model());
+            payload.put("transport", meta.transport());
+            payload.put("method", meta.method());
+            payload.put("url", meta.url());
+            payload.put("requestBytes", meta.requestBytes());
+            payload.put("fidelity", meta.fidelity());
+            payload.put("ts", meta.ts());
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+        } catch (Exception ignored) {
+            // A dead socket just misses the mirror; the sidecar already has it.
+        }
+    }
+
     private synchronized void sendLlmExchange(LlmWireRecorder.ExchangeMeta meta) {
         if (!socket.isOpen()) {
             return;

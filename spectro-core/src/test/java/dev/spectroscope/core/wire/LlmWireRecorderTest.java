@@ -274,4 +274,51 @@ class LlmWireRecorderTest {
             assertNull(response.get("lines"));
         }
     }
+
+    /**
+     * Leg 2 (card 184). The socket used to hear about an exchange exactly once,
+     * at close, so a request in flight was invisible and the finished row landed
+     * AFTER its own text deltas. Measured on a real turn: the POST left at
+     * 48.291, the first token arrived at 50.035, the stream closed at 50.138 —
+     * and only the last of those reached the screen, so the trace showed the
+     * answer above the request.
+     */
+    @Test
+    void tellsTheSocketAboutARequestTheMOMENTItLeaves(@TempDir Path dir) throws Exception {
+        java.util.List<LlmWireRecorder.RequestMeta> sent = new java.util.ArrayList<>();
+        java.util.List<LlmWireRecorder.ExchangeMeta> closed = new java.util.ArrayList<>();
+        try (LlmWireRecorder recorder = new LlmWireRecorder(dir.resolve("s1.llm.jsonl"), 1_000_000)) {
+            recorder.onRequest(sent::add);
+            recorder.onExchange(closed::add);
+
+            LlmWireTap.Exchange exchange = recorder.bound("main", 1).begin(
+                    new WireRequest("anthropic", "claude-opus-4-8", "https", "POST",
+                            "https://api.anthropic.com/v1/messages", Map.of(), "bytes", "{\"a\":1}", 100L));
+
+            // The point: the listener has already fired, and nothing has answered.
+            assertEquals(1, sent.size(), "the request is announced before any answer exists");
+            assertEquals(0, closed.size(), "and the close listener has not run");
+            assertEquals(100L, sent.get(0).ts(), "stamped when it LEFT, not when it closed");
+            assertEquals("https://api.anthropic.com/v1/messages", sent.get(0).url());
+            assertEquals(7L, sent.get(0).requestBytes(), "the size it really posted: {\"a\":1} is seven bytes");
+
+            exchange.end(new WireOutcome(200, "bytes", "{}", false, null, 1947L));
+        }
+        assertEquals(1, closed.size(), "the close still announces itself exactly once");
+        assertEquals(sent.get(0).xid(), closed.get(0).xid(), "and the pair carries ONE id");
+        assertEquals(1847L, closed.get(0).durationMs(), "close minus send, from the record itself");
+    }
+
+    /** A recorder nobody listens to must not care. */
+    @Test
+    void recordsJustAsWellWithNoSendListenerAtAll(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("s2.llm.jsonl");
+        try (LlmWireRecorder recorder = new LlmWireRecorder(file, 1_000_000)) {
+            recorder.bound("main", 1).begin(
+                    new WireRequest("ollama", "qwen3.5", "http", "POST",
+                            "http://localhost:11434/api/chat", Map.of(), "bytes", "{}", 1L))
+                    .end(new WireOutcome(200, "bytes", "{}", false, null, 2L));
+        }
+        assertTrue(Files.readString(file).contains("llm_request"));
+    }
 }
