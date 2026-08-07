@@ -958,3 +958,12 @@
   .mic-led { animation: none; }
   .mic-meter i { transition: none; }
 }
+/* The device picker's caret, a step quieter than the glyph it hangs off: it
+   picks a device, it does not record. */
+.mic-anchor { position: relative; display: inline-flex; }
+.mic-menu-button { width: 16px; min-width: 16px; padding: 0; color: var(--text-faint); }
+.mic-menu-button:hover { color: var(--text); }
+/* Both pinned like .disc-pop, for the reason that file documents: a later
+   sheet's bottom-pin would otherwise win the cascade and squash the popover. */
+.wsg-pop.mic-pop { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; min-width: 240px; }
+.mic-pop-note { padding: var(--sp-2); margin: 0; }

@@ -743,6 +743,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   // Card 187 step 1: why the microphone did not work. Both paths used to be a
   // silent catch, so "you denied permission" and "the request failed" both read
   // as "this machine has no microphone".
+  "voice.pick.title": { de: "Mikrofon wählen", en: "Choose a microphone" },
+  "voice.pick.system": { de: "Systemvorgabe", en: "System default" },
+  // Not an error: the browser HAS devices and withholds their names until the
+  // microphone has been granted once. Saying so beats five blank rows.
+  "voice.pick.unnamed": { de: "Die Namen der Geräte zeigt der Browser erst, wenn das Mikrofon einmal erlaubt wurde. Einmal aufnehmen — danach steht die Liste hier.", en: "The browser only names the devices once the microphone has been allowed. Record once, and the list appears here." },
+  "voice.pick.none": { de: "Kein Eingabegerät gefunden.", en: "No input device found." },
   "voice.err.denied": { de: "Kein Zugriff aufs Mikrofon — der Browser hat ihn verweigert. In den Website-Einstellungen erlauben, dann noch einmal.", en: "No access to the microphone — the browser refused it. Allow it in the site settings, then try again." },
   "voice.err.noDevice": { de: "Kein Mikrofon gefunden.", en: "No microphone found." },
   "voice.err.deviceBusy": { de: "Das Mikrofon ließ sich nicht öffnen — vermutlich hält es gerade ein anderes Programm.", en: "The microphone could not be opened — another program is probably holding it." },

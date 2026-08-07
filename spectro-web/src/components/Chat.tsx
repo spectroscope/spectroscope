@@ -21,6 +21,7 @@ import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { voiceErrorKey } from "./voiceError";
 import { meterBars } from "./micLevel";
+import { MicMenu } from "./MicMenu";
 import { formatTimer, micButtonState } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
 import type { QueuedMessage } from "../state/sendQueue";
@@ -710,6 +711,11 @@ export function Chat(props: {
                   </svg>
                 )}
               </button>
+              {/* The device picker, right beside the glyph it belongs to
+                  (card 187 step 2). It opens even while the button is disabled:
+                  choosing a microphone is exactly what someone does when it did
+                  not work. */}
+              <MicMenu choice={voice.choice} onOpen={() => void voice.refreshDevices()} />
               <ComposerGear
                 workspaceInfo={state.workspace}
                 permissionMode={state.permissionMode}
