@@ -17,6 +17,8 @@
 // through to the live default, the same landing every unknown address gets.
 
 import type { Route, SettingsSection, ViewTab } from "./route";
+import type { ViewState } from "./viewState";
+import type { ReportingTab } from "./viewReport";
 
 /** What is on screen right now, as the route planner needs to know it. */
 export interface Place {
@@ -39,6 +41,13 @@ export interface Place {
   enteredFleet: string | null;
   tab: ViewTab;
   settingsOpen: boolean;
+  /**
+   * How the visible view is being read, as that view last reported it (card
+   * 181): the selected trace row, the filters that are off, the spectrum
+   * window. Absent for a tab that has no reading worth addressing, which is
+   * most of them.
+   */
+  view?: ViewState;
 }
 
 /** One step of applying an address. The App maps each to its own handler. */
@@ -51,7 +60,9 @@ export type RouteAction =
   | { kind: "open-settings"; section: SettingsSection | null }
   | { kind: "close-settings" }
   /** Fetch a store transcript by path and import it. */
-  | { kind: "open-import"; path: string };
+  | { kind: "open-import"; path: string }
+  /** Hand a view the reading its address named, for it to take once. */
+  | { kind: "offer-view"; tab: ReportingTab; view: ViewState };
 
 export interface RoutePlan {
   actions: RouteAction[];
@@ -140,7 +151,29 @@ export function planRoute(route: Route, place: Place, guards: RouteGuards): Rout
       break;
     }
   }
+  offerView(effective, actions);
   return { actions, effective };
+}
+
+/** The tabs that can take a reading. Anything else is handed nothing. */
+const READING_TABS: readonly string[] = ["trace", "spectrum"];
+
+/**
+ * Adds the offer that hands a view the reading its address named.
+ *
+ * The tab is the one the address RESOLVED to, not the one on screen: a cold
+ * deep link opens the session and the tab together, and the reading has to
+ * arrive with them or the link lands on the right view showing the wrong thing.
+ */
+function offerView(route: Route, actions: RouteAction[]): void {
+  if (route.kind === "fleet" || route.kind === "settings") return;
+  const view = route.view;
+  if (view === undefined || (view.row === undefined && view.only === undefined && view.win === undefined)) {
+    return;
+  }
+  const tab = route.tab ?? (route.kind === "session" && route.eventIndex !== null ? "trace" : "chat");
+  if (!READING_TABS.includes(tab)) return; // a row clause is not the chat's business
+  actions.push({ kind: "offer-view", tab: tab as ReportingTab, view });
 }
 
 /**
@@ -153,16 +186,25 @@ export function planRoute(route: Route, place: Place, guards: RouteGuards): Rout
 export function routeOfPlace(place: Place): Route {
   const tab = place.tab === "chat" ? null : place.tab;
   if (place.enteredFleet !== null) {
+    // A fleet landing has no view whose reading would mean anything, so it
+    // never carries one; the formatter drops the clause in any case.
     return { kind: "fleet", contextId: place.enteredFleet };
   }
+  // An empty reading is left OFF rather than written as an empty query: the
+  // short spelling is the common address and has to stay reachable.
+  const view =
+    place.view !== undefined &&
+    (place.view.row !== undefined || place.view.only !== undefined || place.view.win !== undefined)
+      ? { view: place.view }
+      : {};
   // BEFORE the replayId branch: an import has both, and only this one formats.
   if (place.importPath !== null) {
-    return { kind: "import", path: place.importPath, tab };
+    return { kind: "import", path: place.importPath, tab, ...view };
   }
   if (place.replayId !== null) {
-    return { kind: "session", sessionId: place.replayId, eventIndex: null, tab };
+    return { kind: "session", sessionId: place.replayId, eventIndex: null, tab, ...view };
   }
-  return { kind: "live", tab };
+  return { kind: "live", tab, ...view };
 }
 
 /** Last-wins ordering for async navigations: a ticket is current only until

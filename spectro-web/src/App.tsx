@@ -2,7 +2,7 @@
 // and a replayed archive are the same UiState shape from the same reducer;
 // the app only decides which of the two the components render.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import type { ClientMessage, RunEvent } from "./events";
 import { connect } from "./transport/ws";
@@ -36,6 +36,12 @@ import { useLeveling } from "./state/useLeveling";
 import { isSurfaceOpen, newlyOpened, translated, levelName } from "./state/leveling";
 import { setBeaconSink } from "./state/levelingBeacon";
 import { formatRoute, parseAppRoute, type Route, type SettingsSection, type ViewTab } from "./state/route";
+import {
+  clearReportedViews,
+  offerIncomingView,
+  reportedViewFor,
+  subscribeReportedViews,
+} from "./state/viewReport";
 import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
 import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
 import {
@@ -753,12 +759,22 @@ export function App() {
   // the previous transcript is worse than none.
   const shownStorePath =
     importedPath !== null && importedPath.sessionId === (replay?.id ?? null) ? importedPath.path : null;
+  // How the visible view is being read, straight from the module store the two
+  // views report into (card 181). Subscribed rather than lifted into App state,
+  // so a spectrum drag re-renders on its own terms and this only wakes when the
+  // reading it publishes actually changed.
+  const reportedView = useSyncExternalStore(
+    subscribeReportedViews,
+    () => reportedViewFor(tab),
+    () => reportedViewFor(tab),
+  );
   placeRef.current = {
     replayId: replay?.id ?? null,
     importPath: shownStorePath,
     enteredFleet,
     tab,
     settingsOpen,
+    view: reportedView,
   };
   const fleetsLocked = leveling.snapshot ? !isSurfaceOpen(leveling.snapshot, "fleets") : false;
   const fleetsLockedRef = useRef(fleetsLocked);
@@ -872,6 +888,31 @@ export function App() {
   // A view tab chosen by hand: the flip plus its address — the tab suffix on
   // a session, the bare tab on the live view, and no tab vocabulary at all on
   // a fleet landing (the write is a no-op there).
+  // The address keeps up with the reading (card 181). The intent is always a
+  // replace, because navigationIntent recognises a view-only move as one; that
+  // is what keeps a zoom drag from burying the place a reader came from under
+  // an entry per frame. Settings lie OVER the view, so nothing is written while
+  // they are open or the panel's own address would be overwritten.
+  const lastReported = useRef<string>("");
+  useEffect(() => {
+    if (settingsOpen) return;
+    const target = formatRoute(currentAppRoute());
+    if (target === lastReported.current) return;
+    lastReported.current = target;
+    commitUrl(currentAppRoute(), "gesture");
+  });
+
+  // A different transcript under the views: every reading is dropped. Row 12 of
+  // one session addresses nothing in the next, and a window fitted to one run's
+  // clock means nothing against another's.
+  const shownIdentity = `${replay?.id ?? ""}|${shownStorePath ?? ""}|${enteredFleet ?? ""}`;
+  const lastIdentity = useRef(shownIdentity);
+  useEffect(() => {
+    if (lastIdentity.current === shownIdentity) return;
+    lastIdentity.current = shownIdentity;
+    clearReportedViews();
+  }, [shownIdentity]);
+
   const changeTab = (next: ViewTab): void => {
     setTab(next);
     // routeOfPlace already knows every one of these cases, INCLUDING the import
@@ -1186,6 +1227,12 @@ export function App() {
         case "open-settings":
           setSettingsOpen(true);
           setSettingsSection(action.section);
+          break;
+        case "offer-view":
+          // Left for the view to take once when it next notices. It cannot be
+          // applied from here: the view owns the state, and the reading may
+          // arrive before the view that reads it has mounted.
+          offerIncomingView(action.tab, action.view);
           break;
         case "close-settings":
           setSettingsOpen(false);

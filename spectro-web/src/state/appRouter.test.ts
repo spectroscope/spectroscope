@@ -33,13 +33,12 @@ const at = (over: Partial<Place> = {}): Place => ({
   ...over,
 });
 
+type SessionRouteShape = Extract<Route, { kind: "session" }>;
 const session = (
   sessionId: string,
   eventIndex: number | null = null,
-  tab: Route & { kind: "session" } extends never
-    ? never
-    : "chat" | "spectrum" | "graph" | "trace" | "text" | "lab" | null = null,
-): Route => ({ kind: "session", sessionId, eventIndex, tab });
+  tab: "chat" | "spectrum" | "graph" | "trace" | "text" | "lab" | null = null,
+): SessionRouteShape => ({ kind: "session", sessionId, eventIndex, tab });
 
 describe("planRoute for a session address", () => {
   it("opens a session that is not on screen, with the tab riding IN the open", () => {
@@ -184,6 +183,90 @@ describe("routeOfPlace: the address of what is on screen", () => {
     expect(routeOfPlace(at({ replayId: "x" }))).toEqual(session("x", null, null));
     expect(routeOfPlace(at({ tab: "lab" }))).toEqual({ kind: "live", tab: "lab" });
     expect(routeOfPlace(at())).toEqual({ kind: "live", tab: null });
+  });
+});
+
+describe("routeOfPlace carries the reading the view reported (card 181)", () => {
+  it("writes it for a session, an import and the live view", () => {
+    const view = { row: 12 };
+    expect(routeOfPlace(at({ replayId: "x", tab: "trace", view }))).toEqual({
+      ...session("x", null, "trace"),
+      view,
+    });
+    expect(routeOfPlace(at({ importPath: "p/s.jsonl", tab: "trace", view }))).toEqual({
+      kind: "import",
+      path: "p/s.jsonl",
+      tab: "trace",
+      view,
+    });
+    expect(routeOfPlace(at({ tab: "spectrum", view: { win: { a: 0.2, b: 0.5 } } }))).toEqual({
+      kind: "live",
+      tab: "spectrum",
+      view: { win: { a: 0.2, b: 0.5 } },
+    });
+  });
+
+  it("leaves the address alone when the view reported nothing", () => {
+    // The short spelling is the common one and must stay reachable: a reader
+    // who has touched nothing gets "#/session/x/trace", not a query saying so.
+    expect(routeOfPlace(at({ replayId: "x", tab: "trace", view: {} }))).toEqual(session("x", null, "trace"));
+    expect(routeOfPlace(at({ replayId: "x", tab: "trace" }))).toEqual(session("x", null, "trace"));
+  });
+
+  it("never hangs a reading on a fleet", () => {
+    // A fleet landing has no view whose state would mean anything, and the
+    // formatter drops the clause anyway; planting one here would be an address
+    // that promises something nothing reads.
+    expect(routeOfPlace(at({ enteredFleet: "c", tab: "trace", view: { row: 3 } }))).toEqual({
+      kind: "fleet",
+      contextId: "c",
+    });
+  });
+});
+
+describe("planRoute hands a view the reading its address named", () => {
+  it("offers it to the tab the address resolved to", () => {
+    const plan = planRoute(
+      { ...session("x", null, "trace"), view: { row: 12 } },
+      at({ replayId: "x" }),
+      openGuards,
+    );
+
+    expect(plan.actions).toContainEqual({ kind: "offer-view", tab: "trace", view: { row: 12 } });
+  });
+
+  it("offers it on an open too, so a cold deep link lands read", () => {
+    // The commonest way anybody meets one of these links: pasted into a fresh
+    // tab, with the session not on screen yet.
+    const plan = planRoute(
+      { ...session("x", null, "spectrum"), view: { win: { a: 0.2, b: 0.5 } } },
+      at(),
+      openGuards,
+    );
+
+    expect(plan.actions).toContainEqual({
+      kind: "offer-view",
+      tab: "spectrum",
+      view: { win: { a: 0.2, b: 0.5 } },
+    });
+  });
+
+  it("offers nothing when the address carries no reading", () => {
+    const plan = planRoute(session("x", null, "trace"), at({ replayId: "x" }), openGuards);
+
+    expect(plan.actions.some((a) => a.kind === "offer-view")).toBe(false);
+  });
+
+  it("offers nothing to a tab that has no reading to take", () => {
+    // A row clause on a chat address is not the chat's business, and the chat
+    // has nothing to do with it.
+    const plan = planRoute(
+      { ...session("x", null, "chat"), view: { row: 12 } },
+      at({ replayId: "x" }),
+      openGuards,
+    );
+
+    expect(plan.actions.some((a) => a.kind === "offer-view")).toBe(false);
   });
 });
 

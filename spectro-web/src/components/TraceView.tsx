@@ -4,7 +4,7 @@
 // reducer state, so live and replay render through the same path (a replayed
 // archive is all dir "in" by construction).
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { CSSProperties } from "react";
 import type { RunEvent } from "../events";
 import type { TraceEntry, UserAttachment } from "../state/reducer";
@@ -59,6 +59,13 @@ import {
   traceColumnData,
   useTraceColumns,
 } from "../state/traceColumns";
+import {
+  incomingGeneration,
+  reportView,
+  subscribeReportedViews,
+  takeIncomingView,
+} from "../state/viewReport";
+import { onlyClause } from "../state/viewState";
 import type { TraceColumns } from "../state/traceColumns";
 import { TRACE_FACES, rowFace, setTraceFace, useTraceFace } from "../state/traceFace";
 import type { RowFace } from "../state/traceFace";
@@ -90,6 +97,11 @@ export const CATEGORIES = [
   "other",
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
+
+/** Whether a name off an address is one of ours. An address may say anything. */
+function isCategory(name: string): name is Category {
+  return (CATEGORIES as readonly string[]).includes(name);
+}
 
 /** Which chip a frame answers to. */
 export function categoryOf(type: string): Category {
@@ -1286,6 +1298,31 @@ export function TraceView(props: {
   const [llmDir, setLlmDir] = useState<"all" | LlmDir>("all");
   const [active, setActive] = useState<ReadonlySet<Category>>(() => new Set(CATEGORIES));
   const [openSeq, setOpenSeq] = useState<number | null>(null);
+  // Card 181: the address and this view keep up with each other. The reading
+  // that travels is the open row and the filters, and the filters only when
+  // some are off — a link a reader copies should not carry a clause describing
+  // a state nobody chose.
+  useEffect(() => {
+    reportView("trace", {
+      row: openSeq ?? undefined,
+      only: onlyClause(active as ReadonlySet<string>, CATEGORIES),
+    });
+  }, [openSeq, active]);
+  // Taken ONCE per offer. Keyed on the OFFER, not on the entries: navigating
+  // within a session leaves the entries alone, so keying on them meant back and
+  // forward between two readings of one session moved the address and left this
+  // view exactly where it was. Found live, on the second link pasted.
+  const offered = useSyncExternalStore(subscribeReportedViews, incomingGeneration, incomingGeneration);
+  useEffect(() => {
+    const arriving = takeIncomingView("trace");
+    if (arriving === undefined) return;
+    if (arriving.row !== undefined) setOpenSeq(arriving.row);
+    if (arriving.only !== undefined) {
+      // An address may name anything; only the categories this build has are
+      // believed, and an unknown one is dropped rather than trusted.
+      setActive(new Set(arriving.only.filter(isCategory)));
+    }
+  }, [offered, entries]);
   const [freshCount, setFreshCount] = useState(0);
   // Reasoning lens (card 13): a persisted preference, not view state — it
   // survives reloads and applies to live and replay alike.

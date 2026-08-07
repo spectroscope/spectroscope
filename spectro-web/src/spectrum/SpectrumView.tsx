@@ -5,7 +5,7 @@
 // Pure presentation: the folding lives in spectrumModel.ts, live and replay
 // render through the same path.
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { RunEvent } from "../events";
 import { formatDuration, formatTokens } from "../format";
 import { t } from "../i18n/i18n";
@@ -17,6 +17,12 @@ import { BAND_W, SpectrumBand, TICK_COLOR } from "./SpectrumBand";
 import { SpectrumAxis } from "./SpectrumAxis";
 import { SpectrumStrip } from "./SpectrumStrip";
 import { sliceLane } from "./laneSlice";
+import {
+  incomingGeneration,
+  reportView,
+  subscribeReportedViews,
+  takeIncomingView,
+} from "../state/viewReport";
 
 import { applyIntent, buttonToIntent, zoomEnabled, type ZoomButton } from "./gestures";
 import { fit, isWhole, minWidthFor, rebase, storeWindow, type Window } from "./viewport";
@@ -265,6 +271,23 @@ export function SpectrumView(props: {
   }
 
   const win = winState ?? FULL;
+
+  // Card 181: the window is a READING, and a reading belongs in the address.
+  // The whole span reports NOTHING rather than the pair {0,1}: a reader who has
+  // not zoomed should get a clean link, and null-means-the-whole is exactly the
+  // distinction this view already keeps.
+  useEffect(() => {
+    reportView("spectrum", isWhole(win) ? {} : { win: { a: win.a, b: win.b } });
+  }, [win]);
+  // Taken once, through the same one writer every other gesture uses, so an
+  // address cannot store a window the buttons and keys would disagree about.
+  const setWindowRef = useRef(setWindow);
+  setWindowRef.current = setWindow;
+  const offered = useSyncExternalStore(subscribeReportedViews, incomingGeneration, incomingGeneration);
+  useEffect(() => {
+    const arriving = takeIncomingView("spectrum");
+    if (arriving?.win !== undefined) setWindowRef.current(arriving.win);
+  }, [offered, model.t0, model.t1]);
   const slices = useMemo(
     () => model.lanes.map((l) => sliceLane(l.ticks, win, bandW)),
     [model.lanes, win, bandW],

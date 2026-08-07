@@ -6,9 +6,15 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { __setHistoryTestHooks, navigationIntent, writeRoute } from "./history";
 import type { Route, ViewTab } from "./route";
+import type { ViewState } from "./viewState";
 
 const LIVE: Route = { kind: "live", tab: null };
-const session = (sessionId: string, eventIndex: number | null = null, tab: ViewTab | null = null): Route => ({
+type SessionRouteShape = Extract<Route, { kind: "session" }>;
+const session = (
+  sessionId: string,
+  eventIndex: number | null = null,
+  tab: ViewTab | null = null,
+): SessionRouteShape => ({
   kind: "session",
   sessionId,
   eventIndex,
@@ -59,6 +65,59 @@ describe("navigationIntent on a gesture", () => {
   it("pushes when a scrub-sized change rides a different session or tab", () => {
     expect(navigationIntent(session("x", 3), session("y", 5), "gesture")).toBe("push");
     expect(navigationIntent(session("x", 3, "chat"), session("x", 5, "trace"), "gesture")).toBe("push");
+  });
+
+  it("replaces when only the view state moved (card 181)", () => {
+    // The rule that keeps the back button usable. Dragging a zoom end emits a
+    // window per frame and clicking down a trace is one row after another;
+    // pushing those would bury the place a reader actually came from under
+    // fifty entries of the same place looked at slightly differently. It is
+    // the seek argument exactly: same place, new reading.
+    const at = (view: ViewState): Route => ({ ...session("x", null, "trace"), view });
+    expect(navigationIntent(at({}), at({ row: 12 }), "gesture")).toBe("replace");
+    expect(navigationIntent(at({ row: 12 }), at({ row: 13 }), "gesture")).toBe("replace");
+    expect(navigationIntent(at({ win: { a: 0, b: 1 } }), at({ win: { a: 0.2, b: 0.4 } }), "gesture")).toBe(
+      "replace",
+    );
+    expect(navigationIntent(at({ row: 12 }), at({}), "gesture")).toBe("replace");
+    expect(navigationIntent(at({ only: ["tool"] }), at({ only: ["tool", "llm"] }), "gesture")).toBe(
+      "replace",
+    );
+  });
+
+  it("replaces a view-only move on a live run and on an imported transcript", () => {
+    // isSameSessionSeek only ever knew the "session" kind, so the rule above
+    // held for a stored session and nowhere else. The live trace and an opened
+    // store transcript are the two surfaces a reader is most likely to be
+    // clicking down while the run is still going.
+    const live = (view: ViewState): Route => ({ kind: "live", tab: "trace", view });
+    const imported = (view: ViewState): Route => ({ kind: "import", path: "p/s.jsonl", tab: "trace", view });
+    expect(navigationIntent(live({}), live({ row: 4 }), "gesture")).toBe("replace");
+    expect(navigationIntent(live({ row: 4 }), live({ row: 5 }), "gesture")).toBe("replace");
+    expect(navigationIntent(imported({}), imported({ win: { a: 0.1, b: 0.3 } }), "gesture")).toBe("replace");
+  });
+
+  it("still pushes when the view state rides a real move", () => {
+    // The guard on the rule above: a view clause must not make a genuine
+    // navigation look like a reading.
+    const live = (view: ViewState): Route => ({ kind: "live", tab: "trace", view });
+    expect(
+      navigationIntent({ ...session("x", null, "trace"), view: { row: 1 } }, live({ row: 1 }), "gesture"),
+    ).toBe("push");
+    expect(
+      navigationIntent(
+        { ...session("x", null, "chat") },
+        { ...session("x", null, "trace"), view: { row: 1 } },
+        "gesture",
+      ),
+    ).toBe("push");
+    expect(
+      navigationIntent(
+        { ...session("x", null, "trace"), view: { row: 1 } },
+        { ...session("y", null, "trace"), view: { row: 1 } },
+        "gesture",
+      ),
+    ).toBe("push");
   });
 });
 
