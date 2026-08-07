@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;

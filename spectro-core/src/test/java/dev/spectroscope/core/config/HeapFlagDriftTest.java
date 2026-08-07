@@ -69,7 +69,7 @@ class HeapFlagDriftTest {
         Path root = repoRoot();
         assumeTrue(root != null, "not running from a source checkout");
         Path controller = root.resolve(
-                "spectro-server/src/main/java/dev/spectroscope/server/ClaudeTranscriptsController.java");
+                "spectro-server/src/main/java/dev/spectroscope/server/transcripts/ClaudeTranscriptsController.java");
         assertTrue(Files.isRegularFile(controller), "the transcript controller moved");
 
         Matcher matcher = Pattern.compile("MAX_CONTENT_BYTES\\s*=\\s*([^;]+);")

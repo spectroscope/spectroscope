@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -1,4 +1,6 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
+
+import dev.spectroscope.server.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.ByteArrayResource;

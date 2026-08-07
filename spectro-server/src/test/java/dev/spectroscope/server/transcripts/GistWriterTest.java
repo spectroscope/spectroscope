@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
 
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.SpectroConfig;
