@@ -3,7 +3,7 @@
 `spectro-web/vite.config.ts` writes the built UI into
 `spectro-server/src/main/resources/static`, and those 15 files are **tracked**.
 This document says why, what it costs, and the one command that resolves a
-conflict correctly. Card 184.
+conflict correctly. Card 188.
 
 ## Why it is tracked
 
@@ -87,4 +87,4 @@ The 39% churn and the 244 MB already in history. Untracking would stop the
 growth, but it would also mean adding Node, `npm ci` and a vite build to
 `java-gate` ahead of the Java tests, and `tag.yml` picks the rebuilt bundle up
 through `git add -A`, so the release commit would need the same change or the
-tag would stop carrying the UI. That trade is the rest of card 184.
+tag would stop carrying the UI. That trade is the rest of card 188.

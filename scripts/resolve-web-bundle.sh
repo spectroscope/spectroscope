@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resolve a conflicted web bundle by rebuilding it (card 184).
+# Resolve a conflicted web bundle by rebuilding it (card 188).
 #
 # The bundle in spectro-server/src/main/resources/static is generated output
 # that happens to be tracked, so a conflict there is never two authors
