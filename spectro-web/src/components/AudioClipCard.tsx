@@ -84,6 +84,11 @@ export function AudioClipCard({ body, responseBody }: { body: string; responseBo
     if (clip === null) return;
     const ctx = ctxRef.current ?? new AudioContext();
     ctxRef.current = ctx;
+    // A context born outside a user gesture starts suspended and its clock
+    // never moves — the source "plays" into silence at position zero. Resume
+    // is idempotent and cheap, so it runs on every start rather than on a
+    // state we would have to guess.
+    void ctx.resume().catch(() => undefined);
     if (bufferRef.current === null) {
       const frames = Math.floor(clip.samples.length / clip.channels);
       const buffer = ctx.createBuffer(clip.channels, Math.max(1, frames), clip.sampleRate);
@@ -152,7 +157,7 @@ export function AudioClipCard({ body, responseBody }: { body: string; responseBo
       void ctxRef.current?.close().catch(() => undefined);
       ctxRef.current = null;
     },
-     
+
     [],
   );
 
