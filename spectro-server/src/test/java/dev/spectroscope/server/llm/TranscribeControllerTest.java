@@ -35,6 +35,7 @@ class TranscribeControllerTest {
     /** Whisper returns the canned transcript, and remembers what it was asked to run. */
     private static final class FakeRunner implements CommandRunner {
         List<String> transcriptLines = List.of("what is in the readme");
+        IOException refuse; // set to make the child fail the way a real one does
         final List<List<String>> commands = new ArrayList<>();
 
         @Override
@@ -43,8 +44,11 @@ class TranscribeControllerTest {
         }
 
         @Override
-        public List<String> runCapturingOutput(List<String> command) {
+        public List<String> runCapturingOutput(List<String> command) throws IOException {
             commands.add(command);
+            if (refuse != null) {
+                throw refuse;
+            }
             return transcriptLines;
         }
     }
@@ -231,7 +235,12 @@ class TranscribeControllerTest {
     }
 
     @Test
-    void aRefusalFromTheApiComesBackAsItsOwnSentence(@TempDir Path dir) {
+    void aRefusalFromTheApiComesBackAsItsOwnSentenceAndAs502(@TempDir Path dir) {
+        // Replaced, not loosened: this test used to pin 503 for EVERY hosted
+        // failure, and 503 is the number the browser reads as "STT is not set
+        // up" -- it removes the microphone button until reload. One transient
+        // 429 from the provider therefore killed voice for the session. The
+        // far side failing is 502; the sentence still travels.
         FakeHosted hosted = new FakeHosted();
         hosted.refuse = new IOException("Transcription failed with HTTP 401 — Incorrect API key provided");
         TranscribeController controller = new TranscribeController(
@@ -240,9 +249,25 @@ class TranscribeControllerTest {
 
         ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
 
-        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertEquals(HttpStatus.BAD_GATEWAY, response.getStatusCode());
         assertTrue(String.valueOf(response.getBody().get("error")).contains("401"),
                 response.getBody().toString());
+    }
+
+    @Test
+    void aLocalRouteFailureStays503BecauseThatOneIsSetup(@TempDir Path dir) throws IOException {
+        // The other half of the split: a local whisper-cli that cannot run IS
+        // a setup problem, and 503 is what routes the reader to the pane with
+        // the fix.
+        FakeRunner runner = new FakeRunner();
+        runner.refuse = new IOException("whisper-cli: model file is unreadable");
+        TranscribeController controller = new TranscribeController(
+                runner, presentModel(dir), true, null,
+                () -> new TranscribeController.Choice(SttRoute.LOCAL, "", new FakeHosted(), "auto"));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
     }
 
     private static Path presentModelQuietly(Path dir) {

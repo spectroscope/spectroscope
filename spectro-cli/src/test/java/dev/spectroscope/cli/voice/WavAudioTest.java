@@ -104,6 +104,34 @@ class WavAudioTest {
     }
 
     @Test
+    void aCraftedChunkSizeIsARefusalAndNeverAnOverflow() {
+        // The walker only trips over a lying size when it has to walk PAST the
+        // liar: at += 8 + size wraps negative, and the next tag() read throws
+        // an uncaught IllegalArgumentException out of the controller -- a 500
+        // with a stack trace where the contract promises a readable 400. So
+        // the liar here sits FIRST, before fmt, exactly where a hostile file
+        // would put it.
+        byte[] base = good();
+        ByteBuffer crafted = ByteBuffer.allocate(base.length + 8).order(ByteOrder.LITTLE_ENDIAN);
+        crafted.put(base, 0, 12); // RIFF size WAVE
+        crafted.put("JUNK".getBytes(StandardCharsets.US_ASCII));
+        crafted.putInt(Integer.MAX_VALUE - 3); // the lie
+        crafted.put(base, 12, base.length - 12);
+        assertTrue(WavAudio.problem(crafted.array()).isPresent(),
+                "a size that cannot fit the file is a broken file, said in a sentence");
+    }
+
+    @Test
+    void secondsNeverThrowsOnTheSameLie() {
+        // seconds() walks for "data" and crosses the fmt chunk, so a lying fmt
+        // size hits the same overflow from the other side.
+        byte[] bytes = good();
+        ByteBuffer buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN);
+        buffer.putInt(16, Integer.MAX_VALUE - 3);
+        assertEquals(0, WavAudio.seconds(bytes), "a broken walk is zero seconds, never a throw");
+    }
+
+    @Test
     void aChunkBeforeFmtDoesNotHideIt() {
         // Some encoders put LIST or JUNK first. The fmt chunk is found by walking,
         // so a legitimate file is never refused for where it keeps its fields.

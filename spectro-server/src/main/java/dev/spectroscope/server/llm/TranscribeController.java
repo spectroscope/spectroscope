@@ -298,11 +298,16 @@ public class TranscribeController {
             answer.put("wire", wire);
             return ResponseEntity.ok(answer);
         } catch (IOException failure) {
-            // A missing binary or model, or a provider that refused: both surface
-            // here as a readable message → 503 with that message, never a trace.
-            exchange.end(new LlmWireTap.WireOutcome(503, hosted ? "bytes" : "process-output",
+            // Two different failures used to wear the same number, and the browser
+            // treats 503 as "STT is not set up" and takes the microphone button
+            // away until reload. A hosted provider that refused (a 429, a blip)
+            // is not a setup problem -- it is the far side failing, which is what
+            // 502 says, and the browser keeps the button so the next press can
+            // succeed. Only the LOCAL route's failures are setup: 503 as before.
+            int status = hosted ? 502 : 503;
+            exchange.end(new LlmWireTap.WireOutcome(status, hosted ? "bytes" : "process-output",
                     null, false, failure.getMessage(), System.currentTimeMillis()));
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+            return ResponseEntity.status(hosted ? HttpStatus.BAD_GATEWAY : HttpStatus.SERVICE_UNAVAILABLE)
                     .body(Map.of("error", failure.getMessage()));
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();

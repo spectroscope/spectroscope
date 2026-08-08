@@ -2,7 +2,7 @@
 // attempt failed" and "this feature is not here".
 
 import { describe, expect, it } from "vitest";
-import { VOICE_ERRORS, micErrorOf, silencesTheButton, voiceErrorKey } from "./voiceError";
+import { VOICE_ERRORS, micErrorOf, silencesTheButton, voiceErrorKey, transcribeErrorOf } from "./voiceError";
 import { dict } from "../i18n/i18n";
 
 describe("what the browser said, read as a reason", () => {
@@ -54,5 +54,24 @@ describe("every reason has something to say", () => {
       expect(entry.de.length).toBeGreaterThan(0);
       expect(entry.en.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("transcribeErrorOf splits setup from a bad day", () => {
+  it("latches only on 503, which really is setup", () => {
+    expect(transcribeErrorOf(503)).toBe("sttMissing");
+    expect(silencesTheButton(transcribeErrorOf(503)!)).toBe(true);
+  });
+  it("keeps the button through the far side failing", () => {
+    // The server answers 502 for a hosted provider that refused (a 429, a
+    // blip). Latching on it took the microphone away until reload.
+    expect(transcribeErrorOf(502)).toBe("requestFailed");
+    expect(silencesTheButton(transcribeErrorOf(502)!)).toBe(false);
+  });
+  it("names this browser's own encoding on 400", () => {
+    expect(transcribeErrorOf(400)).toBe("convertFailed");
+  });
+  it("leaves unknown statuses to the caller", () => {
+    expect(transcribeErrorOf(500)).toBeNull();
   });
 });

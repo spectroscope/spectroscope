@@ -87,6 +87,24 @@ export function voiceErrorKey(reason: VoiceError): string {
  * @param reason what went wrong
  * @return true when the button should stay gone until something changes
  */
+/**
+ * Read a transcribe answer's status into a reason.
+ *
+ * The split matters more than it looks: 503 means "STT is not set up" and the
+ * button leaves until the setup changes. The server used to answer 503 for a
+ * hosted provider's transient refusal too, so one 429 took the microphone away
+ * until reload. 502 is the far side failing -- retryable, the button stays.
+ *
+ * @param status the HTTP status of /api/transcribe
+ * @return the reason, or null for a status the caller handles itself
+ */
+export function transcribeErrorOf(status: number): VoiceError | null {
+  if (status === 503) return "sttMissing";
+  if (status === 400) return "convertFailed";
+  if (status === 502) return "requestFailed";
+  return null;
+}
+
 export function silencesTheButton(reason: VoiceError): boolean {
   return reason === "noDevice" || reason === "sttMissing";
 }
