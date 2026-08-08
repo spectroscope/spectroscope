@@ -315,6 +315,7 @@ three consecutive runs before a release.
 - [dev portal](https://spectroscope.dev) with a generated, searchable reference extracted from this source tree
 - [samples/](samples/) — eight numbered examples, six of them standalone Gradle projects that resolve spectroscope from Maven Central rather than from this tree: the five lines, a fleet, recording a run for `spectro web`, a fleet across processes, OTel export, and a LangChain4j provider
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), [docs/WEB-UI.md](docs/WEB-UI.md), [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md), [docs/INTEROP.md](docs/INTEROP.md)
+- [docs/WEB-BUNDLE.md](docs/WEB-BUNDLE.md) — why the built UI is a tracked file, and the one command that resolves it when two branches collide in it
 - [release-notes/](release-notes/) for what each version brought
 
 Found a bug or a rough edge? Open an issue; the project is young and moves
