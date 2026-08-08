@@ -33,7 +33,7 @@ const typeOf = (event: unknown): string => (event as { type: string }).type;
 
 describe("what a written jsonl may contain", () => {
   it("names every frame that is ours rather than the wire's", () => {
-    // The seven the app builds for its own screen, plus the nine an import
+    // The ones the app builds for its own screen, plus the ones an import
     // reads. Written out by hand on purpose, so removing one goes red here;
     // ADDING one is what wireOnly.drift.test.ts catches, by reading
     // SessionConnection and the RunEvent union off disk. This list alone missed
@@ -47,6 +47,13 @@ describe("what a written jsonl may contain", () => {
       "otlp_export",
       "fleet_roster",
       "fleet_event",
+      "llm_exchange",
+      // Leg 2 (card 184): the call leaving, and the moment it closed. Both are
+      // socket-only announcements like provider_info, and llm_response is not
+      // even that — it is built in this browser out of the closing frame, so no
+      // session file has ever held either of them.
+      "llm_request",
+      "llm_response",
       "user_message",
       "task_reminder",
       "queue_operation",
@@ -59,7 +66,7 @@ describe("what a written jsonl may contain", () => {
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    expect(NON_WIRE_TYPES.size).toBe(16);
+    expect(NON_WIRE_TYPES.size).toBe(19);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

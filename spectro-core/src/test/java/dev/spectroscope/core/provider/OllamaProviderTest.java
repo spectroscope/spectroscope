@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import dev.spectroscope.core.CancelSignal;
+import dev.spectroscope.core.wire.LlmWireTap;
 import dev.spectroscope.core.provider.LlmProvider.ImageContent;
 import dev.spectroscope.core.provider.LlmProvider.PStop;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
@@ -117,6 +118,11 @@ class OllamaProviderTest {
 
     private static ProviderRequest thinkingRequest(List<ProviderMessage> messages) {
         return new ProviderRequest("You are a test.", messages, List.of(), 500, true, new CancelSignal());
+    }
+
+    private static ProviderRequest tapped(List<ProviderMessage> messages, LlmWireTap tap) {
+        return new ProviderRequest("You are a test.", messages, List.of(), 500,
+                ProviderRequest.Reasoning.DEFAULT, null, new CancelSignal(), tap);
     }
 
     private static List<ProviderMessage> oneUser(String text) {
@@ -536,5 +542,136 @@ class OllamaProviderTest {
         assertFalse(RetryPolicy.from(2).isTransient(error),
                 "the retry layer must not re-send a terminal status");
         assertTrue(error.getMessage().contains("400"));
+    }
+
+    // ---- the llm-wire tap (card 184): recorded == posted, by construction ---
+
+    @Test
+    void tapRecordsTheRequestBodyByteEqualToWhatTheServerReceived() {
+        scriptedNdjson = """
+                {"message":{"content":"ok"},"done":true}
+                """;
+        RecordingWireTap tap = new RecordingWireTap();
+        List<ProviderEvent> events = new ArrayList<>();
+        provider().stream(tapped(oneUser("Hi"), tap)).forEach(events::add);
+
+        assertEquals(1, tap.requests.size());
+        LlmWireTap.WireRequest recorded = tap.requests.getFirst();
+        assertEquals(lastChatBody.get(), recorded.body(),
+                "the tap must get the exact string the server received");
+        assertEquals("bytes", recorded.fidelity());
+        assertEquals("ollama", recorded.provider());
+        assertEquals("qwen3", recorded.model());
+        assertEquals("POST", recorded.method());
+        assertEquals("http", recorded.transport());
+        assertEquals(baseUrl + "/api/chat", recorded.url());
+        assertEquals("application/json", recorded.headers().get("Content-Type"));
+    }
+
+    @Test
+    void tapRecordsEveryNdjsonLineTheServerSentAndACleanOutcome() {
+        scriptedNdjson = """
+                {"message":{"content":"Hel"},"done":false}
+                {"message":{"content":"lo"},"done":false}
+                {"message":{"content":""},"done":true,"prompt_eval_count":42,"eval_count":7}
+                """;
+        RecordingWireTap tap = new RecordingWireTap();
+        provider().stream(tapped(oneUser("Say Hello."), tap)).forEach(event -> { });
+
+        // EVERY line read off the connection is teed, verbatim and in order.
+        assertEquals(scriptedNdjson.lines().toList(), tap.lines);
+        assertEquals(1, tap.outcomes.size());
+        LlmWireTap.WireOutcome outcome = tap.outcomes.getFirst();
+        assertEquals(200, outcome.status());
+        assertEquals("bytes", outcome.fidelity());
+        assertEquals(null, outcome.body(), "streamed responses ride line(), not body");
+        assertFalse(outcome.aborted());
+        assertEquals(null, outcome.error());
+    }
+
+    @Test
+    void tapRecordsTheHttpErrorPathWithStatusAndDetailBody() {
+        scriptedStatus = 503;
+        scriptedErrorBody = "{\"error\":\"server busy\"}";
+        RecordingWireTap tap = new RecordingWireTap();
+        assertThrows(TransientProviderException.class,
+                () -> provider().stream(tapped(oneUser("Hi"), tap)).forEach(event -> { }));
+
+        assertEquals(1, tap.requests.size(), "the request WAS posted and must be on record");
+        assertEquals(1, tap.outcomes.size());
+        LlmWireTap.WireOutcome outcome = tap.outcomes.getFirst();
+        assertEquals(503, outcome.status());
+        assertEquals(scriptedErrorBody, outcome.body(),
+                "the error detail body is the outcome's single payload");
+        assertFalse(outcome.aborted());
+    }
+
+    @Test
+    void tapKeepsPartialLinesAndMarksAbortedOnCancel() throws Exception {
+        CountDownLatch requestArrived = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        server.removeContext("/api/chat");
+        server.createContext("/api/chat", exchange -> {
+            exchange.getRequestBody().readAllBytes();
+            exchange.getResponseHeaders().add("Content-Type", "application/x-ndjson");
+            exchange.sendResponseHeaders(200, 0); // chunked: an open NDJSON stream
+            OutputStream out = exchange.getResponseBody();
+            try {
+                out.write("{\"message\":{\"content\":\"hi \"}}\n".getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                requestArrived.countDown();
+                release.await(8, TimeUnit.SECONDS); // then STALL
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+
+        RecordingWireTap tap = new RecordingWireTap();
+        CancelSignal signal = new CancelSignal();
+        ProviderRequest req = new ProviderRequest("sys", oneUser("go"), List.of(), 500,
+                ProviderRequest.Reasoning.DEFAULT, null, signal, tap);
+        Iterator<ProviderEvent> it = provider().stream(req).iterator();
+
+        assertTrue(it.hasNext());
+        it.next();
+        assertTrue(requestArrived.await(5, TimeUnit.SECONDS));
+
+        CountDownLatch done = new CountDownLatch(1);
+        Thread reader = Thread.ofVirtual().start(() -> {
+            while (it.hasNext()) {
+                it.next();
+            }
+            done.countDown();
+        });
+        Thread.sleep(300);
+        signal.cancel();
+        assertTrue(done.await(3, TimeUnit.SECONDS));
+        release.countDown();
+        reader.join(1_000);
+
+        assertEquals(1, tap.outcomes.size());
+        assertTrue(tap.outcomes.getFirst().aborted(),
+                "a cancelled stream must record aborted=true");
+        assertTrue(tap.lines.contains("{\"message\":{\"content\":\"hi \"}}"),
+                "the partial lines received before the cancel must survive, got: " + tap.lines);
+    }
+
+    @Test
+    void aNullTapChangesNothing() {
+        scriptedNdjson = """
+                {"message":{"content":"Hel"},"done":false}
+                {"message":{"content":"lo"},"done":true,"prompt_eval_count":42,"eval_count":7}
+                """;
+        // The explicit full-arity null: the stream must translate exactly as the
+        // tap-free constructors do (which the rest of this suite already pins).
+        List<ProviderEvent> events = new ArrayList<>();
+        provider().stream(tapped(oneUser("Hi"), null)).forEach(events::add);
+
+        assertEquals(new PTextDelta("Hel"), events.get(0));
+        assertEquals(new PTextDelta("lo"), events.get(1));
+        assertEquals(new PUsage(42, 7), events.get(2));
+        assertEquals(new PStop(PStop.StopReason.END_TURN), events.get(3));
     }
 }

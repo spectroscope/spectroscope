@@ -32,6 +32,8 @@ import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
 import dev.spectroscope.core.session.Compaction;
 import dev.spectroscope.core.tools.Tool;
+import dev.spectroscope.core.wire.LlmWireRecorder;
+import dev.spectroscope.core.wire.LlmWireTap;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -151,10 +153,13 @@ public final class Agent {
      * @return the event to persist and render, or empty when nothing was compacted
      */
     public Optional<RunEvent> compactNow() {
+        // Between runs there is no turn number, so the wire binding carries null.
+        LlmWireRecorder recorder = options.llmWire();
         Compaction.Result result = Compaction.maybeCompact(
                 options.provider(), List.copyOf(messages),
                 Integer.MAX_VALUE, 1, // force: pretend the context is over any threshold
-                options.agentId(), new CancelSignal());
+                options.agentId(), new CancelSignal(),
+                recorder == null ? null : recorder.bound(options.agentId(), null, "compaction"));
         if (result.event() instanceof RunEvent.Compaction) {
             messages.clear();
             messages.addAll(result.messages());
@@ -227,6 +232,10 @@ public final class Agent {
         // Input tokens of the last completed turn — the compaction trigger.
         int lastInputTokens = 0;
 
+        // The backend-to-LLM record (card 184). Null means no record: every
+        // request then travels tap-free, byte-identical to before.
+        LlmWireRecorder recorder = options.llmWire();
+
         try {
             for (int turn = 1; turn <= MAX_TURNS; turn++) {
                 emit.accept(new TurnStart(agentId, turn, now()));
@@ -238,9 +247,12 @@ public final class Agent {
 
                 // Compaction hook: a no-op below the threshold. The event
                 // is appended to the stream; the JSONL file is never rewritten.
+                // The summarizer's own model call is on the record too, under
+                // its own kind — bound to the turn that triggered it.
                 Compaction.Result compacted = Compaction.maybeCompact(
                         options.provider(), List.copyOf(messages), lastInputTokens,
-                        compactionThreshold, agentId, signal);
+                        compactionThreshold, agentId, signal,
+                        recorder == null ? null : recorder.bound(agentId, turn, "compaction"));
                 if (compacted.event() != null) {
                     messages.clear();
                     messages.addAll(compacted.messages());
@@ -267,9 +279,13 @@ public final class Agent {
                                 .nativeTools()
                                 ? options.registry().specs()
                                 : List.of();
+                // One tap per provider call, bound to this agent and the same
+                // turn number turn_start carries; the provider records the real
+                // exchange through it and knows neither agent nor turn itself.
+                LlmWireTap tap = recorder == null ? null : recorder.bound(agentId, turn);
                 ProviderRequest request = new ProviderRequest(options.systemPrompt(),
                         List.copyOf(messages), advertisedTools, maxTokens,
-                        effectiveReasoning(), effortOverride, signal);
+                        effectiveReasoning(), effortOverride, signal, tap);
 
                 // Blocking for-each over the provider stream — text deltas are passed
                 // through one by one; tool calls and usage arrive at the end of the turn.

@@ -1,5 +1,7 @@
 package dev.spectroscope.core.image;
 
+import dev.spectroscope.core.wire.LlmWireTap;
+
 /**
  * The image-side counterpart of {@link dev.spectroscope.core.provider.LlmProvider} — the same
  * port idea for a different capability: a narrow, blocking contract in front of a
@@ -18,6 +20,21 @@ public interface ImageProvider {
      *     status, or a response that carries no image)
      */
     Generated generate(String prompt);
+
+    /**
+     * The tap-aware variant (card 184): providers that own their HTTP override
+     * it and record the real exchange verbatim, base64 payloads included. The
+     * default ignores the tap, so every existing implementation keeps its
+     * behavior; a null tap records nothing either way.
+     *
+     * @param prompt textual description of the desired image
+     * @param tap    where the provider records the exchange; null records nothing
+     * @return the raw bytes and their media type, ready for the {@link ImageStore}
+     * @throws RuntimeException with a short readable message on API errors
+     */
+    default Generated generate(String prompt, LlmWireTap tap) {
+        return generate(prompt);
+    }
 
     /** Stable provider name as it appears in events and the UI: {@code "gemini"} or {@code "openai"}. */
     String providerName();

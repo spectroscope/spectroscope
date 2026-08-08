@@ -4,6 +4,7 @@ import dev.spectroscope.core.PermissionBroker;
 import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.tools.Tool;
+import dev.spectroscope.core.wire.LlmWireRecorder;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -23,6 +24,9 @@ import java.util.List;
  * @param hooks         the same pre/post_tool_use hooks the parent runs — a
  *                      hook that blocks a tool must also block it on a child,
  *                      or delegation becomes a bypass (nullable → none)
+ * @param llmWire       the session's backend-to-LLM recorder (card 184), the
+ *                      SAME instance the parent writes on — children bind their
+ *                      own agentId onto it (nullable → children record nothing)
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -30,7 +34,24 @@ public record SubagentConfig(
         String parentAgentId,
         PermissionBroker onPermission,
         List<Tool> baseTools,
-        HookRunner hooks) {
+        HookRunner hooks,
+        LlmWireRecorder llmWire) {
+
+    /**
+     * Compat: the pre-wire arity (callers without an llm-wire recorder).
+     *
+     * @param provider      the provider the children run on — the parent's instance
+     * @param cwd           sandbox root, same as the parent's
+     * @param parentAgentId agentId of the parent agent (CLI: "main")
+     * @param onPermission  the same blocking broker the parent uses
+     * @param baseTools     standard tools WITHOUT the spawn tools
+     * @param hooks         the same pre/post_tool_use hooks the parent runs
+     */
+    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
+                          PermissionBroker onPermission, List<Tool> baseTools,
+                          HookRunner hooks) {
+        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, null);
+    }
 
     /**
      * Compat: no hooks (tests and callers without a hook config).
@@ -43,6 +64,6 @@ public record SubagentConfig(
      */
     public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
                           PermissionBroker onPermission, List<Tool> baseTools) {
-        this(provider, cwd, parentAgentId, onPermission, baseTools, null);
+        this(provider, cwd, parentAgentId, onPermission, baseTools, null, null);
     }
 }

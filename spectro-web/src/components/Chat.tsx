@@ -19,6 +19,9 @@ import type { PendingAttachment } from "./AttachmentPreview";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
+import { voiceErrorKey } from "./voiceError";
+import { meterBars } from "./micLevel";
+import { MicMenu } from "./MicMenu";
 import { formatTimer, micButtonState } from "./voiceButton";
 import { composerButtons } from "./composerButtons";
 import { useSlashPicker } from "./SlashPicker";
@@ -90,6 +93,10 @@ export function Chat(props: {
   stopRequested?: boolean;
   /** The stored session id when this archive can be exported (card 95). */
   exportId?: string;
+  /** The stored session id when its llm-wire sidecar answered non-empty: the
+   *  recorded exchanges as an NDJSON download beside the session's own. Absent
+   *  whenever the index named nothing — a link to an empty file is a claim. */
+  llmWireId?: string;
   /** Which grouping the scroll uses (branch chat-v2). Default "v1" — every
    *  existing caller keeps the recorded rendering, subagent turns and all.
    *  "v2" lifts the child turns out and asks {@link renderChip} for the marker
@@ -244,7 +251,12 @@ export function Chat(props: {
   };
 
   const lastIndex = state.turns.length - 1;
-  const mic = micButtonState(voice.micPhase, voice.micAvailable, lang);
+  const micBase = micButtonState(voice.micPhase, voice.micAvailable, lang);
+  // Card 187 step 1: a failure says why, on the control that failed. The button
+  // keeps its own title while nothing has gone wrong, so the normal case reads
+  // exactly as it always did.
+  const mic =
+    voice.micError === null ? micBase : { ...micBase, title: t(lang, voiceErrorKey(voice.micError)) };
   const buttons = composerButtons(
     {
       running: liveView && state.running,
@@ -604,6 +616,15 @@ export function Chat(props: {
               </div>
             )}
             <AttachmentPreview attachments={attachments.pending} onRemove={attachments.removeAt} />
+            {voice.micPhase === "recording" && (
+              /* The level meter (card 187 step 3): it moves with the voice, so
+                 "it hears you" is answered by looking rather than by trying. */
+              <span className="mic-meter" aria-hidden="true">
+                {meterBars(voice.level).map((h, i) => (
+                  <i key={i} style={{ transform: `scaleY(${h.toFixed(3)})` }} />
+                ))}
+              </span>
+            )}
             {mic.recording && (
               <div className="recording-indicator" aria-live="polite">
                 <span className="dot accent pulse" aria-hidden="true" />
@@ -682,6 +703,12 @@ export function Chat(props: {
                 disabled={mic.disabled}
                 onClick={() => void voice.toggleMic()}
               >
+                {voice.micPhase === "recording" && (
+                  /* The LED: it is listening. A dot rather than a word, beside
+                     the glyph, because the answer to "does it hear me" has to
+                     be readable without reading (card 187 step 5). */
+                  <span className="mic-led" aria-hidden="true" />
+                )}
                 {mic.recording ? (
                   <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
                     <rect x="3" y="3" width="10" height="10" rx="1.5" />
@@ -704,6 +731,11 @@ export function Chat(props: {
                   </svg>
                 )}
               </button>
+              {/* The device picker, right beside the glyph it belongs to
+                  (card 187 step 2). It opens even while the button is disabled:
+                  choosing a microphone is exactly what someone does when it did
+                  not work. */}
+              <MicMenu choice={voice.choice} onOpen={() => void voice.refreshDevices()} />
               <ComposerGear
                 workspaceInfo={state.workspace}
                 permissionMode={state.permissionMode}
@@ -767,6 +799,21 @@ export function Chat(props: {
                   title={t(lang, "arch.exportTitle")}
                 >
                   {t(lang, "arch.export")}
+                </a>
+              )}
+              {/* The sidecar beside that file: the recorded LLM exchanges,
+                  every line labeled with its fidelity (an Anthropic response
+                  is reconstructed from sdk-events, not socket bytes). Offered
+                  only when the index answered non-empty, so the link never
+                  names an empty file. */}
+              {props.llmWireId !== undefined && (
+                <a
+                  className="ghost archive-export"
+                  href={`/api/sessions/${encodeURIComponent(props.llmWireId)}/llm-wire`}
+                  download={`${props.llmWireId}.llm.jsonl`}
+                  title={t(lang, "arch.llmWireTitle")}
+                >
+                  {t(lang, "arch.llmWire")}
                 </a>
               )}
               {props.onDelete !== undefined && <DeleteButton onDelete={props.onDelete} />}

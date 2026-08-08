@@ -608,6 +608,10 @@
 /* The verbatim/readable strip sits inside the pane, a step quieter than the
    face row above it: it picks a rendering, not a view. */
 .trace-detail-modes.trace-reading { margin-left: var(--sp-2); }
+/* The llm exchange detail reuses the lightbox's blob mark, but inert: there is
+   no base64 face to open here, so the mark must not promise a click. */
+.llm-wire-mark { cursor: default; }
+.llm-wire-mark:hover { background: none; }
 .trace-detail:hover .copy,
 .trace-detail .copy:focus-visible { opacity: 1; }
 
@@ -907,3 +911,59 @@
 /* The rows are buttons here, not divs — undo what the UA paints on a button. */
 .export-pop .wsg-mode-row { width: 100%; background: none; border: 0; font: inherit; text-align: left; }
 .export-pop .wsg-mode-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ---------- The recorded LLM exchange, in parts (card 184) ----------
+   The rejected face was one wall of JSON. What replaces it is a fold per part
+   whose HEAD carries the count, so a reader decides what to open before paying
+   for it. No colour of its own: the borders and the faint text are the ones the
+   detail pane already uses, because colour lives on the spectral lines. */
+.lw-parts { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.lw-fold { display: flex; flex-direction: column; min-width: 0; }
+.lw-fold-head { display: flex; align-items: baseline; gap: var(--sp-2); width: 100%;
+  font: inherit; font-size: var(--fs-12); text-align: left; color: var(--text);
+  background: none; border: 0; padding: 2px 0; cursor: pointer; }
+.lw-fold-head:hover { color: var(--accent); }
+.lw-fold-caret { flex-shrink: 0; width: 10px; color: var(--text-faint); }
+.lw-fold-label { overflow-wrap: anywhere; }
+.lw-fold-note { color: var(--text-faint); font-size: var(--fs-11); overflow-wrap: anywhere; }
+.lw-fold-body { padding-left: var(--sp-3); margin-left: 4px; border-left: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+/* One content block of one message: its wire word, then either a measurement or
+   the text. The kind sits on its own line so a long tool input does not push it
+   off screen. */
+.lw-block { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lw-block-kind { font-size: var(--fs-11); color: var(--text-faint); }
+/* The wire face's HTTP head: the request line and the headers, monospaced and
+   quieter than the body under them — they frame the bytes, they are not them. */
+.lw-http { color: var(--text-dim); }
+/* One received stream line, numbered. The number is the reader's anchor when a
+   stream runs to hundreds of lines and every one of them starts with `data:`. */
+.lw-line { display: flex; gap: var(--sp-2); min-width: 0; }
+.lw-line-no { flex-shrink: 0; min-width: 3ch; text-align: right; font-size: var(--fs-11); color: var(--text-faint); }
+.lw-line > pre { flex: 1; min-width: 0; margin: 0; }
+
+/* ---------- The microphone's own signals (card 187) ----------
+   A meter that moves with the voice and a dot that says it is listening. Both
+   beside the glyph, both aria-hidden: they repeat what the button's label
+   already says, and a screen reader should hear it once. */
+.mic-meter { display: inline-flex; align-items: center; gap: 2px; height: 14px; margin-right: var(--sp-2); }
+.mic-meter i { display: block; width: 2px; height: 14px; border-radius: 1px;
+  background: var(--accent); transform-origin: center; transition: transform 60ms linear; }
+/* The LED. It pulses while listening and is the one place a colour means a
+   STATE rather than a kind — so it borrows the accent and never invents one. */
+.mic-led { display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent); margin-right: 4px; animation: mic-led-pulse 1.4s ease-in-out infinite; }
+@keyframes mic-led-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .mic-led { animation: none; }
+  .mic-meter i { transition: none; }
+}
+/* The device picker's caret, a step quieter than the glyph it hangs off: it
+   picks a device, it does not record. */
+.mic-anchor { position: relative; display: inline-flex; }
+.mic-menu-button { width: 16px; min-width: 16px; padding: 0; color: var(--text-faint); }
+.mic-menu-button:hover { color: var(--text); }
+/* Both pinned like .disc-pop, for the reason that file documents: a later
+   sheet's bottom-pin would otherwise win the cascade and squash the popover. */
+.wsg-pop.mic-pop { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; min-width: 240px; }
+.mic-pop-note { padding: var(--sp-2); margin: 0; }

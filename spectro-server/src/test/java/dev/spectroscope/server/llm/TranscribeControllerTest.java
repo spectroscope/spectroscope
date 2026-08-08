@@ -10,23 +10,32 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The /api/transcribe endpoint proven WITHOUT ffmpeg, whisper-cli or a model file:
- * a fake {@link CommandRunner} stands in for both child processes (the webm→wav
- * conversion and whisper). Two guarantees matter — a good clip returns its text, and
- * a machine without STT gets a clean 503 with the setup hint, never a stack trace.
+ * The /api/transcribe endpoint proven WITHOUT whisper-cli or a model file: a fake
+ * {@link CommandRunner} stands in for the one child process left. Three guarantees
+ * matter — a good clip returns its text, a machine without STT gets a clean 503 with
+ * the setup hint rather than a stack trace, and audio the model cannot read is refused
+ * with a sentence instead of being handed over anyway.
+ *
+ * <p>Card 187 step 5.4 removed the second child process: the browser now converts its
+ * own recording to 16 kHz mono WAV, so the body arrives ready and ffmpeg is gone from
+ * this path. {@link #theOnlyChildProcessLeftIsWhisper} is what keeps it gone.</p>
  */
 class TranscribeControllerTest {
 
-    /** ffmpeg (conversion) writes the wav; whisper returns the canned transcript. */
+    /** Whisper returns the canned transcript, and remembers what it was asked to run. */
     private static final class FakeRunner implements CommandRunner {
         List<String> transcriptLines = List.of("what is in the readme");
+        final List<List<String>> commands = new ArrayList<>();
 
         @Override
         public long record(List<String> command, BufferedReader stopSignal) {
@@ -34,14 +43,9 @@ class TranscribeControllerTest {
         }
 
         @Override
-        public List<String> runCapturingOutput(List<String> command) throws IOException {
-            // The conversion step (ffmpeg) ends with the wav path; create it so the
-            // subsequent transcribe() sees a file, then return the whisper transcript.
-            if (command.contains("-i")) {                 // the ffmpeg conversion call
-                Files.writeString(Path.of(command.getLast()), "fake wav bytes");
-                return List.of();
-            }
-            return transcriptLines;                        // the whisper-cli call
+        public List<String> runCapturingOutput(List<String> command) {
+            commands.add(command);
+            return transcriptLines;
         }
     }
 
@@ -56,11 +60,50 @@ class TranscribeControllerTest {
         TranscribeController controller =
                 new TranscribeController(new FakeRunner(), presentModel(dir), true);
 
-        ResponseEntity<Map<String, String>> response =
-                controller.transcribe("webm bytes".getBytes());
+        ResponseEntity<Map<String, Object>> response =
+                controller.transcribe(VoiceFixtures.clip());
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("what is in the readme", response.getBody().get("text"));
+    }
+
+    /**
+     * The whole point of step 5.4: one binary, not two. If a conversion call ever
+     * comes back, this fails — which is the only way "ffmpeg is gone" stays true
+     * after somebody edits this endpoint a year from now.
+     */
+    @Test
+    void theOnlyChildProcessLeftIsWhisper(@TempDir Path dir) throws IOException {
+        FakeRunner runner = new FakeRunner();
+        TranscribeController controller =
+                new TranscribeController(runner, presentModel(dir), true);
+
+        controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(1, runner.commands.size(),
+                "one child process per recording: " + runner.commands);
+        assertEquals("whisper-cli", runner.commands.getFirst().getFirst());
+    }
+
+    /**
+     * The browser sends WAV now, so anything else is a client that did not convert.
+     * Card 184 watched the alternative: unreadable audio went down the pipeline, the
+     * failure was swallowed, and whisper's HELP TEXT came back as a 200 "transcript".
+     */
+    @Test
+    void audioTheModelCannotReadIsRefusedWithASentenceAndNoChildProcess(@TempDir Path dir)
+            throws IOException {
+        FakeRunner runner = new FakeRunner();
+        TranscribeController controller =
+                new TranscribeController(runner, presentModel(dir), true);
+        byte[] webm = {0x1A, 0x45, (byte) 0xDF, (byte) 0xA3, 0, 0, 0, 0, 0, 0, 0, 0};
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(webm);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("WAV"),
+                "the answer names what was wrong: " + response.getBody());
+        assertTrue(runner.commands.isEmpty(), "nothing was spawned for a body no model can read");
     }
 
     @Test
@@ -70,13 +113,98 @@ class TranscribeControllerTest {
         TranscribeController controller =
                 new TranscribeController(new FakeRunner(), presentModel(dir), false);
 
-        ResponseEntity<Map<String, String>> response =
-                controller.transcribe("webm bytes".getBytes());
+        ResponseEntity<Map<String, Object>> response =
+                controller.transcribe(VoiceFixtures.clip());
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode(),
                 "STT is optional infrastructure — 503, not 500");
-        assertTrue(response.getBody().get("error").contains("scripts/setup-stt.sh"),
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("scripts/setup-stt.sh"),
                 "the body must point the user at the setup script: " + response.getBody());
+    }
+
+    // ---- the hosted route (card 187, the correction) -----------------------
+
+    /** Stands in for the transcription API: no network, no key, no account. */
+    private static final class FakeHosted implements HostedStt {
+        byte[] posted;
+        String keyUsed;
+        String answer = "{\"text\":\"hello from the hosted one\"}";
+        IOException refuse;
+
+        @Override
+        public String post(byte[] wav, String key) throws IOException {
+            posted = wav;
+            keyUsed = key;
+            if (refuse != null) {
+                throw refuse;
+            }
+            return answer;
+        }
+
+        @Override
+        public String model() {
+            return "gpt-transcribe";
+        }
+    }
+
+    /**
+     * The point of the whole correction: a machine with NO whisper and NO model
+     * transcribes anyway. Before this, `sttReady` gated every call, so the one
+     * reader a DMG exists for got a 503 telling them to run a shell script.
+     */
+    @Test
+    void theHostedRouteTranscribesOnAMachineWithNothingInstalled(@TempDir Path dir) {
+        FakeHosted hosted = new FakeHosted();
+        Path noModel = dir.resolve("nothing-here.bin");
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), noModel, true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-test", hosted));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("hello from the hosted one", response.getBody().get("text"));
+        assertArrayEquals(VoiceFixtures.clip(), hosted.posted,
+                "the browser's own bytes travel on, unrewritten — one encoder, two destinations");
+        assertEquals("sk-test", hosted.keyUsed);
+    }
+
+    @Test
+    void theHostedRouteWithoutAKeySaysSoRatherThanNamingTheSetupScript(@TempDir Path dir) {
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), presentModelQuietly(dir), true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "", new FakeHosted()));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        String error = String.valueOf(response.getBody().get("error"));
+        assertTrue(error.contains("OPENAI_API_KEY"), error);
+        assertFalse(error.contains("setup-stt.sh"),
+                "that sentence belongs to the other route: " + error);
+    }
+
+    @Test
+    void aRefusalFromTheApiComesBackAsItsOwnSentence(@TempDir Path dir) {
+        FakeHosted hosted = new FakeHosted();
+        hosted.refuse = new IOException("Transcription failed with HTTP 401 — Incorrect API key provided");
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), dir.resolve("none"), true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-bad", hosted));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("401"),
+                response.getBody().toString());
+    }
+
+    private static Path presentModelQuietly(Path dir) {
+        try {
+            return presentModel(dir);
+        } catch (IOException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 
     @Test
@@ -87,11 +215,11 @@ class TranscribeControllerTest {
         TranscribeController controller =
                 new TranscribeController(new FakeRunner(), absentModel, true);
 
-        ResponseEntity<Map<String, String>> response =
-                controller.transcribe("webm bytes".getBytes());
+        ResponseEntity<Map<String, Object>> response =
+                controller.transcribe(VoiceFixtures.clip());
 
         assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
-        assertTrue(response.getBody().get("error").contains("scripts/setup-stt.sh"),
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("scripts/setup-stt.sh"),
                 response.getBody().toString());
     }
 }

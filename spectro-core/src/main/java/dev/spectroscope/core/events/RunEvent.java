@@ -1,5 +1,6 @@
 package dev.spectroscope.core.events;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
@@ -18,7 +19,20 @@ import java.util.List;
  *
  * <p>Three rules make this a load-bearing protocol: only JSON-serializable fields;
  * extend only additively (never rename or remove a field); ignore unknown event types.</p>
+ *
+ * <p><b>And the rule that makes the second one true from the reading side</b>
+ * ({@code ignoreUnknown}, card 184): a field a newer writer added must cost
+ * nothing here. Without it Jackson raises {@code UnrecognizedPropertyException},
+ * which is an {@code IOException}, which {@code SessionStore}'s reader catches as
+ * a torn trailing line and discards <em>silently</em> — so an already-shipped
+ * build would read a newer session as a file whose enriched lines do not exist,
+ * without a word. Measured before it was fixed: today's {@code run_start} read,
+ * the same line plus {@code cwd}/{@code gitBranch}/{@code version} did not. The
+ * TypeScript edition reads structurally and the Python one filters unknown keys
+ * ({@code events.py} {@code from_dict}), so this reader was the only intolerant
+ * one of the three and the promise above was aspirational in Java alone.</p>
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
     @JsonSubTypes.Type(value = RunEvent.RunStart.class,           name = "run_start"),

@@ -34,7 +34,7 @@ class OtlpSinkTest {
 
     private static SpectroConfig config(String otlpEndpoint, String otlpAuth) {
         return new SpectroConfig("anthropic", "m", null, 100000, "ask", List.of(), "gemini",
-                false, List.of(), 2, false, List.of(), null, "info", null, null, null,
+                false, List.of(), 2, false, List.of(), null, "info", null, null, "auto", null,
                 otlpEndpoint, otlpAuth);
     }
 

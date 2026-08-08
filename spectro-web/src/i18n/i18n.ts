@@ -682,6 +682,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.cat.permission": { de: "permission", en: "permission" },
   "trace.cat.usage": { de: "usage", en: "usage" },
   "trace.cat.image": { de: "image", en: "image" },
+  // "llm" is the eleventh: the recorded exchange itself — what actually left
+  // for the model and what came back, as the llm-wire sidecar measured it.
+  "trace.cat.llm": { de: "llm", en: "llm" },
   "trace.cat.context": { de: "context", en: "context" },
   "trace.cat.client": { de: "client", en: "client" },
   "trace.cat.other": { de: "other", en: "other" },
@@ -703,6 +706,77 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.mode.compact": { de: "Compact", en: "Compact" },
   "trace.mode.wire": { de: "Draht", en: "Wire" },
   "trace.mode.source": { de: "Quelle", en: "Source" },
+  // The llm-wire detail pane (wire/llmWire.ts): one honest sentence per
+  // fidelity, said per SIDE — the request and the response of one exchange can
+  // be recorded at different fidelities.
+  "trace.llm.fid.bytes": { de: "bytes — aufgezeichnet, wie es gesendet wurde", en: "bytes — recorded as posted" },
+  "trace.llm.fid.sdk-json": { de: "sdk-json — die eigene Serialisierung des SDK, in Tests als identisch gemessen", en: "sdk-json — the SDK's own serialization, measured equal in tests" },
+  "trace.llm.fid.sdk-events": { de: "sdk-events — rekonstruiert aus den typisierten Events des SDK", en: "sdk-events — reconstructed from the SDK's typed events" },
+  "trace.llm.fid.encoded": { de: "encoded — das eigene base64 der Aufzeichnung über die echten Eingabe-Bytes", en: "encoded — the recording's own base64 of the real input bytes" },
+  "trace.llm.imported": { de: "Diese Session wurde importiert — ihr eigenes Source-Gesicht ist der Draht; einen llm-wire-Mitschnitt gibt es nicht.", en: "This session was imported — its own source face is the wire; no llm-wire record exists." },
+  "trace.llm.loading": { de: "der aufgezeichnete Austausch wird geladen …", en: "fetching the recorded exchange …" },
+  "trace.llm.failed": { de: "Der aufgezeichnete Austausch hat nicht geantwortet — die Sidecar-Datei kann fehlen, oder der Server ist älter als diese Ansicht.", en: "The recorded exchange did not answer — the sidecar file may be missing, or the server predates this view." },
+  "trace.llm.blobTitle": { de: "Ein base64-Lauf, den die Ansicht nicht druckt; die Zahl ist an der aufgezeichneten Zeile gemessen.", en: "A run of base64 the pane does not print; the count is measured on the recorded line." },
+  "trace.llm.linesCap": { de: "{shown} von {total} Antwort-Zeilen gezeigt.", en: "showing {shown} of {total} response lines." },
+  "trace.llm.omittedCeiling": { de: "Der Body wurde an der Aufzeichnungs-Obergrenze verworfen — das Ledger trägt weiterhin seine gemessene Größe.", en: "body dropped at the recording ceiling — the ledger still carries its measured size." },
+  "trace.llm.noResponse": { de: "keine Antwort aufgezeichnet — der Austausch wurde nie geschlossen.", en: "no response recorded — the exchange never closed." },
+  // The request in its PARTS (card 184). Labels are the wire's own words where
+  // the wire has one: `system`, `messages`, `tools` are fields, not names we chose.
+  "trace.llm.parts.system": { de: "system-Prompt", en: "system prompt" },
+  "trace.llm.parts.messages": { de: "messages", en: "messages" },
+  "trace.llm.parts.tools": { de: "tools", en: "tools" },
+  "trace.llm.parts.blocks": { de: "{n} Blöcke", en: "{n} blocks" },
+  // One block is one block. The count is right beside the word in a pane whose
+  // whole promise is that it says what is there, and "1 blocks" reads as a
+  // string somebody forgot to finish.
+  "trace.llm.parts.block1": { de: "1 Block", en: "1 block" },
+  "trace.llm.parts.chars": { de: "{chars} Zeichen", en: "{chars} chars" },
+  "trace.llm.parts.more": { de: "{shown} von {total} gezeigt.", en: "showing {shown} of {total}." },
+  "trace.llm.parts.unknownShape": { de: "Diese Ansicht kennt die Form dieses Bodys nicht, also zeigt sie ihn als Baum statt in Teilen. Der Draht darunter ist unverändert.", en: "This pane does not know this body's shape, so it shows the tree instead of the parts. The wire below is unchanged." },
+  "trace.llm.res.lines": { de: "{n} Zeilen", en: "{n} lines" },
+  "trace.llm.res.aborted": { de: "abgebrochen", en: "aborted" },
+  "trace.llm.res.noReassembly": { de: "Die Antwort wird hier NICHT zusammengesetzt: der zusammengesetzte Text ist der Chat, und ein zweiter Zusammenbau im Browser wäre eine zweite Wahrheit. Was ankam, steht Zeile für Zeile auf dem wire-Gesicht.", en: "The answer is NOT reassembled here: the reassembled text is the chat, and a second reassembly in the browser would be a second truth. What arrived is on the wire face, line by line." },
+  // Open everything at once, and back (owner 2026-08-07). Two buttons and not a
+  // toggle: "back to default" has to mean the pane as it opened, folds a reader
+  // touched by hand included, and a toggle that left those open would not be a
+  // way back at all.
+  // Card 187 step 1: why the microphone did not work. Both paths used to be a
+  // silent catch, so "you denied permission" and "the request failed" both read
+  // as "this machine has no microphone".
+  "voice.pick.title": { de: "Mikrofon wählen", en: "Choose a microphone" },
+  "voice.pick.system": { de: "Systemvorgabe", en: "System default" },
+  // Not an error: the browser HAS devices and withholds their names until the
+  // microphone has been granted once. Saying so beats five blank rows.
+  "voice.pick.unnamed": { de: "Die Namen der Geräte zeigt der Browser erst, wenn das Mikrofon einmal erlaubt wurde. Einmal aufnehmen — danach steht die Liste hier.", en: "The browser only names the devices once the microphone has been allowed. Record once, and the list appears here." },
+  "voice.pick.none": { de: "Kein Eingabegerät gefunden.", en: "No input device found." },
+  "voice.err.denied": { de: "Kein Zugriff aufs Mikrofon — der Browser hat ihn verweigert. In den Website-Einstellungen erlauben, dann noch einmal.", en: "No access to the microphone — the browser refused it. Allow it in the site settings, then try again." },
+  "voice.err.noDevice": { de: "Kein Mikrofon gefunden.", en: "No microphone found." },
+  "voice.err.deviceBusy": { de: "Das Mikrofon ließ sich nicht öffnen — vermutlich hält es gerade ein anderes Programm.", en: "The microphone could not be opened — another program is probably holding it." },
+  "voice.err.sttMissing": { de: "Spracheingabe ist auf diesem Server nicht eingerichtet — Einstellungen → Spracheingabe.", en: "Speech to text is not set up on this server — Settings → Speech to text." },
+  "voice.err.requestFailed": { de: "Die Aufnahme kam nicht durch. Nichts wurde übertragen; einfach noch einmal.", en: "The recording did not get through. Nothing was sent; just try again." },
+  "voice.err.convertFailed": { de: "Die Aufnahme ließ sich nicht in Ton umwandeln, den das Modell liest. Gesendet wurde nichts.", en: "The recording could not be turned into audio the model reads. Nothing was sent." },
+  "voice.err.unknown": { de: "Die Aufnahme ist fehlgeschlagen.", en: "The recording failed." },
+  "set.secStt": { de: "Spracheingabe", en: "Speech to text" },
+  "set.sttProvider": { de: "Weg der Spracheingabe", en: "Speech to text via" },
+  "set.sttProvider.auto": { de: "automatisch — gehostet, wenn ein Key da ist", en: "automatic — hosted when a key is there" },
+  "set.sttProvider.local": { de: "lokal — whisper.cpp, nichts verlässt den Rechner", en: "local — whisper.cpp, nothing leaves this machine" },
+  "set.sttProvider.openai": { de: "gehostet — openai, ohne Installation", en: "hosted — openai, nothing to install" },
+  "set.sttHostedReady": { de: "Gehostet ist einsatzbereit: {model}. Aufnahmen verlassen dabei diesen Rechner.", en: "The hosted route is ready: {model}. Recordings leave this machine on it." },
+  "set.sttHostedNoKey": { de: "Für den gehosteten Weg fehlt {key} — er lässt sich oben bei den Providern setzen.", en: "The hosted route needs {key} — it can be set with the providers above." },
+  "set.sttReadyHosted": { de: "Spracheingabe ist bereit — über den gehosteten Anbieter, ohne Installation.", en: "Speech to text is ready — through the hosted provider, with nothing installed." },
+  "set.sttHint": { de: "Zwei Wege: ein gehosteter Anbieter, der nichts als einen Key braucht, und whisper.cpp auf diesem Rechner, das keinen Key braucht und nichts nach außen gibt. Für den lokalen Weg lädt diese App das Modell; das Programm sucht sie nur und meldet ehrlich, was sie findet.", en: "Two routes: a hosted provider, which needs nothing but a key, and whisper.cpp on this machine, which needs no key and sends nothing out. For the local one this app fetches the model; the binary it only probes for and reports honestly." },
+  "set.sttPresent": { de: "da", en: "present" },
+  "set.sttAbsent": { de: "fehlt", en: "absent" },
+  "set.sttMissing": { de: "nicht gefunden", en: "not found" },
+  "set.sttDownload": { de: "Modell laden ({size})", en: "download the model ({size})" },
+  "set.sttDownloading": { de: "lädt … {done} von {total}", en: "downloading … {done} of {total}" },
+  "set.sttBinaryHint": { de: "Zum Nachinstallieren, außerhalb dieser App:", en: "To install them, outside this app:" },
+  "set.sttReady": { de: "Spracheingabe ist einsatzbereit.", en: "Speech input is ready." },
+  "set.sttNotReady": { de: "Spracheingabe ist noch nicht einsatzbereit — der Mikrofon-Knopf bleibt aus.", en: "Speech input is not ready yet — the microphone button stays off." },
+  "trace.llm.expandAll": { de: "alles aufklappen", en: "expand all" },
+  "trace.llm.expandDefault": { de: "Standard", en: "default" },
+  "trace.llm.expandAria": { de: "Wie weit der Austausch aufgeklappt ist", en: "How far the exchange is unfolded" },
+  "trace.llm.wire.noHeaders": { de: "keine Header aufgezeichnet — das SDK besitzt hier den Socket.", en: "no headers recorded — the SDK owns the socket here." },
 
   // system-context tab
   "ctx.unavailable": { de: "System-Kontext nicht verfügbar (Server offline?).", en: "System context unavailable (server offline?)." },
@@ -1116,6 +1190,10 @@ export const dict: Record<string, { de: string; en: string }> = {
   // been one word for two different things (owner report, 2026-08-03).
   "arch.export": { de: ".jsonl herunterladen", en: "download .jsonl" },
   "arch.exportTitle": { de: "Die aufgezeichnete Datei, unverändert; der Import liest sie wieder ein", en: "The recorded file, unchanged; the import reads it back" },
+  // The sidecar beside the session file: offered only when its index answered
+  // non-empty, so the link never promises a file that is not there.
+  "arch.llmWire": { de: "llm wire", en: "llm wire" },
+  "arch.llmWireTitle": { de: "Die neben dieser Session aufgezeichneten LLM-Austausche, als NDJSON — jede Zeile mit ihrer Aufzeichnungstreue gekennzeichnet", en: "The LLM exchanges recorded beside this session, as NDJSON — every line labeled with its fidelity" },
 
   // tool card views (card 94)
   "tv.modeAria": { de: "Darstellung des Tool-Aufrufs", en: "Tool call view" },
