@@ -97,6 +97,8 @@ export function SummaryLine({ text, field }: { text: string; field?: "text" }) {
   );
 }
 
+import { frameLayer } from "./frameLayer";
+
 /** Events whose summary is (or ends in) their own `text` field content. */
 export const TEXT_FIELD_EVENTS: ReadonlySet<string> = new Set([
   "text_delta",
@@ -138,11 +140,50 @@ export function llmDirection(type: string): LlmDir {
 
 /** ↑ goes to the model, ↓ comes back, · never reaches it. */
 export const LLM_DIR_GLYPH: Record<LlmDir, string> = { to: "↑", from: "↓", internal: "·" };
+
+/**
+ * The arrow a row wears, which is a fact about ITS OWN WIRE and not a reading
+ * of what it says (card 184, owner 2026-08-07: "llm hoch und runter können wir
+ * hier noch ein Pfeil links und rechts machen wenn es NUR über websocket geht").
+ *
+ * Vertical means the row left this machine for a model. Horizontal means it
+ * crossed the local socket and nothing else. That distinction is the answer to
+ * his question — in a one-turn session exactly ONE row is vertical — and the
+ * old column got it backwards, printing ↑ and ↓ on nine frames that never left
+ * localhost while the single HTTPS call to the provider printed a dot.
+ *
+ * @param type the frame's type
+ * @param dir  the socket direction the reducer recorded
+ * @return ↑ / ↓ for the llm layer (↕ while an exchange is still one row),
+ *         → / ← for everything that only ever rode the WebSocket
+ */
+export function dirGlyph(type: string, dir: "in" | "out"): string {
+  if (frameLayer(type) === "llm") {
+    if (type === "llm_request") return "↑";
+    if (type === "llm_response") return "↓";
+    return "↕"; // one row still carrying both halves; leg 2 splits it
+  }
+  return dir === "out" ? "→" : "←";
+}
 export const LLM_DIR_LABEL: Record<LlmDir, string> = {
   to: "an die LLM (Anfrage)",
   from: "von der LLM (Antwort)",
   internal: "harness-intern (nicht an die LLM)",
 };
+
+/** What an llm row's own record says about the wire it used. Both fields are
+ *  optional because an archive written before they travelled has neither, and a
+ *  cell that degrades beats a row that disappears. */
+export interface LlmWireFacts {
+  /** "process" | "http" | "sdk" — as the recorder wrote it. */
+  transport?: string;
+  /** "chat" | "compaction" | "image" | "stt". */
+  kind?: string;
+}
+
+/** The kinds whose answer arrives as a stream. Everything else is one request
+ *  and one answer, however it travelled. */
+const STREAMING_KINDS: ReadonlySet<string> = new Set(["chat", "compaction"]);
 
 /**
  * Which wire a frame's payload actually rides — the protocol-breakdown poster
@@ -152,8 +193,35 @@ export const LLM_DIR_LABEL: Record<LlmDir, string> = {
  * (stdio), web_fetch/generate_image leave over plain HTTP, the standard tools
  * stay local. Everything harness-internal (gate, plan, introspection, A2A)
  * never leaves the process: "—".
+ *
+ * @param type the frame type
+ * @param provider the provider this row belongs to, when known
+ * @param toolName the tool a tool row is about, when known
+ * @param llm what the exchange RECORDED about its own wire, when the row has it
  */
-export function wireProtocol(type: string, provider: string | null, toolName: string | null): string {
+export function wireProtocol(
+  type: string,
+  provider: string | null,
+  toolName: string | null,
+  llm: LlmWireFacts | null = null,
+): string {
+  const layer = frameLayer(type);
+  // An app frame rode the WebSocket. It may be ABOUT the model's output; it is
+  // not the model's output arriving, and printing the provider's streaming
+  // protocol on it was the trace claiming a wire this row never touched.
+  if (layer === "app") return "WebSocket";
+  if (layer === "llm") {
+    // Two recorded facts decide this, and neither is inferred from the provider.
+    // `transport` says whether anything left the machine — speech can run as a
+    // local child process, which opens no socket at all. `kind` says whether the
+    // answer streamed: a chat turn does, a transcription and an image are one
+    // request and one answer, and calling those SSE was the same borrowed claim
+    // in a quieter place.
+    if (llm?.transport === "process") return "process";
+    const streams = llm === null || llm.kind === undefined || STREAMING_KINDS.has(llm.kind);
+    if (!streams) return "HTTPS";
+    return provider === "ollama" ? "HTTPS/NDJSON" : provider === null ? "HTTPS" : "HTTPS/SSE";
+  }
   const llmStream = provider === "ollama" ? "NDJSON" : provider === null ? "—" : "SSE";
   switch (type) {
     case "tool_call":
@@ -207,7 +275,21 @@ export function wireHost(
   toolName: string | null,
   urlInput: string | null,
   imageProvider: string | null,
+  origin: string | null,
 ): string {
+  const layer = frameLayer(type);
+  // The one app frame that ANNOUNCES a host instead of having one: it is how a
+  // replay learns which backend the run rode, and its layer still says `app`.
+  if (type === "provider_info") return llmHost ?? origin ?? "—";
+  // Where this frame really came from: our own server. Null for a session this
+  // browser did not produce — an import cannot know the host the other app ran
+  // on, and a dash is the honest answer to a question with no record.
+  if (layer === "app") return origin ?? "—";
+  if (layer === "llm") {
+    if (urlInput !== null) return hostOf(urlInput); // the recorded url wins: it IS the fact
+    if (llmHost !== null) return llmHost;
+    return provider === "anthropic" ? "api.anthropic.com" : "—";
+  }
   switch (type) {
     case "tool_call":
     case "tool_result":

@@ -433,3 +433,51 @@ describe("reasoningLead", () => {
     expect(reasoningLead("short one")).toBe("short one");
   });
 });
+
+// Owner, 2026-08-07, on seeing the parts face: "ein chain eintrag zum paket wo
+// es herkommt oder zu welchen paketen es sonst gehört wäre cool".
+//
+// The recorded exchange fell into the walk's default branch, so its chain was
+// one link long and the strip did not render at all — the one row that names an
+// actual packet was the one row with no provenance on it.
+describe("the recorded LLM exchange in the causal walk", () => {
+  const row = (seq: number, type: string, agentId: string, payload: object = {}): TraceEntry => ({
+    seq,
+    dir: "in",
+    ts: seq * 10,
+    type,
+    agentId,
+    payload: { type, agentId, ...payload },
+  });
+
+  const stream: TraceEntry[] = [
+    row(1, "user_message", "main"),
+    row(2, "run_start", "main", { runId: "r1" }),
+    row(3, "turn_start", "main", { turn: 1 }),
+    row(4, "text_delta", "main", { text: "Red" }),
+    row(5, "llm_exchange", "main", { xid: "x1" }),
+  ];
+
+  it("walks back to the turn that sent it, and on to the run", () => {
+    const chain = causalChain(stream, stream[4]);
+    expect(chain.map((e) => e.type)).toEqual(["run_start", "turn_start", "llm_exchange"]);
+  });
+
+  it("takes its OWN agent's turn, never a subagent's", () => {
+    const mixed: TraceEntry[] = [
+      row(1, "run_start", "main", { runId: "r1" }),
+      row(2, "turn_start", "main", { turn: 1 }),
+      row(3, "run_start", "sub-1", { runId: "r2" }),
+      row(4, "turn_start", "sub-1", { turn: 1 }),
+      row(5, "llm_exchange", "main", { xid: "x1" }),
+    ];
+    const chain = causalChain(mixed, mixed[4]);
+    expect(chain.every((e) => e.agentId === "main")).toBe(true);
+    expect(chain.map((e) => e.seq)).toEqual([1, 2, 5]);
+  });
+
+  it("falls back to the run when the turn is not on screen", () => {
+    const thin: TraceEntry[] = [row(1, "run_start", "main", { runId: "r1" }), row(2, "llm_exchange", "main")];
+    expect(causalChain(thin, thin[1]).map((e) => e.type)).toEqual(["run_start", "llm_exchange"]);
+  });
+});

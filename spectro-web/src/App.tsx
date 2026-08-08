@@ -17,6 +17,7 @@ import {
   windowTrace,
 } from "./state/reducer";
 import type { UiState } from "./state/reducer";
+import { fetchLlmWireIndex, mergeLlmExchanges } from "./wire/llmWire";
 import { summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
@@ -180,6 +181,11 @@ export function App() {
   // leave an imported file without anything clearing this, and folder buttons
   // pointing at the previous session's directories would be worse than none.
   const [importedPath, setImportedPath] = useState<{ sessionId: string; path: string } | null>(null);
+  // What the llm-wire index answered for the opened session (leg E): how many
+  // recorded exchanges sit in the sidecar. STAMPED WITH THE SESSION like
+  // `importedPath`, for the same reason — a download link pointing at the
+  // previous session's sidecar would be worse than none.
+  const [llmWire, setLlmWire] = useState<{ sessionId: string; count: number } | null>(null);
   /**
    * Which sidebar segment is showing — App's, not the sidebar's.
    *
@@ -806,11 +812,24 @@ export function App() {
     const cause: NavCause = opts?.cause ?? "gesture";
     const ticket = navNonce.issue();
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
+      // The llm-wire index rides along: its frames are socket-only, so a
+      // reopened file's fold has no exchange rows — the index brings them
+      // back, merged by ts and deduped by xid (wire/llmWire.ts). An empty
+      // answer (no sidecar, an older server) merges nothing and offers no link.
+      const [res, wire] = await Promise.all([
+        fetch(`/api/sessions/${encodeURIComponent(id)}/events`),
+        fetchLlmWireIndex(id),
+      ]);
       if (!res.ok) throw new Error(String(res.status));
       const events = (await res.json()) as RunEvent[];
       if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
-      setReplay({ id, state: foldArchive(events), events });
+      const folded = foldArchive(events);
+      setReplay({
+        id,
+        state: wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
+        events,
+      });
+      setLlmWire(wire.length === 0 ? null : { sessionId: id, count: wire.length });
       setEnteredFleet(null);
       beaconRef.current("session", id);
       // A deep link resolves its index against the events as STORED, then hands
@@ -1124,12 +1143,19 @@ export function App() {
     if (live.running) return; // never hijack a running live session
     const ticket = navNonce.issue();
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(id)}/events`);
+      // Same rule as openSession: the recorded exchanges are socket-only, so
+      // the seeded history has none — the index restores them, and the new
+      // socket's own llm_exchange frames simply append behind (fresh xids).
+      const [res, wire] = await Promise.all([
+        fetch(`/api/sessions/${encodeURIComponent(id)}/events`),
+        fetchLlmWireIndex(id),
+      ]);
       if (!res.ok) return;
       const events = (await res.json()) as RunEvent[];
       if (!navNonce.isCurrent(ticket)) return; // a later navigation already won
+      const folded = foldArchive(events);
       const seeded = recordResumeMarker(
-        foldArchive(events),
+        wire.length === 0 ? folded : { ...folded, trace: mergeLlmExchanges(folded.trace, wire) },
         // history carries the full re-uploaded JSONL: the trace detail's
         // Raw/Compact views show it line by line, exactly as it rides along.
         { sessionId: id, ...summarizeHistory(events), history: events },
@@ -1492,6 +1518,20 @@ export function App() {
     () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
     [enteredFleet, shownEvents, view.trace],
   );
+
+  // Where an expanded llm_exchange row may fetch its recorded bodies from: the
+  // stored session on screen, or the live session once the server has named
+  // one. Null for everything that has no sidecar to ask — an import, a
+  // scenario, an entered fleet — and the detail then says so instead of
+  // fetching a 404.
+  const llmWireSessionId =
+    enteredFleet !== null
+      ? null
+      : replay !== null
+        ? canResume
+          ? replay.id
+          : null
+        : (live.workspace?.sessionId ?? null);
 
   // Card 137: the trace's own address in the configured backend. Derived, not
   // fetched — the id is sha256 over the session id, the same seed OtlpSink
@@ -1952,6 +1992,12 @@ export function App() {
                   onResume: canResume ? () => void resumeSession(replay!.id) : undefined,
                   onDelete: canDelete ? () => void deleteSession(replay!.id) : undefined,
                   exportId: canResume ? replay!.id : undefined,
+                  // The sidecar link, only when the index answered non-empty
+                  // for THIS session — an honest download offers no empty file.
+                  llmWireId:
+                    canResume && llmWire !== null && llmWire.sessionId === replay!.id && llmWire.count > 0
+                      ? replay!.id
+                      : undefined,
                   sendClient,
                   onPickFolder: pickWorkspace,
                   queued: queue,
@@ -2111,6 +2157,7 @@ export function App() {
                the source pane's "byte for byte" sentence would be describing a
                line nobody stored. */
             translated={showingTranslation && enteredFleet === null}
+            llmWireSessionId={llmWireSessionId}
           />
         )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (

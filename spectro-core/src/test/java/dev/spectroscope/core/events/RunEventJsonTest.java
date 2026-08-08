@@ -220,6 +220,50 @@ class RunEventJsonTest {
                 "wire status values stay English");
     }
 
+    /**
+     * The other half of "extend only additively", which this record's own javadoc
+     * promises and which nothing pinned until card 184 measured it.
+     *
+     * <p>A newer writer adds a field; every reader already in the wild must keep
+     * the line. Without {@code ignoreUnknown} Jackson raises
+     * {@code UnrecognizedPropertyException}, which is an {@code IOException},
+     * which {@link dev.spectroscope.core.session.SessionStore} catches with the
+     * comment "truncated trailing line after a crash, discard silently". So the
+     * failure is not an error a user sees: the enriched line simply is not there,
+     * and a session reads short with nothing to say why. The Python edition
+     * filters unknown keys and keeps the event, the TypeScript one reads
+     * structurally, so this reader was the only intolerant one of the three.</p>
+     */
+    @Test
+    void keepsALineFromANewerWriterThatCarriesFieldsThisBuildHasNeverHeardOf() throws Exception {
+        String fromTheFuture = """
+                {"type":"run_start","runId":"r1","agentId":"main","prompt":"count files",\
+                "provider":"anthropic","ts":1,\
+                "cwd":"/Users/you/project","gitBranch":"main","version":"0.9.9","permissionMode":"ask"}""";
+
+        RunEvent read = JSON.readValue(fromTheFuture, RunEvent.class);
+
+        assertTrue(read instanceof RunEvent.RunStart, "a fat run_start is still a run_start");
+        RunEvent.RunStart start = (RunEvent.RunStart) read;
+        assertEquals("r1", start.runId(), "the fields this build knows survive intact");
+        assertEquals("count files", start.prompt());
+        assertEquals(1L, start.ts());
+    }
+
+    /** The same promise for a nested object, because the enrichment the owner
+     *  asked for (card 184, Q3) puts a whole usage block on the line. */
+    @Test
+    void keepsALineWhoseNewFieldIsAWholeObject() throws Exception {
+        String fromTheFuture = """
+                {"type":"usage","agentId":"main","inputTokens":2411,"outputTokens":186,"ts":11,\
+                "detail":{"cacheReadInputTokens":9000,"cacheCreationInputTokens":120}}""";
+
+        RunEvent read = JSON.readValue(fromTheFuture, RunEvent.class);
+
+        assertTrue(read instanceof RunEvent.Usage, "a fat usage is still a usage");
+        assertEquals(2411, ((RunEvent.Usage) read).inputTokens());
+    }
+
     private JsonNode serialize(RunEvent event) {
         try {
             return JSON.readTree(JSON.writeValueAsString(event));

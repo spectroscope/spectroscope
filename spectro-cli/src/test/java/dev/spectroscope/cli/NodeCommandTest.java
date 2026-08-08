@@ -46,7 +46,7 @@ class NodeCommandTest {
     private static final SpectroConfig CONFIG = new SpectroConfig(
             "anthropic", "claude-opus-4-8", "http://localhost:11434", 100_000, "ask",
             java.util.List.of(), "gemini", true, java.util.List.of(), 2, true,
-            java.util.List.of(), null, "info", null, null, null, null, null);
+            java.util.List.of(), null, "info", null, null, "auto", null, null, null);
 
     private static final class ScriptedProvider implements LlmProvider {
         final Queue<List<ProviderEvent>> turns = new ArrayDeque<>();

@@ -23,6 +23,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import dev.spectroscope.core.wire.LlmWireRecorder;
+
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -247,6 +249,15 @@ public final class HeadlessRunner {
                 ? providerOverride
                 : ProviderFactory.providerFromConfig(config); // the model lives in the provider
 
+        // The store BEFORE the agent: the llm-wire recorder (card 184) shares the
+        // session id, and the agent needs it at build time. A triggered node's
+        // provided store reuses one file across fires — the recorder appends the
+        // same way.
+        SessionStore store = providedStore != null
+                ? providedStore
+                : new SessionStore(); // canonical sessionId + JSONL append
+        LlmWireRecorder llmWire = LlmWireRecorder.forSession(store.id());
+
         Agent agent = new Agent(AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt(HEADLESS_SYSTEM_PROMPT)
@@ -256,11 +267,8 @@ public final class HeadlessRunner {
                 .onPermission(broker)
                 .agentId(agentId)                      // "main", or a fleet node's identity
                 .thinking(config.thinking())           // surface reasoning in the NDJSON stream too
+                .llmWire(llmWire)                      // the backend-to-LLM record (card 184)
                 .build());
-
-        SessionStore store = providedStore != null
-                ? providedStore
-                : new SessionStore(); // canonical sessionId + JSONL append
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An
         // auxiliary port (a node's bus publisher) is REGISTERED: durability
@@ -308,6 +316,8 @@ public final class HeadlessRunner {
             }
         } catch (RuntimeException failure) {
             errorMessage = describe(failure);
+        } finally {
+            llmWire.close(); // per-run handle; a triggered node reopens per fire, appending
         }
 
         boolean exitOk = "end_turn".equals(stopReason) && !turnLimitHit && errorMessage.isEmpty();

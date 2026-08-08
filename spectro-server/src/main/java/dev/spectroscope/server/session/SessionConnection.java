@@ -39,6 +39,7 @@ import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.web.BrowsePageTool;
 import dev.spectroscope.core.web.DefaultChromeRunner;
 import dev.spectroscope.core.web.WebSearchTool;
+import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import dev.spectroscope.server.leveling.ServerLeveling;
@@ -136,6 +137,10 @@ public final class SessionConnection {
     // bus/OTel consumers can dock without touching the drain loop. Built
     // wherever the store is — the sink holds the store it writes.
     private TracingPorts tracing;
+    // The backend-to-LLM record (card 184): one recorder per session, minted
+    // with the store, closed with the connection. Its metadata listener feeds
+    // the llm_exchange socket frame; bodies stay in the sidecar file.
+    private LlmWireRecorder llmWire;
     private List<ProviderMessage> initial = List.of();
 
     private volatile CancelSignal signal;     // the running run's signal, or null
@@ -263,6 +268,7 @@ public final class SessionConnection {
         try {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
+            openLlmWire();                                // the sidecar appends across resumes too
             tracing = new TracingPorts().require(new JsonlSink(store));
             OtlpSink.fromConfig(activeConfig.get(), store.id())
                     .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
@@ -635,6 +641,10 @@ public final class SessionConnection {
         if (current != null) {
             current.close(); // tear down this connection's MCP server processes/connections
         }
+        LlmWireRecorder wire = this.llmWire;
+        if (wire != null) {
+            wire.close(); // flushed per line, so closing only releases the writer
+        }
     }
 
     /**
@@ -644,6 +654,7 @@ public final class SessionConnection {
     private void ensureStore() {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
+            openLlmWire();                // the sidecar shares the store's id
             tracing = new TracingPorts().require(new JsonlSink(store));
             OtlpSink.fromConfig(activeConfig.get(), store.id())
                     .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
@@ -651,6 +662,18 @@ public final class SessionConnection {
             // renders, and a leveling defect must never cost a run its life.
             tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder()));
         }
+    }
+
+    /**
+     * Opens the session's llm-wire sidecar recorder (card 184) and wires its
+     * metadata listener to the {@code llm_exchange} frame. Called wherever the
+     * store is minted, fresh and resume alike, so both paths record their
+     * backend calls under the same session id the read endpoints resolve.
+     */
+    private void openLlmWire() {
+        llmWire = LlmWireRecorder.forSession(store.id());
+        llmWire.onExchange(this::sendLlmExchange);
+        llmWire.onRequest(this::sendLlmRequest);
     }
 
     /**
@@ -763,7 +786,8 @@ public final class SessionConnection {
         registry.register(new GenerateImageTool(
                 () -> ImageProviders.create(imageProviderName.get(),
                         activeConfig.get().imageModel(), SpectroConfig.imageEnv()),
-                ImageStore.inUserHome()));
+                ImageStore.inUserHome(),
+                llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
         // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
         registry.register(new WebFetchTool(new DefaultHttpFetcher()));
         // web_search branch: tiered search (Tavily when TAVILY_API_KEY is set, else
@@ -821,6 +845,7 @@ public final class SessionConnection {
                 .introspection(true) // additive: context introspection for the ring in the web UI
                 .thinking(thinking.get()) // reasoning visibility; the header toggle applies on the next run
                 .hooks(hooks) // external pre/post_tool_use shell hooks (config-only)
+                .llmWire(llmWire) // the backend-to-LLM record rides the session's recorder (card 184)
                 .build());
         // A picker reasoning choice made before the first prompt must survive
         // the build — the boolean seed above cannot carry mode "off" or an
@@ -1110,6 +1135,79 @@ public final class SessionConnection {
             socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
         } catch (Exception ignored) {
             // A dead socket just misses the mirror — the export itself already ran.
+        }
+    }
+
+    /**
+     * Mirrors one finished backend exchange (card 184) as a socket-only UI
+     * frame like {@code provider_info}, never appended to the JSONL. Metadata
+     * only, exactly the recorder's {@code ExchangeMeta}: the sidecar file under
+     * {@code ~/.spectro/llm-wire/} keeps the bodies, and the read endpoints
+     * serve them on demand. Runs on the exchange's closing thread and holds
+     * the connection monitor like every send.
+     */
+    /**
+     * Mirrors ONE request the moment it leaves, before the provider has answered
+     * anything (card 184 leg 2). Without this the socket heard about an exchange
+     * only at close, so a call in flight was invisible and the finished row
+     * landed after its own text deltas: measured on a real turn, the POST left
+     * at 48.291, the first token arrived at 50.035, the stream closed at 50.138,
+     * and only the last of those was ever on screen.
+     *
+     * <p>No status, no duration, no response size: those facts do not exist yet
+     * and a zero would be a claim. The bodies stay in the sidecar as always.</p>
+     */
+    private synchronized void sendLlmRequest(LlmWireRecorder.RequestMeta meta) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("type", "llm_request");
+            payload.put("xid", meta.xid());
+            payload.put("agentId", meta.agentId());
+            payload.put("turn", meta.turn());
+            payload.put("kind", meta.kind());
+            payload.put("provider", meta.provider());
+            payload.put("model", meta.model());
+            payload.put("transport", meta.transport());
+            payload.put("method", meta.method());
+            payload.put("url", meta.url());
+            payload.put("requestBytes", meta.requestBytes());
+            payload.put("fidelity", meta.fidelity());
+            payload.put("ts", meta.ts());
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+        } catch (Exception ignored) {
+            // A dead socket just misses the mirror; the sidecar already has it.
+        }
+    }
+
+    private synchronized void sendLlmExchange(LlmWireRecorder.ExchangeMeta meta) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            Map<String, Object> payload = new java.util.LinkedHashMap<>();
+            payload.put("type", "llm_exchange");
+            payload.put("xid", meta.xid());
+            payload.put("agentId", meta.agentId());
+            payload.put("turn", meta.turn());
+            payload.put("kind", meta.kind());
+            payload.put("provider", meta.provider());
+            payload.put("model", meta.model());
+            payload.put("transport", meta.transport());
+            payload.put("url", meta.url());
+            payload.put("status", meta.status());
+            payload.put("requestBytes", meta.requestBytes());
+            payload.put("responseBytes", meta.responseBytes());
+            payload.put("responseLines", meta.responseLines());
+            payload.put("aborted", meta.aborted());
+            payload.put("fidelity", meta.fidelity());
+            payload.put("durationMs", meta.durationMs());
+            payload.put("ts", meta.ts());
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+        } catch (Exception ignored) {
+            // A dead socket just misses the mirror; the sidecar already has it.
         }
     }
 

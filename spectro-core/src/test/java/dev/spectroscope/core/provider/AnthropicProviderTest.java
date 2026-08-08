@@ -3,23 +3,40 @@ package dev.spectroscope.core.provider;
 import com.anthropic.models.messages.ContentBlockParam;
 import com.anthropic.models.messages.MessageCreateParams;
 import com.anthropic.models.messages.ThinkingConfigAdaptive;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpServer;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.provider.LlmProvider.ImageContent;
+import dev.spectroscope.core.provider.LlmProvider.PStop;
+import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
 import dev.spectroscope.core.provider.LlmProvider.ProviderContent;
+import dev.spectroscope.core.provider.LlmProvider.ProviderEvent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolSpec;
+import dev.spectroscope.core.wire.LlmWireTap;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -28,6 +45,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * are needed. The streaming translation itself is covered by the agent tests
  * against a fake provider; this class pins the SDK block shapes — above all
  * that an image becomes a base64 image block placed BEFORE the text.
+ *
+ * <p>The one exception is {@link WireCapture}: the llm-wire tap records what
+ * the SDK posts and receives, and only a real streaming call against a
+ * scripted loopback server (the {@code ReasoningWireTest} pattern, via the
+ * package-private baseUrl constructor) can measure that record against the
+ * actual bytes on the wire.</p>
  */
 class AnthropicProviderTest {
 
@@ -251,5 +274,192 @@ class AnthropicProviderTest {
         assertEquals(100, plain.inputTokens());
         assertEquals(0, plain.cacheReadTokens());
         assertEquals(0, plain.cacheCreationTokens());
+    }
+
+    // ---- llm-wire capture: the SDK-owned exchange, measured on loopback ----
+
+    @Nested
+    class WireCapture {
+
+        /** The SSE data payloads the loopback serves — the fidelity yardstick. */
+        private static final List<String> SERVED_DATA = List.of(
+                "{\"type\":\"message_start\",\"message\":{\"id\":\"msg_wire\",\"type\":\"message\","
+                        + "\"role\":\"assistant\",\"model\":\"claude-opus-4-8\",\"content\":[],"
+                        + "\"stop_reason\":null,\"stop_sequence\":null,"
+                        + "\"usage\":{\"input_tokens\":12,\"output_tokens\":1}}}",
+                "{\"type\":\"content_block_start\",\"index\":0,"
+                        + "\"content_block\":{\"type\":\"text\",\"text\":\"\"}}",
+                "{\"type\":\"content_block_delta\",\"index\":0,"
+                        + "\"delta\":{\"type\":\"text_delta\",\"text\":\"Hello\"}}",
+                "{\"type\":\"content_block_delta\",\"index\":0,"
+                        + "\"delta\":{\"type\":\"text_delta\",\"text\":\" there\"}}",
+                "{\"type\":\"content_block_stop\",\"index\":0}",
+                "{\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\","
+                        + "\"stop_sequence\":null},\"usage\":{\"output_tokens\":2}}",
+                "{\"type\":\"message_stop\"}");
+
+        private HttpServer server;
+        private String baseUrl;
+        private final AtomicReference<String> receivedBody = new AtomicReference<>();
+
+        @BeforeEach
+        void scriptedSseServer() throws IOException {
+            server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+            server.createContext("/", exchange -> {
+                receivedBody.set(new String(exchange.getRequestBody().readAllBytes(),
+                        StandardCharsets.UTF_8));
+                StringBuilder sse = new StringBuilder();
+                for (String data : SERVED_DATA) {
+                    String name = JSON.readTree(data).get("type").asText();
+                    sse.append("event: ").append(name).append('\n')
+                            .append("data: ").append(data).append("\n\n");
+                }
+                byte[] bytes = sse.toString().getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "text/event-stream");
+                exchange.sendResponseHeaders(200, bytes.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(bytes);
+                }
+            });
+            server.start();
+            baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
+        }
+
+        @AfterEach
+        void stop() {
+            server.stop(0);
+        }
+
+        /** Collects everything the provider hands the tap. */
+        private static final class RecordingTap implements LlmWireTap {
+            WireRequest request;
+            final List<String> lines = new ArrayList<>();
+            WireOutcome outcome;
+
+            @Override
+            public Exchange begin(WireRequest request) {
+                this.request = request;
+                return new Exchange() {
+                    @Override
+                    public void line(String rawLine) {
+                        lines.add(rawLine);
+                    }
+
+                    @Override
+                    public void end(WireOutcome ended) {
+                        outcome = ended;
+                    }
+                };
+            }
+        }
+
+        private List<ProviderEvent> drained(LlmWireTap tap) {
+            AnthropicProvider provider = new AnthropicProvider(
+                    "claude-opus-4-8", false, "test-key", baseUrl);
+            ProviderRequest request = new ProviderRequest("You are spectroscope.",
+                    List.of(new ProviderMessage(ProviderMessage.Role.USER,
+                            List.of(new TextContent("Hi")))),
+                    List.of(), 512, ProviderRequest.Reasoning.DEFAULT, null,
+                    new CancelSignal(), tap);
+            List<ProviderEvent> events = new ArrayList<>();
+            for (ProviderEvent event : provider.stream(request)) {
+                events.add(event);
+            }
+            return events;
+        }
+
+        @Test
+        void recordedRequestBodyIsByteEqualToWhatTheLoopbackReceived() {
+            // BYTE equality held: the record serializes the same Body object
+            // (plus stream:true) with the same SDK mapper the service posts
+            // with — not merely JsonNode-equal, the identical string.
+            RecordingTap tap = new RecordingTap();
+            drained(tap);
+
+            assertNotNull(tap.request, "begin() must fire at stream-open time");
+            assertEquals(receivedBody.get(), tap.request.body(),
+                    "the recorded request body must be the posted body, byte for byte");
+            assertEquals("anthropic", tap.request.provider());
+            assertEquals("claude-opus-4-8", tap.request.model());
+            assertEquals("sdk", tap.request.transport());
+            assertEquals("POST", tap.request.method());
+            assertEquals(baseUrl + "/v1/messages", tap.request.url());
+            assertEquals("sdk-json", tap.request.fidelity());
+            assertNull(tap.request.headers(),
+                    "the SDK owns the headers — the record must not fabricate any");
+        }
+
+        @Test
+        void reconstructedDataLinesMatchTheServedSsePayloads() throws IOException {
+            RecordingTap tap = new RecordingTap();
+            drained(tap);
+
+            assertEquals(SERVED_DATA.size() * 2, tap.lines.size(),
+                    "one event: line and one data: line per served SSE event");
+            for (int i = 0; i < SERVED_DATA.size(); i++) {
+                String eventLine = tap.lines.get(2 * i);
+                String dataLine = tap.lines.get(2 * i + 1);
+                JsonNode served = JSON.readTree(SERVED_DATA.get(i));
+                assertEquals("event: " + served.get("type").asText(), eventLine);
+                assertTrue(dataLine.startsWith("data: "), "got: " + dataLine);
+                // JsonNode equality: the SDK re-serializes the event, so field
+                // ORDER may differ from the served bytes; the content must not.
+                assertEquals(served, JSON.readTree(dataLine.substring("data: ".length())),
+                        "reconstructed event " + i + " must carry the served payload");
+            }
+
+            assertNotNull(tap.outcome, "end() must fire on the natural finish");
+            assertEquals("sdk-events", tap.outcome.fidelity());
+            assertNull(tap.outcome.status(),
+                    "the SDK's StreamResponse exposes no status — null, never a fabricated 200");
+            assertNull(tap.outcome.body(), "streamed responses carry lines, not a body");
+            assertFalse(tap.outcome.aborted());
+            assertNull(tap.outcome.error());
+            assertTrue(tap.outcome.ts() >= tap.request.ts(), "close stamps after send");
+        }
+
+        @Test
+        void aNullTapRecordsNothingAndChangesNothing() {
+            // The tap-free request must translate the identical stream — the
+            // same deltas in the same order, ending in usage and stop.
+            List<ProviderEvent> events = drained(null);
+
+            assertEquals("Hello", ((PTextDelta) events.get(0)).text());
+            assertEquals(" there", ((PTextDelta) events.get(1)).text());
+            assertTrue(events.stream().anyMatch(event -> event instanceof PStop stop
+                    && stop.reason() == PStop.StopReason.END_TURN));
+        }
+
+        @Test
+        void anHttpErrorEndsTheExchangeWithStatusAndError() {
+            // Rescript the loopback: a 400 before any SSE event. The request
+            // line must be on record and the exchange must close with the
+            // real status off the SDK's service exception.
+            server.removeContext("/");
+            server.createContext("/", exchange -> {
+                receivedBody.set(new String(exchange.getRequestBody().readAllBytes(),
+                        StandardCharsets.UTF_8));
+                byte[] error = ("{\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\","
+                        + "\"message\":\"scripted\"}}").getBytes(StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(400, error.length);
+                try (OutputStream out = exchange.getResponseBody()) {
+                    out.write(error);
+                }
+            });
+
+            RecordingTap tap = new RecordingTap();
+            try {
+                drained(tap);
+            } catch (RuntimeException scripted) {
+                // expected — the loopback answers 400 after the body arrived
+            }
+
+            assertNotNull(tap.request, "the request line precedes the failure");
+            assertNotNull(tap.outcome, "an HTTP error still closes the exchange");
+            assertEquals(400, tap.outcome.status());
+            assertNotNull(tap.outcome.error());
+            assertFalse(tap.outcome.aborted());
+        }
     }
 }

@@ -41,12 +41,12 @@ public final class LocalModelDownload {
     private final AtomicReference<String> error = new AtomicReference<>(null);
 
     /** Seam constructor for tests — the url is unused (the fetcher ignores it). */
-    LocalModelDownload(Path modelsDir, String fileName, String sha256, long totalBytes, Fetcher fetcher) {
+    public LocalModelDownload(Path modelsDir, String fileName, String sha256, long totalBytes, Fetcher fetcher) {
         this(modelsDir, fileName, sha256, totalBytes, fetcher, "test://" + fileName);
     }
 
     /** Full constructor. */
-    LocalModelDownload(Path modelsDir, String fileName, String sha256, long totalBytes,
+    public LocalModelDownload(Path modelsDir, String fileName, String sha256, long totalBytes,
             Fetcher fetcher, String url) {
         this.modelsDir = modelsDir;
         this.fileName = fileName;

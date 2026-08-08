@@ -72,6 +72,11 @@ export function causalChain(entries: TraceEntry[], target: TraceEntry): TraceEnt
           (e) => e.type === "tool_call" && str(payload(e)["callId"]) === callId,
         );
         break;
+      // The recorded exchange belongs to the turn that sent it (card 184, owner:
+      // "ein chain eintrag zum paket wo es herkommt"). It fell into `default`
+      // before, so the one row that names an actual packet on the wire was the
+      // one row with no provenance on it and the strip did not render at all.
+      case "llm_exchange":
       case "tool_call":
       case "text_delta":
       case "thinking_delta":

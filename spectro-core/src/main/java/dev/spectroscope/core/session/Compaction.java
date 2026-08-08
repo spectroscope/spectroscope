@@ -10,6 +10,7 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.wire.LlmWireTap;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -62,6 +63,27 @@ public final class Compaction {
     public static Result maybeCompact(LlmProvider provider, List<ProviderMessage> messages,
                                       int lastInputTokens, int threshold, String agentId,
                                       CancelSignal signal) {
+        return maybeCompact(provider, messages, lastInputTokens, threshold, agentId, signal, null);
+    }
+
+    /**
+     * The tap-aware variant (card 184): the summarizer's own model call rides
+     * the llm-wire record when the caller binds a tap for it (kind
+     * "compaction"). The tap-free signature above keeps delegating here.
+     *
+     * @param provider        the SAME provider the run uses (model lives in it)
+     * @param messages        the current history
+     * @param lastInputTokens input tokens of the last turn (from the usage event)
+     * @param threshold       compaction threshold in input tokens
+     * @param agentId         the agentId for the compaction event ("main")
+     * @param signal          cooperative cancel (may be null)
+     * @param tap             where the summarizer call records its real exchange;
+     *                        null records nothing
+     * @return a Result exactly as the tap-free signature describes it
+     */
+    public static Result maybeCompact(LlmProvider provider, List<ProviderMessage> messages,
+                                      int lastInputTokens, int threshold, String agentId,
+                                      CancelSignal signal, LlmWireTap tap) {
         int keep = DEFAULT_KEEP_MESSAGES;
         if (lastInputTokens < threshold) {
             return new Result(messages, null);
@@ -95,7 +117,10 @@ public final class Compaction {
                     SessionStore.mergeAdjacentRoles(summaryInput),
                     List.of(),      // summary call ALWAYS without tools
                     32000,          // generous maxTokens; no sampling parameters
-                    signal);
+                    ProviderRequest.Reasoning.DEFAULT,
+                    null,           // no effort request either
+                    signal,
+                    tap);           // the summarizer call is on the wire record too
             for (ProviderEvent event : provider.stream(request)) {
                 if (event instanceof PTextDelta delta) {
                     summary.append(delta.text());

@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # setup-stt.sh — sets up local speech-to-text: whisper.cpp + the ggml-small model.
+# Two things, one of which the app can do for itself: the settings pane downloads
+# and verifies the model with the same digest this script pins.
 # Idempotent: a second run detects what is present and downloads nothing again.
 set -euo pipefail
 
@@ -41,7 +43,12 @@ verify_model() {
   fi
 }
 
-# --- 1. install whisper.cpp and ffmpeg (OS-dependent) ---
+# --- 1. install whisper.cpp (OS-dependent) ---
+# ffmpeg used to be required here too: the server converted the browser's
+# webm/opus recording with it. The browser does that conversion itself now
+# (card 187 step 5.4), so the app needs ONE binary, and whisper.cpp is MIT.
+# ffmpeg is still what the CLI's own `/voice` RECORDS with, which is a different
+# job the browser cannot do for it — so it is reported below and never required.
 OS="$(uname -s)"
 case "$OS" in
   Darwin)
@@ -54,11 +61,6 @@ case "$OS" in
     else
       brew install whisper-cpp
     fi
-    if command -v ffmpeg >/dev/null 2>&1; then
-      echo "ffmpeg already present."
-    else
-      brew install ffmpeg
-    fi
     ;;
   Linux)
     if ! command -v whisper-cli >/dev/null 2>&1; then
@@ -67,17 +69,18 @@ case "$OS" in
       echo "(cmake -B build && cmake --build build; put build/bin/whisper-cli on the PATH)." >&2
       exit 1
     fi
-    if ! command -v ffmpeg >/dev/null 2>&1; then
-      echo "ERROR: ffmpeg missing — use the package manager (e.g. apt install ffmpeg)." >&2
-      exit 1
-    fi
-    echo "whisper-cli and ffmpeg already present."
+    echo "whisper-cli already present."
     ;;
   *)
     echo "ERROR: unsupported OS '$OS'. On Windows: use WSL2." >&2
     exit 1
     ;;
 esac
+
+if ! command -v ffmpeg >/dev/null 2>&1; then
+  echo "Note: ffmpeg is not installed. Voice in the app works without it."
+  echo "      Only the CLI's /voice needs it, to record from the microphone."
+fi
 
 # --- 2. download + verify the model (idempotent) ---
 mkdir -p "$MODEL_DIR"

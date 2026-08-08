@@ -147,9 +147,18 @@ public class SessionsController {
             return ResponseEntity.badRequest().build();
         }
         try {
-            return SessionStore.deleteSession(id)
-                    ? ResponseEntity.noContent().build()
-                    : ResponseEntity.notFound().build();
+            // The cascade runs UNCONDITIONALLY: "delete whatever this id left
+            // behind" is the honest contract. Gating the sidecar on the session
+            // file's existence stranded two real cases (card 184 review): the
+            // stt day files, which never have a session, and an orphaned
+            // sidecar after a half-failed earlier delete.
+            boolean hadSession = SessionStore.deleteSession(id);
+            boolean hadWire = Files.deleteIfExists(
+                    dev.spectroscope.core.wire.LlmWireRecorder.fileFor(id));
+            if (!hadSession && !hadWire) {
+                return ResponseEntity.notFound().build();
+            }
+            return ResponseEntity.noContent().build();
         } catch (Exception failure) {
             return ResponseEntity.internalServerError().build();
         }

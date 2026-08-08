@@ -79,6 +79,10 @@ import java.util.function.Function;
  * @param imageModel          override for the image backend's default model
  *                           ; {@code null} means "use the backend's
  *                            own default" — env {@code SPECTRO_IMAGE_MODEL}
+ * @param sttProvider         which way speech to text goes: {@code auto} (the
+ *                            hosted API when a key is there, whisper otherwise),
+ *                            {@code local}, or {@code openai} — env
+ *                            {@code SPECTRO_STT_PROVIDER}
  * @param sttModel            path to the local whisper.cpp model file;
  *                            {@code null} means the CLI-side default —
  *                            env {@code SPECTRO_STT_MODEL}
@@ -114,6 +118,7 @@ public record SpectroConfig(
         String logLevel,
         String imageModel,
         String sttModel,
+        String sttProvider,
         String chromeBinary,
         String otlpEndpoint,
         String otlpBasicAuth) {
@@ -153,6 +158,8 @@ public record SpectroConfig(
     public static final String KNOWN_PROVIDERS_DISPLAY =
             "anthropic, ollama, openai, lmstudio, openrouter, gemini, spectro-local";
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
+    /** {@code sttProvider}'s known values — "auto" decides by what the machine has. */
+    public static final Set<String> KNOWN_STT_PROVIDERS = Set.of("auto", "local", "openai");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
     /** {@code permissionMode}'s known values — the single source for both the
@@ -164,7 +171,9 @@ public record SpectroConfig(
             "gemini", true, List.of(), 2, true, List.of(), // 2 retries; caching on; no hooks
             null, // workspace: per-session temp folder unless configured
             "info", // logLevel: file diagnostics at info; console stays WARN-quiet
-            null, null, null, // imageModel/sttModel/chromeBinary: backend/CLI/discovery defaults
+            null, null, // imageModel/sttModel: backend and CLI defaults
+            "auto", // sttProvider: hosted when a key is there, local otherwise
+            null, // chromeBinary: built-in discovery
             null, null); // otlpEndpoint/otlpBasicAuth: exporter off by default
 
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -463,6 +472,8 @@ public record SpectroConfig(
         // covers permissionMode too (it used to load unchecked).
         validateKnown("permissionMode", base.permissionMode(), KNOWN_PERMISSION_MODES,
                 "ask, auto, readonly");
+        validateKnown("sttProvider", base.sttProvider(), KNOWN_STT_PROVIDERS,
+                "auto, local, openai");
         validateKnown("logLevel", base.logLevel(), KNOWN_LOG_LEVELS,
                 "error, warn, info, debug, trace");
 
@@ -476,7 +487,7 @@ public record SpectroConfig(
                         base.imageProvider(), base.thinking(), base.mcpServers(),
                         base.maxRetries(), base.promptCaching(), base.hooks(),
                         base.workspace(), base.logLevel(),
-                        base.imageModel(), base.sttModel(), base.chromeBinary(),
+                        base.imageModel(), base.sttModel(), base.sttProvider(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth());
             }
         }
@@ -518,6 +529,7 @@ public record SpectroConfig(
             new FieldProbe("logLevel", p -> p.logLevel),
             new FieldProbe("imageModel", p -> p.imageModel),
             new FieldProbe("sttModel", p -> p.sttModel),
+            new FieldProbe("sttProvider", p -> p.sttProvider),
             new FieldProbe("chromeBinary", p -> p.chromeBinary),
             new FieldProbe("otlpEndpoint", p -> p.otlpEndpoint),
             new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth));
@@ -553,7 +565,7 @@ public record SpectroConfig(
                 compactionThreshold, permissionMode, autoApprove,
                 imageProvider, thinking, mcpServers,
                 maxRetries, promptCaching, hooks,
-                workspace, logLevel, imageModel, sttModel, chromeBinary,
+                workspace, logLevel, imageModel, sttModel, sttProvider, chromeBinary,
                 otlpEndpoint, otlpBasicAuth);
     }
 
@@ -1170,6 +1182,7 @@ public record SpectroConfig(
         public String logLevel;
         public String imageModel;
         public String sttModel;
+        public String sttProvider;
         public String chromeBinary;
         public String otlpEndpoint;
         public String otlpBasicAuth;
@@ -1202,6 +1215,7 @@ public record SpectroConfig(
             out.logLevel = Optional.ofNullable(higher.logLevel).orElse(logLevel);
             out.imageModel = Optional.ofNullable(higher.imageModel).orElse(imageModel);
             out.sttModel = Optional.ofNullable(higher.sttModel).orElse(sttModel);
+            out.sttProvider = Optional.ofNullable(higher.sttProvider).orElse(sttProvider);
             out.chromeBinary = Optional.ofNullable(higher.chromeBinary).orElse(chromeBinary);
             out.otlpEndpoint = Optional.ofNullable(higher.otlpEndpoint).orElse(otlpEndpoint);
             out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
@@ -1232,6 +1246,7 @@ public record SpectroConfig(
                     Optional.ofNullable(logLevel).orElse(DEFAULTS.logLevel()),
                     Optional.ofNullable(imageModel).orElse(DEFAULTS.imageModel()),
                     Optional.ofNullable(sttModel).orElse(DEFAULTS.sttModel()),
+                    Optional.ofNullable(sttProvider).orElse(DEFAULTS.sttProvider()),
                     Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()),
                     Optional.ofNullable(otlpEndpoint).orElse(DEFAULTS.otlpEndpoint()),
                     Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()));
@@ -1290,6 +1305,7 @@ public record SpectroConfig(
             // any of the three exactly like every other field.
             out.imageModel = env.get("SPECTRO_IMAGE_MODEL");
             out.sttModel = env.get("SPECTRO_STT_MODEL");
+            out.sttProvider = env.get("SPECTRO_STT_PROVIDER");
             out.chromeBinary = env.get("SPECTRO_CHROME");
             return out;
         }
