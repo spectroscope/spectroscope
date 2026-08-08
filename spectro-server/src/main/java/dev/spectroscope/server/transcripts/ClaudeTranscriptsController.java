@@ -1,6 +1,6 @@
 package dev.spectroscope.server.transcripts;
 
-import dev.spectroscope.server.LocalOrigin;
+import dev.spectroscope.server.web.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.ByteArrayResource;
@@ -61,7 +61,7 @@ public class ClaudeTranscriptsController {
      * <p>There are two, and this record used to publish one. The byte ceiling
      * refuses a named file the caller can see; the row cap drops files the
      * caller never learns about, which is the worse of the pair to keep quiet.
-     * The sibling {@link dev.spectroscope.server.WorkspaceController.FilesResponse} has carried the same
+     * The sibling {@link dev.spectroscope.server.workspace.WorkspaceController.FilesResponse} has carried the same
      * flag for the same reason since it was written.</p>
      *
      * @param limitBytes the largest transcript {@link #content} will serve

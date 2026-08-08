@@ -127,8 +127,8 @@ files: {"user": "/Users/christopher.ezell/.spectro/settings.json", ...}
 | Way | Mechanism | Use it when |
 |---|---|---|
 | CLI flag | `--provider` / `--model` on the parent command (`spectro-cli/src/main/java/dev/spectroscope/cli/SpectroCli.java:86-92`) | Headless runs. Highest layer, beats every file. |
-| User settings file | Edit `~/.spectro/settings.json`, or `PUT /api/settings/user` (`spectro-server/src/main/java/dev/spectroscope/server/SettingsController.java:143`) | Server verification runs, before boot. |
-| The picker | `set_provider` over the WebSocket (`SessionConnection.onSetProvider`, `spectro-server/src/main/java/dev/spectroscope/server/SessionConnection.java:448`) | Browser verification. Applies on the next prompt, not retroactively. |
+| User settings file | Edit `~/.spectro/settings.json`, or `PUT /api/settings/user` (`spectro-server/src/main/java/dev/spectroscope/server/settings/SettingsController.java:143`) | Server verification runs, before boot. |
+| The picker | `set_provider` over the WebSocket (`SessionConnection.onSetProvider`, `spectro-server/src/main/java/dev/spectroscope/server/session/SessionConnection.java:448`) | Browser verification. Applies on the next prompt, not retroactively. |
 | Fresh home | `java -Duser.home=$T -jar …` with env vars set | First-run behaviour. No settings file exists yet, so env wins, once. |
 
 Two gotchas measured on 2026-07-27:

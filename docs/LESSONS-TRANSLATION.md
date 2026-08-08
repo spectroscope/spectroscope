@@ -32,7 +32,7 @@ Three files own it:
 |---|---|
 | `spectro-web/src/translate/units.ts` | what a translatable unit IS: which fields go, which stay, and how delta runs group into one unit |
 | `spectro-web/src/state/translate.ts` | what leaves the browser: passage cutting (`MAX_PASSAGE_CHARS`), code-fence removal, request batching, and the NDJSON fold |
-| `spectro-server/src/main/java/dev/spectroscope/server/TranslateController.java` | one provider call per passage, the prompt, the bounds, the origin fences |
+| `spectro-server/src/main/java/dev/spectroscope/server/llm/TranslateController.java` | one provider call per passage, the prompt, the bounds, the origin fences |
 
 Wire: `{meta:{…}}`, then `{unit,delta}` lines per passage, then `{unit,end:true}`
 or `{unit,error}`, then `{done:true}`.

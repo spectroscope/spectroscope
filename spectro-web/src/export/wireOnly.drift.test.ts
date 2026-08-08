@@ -27,7 +27,7 @@ import { NON_WIRE_TYPES } from "../wire/nonWire";
 const java = (name: string): string =>
   readFileSync(fileURLToPath(new URL(`../../../${name}`, import.meta.url)), "utf8");
 
-const CONNECTION = "spectro-server/src/main/java/dev/spectroscope/server/SessionConnection.java";
+const CONNECTION = "spectro-server/src/main/java/dev/spectroscope/server/session/SessionConnection.java";
 const UNION = "spectro-core/src/main/java/dev/spectroscope/core/events/RunEvent.java";
 
 /**

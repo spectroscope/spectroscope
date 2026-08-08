@@ -1,7 +1,7 @@
 package dev.spectroscope.server.starter;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import dev.spectroscope.server.LocalOrigin;
+import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -26,7 +26,7 @@ import java.util.Map;
  * the same native picker as the workspace, {@code /api/pick-workspace}).
  *
  * <p>No {@code @CrossOrigin}: the scaffold endpoint writes files, so it stays
- * same-origin only (like {@link dev.spectroscope.server.SettingsController}) —
+ * same-origin only (like {@link dev.spectroscope.server.settings.SettingsController}) —
  * a foreign page cannot make the local server write to disk. The write wears
  * the complete write-endpoint template: {@code consumes=json} forces the
  * preflight a cross-origin page cannot pass, {@link LocalOrigin#isLocalOrigin}

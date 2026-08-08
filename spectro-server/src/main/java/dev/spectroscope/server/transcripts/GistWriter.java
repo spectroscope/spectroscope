@@ -8,7 +8,7 @@ import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
-import dev.spectroscope.server.ExplainController;
+import dev.spectroscope.server.llm.ExplainController;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
