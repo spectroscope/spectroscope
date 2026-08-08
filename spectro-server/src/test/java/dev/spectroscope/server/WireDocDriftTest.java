@@ -1,5 +1,7 @@
 package dev.spectroscope.server;
 
+import dev.spectroscope.server.web.ApiLocalFence;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -37,8 +39,8 @@ class WireDocDriftTest {
 
     /** The endpoints this branch fenced, and the controller each one lives in. */
     private static final Map<String, String> FENCED = Map.of(
-            "/api/files", "WorkspaceController.java",
-            "/api/file", "WorkspaceController.java",
+            "/api/files", "workspace/WorkspaceController.java",
+            "/api/file", "workspace/WorkspaceController.java",
             "/api/claude/transcripts", "transcripts/ClaudeTranscriptsController.java",
             "/api/claude/transcripts/content", "transcripts/ClaudeTranscriptsController.java");
 

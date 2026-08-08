@@ -2,7 +2,7 @@ package dev.spectroscope.server.observability;
 
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.trace.OtlpSink;
-import dev.spectroscope.server.LocalOrigin;
+import dev.spectroscope.server.web.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 

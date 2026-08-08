@@ -1,5 +1,8 @@
 package dev.spectroscope.server;
 
+import dev.spectroscope.server.leveling.ServerLeveling;
+import dev.spectroscope.server.settings.BundledSkills;
+
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 

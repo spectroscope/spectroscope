@@ -1,6 +1,6 @@
 package dev.spectroscope.server.observability;
 
-import dev.spectroscope.server.LocalOrigin;
+import dev.spectroscope.server.web.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 

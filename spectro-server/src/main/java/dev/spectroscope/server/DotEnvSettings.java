@@ -57,7 +57,7 @@ public final class DotEnvSettings {
     public static final List<String> WRITABLE = List.of(HUB_PORT, ALLOW_SPAWN);
 
     /** The property source's name — also how a test finds it. */
-    static final String SOURCE = "spectroDotEnvSettings";
+    public static final String SOURCE = "spectroDotEnvSettings";
 
     /**
      * Reads the allowlisted settings out of {@code ~/.spectro/.env}.
