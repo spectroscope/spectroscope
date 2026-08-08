@@ -764,7 +764,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "voice.notice.local.modelMissing": { de: "Das Modell fehlt — einmalig {v} zu laden.", en: "The model is missing — a one-time {v} download." },
   "voice.notice.local.staysHere": { de: "Die Aufnahme verlässt diesen Rechner nicht.", en: "The recording never leaves this machine." },
   "voice.notice.switchHint": { de: "Beide Wege stehen in den Einstellungen unter Spracheingabe.", en: "Both routes are in Settings, under Speech to text." },
-  "voice.notice.settings": { de: "Einstellungen öffnen", en: "Open settings" },
+  "voice.notice.settings": { de: "Einstellungen", en: "Settings" },
   "voice.notice.gotIt": { de: "Verstanden", en: "Got it" },
   "voice.err.denied": { de: "Kein Zugriff aufs Mikrofon — der Browser hat ihn verweigert. In den Website-Einstellungen erlauben, dann noch einmal.", en: "No access to the microphone — the browser refused it. Allow it in the site settings, then try again." },
   "voice.err.noDevice": { de: "Kein Mikrofon gefunden.", en: "No microphone found." },
