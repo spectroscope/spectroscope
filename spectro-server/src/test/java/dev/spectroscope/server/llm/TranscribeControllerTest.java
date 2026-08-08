@@ -128,13 +128,15 @@ class TranscribeControllerTest {
     private static final class FakeHosted implements HostedStt {
         byte[] posted;
         String keyUsed;
+        String languageUsed;
         String answer = "{\"text\":\"hello from the hosted one\"}";
         IOException refuse;
 
         @Override
-        public String post(byte[] wav, String key) throws IOException {
+        public String post(byte[] wav, String key, String language) throws IOException {
             posted = wav;
             keyUsed = key;
+            languageUsed = language;
             if (refuse != null) {
                 throw refuse;
             }
@@ -158,7 +160,7 @@ class TranscribeControllerTest {
         Path noModel = dir.resolve("nothing-here.bin");
         TranscribeController controller = new TranscribeController(
                 new FakeRunner(), noModel, true, null,
-                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-test", hosted));
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-test", hosted, "auto"));
 
         ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
 
@@ -169,11 +171,55 @@ class TranscribeControllerTest {
         assertEquals("sk-test", hosted.keyUsed);
     }
 
+    /** The sttLanguage setting reaches whisper-cli as {@code -l <code>}. */
+    @Test
+    void theConfiguredLanguageReachesWhisperCli(@TempDir Path dir) throws IOException {
+        FakeRunner runner = new FakeRunner();
+        TranscribeController controller = new TranscribeController(
+                runner, presentModel(dir), true, null,
+                () -> new TranscribeController.Choice(SttRoute.LOCAL, "", new FakeHosted(), "de"));
+
+        controller.transcribe(VoiceFixtures.clip());
+
+        List<String> argv = runner.commands.getFirst();
+        assertEquals("de", argv.get(argv.indexOf("-l") + 1),
+                "sttLanguage=de must pin whisper to German: " + argv);
+    }
+
+    /** And "auto" keeps the request whisper always got: {@code -l auto}. */
+    @Test
+    void autoKeepsWhisperOnAutoDetection(@TempDir Path dir) throws IOException {
+        FakeRunner runner = new FakeRunner();
+        TranscribeController controller = new TranscribeController(
+                runner, presentModel(dir), true, null,
+                () -> new TranscribeController.Choice(SttRoute.LOCAL, "", new FakeHosted(), "auto"));
+
+        controller.transcribe(VoiceFixtures.clip());
+
+        List<String> argv = runner.commands.getFirst();
+        assertEquals("auto", argv.get(argv.indexOf("-l") + 1),
+                "sttLanguage=auto must leave detection to the model: " + argv);
+    }
+
+    /** The same setting reaches the hosted provider on its route. */
+    @Test
+    void theConfiguredLanguageReachesTheHostedProvider(@TempDir Path dir) {
+        FakeHosted hosted = new FakeHosted();
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), dir.resolve("nothing-here.bin"), true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-test", hosted, "de"));
+
+        controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals("de", hosted.languageUsed,
+                "the hosted call must carry the configured language");
+    }
+
     @Test
     void theHostedRouteWithoutAKeySaysSoRatherThanNamingTheSetupScript(@TempDir Path dir) {
         TranscribeController controller = new TranscribeController(
                 new FakeRunner(), presentModelQuietly(dir), true, null,
-                () -> new TranscribeController.Choice(SttRoute.HOSTED, "", new FakeHosted()));
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "", new FakeHosted(), "auto"));
 
         ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
 
@@ -190,7 +236,7 @@ class TranscribeControllerTest {
         hosted.refuse = new IOException("Transcription failed with HTTP 401 — Incorrect API key provided");
         TranscribeController controller = new TranscribeController(
                 new FakeRunner(), dir.resolve("none"), true, null,
-                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-bad", hosted));
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-bad", hosted, "auto"));
 
         ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
 

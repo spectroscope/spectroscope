@@ -145,8 +145,28 @@ public final class Transcriber {
      * @return the complete argv, transcript file target included
      */
     static List<String> transcribeCommand(Path modelPath, Path wavPath) {
+        return transcribeCommand(modelPath, wavPath, LANGUAGE_AUTO);
+    }
+
+    /** The {@code sttLanguage} value that leaves detection to the model. */
+    static final String LANGUAGE_AUTO = "auto";
+
+    /**
+     * The argv with the configured dictation language. {@code auto} (and null,
+     * and blank) keeps {@code -l auto} — the request whisper always got. The
+     * flag is never DROPPED for auto, because whisper-cli without {@code -l}
+     * defaults to English, which is exactly what auto-detection exists to avoid.
+     *
+     * @param modelPath the ggml model file to transcribe with
+     * @param wavPath   the 16 kHz mono recording to transcribe
+     * @param language  the {@code sttLanguage} setting: {@code auto}, or an ISO
+     *                  code such as {@code de} that pins whisper to one language
+     * @return the complete argv, transcript file target included
+     */
+    static List<String> transcribeCommand(Path modelPath, Path wavPath, String language) {
+        String code = language == null || language.isBlank() ? LANGUAGE_AUTO : language;
         return List.of("whisper-cli", "-m", modelPath.toString(),
-                "-l", "auto", "--no-timestamps", "--no-prints",
+                "-l", code, "--no-timestamps", "--no-prints",
                 "-otxt", "-of", wavPath.resolveSibling("transcript").toString(),
                 "-f", wavPath.toString());
     }
@@ -170,12 +190,26 @@ public final class Transcriber {
      * @return the cleaned transcript, empty when nothing intelligible was spoken
      */
     public Optional<String> transcribe(Path wavPath) throws IOException, InterruptedException {
+        return transcribe(wavPath, LANGUAGE_AUTO);
+    }
+
+    /**
+     * {@link #transcribe(Path)} with the configured dictation language: the
+     * {@code sttLanguage} setting travels here per call (it can change while a
+     * server runs), and {@code auto} keeps the model's own detection.
+     *
+     * @param wavPath  the recording to transcribe
+     * @param language {@code auto} for detection, or an ISO code such as {@code de}
+     * @return the cleaned transcript, empty when nothing intelligible was spoken
+     */
+    public Optional<String> transcribe(Path wavPath, String language)
+            throws IOException, InterruptedException {
         if (!Files.exists(modelPath)) {
             throw new IOException("STT model missing: " + modelPath
                     + " — run bash scripts/setup-stt.sh.");
         }
 
-        List<String> lines = runner.runCapturingOutput(transcribeCommand(modelPath, wavPath));
+        List<String> lines = runner.runCapturingOutput(transcribeCommand(modelPath, wavPath, language));
         // Prefer the -otxt file: it contains ONLY the transcript, regardless of
         // what the backend printed. The process output stays as the fallback for
         // older whisper builds that ignore the flag.

@@ -86,6 +86,9 @@ import java.util.function.Function;
  * @param sttModel            path to the local whisper.cpp model file;
  *                            {@code null} means the CLI-side default —
  *                            env {@code SPECTRO_STT_MODEL}
+ * @param sttLanguage         the language dictation is transcribed in:
+ *                            {@code auto} (the model detects), {@code de} or
+ *                            {@code en} — env {@code SPECTRO_STT_LANGUAGE}
  * @param otlpEndpoint        OTLP traces endpoint (e.g. a local Langfuse's
  *                            {@code http://localhost:3000/api/public/otel});
  *                            null keeps the exporter off. Env
@@ -119,6 +122,7 @@ public record SpectroConfig(
         String imageModel,
         String sttModel,
         String sttProvider,
+        String sttLanguage,
         String chromeBinary,
         String otlpEndpoint,
         String otlpBasicAuth) {
@@ -160,6 +164,9 @@ public record SpectroConfig(
     static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
     /** {@code sttProvider}'s known values — "auto" decides by what the machine has. */
     public static final Set<String> KNOWN_STT_PROVIDERS = Set.of("auto", "local", "openai");
+    /** {@code sttLanguage}'s known values — "auto" lets the model detect; a code
+     *  pins dictation to one language on BOTH transcription routes. */
+    public static final Set<String> KNOWN_STT_LANGUAGES = Set.of("auto", "de", "en");
     static final Set<String> KNOWN_LOG_LEVELS =
             Set.of("error", "warn", "info", "debug", "trace");
     /** {@code permissionMode}'s known values — the single source for both the
@@ -173,6 +180,7 @@ public record SpectroConfig(
             "info", // logLevel: file diagnostics at info; console stays WARN-quiet
             null, null, // imageModel/sttModel: backend and CLI defaults
             "auto", // sttProvider: hosted when a key is there, local otherwise
+            "auto", // sttLanguage: the model detects; a code pins dictation
             null, // chromeBinary: built-in discovery
             null, null); // otlpEndpoint/otlpBasicAuth: exporter off by default
 
@@ -474,6 +482,8 @@ public record SpectroConfig(
                 "ask, auto, readonly");
         validateKnown("sttProvider", base.sttProvider(), KNOWN_STT_PROVIDERS,
                 "auto, local, openai");
+        validateKnown("sttLanguage", base.sttLanguage(), KNOWN_STT_LANGUAGES,
+                "auto, de, en");
         validateKnown("logLevel", base.logLevel(), KNOWN_LOG_LEVELS,
                 "error, warn, info, debug, trace");
 
@@ -487,7 +497,8 @@ public record SpectroConfig(
                         base.imageProvider(), base.thinking(), base.mcpServers(),
                         base.maxRetries(), base.promptCaching(), base.hooks(),
                         base.workspace(), base.logLevel(),
-                        base.imageModel(), base.sttModel(), base.sttProvider(), base.chromeBinary(),
+                        base.imageModel(), base.sttModel(), base.sttProvider(),
+                        base.sttLanguage(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth());
             }
         }
@@ -530,6 +541,7 @@ public record SpectroConfig(
             new FieldProbe("imageModel", p -> p.imageModel),
             new FieldProbe("sttModel", p -> p.sttModel),
             new FieldProbe("sttProvider", p -> p.sttProvider),
+            new FieldProbe("sttLanguage", p -> p.sttLanguage),
             new FieldProbe("chromeBinary", p -> p.chromeBinary),
             new FieldProbe("otlpEndpoint", p -> p.otlpEndpoint),
             new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth));
@@ -565,8 +577,8 @@ public record SpectroConfig(
                 compactionThreshold, permissionMode, autoApprove,
                 imageProvider, thinking, mcpServers,
                 maxRetries, promptCaching, hooks,
-                workspace, logLevel, imageModel, sttModel, sttProvider, chromeBinary,
-                otlpEndpoint, otlpBasicAuth);
+                workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
+                chromeBinary, otlpEndpoint, otlpBasicAuth);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1183,6 +1195,7 @@ public record SpectroConfig(
         public String imageModel;
         public String sttModel;
         public String sttProvider;
+        public String sttLanguage;
         public String chromeBinary;
         public String otlpEndpoint;
         public String otlpBasicAuth;
@@ -1216,6 +1229,7 @@ public record SpectroConfig(
             out.imageModel = Optional.ofNullable(higher.imageModel).orElse(imageModel);
             out.sttModel = Optional.ofNullable(higher.sttModel).orElse(sttModel);
             out.sttProvider = Optional.ofNullable(higher.sttProvider).orElse(sttProvider);
+            out.sttLanguage = Optional.ofNullable(higher.sttLanguage).orElse(sttLanguage);
             out.chromeBinary = Optional.ofNullable(higher.chromeBinary).orElse(chromeBinary);
             out.otlpEndpoint = Optional.ofNullable(higher.otlpEndpoint).orElse(otlpEndpoint);
             out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
@@ -1247,6 +1261,7 @@ public record SpectroConfig(
                     Optional.ofNullable(imageModel).orElse(DEFAULTS.imageModel()),
                     Optional.ofNullable(sttModel).orElse(DEFAULTS.sttModel()),
                     Optional.ofNullable(sttProvider).orElse(DEFAULTS.sttProvider()),
+                    Optional.ofNullable(sttLanguage).orElse(DEFAULTS.sttLanguage()),
                     Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()),
                     Optional.ofNullable(otlpEndpoint).orElse(DEFAULTS.otlpEndpoint()),
                     Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()));
@@ -1306,6 +1321,7 @@ public record SpectroConfig(
             out.imageModel = env.get("SPECTRO_IMAGE_MODEL");
             out.sttModel = env.get("SPECTRO_STT_MODEL");
             out.sttProvider = env.get("SPECTRO_STT_PROVIDER");
+            out.sttLanguage = env.get("SPECTRO_STT_LANGUAGE");
             out.chromeBinary = env.get("SPECTRO_CHROME");
             return out;
         }

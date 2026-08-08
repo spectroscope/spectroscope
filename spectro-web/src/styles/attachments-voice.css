@@ -15,8 +15,10 @@
   flex: none;
 }
 
-/* Drag-over tints the input zone (accent-soft) with a dashed Coral border. */
-.composer-inner.drag-over textarea {
+/* Drag-over tints the input zone (accent-soft) with a dashed Coral border.
+   The BOX carries border and ground since the 2026-08-09 regroup — the
+   textarea inside is naked, so tinting it would draw a box inside the box. */
+.composer-inner.drag-over .composer-box {
   border: 1px dashed var(--accent);
   background: var(--accent-soft);
 }

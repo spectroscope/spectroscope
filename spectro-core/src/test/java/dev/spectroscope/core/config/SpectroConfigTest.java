@@ -501,7 +501,7 @@ class SpectroConfigTest {
     private static SpectroConfig configFor(String provider, String baseUrl) {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
-                null, null, "auto", null, null, null);
+                null, null, "auto", "auto", null, null, null);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -700,6 +700,38 @@ class SpectroConfigTest {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, env);
         assertEquals("gemini-2.5-flash-image", config.imageModel());
         assertEquals("/abs/ggml-large.bin", config.sttModel());
+    }
+
+    // ---- sttLanguage (the dictation language, both transcription routes) ----
+
+    @Test
+    void sttLanguageDefaultsToAutoRidesTheSettingsFileAndTheEnv(@TempDir Path projectDir)
+            throws IOException {
+        assertEquals("auto", SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of()).sttLanguage());
+
+        // The env layer sits directly above the defaults ...
+        var env = java.util.Map.of("SPECTRO_STT_LANGUAGE", "en");
+        assertEquals("en", SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, env).sttLanguage());
+
+        // ... and is outranked by every settings file, like every other field.
+        writeProjectSettings(projectDir, """
+                { "sttLanguage": "de" }
+                """);
+        assertEquals("de", SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, env).sttLanguage());
+    }
+
+    @Test
+    void anUnknownSttLanguageFailsLoudlyInsteadOfSilentlyMisdirectingDictation(
+            @TempDir Path projectDir) throws IOException {
+        writeProjectSettings(projectDir, """
+                { "sttLanguage": "klingon" }
+                """);
+        var thrown = org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, java.util.Map.of()));
+        assertTrue(thrown.getMessage().contains("sttLanguage"), thrown.getMessage());
     }
 
     @Test

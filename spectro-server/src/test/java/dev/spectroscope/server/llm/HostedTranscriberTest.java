@@ -27,7 +27,7 @@ class HostedTranscriberTest {
 
     @Test
     void buildsAMultipartBodyCarryingTheAudioVerbatim() {
-        byte[] body = HostedTranscriber.multipart("BOUNDARY", AUDIO, "gpt-transcribe");
+        byte[] body = HostedTranscriber.multipart("BOUNDARY", AUDIO, "gpt-transcribe", "auto");
         String text = new String(body, StandardCharsets.ISO_8859_1);
 
         assertTrue(text.contains("--BOUNDARY\r\n"), text.substring(0, 120));
@@ -39,6 +39,28 @@ class HostedTranscriberTest {
 
         // The audio rides byte for byte: find it back in the assembled body.
         assertTrue(indexOf(body, AUDIO) > 0, "the recording itself must be in there, unchanged");
+    }
+
+    @Test
+    void aConfiguredLanguageRidesTheMultipartAsItsOwnField() {
+        byte[] body = HostedTranscriber.multipart("BOUNDARY", AUDIO, "gpt-transcribe", "de");
+        String text = new String(body, StandardCharsets.ISO_8859_1);
+
+        assertTrue(text.contains("Content-Disposition: form-data; name=\"language\"\r\n\r\nde\r\n"),
+                "the sttLanguage setting becomes the API's language field: " + text.substring(0, 200));
+        // The audio still rides byte for byte with the extra field in front of it.
+        assertTrue(indexOf(body, AUDIO) > 0);
+    }
+
+    @Test
+    void autoMeansNoLanguageFieldAtAllNotLanguageAuto() {
+        // "auto" is the absence of an instruction: the request stays exactly what
+        // it was before the setting existed, and the API detects on its own.
+        for (String language : new String[] {"auto", "", null}) {
+            byte[] body = HostedTranscriber.multipart("BOUNDARY", AUDIO, "gpt-transcribe", language);
+            assertFalse(new String(body, StandardCharsets.ISO_8859_1).contains("name=\"language\""),
+                    "language \"" + language + "\" must not add a field");
+        }
     }
 
     @Test

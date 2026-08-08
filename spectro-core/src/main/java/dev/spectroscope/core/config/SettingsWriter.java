@@ -56,7 +56,7 @@ public final class SettingsWriter {
             "provider", "model", "baseUrl", "compactionThreshold", "permissionMode",
             "autoApprove", "imageProvider", "thinking", "mcpServers", "maxRetries",
             "promptCaching", "hooks", "workspace", "logLevel",
-            "imageModel", "sttModel", "sttProvider", "chromeBinary",
+            "imageModel", "sttModel", "sttProvider", "sttLanguage", "chromeBinary",
             "otlpEndpoint", "otlpBasicAuth");
 
     /** Fields that apply to the whole process, not one workspace — a
@@ -206,6 +206,7 @@ public final class SettingsWriter {
             case "provider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PROVIDERS);
             case "imageProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_IMAGE_PROVIDERS);
             case "sttProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_PROVIDERS);
+            case "sttLanguage" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_LANGUAGES);
             case "logLevel" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_LOG_LEVELS);
             case "permissionMode" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PERMISSION_MODES);
             default -> { }
