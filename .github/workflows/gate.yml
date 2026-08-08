@@ -125,6 +125,11 @@ jobs:
       # so that is fine here; do not add a "git status must be clean" check
       # after this step, it would fail on the gate's own output.
       #
+      # Note for anyone reading this while resolving a merge: the bundle is
+      # also why two branches that touch spectro-web always conflict, and the
+      # conflict is ten files, not one. docs/WEB-BUNDLE.md explains it and
+      # names the one command that resolves it correctly (card 184).
+      #
       # The gate's output is captured so the next step can read the vitest
       # summary; pipefail keeps the tee pipe from masking a failing gate.
       - name: Web gate
