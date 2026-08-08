@@ -692,7 +692,7 @@ export function SettingsPanel({
               <FleetSettings anchorId={sectionAnchorId("fleet")} />
 
               {/* ---- Speech to text: what it needs, and the half we may fetch ---- */}
-              <SttSettings anchorId={sectionAnchorId("stt")} />
+              <SttSettings anchorId={sectionAnchorId("stt")} onSave={saveUser} />
 
               {/* ---- Observability: the OTLP exporter (Langfuse, Jaeger, …) ---- */}
               <div className="settings-label" id={sectionAnchorId("observability")}>

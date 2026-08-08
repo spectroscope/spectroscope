@@ -45,6 +45,7 @@ export function readVoiceWire(value: unknown): VoiceExchange | null {
     kind: str(v.kind) || "stt",
     provider: str(v.provider),
     model: str(v.model),
+    transport: str(v.transport),
     url: str(v.url),
     status: num(v.status),
     requestBytes: num(v.requestBytes),

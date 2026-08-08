@@ -21,7 +21,57 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SttControllerTest {
 
     private static SttController controllerIn(Path models, String path) {
-        return new SttController(models, path, url -> new ByteArrayInputStream(new byte[0]));
+        return controllerIn(models, path, "auto", false);
+    }
+
+    /** The full seam: also what the settings say and whether a hosted key exists. */
+    private static SttController controllerIn(Path models, String path, String configured,
+                                              boolean keyPresent) {
+        return new SttController(models, path, url -> new ByteArrayInputStream(new byte[0]),
+                () -> configured, () -> keyPresent);
+    }
+
+    // ---- the two routes (card 187, the correction) --------------------------
+
+    /**
+     * The pane's whole job after the correction: say which way speech goes and
+     * whether that way can run. A machine with a key and nothing installed is
+     * READY, and a pane that answered "not installed" there would be describing
+     * a route this call is not taking.
+     */
+    @Test
+    void aKeyAndNothingInstalledIsAWorkingSetup(@TempDir Path dir) {
+        Map<String, Object> state = controllerIn(dir, "", "auto", true).state();
+
+        assertEquals("hosted", state.get("route"));
+        assertEquals(true, state.get("speechWorks"), "a key is all the hosted route needs");
+        assertEquals(false, state.get("ready"), "and the LOCAL route is still honestly not ready");
+    }
+
+    @Test
+    void noKeyFallsBackToTheLocalRouteAndSaysWhatItNeeds(@TempDir Path dir) {
+        Map<String, Object> state = controllerIn(dir, "", "auto", false).state();
+
+        assertEquals("local", state.get("route"));
+        assertEquals(false, state.get("speechWorks"));
+        assertNotNull(state.get("binaryHint"), "the local route's obstacle is the one named");
+    }
+
+    @Test
+    void anExplicitLocalChoiceIsNotOverriddenByTheMereExistenceOfAKey(@TempDir Path dir) {
+        Map<String, Object> state = controllerIn(dir, "", "local", true).state();
+        assertEquals("local", state.get("route"));
+    }
+
+    @Test
+    void thePaneNamesTheHostedProviderItWouldUse(@TempDir Path dir) {
+        Map<String, Object> state = controllerIn(dir, "", "openai", true).state();
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> hosted = (Map<String, Object>) state.get("hosted");
+        assertEquals(true, hosted.get("keyPresent"));
+        assertEquals("OPENAI_API_KEY", hosted.get("keyEnv"));
+        assertEquals("gpt-transcribe", hosted.get("model"));
     }
 
     @SuppressWarnings("unchecked")

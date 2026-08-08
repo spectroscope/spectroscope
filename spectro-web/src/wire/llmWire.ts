@@ -33,6 +33,9 @@ export interface LlmExchangeMeta {
   kind: string;
   provider: string;
   model: string;
+  /** The wire it used, as the recorder declared it: "process" | "http" | "sdk".
+   *  Empty for an archive written before this travelled with the summary. */
+  transport: string;
   url: string;
   status: number;
   requestBytes: number;
@@ -68,6 +71,7 @@ export function readExchange(value: unknown): LlmExchangeMeta | null {
     kind: str(v.kind) || "chat",
     provider: str(v.provider),
     model: str(v.model),
+    transport: str(v.transport),
     url: str(v.url),
     status: num(v.status),
     requestBytes: num(v.requestBytes),
@@ -175,7 +179,7 @@ export function mergeLlmExchanges(trace: TraceEntry[], exchanges: readonly LlmEx
           kind: x.kind,
           provider: x.provider,
           model: x.model,
-          transport: "",
+          transport: x.transport,
           method: "POST",
           url: x.url,
           requestBytes: x.requestBytes,
@@ -227,10 +231,19 @@ export function readRequestFrame(value: unknown): LlmRequestMeta | null {
   };
 }
 
-/** The leaving call in one line: the verb, the path, the size that went out. */
+/**
+ * The leaving call in one line: the verb, the path, the size that went out.
+ *
+ * A local transcription has neither a verb nor a path — it is a child process,
+ * and the row used to print `POST` (invented by the reader's own default) next
+ * to the empty remainder of `process://whisper-cli`. So a process names itself
+ * and everything else keeps its verb.
+ */
 export function llmRequestSummary(r: LlmRequestMeta): string {
   const head = r.kind === "chat" ? "" : `${r.kind} · `;
-  return `${head}${r.method} ${pathOf(r.url)} · ${r.provider} · ${formatBytes(r.requestBytes)}`;
+  const where =
+    r.transport === "process" ? r.url.replace(/^process:\/\//, "") : `${r.method} ${pathOf(r.url)}`;
+  return `${head}${where} · ${r.provider} · ${formatBytes(r.requestBytes)}`;
 }
 
 /** The closing call in one line: how it went, how much came back, how long. */
@@ -273,8 +286,10 @@ export function voiceRows(list: readonly { wireSession: string }[]): TraceEntry[
           kind: v.kind,
           provider: v.provider,
           model: v.model,
-          transport: "process",
-          method: "",
+          // The recorded fact, not a guess: this row is a child process on the
+          // local route and an HTTPS call on the hosted one.
+          transport: v.transport,
+          method: v.transport === "process" ? "" : "POST",
           url: v.url,
           requestBytes: v.requestBytes,
           fidelity: v.fidelity,

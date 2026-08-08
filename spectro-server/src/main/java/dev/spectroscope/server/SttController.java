@@ -1,5 +1,6 @@
 package dev.spectroscope.server;
 
+import dev.spectroscope.core.config.SpectroConfig;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -55,18 +56,43 @@ public final class SttController {
     private final Path modelsDir;
     private final String path;
     private final LocalModelDownload download;
+    /** The {@code sttProvider} setting, read per call. */
+    private final java.util.function.Supplier<String> configured;
+    /** Whether the hosted provider has a key, read per call. */
+    private final java.util.function.BooleanSupplier keyPresent;
 
     public SttController() {
         this(Path.of(System.getProperty("user.home"), ".spectro", "models"),
-                System.getenv("PATH"), SttController::httpFetch);
+                System.getenv("PATH"), SttController::httpFetch,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider(),
+                () -> SpectroConfig.hasApiKey(HostedTranscriber.KEY_ENV));
     }
 
     /** Seam for tests: a models dir, a PATH to search, and the HTTP leg. */
     SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher) {
+        this(modelsDir, path, fetcher, () -> SttRoute.AUTO, () -> false);
+    }
+
+    /**
+     * The full seam: also what the settings say and whether a hosted key exists.
+     *
+     * @param modelsDir where the whisper model lives
+     * @param path the PATH to search for the binary
+     * @param fetcher the HTTP leg of the model download
+     * @param configured reads {@code sttProvider} — a supplier, because it can
+     *                   change while the server runs and this pane must not
+     *                   describe the settings as they were at boot
+     * @param keyPresent whether the hosted provider's key is set somewhere
+     */
+    SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher,
+                  java.util.function.Supplier<String> configured,
+                  java.util.function.BooleanSupplier keyPresent) {
         this.modelsDir = modelsDir;
         this.path = path == null ? "" : path;
         this.download = new LocalModelDownload(modelsDir, MODEL_FILE, MODEL_SHA256, MODEL_BYTES,
                 fetcher, MODEL_URL);
+        this.configured = configured;
+        this.keyPresent = keyPresent;
     }
 
     /**
@@ -160,6 +186,19 @@ public final class SttController {
         // none to drive.
         out.put("binaryHint", allBins ? null : hintFor(System.getProperty("os.name", "")));
         out.put("download", download.status());
+        // Which way a recording would go RIGHT NOW, and whether that way can run.
+        // `ready` above keeps its old meaning — the LOCAL route — because that is
+        // what it has always measured; `speechWorks` is the answer to the question
+        // a reader actually has, which depends on the route being taken.
+        boolean key = keyPresent.getAsBoolean();
+        SttRoute route = SttRoute.of(configured.get(), key);
+        out.put("provider", configured.get());
+        out.put("route", route == SttRoute.HOSTED ? "hosted" : "local");
+        out.put("hosted", Map.of(
+                "keyPresent", key,
+                "keyEnv", HostedTranscriber.KEY_ENV,
+                "model", HostedTranscriber.DEFAULT_MODEL));
+        out.put("speechWorks", route == SttRoute.HOSTED ? key : (present && allBins));
         return out;
     }
 

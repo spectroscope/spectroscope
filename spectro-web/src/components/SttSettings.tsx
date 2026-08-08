@@ -26,12 +26,30 @@ interface BinaryState {
 interface SttStatus {
   model: { file: string; path: string; present: boolean; bytes: number; expectedBytes: number };
   binaries: Record<string, BinaryState>;
+  /** The LOCAL route's readiness — model and binary both here. */
   ready: boolean;
   binaryHint: string | null;
   download: { state?: string; bytes?: number; total?: number; error?: string | null };
+  /** The setting as configured: "auto" | "local" | "openai". */
+  provider?: string;
+  /** What a recording would do right now: "local" | "hosted". */
+  route?: string;
+  hosted?: { keyPresent: boolean; keyEnv: string; model: string };
+  /** Whether the route being taken can actually run. */
+  speechWorks?: boolean;
 }
 
-export function SttSettings({ anchorId }: { anchorId: string }) {
+/** The values `sttProvider` accepts, in the order the pane offers them. */
+const STT_PROVIDERS = ["auto", "local", "openai"] as const;
+
+export function SttSettings({
+  anchorId,
+  onSave,
+}: {
+  anchorId: string;
+  /** Writes one settings key, exactly like every other field in this panel. */
+  onSave?: (patch: Record<string, unknown>) => void;
+}) {
   const lang = useLang();
   const [status, setStatus] = useState<SttStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -77,6 +95,37 @@ export function SttSettings({ anchorId }: { anchorId: string }) {
         {t(lang, "set.secStt")}
       </div>
       <p className="settings-note">{t(lang, "set.sttHint")}</p>
+      {/* Which way speech goes. The hosted one needs a key and nothing else,
+          which is what makes voice work in a DMG; the local one sends nothing
+          out, which is the reason it stays. */}
+      {status.route !== undefined && (
+        <label className="settings-field">
+          <span>{t(lang, "set.sttProvider")}</span>
+          <select
+            value={String(status.provider ?? "auto")}
+            onChange={(e) => {
+              onSave?.({ sttProvider: e.target.value });
+              // The pane describes the server's answer, so re-ask rather than
+              // guess what the write did.
+              window.setTimeout(() => void load(), 150);
+            }}
+            disabled={onSave === undefined}
+          >
+            {STT_PROVIDERS.map((p) => (
+              <option key={p} value={p}>
+                {t(lang, `set.sttProvider.${p}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {status.hosted !== undefined && (
+        <p className="settings-note">
+          {status.hosted.keyPresent
+            ? t(lang, "set.sttHostedReady", { model: status.hosted.model })
+            : t(lang, "set.sttHostedNoKey", { key: status.hosted.keyEnv })}
+        </p>
+      )}
       <dl className="ed-rows">
         <div>
           <dt className="mono">{model.file}</dt>
@@ -118,7 +167,17 @@ export function SttSettings({ anchorId }: { anchorId: string }) {
           {t(lang, "set.sttBinaryHint")} <code className="mono">{status.binaryHint}</code>
         </p>
       )}
-      <p className="settings-note">{status.ready ? t(lang, "set.sttReady") : t(lang, "set.sttNotReady")}</p>
+      {/* The summary answers the question a reader has — "does speech work" —
+          which depends on the ROUTE. Saying "not installed" to somebody whose
+          recordings go to the hosted provider would describe a path this
+          machine is not taking. */}
+      <p className="settings-note">
+        {(status.speechWorks ?? status.ready)
+          ? status.route === "hosted"
+            ? t(lang, "set.sttReadyHosted")
+            : t(lang, "set.sttReady")
+          : t(lang, "set.sttNotReady")}
+      </p>
     </>
   );
 }

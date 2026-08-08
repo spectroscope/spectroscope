@@ -171,6 +171,20 @@ export const LLM_DIR_LABEL: Record<LlmDir, string> = {
   internal: "harness-intern (nicht an die LLM)",
 };
 
+/** What an llm row's own record says about the wire it used. Both fields are
+ *  optional because an archive written before they travelled has neither, and a
+ *  cell that degrades beats a row that disappears. */
+export interface LlmWireFacts {
+  /** "process" | "http" | "sdk" — as the recorder wrote it. */
+  transport?: string;
+  /** "chat" | "compaction" | "image" | "stt". */
+  kind?: string;
+}
+
+/** The kinds whose answer arrives as a stream. Everything else is one request
+ *  and one answer, however it travelled. */
+const STREAMING_KINDS: ReadonlySet<string> = new Set(["chat", "compaction"]);
+
 /**
  * Which wire a frame's payload actually rides — the protocol-breakdown poster
  * as a column. The LLM stream is SSE for the cloud providers (Anthropic and
@@ -183,14 +197,13 @@ export const LLM_DIR_LABEL: Record<LlmDir, string> = {
  * @param type the frame type
  * @param provider the provider this row belongs to, when known
  * @param toolName the tool a tool row is about, when known
- * @param url the url the exchange RECORDED, when it has one — the fact that
- *            settles it, exactly as the host column already uses it
+ * @param llm what the exchange RECORDED about its own wire, when the row has it
  */
 export function wireProtocol(
   type: string,
   provider: string | null,
   toolName: string | null,
-  url: string | null = null,
+  llm: LlmWireFacts | null = null,
 ): string {
   const layer = frameLayer(type);
   // An app frame rode the WebSocket. It may be ABOUT the model's output; it is
@@ -198,11 +211,15 @@ export function wireProtocol(
   // protocol on it was the trace claiming a wire this row never touched.
   if (layer === "app") return "WebSocket";
   if (layer === "llm") {
-    // Speech is the one model call that never opens a socket: whisper runs as a
-    // child process and the record says `process://…`. Reading the recorded url
-    // keeps this row describing its OWN wire rather than borrowing the shape of
-    // every other llm row.
-    if (url !== null && url.startsWith("process://")) return "process";
+    // Two recorded facts decide this, and neither is inferred from the provider.
+    // `transport` says whether anything left the machine — speech can run as a
+    // local child process, which opens no socket at all. `kind` says whether the
+    // answer streamed: a chat turn does, a transcription and an image are one
+    // request and one answer, and calling those SSE was the same borrowed claim
+    // in a quieter place.
+    if (llm?.transport === "process") return "process";
+    const streams = llm === null || llm.kind === undefined || STREAMING_KINDS.has(llm.kind);
+    if (!streams) return "HTTPS";
     return provider === "ollama" ? "HTTPS/NDJSON" : provider === null ? "HTTPS" : "HTTPS/SSE";
   }
   const llmStream = provider === "ollama" ? "NDJSON" : provider === null ? "—" : "SSE";

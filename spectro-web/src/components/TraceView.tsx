@@ -1755,8 +1755,17 @@ export function TraceView(props: {
       }
       const imageProvider =
         typeof p["provider"] === "string" && e.type === "image_generated" ? (p["provider"] as string) : null;
+      // What the exchange itself recorded about its wire — the column describes
+      // the row rather than the provider it happens to belong to.
+      const llmFacts =
+        frameLayer(e.type) === "llm"
+          ? {
+              transport: typeof p["transport"] === "string" ? (p["transport"] as string) : undefined,
+              kind: typeof p["kind"] === "string" ? (p["kind"] as string) : undefined,
+            }
+          : null;
       bySeq.set(e.seq, {
-        proto: wireProtocol(e.type, provider, toolName, url),
+        proto: wireProtocol(e.type, provider, toolName, llmFacts),
         host: wireHost(e.type, provider, llmHost, toolName, url, imageProvider, appOrigin),
       });
     }

@@ -215,6 +215,9 @@ public class LlmWireController {
         entry.put("kind", textOrNull(node, "kind"));
         entry.put("provider", textOrNull(node, "provider"));
         entry.put("model", textOrNull(node, "model"));
+        // The wire it used, so a reopened archive's rows describe themselves as
+        // exactly as a live one does.
+        entry.put("transport", textOrNull(node, "transport"));
         entry.put("url", textOrNull(node, "url"));
         entry.put("status", null);
         entry.put("requestBytes", node.path("bodyBytes").asLong(0));

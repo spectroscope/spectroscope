@@ -14,7 +14,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -118,6 +120,91 @@ class TranscribeControllerTest {
                 "STT is optional infrastructure — 503, not 500");
         assertTrue(String.valueOf(response.getBody().get("error")).contains("scripts/setup-stt.sh"),
                 "the body must point the user at the setup script: " + response.getBody());
+    }
+
+    // ---- the hosted route (card 187, the correction) -----------------------
+
+    /** Stands in for the transcription API: no network, no key, no account. */
+    private static final class FakeHosted implements HostedStt {
+        byte[] posted;
+        String keyUsed;
+        String answer = "{\"text\":\"hello from the hosted one\"}";
+        IOException refuse;
+
+        @Override
+        public String post(byte[] wav, String key) throws IOException {
+            posted = wav;
+            keyUsed = key;
+            if (refuse != null) {
+                throw refuse;
+            }
+            return answer;
+        }
+
+        @Override
+        public String model() {
+            return "gpt-transcribe";
+        }
+    }
+
+    /**
+     * The point of the whole correction: a machine with NO whisper and NO model
+     * transcribes anyway. Before this, `sttReady` gated every call, so the one
+     * reader a DMG exists for got a 503 telling them to run a shell script.
+     */
+    @Test
+    void theHostedRouteTranscribesOnAMachineWithNothingInstalled(@TempDir Path dir) {
+        FakeHosted hosted = new FakeHosted();
+        Path noModel = dir.resolve("nothing-here.bin");
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), noModel, true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-test", hosted));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("hello from the hosted one", response.getBody().get("text"));
+        assertArrayEquals(VoiceFixtures.clip(), hosted.posted,
+                "the browser's own bytes travel on, unrewritten — one encoder, two destinations");
+        assertEquals("sk-test", hosted.keyUsed);
+    }
+
+    @Test
+    void theHostedRouteWithoutAKeySaysSoRatherThanNamingTheSetupScript(@TempDir Path dir) {
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), presentModelQuietly(dir), true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "", new FakeHosted()));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        String error = String.valueOf(response.getBody().get("error"));
+        assertTrue(error.contains("OPENAI_API_KEY"), error);
+        assertFalse(error.contains("setup-stt.sh"),
+                "that sentence belongs to the other route: " + error);
+    }
+
+    @Test
+    void aRefusalFromTheApiComesBackAsItsOwnSentence(@TempDir Path dir) {
+        FakeHosted hosted = new FakeHosted();
+        hosted.refuse = new IOException("Transcription failed with HTTP 401 — Incorrect API key provided");
+        TranscribeController controller = new TranscribeController(
+                new FakeRunner(), dir.resolve("none"), true, null,
+                () -> new TranscribeController.Choice(SttRoute.HOSTED, "sk-bad", hosted));
+
+        ResponseEntity<Map<String, Object>> response = controller.transcribe(VoiceFixtures.clip());
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, response.getStatusCode());
+        assertTrue(String.valueOf(response.getBody().get("error")).contains("401"),
+                response.getBody().toString());
+    }
+
+    private static Path presentModelQuietly(Path dir) {
+        try {
+            return presentModel(dir);
+        } catch (IOException impossible) {
+            throw new IllegalStateException(impossible);
+        }
     }
 
     @Test

@@ -223,8 +223,11 @@ public final class LlmWireRecorder implements AutoCloseable {
                     outcome.body(), received, bodyBytes);
             Consumer<ExchangeMeta> l = listener;
             if (l != null) {
+                // transport travels with the summary now: it is the fact that
+                // says WHICH WIRE this exchange used, and the trace column that
+                // prints it was otherwise left inferring one from the provider.
                 l.accept(new ExchangeMeta(xid, agentId, turn, kind,
-                        request.provider(), request.model(), request.url(),
+                        request.provider(), request.model(), request.transport(), request.url(),
                         outcome.status(), utf8Length(request.body()), bodyBytes,
                         received.size(), outcome.aborted(), request.fidelity(),
                         durationMs, outcome.ts()));
@@ -400,9 +403,10 @@ public final class LlmWireRecorder implements AutoCloseable {
                               String fidelity, long ts) {}
 
     public record ExchangeMeta(String xid, String agentId, Integer turn, String kind,
-                               String provider, String model, String url, Integer status,
-                               long requestBytes, long responseBytes, int responseLines,
-                               boolean aborted, String fidelity, long durationMs, long ts) {}
+                               String provider, String model, String transport, String url,
+                               Integer status, long requestBytes, long responseBytes,
+                               int responseLines, boolean aborted, String fidelity,
+                               long durationMs, long ts) {}
 
     // ---- line records (the file format) ------------------------------------
 

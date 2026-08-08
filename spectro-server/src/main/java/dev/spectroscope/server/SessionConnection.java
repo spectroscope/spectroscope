@@ -1193,6 +1193,7 @@ public final class SessionConnection {
             payload.put("kind", meta.kind());
             payload.put("provider", meta.provider());
             payload.put("model", meta.model());
+            payload.put("transport", meta.transport());
             payload.put("url", meta.url());
             payload.put("status", meta.status());
             payload.put("requestBytes", meta.requestBytes());

@@ -15,6 +15,7 @@ import {
   type LlmExchangeMeta,
   readExchangeDetail,
   traceWithVoice,
+  llmRequestSummary,
 } from "./llmWire";
 
 /** One frame the server would push, with room to disagree per test. */
@@ -316,5 +317,44 @@ describe("the rows an exchange stands for, wherever it came from", () => {
 
   it("leaves a trace with no voice in it exactly as it was", () => {
     expect(traceWithVoice([chatRow], []).map((r) => r.type)).toEqual(["llm_response", "llm_exchange"]);
+  });
+});
+
+// A child process has no HTTP method and no path, and the row used to print
+// both: `stt · POST · whisper-cpp`, where the POST was invented by the reader's
+// own default and the path was the empty remainder of `process://whisper-cli`.
+describe("what a request row says about a call that never opened a socket", () => {
+  const request = (over: Record<string, unknown>) => ({
+    xid: "x",
+    agentId: "composer",
+    turn: 0,
+    kind: "stt",
+    provider: "whisper-cpp",
+    model: "ggml-small.bin",
+    transport: "process",
+    method: "",
+    url: "process://whisper-cli",
+    requestBytes: 99884,
+    fidelity: "encoded",
+    ts: 1,
+    ...over,
+  });
+
+  it("names the process instead of a verb it never used", () => {
+    const line = llmRequestSummary(request({}));
+    expect(line).toContain("whisper-cli");
+    expect(line).not.toContain("POST");
+  });
+
+  it("still prints the verb and the path for a call that really is one", () => {
+    const line = llmRequestSummary(
+      request({
+        transport: "http",
+        method: "POST",
+        url: "https://api.openai.com/v1/audio/transcriptions",
+        provider: "openai",
+      }),
+    );
+    expect(line).toContain("POST /v1/audio/transcriptions");
   });
 });

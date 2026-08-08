@@ -109,18 +109,29 @@ describe("wireProtocol", () => {
   });
 
   // Speech is the one llm row that is not an HTTP call at all: whisper runs as a
-  // child process, and the recorded url says so. Printing HTTPS/SSE on it was the
-  // trace claiming a wire the row never touched — the same defect the app frames
-  // were fixed for, surviving in the one place it could still hide.
+  // child process, and the record says so. Printing HTTPS/SSE on it was the trace
+  // claiming a wire the row never touched — the same defect the app frames were
+  // fixed for, surviving in the one place it could still hide.
   it("names a child process rather than claiming a network protocol", () => {
-    expect(wireProtocol("llm_request", "whisper-cpp", null, "process://whisper-cli")).toBe("process");
-    expect(wireProtocol("llm_response", "whisper-cpp", null, "process://whisper-cli")).toBe("process");
-    expect(wireProtocol("llm_exchange", "whisper-cpp", null, "process://whisper-cli")).toBe("process");
+    const local = { transport: "process", kind: "stt" };
+    expect(wireProtocol("llm_request", "whisper-cpp", null, local)).toBe("process");
+    expect(wireProtocol("llm_response", "whisper-cpp", null, local)).toBe("process");
+    expect(wireProtocol("llm_exchange", "whisper-cpp", null, local)).toBe("process");
   });
 
-  it("still says SSE when the recorded url really is an https call", () => {
-    expect(wireProtocol("llm_exchange", "anthropic", null, "https://api.anthropic.com/v1/messages")).toBe(
+  // A transcription and an image are ONE request and ONE answer. Only a chat turn
+  // streams, so only a chat turn gets to name a streaming protocol.
+  it("does not claim a stream for a call that returns a single answer", () => {
+    expect(wireProtocol("llm_exchange", "openai", null, { transport: "http", kind: "stt" })).toBe("HTTPS");
+    expect(wireProtocol("llm_exchange", "openai", null, { transport: "http", kind: "image" })).toBe("HTTPS");
+  });
+
+  it("still says SSE for the thing that really does stream", () => {
+    expect(wireProtocol("llm_exchange", "anthropic", null, { transport: "sdk", kind: "chat" })).toBe(
       "HTTPS/SSE",
+    );
+    expect(wireProtocol("llm_exchange", "ollama", null, { transport: "http", kind: "chat" })).toBe(
+      "HTTPS/NDJSON",
     );
   });
 

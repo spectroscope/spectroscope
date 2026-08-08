@@ -51,12 +51,13 @@ public final class SettingsWriter {
     public enum Scope { USER, PROJECT, LOCAL }
 
     /** Every settings key {@link #patch} accepts — mirrors {@link SpectroConfig}'s
-     *  17 record components exactly; anything else is refused as unknown. */
+     *  record components exactly; anything else is refused as unknown. */
     private static final Set<String> KNOWN_KEYS = Set.of(
             "provider", "model", "baseUrl", "compactionThreshold", "permissionMode",
             "autoApprove", "imageProvider", "thinking", "mcpServers", "maxRetries",
             "promptCaching", "hooks", "workspace", "logLevel",
-            "imageModel", "sttModel", "chromeBinary", "otlpEndpoint", "otlpBasicAuth");
+            "imageModel", "sttModel", "sttProvider", "chromeBinary",
+            "otlpEndpoint", "otlpBasicAuth");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting either is refused. This is the
@@ -204,6 +205,7 @@ public final class SettingsWriter {
         switch (key) {
             case "provider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PROVIDERS);
             case "imageProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_IMAGE_PROVIDERS);
+            case "sttProvider" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_STT_PROVIDERS);
             case "logLevel" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_LOG_LEVELS);
             case "permissionMode" -> requireOneOf(key, value.asText(), SpectroConfig.KNOWN_PERMISSION_MODES);
             default -> { }
