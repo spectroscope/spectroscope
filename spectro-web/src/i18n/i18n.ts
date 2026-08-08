@@ -749,6 +749,23 @@ export const dict: Record<string, { de: string; en: string }> = {
   // microphone has been granted once. Saying so beats five blank rows.
   "voice.pick.unnamed": { de: "Die Namen der Geräte zeigt der Browser erst, wenn das Mikrofon einmal erlaubt wurde. Einmal aufnehmen — danach steht die Liste hier.", en: "The browser only names the devices once the microphone has been allowed. Record once, and the list appears here." },
   "voice.pick.none": { de: "Kein Eingabegerät gefunden.", en: "No input device found." },
+  // Card 187 step 7 — the first-run voice sheet. The route decides which set a
+  // reader sees; the local lines never appear while the hosted route is taken.
+  "voice.notice.title": { de: "Sprechen statt tippen", en: "Speak instead of typing" },
+  "voice.notice.works": { de: "Das geht auf diesem Rechner.", en: "This works on this machine." },
+  "voice.notice.blocked": { de: "Dafür fehlt noch etwas.", en: "Something is still missing for this." },
+  "voice.notice.hosted.nothingToInstall": { de: "Nichts zu installieren — die Umwandlung passiert beim Anbieter.", en: "Nothing to install — the conversion happens at the provider." },
+  "voice.notice.hosted.keyThere": { de: "Der Schlüssel ist da ({v}).", en: "The key is there ({v})." },
+  "voice.notice.hosted.keyMissing": { de: "Es fehlt ein Schlüssel in {v} — Einstellungen → Anbieter.", en: "A key is missing in {v} — Settings → Providers." },
+  "voice.notice.hosted.leaves": { de: "Die Aufnahme verlässt diesen Rechner und geht an {v}.", en: "The recording leaves this machine and goes to {v}." },
+  "voice.notice.local.binaryThere": { de: "whisper-cli ist installiert.", en: "whisper-cli is installed." },
+  "voice.notice.local.binaryMissing": { de: "whisper-cli fehlt — {v}", en: "whisper-cli is missing — {v}" },
+  "voice.notice.local.modelThere": { de: "Das Modell liegt schon hier.", en: "The model is already here." },
+  "voice.notice.local.modelMissing": { de: "Das Modell fehlt — einmalig {v} zu laden.", en: "The model is missing — a one-time {v} download." },
+  "voice.notice.local.staysHere": { de: "Die Aufnahme verlässt diesen Rechner nicht.", en: "The recording never leaves this machine." },
+  "voice.notice.switchHint": { de: "Beide Wege stehen in den Einstellungen unter Spracheingabe.", en: "Both routes are in Settings, under Speech to text." },
+  "voice.notice.settings": { de: "Einstellungen", en: "Settings" },
+  "voice.notice.gotIt": { de: "Verstanden", en: "Got it" },
   "voice.err.denied": { de: "Kein Zugriff aufs Mikrofon — der Browser hat ihn verweigert. In den Website-Einstellungen erlauben, dann noch einmal.", en: "No access to the microphone — the browser refused it. Allow it in the site settings, then try again." },
   "voice.err.noDevice": { de: "Kein Mikrofon gefunden.", en: "No microphone found." },
   "voice.err.deviceBusy": { de: "Das Mikrofon ließ sich nicht öffnen — vermutlich hält es gerade ein anderes Programm.", en: "The microphone could not be opened — another program is probably holding it." },

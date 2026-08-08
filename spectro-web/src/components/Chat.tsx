@@ -6,7 +6,7 @@
 // sent turn) and useVoiceInput (MediaRecorder -> POST /api/transcribe
 // -> the transcript lands IN THE INPUT, never straight at the agent).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import type { ClientMessage, RunEvent } from "../events";
 import type { Turn, UiState } from "../state/reducer";
@@ -20,6 +20,9 @@ import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { voiceErrorKey } from "./voiceError";
+import { opensTheSheet, type SttStatus } from "./voiceNoticeReading";
+import { markVoiceNoticeSeen, readVoiceNoticeSeen, shouldShowVoiceNotice } from "./voiceNoticeFlag";
+import { VoiceNotice } from "./VoiceNotice";
 import { meterBars } from "./micLevel";
 import { MicMenu } from "./MicMenu";
 import { formatTimer, micButtonState } from "./voiceButton";
@@ -127,6 +130,43 @@ export function Chat(props: {
   // microphone wiring — the transcript lands IN THE INPUT (never
   // straight at the agent), appended to whatever is already drafted.
   const voice = useVoiceInput((text) => setDraft((prev) => (prev ? `${prev} ${text}` : text)));
+
+  // Card 187 step 7: the three facts before the first failure, not after it.
+  const [voiceNoticeOpen, setVoiceNoticeOpen] = useState(false);
+  const [sttStatus, setSttStatus] = useState<SttStatus | null>(null);
+  const loadSttStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/stt/status");
+      setSttStatus(res.ok ? ((await res.json()) as SttStatus) : null);
+    } catch {
+      setSttStatus(null); // an older server has no such endpoint; the sheet stays quiet
+    }
+  }, []);
+  // The setup case takes the microphone button away, and its tooltip with it —
+  // so the sheet is the only surface left that can say why, and it must come
+  // back even for a reader who dismissed it once.
+  useEffect(() => {
+    if (voice.micError !== null && opensTheSheet(voice.micError)) {
+      void loadSttStatus();
+      setVoiceNoticeOpen(true);
+    }
+  }, [voice.micError, loadSttStatus]);
+  const reachForMic = async (): Promise<void> => {
+    // A first reach opens the sheet INSTEAD of recording: nobody has agreed to
+    // anything yet, and on the hosted route the first press would otherwise
+    // send audio off the machine before saying that it does.
+    if (voice.micError === null && shouldShowVoiceNotice(readVoiceNoticeSeen(), null, false)) {
+      void loadSttStatus();
+      setVoiceNoticeOpen(true);
+      return;
+    }
+    await voice.toggleMic();
+  };
+  const dismissVoiceNotice = (): void => {
+    // Every exit records it — card 144's lesson, learned on the other sheet.
+    markVoiceNoticeSeen();
+    setVoiceNoticeOpen(false);
+  };
 
   // Keep the view pinned to the bottom while streaming — but only if the
   // reader has not scrolled up to study something.
@@ -701,7 +741,7 @@ export function Chat(props: {
                 aria-pressed={mic.recording}
                 title={mic.title}
                 disabled={mic.disabled}
-                onClick={() => void voice.toggleMic()}
+                onClick={() => void reachForMic()}
               >
                 {voice.micPhase === "recording" && (
                   /* The LED: it is listening. A dot rather than a word, beside
@@ -823,6 +863,19 @@ export function Chat(props: {
             </div>
           </div>
         </div>
+      )}
+      {voiceNoticeOpen && (
+        <VoiceNotice
+          status={sttStatus}
+          onDismiss={dismissVoiceNotice}
+          onOpenSettings={() => {
+            // The address the deep-link work already gives us (card 181), and it
+            // lands on the section that holds the switch rather than the top of
+            // a long pane. Recorded as seen: the reader is acting on it.
+            dismissVoiceNotice();
+            window.location.hash = "#/settings/stt";
+          }}
+        />
       )}
     </main>
   );
