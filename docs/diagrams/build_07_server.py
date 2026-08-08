@@ -5,10 +5,10 @@ Source-verified against spectro-server/src/main/java/dev/spectroscope/server/**
 on 2026-07-16. The path gained a dev/ segment and, since card 186, subpackages,
 so the glob has to recurse.
 
-NOTE: "twelve REST endpoints" above is stale independently of that move -- the
-module answers 54. Left alone here on purpose: this file's drift is not what the
-package split changed, and correcting a count nobody re-verified would only look
-like it had been checked.
+"twelve REST endpoints" describes THIS DIAGRAM's table, which draws twelve
+representative rows -- see REST below. It is not a count of the module, which
+answers rather more; docs/api-collections/endpoints.json is where the full
+surface is enumerated.
 """
 
 import svg_common as C
