@@ -56,8 +56,14 @@ public final class HostedTranscriber implements HostedStt {
     private final HttpClient http;
     private final String model;
 
+    /** One client for every request. The convenience constructor used to build
+     *  a fresh HttpClient -- selector thread and all -- on EVERY transcribe
+     *  call, including local-route calls that never use it. */
+    private static final HttpClient SHARED =
+            HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build();
+
     HostedTranscriber(String model) {
-        this(HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build(), model);
+        this(SHARED, model);
     }
 
     HostedTranscriber(HttpClient http, String model) {

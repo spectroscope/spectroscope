@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { MicPhase } from "./voiceButton";
 import { noteVoiceExchange } from "../state/voiceWire";
-import { micErrorOf, silencesTheButton, type VoiceError } from "./voiceError";
+import { micErrorOf, silencesTheButton, transcribeErrorOf, type VoiceError } from "./voiceError";
 import { levelOf, mayClick } from "./micLevel";
 import { MAX_CLIP_SECONDS, browserAudio, wavFromRecording } from "./wavClip";
 import { audioConstraint, readMicDevices, useMicDevice, type MicChoice } from "../state/micDevice";
@@ -82,6 +82,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
   const audioRef = useRef<{ ctx: AudioContext; raf: number } | null>(null);
   const [recordMs, setRecordMs] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const armingRef = useRef(false);
 
   // Tick the recording timer while recording — and end it at the stated ceiling.
   // The limit exists because 16 kHz PCM is 32 kB per second, so a clip has a
@@ -119,6 +120,12 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       recorderRef.current?.stop(); // onstop takes over
       return;
     }
+    // The await below is a WINDOW: a second press while the permission prompt
+    // is open used to start a second recorder and orphan the first stream --
+    // a hot microphone nothing would ever stop. A ref and not state, because
+    // the second press arrives before any re-render.
+    if (armingRef.current) return;
+    armingRef.current = true;
     setMicError(null); // a fresh attempt is not the last one's failure
     let stream: MediaStream;
     try {
@@ -130,6 +137,7 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       // then allows it in the site settings must be able to press again without
       // reloading the page.
       if (silencesTheButton(reason)) setMicAvailable(false);
+      armingRef.current = false;
       return;
     }
     // Permission has just been granted, so the browser will name the devices
@@ -189,19 +197,13 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
           headers: { "Content-Type": "audio/wav" },
           body: new Blob([wav], { type: "audio/wav" }),
         });
-        if (res.status === 503) {
-          setMicError("sttMissing"); // and the sentence points at the settings pane
-          setMicAvailable(false);
-          return;
-        }
-        if (res.status === 400) {
-          // The server read the header and could not use it. That is this
-          // browser's encoding, not the network, so it says so.
-          setMicError("convertFailed");
-          return;
-        }
         if (!res.ok) {
-          setMicError("requestFailed");
+          // The mapping is pinned in voiceError.ts: 503 is "not set up" and
+          // silences the button, 502 is the far side failing and stays
+          // retryable, 400 is this browser's own encoding.
+          const reason = transcribeErrorOf(res.status) ?? "requestFailed";
+          setMicError(reason);
+          if (silencesTheButton(reason)) setMicAvailable(false);
           return;
         }
         const answer = (await res.json()) as { text?: string; wire?: unknown };
@@ -222,7 +224,36 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
     recorderRef.current = recorder;
     recorder.start();
     setMicPhase("recording");
+    // From here the button is a STOP button, so the guard has done its job.
+    armingRef.current = false;
   }
+
+  // Unmount while recording used to leak the live microphone stream, the
+  // meter's AudioContext and its rAF loop -- a hot mic with no UI attached to
+  // it. The handlers come off first so the orphaned onstop does not fetch and
+  // set state on an unmounted component.
+  useEffect(
+    () => () => {
+      const recorder = recorderRef.current;
+      recorderRef.current = null;
+      if (recorder !== null) {
+        recorder.ondataavailable = null;
+        recorder.onstop = null;
+        try {
+          if (recorder.state !== "inactive") recorder.stop();
+        } catch {
+          /* already stopped */
+        }
+        recorder.stream.getTracks().forEach((track) => track.stop());
+      }
+      if (audioRef.current !== null) {
+        cancelAnimationFrame(audioRef.current.raf);
+        void audioRef.current.ctx.close();
+        audioRef.current = null;
+      }
+    },
+    [],
+  );
 
   return { micPhase, micAvailable, micError, level, choice, refreshDevices, recordMs, toggleMic };
 }

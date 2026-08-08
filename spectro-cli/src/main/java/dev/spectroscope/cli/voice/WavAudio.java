@@ -103,17 +103,21 @@ public final class WavAudio {
      * @return the offset of the payload, or -1
      */
     private static int findChunk(ByteBuffer buffer, String wanted) {
-        int at = FIRST_CHUNK;
+        // The cursor is a long on purpose: a crafted size near Integer.MAX_VALUE
+        // made the int cursor wrap negative, and the next read threw an uncaught
+        // IllegalArgumentException out of the controller -- a 500 with a stack
+        // trace where this class's contract promises a readable 400.
+        long at = FIRST_CHUNK;
         while (at + 8 <= buffer.capacity()) {
-            String id = tag(buffer, at);
-            int size = buffer.getInt(at + 4);
+            String id = tag(buffer, (int) at);
+            int size = buffer.getInt((int) at + 4);
             if (id.equals(wanted)) {
-                return at + 8;
+                return (int) at + 8;
             }
-            if (size < 0) {
-                return -1; // a size that does not fit an int is a broken file
+            if (size < 0 || size > buffer.capacity()) {
+                return -1; // a size that cannot fit the file is a broken file
             }
-            at += 8 + size + (size % 2); // chunks are word aligned
+            at += 8L + size + (size % 2); // chunks are word aligned
         }
         return -1;
     }
