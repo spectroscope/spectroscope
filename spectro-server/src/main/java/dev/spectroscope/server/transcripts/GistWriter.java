@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
 
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.ProviderFactory;
@@ -8,6 +8,7 @@ import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
+import dev.spectroscope.server.ExplainController;
 
 import java.nio.file.Path;
 import java.util.ArrayList;

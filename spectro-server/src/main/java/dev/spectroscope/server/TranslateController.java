@@ -66,7 +66,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  *
  * <p>Security: this endpoint spends the operator's API key and carries a third
  * party's text, so it wears the same fence as {@link ExplainController} —
- * {@link FleetController#isLocalOrigin} against remote/rebound callers and a
+ * {@link LocalOrigin#isLocalOrigin} against remote/rebound callers and a
  * loopback-or-absent Origin check against cross-site pages. No
  * {@code @CrossOrigin}, and the passages are never logged: they belong to
  * whoever recorded that session, not to this process's log file.</p>
@@ -160,7 +160,7 @@ public class TranslateController {
      */
     @GetMapping("/api/translate/engines")
     public ResponseEntity<Map<String, Object>> engines(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         SpectroConfig config = configLoader.get();
@@ -182,7 +182,7 @@ public class TranslateController {
     @PostMapping(value = "/api/translate", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StreamingResponseBody> translate(@RequestBody(required = false) TranslateBody body,
                                                            HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         if (body == null || body.units() == null || body.units().isEmpty()) {

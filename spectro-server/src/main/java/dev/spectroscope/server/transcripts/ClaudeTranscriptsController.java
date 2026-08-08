@@ -1,4 +1,6 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
+
+import dev.spectroscope.server.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.core.io.ByteArrayResource;
@@ -59,7 +61,7 @@ public class ClaudeTranscriptsController {
      * <p>There are two, and this record used to publish one. The byte ceiling
      * refuses a named file the caller can see; the row cap drops files the
      * caller never learns about, which is the worse of the pair to keep quiet.
-     * The sibling {@link WorkspaceController.FilesResponse} has carried the same
+     * The sibling {@link dev.spectroscope.server.WorkspaceController.FilesResponse} has carried the same
      * flag for the same reason since it was written.</p>
      *
      * @param limitBytes the largest transcript {@link #content} will serve
@@ -156,7 +158,7 @@ public class ClaudeTranscriptsController {
      */
     @GetMapping("/api/claude/transcripts")
     public ResponseEntity<TranscriptListing> transcripts(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         return ResponseEntity.ok(listing());
@@ -204,7 +206,7 @@ public class ClaudeTranscriptsController {
     @GetMapping("/api/claude/transcripts/content")
     public ResponseEntity<Resource> content(@RequestParam("path") String rel,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         if (!rel.endsWith(".jsonl")) {
@@ -276,7 +278,7 @@ public class ClaudeTranscriptsController {
     public ResponseEntity<FactsResponse> facts(
             @RequestParam(name = "path", required = false) List<String> paths,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         if (paths == null || paths.isEmpty()) {
@@ -320,7 +322,7 @@ public class ClaudeTranscriptsController {
      */
     @GetMapping("/api/claude/transcripts/gists")
     public ResponseEntity<GistsResponse> storedGists(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build();
         }
         List<GistRow> rows = new ArrayList<>();
@@ -352,7 +354,7 @@ public class ClaudeTranscriptsController {
     @PostMapping(value = "/api/claude/transcripts/gists", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<GistsResponse> writeGists(@RequestBody(required = false) GistRequest body,
                                                     HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.status(404).build();
         }
         List<String> paths = body == null || body.paths() == null ? List.of() : body.paths();
@@ -397,7 +399,7 @@ public class ClaudeTranscriptsController {
     @GetMapping("/api/claude/transcripts/sidecars")
     public ResponseEntity<SidecarsResponse> sidecars(
             @RequestParam(name = "path") String rel, HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         Path file = insideStore(rel);
@@ -428,7 +430,7 @@ public class ClaudeTranscriptsController {
     @GetMapping("/api/claude/transcripts/folders")
     public ResponseEntity<FoldersResponse> folders(
             @RequestParam(name = "path") String rel, HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build();
         }
         Path file = insideStore(rel);
@@ -464,7 +466,7 @@ public class ClaudeTranscriptsController {
             consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<OpenResponse> openFolder(
             @RequestBody OpenRequest body, HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.status(404).build();
         }
         Path file = body == null ? null : insideStore(body.path());

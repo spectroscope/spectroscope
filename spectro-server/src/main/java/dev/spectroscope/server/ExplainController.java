@@ -40,7 +40,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
  * or {@code {error}}. The client parses line-wise off a fetch reader.</p>
  *
  * <p>Security: this endpoint spends the operator's API key, so it wears BOTH
- * fences the key-write endpoint wears — {@link FleetController#isLocalOrigin}
+ * fences the key-write endpoint wears — {@link LocalOrigin#isLocalOrigin}
  * against remote/rebound callers and a loopback-or-absent Origin check against
  * cross-site pages (CSRF). No {@code @CrossOrigin}: a wildcard CORS policy let a
  * foreign page deliver a large JSON body (the digest) that Spring materializes
@@ -65,8 +65,16 @@ public class ExplainController {
      */
     static final int MAX_BODY_BYTES = 4 * MAX_DIGEST_CHARS;
 
-    /** Seam: build the provider from config (real: {@link ProviderFactory}). */
-    interface ProviderBuilder {
+    /**
+     * Seam: build the provider from config (real: {@link ProviderFactory}).
+     *
+     * <p>Public because {@code GistWriter} holds one as a field and takes one in
+     * its constructor, so that both spend the operator's key through a single
+     * seam — and {@code GistWriter} now lives in {@code .transcripts}. This is
+     * the only declaration the {@code .transcripts} and {@code .observability}
+     * moves had to widen.</p>
+     */
+    public interface ProviderBuilder {
         LlmProvider build(SpectroConfig config);
     }
 
@@ -105,7 +113,7 @@ public class ExplainController {
     @PostMapping(value = "/api/explain", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<StreamingResponseBody> explain(@RequestBody(required = false) ExplainBody body,
                                                          HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         if (body == null || body.digest() == null || body.digest().isBlank()) {

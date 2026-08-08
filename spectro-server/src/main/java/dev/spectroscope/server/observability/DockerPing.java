@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.observability;
 
 import java.io.File;
 import java.io.IOException;

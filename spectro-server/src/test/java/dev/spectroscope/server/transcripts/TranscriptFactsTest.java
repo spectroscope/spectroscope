@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

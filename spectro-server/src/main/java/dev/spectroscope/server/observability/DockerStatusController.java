@@ -1,4 +1,6 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.observability;
+
+import dev.spectroscope.server.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -45,7 +47,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code PATH} and cannot see {@code /usr/local/bin/docker}, so PATH-only
  * detection told an operator with a running daemon to go and install Docker.
  *
- * <p>It wears the full local fence ({@link FleetController#isLocalOrigin} plus
+ * <p>It wears the full local fence ({@link LocalOrigin#isLocalOrigin} plus
  * the Origin check) and answers 404 with no body to anyone else, because the
  * answer fingerprints the operator's machine. No {@code @CrossOrigin}.
  */
@@ -95,8 +97,8 @@ public class DockerStatusController {
      */
     @GetMapping("/api/docker/status")
     public ResponseEntity<Map<String, Object>> status(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
 

@@ -49,7 +49,7 @@ public class FleetController {
      */
     @GetMapping("/api/fleet")
     public ResponseEntity<Map<String, Object>> fleet(HttpServletRequest request) {
-        if (!isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build();
         }
         Map<String, Object> body = new LinkedHashMap<>();
@@ -72,7 +72,7 @@ public class FleetController {
     @GetMapping("/api/fleet/{node}/events")
     public ResponseEntity<Map<String, Object>> events(@PathVariable("node") String node,
                                                       HttpServletRequest request) {
-        if (!isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build(); // a node's full replay is sensitive
         }
         return fleet.replayFor(node)
@@ -106,7 +106,7 @@ public class FleetController {
     @PostMapping(path = "/api/fleet/{node}/stop", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<Map<String, Object>> stop(@PathVariable("node") String node,
                                                     HttpServletRequest request) {
-        if (!isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build(); // remote / rebinding — hide it
         }
         return switch (fleet.control(node, "stop")) {
@@ -141,7 +141,7 @@ public class FleetController {
     public ResponseEntity<Map<String, Object>> gate(@PathVariable("node") String node,
                                                     @RequestBody GateAnswer answer,
                                                     HttpServletRequest request) {
-        if (!isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build(); // remote / rebinding — hide it
         }
         if (answer == null || answer.callId() == null || answer.callId().isBlank()
@@ -180,7 +180,7 @@ public class FleetController {
                                                      HttpServletRequest request) {
         // Local origin FIRST, and 404 for everything — a non-local caller cannot
         // tell an enabled spawn (would 200/400) from a disabled one.
-        if (!isLocalOrigin(request) || !spawner.allowed()) {
+        if (!LocalOrigin.isLocalOrigin(request) || !spawner.allowed()) {
             return ResponseEntity.notFound().build();
         }
         try {
@@ -197,75 +197,6 @@ public class FleetController {
         } catch (IOException failed) {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "the node process could not be started"));
-        }
-    }
-
-    /**
-     * The shared fence for every local-only endpoint (fleet control, key save,
-     * bundle scaffold, settings, the OTLP probe — also called cross-package):
-     * a loopback remote address AND a localhost Host header. The Host check is
-     * the DNS-rebinding defense — a rebinding page reaches loopback but carries
-     * the attacker's Host (which JS cannot forge), so it fails here; loopback
-     * alone would let it through.
-     *
-     * @param request the servlet request
-     * @return true only for a loopback peer with a localhost Host
-     */
-    public static boolean isLocalOrigin(HttpServletRequest request) {
-        return isLoopback(request.getRemoteAddr()) && isLocalHostName(request.getServerName());
-    }
-
-    /**
-     * The CSRF half of the fence, shared like {@link #isLocalOrigin}: true when
-     * {@code Origin} is absent (non-browser) or points at loopback. A cross-site
-     * page's request arrives via loopback with a localhost Host, so only its
-     * Origin header (the page's own domain, browser-set) betrays it.
-     *
-     * @param request the servlet request
-     * @return whether the Origin is safe
-     */
-    public static boolean originIsLoopbackOrAbsent(HttpServletRequest request) {
-        String origin = request.getHeader("Origin");
-        if (origin == null || origin.isBlank()) {
-            return true;
-        }
-        try {
-            String host = java.net.URI.create(origin).getHost();
-            return "localhost".equals(host) || "127.0.0.1".equals(host)
-                    || "::1".equals(host) || "[::1]".equals(host);
-        } catch (RuntimeException malformed) {
-            return false;
-        }
-    }
-
-    /** Whether a Host header names loopback (localhost or a loopback literal). */
-    static boolean isLocalHostName(String host) {
-        if (host == null || host.isBlank()) {
-            return false;
-        }
-        String h = host.trim().toLowerCase(java.util.Locale.ROOT);
-        if (h.startsWith("[") && h.endsWith("]")) {
-            h = h.substring(1, h.length() - 1); // an IPv6 literal's brackets
-        }
-        return h.equals("localhost") || h.equals("127.0.0.1")
-                || h.equals("::1") || h.equals("0:0:0:0:0:0:0:1");
-    }
-
-    /**
-     * Whether a servlet remote address is the loopback interface — half of the
-     * local-origin gate. An unparseable address is refused (not trusted).
-     *
-     * @param remoteAddr the request's remote address
-     * @return true only for a loopback address
-     */
-    static boolean isLoopback(String remoteAddr) {
-        if (remoteAddr == null || remoteAddr.isBlank()) {
-            return false;
-        }
-        try {
-            return InetAddress.getByName(remoteAddr).isLoopbackAddress();
-        } catch (UnknownHostException unparseable) {
-            return false;
         }
     }
 

@@ -153,12 +153,12 @@ class NodeSpawnerTest {
 
     @Test
     void loopbackDetectionAcceptsLocalAndRejectsRemote() {
-        assertTrue(FleetController.isLoopback("127.0.0.1"));
-        assertTrue(FleetController.isLoopback("0:0:0:0:0:0:0:1"));
-        assertTrue(FleetController.isLoopback("::1"));
-        assertFalse(FleetController.isLoopback("10.0.0.5"), "a LAN address is not loopback");
-        assertFalse(FleetController.isLoopback("203.0.113.7"), "a public address is not loopback");
-        assertFalse(FleetController.isLoopback("not-an-address"), "an unparseable addr is refused, not trusted");
+        assertTrue(LocalOrigin.isLoopback("127.0.0.1"));
+        assertTrue(LocalOrigin.isLoopback("0:0:0:0:0:0:0:1"));
+        assertTrue(LocalOrigin.isLoopback("::1"));
+        assertFalse(LocalOrigin.isLoopback("10.0.0.5"), "a LAN address is not loopback");
+        assertFalse(LocalOrigin.isLoopback("203.0.113.7"), "a public address is not loopback");
+        assertFalse(LocalOrigin.isLoopback("not-an-address"), "an unparseable addr is refused, not trusted");
     }
 
     @Test
@@ -178,14 +178,14 @@ class NodeSpawnerTest {
     void hostHeaderCheckAcceptsLocalhostAndRejectsARebindingDomain() {
         // The DNS-rebinding defense: a rebinding page reaches loopback but its
         // Host is the attacker's domain (JS cannot forge Host), so it is rejected.
-        assertTrue(FleetController.isLocalHostName("localhost"));
-        assertTrue(FleetController.isLocalHostName("127.0.0.1"));
-        assertTrue(FleetController.isLocalHostName("::1"));
-        assertTrue(FleetController.isLocalHostName("[::1]"), "an IPv6 literal's brackets are stripped");
-        assertFalse(FleetController.isLocalHostName("attacker.com"), "a rebinding Host is refused");
-        assertFalse(FleetController.isLocalHostName("localhost.attacker.com"),
+        assertTrue(LocalOrigin.isLocalHostName("localhost"));
+        assertTrue(LocalOrigin.isLocalHostName("127.0.0.1"));
+        assertTrue(LocalOrigin.isLocalHostName("::1"));
+        assertTrue(LocalOrigin.isLocalHostName("[::1]"), "an IPv6 literal's brackets are stripped");
+        assertFalse(LocalOrigin.isLocalHostName("attacker.com"), "a rebinding Host is refused");
+        assertFalse(LocalOrigin.isLocalHostName("localhost.attacker.com"),
                 "a suffix trick is not localhost");
-        assertFalse(FleetController.isLocalHostName(null));
-        assertFalse(FleetController.isLocalHostName(""));
+        assertFalse(LocalOrigin.isLocalHostName(null));
+        assertFalse(LocalOrigin.isLocalHostName(""));
     }
 }

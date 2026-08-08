@@ -1,4 +1,6 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.observability;
+
+import dev.spectroscope.server.LocalOrigin;
 
 import jakarta.servlet.http.HttpServletRequest;
 
@@ -21,7 +23,7 @@ import org.springframework.web.bind.annotation.RestController;
  * {@code ~/.spectro/logs/spectroscope.log} the shared logback.xml writes,
  * served as a tail plus cheap incremental deltas — the client polls with the
  * returned byte offset and receives only what was appended since. Wears the
- * full local fence ({@link FleetController#isLocalOrigin} + Origin check):
+ * full local fence ({@link LocalOrigin#isLocalOrigin} + Origin check):
  * the log names workspaces, model hosts and prompts-in-errors, none of which
  * a foreign page may read. No {@code @CrossOrigin} — the UI is same-origin.
  */
@@ -68,8 +70,8 @@ public class LogsController {
             @RequestParam(value = "offset", required = false) Long offset,
             @RequestParam(value = "limit", required = false, defaultValue = "" + DEFAULT_TAIL_LINES) int limit,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.status(404).build(); // no fingerprint in the refusal
         }
         Path file = logFile.get();

@@ -15,8 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * The {@code /ws/shell} handshake fence (card 93). This endpoint hands a browser
  * the operator's own shell, so it wears the two predicates {@code /ws} wears
- * ({@link FleetController#isLocalOrigin} + {@link
- * FleetController#originIsLoopbackOrAbsent}) and then goes further in three ways:
+ * ({@link LocalOrigin#isLocalOrigin} + {@link
+ * LocalOrigin#originIsLoopbackOrAbsent}) and then goes further in three ways:
  *
  * <ul>
  *   <li>it refuses with <b>404</b>, the Logs/Settings style, not /ws's 403 — a

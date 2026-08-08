@@ -26,7 +26,7 @@ import java.util.Set;
  * per-handler form cannot give:</p>
  * <ul>
  *   <li>It is <em>default-deny</em>. Sixteen handlers called
- *       {@link FleetController#isLocalOrigin} and twelve did not, and nothing
+ *       {@link LocalOrigin#isLocalOrigin} and twelve did not, and nothing
  *       said which list a new endpoint belonged on. Here the answer for a new
  *       endpoint is "fenced", and leaving one open costs a named line in
  *       {@link #OPEN} that a reader and a drift test can both see.</li>
@@ -87,7 +87,7 @@ public class ApiLocalFence implements Filter {
             chain.doFilter(servletRequest, servletResponse);
             return;
         }
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             response.setStatus(HttpServletResponse.SC_NOT_FOUND);
             return;
         }

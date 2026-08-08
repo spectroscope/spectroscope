@@ -1,4 +1,4 @@
-package dev.spectroscope.server;
+package dev.spectroscope.server.transcripts;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -21,7 +21,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * the Host check keeps it out.
  *
  * <p>Driven through the real request mapping for the same reason as
- * {@link WorkspaceControllerFenceTest}: the claim is about a request, not about
+ * {@link dev.spectroscope.server.WorkspaceControllerFenceTest}: the claim is about a request, not about
  * a method.</p>
  */
 class ClaudeTranscriptsControllerFenceTest {

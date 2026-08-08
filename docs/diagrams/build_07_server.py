@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
 """07 — spectro-server: one socket, twelve REST endpoints, one connection object.
 
-Source-verified against spectro-server/src/main/java/spectroscope/server/* on 2026-07-16.
+Source-verified against spectro-server/src/main/java/dev/spectroscope/server/**
+on 2026-07-16. The path gained a dev/ segment and, since card 186, subpackages,
+so the glob has to recurse.
+
+"twelve REST endpoints" describes THIS DIAGRAM's table, which draws twelve
+representative rows -- see REST below. It is not a count of the module, which
+answers rather more; docs/api-collections/endpoints.json is where the full
+surface is enumerated.
 """
 
 import svg_common as C

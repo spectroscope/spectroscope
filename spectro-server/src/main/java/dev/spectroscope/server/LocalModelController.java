@@ -69,7 +69,7 @@ public class LocalModelController {
      */
     @GetMapping("/api/local-model/catalog")
     public ResponseEntity<Map<String, Object>> catalog(HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build();
         }
         LocalCatalog catalogue = LocalCatalog.bundled();
@@ -139,7 +139,7 @@ public class LocalModelController {
     public ResponseEntity<Map<String, Object>> status(
             @RequestParam(name = "model", required = false) String model,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
             return ResponseEntity.notFound().build();
         }
         LocalModelDownload download = downloadFor(model);
@@ -162,8 +162,8 @@ public class LocalModelController {
     public ResponseEntity<Map<String, Object>> startDownload(
             @RequestParam(name = "model", required = false) String model,
             HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request)
-                || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request)
+                || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
         LocalModelDownload download = downloadFor(model);

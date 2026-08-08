@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 class WireDocDriftTest {
 
     private static final Path CONTROLLER = Path.of(
-            "spectro-server/src/main/java/dev/spectroscope/server/ClaudeTranscriptsController.java");
+            "spectro-server/src/main/java/dev/spectroscope/server/transcripts/ClaudeTranscriptsController.java");
     private static final Path WIRE_PART = Path.of("docs/guide-assets/parts/16-ref-wire.html");
     private static final Path ENDPOINTS = Path.of("docs/api-collections/endpoints.json");
 
@@ -39,8 +39,8 @@ class WireDocDriftTest {
     private static final Map<String, String> FENCED = Map.of(
             "/api/files", "WorkspaceController.java",
             "/api/file", "WorkspaceController.java",
-            "/api/claude/transcripts", "ClaudeTranscriptsController.java",
-            "/api/claude/transcripts/content", "ClaudeTranscriptsController.java");
+            "/api/claude/transcripts", "transcripts/ClaudeTranscriptsController.java",
+            "/api/claude/transcripts/content", "transcripts/ClaudeTranscriptsController.java");
 
     @Test
     void theWireReferencePublishesTheCapTheServerEnforces() throws IOException {

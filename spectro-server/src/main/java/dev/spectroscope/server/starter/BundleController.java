@@ -1,7 +1,7 @@
 package dev.spectroscope.server.starter;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import dev.spectroscope.server.FleetController;
+import dev.spectroscope.server.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,9 +29,9 @@ import java.util.Map;
  * same-origin only (like {@link dev.spectroscope.server.SettingsController}) —
  * a foreign page cannot make the local server write to disk. The write wears
  * the complete write-endpoint template: {@code consumes=json} forces the
- * preflight a cross-origin page cannot pass, {@link FleetController#isLocalOrigin}
+ * preflight a cross-origin page cannot pass, {@link LocalOrigin#isLocalOrigin}
  * blocks a DNS-rebound hostname (which IS same-origin, so preflight alone would
- * miss it), and {@link FleetController#originIsLoopbackOrAbsent} closes the
+ * miss it), and {@link LocalOrigin#originIsLoopbackOrAbsent} closes the
  * Origin gap — the exact bar the key writer and the settings PUTs carry.
  */
 @RestController
@@ -73,7 +73,7 @@ public class BundleController {
     @PostMapping(value = "/api/bundles/{id}/scaffold", consumes = MediaType.APPLICATION_JSON_VALUE)
     public ResponseEntity<?> scaffold(@PathVariable String id, @RequestBody JsonNode body,
                                       HttpServletRequest request) {
-        if (!FleetController.isLocalOrigin(request) || !FleetController.originIsLoopbackOrAbsent(request)) {
+        if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build(); // blank 404, like the fleet writes
         }
         String dirText = body.path("dir").asText("").strip();

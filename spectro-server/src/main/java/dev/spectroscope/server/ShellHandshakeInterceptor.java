@@ -18,8 +18,8 @@ import java.util.function.BooleanSupplier;
  * and no permission gate (the operator types, not the agent).
  *
  * <p>It wears the two predicates every other local surface wears
- * ({@link FleetController#isLocalOrigin} for loopback + Host, and
- * {@link FleetController#originIsLoopbackOrAbsent} for CSRF) and differs from
+ * ({@link LocalOrigin#isLocalOrigin} for loopback + Host, and
+ * {@link LocalOrigin#originIsLoopbackOrAbsent} for CSRF) and differs from
  * {@code /ws} in three ways, each deliberate:</p>
  *
  * <ul>
@@ -66,8 +66,8 @@ final class ShellHandshakeInterceptor implements HandshakeInterceptor {
         HttpServletRequest req = servlet.getServletRequest();
         boolean allowed = featureEnabled.getAsBoolean()
                 && ptyAvailable.getAsBoolean()
-                && FleetController.isLocalOrigin(req)
-                && FleetController.originIsLoopbackOrAbsent(req)
+                && LocalOrigin.isLocalOrigin(req)
+                && LocalOrigin.originIsLoopbackOrAbsent(req)
                 && originPresent(req);
         if (!allowed) {
             response.setStatusCode(HttpStatus.NOT_FOUND); // no fingerprint in the refusal
@@ -84,7 +84,7 @@ final class ShellHandshakeInterceptor implements HandshakeInterceptor {
 
     /**
      * The one rule {@code /ws} does not have: the header must actually be there.
-     * Combined with {@link FleetController#originIsLoopbackOrAbsent} above, the
+     * Combined with {@link LocalOrigin#originIsLoopbackOrAbsent} above, the
      * pair means "present AND loopback".
      *
      * @param request the servlet request
