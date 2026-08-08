@@ -46,7 +46,15 @@ import { useLang } from "../state/lang";
 
 // Composer + scroll tuning, named so every line reads aloud.
 const SCROLL_PIN_THRESHOLD_PX = 120; // this close to the bottom counts as "pinned"
-const TEXTAREA_MAX_HEIGHT_PX = 150;
+/** Where the draft stops growing: ten full lines. The textarea's line-height
+ *  is pinned to 22px in modal-composer.css (an integer on purpose — the
+ *  inherited 1.55 × 14px = 21.7px would round per line and land the cap
+ *  mid-line) and it carries 10px padding top and bottom but NO border of its
+ *  own (the surrounding .composer-box wears the chrome). So scrollHeight at
+ *  ten lines is exactly 10 × 22 + 2 × 10 = 240, the cap sits ON a line
+ *  boundary, and the scrollbar only appears once an eleventh line exists.
+ *  Keep in sync with the .composer-box textarea max-height. */
+const TEXTAREA_MAX_HEIGHT_PX = 240;
 /** An armed delete button disarms again after this long. */
 const DELETE_ARM_TIMEOUT_MS = 4000;
 
@@ -672,9 +680,9 @@ export function Chat(props: {
               </div>
             )}
             <div className={attachments.dragOver ? "composer-inner drag-over" : "composer-inner"}>
-              {/* Card 183: anchored to the composer row, which is why that row
-                  is the positioned ancestor. It opens UPWARD like the
-                  disclosure menu beside it — there is nothing below. */}
+              {/* Card 183: anchored to .composer-inner, which is why it is the
+                  positioned ancestor. It opens UPWARD like the menus in the
+                  action row below — there is nothing beneath the bar. */}
               {slash.node}
               <input
                 ref={attachments.fileInputRef}
@@ -686,74 +694,85 @@ export function Chat(props: {
                 tabIndex={-1}
                 onChange={attachments.onFilePicked}
               />
-              {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
-                  button, per the owner's placement. */}
-              {discMenu}
-              <button
-                type="button"
-                className="icon-button attach-button"
-                aria-label={t(lang, "chat.attachAria")}
-                title={t(lang, "chat.attach")}
-                onClick={attachments.openFilePicker}
-              >
-                <svg
-                  viewBox="0 0 16 16"
-                  width="16"
-                  height="16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden="true"
-                >
-                  <rect x="2" y="3" width="12" height="10" rx="1.5" />
-                  <circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
-                  <path d="M2 11l3.5-3.5L9 11l2.5-2.5L14 11" />
-                </svg>
-              </button>
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                value={draft}
-                placeholder={t(lang, "chat.placeholder")}
-                aria-label={t(lang, "chat.placeholder")}
-                onChange={(e) => {
-                  setDraft(e.target.value);
-                  autosize();
-                }}
-                onKeyDown={(e) => {
-                  if (slash.handleKey(e)) return;
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    submit();
-                  }
-                }}
-              />
-              <button
-                type="button"
-                className={
-                  mic.recording
-                    ? "icon-button attach-button mic-button recording"
-                    : "icon-button attach-button mic-button"
-                }
-                aria-label={mic.title}
-                aria-pressed={mic.recording}
-                title={mic.title}
-                disabled={mic.disabled}
-                onClick={() => void reachForMic()}
-              >
-                {voice.micPhase === "recording" && (
-                  /* The LED: it is listening. A dot rather than a word, beside
-                     the glyph, because the answer to "does it hear me" has to
-                     be readable without reading (card 187 step 5). */
-                  <span className="mic-led" aria-hidden="true" />
-                )}
-                {mic.recording ? (
-                  <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
-                    <rect x="3" y="3" width="10" height="10" rx="1.5" />
-                  </svg>
+              {/* The box (owner 2026-08-09): the full reading width of the
+                  transcript above, growing with the draft, with the ONE action
+                  seat inside at the bottom right — Send, or Stop while a run
+                  streams and nothing new is drafted (composerButtons decides).
+                  Everything else lives in the action row below. */}
+              <div className="composer-box">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  value={draft}
+                  placeholder={t(lang, "chat.placeholder")}
+                  aria-label={t(lang, "chat.placeholder")}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    autosize();
+                  }}
+                  onKeyDown={(e) => {
+                    if (slash.handleKey(e)) return;
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      submit();
+                    }
+                  }}
+                />
+                {buttons.seat === "stop" ? (
+                  <button
+                    type="button"
+                    className="composer-seat composer-seat--stop"
+                    disabled={buttons.stopDisabled}
+                    aria-label={t(lang, "chat.stopAria")}
+                    title={buttons.stopLabel}
+                    onClick={props.onAbort}
+                  >
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                      <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+                    </svg>
+                  </button>
                 ) : (
+                  <button
+                    type="button"
+                    className="composer-seat composer-seat--send"
+                    disabled={buttons.sendDisabled}
+                    aria-label={buttons.sendLabel}
+                    title={buttons.sendLabel}
+                    onClick={submit}
+                  >
+                    <svg
+                      viewBox="0 0 16 16"
+                      width="14"
+                      height="14"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <path d="M8 12.5v-9" />
+                      <path d="M4 7.5 8 3.5l4 4" />
+                    </svg>
+                  </button>
+                )}
+              </div>
+              {/* The action row (owner 2026-08-09): every control that is not
+                  the draft or its seat, on the same column width. Disclosure
+                  and attach keep the left end, the microphone family and the
+                  gear keep the right — the same ends of the line they held
+                  when they shared the row with the textarea. */}
+              <div className="composer-actions">
+                {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
+                    button, per the owner's placement. */}
+                {discMenu}
+                <button
+                  type="button"
+                  className="icon-button attach-button"
+                  aria-label={t(lang, "chat.attachAria")}
+                  title={t(lang, "chat.attach")}
+                  onClick={attachments.openFilePicker}
+                >
                   <svg
                     viewBox="0 0 16 16"
                     width="16"
@@ -765,45 +784,63 @@ export function Chat(props: {
                     strokeLinejoin="round"
                     aria-hidden="true"
                   >
-                    <rect x="6" y="1.5" width="4" height="8" rx="2" />
-                    <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" />
-                    <path d="M8 12v2.5M5.5 14.5h5" />
+                    <rect x="2" y="3" width="12" height="10" rx="1.5" />
+                    <circle cx="5.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+                    <path d="M2 11l3.5-3.5L9 11l2.5-2.5L14 11" />
                   </svg>
-                )}
-              </button>
-              {/* The device picker, right beside the glyph it belongs to
-                  (card 187 step 2). It opens even while the button is disabled:
-                  choosing a microphone is exactly what someone does when it did
-                  not work. */}
-              <MicMenu choice={voice.choice} onOpen={() => void voice.refreshDevices()} />
-              <ComposerGear
-                workspaceInfo={state.workspace}
-                permissionMode={state.permissionMode}
-                sendClient={props.sendClient}
-              />
-              {buttons.showStop && (
+                </button>
                 <button
                   type="button"
-                  className="stop composer-stop"
-                  disabled={buttons.stopDisabled}
-                  aria-label={t(lang, "chat.stopAria")}
-                  title={t(lang, "chat.stopAria")}
-                  onClick={props.onAbort}
+                  className={
+                    mic.recording
+                      ? "icon-button attach-button mic-button recording"
+                      : "icon-button attach-button mic-button"
+                  }
+                  aria-label={mic.title}
+                  aria-pressed={mic.recording}
+                  title={mic.title}
+                  disabled={mic.disabled}
+                  onClick={() => void reachForMic()}
                 >
-                  <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-                    <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
-                  </svg>
-                  {buttons.stopLabel}
+                  {voice.micPhase === "recording" && (
+                    /* The LED: it is listening. A dot rather than a word, beside
+                       the glyph, because the answer to "does it hear me" has to
+                       be readable without reading (card 187 step 5). */
+                    <span className="mic-led" aria-hidden="true" />
+                  )}
+                  {mic.recording ? (
+                    <svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
+                      <rect x="3" y="3" width="10" height="10" rx="1.5" />
+                    </svg>
+                  ) : (
+                    <svg
+                      viewBox="0 0 16 16"
+                      width="16"
+                      height="16"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      aria-hidden="true"
+                    >
+                      <rect x="6" y="1.5" width="4" height="8" rx="2" />
+                      <path d="M3.5 7.5a4.5 4.5 0 0 0 9 0" />
+                      <path d="M8 12v2.5M5.5 14.5h5" />
+                    </svg>
+                  )}
                 </button>
-              )}
-              <button
-                type="button"
-                className="soft-primary send"
-                disabled={buttons.sendDisabled}
-                onClick={submit}
-              >
-                {buttons.sendLabel}
-              </button>
+                {/* The device picker, right beside the glyph it belongs to
+                    (card 187 step 2). It opens even while the button is disabled:
+                    choosing a microphone is exactly what someone does when it did
+                    not work. */}
+                <MicMenu choice={voice.choice} onOpen={() => void voice.refreshDevices()} />
+                <ComposerGear
+                  workspaceInfo={state.workspace}
+                  permissionMode={state.permissionMode}
+                  sendClient={props.sendClient}
+                />
+              </div>
             </div>
           </div>
         </div>

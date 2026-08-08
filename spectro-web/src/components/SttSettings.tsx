@@ -32,6 +32,8 @@ interface SttStatus {
   download: { state?: string; bytes?: number; total?: number; error?: string | null };
   /** The setting as configured: "auto" | "local" | "openai". */
   provider?: string;
+  /** The dictation language as configured: "auto" | "de" | "en". */
+  language?: string;
   /** What a recording would do right now: "local" | "hosted". */
   route?: string;
   hosted?: { keyPresent: boolean; keyEnv: string; model: string };
@@ -41,6 +43,9 @@ interface SttStatus {
 
 /** The values `sttProvider` accepts, in the order the pane offers them. */
 const STT_PROVIDERS = ["auto", "local", "openai"] as const;
+
+/** The values `sttLanguage` accepts — "auto" lets the model detect. */
+const STT_LANGUAGES = ["auto", "de", "en"] as const;
 
 export function SttSettings({
   anchorId,
@@ -114,6 +119,29 @@ export function SttSettings({
             {STT_PROVIDERS.map((p) => (
               <option key={p} value={p}>
                 {t(lang, `set.sttProvider.${p}`)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      {/* The dictation language, passed through BOTH routes: whisper's -l flag
+          locally, the API's language field hosted. "auto" adds nothing to
+          either request and the model detects on its own. */}
+      {status.language !== undefined && (
+        <label className="settings-field">
+          <span>{t(lang, "set.sttLanguage")}</span>
+          <select
+            value={String(status.language ?? "auto")}
+            onChange={(e) => {
+              onSave?.({ sttLanguage: e.target.value });
+              // Same as the provider above: re-ask instead of guessing.
+              window.setTimeout(() => void load(), 150);
+            }}
+            disabled={onSave === undefined}
+          >
+            {STT_LANGUAGES.map((code) => (
+              <option key={code} value={code}>
+                {t(lang, `set.sttLanguage.${code}`)}
               </option>
             ))}
           </select>

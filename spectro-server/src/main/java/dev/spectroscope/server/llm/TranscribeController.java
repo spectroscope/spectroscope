@@ -129,22 +129,26 @@ public class TranscribeController {
 
     /**
      * What one call should do: which way it goes, the key for the hosted path,
-     * and the client that would carry it.
+     * the client that would carry it, and the dictation language.
      *
      * @param route where the recording goes
      * @param key the hosted provider's key — blank when there is none
      * @param hosted the hosted client, never null so the route can be reported
      *               honestly even when it cannot run
+     * @param language the {@code sttLanguage} setting: {@code auto} leaves
+     *                 detection to the model on either route; a code such as
+     *                 {@code de} pins whisper's {@code -l} and rides the hosted
+     *                 multipart as its own field
      */
-    record Choice(SttRoute route, String key, HostedStt hosted) {}
+    record Choice(SttRoute route, String key, HostedStt hosted, String language) {}
 
     /** Production: the settings hierarchy and the .env, read fresh per request. */
     private static Choice liveChoice() {
-        String configured = SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider();
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
         String key = SpectroConfig.resolveApiKey(HostedTranscriber.KEY_ENV);
         String safeKey = key == null ? "" : key;
-        return new Choice(SttRoute.of(configured, !safeKey.isBlank()), safeKey,
-                new HostedTranscriber(HostedTranscriber.DEFAULT_MODEL));
+        return new Choice(SttRoute.of(config.sttProvider(), !safeKey.isBlank()), safeKey,
+                new HostedTranscriber(HostedTranscriber.DEFAULT_MODEL), config.sttLanguage());
     }
 
     /**
@@ -251,7 +255,7 @@ public class TranscribeController {
                 // The answer is recorded as it ARRIVED, not as it was read: this
                 // one really did come off a socket, so its fidelity is "bytes"
                 // and the reader sees the provider's own json.
-                String body = call.hosted().post(audio, call.key());
+                String body = call.hosted().post(audio, call.key(), call.language());
                 text = Optional.of(HostedTranscriber.textOf(body)).filter(t -> !t.isEmpty());
                 exchange.end(new LlmWireTap.WireOutcome(200, "bytes", body, false, null,
                         System.currentTimeMillis()));
@@ -260,7 +264,7 @@ public class TranscribeController {
                 // whisper reads, so nothing rewrites these bytes between the microphone and
                 // the model — which is also what makes the record above the real input.
                 Files.write(wavPath, audio);
-                text = transcriber.transcribe(wavPath);
+                text = transcriber.transcribe(wavPath, call.language());
                 // "process-output": whisper's stdout as the Transcriber parsed it —
                 // not socket bytes, and the label says so.
                 exchange.end(new LlmWireTap.WireOutcome(200, "process-output",

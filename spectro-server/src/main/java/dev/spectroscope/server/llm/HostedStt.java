@@ -14,10 +14,13 @@ public interface HostedStt {
      *
      * @param wav the 16 kHz mono WAV the browser encoded
      * @param key the API key
+     * @param language the {@code sttLanguage} setting — an ISO code such as
+     *                 {@code de} rides the request as its own field; {@code auto}
+     *                 (or blank, or null) adds nothing and the API detects
      * @return the raw response body, so the caller records what really came back
      * @throws IOException with a readable sentence for any refusal
      */
-    String post(byte[] wav, String key) throws IOException, InterruptedException;
+    String post(byte[] wav, String key, String language) throws IOException, InterruptedException;
 
     /** The model it posts with — named on the wire record. */
     String model();

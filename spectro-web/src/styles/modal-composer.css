@@ -126,13 +126,17 @@
   pointer-events: none;
 }
 
+/* A COLUMN since the 2026-08-09 regroup: the box on top, the action row
+   below. Same --content-max as .history, so box and transcript share one
+   edge — the owner read the old narrower box as cut off on the right. */
 .composer-inner {
   display: flex;
-  align-items: flex-end;
+  flex-direction: column;
+  align-items: stretch;
   gap: var(--sp-2);
   max-width: var(--content-max);
   margin: 0 auto;
-  /* The slash picker (card 183) anchors here. Nothing else in this row is
+  /* The slash picker (card 183) anchors here. Nothing else in this column is
      positioned, so without it the popover would climb to the page. */
   position: relative;
 }
@@ -195,43 +199,106 @@
   margin: 0;
 }
 
-.composer textarea {
-  flex: 1;
-  min-height: 42px;
-  max-height: 150px;
+/* The box (owner 2026-08-09, Claude-style): it wears the chrome the bare
+   textarea used to wear, spans the full reading column and seats the one
+   action button at its bottom right. The textarea inside is naked — no
+   border, no background — so the growth math in Chat.tsx is pure
+   lines-plus-padding with no border term. */
+.composer-box {
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
   background: var(--surface-2);
   border: 1px solid var(--border);
   border-radius: var(--radius-card);
   box-shadow: inset 0 1px 2px var(--shade);
-  caret-color: var(--accent);
-  color: var(--text);
-  font: inherit;
-  line-height: var(--lh-body);
-  padding: 10px var(--sp-4);
-  resize: none;
   transition: border-color var(--t-fast), box-shadow var(--t-fast);
 }
-.composer textarea::placeholder { color: var(--text-faint); }
-.composer textarea:hover { border-color: var(--border-strong); }
-/* Focus ring as border + soft Coral halo (replaces the outline, never removes it). */
-.composer textarea:focus-visible {
-  outline: none;
+.composer-box:hover { border-color: var(--border-strong); }
+/* Focus ring as border + soft Coral halo on the BOX — focus-within, because
+   the ring belongs to the field, and the field is now box plus textarea
+   (replaces the outline, never removes it). */
+.composer-box:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 2px var(--shade);
 }
 
-.send { min-height: 42px; }
+.composer-box textarea {
+  flex: 1;
+  /* One 22px line + its two 10px pads. */
+  min-height: 42px;
+  /* Ten lines: 10 × 22 + 2 × 10 = 240. Keep in sync with
+     TEXTAREA_MAX_HEIGHT_PX in Chat.tsx, which grows the element to exactly
+     this cap — only past it does the scrollbar appear. */
+  max-height: 240px;
+  background: none;
+  border: 0;
+  box-shadow: none;
+  caret-color: var(--accent);
+  color: var(--text);
+  font: inherit;
+  /* An integer on purpose: the JS growth cap counts lines, and the inherited
+     1.55 × 14px = 21.7px would round per line and land the cap mid-line. */
+  line-height: 22px;
+  outline: none;
+  padding: 10px var(--sp-4);
+  resize: none;
+}
+.composer-box textarea::placeholder { color: var(--text-faint); }
 
-/* Card 78 #2: the bottom stop — same accent-outline family as the header
-   stop, sized to sit next to Send; disarmed ("stopping …") while the abort
-   is on its way to the run_end. */
-.composer-stop { min-height: 42px; padding: 6px var(--sp-4); }
-.composer-stop:disabled {
+/* The seat at the bottom right of the box. Send holds it; Stop takes it while
+   a run streams with nothing drafted (card 78's queue semantics unchanged —
+   composerButtons.ts decides, this only dresses the winner). */
+.composer-seat {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  /* Centers against the one-line 42px row and keeps the same breath from the
+     box edge as the draft grows. */
+  margin: 5px var(--sp-2) 5px 0;
+  padding: 0;
+  border-radius: var(--radius-control);
+  cursor: pointer;
+  transition: background-color var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.composer-seat--send {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-glow);
+  color: var(--accent);
+}
+.composer-seat--send:hover:not(:disabled) { background: var(--accent); color: var(--bg); }
+.composer-seat--send:disabled {
+  background: transparent;
+  border-color: var(--border);
+  color: var(--text-faint);
+  cursor: default;
+}
+/* Same accent-outline family as the header stop; disarmed ("stopping …" in
+   the title) while the abort is on its way to the run_end. */
+.composer-seat--stop {
+  background: transparent;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.composer-seat--stop:hover:not(:disabled) { background: var(--accent-soft); }
+.composer-seat--stop:disabled {
   opacity: 0.55;
   cursor: default;
-  box-shadow: none;
 }
-.composer-stop:disabled:hover { background: transparent; }
+
+/* The action row below the box (owner 2026-08-09): disclosure and attach on
+   the left end, the microphone family and the gear on the right — the ends
+   they held when they shared the old single row with the textarea. */
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+}
+.composer-actions .mic-button { margin-left: auto; }
 
 /* Card 78 #3: the waiting line — queued messages as removable chips. */
 .queue-chips {
@@ -282,7 +349,10 @@
 .archive-delete--armed,
 .archive-delete--armed:hover { color: var(--error); border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 
+/* The archive bar kept its single row: it holds a note and a few buttons,
+   not a draft — the column regroup above is the live composer's shape. */
 .archive-bar .composer-inner {
+  flex-direction: row;
   align-items: center;
   justify-content: center;
   gap: var(--sp-3);

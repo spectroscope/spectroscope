@@ -94,6 +94,37 @@ class TranscriberTest {
     }
 
     @Test
+    void aConfiguredLanguageReplacesAutoInTheArgv(@TempDir Path dir) throws Exception {
+        FakeRunner runner = new FakeRunner();
+        runner.transcriptLines = List.of("hallo");
+        Transcriber transcriber = new Transcriber(runner, presentModel(dir));
+
+        transcriber.transcribe(dir.resolve("recording.wav"), "de");
+
+        List<String> argv = runner.recorded.getFirst();
+        assertEquals("de", argv.get(argv.indexOf("-l") + 1),
+                "the sttLanguage setting pins whisper to one language");
+    }
+
+    @Test
+    void autoBlankAndNullAllKeepAutoDetection(@TempDir Path dir) throws Exception {
+        // "auto" means the request whisper always got — `-l auto` — and NOT a
+        // dropped flag: whisper-cli without -l defaults to English, which is
+        // exactly the regression the auto flag exists to prevent.
+        for (String language : new String[] {"auto", "", null}) {
+            FakeRunner runner = new FakeRunner();
+            runner.transcriptLines = List.of("hello");
+            Transcriber transcriber = new Transcriber(runner, presentModel(dir));
+
+            transcriber.transcribe(dir.resolve("recording.wav"), language);
+
+            List<String> argv = runner.recorded.getFirst();
+            assertEquals("auto", argv.get(argv.indexOf("-l") + 1),
+                    "language \"" + language + "\" must keep auto-detection");
+        }
+    }
+
+    @Test
     void backendLogNoiseIsIgnoredWhenTheTranscriptFileExists(@TempDir Path dir) throws Exception {
         FakeRunner runner = new FakeRunner();
         // Newer whisper/ggml builds spray backend logs onto the process output …

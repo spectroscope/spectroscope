@@ -76,12 +76,14 @@ public final class HostedTranscriber implements HostedStt {
      *
      * @param wav the recording, exactly as the browser encoded it
      * @param key the API key
+     * @param language the {@code sttLanguage} setting; {@code auto} adds nothing
      * @return the raw response body, so the caller can record what really came
      *         back rather than a rewritten version of it
      * @throws IOException with a readable sentence for any refusal
      */
     @Override
-    public String post(byte[] wav, String key) throws IOException, InterruptedException {
+    public String post(byte[] wav, String key, String language)
+            throws IOException, InterruptedException {
         if (wav.length > MAX_BYTES) {
             throw new IOException("The recording is " + (wav.length / (1024 * 1024))
                     + " MB and the transcription API accepts 25 MB.");
@@ -91,7 +93,8 @@ public final class HostedTranscriber implements HostedStt {
                 .header("Authorization", "Bearer " + key)
                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
                 .timeout(Duration.ofMinutes(5))
-                .POST(HttpRequest.BodyPublishers.ofByteArray(multipart(boundary, wav, model)))
+                .POST(HttpRequest.BodyPublishers.ofByteArray(
+                        multipart(boundary, wav, model, language)))
                 .build();
         HttpResponse<String> response = http.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() / 100 != 2) {
@@ -101,23 +104,35 @@ public final class HostedTranscriber implements HostedStt {
     }
 
     /**
-     * The multipart body: the model as a field, the recording as a file.
+     * The multipart body: the model as a field, an optional language field, the
+     * recording as a file.
      *
-     * <p>Hand-assembled rather than pulled in as a dependency — it is two fields
+     * <p>Hand-assembled rather than pulled in as a dependency — it is a few fields
      * and a boundary, and the audio has to ride through it byte for byte, which
      * is easier to guarantee than to verify in a library.</p>
+     *
+     * <p>The language field appears only for a REAL code. {@code auto} means the
+     * absence of an instruction — the request stays exactly what it was before
+     * the setting existed — never {@code language=auto}, which the API would
+     * read as a literal (and unknown) language.</p>
      *
      * @param boundary the multipart boundary
      * @param wav the recording
      * @param model the transcription model to ask for
+     * @param language the {@code sttLanguage} setting; {@code auto}/blank/null add nothing
      * @return the complete request body
      */
-    static byte[] multipart(String boundary, byte[] wav, String model) {
+    static byte[] multipart(String boundary, byte[] wav, String model, String language) {
         ByteArrayOutputStream out = new ByteArrayOutputStream(wav.length + 512);
         write(out, "--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"model\"\r\n\r\n"
-                + model + "\r\n"
-                + "--" + boundary + "\r\n"
+                + model + "\r\n");
+        if (language != null && !language.isBlank() && !"auto".equals(language)) {
+            write(out, "--" + boundary + "\r\n"
+                    + "Content-Disposition: form-data; name=\"language\"\r\n\r\n"
+                    + language + "\r\n");
+        }
+        write(out, "--" + boundary + "\r\n"
                 + "Content-Disposition: form-data; name=\"file\"; filename=\"recording.wav\"\r\n"
                 + "Content-Type: audio/wav\r\n\r\n");
         out.writeBytes(wav);
