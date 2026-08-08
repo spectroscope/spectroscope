@@ -63,6 +63,22 @@ class SttControllerTest {
         assertEquals("local", state.get("route"));
     }
 
+    /** The pane reports the dictation language the way it reports the provider. */
+    @Test
+    void thePaneReportsTheConfiguredDictationLanguage(@TempDir Path dir) {
+        SttController controller = new SttController(dir, "",
+                url -> new ByteArrayInputStream(new byte[0]),
+                () -> "auto", () -> false, () -> "de");
+
+        assertEquals("de", controller.state().get("language"));
+    }
+
+    /** And the shorter seams default it to auto — the setting's own default. */
+    @Test
+    void theLanguageDefaultsToAuto(@TempDir Path dir) {
+        assertEquals("auto", controllerIn(dir, "").state().get("language"));
+    }
+
     @Test
     void thePaneNamesTheHostedProviderItWouldUse(@TempDir Path dir) {
         Map<String, Object> state = controllerIn(dir, "", "openai", true).state();

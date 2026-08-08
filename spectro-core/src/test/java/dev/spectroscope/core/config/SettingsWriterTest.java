@@ -102,6 +102,22 @@ class SettingsWriterTest {
     }
 
     @Test
+    void sttLanguageWritesLikeSttProviderAndRefusesUnknownCodes(@TempDir Path dir)
+            throws IOException {
+        Path file = dir.resolve(".spectro/settings.json");
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("""
+                        { "sttLanguage": "de" }
+                        """));
+        assertEquals("de", JSON.readTree(Files.readString(file)).path("sttLanguage").asText());
+
+        assertThrows(IllegalArgumentException.class, () -> SettingsWriter.patch(file,
+                SettingsWriter.Scope.USER, JSON.readTree("""
+                        { "sttLanguage": "klingon" }
+                        """)), "only auto, de and en are known dictation languages");
+    }
+
+    @Test
     void workspaceScopesRejectProcessGlobals(@TempDir Path dir) {
         Path file = dir.resolve(".spectro/settings.json");
         assertThrows(IllegalArgumentException.class, () -> SettingsWriter.patch(file,

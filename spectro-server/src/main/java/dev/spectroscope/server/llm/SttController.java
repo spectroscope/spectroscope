@@ -63,17 +63,27 @@ public final class SttController {
     private final java.util.function.Supplier<String> configured;
     /** Whether the hosted provider has a key, read per call. */
     private final java.util.function.BooleanSupplier keyPresent;
+    /** The {@code sttLanguage} setting, read per call like the provider. */
+    private final java.util.function.Supplier<String> language;
 
     public SttController() {
         this(Path.of(System.getProperty("user.home"), ".spectro", "models"),
                 System.getenv("PATH"), SttController::httpFetch,
                 () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider(),
-                () -> SpectroConfig.hasApiKey(HostedTranscriber.KEY_ENV));
+                () -> SpectroConfig.hasApiKey(HostedTranscriber.KEY_ENV),
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none()).sttLanguage());
     }
 
     /** Seam for tests: a models dir, a PATH to search, and the HTTP leg. */
     SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher) {
         this(modelsDir, path, fetcher, () -> SttRoute.AUTO, () -> false);
+    }
+
+    /** Seam for tests: also what the settings say and whether a hosted key exists. */
+    SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher,
+                  java.util.function.Supplier<String> configured,
+                  java.util.function.BooleanSupplier keyPresent) {
+        this(modelsDir, path, fetcher, configured, keyPresent, () -> "auto");
     }
 
     /**
@@ -86,16 +96,20 @@ public final class SttController {
      *                   change while the server runs and this pane must not
      *                   describe the settings as they were at boot
      * @param keyPresent whether the hosted provider's key is set somewhere
+     * @param language reads {@code sttLanguage} — a supplier for the same
+     *                 reason {@code configured} is one
      */
     SttController(Path modelsDir, String path, LocalModelDownload.Fetcher fetcher,
                   java.util.function.Supplier<String> configured,
-                  java.util.function.BooleanSupplier keyPresent) {
+                  java.util.function.BooleanSupplier keyPresent,
+                  java.util.function.Supplier<String> language) {
         this.modelsDir = modelsDir;
         this.path = path == null ? "" : path;
         this.download = new LocalModelDownload(modelsDir, MODEL_FILE, MODEL_SHA256, MODEL_BYTES,
                 fetcher, MODEL_URL);
         this.configured = configured;
         this.keyPresent = keyPresent;
+        this.language = language;
     }
 
     /**
@@ -196,6 +210,7 @@ public final class SttController {
         boolean key = keyPresent.getAsBoolean();
         SttRoute route = SttRoute.of(configured.get(), key);
         out.put("provider", configured.get());
+        out.put("language", language.get());
         out.put("route", route == SttRoute.HOSTED ? "hosted" : "local");
         out.put("hosted", Map.of(
                 "keyPresent", key,
