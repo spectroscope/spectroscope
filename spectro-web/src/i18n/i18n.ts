@@ -732,6 +732,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.llm.parts.block1": { de: "1 Block", en: "1 block" },
   "trace.llm.parts.chars": { de: "{chars} Zeichen", en: "{chars} chars" },
   "trace.llm.parts.more": { de: "{shown} von {total} gezeigt.", en: "showing {shown} of {total}." },
+  // The audio face of an stt exchange (card 184/187): the recording as a
+  // player instead of a wall of base64.
+  "trace.llm.audio.play": { de: "Abspielen", en: "Play" },
+  "trace.llm.audio.pause": { de: "Anhalten", en: "Pause" },
+  "trace.llm.audio.scrub": { de: "In der Aufnahme spulen", en: "Scrub through the recording" },
+  "trace.llm.audio.estimated": { de: "Wort-Timing aus der Wortl\u00e4nge gesch\u00e4tzt \u2014 die Aufzeichnung tr\u00e4gt keine Zeitstempel.", en: "Word timing estimated from word length \u2014 the record carries no timestamps." },
+  "trace.llm.audio.encodedAt": { de: "Zeichen {at} von {total} des base64-Bodys", en: "character {at} of {total} of the base64 body" },
+  "trace.llm.audio.unreadable": { de: "Der Body ist kein lesbares PCM16-WAV \u2014 gezeigt wird sein Ma\u00df. Der Wire darunter ist unver\u00e4ndert.", en: "The body is not readable PCM16 WAV \u2014 shown as its measure. The wire below is unchanged." },
   "trace.llm.parts.unknownShape": { de: "Diese Ansicht kennt die Form dieses Bodys nicht, also zeigt sie ihn als Baum statt in Teilen. Der Draht darunter ist unverändert.", en: "This pane does not know this body's shape, so it shows the tree instead of the parts. The wire below is unchanged." },
   "trace.llm.res.lines": { de: "{n} Zeilen", en: "{n} lines" },
   "trace.llm.res.aborted": { de: "abgebrochen", en: "aborted" },

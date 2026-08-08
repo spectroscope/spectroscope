@@ -27,6 +27,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { AudioClipCard } from "./AudioClipCard";
 import { cutAroundBlob } from "../state/sourceWindow";
 import { withinBudget, SOURCE_DISPLAY_CHARS } from "./traceDetail";
 import { JsonTree } from "./JsonTree";
@@ -218,10 +219,19 @@ function RequestParts({
   expandAll: boolean;
 }) {
   if (parts.empty) {
+    const parsed = safeParse(body);
     return (
       <>
         <p className="trace-source-note">{t(lang, "trace.llm.parts.unknownShape")}</p>
-        <JsonTree value={safeParse(body)} defaultDepth={expandAll ? 99 : 3} />
+        {typeof parsed === "string" ? (
+          /* A body that is not JSON at all reaches the tree as one string
+             leaf, which JsonTree prints WHOLE — for an encoded body that was
+             the wall of base64 this face is meant to prevent. The gap cutter
+             is the rule everywhere else; it applies here too. */
+          <SegmentedText text={parsed} lang={lang} />
+        ) : (
+          <JsonTree value={parsed} defaultDepth={expandAll ? 99 : 3} />
+        )}
       </>
     );
   }
@@ -578,6 +588,14 @@ export function LlmExchangeDetail({
           {sentenceOf(bodies.request, lang)}
           {bodies.request.body === null ? (
             emptyNote(bodies.request, false, lang)
+          ) : meta.kind === "stt" ? (
+            /* An stt body is the recording's own base64 of the WAV (fidelity
+               "encoded", both routes). The parts reader cannot know that shape,
+               and the tree fallback would print the wall of base64 the
+               measured-gap idiom exists to prevent. So the structured face
+               shows the recording as what it is: playable audio, the words the
+               model heard, and the window into the encoded text. */
+            <AudioClipCard body={bodies.request.body} responseBody={bodies.response.body} />
           ) : (
             <RequestParts parts={parts} body={bodies.request.body} lang={lang} expandAll={expandAll} />
           )}
