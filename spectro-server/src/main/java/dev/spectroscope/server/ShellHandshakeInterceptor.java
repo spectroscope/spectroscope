@@ -39,8 +39,10 @@ import java.util.function.BooleanSupplier;
  *
  * <p>{@link LocalOriginHandshakeInterceptor} is untouched — card 92's contract and
  * its tests keep their own shape.</p>
+ *
+ * <p>Public since card 186: WebSocketConfig in .web adds it to the /ws/shell handshake.</p>
  */
-final class ShellHandshakeInterceptor implements HandshakeInterceptor {
+public final class ShellHandshakeInterceptor implements HandshakeInterceptor {
 
     private final BooleanSupplier ptyAvailable;
     private final BooleanSupplier featureEnabled;
@@ -49,7 +51,7 @@ final class ShellHandshakeInterceptor implements HandshakeInterceptor {
      * @param ptyAvailable   whether a terminal can be opened at all
      * @param featureEnabled whether the operator left the feature on
      */
-    ShellHandshakeInterceptor(BooleanSupplier ptyAvailable, BooleanSupplier featureEnabled) {
+    public ShellHandshakeInterceptor(BooleanSupplier ptyAvailable, BooleanSupplier featureEnabled) {
         this.ptyAvailable = ptyAvailable;
         this.featureEnabled = featureEnabled;
     }

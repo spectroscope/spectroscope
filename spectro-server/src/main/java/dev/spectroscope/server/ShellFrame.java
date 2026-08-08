@@ -13,11 +13,13 @@ package dev.spectroscope.server;
  *   0x00 | bytes                     keystrokes
  *   0x01 | rows u16 BE | cols u16 BE  resize (exactly four payload bytes)
  * </pre>
+ *
+ * <p>Public since card 186: WebSocketConfig in .web sizes its binary buffer from MAX_DATA.</p>
  */
-final class ShellFrame {
+public final class ShellFrame {
 
     /** Largest keystroke payload in one frame — a paste, not a file. */
-    static final int MAX_DATA = 64 * 1024;
+    public static final int MAX_DATA = 64 * 1024;
     static final int MAX_ROWS = 1000;
     static final int MAX_COLS = 1000;
 

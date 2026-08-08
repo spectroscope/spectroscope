@@ -63,7 +63,7 @@ public class ExplainController {
      * digest {@link #MAX_DIGEST_CHARS} allows, so nothing honest is refused
      * here and everything dishonest stops before it is read.
      */
-    static final int MAX_BODY_BYTES = 4 * MAX_DIGEST_CHARS;
+    public static final int MAX_BODY_BYTES = 4 * MAX_DIGEST_CHARS;
 
     /**
      * Seam: build the provider from config (real: {@link ProviderFactory}).

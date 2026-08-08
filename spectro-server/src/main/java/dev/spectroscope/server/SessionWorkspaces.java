@@ -10,8 +10,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * In-memory only: a pin lives as long as the server process; after a restart
  * a resumed session falls back to the config/auto rules (the picked folder
  * keeps its files, the pin is just no longer known).
+ *
+ * <p>Public since card 186, and it is the socket-to-REST shared-state bridge: ShellCwd in .shell and WorkspaceController in .workspace read it, as do three WorkspaceController tests. Advertising it module-wide is an invitation to new coupling; a narrow interface is a follow-up card.</p>
  */
-final class SessionWorkspaces {
+public final class SessionWorkspaces {
 
     /** sessionId → the absolute folder the user picked for that session. */
     private static final Map<String, String> PINS = new ConcurrentHashMap<>();
@@ -36,7 +38,7 @@ final class SessionWorkspaces {
      * @param sessionId the session whose workspace was resolved
      * @param path the absolute directory the resolver returned
      */
-    static void resolved(String sessionId, String path) {
+    public static void resolved(String sessionId, String path) {
         RESOLVED.put(sessionId, path);
     }
 
@@ -47,7 +49,7 @@ final class SessionWorkspaces {
      * @return the resolved directory, or {@code null} when this session has not
      *         resolved a workspace, including a session id that never existed
      */
-    static String resolvedPath(String sessionId) {
+    public static String resolvedPath(String sessionId) {
         return sessionId == null ? null : RESOLVED.get(sessionId);
     }
 
@@ -57,7 +59,7 @@ final class SessionWorkspaces {
      * @param sessionId the session to pin
      * @param path the absolute directory the native picker returned
      */
-    static void pin(String sessionId, String path) {
+    public static void pin(String sessionId, String path) {
         PINS.put(sessionId, path);
     }
 
@@ -67,7 +69,7 @@ final class SessionWorkspaces {
      * @param sessionId the session to look up
      * @return the pinned folder, or {@code null} when the session never picked one
      */
-    static String pinned(String sessionId) {
+    public static String pinned(String sessionId) {
         return sessionId == null ? null : PINS.get(sessionId);
     }
 }

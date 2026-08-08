@@ -19,8 +19,10 @@ import java.util.Map;
  * one goes — so a SIGTERM'd server takes its shells with it, and an idle server
  * carries no hook it does not need. The helper's own stdin-EOF rule covers the
  * case where no hook ever runs at all.</p>
+ *
+ * <p>Public since card 186: WebSocketConfig in .web constructs it.</p>
  */
-final class ShellRegistry {
+public final class ShellRegistry {
 
     /** Tabs one session may hold open at once. */
     static final int MAX_PER_SESSION = 8;

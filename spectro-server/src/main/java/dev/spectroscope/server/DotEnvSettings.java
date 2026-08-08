@@ -37,13 +37,15 @@ import java.util.Map;
  * is a file an operator edits: a line reading {@code JAVA_TOOL_OPTIONS=…} or
  * {@code spring.datasource.url=…} would be silently obeyed. The two names below
  * are the ones the UI can write, and they are the only ones this reads.</p>
+ *
+ * <p>Public since card 186: main() applies it from the root package, and SessionsController in .session reads WRITABLE, HUB_PORT and read().</p>
  */
-final class DotEnvSettings {
+public final class DotEnvSettings {
 
     private DotEnvSettings() {}
 
     /** The hub's port opt-in; blank keeps the hub off. */
-    static final String HUB_PORT = "SPECTRO_HUB_PORT";
+    public static final String HUB_PORT = "SPECTRO_HUB_PORT";
     /** The spawn opt-in; anything but {@code true} keeps it off. */
     static final String ALLOW_SPAWN = "SPECTRO_ALLOW_SPAWN";
 
@@ -52,7 +54,7 @@ final class DotEnvSettings {
      * Adding one here is a security decision: it becomes remotely settable by
      * anything that can reach the origin-fenced endpoint.
      */
-    static final List<String> WRITABLE = List.of(HUB_PORT, ALLOW_SPAWN);
+    public static final List<String> WRITABLE = List.of(HUB_PORT, ALLOW_SPAWN);
 
     /** The property source's name — also how a test finds it. */
     static final String SOURCE = "spectroDotEnvSettings";
@@ -70,7 +72,7 @@ final class DotEnvSettings {
      * @return the values found, in file order; empty when the file is absent or
      *         unreadable, because a missing opt-in is exactly "off"
      */
-    static Map<String, Object> read(Path file) {
+    public static Map<String, Object> read(Path file) {
         Map<String, Object> found = new LinkedHashMap<>();
         if (!Files.isRegularFile(file)) {
             return found;

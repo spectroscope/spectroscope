@@ -31,8 +31,10 @@ import java.util.function.Supplier;
  * ends reaps the child. The handshake fence
  * ({@link ShellHandshakeInterceptor}) has already refused anything non-local
  * before this class sees a thing.</p>
+ *
+ * <p>Public since card 186: WebSocketConfig in .web registers it on /ws/shell.</p>
  */
-final class ShellSocketHandler extends AbstractWebSocketHandler {
+public final class ShellSocketHandler extends AbstractWebSocketHandler {
 
     private static final int DEFAULT_ROWS = 24;
     private static final int DEFAULT_COLS = 80;
@@ -50,7 +52,7 @@ final class ShellSocketHandler extends AbstractWebSocketHandler {
      * @param registry the process-wide shell registry
      * @param provider the PTY seam
      */
-    ShellSocketHandler(ShellRegistry registry, PtyProvider provider) {
+    public ShellSocketHandler(ShellRegistry registry, PtyProvider provider) {
         this(registry, provider,
                 () -> SpectroConfig.load(SpectroConfig.Overrides.none()).workspace());
     }

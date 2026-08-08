@@ -14,8 +14,10 @@ import java.util.Set;
  * <p>An unset value keeps the feature on. That is deliberate and it is the one
  * place here that does not err closed: a value nobody set is not a refusal, and
  * defaulting off would mean the pane ships dead.</p>
+ *
+ * <p>Public since card 186: WebSocketConfig in .web and SessionsController in .session both ask whether the shell is on.</p>
  */
-final class Shells {
+public final class Shells {
 
     /** Everything read as a no. */
     private static final Set<String> NO = Set.of("off", "false", "0", "no", "disabled");
@@ -29,7 +31,7 @@ final class Shells {
      *
      * @return whether the shell endpoint exists in this process
      */
-    static boolean enabled() {
+    public static boolean enabled() {
         String property = System.getProperty("spectro.shell");
         if (property != null && !property.isBlank()) {
             return enabled(property);

@@ -22,8 +22,10 @@ import java.util.stream.Stream;
  * {@code checklist}, where the pill and the panel still track but nothing ever
  * locks. That rule comes straight from the stress test: locks are for people
  * meeting the product, never for someone who already has work in here.</p>
+ *
+ * <p>Public since card 186: main() in the root package calls recorder() first thing, and SessionConnection and SessionsController in .session read it.</p>
  */
-final class ServerLeveling {
+public final class ServerLeveling {
 
     private static volatile LevelingRecorder recorder;
 
@@ -33,7 +35,7 @@ final class ServerLeveling {
     /**
      * @return the process-wide recorder, built on first use
      */
-    static LevelingRecorder recorder() {
+    public static LevelingRecorder recorder() {
         LevelingRecorder local = recorder;
         if (local == null) {
             synchronized (ServerLeveling.class) {
