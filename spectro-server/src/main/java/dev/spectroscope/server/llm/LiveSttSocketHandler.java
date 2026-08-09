@@ -125,7 +125,15 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
                     tell("ready", null, null);
                 }
                 case PARTIAL -> tell("partial", read.text(), null);
-                case FINAL -> tell("final", read.text(), null);
+                case FINAL -> {
+                    tell("final", read.text(), null);
+                    // The transcript IS the end of this exchange, and closing the
+                    // record here rather than at disconnect is not tidiness: the
+                    // `wire` frame rides the browser socket, and by the time
+                    // afterConnectionClosed runs that socket is already gone.
+                    // Measured in a real browser — the frame never arrived.
+                    endRecord();
+                }
                 case ERROR -> {
                     // Kept for the outcome: a session that ends after a refusal
                     // must not close with a 200 beside the refusal's own line.

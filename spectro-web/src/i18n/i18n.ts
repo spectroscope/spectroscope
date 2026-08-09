@@ -785,6 +785,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "voice.live.on": { de: "Der Text erscheint beim Sprechen und wird am Ende ersetzt.", en: "The text appears as you speak and is replaced at the end." },
   "voice.live.off": { de: "Der Text erscheint, wenn die Aufnahme fertig ist.", en: "The text appears once the recording is done." },
   "voice.live.localRoute": { de: "Der lokale Weg schreibt erst mit, wenn die Aufnahme steht — er liest eine fertige Datei. Live geht über den Anbieter-Weg.", en: "The local route only writes once the recording is complete — it reads a finished file. Live runs over the provider route." },
+  "voice.live.upstream": { de: "Der Anbieter hat die Live-Sitzung abgelehnt oder abgebrochen. Gesprochen wurde, angekommen ist nichts Verwertbares.", en: "The provider refused or dropped the live session. You spoke, but nothing usable arrived." },
+  "voice.live.closed": { de: "Die Verbindung endete, bevor der Text fertig war. Der blasse Teil ist alles, was gehört wurde.", en: "The connection ended before the text was finished. The faded part is everything that was heard." },
   "voice.live.noKey": { de: "Für den Anbieter-Weg fehlt der Schlüssel — Einstellungen → Anbieter.", en: "The provider route is missing its key — Settings → Providers." },
   "set.secStt": { de: "Spracheingabe", en: "Speech to text" },
   "set.sttProvider": { de: "Weg der Spracheingabe", en: "Speech to text via" },

@@ -222,6 +222,38 @@ class LiveSttWireTest {
     }
 
     @Test
+    void theRecordClosesWhenTheTranscriptLands_notWhenTheSocketDoes(@TempDir Path dir)
+            throws Exception {
+        // Found in a real browser, not here: the `wire` frame rides the browser
+        // socket, and afterConnectionClosed runs when that socket is ALREADY
+        // gone — so a record closed at disconnect can never announce itself.
+        // The transcript is the honest end of the exchange anyway.
+        Path wireFile = dir.resolve("stt.llm.jsonl");
+        FakeUpstream upstream = new FakeUpstream();
+        FakeSocket socket = new FakeSocket("w8", "ws://localhost/ws/stt");
+        try (LlmWireRecorder recorder = new LlmWireRecorder(wireFile, 1_000_000)) {
+            LiveSttSocketHandler handler = handler(upstream, recorder, SttRoute.HOSTED, "sk-real");
+            handler.afterConnectionEstablished(socket);
+            upstream.says("{\"type\":\"session.updated\"}");
+            upstream.says("{\"type\":\"conversation.item.input_audio_transcription.completed\","
+                    + "\"transcript\":\"Done.\"}");
+
+            // Still open, and the record is already complete and announced.
+            assertTrue(socket.textJoined().contains("\"type\":\"wire\""),
+                    "the wire frame must go out while there is still a socket to carry it");
+            assertTrue(linesOf(wireFile).stream()
+                    .anyMatch(l -> l.path("type").asText().equals("llm_response")));
+
+            // And the later disconnect must not append a second answer.
+            handler.afterConnectionClosed(socket, CloseStatus.NORMAL);
+        }
+
+        assertEquals(1, linesOf(wireFile).stream()
+                .filter(l -> l.path("type").asText().equals("llm_response")).count(),
+                "end() latches — two response lines would claim two answers");
+    }
+
+    @Test
     void theBrowserIsToldWhereItsOwnRecordIs(@TempDir Path dir) throws Exception {
         // The batch route answers with a `wire` object because voice happens
         // before any session exists and there is no socket to mirror it onto.
