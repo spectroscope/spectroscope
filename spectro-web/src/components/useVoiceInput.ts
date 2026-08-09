@@ -222,12 +222,21 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
       // spoken (liveCapture.ts), and what comes back is words.
       liveRef.current = LIVE_START;
       setLiveText(LIVE_START);
-      const finish = (): void => {
-        captureRef.current?.close();
-        captureRef.current = null;
+      // The microphone stops; the SOCKET does not. Closing it the moment the
+      // transcript lands is what lost the record: the server sends `final` and
+      // then `wire`, and a socket closed in between drops the second one —
+      // measured, [ready, final] against [ready, final, wire]. Without that
+      // frame the exchange is on disk and in no trace, which is the one thing
+      // this card set exists to prevent.
+      const releaseTheMicrophone = (): void => {
         stream.getTracks().forEach((track) => track.stop());
         stopMeter();
         setMicPhase("idle");
+      };
+      const finish = (): void => {
+        captureRef.current?.close();
+        captureRef.current = null;
+        releaseTheMicrophone();
       };
       try {
         captureRef.current = await startLiveCapture(stream, (frame) => {
@@ -243,12 +252,19 @@ export function useVoiceInput(onTranscript: (text: string) => void, live: boolea
           // Only a `final` ever reaches the draft. The provisional text is a
           // model guess, and the whole point of this card is that a guess is
           // never quietly published as the answer.
+          if ((frame as { type?: unknown } | null)?.type === "wire") {
+            // The record has announced itself, so there is nothing left to wait
+            // for. NOW the socket may go.
+            finish();
+            return;
+          }
           if (now.committed !== null && was.committed === null) {
             // An empty transcript is what silence sounds like, and it is a real
             // answer — the session finished. It is just not something to put in
             // the draft, exactly as the batch path decided.
             if (now.committed !== "") onTranscript(now.committed);
-            finish();
+            // Microphone off, socket open: the wire frame is still on its way.
+            releaseTheMicrophone();
           } else if (now.failed !== null && was.failed === null) {
             finish();
           }
