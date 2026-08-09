@@ -2,8 +2,12 @@ package dev.spectroscope.server.web;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.context.ApplicationContext;
+import org.springframework.web.servlet.HandlerMapping;
+import org.springframework.web.servlet.handler.AbstractUrlHandlerMapping;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -12,11 +16,12 @@ import java.io.OutputStream;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Proof that {@code /ws/stt} is <em>fenced</em>, as opposed to correct.
@@ -37,6 +42,9 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 @Timeout(value = 30, unit = TimeUnit.SECONDS)
 class LiveSttSocketRegistrationTest {
 
+    @Autowired
+    private ApplicationContext context;
+
     @LocalServerPort
     private int port;
 
@@ -54,11 +62,26 @@ class LiveSttSocketRegistrationTest {
     }
 
     @Test
-    void theLocalPageStillGetsThroughTheFence() throws IOException {
+    void theEndpointItselfIsMapped() {
         // Without this the two refusals prove nothing: 403 is also what a
-        // mistyped path would produce, so a typo would read as a working fence.
-        assertNotEquals(403, handshakeStatus("http://localhost:" + port),
-                "the fence must refuse foreign origins and only foreign origins");
+        // mistyped path would answer, so a typo would read as a working fence.
+        //
+        // Deliberately asserted against the mapping and NOT by completing a
+        // handshake from a local origin. That handshake would reach
+        // afterConnectionEstablished, which on a developer machine with a key in
+        // ~/.spectro/.env opens a REAL, metered session at the provider and
+        // writes a record into the real home. A suite that can spend money is a
+        // suite nobody can run twice without thinking about it.
+        Map<String, Object> mapped = context.getBeansOfType(HandlerMapping.class).values().stream()
+                .filter(AbstractUrlHandlerMapping.class::isInstance)
+                .map(AbstractUrlHandlerMapping.class::cast)
+                .map(AbstractUrlHandlerMapping::getHandlerMap)
+                .flatMap(m -> m.entrySet().stream())
+                .collect(java.util.stream.Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue,
+                        (a, b) -> a));
+        assertTrue(mapped.containsKey("/ws/stt"),
+                "the live transcription endpoint is not mapped at all — the two 403s above"
+                        + " would then be proving nothing but a missing route: " + mapped.keySet());
     }
 
     private int handshakeStatus(String origin) throws IOException {
