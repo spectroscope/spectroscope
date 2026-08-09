@@ -10,7 +10,9 @@
 /* The reading width, set in the disclosure menu (owner 2026-07-25). Raising
    the local --content-max is enough: the history AND the composer both read
    that token, so the column and its input stay one shape. */
-.chat--wide { --content-max: var(--content-max-wide); }
+.chat--wide {
+  --content-max: var(--content-max-wide);
+}
 
 /* The session tools (export, translate), in the bottom bar above the input.
    They used to float top-right over the scroll area, which meant giving them a
@@ -41,8 +43,14 @@
    reachable from the trace and the text feed too. It takes the auto margin the
    level pill would otherwise take; the pill then simply follows it. Lives in
    this file because it is the chat's translate control wearing another hat. */
-.tab-nav__translate { margin-left: auto; display: inline-flex; align-items: center; }
-.tab-nav__translate + .tab-nav__level { margin-left: var(--sp-2); }
+.tab-nav__translate {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+}
+.tab-nav__translate + .tab-nav__level {
+  margin-left: var(--sp-2);
+}
 /* The menu popover: compact. It sits at the FAR LEFT of the composer row, so
    it left-aligns (the wsg-pop default right:0 would push it off the window
    edge) and opens upward, which is the only direction left now that the
@@ -80,7 +88,10 @@
   animation: rise-in 200ms var(--ease) backwards;
 }
 @keyframes rise-in {
-  from { opacity: 0; transform: translateY(4px); }
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .empty {
@@ -100,7 +111,9 @@
   font-weight: 640;
   letter-spacing: var(--track-heading);
 }
-.empty-logo { flex-shrink: 0; }
+.empty-logo {
+  flex-shrink: 0;
+}
 .empty p {
   margin: 0;
   color: var(--text-dim);
@@ -118,15 +131,47 @@
   font-size: 0.8rem;
   color: var(--text-faint);
 }
-.empty-hint svg { flex-shrink: 0; }
+.empty-hint svg {
+  flex-shrink: 0;
+}
 
 /* New-chat workspace chooser (random | default | set folder). */
-.ws-chooser { display: flex; align-items: center; gap: var(--sp-2); margin-top: var(--sp-3); }
-.ws-chooser-label { font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
-.ws-chooser-opts { display: inline-flex; gap: 3px; border: 1px solid var(--border); border-radius: var(--radius-chip); padding: 2px; }
-.ws-chooser-opt { background: none; border: 0; border-radius: var(--radius-chip); color: var(--text-faint); font: inherit; font-size: var(--fs-12); padding: 3px var(--sp-2); cursor: pointer; }
-.ws-chooser-opt:hover { color: var(--text); }
-.ws-chooser-opt--on { background: var(--accent-soft); color: var(--accent); }
+.ws-chooser {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.ws-chooser-label {
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.ws-chooser-opts {
+  display: inline-flex;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 2px;
+}
+.ws-chooser-opt {
+  background: none;
+  border: 0;
+  border-radius: var(--radius-chip);
+  color: var(--text-faint);
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: 3px var(--sp-2);
+  cursor: pointer;
+}
+.ws-chooser-opt:hover {
+  color: var(--text);
+}
+.ws-chooser-opt--on {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
 
 /* User turn: a flat bubble on the RIGHT (owner 2026-07-25). One solid mid
    surface — no gradient, no border, no shadow: the side of the column is what
@@ -158,11 +203,15 @@
   overflow-wrap: break-word;
 }
 /* Attachments ride along inside the bubble, right-aligned with it. */
-.user-turn .user-attachments { justify-content: flex-end; }
+.user-turn .user-attachments {
+  justify-content: flex-end;
+}
 
 /* Assistant turn: the LEFT column — document flow on the app ground, no
    bubble at all (owner: "wie im Screenshot"). */
-.assistant-turn { margin: 0 0 var(--sp-4); }
+.assistant-turn {
+  margin: 0 0 var(--sp-4);
+}
 .assistant-turn .agent-badge {
   display: inline-block;
   margin-bottom: var(--sp-1);
@@ -177,15 +226,28 @@
 }
 
 /* Markdown typography — chat-scale, token-driven, reskins with every genome. */
-.md > :last-child { margin-bottom: 0; }
-.md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
   margin: var(--sp-4) 0 var(--sp-2);
   font-weight: 500;
   letter-spacing: var(--track-heading);
   line-height: 1.3;
 }
-.md > h1:first-child, .md > h2:first-child, .md > h3:first-child,
-.md > h4:first-child, .md > h5:first-child, .md > h6:first-child { margin-top: 0; }
+.md > h1:first-child,
+.md > h2:first-child,
+.md > h3:first-child,
+.md > h4:first-child,
+.md > h5:first-child,
+.md > h6:first-child {
+  margin-top: 0;
+}
 .md h1 {
   font-size: var(--fs-20);
   font-weight: 300; /* Light is the display weight */
@@ -193,12 +255,30 @@
   padding-bottom: var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
-.md h2 { font-size: var(--fs-18); font-weight: 300; }
-.md h3 { font-size: var(--fs-15); }
-.md h4, .md h5, .md h6 { font-size: var(--fs-13); }
-.md p { margin: 0 0 var(--sp-3); }
-.md a { color: var(--accent); text-decoration: none; border-bottom: 1px solid transparent; transition: border-color var(--t-fast); }
-.md a:hover { border-bottom-color: var(--accent); }
+.md h2 {
+  font-size: var(--fs-18);
+  font-weight: 300;
+}
+.md h3 {
+  font-size: var(--fs-15);
+}
+.md h4,
+.md h5,
+.md h6 {
+  font-size: var(--fs-13);
+}
+.md p {
+  margin: 0 0 var(--sp-3);
+}
+.md a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color var(--t-fast);
+}
+.md a:hover {
+  border-bottom-color: var(--accent);
+}
 
 /* Inline code: a quiet mono chip. */
 .md-code {
@@ -240,11 +320,24 @@
 }
 
 /* Lists: sand diamond bullets (the deco device), dim ordered markers. */
-.md ul, .md ol { margin: 0 0 var(--sp-3); padding-left: 1.5em; }
-.md li { margin: 0 0 var(--sp-1); }
-.md li > ul, .md li > ol { margin: var(--sp-1) 0 0; }
-.md ul { list-style: none; }
-.md ul > li { position: relative; }
+.md ul,
+.md ol {
+  margin: 0 0 var(--sp-3);
+  padding-left: 1.5em;
+}
+.md li {
+  margin: 0 0 var(--sp-1);
+}
+.md li > ul,
+.md li > ol {
+  margin: var(--sp-1) 0 0;
+}
+.md ul {
+  list-style: none;
+}
+.md ul > li {
+  position: relative;
+}
 .md ul > li::before {
   content: "\25C6";
   position: absolute;
@@ -253,7 +346,11 @@
   font-size: 7px;
   color: var(--sand);
 }
-.md ol > li::marker { color: var(--text-dim); font-family: var(--font-mono); font-size: var(--fs-12); }
+.md ol > li::marker {
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
 
 .md blockquote {
   margin: 0 0 var(--sp-3);
@@ -261,14 +358,27 @@
   border-left: 2px solid var(--sand);
   color: var(--text-dim);
 }
-.md blockquote > :last-child { margin-bottom: 0; }
+.md blockquote > :last-child {
+  margin-bottom: 0;
+}
 
-.md-hr { border: 0; border-top: 1px solid var(--border-strong); margin: var(--sp-4) 0; }
+.md-hr {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+  margin: var(--sp-4) 0;
+}
 
 /* Tables: hairline grid, raised header, quiet zebra. */
-.md-table-wrap { margin: 0 0 var(--sp-3); overflow-x: auto; }
-.md-table { border-collapse: collapse; font-size: var(--fs-13); }
-.md-table th, .md-table td {
+.md-table-wrap {
+  margin: 0 0 var(--sp-3);
+  overflow-x: auto;
+}
+.md-table {
+  border-collapse: collapse;
+  font-size: var(--fs-13);
+}
+.md-table th,
+.md-table td {
   border: 1px solid var(--border);
   padding: var(--sp-1) var(--sp-3);
   text-align: left;
@@ -278,7 +388,9 @@
   font-size: var(--fs-12);
   font-weight: 600;
 }
-.md-table tbody tr:nth-child(even) td { background: var(--shade); }
+.md-table tbody tr:nth-child(even) td {
+  background: var(--shade);
+}
 
 /* Streaming caret: the ONE pulsing element while text streams — with halo. */
 .caret {
@@ -304,7 +416,9 @@
   overflow: hidden;
   transition: border-color var(--t-fast);
 }
-.thinking--active { border-left-color: var(--accent); }
+.thinking--active {
+  border-left-color: var(--accent);
+}
 .thinking-head {
   display: flex;
   align-items: center;
@@ -318,13 +432,30 @@
   font-size: var(--fs-12);
   text-align: left;
   cursor: pointer;
-  transition: background var(--t-fast), color var(--t-fast);
+  transition:
+    background var(--t-fast),
+    color var(--t-fast);
 }
-.thinking-head:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); color: var(--text); }
-.thinking-glyph { flex: none; color: var(--text-faint); }
-.thinking--active .thinking-glyph { color: var(--accent); }
-.thinking-label { font-weight: 500; letter-spacing: var(--track-heading); }
-.thinking-meta { margin-left: auto; color: var(--text-faint); font-family: var(--font-mono); }
+.thinking-head:hover {
+  background: color-mix(in srgb, var(--surface-2) 60%, transparent);
+  color: var(--text);
+}
+.thinking-glyph {
+  flex: none;
+  color: var(--text-faint);
+}
+.thinking--active .thinking-glyph {
+  color: var(--accent);
+}
+.thinking-label {
+  font-weight: 500;
+  letter-spacing: var(--track-heading);
+}
+.thinking-meta {
+  margin-left: auto;
+  color: var(--text-faint);
+  font-family: var(--font-mono);
+}
 /* Per-message token/duration footer — quiet, under the answer. */
 .assistant-meta {
   margin-top: var(--sp-1);
@@ -349,15 +480,24 @@
   animation: thinking-pulse 1.2s ease-in-out infinite;
 }
 @keyframes thinking-pulse {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.4; transform: scale(0.7); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.7);
+  }
 }
 .thinking-caret {
   flex: none;
   color: var(--text-faint);
   transition: transform var(--t-fast);
 }
-.thinking-caret--open { transform: rotate(90deg); }
+.thinking-caret--open {
+  transform: rotate(90deg);
+}
 .thinking-body {
   max-height: 240px;
   overflow-y: auto;
@@ -372,7 +512,9 @@
   overflow-wrap: break-word;
 }
 @media (prefers-reduced-motion: reduce) {
-  .thinking-dot { animation: none; }
+  .thinking-dot {
+    animation: none;
+  }
 }
 
 /* Header "Thinking" toggle — a token-styled switch, Coral when on. */
@@ -389,8 +531,12 @@
   cursor: pointer;
   white-space: nowrap;
 }
-.thinking-toggle:hover { color: var(--text); }
-.thinking-toggle-label { letter-spacing: var(--track-heading); }
+.thinking-toggle:hover {
+  color: var(--text);
+}
+.thinking-toggle-label {
+  letter-spacing: var(--track-heading);
+}
 .thinking-toggle-track {
   position: relative;
   width: 30px;
@@ -398,7 +544,9 @@
   border-radius: 999px;
   background: var(--surface-3);
   border: 1px solid var(--border-strong);
-  transition: background var(--t-fast), border-color var(--t-fast);
+  transition:
+    background var(--t-fast),
+    border-color var(--t-fast);
 }
 .thinking-toggle-knob {
   position: absolute;
@@ -408,7 +556,9 @@
   height: 12px;
   border-radius: 999px;
   background: var(--text-faint);
-  transition: transform var(--t-fast), background var(--t-fast);
+  transition:
+    transform var(--t-fast),
+    background var(--t-fast);
 }
 .thinking-toggle--on .thinking-toggle-track {
   background: var(--accent-soft);
@@ -450,20 +600,39 @@
   padding: var(--sp-3) var(--sp-4);
   margin: 0 0 var(--sp-3);
 }
-.error-card .eyebrow { color: var(--error); }
-.error-text { font-size: var(--fs-13); }
-.error-card .link { font-size: var(--fs-13); }
+.error-card .eyebrow {
+  color: var(--error);
+}
+.error-text {
+  font-size: var(--fs-13);
+}
+.error-card .link {
+  font-size: var(--fs-13);
+}
 
 /* In-view search (state/search.ts). One hit is one TURN: the answer is markdown
    rendered to React elements, so there is no rendered string left to slice —
    chatSearch.ts carries the reasoning. Outline, not border: it draws outside the
    box model, so marking a turn never reflows the column under the reader. */
-.chat-hit { outline: 1px solid var(--border-strong); outline-offset: 3px; border-radius: var(--radius-card); }
-.chat-hit--current { outline: 2px solid var(--accent); }
+.chat-hit {
+  outline: 1px solid var(--border-strong);
+  outline-offset: 3px;
+  border-radius: var(--radius-card);
+}
+.chat-hit--current {
+  outline: 2px solid var(--accent);
+}
 /* Inside a user turn the text IS a plain string, so its occurrences mark too —
    a refinement of the outline, never a second thing to step through. */
-.chat-mark { background: var(--accent-soft); border-radius: 2px; color: inherit; padding: 0 1px; }
-.chat-hit--current .chat-mark { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.chat-mark {
+  background: var(--accent-soft);
+  border-radius: 2px;
+  color: inherit;
+  padding: 0 1px;
+}
+.chat-hit--current .chat-mark {
+  background: color-mix(in srgb, var(--accent) 26%, transparent);
+}
 
 /* Agent identity: pastel is decoration — border/badge tint, never text color. */
 .agent-badge {
@@ -478,25 +647,75 @@
   white-space: nowrap;
 }
 
-
 /* Jump rail — the trace's affordance, same shape, because an imported session
    is hundreds of turns long and scrolling it by hand is not navigation. */
-.chat-rail { position: absolute; right: 10px; bottom: 96px; z-index: 3; display: flex; flex-direction: column; gap: 2px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 999px; opacity: .55; transition: opacity var(--t-fast); }
-.chat-rail:hover { opacity: 1; }
-.chat-rail-btn { display: grid; place-items: center; width: 26px; height: 26px; border: 0; background: none; color: var(--text-dim); cursor: pointer; border-radius: 50%; }
-.chat-rail-btn:hover { color: var(--text); background: var(--surface-3); }
-.chat-rail-btn:focus-visible { outline: 2px solid var(--accent-glow); outline-offset: 1px; }
-
+/* Owner 2026-08-10: at 96px the pill was cut in half by the composer's own top
+   border, which reads as a control stuck to a divider. Asked for lower, told
+   that lower means floating over the input box itself, and picked lower. */
+.chat-rail {
+  position: absolute;
+  right: 10px;
+  bottom: 56px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  opacity: 0.55;
+  transition: opacity var(--t-fast);
+}
+.chat-rail:hover {
+  opacity: 1;
+}
+.chat-rail-btn {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  background: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 50%;
+}
+.chat-rail-btn:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.chat-rail-btn:focus-visible {
+  outline: 2px solid var(--accent-glow);
+  outline-offset: 1px;
+}
 
 /* Translation sheet: the reasoning choice with its price under it. Stacked, and
    tight, so the checkbox and the two numbers it moves read as one thing — the
    price is only useful while the control that changes it is still in view. */
-.tr-cost { display: flex; flex-direction: column; gap: var(--sp-1); margin-top: var(--sp-4); }
-.tr-check { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--text); font-size: var(--fs-13); cursor: pointer; }
-.tr-check input { accent-color: var(--accent); }
+.tr-cost {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin-top: var(--sp-4);
+}
+.tr-check {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text);
+  font-size: var(--fs-13);
+  cursor: pointer;
+}
+.tr-check input {
+  accent-color: var(--accent);
+}
 /* Disabled mid-run. Dimmed as well as inert: an unexplained click that does
    nothing reads as a broken control rather than a locked one. */
-.tr-check:has(input:disabled) { color: var(--text-faint); cursor: not-allowed; }
+.tr-check:has(input:disabled) {
+  color: var(--text-faint);
+  cursor: not-allowed;
+}
 
 /* The workspace chooser names the folder it is about (card 179). Basename as
    text, full path in the title: the pattern the Files pane already uses. */
@@ -504,7 +723,9 @@
   font-size: var(--fs-11);
   color: var(--text-dim);
 }
-.ws-chooser-new { color: var(--text-faint); }
+.ws-chooser-new {
+  color: var(--text-faint);
+}
 
 /* Pictures a tool RETURNED, carried out of an imported transcript (card 179).
    Bounded on screen and openable at full size by the browser's own image view —
