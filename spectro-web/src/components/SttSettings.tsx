@@ -17,6 +17,8 @@ import { useCallback, useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatBytes } from "../workspace/preview";
+import { liveReading, type LiveRoute } from "./liveTranscription";
+import { setLiveWanted, useLiveWanted } from "../state/liveWanted";
 
 interface BinaryState {
   found: boolean;
@@ -58,6 +60,7 @@ export function SttSettings({
   const lang = useLang();
   const [status, setStatus] = useState<SttStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const liveWanted = useLiveWanted();
 
   const load = useCallback(async () => {
     try {
@@ -84,6 +87,15 @@ export function SttSettings({
   if (status === null) return null;
 
   const model = status.model;
+  // What the live control may do right now. The server's own words: `route` is
+  // where a recording WOULD go, `speechWorks` whether that route can run at all.
+  const live = liveReading(
+    {
+      route: (status.route === "hosted" ? "hosted" : "local") as LiveRoute,
+      speechWorks: status.speechWorks !== false,
+    },
+    liveWanted,
+  );
   const start = async (): Promise<void> => {
     setBusy(true);
     try {
@@ -146,6 +158,29 @@ export function SttSettings({
             ))}
           </select>
         </label>
+      )}
+      {/* Live text (card 187 step 6). The owner's rule for this control, and it
+          has two halves: greyed out whenever the route being taken cannot
+          stream, active when it can, NEVER hidden — and never silently
+          rerouted, because wanting live text is not consent to send the audio
+          of someone who chose the offline path off their machine. Both halves
+          live in `liveReading`; this only draws it. */}
+      {status.route !== undefined && (
+        <>
+          <label className="settings-field">
+            <span>{t(lang, "voice.live.label")}</span>
+            <input
+              type="checkbox"
+              checked={live.active}
+              disabled={!live.streams}
+              onChange={(e) => setLiveWanted(e.target.checked)}
+            />
+          </label>
+          {/* The sentence is there in every state, including greyed out. A grey
+              switch with no reason is a vanished button with extra steps, which
+              is the defect step 1 of this card was opened for. */}
+          <p className="settings-note">{t(lang, live.key)}</p>
+        </>
       )}
       {status.hosted !== undefined && (
         <p className="settings-note">

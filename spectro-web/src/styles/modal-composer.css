@@ -223,6 +223,38 @@
   box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 2px var(--shade);
 }
 
+/* The field: the textarea, plus the ghost layer that shows what a live session
+   is hearing (card 187 step 6). It exists so the ghost can be positioned
+   against the textarea's own box rather than the whole composer, which also
+   holds the send seat — an overlay measured against the wrong box drifts by
+   exactly the seat's width. */
+.composer-field {
+  position: relative;
+  flex: 1;
+  display: flex;
+  min-width: 0;
+}
+
+/* Under the textarea, never over it: the real text stays crisp and keeps its
+   caret and selection. The draft is repeated here in TRANSPARENT ink so the
+   faded words begin exactly where the typed ones end — same font, same padding,
+   same wrapping, by construction rather than by measurement. */
+.composer-ghost {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 10px var(--sp-4);
+  font: inherit;
+  line-height: 22px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+.composer-ghost .said { color: transparent; }
+/* Faint on purpose, and it means one thing: this is a guess. It turns into real
+   text only when the model says it is finished. */
+.composer-ghost .heard { color: var(--text-faint); }
+
 .composer-box textarea {
   flex: 1;
   /* One 22px line + its two 10px pads. */
@@ -245,6 +277,9 @@
   resize: none;
 }
 .composer-box textarea::placeholder { color: var(--text-faint); }
+/* The textarea sits ON the ghost; without a stacking context of its own an
+   absolutely positioned sibling would paint over it. */
+.composer-field textarea { position: relative; z-index: 1; background: none; }
 
 /* The seat at the bottom right of the box. Send holds it; Stop takes it while
    a run streams with nothing drafted (card 78's queue semantics unchanged —
