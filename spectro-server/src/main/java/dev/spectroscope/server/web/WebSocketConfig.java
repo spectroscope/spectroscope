@@ -1,5 +1,11 @@
 package dev.spectroscope.server.web;
 
+import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.server.llm.HostedTranscriber;
+import dev.spectroscope.server.llm.LiveSttProtocol;
+import dev.spectroscope.server.llm.LiveSttSocketHandler;
+import dev.spectroscope.server.llm.OpenAiLiveStt;
+import dev.spectroscope.server.llm.SttRoute;
 import dev.spectroscope.server.session.SpectroSocketHandler;
 import dev.spectroscope.server.shell.HelperPtyProvider;
 import dev.spectroscope.server.shell.PtyProvider;
@@ -63,6 +69,27 @@ public class WebSocketConfig implements WebSocketConfigurer {
                 .addInterceptors(new ShellHandshakeInterceptor(
                         ptyProvider::available, Shells::enabled))
                 .setAllowedOrigins("*");
+        registry.addHandler(
+                        new LiveSttSocketHandler(WebSocketConfig::liveSttSetup, new OpenAiLiveStt()),
+                        "/ws/stt")
+                .addInterceptors(new LocalOriginHandshakeInterceptor())
+                .setAllowedOrigins("*");
+    }
+
+    /**
+     * What a live transcription session should do, read fresh per connection —
+     * a key or a provider choice can change while the server runs, exactly as
+     * {@code TranscribeController} reads its own choice per request.
+     *
+     * @return the route, the key and the transcription model
+     */
+    private static LiveSttSocketHandler.Setup liveSttSetup() {
+        String key = SpectroConfig.resolveApiKey(HostedTranscriber.KEY_ENV);
+        String safeKey = key == null ? "" : key;
+        SttRoute route = SttRoute.of(
+                SpectroConfig.load(SpectroConfig.Overrides.none()).sttProvider(),
+                !safeKey.isBlank());
+        return new LiveSttSocketHandler.Setup(route, safeKey, LiveSttProtocol.DEFAULT_MODEL);
     }
 
     /**
