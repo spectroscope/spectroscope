@@ -19,6 +19,8 @@ import type { PendingAttachment } from "./AttachmentPreview";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
+import { liveReading, type LiveRoute } from "./liveTranscription";
+import { useLiveWanted } from "../state/liveWanted";
 import { voiceErrorKey } from "./voiceError";
 import { opensTheSheet, type SttStatus } from "./voiceNoticeReading";
 import { markVoiceNoticeSeen, readVoiceNoticeSeen, shouldShowVoiceNotice } from "./voiceNoticeFlag";
@@ -137,11 +139,24 @@ export function Chat(props: {
   const attachments = useAttachments(liveView);
   // microphone wiring — the transcript lands IN THE INPUT (never
   // straight at the agent), appended to whatever is already drafted.
-  const voice = useVoiceInput((text) => setDraft((prev) => (prev ? `${prev} ${text}` : text)));
-
   // Card 187 step 7: the three facts before the first failure, not after it.
   const [voiceNoticeOpen, setVoiceNoticeOpen] = useState(false);
   const [sttStatus, setSttStatus] = useState<SttStatus | null>(null);
+  // Whether THIS press opens a live session. The decision is `liveReading`'s and
+  // nobody else's: a route that cannot stream is never quietly swapped for one
+  // that can, because wanting live text is not consent to send the audio of
+  // someone who chose the offline path off their machine.
+  const liveWanted = useLiveWanted();
+  const live = liveReading(
+    {
+      route: (sttStatus?.route === "hosted" ? "hosted" : "local") as LiveRoute,
+      speechWorks: sttStatus?.speechWorks !== false,
+    },
+    // Until the status has arrived the route is unknown, and an unknown route
+    // is not a licence to open a metered session.
+    liveWanted && sttStatus !== null,
+  );
+  const voice = useVoiceInput((text) => setDraft((prev) => (prev ? `${prev} ${text}` : text)), live.active);
   const loadSttStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/stt/status");
@@ -150,6 +165,13 @@ export function Chat(props: {
       setSttStatus(null); // an older server has no such endpoint; the sheet stays quiet
     }
   }, []);
+  // Once, on mount: the live decision needs the ROUTE before the first press,
+  // and an unknown route reads as "cannot stream" — which would quietly demote
+  // the feature for the length of one fetch. Three file probes on the server,
+  // and the sheet below is faster for it too.
+  useEffect(() => {
+    void loadSttStatus();
+  }, [loadSttStatus]);
   // The setup case takes the microphone button away, and its tooltip with it —
   // so the sheet is the only surface left that can say why, and it must come
   // back even for a reader who dismissed it once.
@@ -679,6 +701,15 @@ export function Chat(props: {
                 <span>{t(lang, "chat.recording", { t: formatTimer(voice.recordMs) })}</span>
               </div>
             )}
+            {/* A live session that produced no transcript says which of the four
+                things happened. Separate from micError on purpose: "the
+                provider refused" and "you denied the microphone" are not the
+                same news and must not share a sentence. */}
+            {voice.liveFailed !== null && (
+              <div className="recording-indicator" aria-live="polite">
+                <span>{t(lang, `voice.live.${voice.liveFailed}`)}</span>
+              </div>
+            )}
             <div className={attachments.dragOver ? "composer-inner drag-over" : "composer-inner"}>
               {/* Card 183: anchored to .composer-inner, which is why it is the
                   positioned ancestor. It opens UPWARD like the menus in the
@@ -700,24 +731,44 @@ export function Chat(props: {
                   streams and nothing new is drafted (composerButtons decides).
                   Everything else lives in the action row below. */}
               <div className="composer-box">
-                <textarea
-                  ref={textareaRef}
-                  rows={1}
-                  value={draft}
-                  placeholder={t(lang, "chat.placeholder")}
-                  aria-label={t(lang, "chat.placeholder")}
-                  onChange={(e) => {
-                    setDraft(e.target.value);
-                    autosize();
-                  }}
-                  onKeyDown={(e) => {
-                    if (slash.handleKey(e)) return;
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault();
-                      submit();
-                    }
-                  }}
-                />
+                {/* The field is the textarea plus, while a live session runs, a
+                    ghost layer under it (card 187 step 6). The owner asked for
+                    the words to arrive IN the text, and the two layers are how
+                    that stays honest: the ghost repeats the draft in
+                    TRANSPARENT ink so the faded part begins exactly where the
+                    real text ends, and the provisional words live only there.
+                    They are therefore unselectable, unsendable and not in
+                    `draft` — a guess must never be one Enter away from being
+                    sent as if somebody had typed it. */}
+                <div className="composer-field">
+                  {voice.provisional !== "" && (
+                    <div className="composer-ghost" aria-hidden="true">
+                      <span className="said">{draft}</span>
+                      <span className="heard">
+                        {draft === "" ? "" : " "}
+                        {voice.provisional}
+                      </span>
+                    </div>
+                  )}
+                  <textarea
+                    ref={textareaRef}
+                    rows={1}
+                    value={draft}
+                    placeholder={t(lang, "chat.placeholder")}
+                    aria-label={t(lang, "chat.placeholder")}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      autosize();
+                    }}
+                    onKeyDown={(e) => {
+                      if (slash.handleKey(e)) return;
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        submit();
+                      }
+                    }}
+                  />
+                </div>
                 {buttons.seat === "stop" ? (
                   <button
                     type="button"

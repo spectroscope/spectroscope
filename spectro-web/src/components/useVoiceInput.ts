@@ -15,6 +15,8 @@ import { micErrorOf, silencesTheButton, transcribeErrorOf, type VoiceError } fro
 import { levelOf, mayClick } from "./micLevel";
 import { MAX_CLIP_SECONDS, browserAudio, wavFromRecording } from "./wavClip";
 import { audioConstraint, readMicDevices, useMicDevice, type MicChoice } from "../state/micDevice";
+import { startLiveCapture, type LiveCapture } from "./liveCapture";
+import { LIVE_START, liveStep, type LiveFailure, type LiveText } from "./liveSession";
 
 /** Whether the platform asked for no incidental effects. */
 function prefersReducedMotion(): boolean {
@@ -59,14 +61,30 @@ export interface VoiceInput {
   refreshDevices: () => Promise<void>;
   /** Milliseconds since the recording began — drives the mm:ss timer. */
   recordMs: number;
+  /** What a live session has heard so far. Empty on the batch path, and shown
+   *  FADED wherever it is rendered: it is a model guess until `final` replaces
+   *  it, and it never reaches the draft on its own. */
+  provisional: string;
+  /** Why a live session produced no transcript, or null. Its sentence is
+   *  `voice.live.<reason>` — separate from `micError`, because "the provider
+   *  refused" and "you denied the microphone" are not the same kind of news. */
+  liveFailed: LiveFailure | null;
   /** First press records; second press stops and transcribes. */
   toggleMic: () => Promise<void>;
 }
 
-/** Microphone state + recorder wiring. `onTranscript` receives the finished
- *  transcript text — the caller decides where it lands (the draft, for the
- *  composer), so audio never reaches the agent unreviewed. */
-export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput {
+/**
+ * Microphone state + recorder wiring. `onTranscript` receives the finished
+ * transcript text — the caller decides where it lands (the draft, for the
+ * composer), so audio never reaches the agent unreviewed.
+ *
+ * @param onTranscript where a finished transcript goes
+ * @param live whether this press should open a LIVE session, which the caller
+ *             decides with `liveReading` — never this hook, because the rule it
+ *             encodes (a local route is not rerouted to get live text) is a
+ *             decision about consent and belongs in one place
+ */
+export function useVoiceInput(onTranscript: (text: string) => void, live: boolean = false): VoiceInput {
   const [micPhase, setMicPhase] = useState<MicPhase>("idle");
   const [micAvailable, setMicAvailable] = useState(true);
   // Why the last attempt failed, or null. Card 187 step 1: both paths below used
@@ -83,6 +101,16 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
   const [recordMs, setRecordMs] = useState(0);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const armingRef = useRef(false);
+  // The live half. A ref for the handle because the second press arrives before
+  // any re-render, exactly like the arming guard; state for the text because
+  // that is what gets drawn.
+  const captureRef = useRef<LiveCapture | null>(null);
+  const [liveText, setLiveText] = useState<LiveText>(LIVE_START);
+  // The same value as `liveText`, readable synchronously. The frame handler has
+  // to compare the state BEFORE and after a frame to know whether this is the
+  // moment a transcript landed, and doing that inside a setState updater would
+  // fire the side effects twice under StrictMode.
+  const liveRef = useRef<LiveText>(LIVE_START);
 
   // Tick the recording timer while recording — and end it at the stated ceiling.
   // The limit exists because 16 kHz PCM is 32 kB per second, so a clip has a
@@ -95,7 +123,13 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
     const id = window.setInterval(() => {
       const elapsed = Date.now() - startedAt;
       setRecordMs(elapsed);
-      if (elapsed >= MAX_CLIP_SECONDS * 1000) recorderRef.current?.stop();
+      if (elapsed < MAX_CLIP_SECONDS * 1000) return;
+      // The same ceiling on both paths, and it means the same thing: the tail of
+      // a very long take is lost rather than the whole thing. On the live path
+      // it is also the only thing that ends a metered session somebody walked
+      // away from mid-sentence.
+      if (captureRef.current !== null) captureRef.current.commit();
+      else recorderRef.current?.stop();
     }, RECORDING_TIMER_TICK_MS);
     return () => window.clearInterval(id);
   }, [micPhase]);
@@ -115,9 +149,27 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
     }
   }
 
+  /** The meter dies with the stream it was listening to. */
+  function stopMeter(): void {
+    if (audioRef.current !== null) {
+      cancelAnimationFrame(audioRef.current.raf);
+      void audioRef.current.ctx.close();
+      audioRef.current = null;
+    }
+    setLevel(0);
+  }
+
   async function toggleMic(): Promise<void> {
     if (micPhase === "recording") {
-      recorderRef.current?.stop(); // onstop takes over
+      // Both paths end on the second press; only what "end" means differs. The
+      // live one keeps its socket open afterwards, because the transcript is
+      // still on its way.
+      if (captureRef.current !== null) {
+        captureRef.current.commit();
+        setMicPhase("transcribing");
+      } else {
+        recorderRef.current?.stop(); // onstop takes over
+      }
       return;
     }
     // The await below is a WINDOW: a second press while the permission prompt
@@ -164,6 +216,57 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
       // No Web Audio: the meter stays flat and everything else works. A missing
       // decoration must never cost the feature it decorates.
     }
+    if (live) {
+      // A different instrument for a different job: no MediaRecorder, no blob,
+      // no conversion at the end. The audio leaves in pieces while it is being
+      // spoken (liveCapture.ts), and what comes back is words.
+      liveRef.current = LIVE_START;
+      setLiveText(LIVE_START);
+      const finish = (): void => {
+        captureRef.current?.close();
+        captureRef.current = null;
+        stream.getTracks().forEach((track) => track.stop());
+        stopMeter();
+        setMicPhase("idle");
+      };
+      try {
+        captureRef.current = await startLiveCapture(stream, (frame) => {
+          if ((frame as { type?: unknown } | null)?.type === "wire") {
+            // The record this session left, announced on the socket it already
+            // has — the batch path has to carry it in a POST answer instead.
+            noteVoiceExchange(frame);
+          }
+          const was = liveRef.current;
+          const now = liveStep(was, frame);
+          liveRef.current = now;
+          setLiveText(now);
+          // Only a `final` ever reaches the draft. The provisional text is a
+          // model guess, and the whole point of this card is that a guess is
+          // never quietly published as the answer.
+          if (now.committed !== null && was.committed === null) {
+            // An empty transcript is what silence sounds like, and it is a real
+            // answer — the session finished. It is just not something to put in
+            // the draft, exactly as the batch path decided.
+            if (now.committed !== "") onTranscript(now.committed);
+            finish();
+          } else if (now.failed !== null && was.failed === null) {
+            finish();
+          }
+        });
+      } catch {
+        // The socket never opened. Nothing was captured and nothing was sent,
+        // so this is the request-failed shape and not a microphone problem.
+        setMicError("requestFailed");
+        stream.getTracks().forEach((track) => track.stop());
+        stopMeter();
+        armingRef.current = false;
+        return;
+      }
+      setMicPhase("recording");
+      armingRef.current = false;
+      return;
+    }
+
     const recorder = new MediaRecorder(stream);
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => chunks.push(e.data);
@@ -251,9 +354,26 @@ export function useVoiceInput(onTranscript: (text: string) => void): VoiceInput 
         void audioRef.current.ctx.close();
         audioRef.current = null;
       }
+      // A live session left running is worse than a leaked recorder: it is a
+      // metered connection at a provider, and closing our socket is what takes
+      // the provider's session down with it.
+      const capture = captureRef.current;
+      captureRef.current = null;
+      capture?.close();
     },
     [],
   );
 
-  return { micPhase, micAvailable, micError, level, choice, refreshDevices, recordMs, toggleMic };
+  return {
+    micPhase,
+    micAvailable,
+    micError,
+    level,
+    choice,
+    refreshDevices,
+    recordMs,
+    provisional: liveText.provisional,
+    liveFailed: liveText.failed,
+    toggleMic,
+  };
 }
