@@ -47,8 +47,13 @@ describe("what a written jsonl may contain", () => {
       "otlp_export",
       "fleet_roster",
       "fleet_event",
-      "llm_exchange",
-      // Leg 2 (card 184): the call leaving, and the moment it closed. Both are
+      // `llm_exchange` is deliberately NOT in this list any more. Card 184 leg 3
+      // gave the sealed union a type for it, so a session file can hold it and a
+      // reopened session can say that a model was called — which is the whole
+      // point of the leg. Removing a name here is meant to be a decision, and
+      // this is the decision.
+      //
+      // Leg 2 (card 184): the call leaving, and the moment it closed. Both stay
       // socket-only announcements like provider_info, and llm_response is not
       // even that — it is built in this browser out of the closing frame, so no
       // session file has ever held either of them.
@@ -66,7 +71,10 @@ describe("what a written jsonl may contain", () => {
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    expect(NON_WIRE_TYPES.size).toBe(19);
+    // Eighteen, down from nineteen: `llm_exchange` graduated to the wire in
+    // card 184 leg 3. The number is asserted so the set cannot grow or shrink
+    // by accident — only on purpose, with the reason written above.
+    expect(NON_WIRE_TYPES.size).toBe(18);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

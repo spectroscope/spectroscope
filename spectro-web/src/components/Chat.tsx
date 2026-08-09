@@ -526,65 +526,73 @@ export function Chat(props: {
   // absent from the screen that needs it most. Not folded into the tools row:
   // that row withholds itself on an empty chat, and this control still applies
   // there. One mount, two places to render it.
+  // The jump rail lives INSIDE the bar it floats above (owner 2026-08-10):
+  // anchored to the composer's own top edge with `bottom: 100%`, so it keeps its
+  // distance when the bar grows a second line or a row of chips. Pinned to a
+  // fixed offset from the window bottom it drifted onto whatever the bar happened
+  // to be that day — first a divider, then the send button.
+  // The trace's affordance: an imported session runs to hundreds of turns and
+  // scrolling it by hand is not navigation.
+  const jumpRail = (
+    <div className="chat-rail">
+      <button
+        type="button"
+        className="chat-rail-btn"
+        title={t(lang, "trace.toStart")}
+        aria-label={t(lang, "trace.toStart")}
+        onClick={() => {
+          scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+          pinnedRef.current = false;
+        }}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 3.5h8" />
+          <path d="M4 11.5 8 7.5l4 4" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="chat-rail-btn"
+        title={t(lang, "trace.toEnd")}
+        aria-label={t(lang, "trace.toEnd")}
+        onClick={() => {
+          const el = scrollRef.current;
+          if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+          pinnedRef.current = true;
+        }}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 12.5h8" />
+          <path d="M4 4.5 8 8.5l4-4" />
+        </svg>
+      </button>
+    </div>
+  );
+
   const discMenu = <DisclosureMenu />;
 
   return (
     <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>
-      {/* Jump rail, the trace's affordance: an imported session runs to hundreds
-          of turns and scrolling it by hand is not navigation. */}
-      <div className="chat-rail">
-        <button
-          type="button"
-          className="chat-rail-btn"
-          title={t(lang, "trace.toStart")}
-          aria-label={t(lang, "trace.toStart")}
-          onClick={() => {
-            scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-            pinnedRef.current = false;
-          }}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 3.5h8" />
-            <path d="M4 11.5 8 7.5l4 4" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="chat-rail-btn"
-          title={t(lang, "trace.toEnd")}
-          aria-label={t(lang, "trace.toEnd")}
-          onClick={() => {
-            const el = scrollRef.current;
-            if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-            pinnedRef.current = true;
-          }}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 12.5h8" />
-            <path d="M4 4.5 8 8.5l4-4" />
-          </svg>
-        </button>
-      </div>
       <div
         className="chat-scroll"
         ref={scrollRef}
@@ -678,6 +686,7 @@ export function Chat(props: {
 
       {liveView ? (
         <div className="composer">
+          {jumpRail}
           <div className="composer-column">
             {/* The waiting line (card 78 #3): queued messages as removable
                 chips — they auto-send, oldest first, when the run ends. */}
@@ -921,6 +930,7 @@ export function Chat(props: {
         </div>
       ) : (
         <div className="composer archive-bar">
+          {jumpRail}
           {/* Same column wrapper as the live branch, so the bar keeps the width
               it had. The tools sit INSIDE the bar now, next to the disclosure
               menu — same move as the live branch, so the two screens do not

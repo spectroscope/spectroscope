@@ -5,7 +5,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  position: relative; /* anchors .chat-rail, which is absolute inside it */
+  position: relative; /* the scroll area's own anchor; .chat-rail hangs off the composer */
 }
 /* The reading width, set in the disclosure menu (owner 2026-07-25). Raising
    the local --content-max is enough: the history AND the composer both read
