@@ -47,6 +47,35 @@ export type RunEvent =
     }
   | { type: "agent_spawn"; agentId: string; parentId: string; task: string; ts: number }
   | { type: "compaction"; agentId: string; removedTurns: number; summaryChars: number; ts: number } // additive
+  // Card 184 leg 3: one finished backend-to-model exchange, as the SESSION's own
+  // record of it. It was a socket-only frame until the sealed union grew a type
+  // for it, which is why a reopened session used to lose the fact that a model
+  // had been called at all. Metadata only — the bodies stay in the sidecar and
+  // the gated endpoint serves them on the gesture that asks.
+  | {
+      type: "llm_exchange";
+      /** The sidecar's own id: what joins this line to the two lines over there. */
+      xid: string;
+      agentId: string;
+      /** Absent where no turn exists (stt happens before any session). */
+      turn?: number;
+      /** What the call was for: chat | compaction | image | stt. */
+      kind: string;
+      provider: string;
+      model: string;
+      /** Who owned the socket: http | sdk | websocket | process. */
+      transport: string;
+      url: string;
+      /** Null when nothing ever answered — a zero would be a claim. */
+      status?: number;
+      requestBytes: number;
+      responseBytes: number;
+      responseLines: number;
+      aborted: boolean;
+      fidelity: string;
+      durationMs: number;
+      ts: number;
+    }
   | {
       type: "usage";
       agentId: string;

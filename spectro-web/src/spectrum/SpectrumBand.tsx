@@ -14,11 +14,19 @@ import { innerWidthPx, markX, seqAt, viewBoxX } from "./bandGeometry";
 import { applyIntent, followMark, keyToIntent } from "./gestures";
 import { useWheelZoom } from "./useWheelZoom";
 import type { Window } from "./viewport";
-import type { Lane, LaneTick, TickKind } from "./spectrumModel";
+import type { Lane, LaneTick, TickKind, WireTick } from "./spectrumModel";
 
 export const BAND_W = 1000;
 const BAND_H = 32;
 const BAND_PAD_X = 4;
+/** The second line's strip, in viewBox units (card 184 leg 4). Added only to a
+ *  lane that actually called a model, so a lane without exchanges keeps the
+ *  exact height it had — a picture that changed for everyone to show something
+ *  most lanes do not have would be a worse trade than the feature. */
+const WIRE_BAND_H = 12;
+/** The svg is 40px tall for 32 viewBox units; the strip keeps that ratio so the
+ *  upper line stays pixel-identical to what it was. */
+const PX_PER_UNIT = 40 / 32;
 /** The drawable span between the pads: the width every mapping measures against. */
 const BAND_INNER = BAND_W - 2 * BAND_PAD_X;
 
@@ -43,6 +51,32 @@ export const TICK_COLOR: Record<TickKind, string> = {
   lifecycle: "var(--ev-lifecycle)",
   error: "var(--error)",
 };
+
+/**
+ * One exchange on the lane's second line.
+ *
+ * Colour says only what is measured: an exchange that came back is dim ink, one
+ * that never answered or was torn down is the error colour. Nothing here
+ * encodes how GOOD a call was, because the record does not know that.
+ */
+function WireMark({ mark, win, y }: { mark: WireTick; win: Window; y: number }) {
+  const w = 2.4;
+  const x = markX(mark.x, win, BAND_W, BAND_PAD_X) - w / 2;
+  const failed = mark.status === null || mark.aborted;
+  return (
+    <rect
+      x={x}
+      y={y}
+      width={w}
+      height={6}
+      rx={1}
+      fill={failed ? "var(--error)" : "var(--ev-subagent)"}
+      opacity={failed ? 0.95 : 0.7}
+    >
+      <title>{`${mark.kind} · ${mark.model} · ${mark.status ?? "no answer"} · ${mark.durationMs} ms`}</title>
+    </rect>
+  );
+}
 
 function TickMark({ tick, win, highlighted }: { tick: LaneTick; win: Window; highlighted: boolean }) {
   const shape = TICK_SHAPE[tick.kind];
@@ -168,6 +202,10 @@ export function SpectrumBand({
   // has no rect of its own. The line marks the true instant; the rect nearest it
   // is at most one pixel away and is the same colour.
   const tick = hoverSeq !== null ? (lane.ticks.find((k) => k.seq === hoverSeq) ?? null) : null;
+  // A lane only grows the second line when it really called a model, so a lane
+  // that never did keeps the height it always had.
+  const hasWire = lane.wire.length > 0;
+  const bandHeight = hasWire ? BAND_H + WIRE_BAND_H : BAND_H;
 
   const open = (seq: number | null) => {
     if (seq == null || !onFocusEvent) {
@@ -236,11 +274,32 @@ export function SpectrumBand({
       onKeyDown={onKey}
       onClick={() => open(hoverSeq)}
     >
-      <svg viewBox={`0 0 ${BAND_W} ${BAND_H}`} preserveAspectRatio="none">
+      <svg
+        viewBox={`0 0 ${BAND_W} ${bandHeight}`}
+        preserveAspectRatio="none"
+        style={hasWire ? { height: bandHeight * PX_PER_UNIT } : undefined}
+      >
         <line x1="0" y1={BAND_H / 2} x2={BAND_W} y2={BAND_H / 2} className="spectrum-baseline" />
         {marks.map((m) => (
           <TickMark key={`${m.seq}-${m.kind}`} tick={m} win={win} highlighted={m.seq === hoverSeq} />
         ))}
+        {/* The second line (card 184 leg 4): the app protocol above, the
+            conversation with the model below, on the SAME axis — so a call sits
+            under the moment that caused it. */}
+        {hasWire && (
+          <>
+            <line
+              x1="0"
+              y1={BAND_H + WIRE_BAND_H / 2}
+              x2={BAND_W}
+              y2={BAND_H + WIRE_BAND_H / 2}
+              className="spectrum-baseline spectrum-baseline--wire"
+            />
+            {lane.wire.map((m) => (
+              <WireMark key={`w-${m.seq}`} mark={m} win={win} y={BAND_H + WIRE_BAND_H / 2 - 3} />
+            ))}
+          </>
+        )}
       </svg>
       {tick && preview && (
         <>

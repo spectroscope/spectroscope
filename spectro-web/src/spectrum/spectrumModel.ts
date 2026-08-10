@@ -28,6 +28,37 @@ export interface LaneTick {
   allowed?: boolean;
 }
 
+/**
+ * One finished exchange with the model, on the lane's SECOND line (card 184
+ * leg 4).
+ *
+ * The app protocol runs above, the conversation with the backend below, and the
+ * two are joined by {@link WireTick.xid} — which is what makes the picture worth
+ * having: you can see the call leave under the turn that caused it. Metadata
+ * only; the bodies live in the sidecar and the gated endpoint serves them when
+ * something asks.
+ */
+export interface WireTick {
+  /** Position on the SAME time axis as the ticks above, normalized 0..1. */
+  x: number;
+  /** Index of the source event (stable render key, trace hand-off). */
+  seq: number;
+  /** The sidecar's key. A mark you cannot follow back to its record is
+   *  decoration, so this always travels. */
+  xid: string;
+  /** What the call was for: chat | compaction | image | stt. */
+  kind: string;
+  /** The model that answered — the lane's own model may differ per call
+   *  (compaction runs its own). */
+  model: string;
+  /** Null when nothing ever answered. Drawing that like a 200 would be the
+   *  record lying in a picture. */
+  status: number | null;
+  /** True when a cancel tore the stream down mid-generation. */
+  aborted: boolean;
+  durationMs: number;
+}
+
 export interface Lane {
   id: string;
   parentId: string | null;
@@ -44,6 +75,11 @@ export interface Lane {
    *  binary search. How many of these reach the screen is a question for the
    *  viewport (see laneSlice.ts), not for this fold. */
   ticks: LaneTick[];
+  /** The second line: this agent's exchanges with the model, sorted by x.
+   *  EMPTY rather than absent for a lane that never called one — an agent that
+   *  only ran tools has a line with nothing on it, and that is a fact worth
+   *  seeing rather than a case every renderer has to guard. */
+  wire: WireTick[];
   inTokens: number;
   outTokens: number;
   /** The lane's latest reasoning text — a bounded buffer (latest wins), so the
@@ -82,9 +118,21 @@ interface RawTick {
   pending?: boolean;
 }
 
+interface RawWire {
+  ts: number;
+  seq: number;
+  xid: string;
+  kind: string;
+  model: string;
+  status: number | null;
+  aborted: boolean;
+  durationMs: number;
+}
+
 interface LaneAcc {
-  lane: Omit<Lane, "ticks">;
+  lane: Omit<Lane, "ticks" | "wire">;
   ticks: RawTick[];
+  wire: RawWire[];
 }
 
 /** Fold a whole stream into the Spectrum model. */
@@ -114,6 +162,7 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
           thinking: "",
         },
         ticks: [],
+        wire: [],
       };
       acc.set(id, l);
       order.push(id);
@@ -243,6 +292,24 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
       case "compaction":
         tick(event.agentId, { ts, kind: "lifecycle", seq });
         break;
+      // The second line (card 184 leg 4). Deliberately NOT a tick on the upper
+      // track: the app protocol and the conversation with the model are two
+      // different stories about the same moment, and flattening them into one
+      // row is exactly the picture this leg exists to replace.
+      case "llm_exchange":
+        laneOf(event.agentId).wire.push({
+          ts,
+          seq,
+          xid: event.xid,
+          kind: event.kind,
+          model: event.model,
+          // A transport failure has no status, and the record says so with an
+          // absent field rather than a zero.
+          status: typeof event.status === "number" ? event.status : null,
+          aborted: event.aborted,
+          durationMs: event.durationMs,
+        });
+        break;
       case "image_generated":
         tick(event.agentId, { ts, kind: "tool", seq });
         break;
@@ -259,7 +326,7 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
   const span = Math.max(1, t1 - t0);
 
   const lanes: Lane[] = order.map((id) => {
-    const { lane, ticks } = acc.get(id)!;
+    const { lane, ticks, wire } = acc.get(id)!;
     // A request whose decision never arrived stays pending; everything else
     // reflects the recorded outcome.
     for (const t of ticks) {
@@ -281,7 +348,24 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
     // which the importer manufactures by the thousand: it stamps every content
     // block of one transcript record with that record's single timestamp.
     marks.sort((p, q) => p.x - q.x || p.seq - q.seq);
-    return { ...lane, pendingGate, ticks: marks };
+    // The second line rides the SAME axis, which is what makes "above and
+    // below" mean anything: a mark down here sits under the moment it happened.
+    const exchanges: WireTick[] = wire
+      .map((w) => {
+        const raw = (w.ts - t0) / span;
+        return {
+          x: raw < 0 ? 0 : raw > 1 ? 1 : raw,
+          seq: w.seq,
+          xid: w.xid,
+          kind: w.kind,
+          model: w.model,
+          status: w.status,
+          aborted: w.aborted,
+          durationMs: w.durationMs,
+        };
+      })
+      .sort((p, q) => p.x - q.x || p.seq - q.seq);
+    return { ...lane, pendingGate, ticks: marks, wire: exchanges };
   });
 
   return { lanes, t0, t1, running, totalEvents: events.length };
