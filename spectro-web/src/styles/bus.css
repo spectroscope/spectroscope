@@ -227,10 +227,11 @@
   color: var(--error);
 }
 
-/* ---- the honest composer mock -------------------------------------------- */
+/* ---- the composer, live since card 166's message verb --------------------- */
 
 .bus-card-composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
 }
 
@@ -257,6 +258,29 @@
 .bus-card-composer input:disabled,
 .bus-card-composer button:disabled {
   cursor: not-allowed;
+}
+
+/* The dashed border was the mock's own label — a live box is solid. Kept on the
+   disabled state, where it still means "this is not a thing you can use". */
+.bus-card-composer input:enabled,
+.bus-card-composer button:enabled {
+  border-style: solid;
+}
+
+.bus-card-composer input:enabled {
+  color: var(--fg);
+}
+
+/* The send answer, under the box on its own row (flex-wrap). Never a colour on
+   its own — the word carries the meaning, the tone only seconds it. */
+.composer-note {
+  flex-basis: 100%;
+  font-size: 10px;
+  color: var(--fg-faint);
+}
+
+.composer-note.is-bad {
+  color: var(--fg-dim);
 }
 
 .bus-spawn-toggle {
@@ -389,6 +413,7 @@
 
 .agent-feed-composer {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   padding: 10px 20px;
   border-top: 1px solid var(--line);

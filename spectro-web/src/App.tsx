@@ -1956,7 +1956,11 @@ export function App() {
               translated={false}
             />
           ) : (
-            <AgentFeed agentId={fleetTab.slice("agent:".length)} events={shownEvents} />
+            <AgentFeed
+              agentId={fleetTab.slice("agent:".length)}
+              events={shownEvents}
+              card={enteredFleetModel.roster.find((node) => node.id === fleetTab.slice("agent:".length))}
+            />
           )
         ) : tab !== "chat" && leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab) ? (
           /* A locked surface shows a teaser, never its content. The tab itself

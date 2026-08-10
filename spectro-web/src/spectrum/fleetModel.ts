@@ -15,6 +15,11 @@ export interface FleetNode {
   topic: string;
   connected: boolean;
   lastSeen: number;
+  /** The node's trigger note, present only when its card announced one (card
+   *  72). It is what says whether the node has a run loop at all — and so
+   *  whether it can be sent a message (card 166). Absent on a plain node, which
+   *  is why the server omits the key rather than sending null. */
+  trigger?: string | null;
 }
 
 /** One fleet frame's envelope: the canonical bus line the server sends under

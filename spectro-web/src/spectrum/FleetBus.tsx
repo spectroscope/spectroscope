@@ -16,6 +16,7 @@ import { useLang } from "../state/lang";
 import { buildFleetLabScene, type FleetLabNode } from "../lab/fleetLabScene";
 import { isLocalProvider } from "../lab/labScene";
 import { buildFleetGraph, type FleetGraphNode } from "./fleetGraph";
+import { NodeComposer } from "./NodeComposer";
 import { buildSpectrum, type Lane, type TickKind } from "./spectrumModel";
 import type { FleetModel } from "./fleetModel";
 import { FleetSpawnForm } from "./FleetSpawn";
@@ -215,18 +216,7 @@ function BusAgentCard({
           </button>
         )}
       </div>
-      <div className="bus-card-composer">
-        <input
-          type="text"
-          className="mono"
-          placeholder={t(lang, "bus.composerPlaceholder")}
-          disabled
-          title={t(lang, "bus.composerPending")}
-        />
-        <button type="button" disabled title={t(lang, "bus.composerPending")}>
-          →
-        </button>
-      </div>
+      <NodeComposer nodeId={card.id} card={card} className="bus-card-composer" />
     </div>
   );
 }

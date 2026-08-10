@@ -26,6 +26,11 @@ export interface FleetLabNode extends Loop {
   connected: boolean;
   /** The provider its last run_start named (null before the first run). */
   provider: string | null;
+  /** The roster card's trigger note — null for a plain node. Carried onto the
+   *  card because it is what decides whether this node can be talked to at all
+   *  (card 166): a trigger means a run loop, and a run loop is what a message
+   *  fires. */
+  trigger: string | null;
 }
 
 export interface FleetLabScene {
@@ -38,7 +43,7 @@ export interface FleetLabScene {
   hasLocal: boolean;
 }
 
-function freshNode(id: string, role: string, connected: boolean): FleetLabNode {
+function freshNode(id: string, role: string, connected: boolean, trigger: string | null): FleetLabNode {
   return {
     id,
     role,
@@ -47,6 +52,7 @@ function freshNode(id: string, role: string, connected: boolean): FleetLabNode {
     lastStatus: null,
     connected,
     provider: null,
+    trigger,
     ...initialLoop(),
   };
 }
@@ -74,10 +80,10 @@ function advanceFleetLoop(loop: Loop, event: RunEvent): Loop {
 export function buildFleetLabScene(model: FleetModel): FleetLabScene {
   const byId = new Map<string, FleetLabNode>();
   const order: string[] = [];
-  const ensure = (id: string, role?: string, connected?: boolean): FleetLabNode => {
+  const ensure = (id: string, role?: string, connected?: boolean, trigger?: string | null): FleetLabNode => {
     let card = byId.get(id);
     if (card === undefined) {
-      card = freshNode(id, role ?? roleFromId(id), connected ?? false);
+      card = freshNode(id, role ?? roleFromId(id), connected ?? false, trigger ?? null);
       byId.set(id, card);
       order.push(id);
     }
@@ -85,7 +91,7 @@ export function buildFleetLabScene(model: FleetModel): FleetLabScene {
   };
 
   for (const rosterNode of model.roster) {
-    ensure(rosterNode.id, rosterNode.role, rosterNode.connected);
+    ensure(rosterNode.id, rosterNode.role, rosterNode.connected, rosterNode.trigger);
   }
 
   const runOwners = new Map<string, string>(); // runId -> agentId (for run_end)

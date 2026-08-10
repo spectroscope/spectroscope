@@ -4,6 +4,8 @@
 
 import { useEffect, useMemo, useRef } from "react";
 import type { RunEvent } from "../events";
+import { NodeComposer } from "./NodeComposer";
+import type { Addressable } from "./nodeMessaging";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { eventPreview } from "./eventPreview";
@@ -26,7 +28,17 @@ function ownsEvent(event: RunEvent, agentId: string): boolean {
   return "agentId" in event && (event as { agentId?: unknown }).agentId === agentId;
 }
 
-export function AgentFeed({ agentId, events }: { agentId: string; events: RunEvent[] }) {
+export function AgentFeed({
+  agentId,
+  events,
+  card,
+}: {
+  agentId: string;
+  events: RunEvent[];
+  /** The node's roster card, when this agent is a fleet node — what decides
+   *  whether it can be talked to (card 166). Absent for a non-fleet agent. */
+  card?: Addressable;
+}) {
   const lang = useLang();
   const mine = useMemo(() => events.filter((e) => ownsEvent(e, agentId)), [events, agentId]);
   const t0 = useMemo(() => {
@@ -60,18 +72,13 @@ export function AgentFeed({ agentId, events }: { agentId: string; events: RunEve
         })}
         <div ref={endRef} />
       </div>
-      <div className="agent-feed-composer">
-        <input
-          type="text"
-          className="mono"
-          placeholder={t(lang, "bus.composerPlaceholder")}
-          disabled
-          title={t(lang, "bus.composerPending")}
-        />
-        <button type="button" disabled title={t(lang, "bus.composerPending")}>
-          →
-        </button>
-      </div>
+      <NodeComposer
+        nodeId={agentId}
+        // No card means no roster entry reached this face — which reads as "not
+        // addressable" rather than "assume it works". The composer says why.
+        card={card ?? { connected: false, trigger: null }}
+        className="agent-feed-composer"
+      />
     </div>
   );
 }
