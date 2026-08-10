@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -275,5 +276,143 @@ class OtlpSinkTest {
     void buildsBasicAuthFromThePair() {
         assertNotNull(OtlpSink.basicAuthHeader("pk:sk"));
         assertEquals("Basic cGs6c2s=", OtlpSink.basicAuthHeader("pk:sk"));
+    }
+
+    /** Every span in the payload, by name -> its parentSpanId. */
+    private java.util.Map<String, String> parentsOf(String body) throws Exception {
+        JsonNode spans = mapper.readTree(body).path("resourceSpans").get(0)
+                .path("scopeSpans").get(0).path("spans");
+        java.util.Map<String, String> byName = new java.util.LinkedHashMap<>();
+        spans.forEach(sp -> byName.put(sp.path("name").asText(), sp.path("parentSpanId").asText("")));
+        return byName;
+    }
+
+    /** Every span in the payload, by name -> its own spanId. */
+    private java.util.Map<String, String> idsOf(String body) throws Exception {
+        JsonNode spans = mapper.readTree(body).path("resourceSpans").get(0)
+                .path("scopeSpans").get(0).path("spans");
+        java.util.Map<String, String> byName = new java.util.LinkedHashMap<>();
+        spans.forEach(sp -> byName.put(sp.path("name").asText(), sp.path("spanId").asText("")));
+        return byName;
+    }
+
+    @Test
+    void aSpawnedSubagentHangsUnderTheAgentThatSpawnedIt() throws Exception {
+        // Card 142: `parentId` is on the wire and the fleet view already draws
+        // the real shape from it. The export ignored it and hung EVERY agent off
+        // the root, so a subagent came out as its spawner's sibling — the wrong
+        // shape, not a small inaccuracy, in any viewer that draws a tree.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-tree", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"agent_spawn\",\"agentId\":\"kid\",\"parentId\":\"main\",\"task\":\"look\",\"ts\":1150}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"kid\",\"turn\":1,\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"text_delta\",\"agentId\":\"kid\",\"text\":\"found\",\"ts\":1250}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        java.util.Map<String, String> parent = parentsOf(posted.get(0));
+        java.util.Map<String, String> id = idsOf(posted.get(0));
+
+        String mainSpan = id.get("agent · main");
+        String kidParent = parent.get("agent · kid");
+        assertEquals(mainSpan, kidParent,
+                "a spawned agent hangs under its spawner, not beside it: " + parent);
+        assertNotEquals("", mainSpan, "the spawner has a span at all");
+    }
+
+    @Test
+    void aRootAgentStillHangsUnderTheSession() throws Exception {
+        // The other half of the same rule: consulting parentId must not orphan
+        // the agent that genuinely has no parent.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-root", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        java.util.Map<String, String> parent = parentsOf(posted.get(0));
+        java.util.Map<String, String> id = idsOf(posted.get(0));
+        String sessionSpan = id.values().iterator().next(); // the root is written first
+        assertEquals(sessionSpan, parent.get("agent · main"),
+                "a root agent hangs under the session span: " + parent);
+    }
+
+    @Test
+    void aToolSpanSitsInsideTheTurnThatTriggeredIt() throws Exception {
+        // Measured across the stored corpus before this: 176 overlapping sibling
+        // pairs, 173 of them full containment. A turn temporally CONTAINS the
+        // tools it triggered, so drawing them as siblings puts a child next to
+        // its parent with the parent's time range.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-nest", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"write_file\",\"input\":{\"path\":\"a.txt\"},\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":5,\"ts\":1400}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        java.util.Map<String, String> parent = parentsOf(posted.get(0));
+        java.util.Map<String, String> id = idsOf(posted.get(0));
+
+        String turnSpan = id.entrySet().stream().filter(e -> e.getKey().startsWith("turn 1"))
+                .map(java.util.Map.Entry::getValue).findFirst().orElse("");
+        String toolParent = parent.entrySet().stream().filter(e -> e.getKey().contains("write_file"))
+                .map(java.util.Map.Entry::getValue).findFirst().orElse("");
+        assertNotEquals("", turnSpan, "there is a turn span: " + id.keySet());
+        assertEquals(turnSpan, toolParent, "the tool sits inside its turn: " + parent);
+    }
+
+    @Test
+    void aZeroLengthSpanIsWidenedJustEnoughToBeSeen() throws Exception {
+        // Card 142 scope item 4, decided out loud: 33 spans in the stored corpus
+        // came out zero-length and drew as invisible bars. A span nobody can see
+        // does not report a fast operation — it reports no operation — which is
+        // the more misleading of the two available errors. One millisecond is
+        // too small to read as a measurement and big enough to have a hit area.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-zero", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        // call and result on the SAME millisecond: a real shape for a cached read
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"read_file\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"x\",\"isError\":false,\"durationMs\":0,\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
+
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+        JsonNode spans = mapper.readTree(posted.get(0)).path("resourceSpans").get(0)
+                .path("scopeSpans").get(0).path("spans");
+        boolean checked = false;
+        for (JsonNode sp : spans) {
+            if (!sp.path("name").asText().contains("read_file")) {
+                continue;
+            }
+            long start = Long.parseLong(sp.path("startTimeUnixNano").asText());
+            long end = Long.parseLong(sp.path("endTimeUnixNano").asText());
+            assertTrue(end > start, "a zero-length span is widened, not left invisible");
+            assertEquals(1_000_000L, end - start, "widened by exactly one millisecond, no more");
+            checked = true;
+        }
+        assertTrue(checked, "the tool span is in the payload at all");
     }
 }

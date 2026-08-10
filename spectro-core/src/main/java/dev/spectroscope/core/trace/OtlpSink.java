@@ -264,6 +264,8 @@ public final class OtlpSink implements TracingPort {
         String firstPrompt = "";
         Map<String, String> provider = new HashMap<>();
         Map<String, long[]> agentBounds = new LinkedHashMap<>();
+        /** Who spawned whom, straight off the wire. Absent for a genuine root. */
+        Map<String, String> spawnedBy = new HashMap<>();
         for (RunEvent e : events) {
             String aid = agentOf(e);
             long ts = tsOf(e);
@@ -274,6 +276,14 @@ public final class OtlpSink implements TracingPort {
                 if (s.provider() != null) {
                     provider.put(aid, s.provider());
                 }
+            }
+            // Card 142: `parentId` is on the wire and the fleet view already draws
+            // the real shape from it. The export used to ignore it and hang every
+            // agent off the root, so a subagent came out as its spawner's
+            // SIBLING — which in a viewer that draws a tree is not a small
+            // inaccuracy, it is the wrong shape.
+            if (e instanceof RunEvent.AgentSpawn sp && sp.parentId() != null) {
+                spawnedBy.put(sp.agentId(), sp.parentId());
             }
             if (aid != null && ts > 0) {
                 agentBounds.computeIfAbsent(aid, k -> new long[]{ts, ts});
@@ -303,7 +313,15 @@ public final class OtlpSink implements TracingPort {
                 attrs.put("gen_ai.system", provider.get(aid));
             }
             long[] b = agentBounds.get(aid);
-            span(spans, traceId, sid, rootSpan, "agent · " + aid, b[0], b[1], attrs, false, null);
+            // Under its spawner when the wire says it had one, under the
+            // session only when it is genuinely a root. `getOrDefault` on the
+            // spawner's own span keeps a spawn whose parent never produced a
+            // span (a truncated record) attached to the session rather than
+            // orphaned — a dangling parentSpanId draws as nothing at all.
+            String parentOfAgent = spawnedBy.containsKey(aid)
+                    ? id("agent:" + sessionId + ":" + spawnedBy.get(aid), 8)
+                    : rootSpan;
+            span(spans, traceId, sid, parentOfAgent, "agent · " + aid, b[0], b[1], attrs, false, null);
         }
 
         // turns, tools, gates, images
@@ -354,7 +372,7 @@ public final class OtlpSink implements TracingPort {
                         attrs.put("spectroscope.gate.wait_ms", String.valueOf(r.gateWaitMs()));
                     }
                     span(spans, traceId, id("tool:" + sessionId + ":" + r.callId(), 8),
-                            agentSpan.getOrDefault(open[0], rootSpan), (String) open[1],
+                            openTurnSpan(agentSpan, turnSeq, turnStart, (String) open[0]), (String) open[1],
                             start, ts, attrs, r.isError(),
                             r.isError() ? cut(r.output(), 300) : null);
                 }
@@ -371,7 +389,7 @@ public final class OtlpSink implements TracingPort {
                         attrs.put("langfuse.observation.level", "WARNING");
                     }
                     span(spans, traceId, id("gate:" + sessionId + ":" + d.callId(), 8),
-                            agentSpan.getOrDefault(open[0], rootSpan), "gate · " + open[1],
+                            openTurnSpan(agentSpan, turnSeq, turnStart, (String) open[0]), "gate · " + open[1],
                             (long) open[2], ts, attrs, false, null);
                 }
             } else if (e instanceof RunEvent.ImageGenerated img) {
@@ -381,7 +399,7 @@ public final class OtlpSink implements TracingPort {
                 attrs.put("gen_ai.request.model", img.model() == null ? "" : img.model());
                 attrs.put("langfuse.observation.input", cut(img.prompt(), CUT));
                 span(spans, traceId, id("img:" + sessionId + ":" + img.callId(), 8),
-                        agentSpan.getOrDefault(aid, rootSpan), "image · " + img.provider(),
+                        openTurnSpan(agentSpan, turnSeq, turnStart, aid), "image · " + img.provider(),
                         ts, ts, attrs, false, null);
             } else if (e instanceof RunEvent.RunEnd end) {
                 String owner = runOwner.getOrDefault(end.runId(), "main");
@@ -395,6 +413,36 @@ public final class OtlpSink implements TracingPort {
         }
 
         return new Payload(root.toString(), spans.size());
+    }
+
+    /**
+     * The span a tool, gate or image belongs INSIDE — the agent's open turn.
+     *
+     * <p>Card 142: these used to attach to the agent span, beside the turn that
+     * triggered them, while temporally sitting inside it. Measured across the
+     * stored corpus at the time: 176 overlapping sibling pairs, 173 of them full
+     * containment, across 30 sessions. A child drawn next to its parent, holding
+     * the parent's time range, is the wrong shape rather than a rounding error.</p>
+     *
+     * <p>The number is computed the same way {@link #closeTurn} computes it —
+     * one past what has closed — so an open turn and its own closing span agree
+     * without either having to remember an id.</p>
+     *
+     * @param agentSpan the agent spans by id, for the fallback
+     * @param turnSeq how many turns have CLOSED per agent
+     * @param turnStart which agents currently have a turn open
+     * @param aid the agent
+     * @return the open turn's span id, or the agent's own when no turn is open
+     *         (a tool outside any turn is rare but real, and it must still land
+     *         somewhere that exists)
+     */
+    private String openTurnSpan(Map<String, String> agentSpan, Map<String, Integer> turnSeq,
+                                Map<String, Long> turnStart, String aid) {
+        if (aid == null || !turnStart.containsKey(aid)) {
+            return agentSpan.getOrDefault(aid, id("root:" + sessionId, 8));
+        }
+        int n = turnSeq.getOrDefault(aid, 0) + 1;
+        return id("turn:" + sessionId + ":" + aid + ":" + n, 8);
     }
 
     private void closeTurn(ArrayNode spans, String traceId, Map<String, String> agentSpan,
@@ -429,6 +477,10 @@ public final class OtlpSink implements TracingPort {
 
     // ---- OTLP plumbing -----------------------------------------------------
 
+    /** What a zero-length span is widened to, so it can be seen at all. One
+     *  millisecond: too small to read as a measurement, big enough to click. */
+    private static final long ZERO_SPAN_FLOOR_MS = 1;
+
     private void span(ArrayNode spans, String traceId, String spanId, String parent, String name,
                       long startMs, long endMs, Map<String, String> attrs, boolean error,
                       String errorMessage) {
@@ -440,8 +492,31 @@ public final class OtlpSink implements TracingPort {
         }
         s.put("name", name);
         s.put("kind", 1);
+        // ZERO-LENGTH SPANS, decided out loud (card 142, scope item 4).
+        //
+        // 33 spans in the stored corpus came out zero or negative — 12 tool,
+        // 10 gate, 6 turn, 5 image — and drew as invisible bars. Two honest
+        // answers were available: leave them at zero, which tells the truth
+        // about duration and shows the reader nothing, or give them a floor,
+        // which is readable and is a small lie about how long something took.
+        //
+        // The floor wins, and only just. This exporter's job is to make a run
+        // legible in somebody else's viewer, and a span nobody can see does not
+        // report a fast operation — it reports no operation at all, which is
+        // the more misleading of the two errors. The floor is ONE MILLISECOND:
+        // small enough that no reader mistakes it for a real measurement, large
+        // enough to have a hit area. `durationMs` on the event carries the
+        // truth for anyone who needs it.
+        //
+        // The negative case is separate and is NOT floored into looking fine:
+        // an end before its start is a clock going backwards, and it collapses
+        // to the start rather than being given a width it never had.
+        long end = Math.max(endMs, startMs);
+        if (end == startMs) {
+            end = startMs + ZERO_SPAN_FLOOR_MS;
+        }
         s.put("startTimeUnixNano", String.valueOf(startMs * 1_000_000L));
-        s.put("endTimeUnixNano", String.valueOf(Math.max(endMs, startMs) * 1_000_000L));
+        s.put("endTimeUnixNano", String.valueOf(end * 1_000_000L));
         ArrayNode attrArray = s.putArray("attributes");
         attrs.forEach((k, v) -> addAttr(attrArray, k, v));
         if (error) {
