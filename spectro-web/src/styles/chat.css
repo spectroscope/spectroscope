@@ -649,13 +649,21 @@
 
 /* Jump rail — the trace's affordance, same shape, because an imported session
    is hundreds of turns long and scrolling it by hand is not navigation. */
-/* Owner 2026-08-10: at 96px the pill was cut in half by the composer's own top
-   border, which reads as a control stuck to a divider. Asked for lower, told
-   that lower means floating over the input box itself, and picked lower. */
+/* The bar is the rail's anchor, stated here rather than relied on. */
+.composer {
+  position: relative;
+}
+
+/* Owner 2026-08-10: the pill kept landing ON a divider — first the composer's
+   top border at 96px, then the send button at 56px. Both were the same mistake:
+   a fixed offset from the window bottom has no idea how tall the bar below it
+   is. It now hangs off the bar's OWN top edge, so a second draft line, a row of
+   chips or a recording indicator pushes it up with them and it never lands on
+   anything again. */
 .chat-rail {
   position: absolute;
   right: 10px;
-  bottom: 56px;
+  bottom: calc(100% + 8px);
   z-index: 3;
   display: flex;
   flex-direction: column;
