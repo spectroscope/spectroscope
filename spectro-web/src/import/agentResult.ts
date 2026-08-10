@@ -55,6 +55,16 @@ export interface AgentRunResult {
    *  this file. Only ever true; a launch that DID report back carries nothing
    *  here, because "it finished" is what an unmarked row already says. */
   launched?: true;
+  /** `totalDurationMs` — the child's wall time. 238 of the session corpus's
+   *  launch records carry it, and none of them reached a frame until card 167's
+   *  residue was closed: a row could say which model a child ran on and what it
+   *  spent, but not that it took three minutes, which is the first thing a
+   *  reader asks when a subagent looks stuck. */
+  durationMs?: number;
+  /** `totalToolUseCount` — how many tools the child called. 237 records carry
+   *  the neighbouring `toolStats`; this is the one number of it a row can show
+   *  without inventing a layout for the rest. */
+  toolCalls?: number;
   /** `usage`, the four counters this app has words for. The rest of the
    *  object (service_tier, inference_geo, iterations, speed) is plumbing
    *  inside an otherwise load-bearing value. */
@@ -104,6 +114,13 @@ export function readAgentResult(value: unknown): AgentRunResult | null {
   // Exactly one status in the corpus means "not back yet". Any other word,
   // known or new, is left alone rather than guessed at.
   if (tur["status"] === "async_launched") r.launched = true;
+  // Absent-first, like every reader in this file: `num` returns undefined for
+  // a string, a null, a NaN or an infinity, and a zero duration would read as
+  // "it took no time" rather than "the record did not say".
+  const durationMs = num(tur["totalDurationMs"]);
+  if (durationMs !== undefined) r.durationMs = durationMs;
+  const toolCalls = num(tur["totalToolUseCount"]);
+  if (toolCalls !== undefined) r.toolCalls = toolCalls;
   const usage = usageOf(tur["usage"]);
   if (usage !== null) r.usage = usage;
   return Object.keys(r).length === 0 ? null : r;

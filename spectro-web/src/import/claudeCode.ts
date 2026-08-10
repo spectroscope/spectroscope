@@ -977,12 +977,24 @@ export function claudeCodeWithOrigin(records: unknown[], base = 1_783_500_000_00
    * did not name one.
    */
   const emitAgentDetail = (agentId: string, res: AgentRunResult, ts: number): void => {
-    if (res.model === undefined && res.launched === undefined) return;
+    // The gate widened with the reading (card 167's residue): a record that
+    // names only how long the child ran still says something worth showing, and
+    // used to fall through here because the gate asked about the model alone.
+    if (
+      res.model === undefined &&
+      res.launched === undefined &&
+      res.durationMs === undefined &&
+      res.toolCalls === undefined
+    ) {
+      return;
+    }
     out.push({
       type: "agent_detail",
       agentId,
       ...(res.model !== undefined ? { model: res.model } : {}),
       ...(res.launched !== undefined ? { launched: true } : {}),
+      ...(res.durationMs !== undefined ? { durationMs: res.durationMs } : {}),
+      ...(res.toolCalls !== undefined ? { toolCalls: res.toolCalls } : {}),
       ts,
     } as unknown as RunEvent);
   };

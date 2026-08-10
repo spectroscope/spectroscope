@@ -61,3 +61,43 @@ describe("readAgentResult", () => {
     expect(readAgentResult({ usage: { service_tier: "standard" } })).toBeNull();
   });
 });
+
+describe("how long the child ran, and how much it did (card 167 residue)", () => {
+  // Measured over ~/.claude/projects on 2026-08-10, session files only: 238
+  // launch records carry `totalDurationMs` and 237 carry `toolStats`, and not
+  // one of them reached a frame. A child's row could say the model it ran on
+  // and what it spent, but not that it took three minutes and called ten tools
+  // — which is the part a reader asks about first when a subagent looks stuck.
+  it("reads the wall time and the tool count when the record carries them", () => {
+    const res = readAgentResult({
+      resolvedModel: "claude-opus-5",
+      totalDurationMs: 175413,
+      totalTokens: 117552,
+      totalToolUseCount: 10,
+    });
+    expect(res?.durationMs).toBe(175413);
+    expect(res?.toolCalls).toBe(10);
+  });
+
+  it("stays absent rather than reporting a zero", () => {
+    // The file's own rule: 117 of the 741 launch results carry no object at
+    // all, and a zero duration would read as "it took no time" rather than
+    // "the record did not say".
+    const res = readAgentResult({ resolvedModel: "claude-opus-5" });
+    expect(res?.durationMs).toBeUndefined();
+    expect(res?.toolCalls).toBeUndefined();
+  });
+
+  it("refuses a duration that is not a finite number", () => {
+    for (const bad of ["175413", null, {}, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const res = readAgentResult({ resolvedModel: "m", totalDurationMs: bad });
+      expect(res?.durationMs, String(bad)).toBeUndefined();
+    }
+  });
+
+  it("is enough on its own to produce a reading", () => {
+    // A record naming only the wall time still says something worth showing,
+    // so it must not fall through the "says none of it" gate.
+    expect(readAgentResult({ totalDurationMs: 900 })).toEqual({ durationMs: 900 });
+  });
+});
