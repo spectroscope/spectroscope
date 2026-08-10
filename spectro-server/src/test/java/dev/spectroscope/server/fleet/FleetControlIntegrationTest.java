@@ -22,6 +22,7 @@ import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -38,6 +39,7 @@ class FleetControlIntegrationTest {
 
     private static final String CTX = "fleet-ctl-it";
     private static final String CTX_GATE = "fleet-gate-it";
+    private static final String CTX_MSG = "fleet-msg-it";
     private static final ObjectMapper JSON = new ObjectMapper();
 
     @LocalServerPort
@@ -189,5 +191,88 @@ class FleetControlIntegrationTest {
                 String.class);
         assertEquals(415, nonJson.getStatusCode().value(),
                 "only application/json is accepted — a cross-origin form POST cannot reach it");
+    }
+
+    @Test
+    void aMessagePostDeliversTheOperatorsWordsToTheNodeAnd404sForAGhost() throws Exception {
+        // Card 166's server leg: POST /api/fleet/{node}/message {text} carries
+        // the operator's own words to a node that stays, over the same
+        // best-effort channel as stop and the gate answer.
+        String base = "http://127.0.0.1:" + port;
+
+        assertEquals(404,
+                gatePost(base + "/api/fleet/ghost/message", "{\"text\":\"hello\"}")
+                        .getStatusCode().value(),
+                "talking to an unknown node is a 404, not a silent 202");
+
+        // The card announces a trigger, which is what makes this node able to
+        // run again — see the sibling test for the node that cannot.
+        NodeCard card = new NodeCard("node-msg", "worker",
+                List.of("read_file"), BusEnvelope.topicFor(CTX_MSG), "watch:/tmp/drop");
+        try (ProcessBus node = new ProcessBus("127.0.0.1", fleet.port(), "node-msg", 1024, card)) {
+            BlockingQueue<String> messages = new LinkedBlockingQueue<>();
+            BlockingQueue<String> control = new LinkedBlockingQueue<>();
+            node.onMessage(messages::add);
+            node.onControl(control::add);
+
+            awaitConnected(base, "node-msg");
+
+            ResponseEntity<String> resp = gatePost(base + "/api/fleet/node-msg/message",
+                    "{\"text\":\"read the second file too\"}");
+            assertEquals(202, resp.getStatusCode().value(),
+                    "a delivered message is Accepted — sent, not answered");
+            assertEquals("read the second file too", messages.poll(10, TimeUnit.SECONDS),
+                    "the node received the operator's words verbatim over the hub");
+            assertTrue(control.isEmpty(),
+                    "and the control seam saw nothing — words are not a verb");
+        }
+    }
+
+    @Test
+    void aNodeWithNoWayToRunAgainIsRefusedRatherThanSent() throws Exception {
+        // The hole this closes, measured on the shipped node: a plain
+        // `spectro node --linger` parks on its stop latch and has NO run loop —
+        // only a TRIGGERED node has the fire slot a message lands in. Sending
+        // words to the plain one would 202 at the endpoint and vanish at the
+        // node, with no log line on either side. So the roster decides: a node
+        // whose card announces no trigger cannot be talked to, and says so.
+        String base = "http://127.0.0.1:" + port;
+
+        NodeCard plain = new NodeCard("node-deaf", "worker",
+                List.of("read_file"), BusEnvelope.topicFor(CTX_MSG));
+        try (ProcessBus node = new ProcessBus("127.0.0.1", fleet.port(), "node-deaf", 1024, plain)) {
+            BlockingQueue<String> messages = new LinkedBlockingQueue<>();
+            node.onMessage(messages::add);
+            awaitConnected(base, "node-deaf");
+
+            ResponseEntity<String> resp = gatePost(base + "/api/fleet/node-deaf/message",
+                    "{\"text\":\"are you there\"}");
+            assertEquals(409, resp.getStatusCode().value(),
+                    "a node that cannot run again refuses the words instead of swallowing them");
+            assertTrue(resp.getBody() != null && resp.getBody().contains("cannot take messages"),
+                    "and the note says why: " + resp.getBody());
+            assertNull(messages.poll(500, TimeUnit.MILLISECONDS),
+                    "nothing was put on the wire");
+        }
+    }
+
+    @Test
+    void aMessagePostRejectsEmptyWordsAndANonJsonBody() {
+        String url = "http://127.0.0.1:" + port + "/api/fleet/node-x/message";
+
+        // Same CSRF guard as stop/gate/spawn — a browser form POST is a 415.
+        ResponseEntity<String> nonJson = rest.exchange(
+                RequestEntity.post(URI.create(url)).contentType(MediaType.TEXT_PLAIN).body("text=hi"),
+                String.class);
+        assertEquals(415, nonJson.getStatusCode().value(),
+                "only application/json is accepted — a cross-origin form POST cannot reach it");
+
+        // An empty message is a 400 rather than a 202 over an empty wire: the
+        // operator would otherwise watch a success for words nobody can act on,
+        // and the node would burn a whole turn on nothing.
+        for (String body : new String[] {"{}", "{\"text\":\"\"}", "{\"text\":\"   \"}"}) {
+            assertEquals(400, gatePost(url, body).getStatusCode().value(),
+                    "empty words are refused at the door: " + body);
+        }
     }
 }

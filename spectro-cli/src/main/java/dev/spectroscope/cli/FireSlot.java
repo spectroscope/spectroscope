@@ -31,6 +31,13 @@ final class FireSlot {
             notifyAll();
             return Disposition.ACCEPTED;
         }
+        if ("message".equals(fire.kind()) && "message".equals(held.kind())) {
+            // Words merge rather than being refused: unlike http and timer, a
+            // message has no caller left holding a retry — the endpoint already
+            // answered 202. See Fire#coalesceWith.
+            held = held.coalesceWith(fire);
+            return Disposition.COALESCED;
+        }
         if ("fs".equals(fire.kind()) && "fs".equals(held.kind())) {
             held = held.coalesceWith(fire);
             return Disposition.COALESCED;

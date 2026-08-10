@@ -112,7 +112,10 @@ public class FleetController {
         }
         return switch (fleet.control(node, "stop")) {
             case DISABLED, UNKNOWN -> ResponseEntity.notFound().build();
-            case DISCONNECTED -> ResponseEntity.status(HttpStatus.CONFLICT)
+            // NOT_ADDRESSABLE is a message-only answer — a stop reaches any node
+            // that is connected, trigger or not. Stated rather than defaulted, so
+            // a future verb that CAN return it cannot slip through unhandled.
+            case DISCONNECTED, NOT_ADDRESSABLE -> ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(body(node, "the node already left the roster"));
             case DISPATCHED -> ResponseEntity.accepted()
                     .body(body(node, "stop sent — best-effort; re-issue until the node leaves the roster"));
@@ -152,11 +155,58 @@ public class FleetController {
         }
         return switch (fleet.controlGate(node, answer.callId(), answer.allow())) {
             case DISABLED, UNKNOWN -> ResponseEntity.notFound().build();
-            case DISCONNECTED -> ResponseEntity.status(HttpStatus.CONFLICT)
+            // As with stop: a gate answer reaches any connected node, so
+            // NOT_ADDRESSABLE cannot arrive here — named, never defaulted.
+            case DISCONNECTED, NOT_ADDRESSABLE -> ResponseEntity.status(HttpStatus.CONFLICT)
                     .body(gateBody(node, answer.callId(), "the node already left the roster"));
             case DISPATCHED -> ResponseEntity.accepted()
                     .body(gateBody(node, answer.callId(),
                             "gate answer sent — best-effort; if the node left, its close denies the gate"));
+        };
+    }
+
+    /**
+     * Carry the operator's words to a fleet node that stays (card 166's server
+     * leg) — the verb that turns a node you can only stop into one you can talk
+     * to. The words are content, not a command: they reach the node's message
+     * seam, and what the node does with them is its own business.
+     *
+     * <p>Same LOCAL-ORIGIN gate and {@code consumes=json} guard as stop/gate: a
+     * remote or DNS-rebinding caller is a 404, a form POST a 415. Blank text is
+     * a 400 — an empty message would spend a node's turn on nothing while the
+     * operator watched a success.</p>
+     *
+     * <p>The 202 note differs from stop's on purpose. Stop is idempotent, so its
+     * note tells the caller to re-issue until the node leaves. A message is not:
+     * saying it twice says it twice.</p>
+     *
+     * @param node    the node id from the roster
+     * @param message the operator's words {text}
+     * @param request the servlet request — must be a local origin
+     * @return 202 sent · 404 not local / no fleet / unknown · 409 the node left ·
+     *         400 blank words
+     */
+    @PostMapping(path = "/api/fleet/{node}/message", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ResponseEntity<Map<String, Object>> message(@PathVariable("node") String node,
+                                                       @RequestBody NodeMessage message,
+                                                       HttpServletRequest request) {
+        if (!LocalOrigin.isLocalOrigin(request)) {
+            return ResponseEntity.notFound().build(); // remote / rebinding — hide it
+        }
+        if (message == null || message.text() == null || message.text().isBlank()) {
+            return ResponseEntity.badRequest()
+                    .body(Map.of("error", "text is required and must not be blank"));
+        }
+        return switch (fleet.message(node, message.text())) {
+            case DISABLED, UNKNOWN -> ResponseEntity.notFound().build();
+            case DISCONNECTED -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(messageBody(node, "the node already left the roster"));
+            case NOT_ADDRESSABLE -> ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(messageBody(node, "this node cannot take messages — it announced no trigger,"
+                            + " so it has no run loop to fire; start it with a trigger to talk to it"));
+            case DISPATCHED -> ResponseEntity.accepted()
+                    .body(messageBody(node,
+                            "message sent — best-effort, and NOT idempotent; re-sending says it twice"));
         };
     }
 
@@ -216,6 +266,17 @@ public class FleetController {
         json.put("node", node);
         json.put("action", "gate");
         json.put("callId", callId);
+        json.put("note", note);
+        return json;
+    }
+
+    /** The message response shape. The words themselves are NOT echoed: they are
+     *  user content, the caller already has them, and a response that repeats
+     *  them only widens where they can be logged. */
+    private static Map<String, Object> messageBody(String node, String note) {
+        Map<String, Object> json = new LinkedHashMap<>();
+        json.put("node", node);
+        json.put("action", "message");
         json.put("note", note);
         return json;
     }

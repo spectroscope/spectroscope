@@ -43,11 +43,17 @@ class NodeCardTriggerAdditivityTest {
 
     @Test
     void anOldHelloLineWithoutTheNoteStillParses() {
-        String preCard72 = "{\"v\":3,\"op\":\"hello\",\"clientId\":\"n1\",\"card\":{"
+        // The card is additive WITHIN a version: a node built before triggers
+        // existed announces a card with no note, and the parse must not care.
+        // (Across versions there is no tolerance at all and that is deliberate —
+        // the wire refuses a foreign version outright. This test is about the
+        // card's shape, not the dialect's age, so it is written on the current
+        // version on purpose.)
+        String preCard72 = "{\"v\":4,\"op\":\"hello\",\"clientId\":\"n1\",\"card\":{"
                 + "\"id\":\"n1\",\"role\":\"worker\",\"capabilities\":[],\"topic\":\"t.events\"}}";
         Wire.Hello hello = (Wire.Hello) Wire.parse(preCard72, JSON);
         assertNull(hello.card().orElseThrow().trigger(),
-                "a v3 node that predates triggers announces a plain card — no note, no crash");
+                "a card that predates triggers carries no note, and parses clean");
     }
 
     @Test

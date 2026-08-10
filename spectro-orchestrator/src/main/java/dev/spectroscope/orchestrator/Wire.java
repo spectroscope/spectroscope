@@ -26,10 +26,20 @@ import java.util.Optional;
  * loudly at parse time — a mixed-version fleet must be impossible to miss. The
  * version bumped to 3 the moment the delivery dialect grew the ctl op, so a
  * pre-ctl (v2) node can never misread a control line as anything else.</p>
+ *
+ * <p>It bumped to 4 for the message form of ctl, and that one is worth its
+ * cost in writing: the gate form could stay on 3 because a pre-gate node
+ * dispatches on {@code callId != null} and simply never enters the branch. A
+ * message has no such luck. Every shipped control handler reads
+ * {@code if ("stop".equals(action))}, so a v3 node handed
+ * {@code action:"message"} would drop the operator's words with no log line on
+ * either side — a 202 at the endpoint and silence at the node. Silent loss is
+ * the one failure KONZEPT §8 trap 1 forbids outright, so the line is made
+ * unreadable to v3 rather than quietly misread by it.</p>
  */
 final class Wire {
 
-    static final int VERSION = 3;
+    static final int VERSION = 4;
 
     /** The builder-side mapper for ops that carry no envelope. */
     private static final ObjectMapper PLAIN = new ObjectMapper();
@@ -62,9 +72,11 @@ final class Wire {
      *  no id rides the line). {@code action} is the verb — "stop" or "gate"
      *  today; more can join without a version bump, since a new verb adds no op.
      *  A "gate" answer also carries the {@code callId} it addresses and the
-     *  operator's {@code allow} verdict; a plain verb (stop) leaves both null,
-     *  so the reader dispatches on {@code callId != null}, never on the verb. */
-    record Ctl(String action, String callId, Boolean allow) implements Msg {
+     *  operator's {@code allow} verdict; a "message" carries the operator's
+     *  {@code text}; a plain verb (stop) leaves all three null. The reader
+     *  dispatches on WHICH field is present, never on the verb string, so no
+     *  handler can half-understand a line meant for another seam. */
+    record Ctl(String action, String callId, Boolean allow, String text) implements Msg {
     }
 
     static String hello(String clientId) {
@@ -153,12 +165,24 @@ final class Wire {
 
     /** The gate form: the hub answers a parked permission request on ONE node,
      *  carrying the {@code callId} it addresses and the operator's verdict —
-     *  {@code {"v":3,"op":"ctl","action":"gate","callId":"…","allow":true}}. */
+     *  {@code {"v":4,"op":"ctl","action":"gate","callId":"…","allow":true}}. */
     static String ctl(String action, String callId, boolean allow) {
         ObjectNode node = base("ctl");
         node.put("action", action);
         node.put("callId", callId);
         node.put("allow", allow);
+        return write(node);
+    }
+
+    /** The message form (card 166's server leg): the operator's own words,
+     *  addressed to ONE node —
+     *  {@code {"v":4,"op":"ctl","action":"message","text":"…"}}. The text field
+     *  is what separates it from a plain verb at the reader, which is why a
+     *  verb must never grow one. */
+    static String ctl(String action, String text) {
+        ObjectNode node = base("ctl");
+        node.put("action", action);
+        node.put("text", text);
         return write(node);
     }
 
@@ -207,7 +231,9 @@ final class Wire {
                 String callId = callIdNode != null && !callIdNode.isNull() ? callIdNode.asText() : null;
                 JsonNode allowNode = node.get("allow");
                 Boolean allow = allowNode != null && !allowNode.isNull() ? allowNode.asBoolean() : null;
-                yield new Ctl(node.path("action").asText(), callId, allow);
+                JsonNode textNode = node.get("text");
+                String text = textNode != null && !textNode.isNull() ? textNode.asText() : null;
+                yield new Ctl(node.path("action").asText(), callId, allow, text);
             }
             default -> throw new IllegalArgumentException("unknown op '" + op + "': " + line);
         };

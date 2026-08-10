@@ -188,7 +188,13 @@ public class FleetAggregator implements AutoCloseable {
         /** The node was seen but has since left — its connection is gone. */
         DISCONNECTED,
         /** The verb was written to the node's live connection (best-effort). */
-        DISPATCHED
+        DISPATCHED,
+        /**
+         * The node is connected but has no way to act on this — it announced no
+         * trigger, so it has no run loop a message could fire, only a stop latch.
+         * Only {@link #message} ever returns this: a stop reaches any node.
+         */
+        NOT_ADDRESSABLE
     }
 
     /**
@@ -213,6 +219,45 @@ public class FleetAggregator implements AutoCloseable {
             return ControlResult.DISCONNECTED;
         }
         hub.control(nodeId, action);
+        return ControlResult.DISPATCHED;
+    }
+
+    /**
+     * The MESSAGE verb (card 166's server leg): carry an operator's words to a
+     * connected fleet node over the hub. Same best-effort {@link ControlResult}
+     * mapping as {@link #control} — a DISPATCHED means the words were written to
+     * the node's live connection, not that the node ran on them.
+     *
+     * <p>Unlike {@code stop}, this is NOT safe to re-issue on doubt: saying a
+     * thing twice is two messages, not one delivered reliably. A caller that
+     * loses a message loses it, and the roster is what tells the operator so.</p>
+     *
+     * @param nodeId the target node's id
+     * @param text   the operator's words, verbatim
+     * @return where the request landed — the endpoint maps this to an HTTP status
+     */
+    public ControlResult message(String nodeId, String text) {
+        if (hub == null) {
+            return ControlResult.DISABLED;
+        }
+        NodeState state = nodes.get(nodeId);
+        if (state == null) {
+            return ControlResult.UNKNOWN;
+        }
+        if (!state.connected()) {
+            return ControlResult.DISCONNECTED;
+        }
+        // The roster is what stops this leg from ending in a silent drop. A
+        // plain `spectro node --linger` parks on its stop latch and has no fire
+        // slot; only a node that announced a TRIGGER runs again. Sending words
+        // to the first kind would answer 202 and vanish at the node, with no log
+        // line anywhere — the same failure the wire's version bump exists to
+        // prevent, one layer up. So it is refused here, where there is still
+        // somebody to tell.
+        if (state.card() == null || state.card().trigger() == null) {
+            return ControlResult.NOT_ADDRESSABLE;
+        }
+        hub.message(nodeId, text);
         return ControlResult.DISPATCHED;
     }
 

@@ -124,6 +124,21 @@ final class TriggeredNode {
                     }
                 }
             });
+            // The operator's words from the fleet view are simply another thing
+            // that fires this node (card 166's server leg): the run loop below
+            // already knows how to run again, so a message needs no machinery of
+            // its own. Runs on the bus reader thread, so it only offers to the
+            // slot — the run happens on the loop thread, as every fire does.
+            bus.onMessage(text -> {
+                if (stopping.get()) {
+                    log.accept("message ignored — the node is stopping");
+                    return;
+                }
+                // The words stay out of the log: they are the operator's content,
+                // and stderr is not where a fleet message belongs.
+                log.accept("message received from the fleet view — firing the node");
+                slot.offer(Fire.message(text));
+            });
             bus.onGate((callId, allow) -> {
                 GateBroker broker = liveBroker.get();
                 if (broker != null) {

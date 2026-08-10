@@ -73,8 +73,8 @@ class WireTest {
                 Wire.hello("c"), Wire.sub("t", Map.of()), Wire.pub(envelope(0), JSON),
                 Wire.ack("t", "s", 0L, 1L), Wire.gap("t", "s", 0L, 1L, 2L), Wire.ctl("stop")}) {
             assertTrue(line.indexOf('\n') < 0, "one op = one line: " + line);
-            assertTrue(line.contains("\"v\":3"),
-                    "the protocol wears its version — v3 since the ctl op entered the dialect: " + line);
+            assertTrue(line.contains("\"v\":4"),
+                    "the protocol wears its version — v4 since the ctl op grew a message form: " + line);
         }
     }
 
@@ -91,8 +91,9 @@ class WireTest {
     void aGateCtlCarriesCallIdAndAllow() {
         // Block 4: the hub answers a parked permission gate on a node — the
         // control verb "gate" rides the callId it addresses and the verdict.
-        // A new verb with extra fields adds no op, so the version stays 3 and a
-        // pre-gate v3 node reads action="gate", ignores the fields, and no-ops.
+        // Adding it cost no version at the time: a pre-gate node dispatches on
+        // callId==null and simply never enters the branch. The message form
+        // later DID cost one — see Wire's own note on why the two differ.
         Wire.Ctl allowed = assertInstanceOf(Wire.Ctl.class,
                 Wire.parse(Wire.ctl("gate", "call-7", true), JSON));
         assertEquals("gate", allowed.action());
@@ -107,16 +108,18 @@ class WireTest {
 
     @Test
     void aStopCtlStaysByteIdenticalWithoutGateFields() {
-        // The frozen stop verb must NOT grow callId/allow keys: a pre-gate node
-        // parses the exact same line, and the gate fields default to null so the
-        // reader dispatches stop by callId==null, not by sniffing the verb.
+        // The frozen stop verb must NOT grow callId/allow/text keys: the reader
+        // dispatches a plain verb by the ABSENCE of all three, not by sniffing
+        // the verb string, so every key that leaks onto this line would route it
+        // to somebody else's seam.
         String stop = Wire.ctl("stop");
-        assertEquals("{\"v\":3,\"op\":\"ctl\",\"action\":\"stop\"}", stop,
-                "stop is byte-identical — no callId/allow keys leak onto it");
+        assertEquals("{\"v\":4,\"op\":\"ctl\",\"action\":\"stop\"}", stop,
+                "stop keeps its shape — no callId/allow/text keys leak onto it");
         Wire.Ctl parsed = assertInstanceOf(Wire.Ctl.class, Wire.parse(stop, JSON));
         assertEquals("stop", parsed.action());
         assertNull(parsed.callId(), "a plain control verb carries no callId");
         assertNull(parsed.allow(), "a plain control verb carries no verdict");
+        assertNull(parsed.text(), "a plain control verb carries no words");
     }
 
     @Test
@@ -139,11 +142,11 @@ class WireTest {
         // A card without id and topic must not become an empty-string ghost
         // in rosters — "malformed card is simply no card" is the contract.
         Wire.Hello parsed = assertInstanceOf(Wire.Hello.class, Wire.parse(
-                "{\"v\":3,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{}}", JSON));
+                "{\"v\":4,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{}}", JSON));
         assertEquals(java.util.Optional.empty(), parsed.card());
 
         Wire.Hello topicless = assertInstanceOf(Wire.Hello.class, Wire.parse(
-                "{\"v\":3,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{\"id\":\"n\"}}", JSON));
+                "{\"v\":4,\"op\":\"hello\",\"clientId\":\"c\",\"card\":{\"id\":\"n\"}}", JSON));
         assertEquals(java.util.Optional.empty(), topicless.card(),
                 "id without topic is still no card");
     }
@@ -181,7 +184,7 @@ class WireTest {
     @Test
     void anUnknownOpOrForeignVersionFailsLoudly() {
         assertThrows(IllegalArgumentException.class,
-                () -> Wire.parse("{\"v\":3,\"op\":\"warp\"}", JSON));
+                () -> Wire.parse("{\"v\":4,\"op\":\"warp\"}", JSON));
         assertThrows(IllegalArgumentException.class,
                 () -> Wire.parse("{\"v\":1,\"op\":\"hello\",\"clientId\":\"c\"}", JSON),
                 "the pre-epoch dialect is a foreign protocol — mixing must fail loudly");

@@ -268,6 +268,43 @@ public final class ProcessBusHub implements BusTransport {
     }
 
     /**
+     * The MESSAGE verb (card 166's server leg): addresses the operator's own
+     * words to ONE node over its live connection — the thing that turns a node
+     * that lingers into a node you can talk to. Rides the SAME best-effort
+     * channel as {@link #control} and {@link #controlGate}: no outbox, no
+     * cumulative ack, no replay ring, so a server 202 means SENT, not answered.
+     * An unknown or departed node is a no-op warn, never a throw (the endpoint
+     * leans on this, exactly as the stop endpoint does).
+     *
+     * <p>Unlike {@code stop}, this line is NOT idempotent — re-issuing it is
+     * another thing said, not the same thing said again — so the caller must
+     * not retry it on doubt. That asymmetry is why the endpoint's 202 wording
+     * differs from stop's.</p>
+     *
+     * @param nodeId the target node's id (its hello {@code clientId})
+     * @param text   the operator's words, verbatim
+     */
+    public void message(String nodeId, String text) {
+        String line = Wire.ctl("message", text);
+        boolean delivered = false;
+        synchronized (lock) {
+            // Enqueue under the lock — the same ordering discipline as control().
+            for (Connection connection : connections) {
+                if (nodeId.equals(connection.clientId)) {
+                    connection.enqueue(line);
+                    delivered = true;
+                    break;
+                }
+            }
+        }
+        if (!delivered) {
+            // The words themselves stay out of the log: a message is user
+            // content, and the roster miss is what an operator needs to see.
+            log.warn("message({}) — no connected node with that id", nodeId);
+        }
+    }
+
+    /**
      * Reverse control, GATE answer (block 4): addresses the operator's verdict
      * for a permission request the node parked to ONE node over its live
      * connection. Rides the SAME best-effort channel as {@link #control} — no

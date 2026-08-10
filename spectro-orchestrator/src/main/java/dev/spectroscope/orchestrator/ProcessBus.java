@@ -74,6 +74,13 @@ public final class ProcessBus implements BusTransport {
      *  parked future and return — never join, never I/O, or every later frame
      *  stalls behind it. */
     private volatile BiConsumer<String, Boolean> onGate = (callId, allow) -> { };
+    /** The MESSAGE seam: the operator's own words, addressed to this node from
+     *  the fleet view (card 166). Separate from {@link #onControl} on purpose —
+     *  a verb is a command the node obeys, words are input the node runs on, and
+     *  a client that wired only one of the two must never receive the other.
+     *  Runs on the reader thread, so the handler MUST be non-blocking: hand the
+     *  words to a queue or a slot and return. */
+    private volatile Consumer<String> onMessage = text -> { };
     /** Fired when an ESTABLISHED connection drops (block 4): a fleet node's
      *  parked permission gate can only be answered by a live hub, so a node
      *  wires this to release those gates when the hub can no longer reach it —
@@ -158,6 +165,22 @@ public final class ProcessBus implements BusTransport {
      */
     public ProcessBus onGate(BiConsumer<String, Boolean> handler) {
         this.onGate = handler;
+        return this;
+    }
+
+    /**
+     * Registers the MESSAGE handler: the operator's words, addressed to this
+     * node from the fleet view (card 166's server leg). Fires on the
+     * connection's reader thread and is guarded like {@link #onControl} — a
+     * throwing handler is logged, never fatal. The handler MUST be
+     * non-blocking: offer the words to a slot and return; running an agent
+     * inline here would stall every frame behind the turn.
+     *
+     * @param handler receives each message the hub addresses to this node
+     * @return this bus, for fluent construction
+     */
+    public ProcessBus onMessage(Consumer<String> handler) {
+        this.onMessage = handler;
         return this;
     }
 
@@ -406,12 +429,18 @@ public final class ProcessBus implements BusTransport {
                         }
                         announceGap(new BusGap(topic, sender, epoch, fromSeq, toSeq));
                     }
-                    case Wire.Ctl(String action, String callId, Boolean allow) -> {
+                    case Wire.Ctl(String action, String callId, Boolean allow, String text) -> {
                         // Dispatch on the addressing, not the verb: a gate answer
-                        // carries a callId (block 4), a plain control verb (stop)
-                        // does not. A pre-gate handler never sees the gate line.
+                        // carries a callId (block 4), a message carries text
+                        // (card 166), a plain control verb (stop) carries
+                        // neither. A handler that wired only one seam therefore
+                        // never sees a line meant for another — which is what
+                        // stops "message" from arriving somewhere that would
+                        // test it against "stop" and drop it without a word.
                         if (callId != null) {
                             announceGate(callId, allow);
+                        } else if (text != null) {
+                            announceMessage(text);
                         } else {
                             announceControl(action);
                         }
@@ -449,6 +478,18 @@ public final class ProcessBus implements BusTransport {
             onControl.accept(action);
         } catch (RuntimeException broken) {
             log.warn("control handler failed for '{}': {}", action, broken.toString());
+        }
+    }
+
+    /** The message handler is user code (a node's fire slot) — guard it, log
+     *  it, never die of it. One poison message must not strand the node's whole
+     *  event stream, and a node that never wired the seam must not die of words
+     *  it had no use for. */
+    private void announceMessage(String text) {
+        try {
+            onMessage.accept(text);
+        } catch (RuntimeException broken) {
+            log.warn("message handler failed: {}", broken.toString());
         }
     }
 
