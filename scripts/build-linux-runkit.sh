@@ -108,7 +108,9 @@ fi
 # 5) electron-builder: AppImage + deb, x64. No signing, no post-packaging step
 #    — the artifacts come out of electron-builder finished.
 echo "==> [5/5] electron-builder --linux (AppImage, deb)"
-( cd "$D" && { [ -d node_modules ] || npm ci; } && npm run build \
+# Unconditional for the reason spelled out in build-desktop-runkit.sh: a
+#    reused node_modules ships a runtime the lockfile does not name.
+( cd "$D" && npm ci && npm run build \
   && npx electron-builder --linux --x64 )
 
 # Find the artifacts rather than predict their names: electron-builder does

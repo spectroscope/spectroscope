@@ -125,11 +125,36 @@ fi
 #    "Developer ID Application: " prefix (codesign, below, keeps the full string).
 echo "==> [4/7] electron-builder --dir"
 CSC_COMMON_NAME="${ID#Developer ID Application: }"
-( cd "$D" && { [ -d node_modules ] || npm ci; } && npm run build \
+# The install is UNCONDITIONAL, and that is the whole point of this line.
+#    It used to read `{ [ -d node_modules ] || npm ci; }`, which meant a build
+#    reused whatever happened to be on the machine. Measured 2026-08-10: the
+#    lockfile said electron 39.8.10, node_modules held 39.8.5, and the app in
+#    release/mac-arm64 carried CFBundleVersion 39.8.5. So a version bump could
+#    go green, get signed, get NOTARIZED, and ship the old runtime — which is
+#    not hypothetical, it is how v0.7.0 went out. A release is built from the
+#    lock or it is not a release.
+( cd "$D" && npm ci && npm run build \
   && if [ -n "$ID" ]; then CSC_NAME="$CSC_COMMON_NAME" npx electron-builder --dir; \
      else CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --dir; fi )
 APP="$D/release/mac-${ARCH}/spectroscope.app"
 [ -d "$APP" ] || { echo "!! app not built: $APP"; exit 1; }
+
+# 4b) THE RUNTIME IS THE ONE THE LOCK NAMES — asserted, not assumed.
+#     Everything above can succeed while shipping a different Electron than the
+#     lockfile pins (see the note at [4/7]). Nothing downstream would notice:
+#     codesign signs whatever is there and notarization blesses it. So the built
+#     framework is read back and compared to the lock before a signature is put
+#     on it. Deliberately BEFORE step 5: refusing to sign the wrong runtime is
+#     cheaper than un-notarizing one.
+LOCKED_ELECTRON="$(python3 -c "import json,sys;print(json.load(open('$D/package-lock.json'))['packages']['node_modules/electron']['version'])")"
+FW_PLIST="$APP/Contents/Frameworks/Electron Framework.framework/Resources/Info.plist"
+BUILT_ELECTRON="$(plutil -extract CFBundleVersion raw -o - "$FW_PLIST" 2>/dev/null || echo "")"
+if [ "$BUILT_ELECTRON" != "$LOCKED_ELECTRON" ]; then
+  echo "!! the built app carries Electron '$BUILT_ELECTRON' but the lock pins '$LOCKED_ELECTRON'."
+  echo "!! this is how v0.7.0 shipped a runtime nobody chose. refusing to sign it."
+  exit 1
+fi
+echo "    electron $BUILT_ELECTRON, matching the lock"
 
 # 5) seal + verify the whole bundle
 echo "==> [5/7] codesign app + verify"

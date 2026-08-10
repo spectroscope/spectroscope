@@ -11,11 +11,12 @@
     "build": "tsc",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "postinstall": "install-electron"
   },
   "devDependencies": {
-    "@types/node": "^20.14.0",
-    "electron": "^39.8.10",
+    "@types/node": "^24.0.0",
+    "electron": "^43.3.0",
     "electron-builder": "^26.0.12",
     "typescript": "^5.5.4"
   },
