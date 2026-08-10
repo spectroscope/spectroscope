@@ -232,6 +232,11 @@ export interface UiState {
   /** Wire view (trace tab): every frame in arrival order. The fold keeps all of
    *  them; only a live stream is bounded, by {@link windowTrace} at its seam. */
   trace: TraceEntry[];
+  /** How many trace rows the live window has thrown away, in total (card 116).
+   *  Zero for anything finite — an import or a replay is whole before it
+   *  starts. The pane says this out loud: a tool that promises you can watch
+   *  everything must not drop the beginning of an incident without a word. */
+  traceDropped: number;
   /** Latest context_info snapshot — latest wins, null until the first one. */
   context: ContextSnapshot | null;
   /** inputTokens of the LAST usage event of the run's own agent — the context
@@ -308,6 +313,7 @@ export const initialState: UiState = {
   lastStopReason: null,
   images: [],
   trace: [],
+  traceDropped: 0,
   context: null,
   lastInputTokens: 0,
   rootAgentId: null,
@@ -422,7 +428,14 @@ const LIVE_TRACE_WINDOW = 5000;
 export function windowTrace(state: UiState): UiState {
   const { trace } = state;
   if (trace.length <= LIVE_TRACE_WINDOW) return state;
-  return { ...state, trace: trace.slice(trace.length - LIVE_TRACE_WINDOW) };
+  const dropped = trace.length - LIVE_TRACE_WINDOW;
+  return {
+    ...state,
+    trace: trace.slice(dropped),
+    // Cumulative, not per-cut: a long run windows again and again, and what a
+    // reader wants is how many rows are gone in total.
+    traceDropped: state.traceDropped + dropped,
+  };
 }
 
 /** Stamp usage + duration onto the LAST assistant turn of an agent (the answer

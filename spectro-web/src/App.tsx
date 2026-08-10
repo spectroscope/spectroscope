@@ -1933,6 +1933,7 @@ export function App() {
             /* And the trace stays mandatory, agent-filterable via its own bar. */
             <TraceView
               entries={traceEntries}
+              droppedRows={live.traceDropped}
               agentFilter={traceAgent}
               onAgentFilter={setTraceAgent}
               focusEvent={focusEvent}
@@ -2140,6 +2141,7 @@ export function App() {
         ) : (
           <TraceView
             entries={traceEntries}
+            droppedRows={live.traceDropped}
             agentFilter={traceAgent}
             onAgentFilter={setTraceAgent}
             focusEvent={focusEvent}

@@ -781,6 +781,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "voice.err.requestFailed": { de: "Die Aufnahme kam nicht durch. Nichts wurde übertragen; einfach noch einmal.", en: "The recording did not get through. Nothing was sent; just try again." },
   "voice.err.convertFailed": { de: "Die Aufnahme ließ sich nicht in Ton umwandeln, den das Modell liest. Gesendet wurde nichts.", en: "The recording could not be turned into audio the model reads. Nothing was sent." },
   "voice.err.unknown": { de: "Die Aufnahme ist fehlgeschlagen.", en: "The recording failed." },
+  "trace.dropped": { de: "Zeigt die letzten {shown} von {total} — {n} ältere sind aus dem Live-Fenster gefallen.", en: "Showing the last {shown} of {total} — {n} older rows fell out of the live window." },
   "voice.live.label": { de: "Live mitschreiben", en: "Write along live" },
   "voice.live.on": { de: "Der Text erscheint beim Sprechen und wird am Ende ersetzt.", en: "The text appears as you speak and is replaced at the end." },
   "voice.live.off": { de: "Der Text erscheint, wenn die Aufnahme fertig ist.", en: "The text appears once the recording is done." },

@@ -737,10 +737,15 @@ describe("the live trace window (windowTrace)", () => {
     expect(last).toMatchObject({ seq: 5001, dir: "out", type: "abort" });
   });
 
-  it("changes nothing but the trace", () => {
+  it("changes nothing but the trace and the count of what it dropped", () => {
+    // The counter joined the window in card 116: dropping rows silently was the
+    // defect, so the number of dropped rows is now part of what windowing does.
+    // Everything else must still be untouched, which is what this pins.
     const state = live(initialState, [...flood(5010), ...happyPath]);
     const uncapped = reduceAll(initialState, [...flood(5010), ...happyPath]);
-    expect({ ...state, trace: [] }).toEqual({ ...uncapped, trace: [] });
+    expect({ ...state, trace: [], traceDropped: 0 }).toEqual({ ...uncapped, trace: [], traceDropped: 0 });
+    expect(state.traceDropped).toBeGreaterThan(0);
+    expect(uncapped.traceDropped).toBe(0);
   });
 });
 
@@ -1498,5 +1503,41 @@ describe("a picture that arrives before its tool call", () => {
   it("still works the ordinary way round", () => {
     const state = reduceAll(initialState, [call("t1"), shot("t1", "a")]);
     expect(state.cards["t1"]?.images?.map((i) => i.name)).toEqual(["a"]);
+  });
+});
+
+describe("the window says how much it dropped (card 116)", () => {
+  const frames = (n: number): RunEvent[] =>
+    Array.from(
+      { length: n },
+      (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: i + 1 }) as RunEvent,
+    );
+
+  it("counts nothing while everything still fits", () => {
+    const state = windowTrace(reduceAll(initialState, frames(10)));
+    expect(state.traceDropped).toBe(0);
+  });
+
+  it("counts what it threw away, so the pane can say it", () => {
+    // The defect: the trace silently kept the last 5000 of a longer stream and
+    // the screen could not tell you whether 5000 was the maximum or a
+    // coincidence. A tool that promises you can watch everything must not drop
+    // the start of an incident record without a word.
+    const state = windowTrace(reduceAll(initialState, frames(5200)));
+    expect(state.trace.length).toBe(5000);
+    expect(state.traceDropped).toBe(200);
+  });
+
+  it("keeps counting across windows rather than reporting only the last cut", () => {
+    // A long live run windows again and again. What the reader wants is how
+    // many rows are gone in total, not how many went in the most recent slice.
+    let state = windowTrace(reduceAll(initialState, frames(5100)));
+    state = windowTrace(reduceAll(state, frames(300)));
+    expect(state.traceDropped).toBe(400);
+  });
+
+  it("is untouched when the window does not apply", () => {
+    const before = reduceAll(initialState, frames(100));
+    expect(windowTrace(before)).toBe(before); // same object: nothing happened
   });
 });

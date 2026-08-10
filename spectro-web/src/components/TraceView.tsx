@@ -1386,6 +1386,11 @@ function TraceDetail({
 
 export function TraceView(props: {
   entries: TraceEntry[];
+  /** How many rows the LIVE window has thrown away (card 116). The pane says it
+   *  out loud, because a cap nobody can see is indistinguishable from a
+   *  coincidence — the reader could not tell whether 5000 was the maximum or
+   *  simply where the session ended. Zero, and absent, for anything finite. */
+  droppedRows?: number;
   /** Lane hand-off from the Spectrum tab: show only this agent's frames
    *  (frames without an agentId — decisions, run ends — stay visible).
    *  null = all agents. Controlled by App so the pin survives tab switches. */
@@ -1968,6 +1973,19 @@ export function TraceView(props: {
   return (
     <div className="trace-view">
       <div className="trace-toolbar">
+        {/* Card 116: the live window is allowed to drop rows; it is not allowed
+            to do it quietly. Rendered first in the toolbar so it is read before
+            the rows it is about, and only when something really was dropped —
+            a permanent "0 dropped" would be noise. */}
+        {(props.droppedRows ?? 0) > 0 && (
+          <span className="trace-dropped" role="status">
+            {t(lang, "trace.dropped", {
+              shown: String(allEntries.length),
+              total: String(allEntries.length + (props.droppedRows ?? 0)),
+              n: String(props.droppedRows ?? 0),
+            })}
+          </span>
+        )}
         <input
           className="trace-filter"
           type="search"
