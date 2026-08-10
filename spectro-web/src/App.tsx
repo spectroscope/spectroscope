@@ -1514,6 +1514,17 @@ export function App() {
   );
   // The trace tab is a fold-tab too: an entered fleet's frames become inbound
   // trace entries (drill-in shows the MEMBER's wire, not the own session).
+  // Exactly the chain's final else, hoisted so the trace can stay mounted while
+  // another tab is showing. Kept next to the entries it renders, so the two
+  // cannot drift apart.
+  const traceMounted =
+    !(nav === "fleets" && enteredFleet === null) &&
+    enteredFleet === null &&
+    tab === "trace" &&
+    // The chain's leveling gate reads `tab !== "chat" && …`; under `tab ===
+    // "trace"` that term is already true, and the compiler says so.
+    !(leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab));
+
   const traceEntries = useMemo(
     () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
     [enteredFleet, shownEvents, view.trace],
@@ -2138,7 +2149,26 @@ export function App() {
               sendClient={sendClient}
             />
           )
-        ) : (
+        ) : null}
+        {/* The trace is MOUNTED ONCE and hidden, never unmounted (card 175).
+            Measured on a 9,319-row session: pressing the tab cost 955 ms of
+            blocked main thread, because every one of those rows had left the
+            DOM on the way out and had to be built again — 0 rows while the chat
+            was showing. Hiding costs the memory of a page that already existed;
+            unmounting costs a second of the reader's time, every press.
+
+            `display: contents` rather than a wrapper with its own box, so the
+            layout is byte-for-byte what it was when TraceView sat in the chain
+            directly. The condition below IS the chain's final else, written out:
+            not the fleet lobby, not inside a fleet, the leveling gate open, and
+            no other tab claiming the surface.
+
+            ⚠️ This only became safe once `withResponseRows` stopped rebuilding
+            every row object (card 184's identity fix). Before that, a hidden
+            mounted trace re-rendered all 9,320 rows on every frame batch of a
+            live run, which would have broken the owner's own condition that the
+            chat be provably no slower. */}
+        <div style={{ display: traceMounted ? "contents" : "none" }}>
           <TraceView
             entries={traceEntries}
             droppedRows={live.traceDropped}
@@ -2161,7 +2191,7 @@ export function App() {
             translated={showingTranslation && enteredFleet === null}
             llmWireSessionId={llmWireSessionId}
           />
-        )}
+        </div>
         {leveling.snapshot && !leveling.snapshot.introSeen && (
           /* Asked once per home, and only for a home that has never been used —
              an existing operator is grandfathered into checklist by the server
