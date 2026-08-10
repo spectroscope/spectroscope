@@ -16,6 +16,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
@@ -28,7 +30,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Stream;
 
 /**
@@ -354,7 +358,7 @@ public final class SessionStore {
             String model, String stopReason, int gateCount, int denyCount, long endedAt) {}
 
     /**
-     * Overview over all sessions — a fold over the event files.
+     * Overview over all sessions — a fold over the event files, memoized per file.
      *
      * @return one row per readable session, sorted by file name (= start time)
      */
@@ -363,9 +367,18 @@ public final class SessionStore {
             return List.of();
         }
         try (Stream<Path> files = Files.list(SESSIONS_DIR)) {
-            return files
+            List<Path> stored = files
                     .filter(path -> path.getFileName().toString().endsWith(".jsonl"))
                     .sorted()
+                    .toList();
+            // The cache follows the directory instead of growing with it: a
+            // deleted session would otherwise keep its row until the process
+            // restarts, and the listing already knows every file, so bounding it
+            // exactly costs one set copy. A concurrent list may evict a row
+            // another thread has just folded; that race costs one extra fold,
+            // never a wrong row.
+            FOLDED.keySet().retainAll(Set.copyOf(stored));
+            return stored.stream()
                     .map(SessionStore::describe)
                     .flatMap(Optional::stream)
                     .toList();
@@ -375,12 +388,83 @@ public final class SessionStore {
     }
 
     /**
-     * Folds one session file into its overview row; empty for unreadable/broken files.
+     * One session file's folded row, together with the file state it was folded
+     * from.
+     *
+     * @param lastModified the file's modification time, read BEFORE its bytes
+     * @param size         the file's length at that same moment
+     * @param row          the folded row, or null when the file has no run_start
+     *                     or could not be read — the negative answer is cached
+     *                     too, or a broken file, and a session whose first line
+     *                     is still a voice_input, would be re-read every call
+     */
+    private record FoldedRow(FileTime lastModified, long size, SessionInfo row) {}
+
+    /**
+     * Session file → its folded row. The twelve fields of a row are a pure
+     * function of the file's bytes, and a session that has stopped never gains
+     * another one, so reading and parsing every event of every session on every
+     * list request bought nothing at a cost that grows with the whole store.
+     * Only rows are held, never events: a row is a handful of fields, so the
+     * cache stays proportional to the NUMBER of sessions, not to their size.
+     * Concurrent because the REST worker, the socket and the CLI all list.
+     */
+    private static final Map<Path, FoldedRow> FOLDED = new ConcurrentHashMap<>();
+
+    /**
+     * Folds one session file into its overview row, reusing the previous fold
+     * while the file's modification time and length are both unchanged.
+     *
+     * <p>The order of the two reads is the whole safety argument, and it is the
+     * opposite of the obvious one. The metadata is read BEFORE the bytes, and
+     * the fold is stored under THAT metadata. An append landing between the two
+     * then produces a row FRESHER than its key, which the next call sees as a
+     * mismatch and re-folds. Reading the bytes first and stamping them with the
+     * metadata afterwards would cache a row STALER than its key — and since that
+     * key already describes the file's current state, nothing could ever
+     * invalidate it: a running session would freeze on the sidebar one event
+     * short, permanently if that event was its last.</p>
+     *
+     * <p>Both halves of the key earn their place. An appended file always
+     * changes length, which is what covers the session that is still being
+     * written to; the modification time covers a file replaced in place — a
+     * hand-edit, a restored backup — which length alone would miss. What the
+     * pair cannot see is an in-place rewrite to exactly the same length inside
+     * one modification-time tick, and no writer here can produce one: every
+     * event goes through {@link #append(RunEvent)}, which only adds bytes.</p>
      *
      * @param path the .jsonl file to summarize
      * @return the overview row, or empty when the file has no run_start or cannot be read
      */
     private static Optional<SessionInfo> describe(Path path) {
+        BasicFileAttributes stamp;
+        try {
+            // ONE stat for both halves of the key, so length and time are a
+            // consistent snapshot rather than two reads straddling an append.
+            stamp = Files.readAttributes(path, BasicFileAttributes.class);
+        } catch (IOException vanished) {
+            // Deleted between the listing and here: fold anyway (it fails the
+            // same way) and cache nothing about a file that is not there.
+            return fold(path);
+        }
+        FoldedRow cached = FOLDED.get(path);
+        if (cached != null
+                && cached.size() == stamp.size()
+                && cached.lastModified().equals(stamp.lastModifiedTime())) {
+            return Optional.ofNullable(cached.row());
+        }
+        Optional<SessionInfo> row = fold(path);
+        FOLDED.put(path, new FoldedRow(stamp.lastModifiedTime(), stamp.size(), row.orElse(null)));
+        return row;
+    }
+
+    /**
+     * Reads and folds one session file; empty for unreadable/broken files.
+     *
+     * @param path the .jsonl file to summarize
+     * @return the overview row, or empty when the file has no run_start or cannot be read
+     */
+    private static Optional<SessionInfo> fold(Path path) {
         String name = path.getFileName().toString();
         String id = name.substring(0, name.length() - ".jsonl".length());
         List<RunEvent> events;

@@ -162,6 +162,22 @@ SKIP_DESKTOP=1 ./scripts/build-release-assets.sh
 ```
 Everything lands in `build/release-assets/`.
 
+**Read the `[4/5] collected assets` block, not the exit code.** The script names
+every asset expected for this host, marks each one present or `MISSING`, and
+exits non-zero when any is missing or zero bytes. That block is the check, and it
+is the last thing to read before step 8. Why it is worded that way: the 0.6.1
+build was dispatched in the background, the wrapper reported `completed (exit
+code 0)` while the script's own log recorded `1`, and three of four assets were
+sitting in the directory looking like a release. A green from anything that wraps
+a long build is a statement about the wrapper (card 174).
+
+**This step needs no file a fresh checkout lacks.** The entitlements plist the
+hardened runtime signs against lives under gitignored `build/`, so it exists in
+no clone and no new worktree; `build-desktop-runkit.sh` writes it in step 0 on
+every run, from the content in [DESKTOP-SIGNING.md](DESKTOP-SIGNING.md) step 4.
+Cutting 0.6.1 from the fresh worktree this playbook prescribes stopped exactly
+there, back when the script only checked for the file instead of writing it.
+
 ### 8. GitHub release
 ```bash
 gh release create v<v> --title "spectroscope v<v>" --notes-file <notes>.md build/release-assets/*

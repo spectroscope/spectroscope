@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -101,6 +102,71 @@ class SessionStoreTest {
         assertEquals(2, info.agentCount(), "main + worker-1 both ran");
         assertEquals(2, info.turnCount(),
                 "only the two main-agent turns are steppable, not the subagent's");
+    }
+
+    @Test
+    void aWarmListDoesNotReadAnUnchangedSessionFileAgain() throws IOException {
+        // Counts the read rather than timing it. The file's CONTENT is swapped
+        // for a prompt of exactly the same length and its modification time is
+        // put back to the same pinned value, so the (mtime, size) key is exactly
+        // what it was. A list that opened the file again would report the new
+        // prompt; reporting the old one IS the proof that it did not.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        store.append(new RunEvent.RunStart("r1", "main", null, "first", "ollama", null, 42L));
+        Path file = SessionStore.SESSIONS_DIR.resolve(id + ".jsonl");
+        // Pinned rather than captured: both stamps then come out of the same
+        // setter, so a file system that stores time coarser than the getter
+        // reports truncates both identically and cannot fail this spuriously.
+        FileTime pinned = FileTime.fromMillis(1_700_000_000_000L);
+        Files.setLastModifiedTime(file, pinned);
+        long lengthBefore = Files.size(file);
+
+        assertEquals("first", listedRow(id).firstPrompt());
+
+        // Edited in place, five characters for five: the length cannot drift,
+        // whatever the mapper does with the rest of the record.
+        Files.writeString(file,
+                Files.readString(file, StandardCharsets.UTF_8).replace("first", "swapd"),
+                StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(file, pinned);
+        assertEquals(lengthBefore, Files.size(file), "the test's premise: the swap kept the length");
+
+        assertEquals("first", listedRow(id).firstPrompt(),
+                "the warm list must not have read the file again");
+
+        // ...and one appended event moves the length, so the row follows it.
+        store.append(new RunEvent.Usage("main", 7, 3, 43L));
+        SessionStore.SessionInfo afterGrowth = listedRow(id);
+        assertEquals("swapd", afterGrowth.firstPrompt(), "growth invalidates the folded row");
+        assertEquals(10, afterGrowth.tokens());
+    }
+
+    @Test
+    void aRunningSessionsRowFollowsEveryAppend() {
+        // The append-only case a per-file cache is allowed to get wrong: a
+        // session that is still being written to must never be served from a
+        // fold taken mid-run.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        store.append(new RunEvent.RunStart("r1", "main", null, "Count the files", "ollama", null, 1L));
+        store.append(new RunEvent.Usage("main", 100, 20, 2L));
+        assertEquals(120, listedRow(id).tokens());
+
+        store.append(new RunEvent.Usage("main", 5, 5, 3L));
+        store.append(new RunEvent.RunEnd("r1", "end_turn", 4L));
+
+        SessionStore.SessionInfo row = listedRow(id);
+        assertEquals(130, row.tokens(), "the usage appended after the first list counts");
+        assertEquals("end_turn", row.stopReason());
+        assertEquals(4L, row.endedAt(), "and the span ends at the last event, not the folded one");
+    }
+
+    /** This id's row out of the sessions overview. */
+    private static SessionStore.SessionInfo listedRow(String id) {
+        return SessionStore.listSessions().stream()
+                .filter(session -> session.id().equals(id))
+                .findFirst().orElseThrow();
     }
 
     @Test

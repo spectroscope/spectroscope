@@ -181,6 +181,29 @@ echo "deb [signed-by=/usr/share/keyrings/spectroscope.gpg] https://apt.spectrosc
 sudo apt update && sudo apt install spectroscope
 ```
 
+That third line stops twice for an answer, and in a container nobody gives
+either one. apt asks you to confirm the download first; answer that, and on a
+machine where `tzdata` has never been configured a package several levels down
+the dependency chain asks which timezone you live in. Neither question times
+out, so an unattended install stops for good: at the first one nothing has been
+downloaded at all, at the second the package is unpacked and never configured.
+Where no one is at the keyboard, use this instead:
+
+```sh
+sudo DEBIAN_FRONTEND=noninteractive apt install -y spectroscope
+```
+
+`-y` answers apt's own confirmation and `DEBIAN_FRONTEND=noninteractive`
+answers the timezone question, which then settles on `Etc/UTC` without telling
+you. That is the right trade in a container and the wrong one on a machine you
+are setting up by hand, so it stands next to the three lines rather than
+replacing them. Only the Ubuntu half of the pair above is affected: Debian 12
+ships `tzdata` already configured, and its `systemd` does not recommend the
+Python network dispatcher that drags `tzdata` in on Ubuntu. A full Ubuntu
+server or desktop install is fine too, because `tzdata` is priority-important
+and configured long before this repository is added. Minimal container images
+and chroots are the ones that strip it.
+
 The index is GPG-signed and pinned to that one key with `signed-by`; there is no
 `trusted=yes` and no allow-insecure switch. x86_64 only, so on arm64 apt takes
 the source and then finds nothing to install. For x86_64 distributions that do

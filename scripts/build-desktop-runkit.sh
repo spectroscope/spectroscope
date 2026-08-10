@@ -39,7 +39,39 @@ VERSION="${VERSION:-$(sed -nE 's/^version = "([^"]+)".*/\1/p' spectro-server/bui
 ARCH="$(uname -m | sed 's/x86_64/x64/')"
 echo "==> desktop run kit for spectro-server ${VERSION} (host: $(uname -s) ${ARCH})"
 
-# 0) signing identity: explicit SIGN_IDENTITY wins; else auto-detect a
+# 0) the entitlements the hardened runtime signs against. WRITTEN here, never
+#    assumed: the file lives under $D/build, .gitignore:4 ignores build/, so no
+#    clone and no fresh worktree carries it. This step used to be a check that
+#    exited, which meant a signed build worked in exactly one directory on one
+#    machine — the one that had signed before. Cutting 0.6.1 from the fresh
+#    worktree the playbook prescribes stopped dead right here (card 174).
+#    Written unconditionally rather than "when absent", for the same reason the
+#    npm ci in step 4 is unconditional: an artifact that gets notarized under our
+#    Developer ID must be made of what the repo says, not of what some earlier
+#    build left lying around. The content is the one docs/DESKTOP-SIGNING.md
+#    step 4 prints verbatim — change it in both places, or that doc is folklore.
+mkdir -p "$D/build"
+cat > "$ENT" <<'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-jit</key><true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key><true/>
+  <key>com.apple.security.cs.disable-library-validation</key><true/>
+</dict>
+</plist>
+PLIST
+# A heredoc mangled by a later edit survives as a plausible-looking file and only
+# surfaces as a codesign error in step 2c — after jlink and the llama fetch have
+# burned twenty minutes. Read it back now, while the failure is still cheap.
+if command -v plutil >/dev/null 2>&1; then
+  plutil -lint "$ENT" >/dev/null || { echo "!! $ENT is not a valid plist"; exit 1; }
+fi
+echo "==> [0/7] entitlements written: $ENT"
+
+# 0b) signing identity: explicit SIGN_IDENTITY wins; else auto-detect a
 #    "Developer ID Application" cert — but NEVER the Valtech one. Empty => ad-hoc.
 ID="${SIGN_IDENTITY:-}"
 if [ -z "$ID" ]; then
@@ -49,7 +81,6 @@ if [ -z "$ID" ]; then
 fi
 if [ -n "$ID" ]; then
   echo "$ID" | grep -qi valtech && { echo "!! refusing to sign with a Valtech identity"; exit 1; }
-  [ -f "$ENT" ] || { echo "!! Developer ID present but $ENT is missing (see docs/DESKTOP-SIGNING.md step 4)"; exit 1; }
   echo "==> signing identity: $ID"
 else
   echo "==> no Developer ID — ad-hoc signing (docs/DESKTOP-SIGNING.md for zero-warning)"

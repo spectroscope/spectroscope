@@ -149,16 +149,21 @@ Under **hardened runtime** (required for notarization) macOS blocks the JVM's
 JIT and the loading of dylibs not signed by your team. The bundled JRE trips
 both.
 
-**This file is not in the repo.** `.gitignore` ignores `build/`, so
-`spectro-desktop/build/entitlements.mac.plist` is untracked and a fresh clone
-does not have it. With a Developer ID in the keychain and the file missing, the
-build script stops before doing any work:
+**This file is not in the repo, and nothing has to copy it in.** `.gitignore`
+ignores `build/`, so `spectro-desktop/build/entitlements.mac.plist` is untracked
+and no clone and no fresh worktree carries it — which is why
+`scripts/build-desktop-runkit.sh` **writes** it in its step 0, on every run, from
+exactly the text below. Until then the script only checked for the file and
+exited, so a signed build ran in one directory on one machine: the one that had
+signed before. That is what stopped the 0.6.1 cut (card 174).
 
-```
-!! Developer ID present but spectro-desktop/build/entitlements.mac.plist is missing (see docs/DESKTOP-SIGNING.md step 4)
-```
+The block below and the heredoc in that script are the same bytes in two places.
+**Change both, or this section becomes folklore.** Measured 2026-08-10: the
+heredoc's output is byte-identical (md5 `62bedbe76096b50428f2b281e47001e5`) to the
+file this machine had been signing with since 2026-07-22, and `codesign -d
+--entitlements -` reads all three keys back off a binary signed with it.
 
-Recreate it verbatim:
+The content, which is also what the script writes:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -442,6 +447,9 @@ offline.
 
 `scripts/build-desktop-runkit.sh` already does all of the above, auto-selected:
 
+- **Entitlements** — step 0 writes `build/entitlements.mac.plist` from step 4's
+  content and lints it before anything else runs, so a checkout made a minute ago
+  signs exactly like the release machine.
 - **Identity** — it uses `SIGN_IDENTITY` if set, else auto-detects a "Developer
   ID Application" cert from the keychain (and **refuses the Valtech one**). No
   cert → it falls back to the ad-hoc `--sign -` path unchanged, so the script
@@ -497,8 +505,10 @@ Keep the credentials in the keychain / env, **never** in the repo.
 - **A negative `spctl` reading during notarization is meaningless.** Read it
   after the staple, never before.
 - **`build/entitlements.mac.plist` is untracked** (`.gitignore` ignores
-  `build/`). A fresh clone has to recreate it from step 4 or the signed build
-  refuses to start.
+  `build/`), so `build-desktop-runkit.sh` step 0 writes it from step 4's content
+  on every run. Nothing recreates it by hand any more — the version of this
+  script that only checked for the file is what stopped the 0.6.1 release in a
+  fresh worktree (card 174).
 - **`CSC_NAME` takes the common name without the `Developer ID Application: `
   prefix**; `codesign --sign` takes the full string. Mixing them up makes
   electron-builder report no certificate found.
