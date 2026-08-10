@@ -3,6 +3,7 @@
 // process spawns "java -jar spectro-server.jar" as a child, health-checks it, and points a
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
 import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, session, shell } from "electron";
+import { allowsNavigation } from "./navigationGuard";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
@@ -206,7 +207,28 @@ function createWindow(port: number): BrowserWindow {
     return { action: "deny" };
   });
 
-  void w.loadURL(`http://127.0.0.1:${port}`); // the stage-8 UI, WebSocket as always
+  // The seatbelt setWindowOpenHandler does not wear (card 150). That handler
+  // covers window.open and target=_blank; a same-window navigation walks past
+  // it. Nothing in this app can reach one today, which is exactly when a guard
+  // is cheap to add — and this window has no address bar to notice a wrong page
+  // by. The decision is pure and lives in navigationGuard.ts so it can be
+  // tested without Electron.
+  const home = `http://127.0.0.1:${port}`;
+  w.webContents.on("will-navigate", (event, url) => {
+    if (!allowsNavigation(home, url)) {
+      event.preventDefault();
+      // Anything http(s) still reaches the user, just in the browser they
+      // already have — the same destination setWindowOpenHandler gives it.
+      if (/^https?:\/\//i.test(url)) void shell.openExternal(url);
+    }
+  });
+  // A redirect is a navigation the page did not spell out, so it gets the same
+  // answer. Electron fires this one separately.
+  w.webContents.on("will-redirect", (event, url) => {
+    if (!allowsNavigation(home, url)) event.preventDefault();
+  });
+
+  void w.loadURL(home); // the stage-8 UI, WebSocket as always
   w.on("closed", () => { win = null; });
   return w;
 }
