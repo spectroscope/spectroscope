@@ -1,0 +1,2281 @@
+<!doctype html>
+<html lang="en" data-design="spectroscope">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spectroscope — graph view</title>
+<style>
+/* ============================================================
+   Palette. Every value below is copied out of the two token
+   files, byte for byte; nothing here is invented.
+     ~/Spectroscope/design/website/tokens.css
+     spectro-web/src/tokens.css @ origin/main
+   Rules honoured: colour ONLY on the lines, no shadows, no glow
+   on the mark, espresso is the default and paper is complete.
+   ============================================================ */
+:root {
+  color-scheme: dark;
+
+  /* surfaces — vintage espresso ladder */
+  --bg: #17120d;
+  --surface: #201913;
+  --surface-2: #292019;
+  --surface-3: #2e251c;
+  --border: #33291f;
+  --border-strong: #5c5142;
+
+  /* ink — warm cream */
+  --text: #ede7dc;
+  --text-dim: #a2988a;
+  --text-faint: #5c5142;
+  --text-on-accent: #2a1b08;
+
+  /* the logo's amber line */
+  --accent: #ce9440;
+  --accent-hover: #e0a855;
+  --accent-soft: rgba(206, 148, 64, 0.13);
+
+  /* spectral lines — the ONLY carriers of colour */
+  --sp-red: #c05a4c;
+  --sp-amber: #ce9440;
+  --sp-teal: #2dd4a7;
+  --sp-ocean: #2cb1c4;
+  --sp-violet: #8b7cf0;
+
+  /* the fixed event vocabulary, reused rather than re-invented */
+  --ev-token: var(--sp-teal);
+  --ev-tool: var(--sp-amber);
+  --ev-gate: var(--sp-red);
+  --ev-subagent: var(--sp-ocean);
+  --ev-lifecycle: var(--text-faint);
+  --ev-pending: var(--sp-violet);
+
+  --ok: #2dd4a7;
+  --warn: #ce9440;
+  --error: #c05a4c;
+
+  --font-ui: "Inter Variable", Inter, Geist, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-chip: 7px;
+  --radius-control: 10px;
+  --radius-card: 10px;
+
+  --t-fast: 140ms cubic-bezier(0.2, 0, 0, 1);
+
+  /* graph-view roles, derived only by pointing at tokens above */
+  --gv-node-face: var(--surface);
+  --gv-node-face-2: var(--surface-2);
+  --gv-pending: var(--border-strong);
+  --gv-active: var(--accent);
+  --gv-done: var(--ok);
+  --gv-error: var(--error);
+  --gv-edge-quiet: var(--border-strong);
+  --gv-edge-taken: var(--ok);
+  --gv-edge-live: var(--accent);
+  --gv-grid: rgba(237, 231, 220, 0.045);
+  --gv-rule: rgba(237, 231, 220, 0.085);
+}
+
+:root[data-design="paper"] {
+  color-scheme: light;
+
+  --bg: #f6f4ee;
+  --surface: #efece3;
+  --surface-2: #e9e5d8;
+  --surface-3: #e2dccc;
+  --border: #ddd8cb;
+  --border-strong: #c4bcad;
+
+  --text: #17161a;
+  --text-dim: #6a665d;
+  --text-faint: #a39e92;
+  --text-on-accent: #f6f4ee;
+
+  --accent: #2e7ea6;
+  --accent-hover: #276c8f;
+  --accent-soft: rgba(46, 126, 166, 0.14);
+
+  --sp-red: #c24b3e;
+  --sp-amber: #a9762a;
+  --sp-teal: #0f9d77;
+  --sp-ocean: #0b8799;
+  --sp-violet: #6c5ce7;
+
+  --ok: #0f9d77;
+  --warn: #a9762a;
+  --error: #c24b3e;
+
+  --gv-pending: #a39e92;
+  --gv-grid: rgba(23, 22, 26, 0.05);
+  --gv-rule: rgba(23, 22, 26, 0.09);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* focus is always visible and always accent */
+:where(a, button, input, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-chip);
+}
+#graph .node:focus-visible { outline: none; }
+#graph .node:focus-visible .focusring { opacity: 1; }
+
+.app {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100vh;
+}
+
+/* ---------- header ---------- */
+.top {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.brand { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.mark { display: block; }
+.wordmark {
+  font-size: 15px;
+  letter-spacing: -0.01em;
+  font-weight: 500;
+  text-transform: lowercase;
+}
+.brand .sep { width: 1px; height: 15px; background: var(--border-strong); }
+.brand .page {
+  font-size: 11px;
+  text-transform: lowercase;
+  letter-spacing: 0.18em;
+  color: var(--text-dim);
+}
+.tagline {
+  margin: 0;
+  flex: 1 1 320px;
+  min-width: 240px;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+.tagline em { color: var(--text); font-style: normal; }
+
+.topright { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+/* ---------- controls ---------- */
+button, select, label.filebtn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 10px;
+  cursor: pointer;
+  transition: color var(--t-fast), border-color var(--t-fast), background var(--t-fast);
+  white-space: nowrap;
+}
+button:hover, select:hover, label.filebtn:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+button.primary { color: var(--text); }
+button:disabled { opacity: .4; cursor: default; }
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-chip); overflow: hidden; }
+.seg button { border: 0; border-radius: 0; }
+.seg button + button { border-left: 1px solid var(--border); }
+input[type="file"] { display: none; }
+
+.transport {
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.tbtns { display: flex; gap: 6px; align-items: center; }
+.tbtns .icon { font-size: 13px; padding: 5px 9px; min-width: 34px; text-align: center; }
+
+/* the ribbon: one thin line per record, coloured by record type.
+   colour on lines only — this is the page's spectral element. */
+.ribbonwrap { position: relative; height: 40px; }
+#ribbon { position: absolute; inset: 0; width: 100%; height: 40px; display: block; }
+#scrub {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  background: transparent;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+}
+#scrub::-webkit-slider-runnable-track { height: 40px; background: transparent; }
+#scrub::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 3px;
+  height: 40px;
+  border-radius: 1px;
+  background: var(--accent);
+  border: 0;
+}
+#scrub::-moz-range-track { height: 40px; background: transparent; }
+#scrub::-moz-range-thumb { width: 3px; height: 40px; border-radius: 1px; background: var(--accent); border: 0; }
+
+.tmeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+.tmeta b { color: var(--text); font-weight: 500; }
+
+/* ---------- stage ---------- */
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 306px; min-height: 0; }
+.stage.nopanel { grid-template-columns: minmax(0, 1fr); }
+.canvaswrap { position: relative; min-width: 0; overflow: hidden; background:
+  radial-gradient(circle at 1px 1px, var(--gv-grid) 1px, transparent 0) 0 0 / 26px 26px; }
+/* Only while a pan is actually running: a permanent grab cursor would promise
+   the left button pans, and here it does not. */
+.canvaswrap.panning, .canvaswrap.panning #graph .node { cursor: grabbing; }
+#graph { width: 100%; height: 100%; display: block; touch-action: none; }
+.zoombar {
+  position: absolute; left: 14px; bottom: 12px;
+  display: flex; gap: 6px; align-items: center;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+}
+.hint {
+  position: absolute; right: 14px; bottom: 12px;
+  font-size: 11px; color: var(--text-faint);
+}
+
+/* ---------- panel ---------- */
+.panel {
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+  padding: 0 0 18px;
+}
+.psec { padding: 14px 16px; border-bottom: 1px solid var(--border); }
+.plabel {
+  font-size: 10px; text-transform: lowercase; letter-spacing: 0.2em;
+  color: var(--text-faint); margin: 0 0 10px;
+}
+.pid { font-family: var(--font-mono); font-size: 15px; color: var(--text); word-break: break-all; }
+.krow { display: grid; grid-template-columns: 76px 1fr; gap: 4px 10px; font-size: 12px; margin-top: 10px; }
+.krow dt { color: var(--text-faint); }
+.krow dd { margin: 0; font-family: var(--font-mono); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.chip {
+  font-family: var(--font-mono); font-size: 11px;
+  padding: 2px 7px; border-radius: var(--radius-chip);
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text-dim);
+}
+button.chip.branchbtn { padding: 2px 7px; cursor: pointer; }
+button.chip.branchbtn:hover { color: var(--text); border-color: var(--border-strong); }
+.statetag { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-family: var(--font-mono); }
+.statetag i { width: 14px; height: 2px; border-radius: 1px; background: var(--gv-pending); display: block; }
+.statetag[data-s="active"] i { background: var(--gv-active); }
+.statetag[data-s="done"] i { background: var(--gv-done); }
+.statetag[data-s="error"] i { background: var(--gv-error); }
+.edgelist { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.edgebtn {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  text-align: left; padding: 5px 8px; font-family: var(--font-mono); font-size: 11.5px;
+  background: transparent; border: 1px solid transparent;
+}
+.edgebtn:hover { background: var(--surface-2); border-color: var(--border); }
+.edgebtn .dash { width: 18px; height: 0; border-top: 2px solid var(--gv-edge-quiet); flex: 0 0 18px; }
+.edgebtn.taken .dash { border-top-color: var(--gv-edge-taken); }
+.edgebtn.untaken .dash { border-top-style: dashed; }
+.edgebtn .b { color: var(--text-faint); margin-left: auto; font-size: 10.5px; }
+.errbox {
+  margin-top: 10px; padding: 8px 10px; border: 1px solid var(--border);
+  border-left: 2px solid var(--gv-error); border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+}
+.errbox b { color: var(--error); font-weight: 500; display: block; margin-bottom: 3px; }
+.rec { font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim); word-break: break-word; }
+.rec b { color: var(--text); font-weight: 500; }
+.legend { display: flex; flex-direction: column; gap: 6px; font-size: 11.5px; color: var(--text-dim); }
+.legend div { display: flex; align-items: center; gap: 9px; }
+.legend i { width: 22px; height: 0; flex: 0 0 22px; border-top: 2px solid var(--gv-pending); }
+.legend .l-active i { border-top-color: var(--gv-active); border-top-style: dashed; }
+.legend .l-done i { border-top-color: var(--gv-done); }
+.legend .l-error i { border-top-color: var(--gv-error); }
+.legend .l-untaken i { border-top-style: dashed; }
+.empty { color: var(--text-faint); font-size: 12px; }
+
+/* ---------- state payload ----------
+   The second artifact's values live here. Two rules shape all of it:
+   a value that was clipped must LOOK clipped, and a value that was never
+   recorded must not look like a value that is empty. So every marker is a
+   chip with a 2px coloured line on its left — colour on lines only, the
+   same grammar the edges and the error box already speak. */
+.sbanner {
+  margin-top: 8px; padding: 8px 10px;
+  border: 1px solid var(--border); border-left: 2px solid var(--border-strong);
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
+  font-size: 11.5px; line-height: 1.5; color: var(--text-dim);
+}
+.sbanner + .sbanner { margin-top: 6px; }
+.sbanner b { color: var(--text); font-weight: 500; }
+.sbanner code {
+  display: block; margin-top: 5px; font-family: var(--font-mono); font-size: 10.5px;
+  color: var(--text); overflow-wrap: anywhere;
+}
+.sbanner.warn { border-left-color: var(--warn); }
+.sbanner.stop { border-left-color: var(--error); }
+
+details.ch { border-top: 1px solid var(--border); }
+details.ch:last-of-type { border-bottom: 1px solid var(--border); }
+details.ch > summary {
+  display: flex; align-items: baseline; gap: 7px; cursor: pointer;
+  padding: 6px 1px; list-style: none;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--text-dim);
+}
+details.ch > summary::-webkit-details-marker { display: none; }
+details.ch > summary::before {
+  content: "\25B8"; color: var(--text-faint); font-size: 9px; flex: 0 0 8px;
+}
+details.ch[open] > summary::before { content: "\25BE"; }
+details.ch > summary:hover { color: var(--text); }
+details.ch > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.chname { color: var(--text); }
+.chsize {
+  margin-left: auto; color: var(--text-faint); font-size: 10.5px;
+  font-variant-numeric: tabular-nums; text-align: right;
+}
+.chbody { padding: 0 0 9px 15px; min-width: 0; }
+.ch.absent { border-top: 1px solid var(--border); }
+.ch.absent .chname { color: var(--text-faint); }
+.chrow {
+  display: flex; align-items: baseline; gap: 7px; padding: 6px 1px 6px 15px;
+  font-family: var(--font-mono); font-size: 11.5px;
+}
+.chrow .tag { margin-left: auto; }
+
+.vtext {
+  font-family: var(--font-mono); font-size: 11.5px; line-height: 1.55; color: var(--text-dim);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: 208px; overflow-y: auto; overflow-x: hidden;
+  border-left: 1px solid var(--border); padding: 1px 0 1px 8px;
+}
+.vtext.tall { max-height: 62vh; }
+.vscalar { font-family: var(--font-mono); font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
+.vscalar.nil { color: var(--text-faint); }
+.vnote {
+  font-family: var(--font-mono); font-size: 10.5px; color: var(--text-faint);
+  margin-top: 4px; overflow-wrap: anywhere;
+}
+.tag {
+  display: inline-block; font-family: var(--font-mono); font-size: 10.5px;
+  padding: 0 6px; margin-left: 4px; vertical-align: baseline;
+  border: 1px solid var(--border); border-left-width: 2px;
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
+  background: var(--surface-2); color: var(--text-dim); white-space: nowrap;
+}
+.tag.clip { border-left-color: var(--warn); }
+.tag.red  { border-left-color: var(--error); }
+.tag.gone { border-left-color: var(--border-strong); color: var(--text-faint); }
+button.more {
+  margin-top: 5px; padding: 1px 7px; font-size: 10.5px; font-family: var(--font-mono);
+}
+/* A key/value pair sits on one line while the value is small, and breaks to
+   its own full-width block as soon as it is not. A 4 KB document text squeezed
+   into the right half of a 330px column is technically shown and practically
+   unreadable, which is the failure this whole section exists to avoid. */
+.obj { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kvline { display: flex; align-items: baseline; gap: 9px; min-width: 0; }
+.kvline > .k { flex: 0 0 auto; }
+.kvline > .vscalar { min-width: 0; font-size: 11.5px; color: var(--text-dim); overflow-wrap: anywhere; }
+.kvstack { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kvbody { min-width: 0; }
+.k { font-family: var(--font-mono); font-size: 11px; color: var(--text-faint); overflow-wrap: anywhere; }
+.kv { display: grid; grid-template-columns: minmax(0, auto) minmax(0, 1fr); gap: 3px 9px; }
+.kv > .v { min-width: 0; }
+.items { display: flex; flex-direction: column; }
+details.item { border-top: 1px solid var(--border); }
+/* One line per element, clipped with an ellipsis. Deliberately NOT a flex row:
+   a shrunk flex item with nowrap text still reserved three lines of height in
+   Chromium, which left a ragged gap under every list row. A block line box
+   with overflow:hidden is the boring construction that measures right. */
+details.item > summary {
+  display: block; cursor: pointer; padding: 4px 1px; list-style: none;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+details.item > summary::-webkit-details-marker { display: none; }
+details.item > summary::before { content: "\25B8"; font-size: 8px; margin-right: 6px; }
+details.item[open] > summary::before { content: "\25BE"; }
+details.item > summary:hover { color: var(--text-dim); }
+.iprev { color: var(--text-dim); margin-left: 6px; }
+.ibody { padding: 2px 0 8px 15px; min-width: 0; }
+details.polbox { margin-top: 12px; }
+details.polbox > summary {
+  list-style: none; cursor: pointer;
+  font-size: 10px; text-transform: lowercase; letter-spacing: 0.2em; color: var(--text-faint);
+}
+details.polbox > summary::-webkit-details-marker { display: none; }
+details.polbox > summary:hover { color: var(--text-dim); }
+details.polbox .obj { margin-top: 8px; }
+
+/* ---------- footer ---------- */
+.status {
+  display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+  padding: 8px 22px; border-top: 1px solid var(--border);
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-faint);
+}
+.status b { color: var(--text-dim); font-weight: 400; }
+
+/* ---------- svg ---------- */
+#graph text { font-family: var(--font-ui); fill: var(--text); }
+#graph .nbox { fill: var(--gv-node-face); stroke: var(--gv-pending); stroke-width: 1.25; }
+#graph .nlabel { font-size: 16.5px; font-weight: 500; }
+#graph .nmeta { font-size: 12.5px; fill: var(--text-dim); font-family: var(--font-mono); }
+#graph .nkeys { font-size: 11.5px; fill: var(--text-faint); font-family: var(--font-mono); }
+#graph .nring { fill: none; stroke: none; stroke-width: 2; }
+#graph .focusring { fill: none; stroke: var(--accent); stroke-width: 1.5; opacity: 0; stroke-dasharray: 3 3; }
+#graph .node { cursor: pointer; }
+#graph .node:hover .nbox { stroke: var(--text-dim); }
+
+#graph .node.s-done .nbox { stroke: var(--gv-done); }
+#graph .node.s-error .nbox { stroke: var(--gv-error); }
+#graph .node.s-active .nbox { stroke: var(--gv-active); stroke-width: 1.25; }
+#graph .node.s-active .nring { stroke: var(--gv-active); animation: gv-chase 1.6s linear infinite; }
+#graph .node.s-terminal .nbox { stroke-dasharray: 4 4; }
+#graph .node.sel .nbox { stroke-width: 2.25; }
+#graph .node.sel .selmark { opacity: 1; }
+#graph .selmark { opacity: 0; stroke: var(--accent); stroke-width: 2; }
+
+@keyframes gv-chase { to { stroke-dashoffset: var(--gv-perim, -400); } }
+
+#graph .edge { fill: none; stroke: var(--gv-edge-quiet); stroke-width: 1.25; opacity: .6; }
+#graph .edge.cond { stroke-dasharray: 5 4; }
+#graph .edge.taken { stroke: var(--gv-edge-taken); stroke-width: 2; opacity: .95; stroke-dasharray: none; }
+#graph .edge.live { stroke: var(--gv-edge-live); stroke-width: 2.4; opacity: 1; }
+#graph .edge.dim { opacity: .34; }
+#graph .elabel { font-size: 11px; font-family: var(--font-mono); fill: var(--text-faint); }
+#graph .elabel.on { fill: var(--gv-edge-taken); }
+#graph .elabel.now { fill: var(--gv-edge-live); }
+#graph .rankline { stroke: var(--gv-rule); stroke-width: 1; }
+#graph .ranklabel { font-size: 10px; font-family: var(--font-mono); fill: var(--text-faint); letter-spacing: .14em; }
+
+/* reduced motion: the moving accent becomes a static state mark */
+@media (prefers-reduced-motion: reduce) {
+  #graph .node.s-active .nring { animation: none; stroke-dasharray: none; opacity: .55; }
+  * { transition-duration: 0.01ms !important; }
+}
+
+@media (max-width: 900px) {
+  .stage { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
+  .panel { border-left: 0; border-top: 1px solid var(--border); max-height: 40vh; }
+  .transport { grid-template-columns: 1fr; }
+  .tmeta { text-align: left; }
+}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <header class="top">
+    <div class="brand">
+      <!-- the mark: five discrete spectral lines. no glow, no shadow. -->
+      <svg class="mark" width="26" height="20" viewBox="0 0 26 20" aria-hidden="true">
+        <line x1="2"  y1="3" x2="2"  y2="17" stroke="var(--sp-red)"    stroke-width="2"/>
+        <line x1="7"  y1="6" x2="7"  y2="14" stroke="var(--sp-amber)"  stroke-width="2"/>
+        <line x1="12" y1="1" x2="12" y2="19" stroke="var(--sp-teal)"   stroke-width="2"/>
+        <line x1="17" y1="5" x2="17" y2="15" stroke="var(--sp-ocean)"  stroke-width="2"/>
+        <line x1="22" y1="7" x2="22" y2="13" stroke="var(--sp-violet)" stroke-width="2"/>
+      </svg>
+      <span class="wordmark">spectroscope</span>
+      <span class="sep"></span>
+      <span class="page">graph view</span>
+    </div>
+    <p class="tagline">
+      the topology is known at <em>compile()</em>, before the first token — so the graph is drawn
+      first and the event stream only lights it up. observe without touching.
+    </p>
+    <div class="topright">
+      <div class="seg" role="group" aria-label="orientation">
+        <button id="oh" aria-pressed="true">horizontal</button>
+        <button id="ov" aria-pressed="false">vertical</button>
+      </div>
+      <div class="seg" role="group" aria-label="theme">
+        <button id="td" aria-pressed="true">espresso</button>
+        <button id="tl" aria-pressed="false">paper</button>
+      </div>
+      <label class="filebtn" for="file" tabindex="0" role="button"
+             title="a .graph.jsonl draws the run; the .state.jsonl beside it carries the values. A file picker cannot reach a sibling, so load the two one after the other — either order.">load file…</label>
+      <input type="file" id="file" accept=".json,.jsonl,.ndjson,application/json,text/plain">
+    </div>
+  </header>
+
+  <section class="transport">
+    <div class="tbtns">
+      <button class="icon" id="first" title="first record (Home)" aria-label="first record">|&lt;</button>
+      <button class="icon" id="prev" title="step back (left arrow)" aria-label="step back">&lt;</button>
+      <button class="icon primary" id="play" title="play / pause (space)" aria-label="play">&#9654;</button>
+      <button class="icon" id="next" title="step forward (right arrow)" aria-label="step forward">&gt;</button>
+      <button class="icon" id="last" title="last record (End)" aria-label="last record">&gt;|</button>
+      <select id="speed" aria-label="replay speed">
+        <option value="0.5">0.5&times;</option>
+        <option value="1" selected>1&times;</option>
+        <option value="2">2&times;</option>
+        <option value="4">4&times;</option>
+        <option value="0">instant</option>
+      </select>
+    </div>
+    <div class="ribbonwrap">
+      <svg id="ribbon" aria-hidden="true"></svg>
+      <input type="range" id="scrub" min="0" max="0" value="0" step="1" aria-label="record timeline">
+    </div>
+    <div class="tmeta" id="tmeta">—</div>
+  </section>
+
+  <main class="stage" id="stage">
+    <div class="canvaswrap" id="canvaswrap">
+      <svg id="graph" role="img" aria-label="agent graph topology"></svg>
+      <div class="zoombar">
+        <button id="zout" aria-label="zoom out">&minus;</button>
+        <span id="zlabel">100%</span>
+        <button id="zin" aria-label="zoom in">+</button>
+        <button id="zfit">fit</button>
+      </div>
+      <div class="hint">right- or middle-drag to pan · wheel to zoom · click a node</div>
+    </div>
+
+    <aside class="panel" id="panel">
+      <div class="psec" id="detail"></div>
+      <div class="psec">
+        <p class="plabel">current record</p>
+        <div class="rec" id="currec">—</div>
+      </div>
+      <div class="psec">
+        <p class="plabel">branches, known at compile()</p>
+        <div id="branches"></div>
+      </div>
+      <div class="psec">
+        <p class="plabel">reading the picture</p>
+        <div class="legend">
+          <div class="l-pending"><i></i><span>pending — never entered</span></div>
+          <div class="l-active"><i></i><span>active — node_start, no node_end yet</span></div>
+          <div class="l-done"><i></i><span>done — duration + update keys</span></div>
+          <div class="l-error"><i></i><span>error — the node raised</span></div>
+          <div class="l-untaken"><i></i><span>conditional edge that was not taken</span></div>
+          <div class="l-loop"><i style="border-top-style:solid"></i><span>a lane below the graph is a cycle return</span></div>
+          <div class="l-skip"><i style="border-top-style:solid"></i><span>a lane above it skips ranks</span></div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <footer class="status">
+    <span>source <b id="s-src">embedded fixture</b></span>
+    <span>thread <b id="s-thread">—</b></span>
+    <span>run <b id="s-run">—</b></span>
+    <span>nodes <b id="s-nodes">—</b></span>
+    <span>edges <b id="s-edges">—</b></span>
+    <span>supersteps <b id="s-steps">—</b></span>
+    <span>state <b id="s-state">—</b></span>
+    <span>offline · no network calls</span>
+  </footer>
+</div>
+
+<script>
+"use strict";
+
+/* ------------------------------------------------------------------
+   the embedded fixture: an Explainv2-shaped CRAG run.
+   router -> retrieve -> rerank -> grade, grade falls under threshold
+   and rewrites, the rewrite loops back to the router, the second pass
+   grades well, generate, verify raises once, re-generate, END.
+   It goes through the very same parser as the file input.
+   ------------------------------------------------------------------ */
+const FIXTURE = String.raw`
+{"type":"graph_topology","schema_version":1,"entry":"router","nodes":[{"id":"__start__","label":"__start__"},{"id":"router","label":"router"},{"id":"retrieve","label":"retrieve"},{"id":"rerank","label":"rerank"},{"id":"grade","label":"grade"},{"id":"rewrite","label":"rewrite"},{"id":"web","label":"web"},{"id":"generate","label":"generate"},{"id":"verify","label":"verify"},{"id":"__end__","label":"__end__"}],"edges":[{"from":"__start__","to":"router","kind":"direct"},{"from":"router","to":"retrieve","kind":"conditional","branch":"router"},{"from":"router","to":"generate","kind":"conditional","branch":"router"},{"from":"retrieve","to":"rerank","kind":"direct"},{"from":"rerank","to":"grade","kind":"direct"},{"from":"grade","to":"generate","kind":"conditional","branch":"grade"},{"from":"grade","to":"rewrite","kind":"conditional","branch":"grade"},{"from":"grade","to":"web","kind":"conditional","branch":"grade"},{"from":"rewrite","to":"router","kind":"direct"},{"from":"web","to":"generate","kind":"direct"},{"from":"generate","to":"verify","kind":"direct"},{"from":"verify","to":"__end__","kind":"conditional","branch":"verify"},{"from":"verify","to":"generate","kind":"conditional","branch":"verify"}],"branches":[{"source":"router","targets":["retrieve","generate"]},{"source":"grade","targets":["generate","rewrite","web"]},{"source":"verify","targets":["__end__","generate"]}],"ts":1786353243000}
+{"type":"graph_start","threadId":"th_9f2c41a0","runId":"run_2026-08-10T09-14-03Z_a17e","ts":1786353243002}
+{"type":"edge_taken","from":"__start__","to":"router","ts":1786353243004}
+{"type":"node_start","node":"router","superstep":1,"ts":1786353243006}
+{"type":"node_end","node":"router","superstep":1,"durationMs":8,"updateKeys":["route","principal","trace"],"updateBytes":244,"ts":1786353243014}
+{"type":"edge_taken","from":"router","to":"retrieve","branch":"router","ts":1786353243015}
+{"type":"node_start","node":"retrieve","superstep":2,"ts":1786353243018}
+{"type":"node_end","node":"retrieve","superstep":2,"durationMs":46,"updateKeys":["documents","trace"],"updateBytes":39085,"ts":1786353243064}
+{"type":"edge_taken","from":"retrieve","to":"rerank","ts":1786353243065}
+{"type":"node_start","node":"rerank","superstep":3,"ts":1786353243068}
+{"type":"node_end","node":"rerank","superstep":3,"durationMs":63,"updateKeys":["documents","scores"],"updateBytes":39090,"ts":1786353243131}
+{"type":"edge_taken","from":"rerank","to":"grade","ts":1786353243132}
+{"type":"node_start","node":"grade","superstep":4,"ts":1786353243135}
+{"type":"node_end","node":"grade","superstep":4,"durationMs":812,"updateKeys":["grade","confidence","trace"],"updateBytes":101,"ts":1786353243947}
+{"type":"edge_taken","from":"grade","to":"rewrite","branch":"grade","ts":1786353243948}
+{"type":"node_start","node":"rewrite","superstep":5,"ts":1786353243951}
+{"type":"node_end","node":"rewrite","superstep":5,"durationMs":1240,"updateKeys":["question","rewrites","trace"],"updateBytes":184,"ts":1786353245191}
+{"type":"edge_taken","from":"rewrite","to":"router","ts":1786353245192}
+{"type":"node_start","node":"router","superstep":6,"ts":1786353245195}
+{"type":"node_end","node":"router","superstep":6,"durationMs":5,"updateKeys":["route","principal","trace"],"updateBytes":244,"ts":1786353245200}
+{"type":"edge_taken","from":"router","to":"retrieve","branch":"router","ts":1786353245201}
+{"type":"node_start","node":"retrieve","superstep":7,"ts":1786353245204}
+{"type":"node_end","node":"retrieve","superstep":7,"durationMs":39,"updateKeys":["documents","trace"],"updateBytes":42317,"ts":1786353245243}
+{"type":"edge_taken","from":"retrieve","to":"rerank","ts":1786353245244}
+{"type":"node_start","node":"rerank","superstep":8,"ts":1786353245247}
+{"type":"node_end","node":"rerank","superstep":8,"durationMs":58,"updateKeys":["documents","scores"],"updateBytes":42322,"ts":1786353245305}
+{"type":"edge_taken","from":"rerank","to":"grade","ts":1786353245306}
+{"type":"node_start","node":"grade","superstep":9,"ts":1786353245309}
+{"type":"node_end","node":"grade","superstep":9,"durationMs":764,"updateKeys":["grade","confidence","trace"],"updateBytes":101,"ts":1786353246073}
+{"type":"edge_taken","from":"grade","to":"generate","branch":"grade","ts":1786353246074}
+{"type":"node_start","node":"generate","superstep":10,"ts":1786353246077}
+{"type":"node_end","node":"generate","superstep":10,"durationMs":3120,"updateKeys":["answer","citations","trace"],"updateBytes":2597,"ts":1786353249197}
+{"type":"edge_taken","from":"generate","to":"verify","ts":1786353249198}
+{"type":"node_start","node":"verify","superstep":11,"ts":1786353249201}
+{"type":"node_error","node":"verify","superstep":11,"durationMs":410,"error":"GroundednessError","message":"claim 3 cites doc[2] but no supporting span was found in it","ts":1786353249611}
+{"type":"edge_taken","from":"verify","to":"generate","branch":"verify","ts":1786353249612}
+{"type":"node_start","node":"generate","superstep":12,"ts":1786353249615}
+{"type":"node_end","node":"generate","superstep":12,"durationMs":2870,"updateKeys":["answer","citations","trace"],"updateBytes":4529,"ts":1786353252485}
+{"type":"edge_taken","from":"generate","to":"verify","ts":1786353252486}
+{"type":"node_start","node":"verify","superstep":13,"ts":1786353252489}
+{"type":"node_end","node":"verify","superstep":13,"durationMs":380,"updateKeys":["verdict","trace"],"updateBytes":150,"ts":1786353252869}
+{"type":"edge_taken","from":"verify","to":"__end__","branch":"verify","ts":1786353252870}
+{"type":"graph_end","steps":13,"ts":1786353252872}
+`;
+
+/* ------------------------------------------------------------------
+   the companion artifact: what `compile(sink=artifacts(path,
+   state=StatePolicy.sample()))` writes beside the graph file. Shapes
+   are GRAPH-L2-STATE-PAYLOAD.md §4; every byte count in it is the
+   measured size of the thing it describes, so the panel's
+   "wrote … · recorded …" line is arithmetic and not decoration.
+   Note superstep 11 is missing on purpose: verify RAISED there and a
+   node that raised wrote nothing, so there is no record to join.
+   ------------------------------------------------------------------ */
+const FIXTURE_STATE = String.raw`
+{"type":"state_policy","runId":"run_2026-08-10T09-14-03Z_a17e","mode":"sample","caps":{"answer":16384,"question":4096,"trace":8192,"citations":["sample",8,1024],"documents":["sample",3,512],"*":1024},"recordCap":8192,"denied":["principal"],"redaction":"patterns","ts":1786353243003}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"router","superstep":1,"channels":{"route":"local","trace":["router: die lokale Sammlung beantwortet das (route=local)"]},"ts":1786353243014}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"retrieve","superstep":2,"channels":{"documents":{"kind":"list","len":8,"bytes":39009,"omitted":"cap","sampled":3,"items":[{"chunk_id":"chunk:a1b2c3d4e5f60000","document_id":"document:confluence-00000","title":"Betriebshandbuch Abschnitt 0 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-0","source":"confluence","text":{"kind":"str","bytes":4236,"chars":4200,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.9123,"rerank_score":0.9834,"ordinal":0},{"chunk_id":"chunk:a1b2c3d4e5f60001","document_id":"document:confluence-00001","title":"Betriebshandbuch Abschnitt 1 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-1","source":"confluence","text":{"kind":"str","bytes":4236,"chars":4200,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.8813,"rerank_score":0.9364,"ordinal":1},{"chunk_id":"chunk:a1b2c3d4e5f60002","document_id":"document:confluence-00002","title":"Betriebshandbuch Abschnitt 2 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-2","source":"confluence","text":{"kind":"str","bytes":4236,"chars":4200,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.8503,"rerank_score":0.8894,"ordinal":2}]},"trace":["retrieve: 8 Treffer (top_k=8, overfetch_factor=4)"]},"truncated":["documents"],"ts":1786353244064}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"rerank","superstep":3,"channels":{"documents":{"kind":"list","len":8,"bytes":39009,"omitted":"cap","sampled":3,"items":[{"chunk_id":"chunk:a1b2c3d4e5f60003","document_id":"document:confluence-00003","title":"Betriebshandbuch Abschnitt 3 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-3","source":"confluence","text":{"kind":"str","bytes":4236,"chars":4200,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.8193,"rerank_score":0.8424,"ordinal":0},{"chunk_id":"chunk:a1b2c3d4e5f60000","document_id":"document:confluence-00000","title":"Betriebshandbuch Abschnitt 0 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-0","source":"confluence","text":{"kind":"str","bytes":4236,"chars":4200,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.9123,"rerank_score":0.9834,"ordinal":1},{"chunk_id":"chunk:a1b2c3d4e5f60005","document_id":"document:confluence-00005","title":"Betriebshandbuch Abschnitt 5 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-5","source":"confluence","text":{"kind":"str","bytes":4236,"chars":4200,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.7573,"rerank_score":0.7484,"ordinal":2}]},"scores":[0.9834,0.9364,0.8894,0.8424,0.7954,0.7484,0.7014,0.6544]},"truncated":["documents"],"ts":1786353245131}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"grade","superstep":4,"channels":{"grade":0.62,"confidence":0.44,"trace":["grade: 5 von 8 ueber der Schwelle 0.70, Verhaeltnis 0.62"]},"ts":1786353245947}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"rewrite","superstep":5,"channels":{"question":"Wie ist der Freigabeprozess fuer Wartungsfenster geregelt? (Umschreibung 1: Freigabe, Wartungsfenster, Change-Advisory-Board)","rewrites":1,"trace":["rewrite: Versuch 1"]},"ts":1786353248191}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"router","superstep":6,"channels":{"route":"local","trace":["router: die lokale Sammlung beantwortet das (route=local)"]},"ts":1786353248200}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"retrieve","superstep":7,"channels":{"documents":{"kind":"list","len":8,"bytes":42241,"omitted":"cap","sampled":3,"items":[{"chunk_id":"chunk:a1b2c3d4e5f60000","document_id":"document:confluence-00000","title":"Betriebshandbuch Abschnitt 0 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-0","source":"confluence","text":{"kind":"str","bytes":4640,"chars":4600,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.9123,"rerank_score":0.9834,"ordinal":0},{"chunk_id":"chunk:a1b2c3d4e5f60001","document_id":"document:confluence-00001","title":"Betriebshandbuch Abschnitt 1 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-1","source":"confluence","text":{"kind":"str","bytes":4640,"chars":4600,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.8813,"rerank_score":0.9364,"ordinal":1},{"chunk_id":"chunk:a1b2c3d4e5f60002","document_id":"document:confluence-00002","title":"Betriebshandbuch Abschnitt 2 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-2","source":"confluence","text":{"kind":"str","bytes":4640,"chars":4600,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.8503,"rerank_score":0.8894,"ordinal":2}]},"trace":["retrieve: 8 Treffer (top_k=8, overfetch_factor=4)"]},"truncated":["documents"],"ts":1786353248243}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"rerank","superstep":8,"channels":{"documents":{"kind":"list","len":8,"bytes":42241,"omitted":"cap","sampled":3,"items":[{"chunk_id":"chunk:a1b2c3d4e5f60001","document_id":"document:confluence-00001","title":"Betriebshandbuch Abschnitt 1 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-1","source":"confluence","text":{"kind":"str","bytes":4640,"chars":4600,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.8813,"rerank_score":0.9364,"ordinal":0},{"chunk_id":"chunk:a1b2c3d4e5f60004","document_id":"document:confluence-00004","title":"Betriebshandbuch Abschnitt 4 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-4","source":"confluence","text":{"kind":"str","bytes":4640,"chars":4600,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.7883,"rerank_score":0.7954,"ordinal":1},{"chunk_id":"chunk:a1b2c3d4e5f60000","document_id":"document:confluence-00000","title":"Betriebshandbuch Abschnitt 0 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-0","source":"confluence","text":{"kind":"str","bytes":4640,"chars":4600,"omitted":"cap","head":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster"},"snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.9123,"rerank_score":0.9834,"ordinal":2}]},"scores":[0.9911,0.9502,0.9188,0.8771,0.8302,0.7998,0.7461,0.7122]},"truncated":["documents"],"ts":1786353248305}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"grade","superstep":9,"channels":{"grade":0.81,"confidence":0.79,"trace":["grade: 6 von 8 ueber der Schwelle 0.70, Verhaeltnis 0.81"]},"ts":1786353249073}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"generate","superstep":10,"channels":{"answer":"Wartungsfenster gibt das Change-Advisory-Board frei. Der Antrag laeuft ueber das Ticketsystem und braucht einen technischen Ansprechpartner [1]. Ausserhalb der Regelarbeitszeit ist der Betriebsrat zu beteiligen [2]. Notfallfreigaben erteilt ein einzelnes Boardmitglied; die Nachdokumentation ist innerhalb einer Woche nachzureichen [3].","citations":[{"n":1,"document_id":"document:confluence-00000","title":"Betriebshandbuch Abschnitt 0 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-0","snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.9234},{"n":2,"document_id":"document:confluence-00001","title":"Betriebshandbuch Abschnitt 1 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-1","snippet":" ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Z","score":0.8864},{"n":3,"document_id":"document:confluence-00002","title":"Betriebshandbuch Abschnitt 2 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-2","snippet":"trag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds","score":0.8494},{"n":4,"document_id":"document:confluence-00003","title":"Betriebshandbuch Abschnitt 3 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-3","snippet":"Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss inn","score":0.8124}],"trace":["generate: 336 Zeichen, 4 Zitate aus 4 Quellen"]},"ts":1786353252197}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"generate","superstep":12,"channels":{"answer":"Wartungsfenster werden vom Change-Advisory-Board freigegeben. Ein Antrag gilt erst dann als eingereicht, wenn er im Ticketsystem den Status „eingeplant“ traegt und ein technischer Ansprechpartner benannt ist [1]. Liegt das Fenster ausserhalb der Regelarbeitszeit, ist zusaetzlich der Betriebsrat zu beteiligen [2]; innerhalb der Regelarbeitszeit entfaellt dieser Schritt.\n\nFuer Notfallfreigaben sieht das Betriebshandbuch einen verkuerzten Weg vor: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss aber innerhalb von zwei Werktagen nachgereicht werden [3]. Die Frist ist bindend — eine fehlende Nachdokumentation fuehrt laut Abschnitt 4 dazu, dass das Fenster rueckwirkend als nicht freigegeben gilt [4].\n\nNicht belegt ist in den vorliegenden Quellen, wie mit Fenstern umzugehen ist, die waehrend eines laufenden Incidents beantragt werden. Die Dokumente nennen den Fall nicht; die Antwort dazu waere geraten und unterbleibt deshalb.\n\nZusammengefasst: Antrag im Ticketsystem, Ansprechpartner benennen, Board-Freigabe abwarten, bei Randzeiten den Betriebsrat einbinden, im Notfall einzeln freigeben und binnen zwei Werktagen nachdokumentieren.","citations":[{"n":1,"document_id":"document:confluence-00000","title":"Betriebshandbuch Abschnitt 0 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-0","snippet":"Die Freigabe der Wartungsfenster erfolgt ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallf","score":0.9234},{"n":2,"document_id":"document:confluence-00001","title":"Betriebshandbuch Abschnitt 1 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-1","snippet":" ueber das Change-Advisory-Board. Ein Antrag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Z","score":0.8864},{"n":3,"document_id":"document:confluence-00002","title":"Betriebshandbuch Abschnitt 2 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-2","snippet":"trag gilt als eingereicht, sobald er im Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds","score":0.8494},{"n":4,"document_id":"document:confluence-00003","title":"Betriebshandbuch Abschnitt 3 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-3","snippet":"Ticketsystem den Status „eingeplant“ traegt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss inn","score":0.8124},{"n":5,"document_id":"document:confluence-00004","title":"Betriebshandbuch Abschnitt 4 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-4","snippet":"egt und der technische Ansprechpartner benannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die ","score":0.7754},{"n":6,"document_id":"document:confluence-00005","title":"Betriebshandbuch Abschnitt 5 — Wartung und Freigaben","url":"https://confluence.intern.example.com/display/OPS/Betriebshandbuch-5","snippet":"enannt ist. Der Betriebsrat ist nur zu beteiligen, wenn das Fenster ausserhalb der Regelarbeitszeit liegt. Fuer Notfallfreigaben gilt ein verkuerzter Weg: die Zustimmung eines einzelnen Boardmitglieds genuegt, die Nachdokumentation muss innerhalb von zwei Werktagen erfolgen. Die Freigabe der Wartungsfenster erfolgt ueb","score":0.7384}],"trace":["generate: 1175 Zeichen, 6 Zitate aus 6 Quellen"]},"ts":1786353255485}
+{"type":"state_payload","runId":"run_2026-08-10T09-14-03Z_a17e","node":"verify","superstep":13,"channels":{"verdict":{"grounded":true,"claims":7,"unsupported":0,"note":"Anspruch 3 jetzt durch Abschnitt 4 belegt"},"trace":["verify: belegt, Konfidenz 0.86"]},"ts":1786353255869}
+`;
+
+/* ================================================================
+   1. parsing — accepts a bare topology JSON, a .graph.jsonl, or the
+      .state.jsonl written beside it. One gesture, either artifact:
+      the two files are told apart by what is IN them, never by their
+      name, because a reader who renames a file has not lied.
+   ================================================================ */
+const STATE_TYPES = new Set(["state_payload", "state_policy"]);
+const ENC = new TextEncoder();
+/* Sizes are quoted in BYTES throughout, the same unit updateBytes speaks.
+   A string's length in characters is a different number and saying one while
+   meaning the other is how a size claim quietly becomes false. */
+const byteLen = s => ENC.encode(String(s)).length;
+const recordBytes = r => r.__bytes || byteLen(JSON.stringify(r));
+
+function parseSource(text) {
+  const trimmed = text.trim();
+  if (!trimmed) throw new Error("the file is empty");
+
+  // a single JSON document: either a topology, or an array of records
+  try {
+    const doc = JSON.parse(trimmed);
+    if (Array.isArray(doc)) return fromRecords(doc);
+    if (doc && Array.isArray(doc.nodes)) {
+      if (doc.type === "graph_topology") return fromRecords([doc]);
+      return { topology: normaliseTopology(doc), records: [], state: [] };
+    }
+    return fromRecords([doc]);
+  } catch (e) { /* not one document — fall through to jsonl */ }
+
+  const records = [];
+  const lines = trimmed.split(/\r?\n/);
+  let bad = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    try {
+      const rec = JSON.parse(line);
+      // the true size of the line as it sits on disk, so "recorded N B" is
+      // measured rather than re-derived from a re-serialization
+      if (rec && STATE_TYPES.has(rec.type)) rec.__bytes = byteLen(line);
+      records.push(rec);
+    }
+    catch (err) { bad++; }
+  }
+  if (!records.length) throw new Error("no JSON records found (" + bad + " unparsable lines)");
+  const out = fromRecords(records);
+  out.badLines = bad;
+  return out;
+}
+
+function fromRecords(records) {
+  const state = records.filter(r => r && STATE_TYPES.has(r.type));
+  const life = records.filter(r => r && !STATE_TYPES.has(r.type));
+  const topoRec = life.find(r => r.type === "graph_topology") ||
+                  life.find(r => Array.isArray(r.nodes) && Array.isArray(r.edges));
+  if (!topoRec) {
+    // a payload file on its own is not a failure: it is the second half of the
+    // pair, and it joins onto whatever run is already drawn.
+    if (state.length && !life.length) return { topology: null, records: [], state };
+    throw new Error("no graph_topology record — nothing to draw");
+  }
+  return {
+    topology: normaliseTopology(topoRec),
+    records: life.filter(r => r !== topoRec),
+    state
+  };
+}
+
+function normaliseTopology(t) {
+  const nodes = (t.nodes || []).map(n =>
+    typeof n === "string" ? { id: n, label: n } : { id: n.id, label: n.label || n.id });
+  const seen = new Set(nodes.map(n => n.id));
+  const edges = (t.edges || []).map(e => ({
+    from: e.from, to: e.to,
+    kind: e.kind || "direct",
+    branch: e.branch || null
+  }));
+  // an edge may name a node the node list forgot; draw it anyway
+  edges.forEach(e => {
+    [e.from, e.to].forEach(id => {
+      if (id && !seen.has(id)) { seen.add(id); nodes.push({ id, label: id }); }
+    });
+  });
+  return {
+    schema_version: t.schema_version || 1,
+    entry: t.entry || (nodes[0] && nodes[0].id),
+    nodes, edges,
+    branches: t.branches || []
+  };
+}
+
+/* ================================================================
+   2. layout — hand-rolled layered placement.
+      rank = longest path from START over FORWARD edges only.
+      a back edge (rank[to] <= rank[from]) is a cycle return and is
+      routed as an arc that bows clear of the straight connectors.
+   ================================================================ */
+/* One cell per (rank, slot). The gap along the rank axis is tight, the gap
+   across it is generous — which axis is which depends on the orientation, so
+   a horizontal graph spreads downward and a vertical one spreads sideways. */
+const NW = 140, NH = 66, MARGIN = 30;
+const GAP = {
+  horizontal: { along: 44, cross: 66 },
+  vertical:   { along: 42, cross: 58 }
+};
+let GAPX = GAP.horizontal.along, GAPY = GAP.horizontal.cross;
+
+function layoutGraph(topo, orientation) {
+  const g = GAP[orientation] || GAP.horizontal;
+  // GAPX is always the horizontal gap and GAPY the vertical one, whichever
+  // axis the ranks happen to run along; the ruler and the labels read these.
+  GAPX = orientation === "horizontal" ? g.along : g.cross;
+  GAPY = orientation === "horizontal" ? g.cross : g.along;
+  const nodes = topo.nodes.map(n => ({ id: n.id, label: n.label }));
+  const index = new Map(nodes.map((n, i) => [n.id, i]));
+  const edges = topo.edges.map((e, i) => ({ ...e, i, key: e.from + "→" + e.to }));
+
+  const out = new Map(nodes.map(n => [n.id, []]));
+  const inn = new Map(nodes.map(n => [n.id, []]));
+  edges.forEach(e => {
+    if (out.has(e.from)) out.get(e.from).push(e);
+    if (inn.has(e.to)) inn.get(e.to).push(e);
+  });
+
+  // -- a. find cycle edges with an iterative DFS (grey = on the stack)
+  const WHITE = 0, GREY = 1, BLACK = 2;
+  const colour = new Map(nodes.map(n => [n.id, WHITE]));
+  const cycleEdge = new Set();
+  const roots = [];
+  if (index.has("__start__")) roots.push("__start__");
+  if (topo.entry && topo.entry !== "__start__" && index.has(topo.entry)) roots.push(topo.entry);
+  nodes.forEach(n => roots.push(n.id));
+
+  for (const root of roots) {
+    if (colour.get(root) !== WHITE) continue;
+    const stack = [{ id: root, k: 0 }];
+    colour.set(root, GREY);
+    while (stack.length) {
+      const fr = stack[stack.length - 1];
+      const outs = out.get(fr.id) || [];
+      if (fr.k < outs.length) {
+        const e = outs[fr.k++];
+        const c = colour.get(e.to);
+        if (c === GREY) cycleEdge.add(e.i);
+        else if (c === WHITE) { colour.set(e.to, GREY); stack.push({ id: e.to, k: 0 }); }
+      } else { colour.set(fr.id, BLACK); stack.pop(); }
+    }
+  }
+
+  // -- b. longest-path rank over the acyclic remainder (Kahn)
+  const dagOut = new Map(nodes.map(n => [n.id, []]));
+  const indeg = new Map(nodes.map(n => [n.id, 0]));
+  edges.forEach(e => {
+    if (cycleEdge.has(e.i)) return;
+    if (e.from === e.to) { cycleEdge.add(e.i); return; }
+    dagOut.get(e.from).push(e.to);
+    indeg.set(e.to, indeg.get(e.to) + 1);
+  });
+  const rank = new Map(nodes.map(n => [n.id, 0]));
+  const queue = nodes.filter(n => indeg.get(n.id) === 0).map(n => n.id);
+  const order = [];
+  while (queue.length) {
+    const id = queue.shift();
+    order.push(id);
+    for (const to of dagOut.get(id)) {
+      rank.set(to, Math.max(rank.get(to), rank.get(id) + 1));
+      indeg.set(to, indeg.get(to) - 1);
+      if (indeg.get(to) === 0) queue.push(to);
+    }
+  }
+  // anything left (should not happen once cycles are cut) keeps rank 0
+
+  // __end__ always sits in the last column, whatever its longest path says
+  let maxRank = 0;
+  rank.forEach(r => { maxRank = Math.max(maxRank, r); });
+  if (index.has("__end__")) { rank.set("__end__", maxRank); }
+  maxRank = 0; rank.forEach(r => { maxRank = Math.max(maxRank, r); });
+
+  // -- c. order inside each layer: seed by discovery, then barycentre sweeps
+  const layers = [];
+  for (let r = 0; r <= maxRank; r++) layers.push([]);
+  const discovery = new Map();
+  let dcount = 0;
+  const bfs = [];
+  if (index.has("__start__")) bfs.push("__start__"); else if (topo.entry) bfs.push(topo.entry);
+  const seenB = new Set(bfs);
+  while (bfs.length) {
+    const id = bfs.shift();
+    discovery.set(id, dcount++);
+    for (const e of out.get(id) || []) if (!seenB.has(e.to)) { seenB.add(e.to); bfs.push(e.to); }
+  }
+  nodes.forEach(n => { if (!discovery.has(n.id)) discovery.set(n.id, dcount++); });
+  nodes.slice().sort((a, b) => discovery.get(a.id) - discovery.get(b.id))
+       .forEach(n => layers[rank.get(n.id)].push(n.id));
+
+  const pos = new Map();
+  layers.forEach(l => l.forEach((id, i) => pos.set(id, i)));
+  const fwd = edges.filter(e => !cycleEdge.has(e.i));
+  for (let sweep = 0; sweep < 6; sweep++) {
+    const down = sweep % 2 === 0;
+    const seq = down ? layers.map((_, i) => i) : layers.map((_, i) => layers.length - 1 - i);
+    for (const r of seq) {
+      const layer = layers[r];
+      if (layer.length < 2) continue;
+      const bary = new Map();
+      layer.forEach(id => {
+        const rel = down
+          ? fwd.filter(e => e.to === id && rank.get(e.from) < r).map(e => pos.get(e.from))
+          : fwd.filter(e => e.from === id && rank.get(e.to) > r).map(e => pos.get(e.to));
+        bary.set(id, rel.length ? rel.reduce((a, b) => a + b, 0) / rel.length : pos.get(id));
+      });
+      layer.sort((a, b) => (bary.get(a) - bary.get(b)) || (discovery.get(a) - discovery.get(b)));
+      layer.forEach((id, i) => pos.set(id, i));
+    }
+  }
+
+  // -- d. coordinates. one fixed cell per (layer, slot) => boxes cannot collide
+  const horiz = orientation === "horizontal";
+  const slotOf = new Map();
+  let minSlot = Infinity, maxSlot = -Infinity;
+  layers.forEach(layer => {
+    layer.forEach((id, i) => {
+      const s = i - (layer.length - 1) / 2;
+      slotOf.set(id, s);
+      minSlot = Math.min(minSlot, s); maxSlot = Math.max(maxSlot, s);
+    });
+  });
+  if (!isFinite(minSlot)) { minSlot = 0; maxSlot = 0; }
+
+  const placed = nodes.map(n => {
+    const r = rank.get(n.id), s = slotOf.get(n.id) - minSlot;
+    return {
+      id: n.id, label: n.label, rank: r, slot: slotOf.get(n.id),
+      x: MARGIN + (horiz ? r * (NW + GAPX) : s * (NW + GAPX)),
+      y: MARGIN + (horiz ? s * (NH + GAPY) : r * (NH + GAPY)),
+      w: NW, h: NH
+    };
+  });
+  const byId = new Map(placed.map(n => [n.id, n]));
+
+  // the node field's bounds; every arc is aimed to clear them
+  let fx0 = Infinity, fy0 = Infinity, fx1 = -Infinity, fy1 = -Infinity;
+  placed.forEach(n => {
+    fx0 = Math.min(fx0, n.x); fy0 = Math.min(fy0, n.y);
+    fx1 = Math.max(fx1, n.x + n.w); fy1 = Math.max(fy1, n.y + n.h);
+  });
+  let bx0 = fx0, by0 = fy0, bx1 = fx1, by1 = fy1;
+
+  // -- e. edge geometry. endpoints always land on a box boundary.
+  //
+  // Three routings, and the grammar is deliberate:
+  //   neighbouring ranks  -> a straight or gently curved connector
+  //   a cycle return      -> an arc bowed clear on the far side (below /right)
+  //   a rank-skipping edge that WOULD cut through a box in between
+  //                       -> an arc bowed clear on the near side (above/left)
+  // The third case is not cosmetic: router→generate skips four ranks and used
+  // to be drawn straight through retrieve, rerank and grade.
+  const cubic = (p, t) => {
+    const u = 1 - t, a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t;
+    return { x: a * p[0] + b * p[2] + c * p[4] + d * p[6], y: a * p[1] + b * p[3] + c * p[5] + d * p[7] };
+  };
+  // an orthogonal polyline with rounded corners
+  const orthoPath = (pts, r) => {
+    let d = `M${pts[0][0]},${pts[0][1]}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1], p1 = pts[i], p2 = pts[i + 1];
+      const l1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+      const l2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+      if (l1 < 0.5 || l2 < 0.5) continue;
+      const rr = Math.min(r, l1 / 2, l2 / 2);
+      const ax = p1[0] - (p1[0] - p0[0]) / l1 * rr, ay = p1[1] - (p1[1] - p0[1]) / l1 * rr;
+      const bx = p1[0] + (p2[0] - p1[0]) / l2 * rr, by = p1[1] + (p2[1] - p1[1]) / l2 * rr;
+      d += ` L${ax},${ay} Q${p1[0]},${p1[1]} ${bx},${by}`;
+    }
+    const last = pts[pts.length - 1];
+    return d + ` L${last[0]},${last[1]}`;
+  };
+  const cutsThrough = (p, skipA, skipB) => {
+    for (let i = 1; i < 40; i++) {
+      const pt = cubic(p, i / 40);
+      for (const n of placed) {
+        if (n.id === skipA || n.id === skipB) continue;
+        if (pt.x > n.x + 1 && pt.x < n.x + n.w - 1 && pt.y > n.y + 1 && pt.y < n.y + n.h - 1) return true;
+      }
+    }
+    return false;
+  };
+
+  let backIdx = 0, skipIdx = 0;
+  const drawn = edges.map(e => {
+    const a = byId.get(e.from), b = byId.get(e.to);
+    if (!a || !b) return null;
+    const back = rank.get(e.to) <= rank.get(e.from);
+    let x1, y1, x2, y2, d, lx, ly, skipped = false;
+
+    // An arc never crosses the field: it steps sideways into a GUTTER (the free
+    // lane between two rank columns, where no box can ever sit), runs along a
+    // LANE outside the field, and steps back in through the target's gutter.
+    // Every segment therefore lies in provably empty space; the generous corner
+    // radius is what makes it read as a loop instead of a wiring diagram.
+    const GUT = Math.min(30, (horiz ? GAPX : GAPY) - 10);
+    const useArc = (side, baseClear, idx) => {
+      const clear = baseClear + idx * 36;
+      let pts, lane;
+      if (horiz) {
+        lane = side < 0 ? fy0 - clear : fy1 + clear;
+        const sy = a.y + a.h / 2, ty = b.y + b.h / 2;
+        const sx = side < 0 ? a.x + a.w : a.x;
+        const g1 = side < 0 ? sx + GUT : sx - GUT;
+        const g2 = b.x - GUT;
+        pts = [[sx, sy], [g1, sy], [g1, lane], [g2, lane], [g2, ty], [b.x, ty]];
+        lx = (g1 + g2) / 2; ly = lane + (side < 0 ? -9 : 17);
+        if (side < 0) by0 = Math.min(by0, lane - 22); else by1 = Math.max(by1, lane + 22);
+      } else {
+        lane = side < 0 ? fx0 - clear : fx1 + clear;
+        const sx = a.x + a.w / 2, tx = b.x + b.w / 2;
+        const sy = side < 0 ? a.y + a.h : a.y;
+        const g1 = side < 0 ? sy + GUT : sy - GUT;
+        const g2 = b.y - GUT;
+        pts = [[sx, sy], [sx, g1], [lane, g1], [lane, g2], [tx, g2], [tx, b.y]];
+        lx = lane + (side < 0 ? -11 : 13); ly = (g1 + g2) / 2;
+        if (side < 0) bx0 = Math.min(bx0, lane - 34); else bx1 = Math.max(bx1, lane + 30);
+      }
+      x1 = pts[0][0]; y1 = pts[0][1];
+      x2 = pts[pts.length - 1][0]; y2 = pts[pts.length - 1][1];
+      d = orthoPath(pts, 18);
+    };
+
+    if (back) {
+      useArc(+1, 46, backIdx++);
+    } else {
+      if (horiz) {
+        x1 = a.x + a.w; y1 = a.y + a.h / 2; x2 = b.x; y2 = b.y + b.h / 2;
+        const c = Math.max(24, (x2 - x1) * 0.45);
+        const p = [x1, y1, x1 + c, y1, x2 - c, y2, x2, y2];
+        if (rank.get(e.to) - rank.get(e.from) > 1 && cutsThrough(p, e.from, e.to)) {
+          skipped = true; useArc(-1, 42, skipIdx++);
+        } else {
+          d = Math.abs(y1 - y2) < 0.5
+            ? `M${x1},${y1} L${x2},${y2}`
+            : `M${x1},${y1} C${x1 + c},${y1} ${x2 - c},${y2} ${x2},${y2}`;
+          lx = (x1 + x2) / 2; ly = (y1 + y2) / 2 - 7;
+        }
+      } else {
+        x1 = a.x + a.w / 2; y1 = a.y + a.h; x2 = b.x + b.w / 2; y2 = b.y;
+        const c = Math.max(24, (y2 - y1) * 0.45);
+        const p = [x1, y1, x1, y1 + c, x2, y2 - c, x2, y2];
+        if (rank.get(e.to) - rank.get(e.from) > 1 && cutsThrough(p, e.from, e.to)) {
+          skipped = true; useArc(-1, 42, skipIdx++);
+        } else {
+          d = Math.abs(x1 - x2) < 0.5
+            ? `M${x1},${y1} L${x2},${y2}`
+            : `M${x1},${y1} C${x1},${y1 + c} ${x2},${y2 - c} ${x2},${y2}`;
+          lx = (x1 + x2) / 2; ly = (y1 + y2) / 2 - 7;
+        }
+      }
+    }
+    return { ...e, back, skipped, x1, y1, x2, y2, d, lx, ly };
+  }).filter(Boolean);
+
+  const PAD = 22;
+  const bbox = { x: bx0 - PAD, y: by0 - PAD, w: (bx1 - bx0) + PAD * 2, h: (by1 - by0) + PAD * 2 };
+
+  return {
+    nodes: placed, edges: drawn, rank, layers,
+    bbox, width: bbox.w, height: bbox.h,
+    horizontal: horiz
+  };
+}
+
+/* ================================================================
+   3. replay state — fold the records up to an index
+   ================================================================ */
+function computeState(topo, records, upto) {
+  const st = {
+    nodes: {}, edges: {}, lastEdge: null, lastNode: null,
+    run: {}, steps: null, ended: false
+  };
+  topo.nodes.forEach(n => { st.nodes[n.id] = { state: "pending", runs: 0, errors: 0, entries: 0 }; });
+  topo.edges.forEach(e => { st.edges[e.from + "→" + e.to] = { taken: 0 }; });
+
+  for (let i = 0; i <= upto && i < records.length; i++) {
+    const r = records[i];
+    const n = r.node ? (st.nodes[r.node] || (st.nodes[r.node] = { state: "pending", runs: 0, errors: 0, entries: 0 })) : null;
+    switch (r.type) {
+      case "graph_start":
+        st.run = { threadId: r.threadId, runId: r.runId, ts: r.ts };
+        if (st.nodes["__start__"]) st.nodes["__start__"].state = "done";
+        break;
+      case "node_start":
+        n.state = "active"; n.superstep = r.superstep; n.startTs = r.ts;
+        n.durationMs = null; n.updateKeys = null; n.error = null;
+        n.updateBytes = null; n.payload = null;
+        n.entries++; st.lastNode = r.node;
+        break;
+      case "node_end":
+        n.state = "done"; n.superstep = r.superstep ?? n.superstep;
+        n.durationMs = r.durationMs; n.updateKeys = r.updateKeys || [];
+        n.updateBytes = r.updateBytes ?? null;
+        // The values appear exactly when the node reported them, never earlier:
+        // scrubbing back to before `generate` finished must not show its answer.
+        n.payload = payloadFor(r.runId || st.run.runId, r.node, n.superstep);
+        n.runs++; st.lastNode = r.node;
+        break;
+      case "node_error":
+      case "error":
+        n.state = "error"; n.superstep = r.superstep ?? n.superstep;
+        n.durationMs = r.durationMs ?? n.durationMs;
+        n.error = { name: r.error || "error", message: r.message || "" };
+        n.updateBytes = null; n.payload = null;
+        n.errors++; st.lastNode = r.node;
+        break;
+      case "edge_taken": {
+        const k = r.from + "→" + r.to;
+        if (!st.edges[k]) st.edges[k] = { taken: 0 };
+        st.edges[k].taken++;
+        st.lastEdge = k;
+        break;
+      }
+      case "graph_end":
+        st.steps = r.steps; st.ended = true;
+        if (st.nodes["__end__"]) st.nodes["__end__"].state = "done";
+        break;
+      default:
+        if (n && r.error) { n.state = "error"; n.error = { name: String(r.error), message: r.message || "" }; }
+    }
+  }
+  return st;
+}
+
+/* ================================================================
+   4. the view
+   ================================================================ */
+const $ = id => document.getElementById(id);
+const svgNS = "http://www.w3.org/2000/svg";
+const el = (name, attrs, text) => {
+  const e = document.createElementNS(svgNS, name);
+  for (const k in attrs) if (attrs[k] !== null && attrs[k] !== undefined) e.setAttribute(k, attrs[k]);
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+
+const V = {
+  topo: null, records: [], layout: null,
+  orientation: "horizontal",
+  idx: -1, playing: false, speed: 1, timer: null,
+  selected: null, source: "embedded fixture",
+  view: null, fitScale: 1, drag: null
+};
+
+const REC_COLOUR = {
+  node_start: "var(--sp-amber)",
+  node_end: "var(--sp-teal)",
+  node_error: "var(--sp-red)",
+  edge_taken: "var(--sp-ocean)",
+  graph_start: "var(--sp-violet)",
+  graph_end: "var(--sp-violet)"
+};
+const recColour = t => REC_COLOUR[t] || "var(--text-faint)";
+
+/* ---- the second artifact, kept in its own store ----
+   `.graph.jsonl` says what a node WROTE; `.state.jsonl` says what was
+   RECORDED of it; `state_policy` says why the two differ. The panel needs all
+   three to tell "nothing was written" from "nothing was recorded", so nothing
+   here ever invents a value: a payload that is not on disk stays absent and
+   the absence is what gets rendered. */
+const S = {
+  source: null,      // the file the payloads came from; null = none loaded
+  policy: null,      // the state_policy record in force for the drawn run
+  policies: [],
+  payloads: new Map(),   // "runId|node|superstep" -> record
+  mismatch: null,        // {file, graph, runs} when a join was REFUSED
+  bytes: 0
+};
+
+function resetStateStore() {
+  S.source = null; S.policy = null; S.policies = [];
+  S.payloads = new Map(); S.mismatch = null; S.bytes = 0;
+}
+
+/** The run the drawing belongs to, read from graph_start rather than guessed. */
+function graphRunId() {
+  const r = V.records.find(x => x && x.type === "graph_start" && x.runId);
+  return r ? r.runId : (V.records.find(x => x && x.runId) || {}).runId || null;
+}
+
+/** Join payloads onto the drawn run, or refuse and say so. */
+function attachState(recs, sourceName) {
+  resetStateStore();
+  S.source = sourceName;
+  const graphRun = graphRunId();
+  const runs = [];
+  recs.forEach(r => { if (r.runId && !runs.includes(r.runId)) runs.push(r.runId); });
+
+  // A payload file for a DIFFERENT run must not be draped over this one. That
+  // would be a fabricated association, which is the one thing this view cannot
+  // afford; so the file stays loaded, unjoined, and the panel says why.
+  if (graphRun && runs.length && !runs.includes(graphRun)) {
+    S.mismatch = { file: runs[0], graph: graphRun, runs: runs.length };
+    return;
+  }
+  recs.forEach(r => {
+    if (r.type === "state_policy") { S.policies.push(r); return; }
+    if (r.type !== "state_payload") return;
+    S.payloads.set((r.runId || "") + "|" + r.node + "|" + r.superstep, r);
+    S.bytes += recordBytes(r);   // measured, never 0 just because a line was not seen
+  });
+  S.policy = S.policies.find(p => graphRun && p.runId === graphRun) ||
+             S.policies.find(p => !p.runId) || S.policies[0] || null;
+}
+
+function payloadFor(runId, node, superstep) {
+  if (S.mismatch || !S.payloads.size) return null;
+  return S.payloads.get((runId || "") + "|" + node + "|" + superstep) ||
+         S.payloads.get("|" + node + "|" + superstep) || null;
+}
+
+function load(text, sourceName) {
+  const parsed = parseSource(text);
+
+  // half a pair: payloads with no topology join onto what is already drawn.
+  if (!parsed.topology) {
+    if (!V.topo) throw new Error(
+      "this file carries state payloads but no graph_topology — load the .graph.jsonl first, then this one");
+    attachState(parsed.state, sourceName + (parsed.badLines ? " (" + parsed.badLines + " bad lines skipped)" : ""));
+    renderStatus();
+    paint();
+    return;
+  }
+
+  V.topo = parsed.topology;
+  V.records = parsed.records;
+  V.source = sourceName + (parsed.badLines ? " (" + parsed.badLines + " bad lines skipped)" : "");
+  V.selected = null;
+  V.idx = V.records.length ? -1 : -1;
+  // a new drawing means the old run's payloads are no longer about anything
+  resetStateStore();
+  if (parsed.state.length) attachState(parsed.state, V.source);
+  relayout(true);
+  buildRibbon();
+  $("scrub").max = String(Math.max(0, V.records.length - 1));
+  $("scrub").disabled = V.records.length === 0;
+  ["first", "prev", "play", "next", "last", "speed"].forEach(id => { $(id).disabled = V.records.length === 0; });
+  $("s-nodes").textContent = V.topo.nodes.length;
+  $("s-edges").textContent = V.topo.edges.length;
+  renderStatus();
+  renderBranches();
+  seek(V.records.length ? 0 : -1);
+}
+
+function renderStatus() {
+  $("s-src").textContent = V.source;
+  let s;
+  if (S.mismatch) s = "loaded, not joined — other run";
+  else if (!S.source) s = "no .state.jsonl loaded";
+  else if (S.policy && S.policy.mode === "off") s = "off · nothing recorded";
+  else s = (S.policy ? S.policy.mode : "no policy record") + " · " + S.payloads.size + " payloads";
+  $("s-state").textContent = s;
+}
+
+function relayout(resetView) {
+  V.layout = layoutGraph(V.topo, V.orientation);
+  drawStatic();
+  if (resetView) fit();
+  applyView();
+  window.__gvLayout = {
+    nodes: V.layout.nodes.map(n => ({ id: n.id, x: n.x, y: n.y, w: n.w, h: n.h, rank: n.rank })),
+    edges: V.layout.edges.map(e => ({
+      from: e.from, to: e.to, back: e.back, kind: e.kind,
+      x1: e.x1, y1: e.y1, x2: e.x2, y2: e.y2
+    }))
+  };
+}
+
+/* ---- static structure: drawn once per layout, before any event ---- */
+function drawStatic() {
+  const svg = $("graph");
+  svg.replaceChildren();
+
+  const defs = el("defs");
+  [["ar-quiet", "var(--gv-edge-quiet)"], ["ar-taken", "var(--gv-edge-taken)"], ["ar-live", "var(--gv-edge-live)"]]
+    .forEach(([id, fill]) => {
+      const m = el("marker", {
+        id, viewBox: "0 0 10 10", refX: 9, refY: 5,
+        markerWidth: 6, markerHeight: 6, orient: "auto-start-reverse", markerUnits: "strokeWidth"
+      });
+      m.appendChild(el("path", { d: "M0,1 L9,5 L0,9 z", fill }));
+      defs.appendChild(m);
+    });
+  svg.appendChild(defs);
+
+  const root = el("g", { id: "vp" });
+  svg.appendChild(root);
+
+  const gRank = el("g", { id: "ranks" });
+  const gEdge = el("g", { id: "edges" });
+  const gNode = el("g", { id: "nodes" });
+  root.append(gRank, gEdge, gNode);
+
+  // rank ruler — one thin line per layer. It runs far past the content so the
+  // slack around a wide, short graph reads as a ruled field, not as emptiness.
+  const FAR = 4000;
+  V.layout.layers.forEach((layer, r) => {
+    if (!layer.length) return;
+    const inRank = V.layout.nodes.filter(n => n.rank === r);
+    if (!inRank.length) return;
+    const first = inRank.reduce((a, b) =>
+      (V.layout.horizontal ? (b.y < a.y) : (b.x < a.x)) ? b : a);
+    if (V.layout.horizontal) {
+      const x = first.x - GAPX / 2;
+      gRank.appendChild(el("line", { class: "rankline", x1: x, y1: -FAR, x2: x, y2: FAR }));
+      gRank.appendChild(el("text", { class: "ranklabel", x: first.x, y: MARGIN - 12 }, "rank " + r));
+    } else {
+      const y = first.y - GAPY / 2;
+      gRank.appendChild(el("line", { class: "rankline", x1: -FAR, y1: y, x2: FAR, y2: y }));
+      gRank.appendChild(el("text", { class: "ranklabel", x: MARGIN - 22, y: first.y - 8 }, "rank " + r));
+    }
+  });
+
+  V.layout.edges.forEach(e => {
+    const g = el("g", { class: "edgeg", "data-key": e.key });
+    g.appendChild(el("path", {
+      class: "edge" + (e.kind === "conditional" ? " cond" : "") + (e.back ? " back" : ""),
+      d: e.d, "marker-end": "url(#ar-quiet)"
+    }));
+    g.appendChild(el("text", {
+      class: "elabel", x: e.lx, y: e.ly, "text-anchor": "middle"
+    }, ""));
+    gEdge.appendChild(g);
+  });
+
+  V.layout.nodes.forEach(n => {
+    const terminal = n.id === "__start__" || n.id === "__end__";
+    const g = el("g", {
+      class: "node" + (terminal ? " s-terminal" : ""),
+      "data-id": n.id, tabindex: "0", role: "button",
+      "aria-label": n.label + " node"
+    });
+    g.appendChild(el("rect", { class: "nbox", x: n.x, y: n.y, width: n.w, height: n.h, rx: 10 }));
+    const perim = 2 * (n.w + n.h);
+    const ring = el("rect", {
+      class: "nring", x: n.x, y: n.y, width: n.w, height: n.h, rx: 10,
+      "stroke-dasharray": Math.round(perim * 0.26) + " " + Math.round(perim * 0.74)
+    });
+    ring.style.setProperty("--gv-perim", "-" + perim);
+    g.appendChild(ring);
+    g.appendChild(el("rect", {
+      class: "focusring", x: n.x - 5, y: n.y - 5, width: n.w + 10, height: n.h + 10, rx: 13
+    }));
+    g.appendChild(el("rect", {
+      class: "selmark", x: n.x - 5, y: n.y - 5, width: n.w + 10, height: n.h + 10, rx: 13, fill: "none"
+    }));
+    g.appendChild(el("text", { class: "nlabel", x: n.x + 13, y: n.y + 25 }, n.label));
+    g.appendChild(el("text", { class: "nmeta", x: n.x + 13, y: n.y + 44 }, ""));
+    g.appendChild(el("text", { class: "nkeys", x: n.x + 13, y: n.y + 59 }, ""));
+    g.addEventListener("click", () => select(n.id));
+    g.addEventListener("keydown", ev => {
+      if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); ev.stopPropagation(); select(n.id); }
+    });
+    gNode.appendChild(g);
+  });
+}
+
+/* ---- paint: state on top of the static structure ---- */
+function paint() {
+  const st = computeState(V.topo, V.records, V.idx);
+  V.state = st;
+
+  document.querySelectorAll("#nodes .node").forEach(g => {
+    const id = g.dataset.id;
+    const s = st.nodes[id] || { state: "pending" };
+    g.classList.remove("s-pending", "s-active", "s-done", "s-error");
+    g.classList.add("s-" + s.state);
+    g.classList.toggle("sel", V.selected === id);
+    const meta = g.querySelector(".nmeta");
+    const keys = g.querySelector(".nkeys");
+    if (s.state === "active") { meta.textContent = "running · s" + (s.superstep ?? "?"); keys.textContent = ""; }
+    else if (s.state === "done") {
+      meta.textContent = (s.durationMs !== null && s.durationMs !== undefined ? fmtMs(s.durationMs) : "done") +
+        (s.superstep ? " · s" + s.superstep : "") + (s.entries > 1 ? " · ×" + s.entries : "");
+      keys.textContent = truncate((s.updateKeys || []).join(" · "), 18);
+    } else if (s.state === "error") {
+      meta.textContent = truncate(s.error && s.error.name ? s.error.name : "error", 14) + (s.superstep ? " · s" + s.superstep : "");
+      keys.textContent = truncate(s.error && s.error.message ? s.error.message : "", 18);
+    } else { meta.textContent = "pending"; keys.textContent = ""; }
+    g.setAttribute("aria-label", id + " — " + s.state);
+  });
+
+  document.querySelectorAll("#edges .edgeg").forEach(g => {
+    const key = g.dataset.key;
+    const e = st.edges[key] || { taken: 0 };
+    const path = g.querySelector(".edge");
+    const label = g.querySelector(".elabel");
+    const taken = e.taken > 0;
+    const live = st.lastEdge === key;
+    path.classList.toggle("taken", taken && !live);
+    path.classList.toggle("live", live);
+    path.classList.toggle("dim", !taken && V.idx >= 0);
+    path.setAttribute("marker-end", live ? "url(#ar-live)" : taken ? "url(#ar-taken)" : "url(#ar-quiet)");
+    const meta = V.layout.edges.find(x => x.key === key);
+    let txt = "";
+    if (e.taken > 1) txt = "×" + e.taken;
+    else if (meta && meta.back && taken) txt = "↺";
+    else if (meta && meta.back) txt = "↺";
+    label.textContent = txt;
+    label.classList.toggle("on", taken && !live);
+    label.classList.toggle("now", live);
+  });
+
+  renderTransportMeta(st);
+  renderDetail(st);
+  drawRibbonCaret();
+}
+
+function fmtMs(ms) {
+  if (ms === null || ms === undefined) return "—";
+  return ms >= 1000 ? (ms / 1000).toFixed(2) + " s" : ms + " ms";
+}
+function truncate(s, n) { return s && s.length > n ? s.slice(0, n - 1) + "…" : (s || ""); }
+
+/* ---- transport ---- */
+function renderTransportMeta(st) {
+  const r = V.records[V.idx];
+  const total = V.records.length;
+  const t0 = V.records.length && V.records[0].ts ? V.records[0].ts : null;
+  const rel = r && r.ts && t0 !== null ? "+" + ((r.ts - t0) / 1000).toFixed(2) + "s" : "—";
+  $("tmeta").innerHTML = "record <b>" + (V.idx + 1) + "</b>/" + total + " &nbsp; " + rel +
+    " &nbsp; " + (st.ended ? "run complete" : (V.idx < 0 ? "topology only" : "in flight"));
+  $("s-thread").textContent = st.run.threadId || "—";
+  $("s-run").textContent = st.run.runId || "—";
+  $("s-steps").textContent = st.steps !== null ? st.steps : "—";
+  $("currec").innerHTML = r ? describe(r) : "<span class='empty'>the graph as compiled — no events applied</span>";
+  $("play").innerHTML = V.playing ? "&#10073;&#10073;" : "&#9654;";
+  $("play").setAttribute("aria-label", V.playing ? "pause" : "play");
+  $("scrub").value = String(Math.max(0, V.idx));
+}
+
+function describe(r) {
+  const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  const parts = ["<b>" + esc(r.type) + "</b>"];
+  if (r.node) parts.push("node " + esc(r.node));
+  if (r.from) parts.push(esc(r.from) + " → " + esc(r.to));
+  if (r.branch) parts.push("branch " + esc(r.branch));
+  if (r.superstep !== undefined) parts.push("superstep " + r.superstep);
+  if (r.durationMs !== undefined) parts.push(fmtMs(r.durationMs));
+  if (r.updateKeys) parts.push("wrote [" + r.updateKeys.map(esc).join(", ") + "]");
+  if (r.steps !== undefined) parts.push(r.steps + " supersteps");
+  if (r.error) parts.push(esc(r.error) + (r.message ? ": " + esc(r.message) : ""));
+  if (r.threadId) parts.push("thread " + esc(r.threadId));
+  return parts.join("<br>");
+}
+
+function seek(i) {
+  V.idx = Math.max(-1, Math.min(V.records.length - 1, i));
+  paint();
+}
+function step(delta) { pause(); seek(V.idx + delta); }
+
+function play() {
+  if (!V.records.length) return;
+  if (V.idx >= V.records.length - 1) V.idx = -1;
+  V.playing = true;
+  schedule();
+  paint();
+}
+function pause() {
+  V.playing = false;
+  if (V.timer) { clearTimeout(V.timer); V.timer = null; }
+  $("play").innerHTML = "&#9654;";
+}
+function schedule() {
+  if (V.timer) clearTimeout(V.timer);
+  if (!V.playing) return;
+  const cur = V.records[V.idx], nxt = V.records[V.idx + 1];
+  if (!nxt) { pause(); paint(); return; }
+  let wait = 260;
+  if (V.speed === 0) wait = 90;
+  else if (cur && cur.ts && nxt.ts) wait = Math.min(760, Math.max(45, (nxt.ts - cur.ts) / V.speed));
+  else wait = 260 / (V.speed || 1);
+  V.timer = setTimeout(() => { V.idx++; paint(); schedule(); }, wait);
+}
+
+/* ---- ribbon: one thin spectral line per record ---- */
+function buildRibbon() {
+  const svg = $("ribbon");
+  svg.replaceChildren();
+  const W = svg.getBoundingClientRect().width || 800, h = 40;
+  // normalised viewBox + non-scaling strokes: the ticks stay put and stay 1.5px
+  // even when the element is measured a few pixels off.
+  const U = 1000;
+  svg.setAttribute("viewBox", "0 0 " + U + " " + h);
+  svg.setAttribute("preserveAspectRatio", "none");
+  const n = V.records.length;
+  const thumb = (3 / W) * U;                       // the range thumb, in viewBox units
+  const px = i => (n <= 1 ? U / 2 : thumb / 2 + (i / (n - 1)) * (U - thumb));
+  svg.appendChild(el("line", {
+    x1: 0, y1: h - 1, x2: U, y2: h - 1, stroke: "var(--border)",
+    "stroke-width": 1, "vector-effect": "non-scaling-stroke"
+  }));
+  const g = el("g", { id: "ticks" });
+  V.records.forEach((r, i) => {
+    const x = px(i);
+    const tall = r.type === "node_start" || r.type === "node_error";
+    const mid = r.type === "node_end";
+    const hh = tall ? 25 : mid ? 18 : 10;
+    g.appendChild(el("line", {
+      x1: x, y1: h - 3 - hh, x2: x, y2: h - 3,
+      stroke: recColour(r.type), "stroke-width": 1.5, opacity: .8,
+      "vector-effect": "non-scaling-stroke", "data-i": i
+    }));
+  });
+  svg.appendChild(g);
+}
+function drawRibbonCaret() {
+  const ticks = document.querySelectorAll("#ticks line");
+  ticks.forEach((t, i) => {
+    const on = i <= V.idx;
+    t.setAttribute("opacity", on ? 1 : 0.28);
+    t.setAttribute("stroke-width", i === V.idx ? 2.5 : 1.5);
+  });
+}
+
+/* ---- detail panel ---- */
+function select(id) {
+  V.selected = V.selected === id ? null : id;
+  paint();
+  const g = document.querySelector('#nodes .node[data-id="' + cssEsc(id) + '"]');
+  if (g && V.selected) g.focus({ preventScroll: true });
+}
+const cssEsc = s => (window.CSS && CSS.escape) ? CSS.escape(s) : s;
+
+function renderDetail(st) {
+  const box = $("detail");
+  if (!V.selected) {
+    box.innerHTML = "<p class='plabel'>node detail</p><p class='empty'>click a node — or tab to one and press enter — to see when it ran, how long it took, which channels it wrote and what the run recorded of them. The values come from the <code>.state.jsonl</code> written beside the graph file; when it is not loaded, or the run recorded nothing, the panel says which of the two it is.</p>";
+    return;
+  }
+  const id = V.selected;
+  const s = st.nodes[id] || { state: "pending" };
+  const inc = V.layout.edges.filter(e => e.to === id);
+  const outg = V.layout.edges.filter(e => e.from === id);
+  const node = V.layout.nodes.find(n => n.id === id);
+
+  const rows = [
+    ["lifecycle", "<span class='statetag' data-s='" + s.state + "'><i></i>" + s.state + "</span>"],
+    ["rank", String(node ? node.rank : "—")],
+    ["superstep", s.superstep !== undefined && s.superstep !== null ? "s" + s.superstep : "—"],
+    ["duration", fmtMs(s.durationMs)]
+  ];
+  // the one line that answers "what did this cost me": both numbers measured,
+  // one from node_end.updateBytes, one from the payload line on disk.
+  const cost = costLine(s);
+  if (cost) rows.push(["bytes", cost]);
+  rows.push(["entered", String(s.entries || 0) + "×"], ["errors", String(s.errors || 0)]);
+
+  let html = "<p class='plabel'>node detail</p>";
+  html += "<div class='pid'>" + id + "</div>";
+  html += "<dl class='krow'>" + rows.map(r => "<dt>" + r[0] + "</dt><dd>" + r[1] + "</dd>").join("") + "</dl>";
+
+  html += "<p class='plabel' style='margin-top:16px'>update keys</p>";
+  html += (s.updateKeys && s.updateKeys.length)
+    ? "<div class='chips'>" + s.updateKeys.map(k => "<span class='chip'>" + k + "</span>").join("") + "</div>"
+    : "<p class='empty'>none written yet</p>";
+
+  html += "<div id='statesec'></div>";
+
+  if (s.error) {
+    html += "<div class='errbox'><b>" + s.error.name + "</b>" + s.error.message + "</div>";
+  }
+
+  html += "<p class='plabel' style='margin-top:16px'>incoming</p><div class='edgelist'>" +
+    (inc.length ? inc.map(e => edgeRow(e, st, e.from)).join("") : "<p class='empty'>none — this is an entry</p>") + "</div>";
+  html += "<p class='plabel' style='margin-top:14px'>outgoing</p><div class='edgelist'>" +
+    (outg.length ? outg.map(e => edgeRow(e, st, e.to)).join("") : "<p class='empty'>none — this is a sink</p>") + "</div>";
+
+  box.innerHTML = html;
+  // The payload section is built as DOM, not as a string: its content is the
+  // caller's own corpus and must never be able to close a tag.
+  renderStateSection($("statesec"), s);
+  box.querySelectorAll(".edgebtn").forEach(b => {
+    b.addEventListener("click", () => { V.selected = b.dataset.jump; paint(); });
+  });
+}
+
+/* ================================================================
+   4b. the state payload section
+   ----------------------------------------------------------------
+   Three files meet here and each answers a different question:
+     node_end.updateKeys   — what the node WROTE
+     state_payload.channels — what was RECORDED of it
+     state_policy          — WHY the two differ
+   Which is what lets the panel print "not recorded" and "nothing
+   written" as two different sentences instead of one empty box.
+   ================================================================ */
+const H = (tag, cls, text) => {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+};
+const fmtN = n => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+const fmtB = n => fmtN(n) + " B";
+const noteEl = t => H("div", "vnote", t);
+const tagEl = (cls, t) => H("span", "tag " + cls, t);
+
+/* A marker is recognised by its companion fields, not by `kind` alone — a
+   caller is allowed to have a channel called `kind`, and mistaking one for a
+   marker would print a truncation that never happened. */
+function markerKind(v) {
+  if (!v || typeof v !== "object" || Array.isArray(v)) return null;
+  if (v.kind === "str" && (typeof v.head === "string" || Array.isArray(v.head))) return "str";
+  if (v.kind === "list" && Array.isArray(v.items)) return "list";
+  if (v.kind === "redacted" && typeof v.rule === "string") return "redacted";
+  if (v.kind === "channel" && v.omitted === "recordCap") return "channel";
+  if (v.kind === "unserializable") return "unserializable";
+  return null;
+}
+
+function costLine(s) {
+  const wrote = (s.updateBytes === null || s.updateBytes === undefined) ? null : fmtB(s.updateBytes);
+  const rec = s.payload ? fmtB(recordBytes(s.payload)) : null;
+  if (!wrote && !rec) return null;
+  if (wrote && rec) return "wrote " + wrote + " · recorded " + rec;
+  if (wrote) return "wrote " + wrote + " · " + (S.source && !S.mismatch ? "recorded nothing" : "no payload file");
+  return "recorded " + rec;
+}
+
+function bannerEl(cls, build) {
+  const b = H("div", "sbanner" + (cls ? " " + cls : ""));
+  build(b);
+  return b;
+}
+
+/** Run-level truths about the payload file. Shown on every node, because an
+    absent value is only readable next to the reason it is absent. */
+function stateBanners() {
+  const out = [];
+  if (S.mismatch) {
+    out.push(bannerEl("stop", b => {
+      b.append(H("b", null, "not joined."), document.createTextNode(
+        " The loaded payload file records run "));
+      b.append(H("code", null, S.mismatch.file));
+      b.append(document.createTextNode(" and the drawing is run "));
+      b.append(H("code", null, S.mismatch.graph));
+      b.append(document.createTextNode(
+        ". Attaching one run's values to another would be an invention, so nothing from it is shown."));
+    }));
+    return out;
+  }
+  if (!S.source) {
+    out.push(bannerEl("", b => {
+      b.append(document.createTextNode("no "));
+      b.append(H("b", null, ".state.jsonl"));
+      b.append(document.createTextNode(
+        " is loaded. Whether this run recorded one, this page cannot know — a file picker cannot reach a sibling file, so load it too, with the same button. To make a run record one:"));
+      b.append(H("code", null, "compile(sink=artifacts(path, state=StatePolicy.sample()))"));
+    }));
+    return out;
+  }
+  if (S.policy && S.policy.mode === "off") {
+    out.push(bannerEl("warn", b => {
+      b.append(H("b", null, "recording was off for this run."));
+      b.append(document.createTextNode(
+        " state_policy says mode: off — the channels below were written, and nothing of them was put on disk. This is the default, and it is not a failure."));
+      b.append(H("code", null, "compile(sink=artifacts(path, state=StatePolicy.sample()))"));
+    }));
+    return out;
+  }
+  if (!S.policy) {
+    out.push(bannerEl("warn", b => {
+      b.append(document.createTextNode(
+        "the payload file carries no state_policy record. A channel missing below can still be read as not recorded — but not why."));
+    }));
+  }
+  return out;
+}
+
+function absenceReason(name) {
+  if (S.mismatch) return "not recorded here · other run";
+  if (!S.source) return "not loaded";
+  const p = S.policy;
+  if (!p) return "not in the record";
+  if (Array.isArray(p.denied) && p.denied.indexOf(name) >= 0) return "not recorded · policy: deny";
+  if (p.mode === "off") return "not recorded · policy: off";
+  if (p.mode === "summary" && Array.isArray(p.allowed) && p.allowed.indexOf(name) < 0)
+    return "not recorded · not on the allow list";
+  return "not recorded";
+}
+
+function absentRow(name, reason) {
+  const row = H("div", "ch absent");
+  const line = H("div", "chrow");
+  line.append(H("span", "chname", name), tagEl("gone", reason));
+  row.append(line);
+  return row;
+}
+
+const PREVIEW_KEYS = ["title", "name", "label", "question", "text", "snippet", "id", "chunk_id", "url"];
+function previewOf(item) {
+  if (markerKind(item) === "str") return String(item.head || "").slice(0, 90);
+  if (Array.isArray(item)) return item.length + " elements";
+  for (const k of PREVIEW_KEYS) {
+    const v = item[k];
+    if (typeof v === "string" && v) return v.slice(0, 90);
+    if (markerKind(v) === "str") return String(v.head || "").slice(0, 90);
+  }
+  const first = Object.keys(item)[0];
+  return first === undefined ? "{}" : first + ": " + String(item[first]).slice(0, 60);
+}
+
+function moreButton(box) {
+  const b = H("button", "more", "expand");
+  b.type = "button";
+  b.setAttribute("aria-expanded", "false");
+  b.addEventListener("click", () => {
+    const on = box.classList.toggle("tall");
+    b.textContent = on ? "collapse" : "expand";
+    b.setAttribute("aria-expanded", String(on));
+  });
+  return b;
+}
+
+/* A long value scrolls INSIDE its own box; the page itself never grows a
+   horizontal scrollbar. tabindex makes the box reachable, because a scroll
+   region a keyboard cannot enter is not readable. */
+function textBox(parts, opts) {
+  const frag = document.createDocumentFragment();
+  const box = H("div", "vtext");
+  parts.forEach(p => box.append(typeof p === "string" ? document.createTextNode(p) : p));
+  box.tabIndex = 0;
+  frag.append(box);
+  if (opts && opts.note) frag.append(noteEl(opts.note));
+  if (opts && opts.long) frag.append(moreButton(box));
+  return frag;
+}
+
+function renderValue(v) {
+  const kind = markerKind(v);
+  if (kind === "str") {
+    const head = Array.isArray(v.head) ? v.head.map(p => typeof p === "string" ? p : renderValue(p))
+                                       : [String(v.head === undefined ? "" : v.head)];
+    const shown = Array.isArray(v.head) ? null : byteLen(v.head || "");
+    // the clip is marked where it happens, so no reader can take the head for
+    // the whole value
+    const parts = head.concat([tagEl("clip", shown === null ? "clipped" :
+      "clipped · " + fmtB(shown) + " of " + fmtB(v.bytes))]);
+    return textBox(parts, {
+      long: true,
+      note: "head is the first " + (shown === null ? "bytes" : fmtB(shown)) + " of " +
+            fmtB(v.bytes) + (v.chars ? " (" + fmtN(v.chars) + " chars)" : "") +
+            " — a prefix of the value, never a summary of it"
+    });
+  }
+  if (kind === "list") {
+    const frag = document.createDocumentFragment();
+    frag.append(noteEl(fmtN(v.sampled === undefined ? (v.items || []).length : v.sampled) +
+      " of " + fmtN(v.len) + " recorded · " + fmtB(v.bytes) +
+      " written · the leading slice, in the node's own order"));
+    frag.append(renderArray(v.items || []));
+    return frag;
+  }
+  if (kind === "redacted") {
+    const frag = document.createDocumentFragment();
+    frag.append(tagEl("red", "redacted · " + v.rule + (v.bytes ? " · " + v.bytes + " B" : "")));
+    frag.append(noteEl("the value is gone; the rule that fired and a coarse length bucket are what remain"));
+    return frag;
+  }
+  if (kind === "channel") {
+    const frag = document.createDocumentFragment();
+    frag.append(tagEl("gone", "not shown · record ceiling"));
+    frag.append(noteEl(fmtB(v.bytes) + " written · value dropped at the record ceiling"));
+    return frag;
+  }
+  if (kind === "unserializable") {
+    const frag = document.createDocumentFragment();
+    frag.append(tagEl("gone", "unserializable · " + (v.type || "unknown type")));
+    frag.append(noteEl("the recorder could not serialize this channel — the record says so rather than dropping it"));
+    return frag;
+  }
+  if (v === null || v === undefined) return H("div", "vscalar nil", "null");
+  if (typeof v === "string") {
+    if (!v.length) return H("div", "vscalar nil", '"" (empty string)');
+    const bytes = byteLen(v);
+    // "recorded whole" earns its line only where a reader could reasonably
+    // suspect a cut. Printing it under every 40-byte trace string is noise,
+    // and noise is what makes the important sentence unreadable.
+    return textBox([v], {
+      long: v.length > 600,
+      note: bytes > 400 ? fmtB(bytes) + " · " + fmtN(v.length) + " chars · recorded whole" : null
+    });
+  }
+  if (typeof v === "number" || typeof v === "boolean") return H("div", "vscalar", String(v));
+  if (Array.isArray(v)) return renderArray(v);
+  if (typeof v === "object") return renderObject(v);
+  return H("div", "vscalar", String(v));
+}
+
+/* Short scalars ride on the key's line; anything that needs room gets its own.
+   The threshold is bytes, because that is the unit everything else here uses. */
+function isInline(v) {
+  if (v === null || v === undefined) return true;
+  if (typeof v === "number" || typeof v === "boolean") return true;
+  if (typeof v === "string") return v.indexOf("\n") < 0 && byteLen(v) <= 72;
+  return false;
+}
+
+function inlineValue(v) {
+  if (v === null || v === undefined) return H("span", "vscalar nil", "null");
+  if (v === "") return H("span", "vscalar nil", '"" (empty string)');
+  return H("span", "vscalar", String(v));
+}
+
+function renderArray(items) {
+  const wrap = H("div", "items");
+  if (!items.length) { wrap.append(noteEl("no elements")); return wrap; }
+  items.forEach((item, i) => {
+    if (item === null || typeof item !== "object" || markerKind(item) === "redacted") {
+      if (isInline(item)) {
+        const row = H("div", "kvline");
+        row.append(H("span", "k", "[" + i + "]"), inlineValue(item));
+        wrap.append(row);
+        return;
+      }
+      const row = H("div", "kvstack");
+      row.append(H("span", "k", "[" + i + "]"));
+      const body = H("div", "kvbody"); body.append(renderValue(item)); row.append(body);
+      wrap.append(row);
+      return;
+    }
+    const d = document.createElement("details");
+    d.className = "item";
+    if (items.length === 1) d.open = true;
+    const sum = document.createElement("summary");
+    sum.append(H("span", "k", "[" + i + "]"), H("span", "iprev", previewOf(item)));
+    d.append(sum);
+    const body = H("div", "ibody");
+    body.append(renderValue(item));
+    d.append(body);
+    wrap.append(d);
+  });
+  return wrap;
+}
+
+function renderObject(o) {
+  const keys = Object.keys(o);
+  if (!keys.length) return noteEl("no keys");
+  const wrap = H("div", "obj");
+  keys.forEach(k => {
+    if (isInline(o[k])) {
+      const row = H("div", "kvline");
+      row.append(H("span", "k", k), inlineValue(o[k]));
+      wrap.append(row);
+      return;
+    }
+    const row = H("div", "kvstack");
+    row.append(H("span", "k", k));
+    const body = H("div", "kvbody");
+    body.append(renderValue(o[k]));
+    row.append(body);
+    wrap.append(row);
+  });
+  return wrap;
+}
+
+function channelBadge(value, truncated) {
+  const kind = markerKind(value);
+  let badge = "";
+  if (kind === "str") badge = "clipped · " + fmtB(value.bytes);
+  else if (kind === "list") badge = fmtN(value.sampled) + " of " + fmtN(value.len);
+  else if (kind === "channel") badge = "over recordCap";
+  else if (kind === "redacted") badge = "redacted";
+  else if (kind === "unserializable") badge = "unserializable";
+  else if (typeof value === "string") badge = fmtB(byteLen(value));
+  else if (Array.isArray(value)) badge = fmtN(value.length) + (value.length === 1 ? " item" : " items");
+  else if (value && typeof value === "object") badge = fmtN(Object.keys(value).length) + " keys";
+  // clipping can happen deep inside a value that is itself whole; the
+  // record-level `truncated` array is what knows
+  if (truncated && !kind) badge = badge ? badge + " · clipped inside" : "clipped inside";
+  return badge;
+}
+
+function channelBlock(name, value, truncated) {
+  const d = document.createElement("details");
+  d.className = "ch";
+  d.open = true;
+  const sum = document.createElement("summary");
+  sum.append(H("span", "chname", name));
+  const badge = channelBadge(value, truncated);
+  if (badge) sum.append(H("span", "chsize", badge));
+  d.append(sum);
+  const body = H("div", "chbody");
+  body.append(renderValue(value));
+  d.append(body);
+  return d;
+}
+
+function policyBox() {
+  if (!S.source) return null;
+  const d = document.createElement("details");
+  d.className = "polbox";
+  const p = S.policy;
+  const sum = document.createElement("summary");
+  sum.textContent = "state policy · " +
+    (S.mismatch ? "not read — other run" : p ? p.mode : "none in file");
+  d.append(sum);
+  const grid = H("div", "obj");
+  const row = (k, v) => {
+    if (isInline(v)) { const l = H("div", "kvline"); l.append(H("span", "k", k), inlineValue(v)); grid.append(l); return; }
+    const st = H("div", "kvstack"); st.append(H("span", "k", k));
+    const b = H("div", "kvbody"); b.append(H("div", "vscalar", v)); st.append(b); grid.append(st);
+  };
+  row("file", S.source);
+  row("payloads", fmtN(S.payloads.size) + " lines · " + fmtB(S.bytes));
+  if (p) {
+    row("mode", p.mode);
+    if (p.caps) row("caps", JSON.stringify(p.caps));
+    if (p.recordCap !== undefined) row("recordCap", fmtB(p.recordCap));
+    if (p.allowed) row("allowed", p.allowed.join(" · "));
+    if (p.denied) row("denied", p.denied.join(" · "));
+    if (p.redaction) row("redaction", String(p.redaction));
+  }
+  d.append(grid);
+  return d;
+}
+
+function renderStateSection(host, s) {
+  if (!host) return;
+  host.replaceChildren();
+  const label = H("p", "plabel", "state");
+  label.style.marginTop = "16px";
+  host.append(label);
+  stateBanners().forEach(b => host.append(b));
+
+  const payload = s.payload || null;
+  const channels = (payload && payload.channels && typeof payload.channels === "object")
+    ? payload.channels : null;
+  const truncated = new Set((payload && payload.truncated) || []);
+  const keys = s.updateKeys;
+
+  if (s.state === "error") {
+    host.append(noteEl("this node raised — a node that raises writes no channels, so there is nothing to record."));
+  } else if (!keys) {
+    host.append(noteEl(
+      s.state === "active"
+        ? "running — a node reports what it wrote when it ends, not while it runs."
+        : (s.state === "done" && !s.entries)
+          ? "a marker, not a node — __start__ and __end__ are lit by graph_start and graph_end, and they write no channels."
+          : "nothing written yet — at this point in the replay the node has not finished."));
+  } else if (!keys.length && !channels) {
+    host.append(noteEl("this node finished without writing a channel."));
+  } else {
+    const order = keys.slice();
+    if (channels) Object.keys(channels).forEach(k => { if (order.indexOf(k) < 0) order.push(k); });
+    order.forEach(name => {
+      if (channels && Object.prototype.hasOwnProperty.call(channels, name)) {
+        host.append(channelBlock(name, channels[name], truncated.has(name)));
+      } else {
+        host.append(absentRow(name, absenceReason(name)));
+      }
+    });
+  }
+  const pol = policyBox();
+  if (pol) host.append(pol);
+}
+
+function renderBranches() {
+  const box = $("branches");
+  let br = V.topo.branches || [];
+  if (!br.length) {
+    const bySrc = {};
+    V.topo.edges.filter(e => e.kind === "conditional").forEach(e => {
+      (bySrc[e.from] = bySrc[e.from] || []).push(e.to);
+    });
+    br = Object.keys(bySrc).map(s => ({ source: s, targets: bySrc[s] }));
+  }
+  if (!br.length) { box.innerHTML = "<p class='empty'>this graph has no conditional edges</p>"; return; }
+  box.innerHTML = br.map(b =>
+    "<div style='margin-bottom:8px'><div class='rec'><b>" + b.source + "</b></div>" +
+    "<div class='chips'>" + b.targets.map(t =>
+      "<button class='chip branchbtn' data-jump='" + t + "'>" + t + "</button>").join("") +
+    "</div></div>").join("");
+  box.querySelectorAll("[data-jump]").forEach(b =>
+    b.addEventListener("click", () => { V.selected = b.dataset.jump; paint(); }));
+}
+
+function edgeRow(e, st, other) {
+  const taken = (st.edges[e.key] || { taken: 0 }).taken;
+  const cls = "edgebtn " + (taken ? "taken" : "untaken");
+  const note = [];
+  if (e.branch) note.push(e.branch);
+  if (e.back) note.push("loop");
+  if (taken > 1) note.push("×" + taken);
+  else if (!taken) note.push("not taken");
+  return "<button class='" + cls + "' data-jump='" + other + "'>" +
+    "<span class='dash'></span><span>" + other + "</span>" +
+    "<span class='b'>" + note.join(" · ") + "</span></button>";
+}
+
+/* ---- viewport: fit / zoom / pan on the svg viewBox ---- */
+function fit() {
+  const wrap = $("canvaswrap");
+  const L = V.layout;
+  // the pane can still be 0×0 on the very first frame (preview panes, hidden
+  // tabs). A zero divisor once produced "-Infinity NaN" in the viewBox, so the
+  // degenerate case falls back to the plain content box and asks for a retry.
+  const cw = wrap.clientWidth, ch = wrap.clientHeight;
+  const B = L.bbox;
+  if (!(cw > 0 && ch > 0) || !(B.w > 0 && B.h > 0)) {
+    // the pane has no size yet — a hidden tab, a preview pane that has not been
+    // laid out. Show the whole content box and let the ResizeObserver below fit
+    // it properly the moment a real measurement arrives.
+    V.view = { x: B.x || 0, y: B.y || 0, w: B.w || 1000, h: B.h || 600 };
+    V.fitScale = 1;
+    V.needsFit = true;
+    $("zlabel").textContent = "fit";
+    requestAnimationFrame(() => { if ($("canvaswrap").clientWidth > 0) { fit(); applyView(); } });
+    return;
+  }
+  V.needsFit = false;
+  const s = Math.max(0.05, Math.min(cw / B.w, ch / B.h, 1.6));
+  V.fitScale = s;
+  const vw = cw / s, vh = ch / s;
+  V.view = { x: B.x + (B.w - vw) / 2, y: B.y + (B.h - vh) / 2, w: vw, h: vh };
+}
+function applyView() {
+  if (!V.view) return;
+  const v = V.view;
+  if (![v.x, v.y, v.w, v.h].every(Number.isFinite) || v.w <= 0 || v.h <= 0) return;
+  const wrap = $("canvaswrap");
+  $("graph").setAttribute("viewBox", [v.x, v.y, v.w, v.h].join(" "));
+  const scale = (wrap.clientWidth || v.w) / v.w;
+  $("zlabel").textContent = Math.round(scale * 100) + "%";
+}
+function zoomBy(f, cx, cy) {
+  const wrap = $("canvaswrap");
+  const v = V.view;
+  if (!v) return;
+  const px = cx === undefined ? v.x + v.w / 2 : v.x + (cx / wrap.clientWidth) * v.w;
+  const py = cy === undefined ? v.y + v.h / 2 : v.y + (cy / wrap.clientHeight) * v.h;
+  const nw = Math.max(160, Math.min(V.layout.width * 4, v.w / f));
+  const nh = nw * (v.h / v.w);
+  v.x = px - (px - v.x) * (nw / v.w);
+  v.y = py - (py - v.y) * (nh / v.h);
+  v.w = nw; v.h = nh;
+  applyView();
+}
+
+/* ---- wiring ---- */
+function wire() {
+  $("play").addEventListener("click", () => { V.playing ? pause() : play(); paint(); });
+  $("next").addEventListener("click", () => step(1));
+  $("prev").addEventListener("click", () => step(-1));
+  $("first").addEventListener("click", () => { pause(); seek(0); });
+  $("last").addEventListener("click", () => { pause(); seek(V.records.length - 1); });
+  $("speed").addEventListener("change", e => { V.speed = parseFloat(e.target.value); schedule(); });
+  $("scrub").addEventListener("input", e => { pause(); seek(parseInt(e.target.value, 10)); });
+  $("ribbon").addEventListener("click", e => {
+    const r = $("ribbon").getBoundingClientRect();
+    const n = V.records.length;
+    if (!n) return;
+    const frac = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+    pause(); seek(Math.round(frac * (n - 1)));
+  });
+
+  const setOrient = o => {
+    V.orientation = o;
+    $("oh").setAttribute("aria-pressed", String(o === "horizontal"));
+    $("ov").setAttribute("aria-pressed", String(o === "vertical"));
+    relayout(true);
+    paint();
+  };
+  $("oh").addEventListener("click", () => setOrient("horizontal"));
+  $("ov").addEventListener("click", () => setOrient("vertical"));
+
+  const setTheme = t => {
+    document.documentElement.setAttribute("data-design", t);
+    $("td").setAttribute("aria-pressed", String(t === "spectroscope"));
+    $("tl").setAttribute("aria-pressed", String(t === "paper"));
+  };
+  $("td").addEventListener("click", () => setTheme("spectroscope"));
+  $("tl").addEventListener("click", () => setTheme("paper"));
+
+  $("zin").addEventListener("click", () => zoomBy(1.25));
+  $("zout").addEventListener("click", () => zoomBy(1 / 1.25));
+  $("zfit").addEventListener("click", () => { fit(); applyView(); });
+
+  const wrap = $("canvaswrap");
+  wrap.addEventListener("wheel", e => {
+    e.preventDefault();
+    const r = wrap.getBoundingClientRect();
+    zoomBy(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top);
+  }, { passive: false });
+  // Right + middle mouse pan; the left button is left for clicking a node.
+  // The owner rule, and the same one spectro-web's shared GraphCanvas states as
+  // panOnDrag [1, 2] — a person who learns the gesture in one surface keeps it
+  // in the other. A pointer with no buttons to speak of (touch, pen) pans on its
+  // primary contact instead, or it could not pan at all.
+  const PAN_BUTTONS = [1, 2];
+  const pans = e => (e.pointerType === "mouse" ? PAN_BUTTONS.includes(e.button) : e.isPrimary);
+  // Right-drag pans, so a bare right-click would otherwise pop the browser menu
+  // in the middle of the gesture.
+  wrap.addEventListener("contextmenu", e => e.preventDefault());
+  wrap.addEventListener("pointerdown", e => {
+    if (e.target.closest(".zoombar")) return;
+    if (!pans(e)) return;
+    e.preventDefault();
+    V.drag = { x: e.clientX, y: e.clientY, vx: V.view.x, vy: V.view.y };
+    wrap.setPointerCapture(e.pointerId);
+    wrap.classList.add("panning");
+  });
+  wrap.addEventListener("pointermove", e => {
+    if (!V.drag) return;
+    const scale = wrap.clientWidth / V.view.w;
+    V.view.x = V.drag.vx - (e.clientX - V.drag.x) / scale;
+    V.view.y = V.drag.vy - (e.clientY - V.drag.y) / scale;
+    applyView();
+  });
+  ["pointerup", "pointercancel"].forEach(t => wrap.addEventListener(t, () => {
+    V.drag = null;
+    wrap.classList.remove("panning");
+  }));
+
+  const fileInput = $("file");
+  $("file").addEventListener("change", e => {
+    const f = e.target.files && e.target.files[0];
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      try { load(String(rd.result), f.name); }
+      catch (err) { alert("could not read " + f.name + "\n\n" + err.message); }
+    };
+    rd.readAsText(f);
+  });
+  document.querySelector("label.filebtn").addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === " ") { e.preventDefault(); fileInput.click(); }
+  });
+  ["dragover", "drop"].forEach(t => document.addEventListener(t, e => e.preventDefault()));
+  document.addEventListener("drop", e => {
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => { try { load(String(rd.result), f.name); } catch (err) { alert(err.message); } };
+    rd.readAsText(f);
+  });
+
+  document.addEventListener("keydown", e => {
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" && e.target.type !== "range") return;
+    // Space belongs to whatever the reader has focused inside the panel — a
+    // channel disclosure, an expand button, a scrollable value. The transport
+    // may not steal it, or the payload section stops being keyboard-readable.
+    if (e.key === " " && e.target.closest && e.target.closest(".panel")) return;
+    if (e.key === " ") { e.preventDefault(); V.playing ? pause() : play(); paint(); }
+    else if (e.key === "ArrowRight" && tag !== "input") { e.preventDefault(); step(1); }
+    else if (e.key === "ArrowLeft" && tag !== "input") { e.preventDefault(); step(-1); }
+    else if (e.key === "Home") { e.preventDefault(); pause(); seek(0); }
+    else if (e.key === "End") { e.preventDefault(); pause(); seek(V.records.length - 1); }
+    else if (e.key === "Escape") { V.selected = null; paint(); }
+  });
+
+  let rt = null;
+  window.addEventListener("resize", () => {
+    clearTimeout(rt);
+    rt = setTimeout(() => { fit(); applyView(); buildRibbon(); drawRibbonCaret(); }, 120);
+  });
+}
+
+/* The pane can report 0×0 for a while — a hidden tab, a preview surface that
+   has not been laid out yet. Nothing may assume the first measurement is real,
+   so keep asking until one is, and keep watching afterwards. */
+function watchSize() {
+  const ensure = (tries) => {
+    const wrap = $("canvaswrap");
+    if (wrap.clientWidth > 0 && wrap.clientHeight > 0) {
+      if (V.needsFit) { fit(); applyView(); }
+      if ($("ribbon").getBoundingClientRect().width > 0 && !V.ribbonSized) {
+        V.ribbonSized = true; buildRibbon(); drawRibbonCaret();
+      }
+      return;
+    }
+    if (tries > 0) requestAnimationFrame(() => ensure(tries - 1));
+  };
+  ensure(30);
+  window.addEventListener("load", () => ensure(10));
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) ensure(10); });
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => ensure(0)).observe($("canvaswrap"));
+    new ResizeObserver(() => {
+      if ($("ribbon").getBoundingClientRect().width > 0) { buildRibbon(); drawRibbonCaret(); }
+    }).observe(document.querySelector(".ribbonwrap"));
+  }
+}
+
+/* ---- the frame that shows all four states at once:
+        the node_start right after the only node_error ---- */
+function storyFrame() {
+  const errAt = V.records.findIndex(r => r.type === "node_error" || r.type === "error");
+  if (errAt < 0) return Math.max(0, V.records.length - 1);
+  for (let i = errAt + 1; i < V.records.length; i++) if (V.records[i].type === "node_start") return i;
+  return errAt;
+}
+
+wire();
+load(FIXTURE, "embedded fixture");
+// The second gesture, performed for the reader: the demo ships with the
+// payload artifact its own source would write at StatePolicy.sample(), and it
+// arrives through exactly the code path a loaded file takes.
+load(FIXTURE_STATE, "embedded fixture · state");
+watchSize();
+
+const reduced = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+if (reduced) seek(storyFrame());
+else play();
+
+/* the layout guard, callable from the console or a headless check */
+window.__gvCheck = function () {
+  const L = window.__gvLayout;
+  const overlaps = [];
+  for (let i = 0; i < L.nodes.length; i++) {
+    for (let j = i + 1; j < L.nodes.length; j++) {
+      const a = L.nodes[i], b = L.nodes[j];
+      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) {
+        overlaps.push(a.id + " / " + b.id);
+      }
+    }
+  }
+  const byId = {}; L.nodes.forEach(n => byId[n.id] = n);
+  const eps = 0.51;
+  const onBoundary = (n, x, y) => {
+    if (!n) return false;
+    const inside = x >= n.x - eps && x <= n.x + n.w + eps && y >= n.y - eps && y <= n.y + n.h + eps;
+    const edge = Math.abs(x - n.x) <= eps || Math.abs(x - (n.x + n.w)) <= eps ||
+                 Math.abs(y - n.y) <= eps || Math.abs(y - (n.y + n.h)) <= eps;
+    return inside && edge;
+  };
+  const badEndpoints = [];
+  L.edges.forEach(e => {
+    if (!onBoundary(byId[e.from], e.x1, e.y1)) badEndpoints.push(e.from + "->" + e.to + " (source)");
+    if (!onBoundary(byId[e.to], e.x2, e.y2)) badEndpoints.push(e.from + "->" + e.to + " (target)");
+  });
+
+  // a connector must not run through a box it does not belong to: sample the
+  // rendered path and test containment, endpoints excluded.
+  const crossings = [];
+  document.querySelectorAll("#edges .edgeg").forEach(g => {
+    const key = g.dataset.key, p = g.querySelector("path");
+    const [from, to] = key.split("→");
+    const len = p.getTotalLength();
+    for (let i = 1; i < 80; i++) {
+      const pt = p.getPointAtLength((i / 80) * len);
+      for (const n of L.nodes) {
+        if (n.id === from || n.id === to) continue;
+        if (pt.x > n.x + 1 && pt.x < n.x + n.w - 1 && pt.y > n.y + 1 && pt.y < n.y + n.h - 1) {
+          const tag = from + "->" + to + " through " + n.id;
+          if (!crossings.includes(tag)) crossings.push(tag);
+        }
+      }
+    }
+  });
+
+  return {
+    orientation: V.orientation,
+    nodes: L.nodes.length, edges: L.edges.length,
+    backEdges: L.edges.filter(e => e.back).map(e => e.from + "->" + e.to),
+    overlaps, badEndpoints, crossings,
+    ok: overlaps.length === 0 && badEndpoints.length === 0 && crossings.length === 0
+  };
+};
+/* the payload guard: does the second artifact actually JOIN onto the first?
+   A viewer that silently fails the join looks exactly like a run that recorded
+   nothing, which is the one confusion this layer exists to prevent. */
+window.__gvStateCheck = function () {
+  const ends = V.records.filter(r => r.type === "node_end");
+  const joined = [], missing = [];
+  ends.forEach(r => {
+    const p = payloadFor(r.runId || graphRunId(), r.node, r.superstep);
+    (p ? joined : missing).push(r.node + "@s" + r.superstep);
+  });
+  const used = new Set(ends.map(r => (r.runId || graphRunId() || "") + "|" + r.node + "|" + r.superstep));
+  return {
+    source: S.source,
+    mode: S.policy ? S.policy.mode : null,
+    graphRun: graphRunId(),
+    payloads: S.payloads.size,
+    payloadBytes: S.bytes,
+    nodeEnds: ends.length,
+    joined: joined.length, joinedList: joined,
+    unjoined: missing,
+    orphanPayloads: [...S.payloads.keys()].filter(k => !used.has(k)),
+    mismatch: S.mismatch,
+    ok: S.mismatch === null && (!S.source || joined.length > 0)
+  };
+};
+window.__gv = V;
+window.__gvS = S;
+</script>
+</body>
+</html>
