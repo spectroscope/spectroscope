@@ -193,6 +193,13 @@ export function activity(
   mcp: string | null,
   gate: GateState,
   lang: Lang,
+  /** The exact tool name, when one is running. The map has a station for six
+   *  tools; everything else lands on the agent hub, and the hub used to claim
+   *  the agent was PLANNING while a named tool was in flight (card 146). A
+   *  `Workflow` call fanning work across a dozen agents read as "plans the next
+   *  step", which is not a rounding error — it is the map saying the opposite of
+   *  what is happening. Optional so both call sites can adopt it separately. */
+  tool?: string | null,
 ) {
   const file_ = file ?? t(lang, "map.act.file");
   switch (f) {
@@ -209,7 +216,11 @@ export function activity(
     case "gate":
       return { text: gateNote(gate, lang), color: GATE_COLOR[gate] };
     case "agent":
-      return { text: t(lang, "map.act.plans"), color: "var(--text-dim)" };
+      // A named tool with no station of its own is still a named tool. Saying
+      // which one beats claiming the agent is between steps.
+      return tool != null && tool !== ""
+        ? { text: cut(tool, 26), color: "var(--sand)" }
+        : { text: t(lang, "map.act.plans"), color: "var(--text-dim)" };
     default:
       return { text: t(lang, "map.gate.none"), color: "var(--text-faint)" };
   }
@@ -651,6 +662,7 @@ export function sceneToFlow(
     scene.activeMcp,
     scene.gate,
     lang,
+    scene.activeTool,
   );
   N("agent", "agent", {
     active: scene.focus === "agent" || scene.focus === "gate",
@@ -732,7 +744,16 @@ export function sceneToFlow(
   subs.forEach((c, i) => {
     const id = `sub-${c.id}`;
     posL[id] = { x: declutter ? subBaseX : subBaseL.x, y: subYs[i] };
-    const act = activity(c.focus, c.disk, c.activeFile, c.activeCommand, c.activeMcp, c.gate, lang);
+    const act = activity(
+      c.focus,
+      c.disk,
+      c.activeFile,
+      c.activeCommand,
+      c.activeMcp,
+      c.gate,
+      lang,
+      c.activeTool,
+    );
     N(id, "subagent", {
       id: c.id,
       label: c.label,

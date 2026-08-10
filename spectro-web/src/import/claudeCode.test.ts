@@ -2713,3 +2713,46 @@ describe("a subagent file that opens with a screenshot", () => {
     });
   });
 });
+
+describe("a Workflow is a background launch, not a spawn (card 146)", () => {
+  // Nearly got this wrong. Measured over ~/.claude/projects on 2026-08-10:
+  // 1,201 scanned transcripts carry 97 Workflow calls in 19 files, against 229
+  // Task/Agent calls in 25 — so Workflow is a common way work fans out, and the
+  // obvious move is to add it to `isSpawnTool` beside them.
+  //
+  // That is wrong, and two existing tests said so within seconds. A Workflow
+  // tool_use is already modelled as a BACKGROUND LAUNCH: its tool_result is a
+  // receipt naming a task id, and a `<task-notification>` arrives much later and
+  // is joined back onto the launch by tool-use id. Turning it into a spawn
+  // replaces that richer model with a poorer one and breaks the join.
+  //
+  // Pinned here so the next person who reads `isSpawnTool` and notices the
+  // absence finds the reason instead of the gap.
+  const withTool = (name: string) => [
+    { type: "user", message: { role: "user", content: "go" }, uuid: "u1" },
+    {
+      type: "assistant",
+      message: {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "t1", name, input: { description: "fan out" } }],
+      },
+      uuid: "a1",
+      parentUuid: "u1",
+    },
+  ];
+
+  const spawnsOf = (lines: unknown[]) =>
+    detectAndLoad(lines.map((l) => JSON.stringify(l)).join("\n")).events.filter(
+      (e) => (e as { type?: string }).type === "agent_spawn",
+    );
+
+  it("spawns for Task and Agent, and deliberately not for Workflow", () => {
+    expect(spawnsOf(withTool("Task"))).toHaveLength(1);
+    expect(spawnsOf(withTool("Agent"))).toHaveLength(1);
+    expect(spawnsOf(withTool("Workflow"))).toHaveLength(0);
+  });
+
+  it("still ignores a tool that spawns nothing", () => {
+    expect(spawnsOf(withTool("Bash"))).toHaveLength(0);
+  });
+});

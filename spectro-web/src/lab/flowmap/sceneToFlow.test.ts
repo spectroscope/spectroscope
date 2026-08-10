@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { RunEvent } from "../../events";
 import { advanceScene, initialScene } from "../labScene";
+import { t } from "../../i18n/i18n";
 import {
+  activity,
   deriveDetail,
   EXPANDED_CARD,
   MAX_CARD_SHOTS,
@@ -541,5 +543,29 @@ describe("a stream that is not rooted at main", () => {
   it("puts the root's pictures where the card looks for them", () => {
     const d = deriveDetail(events);
     expect(d.attached[d.root]).toHaveLength(1);
+  });
+});
+
+describe("the agent hub stops claiming a named tool is planning (card 146)", () => {
+  // The map has a station for six tools. Everything else — Workflow, Monitor,
+  // TaskCreate, any MCP tool without a server prefix — fell to the agent hub,
+  // and the hub's status line said "plans the next step" while that tool was in
+  // flight. Measured over ~/.claude/projects on 2026-08-10: 97 Workflow calls
+  // across 19 transcripts, each of them drawn as an agent thinking.
+  it("names the tool instead of claiming the agent is between steps", () => {
+    const said = activity("agent", "idle", null, null, null, "none", "en", "Workflow");
+    expect(said.text).toBe("Workflow");
+  });
+
+  it("still says it plans when nothing is actually running", () => {
+    const said = activity("agent", "idle", null, null, null, "none", "en", null);
+    expect(said.text).toBe(t("en", "map.act.plans"));
+  });
+
+  it("truncates a long tool name rather than letting it push the card open", () => {
+    const long = "mcp__some__extremely__long__tool__name__that__never__ends";
+    expect(activity("agent", "idle", null, null, null, "none", "en", long).text.length).toBeLessThanOrEqual(
+      26,
+    );
   });
 });
