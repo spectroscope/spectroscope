@@ -330,7 +330,18 @@ export function voiceRows(list: readonly { wireSession: string }[]): TraceEntry[
  */
 export function traceWithVoice(rows: TraceEntry[], voice: readonly { wireSession: string }[]): TraceEntry[] {
   if (voice.length === 0) return withResponseRows(rows);
-  return withResponseRows([...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts));
+  // The renumbering lives HERE and not in withResponseRows, because this is the
+  // branch that manufactures rows: `voiceRows` invents its rows and they arrive
+  // with no sequence of their own, so a merged list has to be counted before it
+  // means anything.
+  //
+  // withResponseRows used to do it for both branches, which cost every row a new
+  // object on the common path too — and `TraceRow` is memo() with no comparator,
+  // so a live trace re-rendered everything on every frame batch once card 184
+  // leg 3 put an llm_exchange into every session. The rare path pays; the hot
+  // one does not.
+  const merged = withResponseRows([...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts));
+  return merged.map((r, i) => ({ ...r, seq: i + 1 }));
 }
 
 export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {
@@ -338,11 +349,24 @@ export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {
   const out: TraceEntry[] = [];
   for (const row of rows) {
     if (row.type === "llm_exchange") {
-      out.push({ ...row, type: "llm_response" });
+      // Half a step in front of the row it belongs to. It used to be an
+      // integer, and paying for that integer meant renumbering the WHOLE list
+      // afterwards — which built a new object for every row and broke
+      // `TraceRow`'s memo, whose own comment promises that a delta flood only
+      // renders the rows it appended. Latent until card 184 leg 3 put an
+      // llm_exchange into every live session; after that a live trace
+      // re-rendered all of its rows on every frame batch.
+      //
+      // A non-integer seq is not a new idea here: the synthetic system-context
+      // row already sits at 0 (TraceView.tsx, `allEntries`). Nothing downstream
+      // wants contiguity — `bySeq` is a Map and the rest compares.
+      out.push({ ...row, type: "llm_response", seq: row.seq - 0.5 });
     }
     out.push(row);
   }
-  return out.map((r, i) => ({ ...r, seq: i + 1 }));
+  // Every untouched row leaves as the SAME object it arrived as, which is the
+  // whole point: identity is what lets a memoized row skip a render.
+  return out;
 }
 
 /** The sentences the detail pane may claim about a recording, per recorded

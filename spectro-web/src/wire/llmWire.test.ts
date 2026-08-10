@@ -16,6 +16,7 @@ import {
   readExchangeDetail,
   traceWithVoice,
   llmRequestSummary,
+  withResponseRows,
 } from "./llmWire";
 
 /** One frame the server would push, with room to disagree per test. */
@@ -356,5 +357,51 @@ describe("what a request row says about a call that never opened a socket", () =
       }),
     );
     expect(line).toContain("POST /v1/audio/transcriptions");
+  });
+});
+
+describe("the response row keeps every other row's identity", () => {
+  const row = (seq: number, type: string, ts: number): TraceEntry =>
+    ({ seq, type, ts, dir: "in", summary: `row ${seq}` }) as unknown as TraceEntry;
+
+  it("returns the SAME objects for rows it does not change", () => {
+    // The defect this pins, found 2026-08-10: the function used to renumber the
+    // whole list with `out.map((r, i) => ({ ...r, seq: i + 1 }))`, which builds
+    // a new object for EVERY row. `TraceRow` is memo() with no comparator and
+    // takes `entry={e}`, so once identity breaks not one row can bail out — and
+    // its own comment promises "during a delta flood only the appended rows
+    // render".
+    //
+    // It was latent until card 184 leg 3, which put llm_exchange into every
+    // live session. Then the early return above stopped firing and a live trace
+    // re-rendered all of its rows on every frame batch.
+    const rows = [row(1, "frame", 10), row(2, "llm_exchange", 20), row(3, "frame", 30)];
+    const out = withResponseRows(rows);
+    expect(out).toHaveLength(4);
+    for (const original of rows) {
+      expect(out).toContain(original); // identity, not equality
+    }
+  });
+
+  it("still puts the response row before the exchange it belongs to", () => {
+    const rows = [row(1, "llm_exchange", 10)];
+    expect(withResponseRows(rows).map((r) => r.type)).toEqual(["llm_response", "llm_exchange"]);
+  });
+
+  it("gives the synthetic row a seq of its own that collides with nothing", () => {
+    // Real rows keep their number, so the synthetic one cannot have an integer.
+    // The trace already carries a synthetic row at seq 0 (the system context),
+    // so a non-integer seq is not a new idea here — it is the existing one.
+    const rows = [row(1, "frame", 10), row(2, "llm_exchange", 20)];
+    const out = withResponseRows(rows);
+    const seqs = out.map((r) => r.seq);
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect(out.find((r) => r.type === "llm_response")?.seq).toBeLessThan(2);
+    expect(out.find((r) => r.type === "llm_exchange")?.seq).toBe(2);
+  });
+
+  it("leaves a list without any exchange completely alone", () => {
+    const rows = [row(1, "frame", 10), row(2, "frame", 20)];
+    expect(withResponseRows(rows)).toBe(rows); // the same array, not a copy
   });
 });
