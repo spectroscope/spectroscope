@@ -52,9 +52,10 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.ImageGenerated.class,     name = "image_generated"), // from additive
     @JsonSubTypes.Type(value = RunEvent.ContextInfo.class,        name = "context_info"),  // additive
     @JsonSubTypes.Type(value = RunEvent.AgentMessage.class,       name = "agent_message"), // A2A-lite, additive
-    @JsonSubTypes.Type(value = RunEvent.Plan.class,               name = "plan")           // additive
+    @JsonSubTypes.Type(value = RunEvent.Plan.class,               name = "plan"),          // additive
+    @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange")   // additive (card 184 leg 3)
 })
-public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
+public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
         RunEvent.PermissionDecision, RunEvent.ToolResult, RunEvent.AgentSpawn,
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
@@ -302,6 +303,49 @@ public sealed interface RunEvent permits RunEvent.RunStart, RunEvent.TurnStart,
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     record RunEnd(String runId, String stopReason, long ts) implements RunEvent {}
+
+    /**
+     * One finished backend-to-model exchange, as the session's own record of it
+     * (card 184 leg 3).
+     *
+     * <p>This has been a socket frame since leg 2 and a line in the session file
+     * never — so reopening a stored session lost the fact that a model call had
+     * happened at all, and the spectrum's second line per agent could only exist
+     * while you were watching. Every field here is MEASURED by the sidecar
+     * recorder rather than inferred, which is the constraint this record was
+     * allowed to grow under: a field we cannot fill truthfully is not added.</p>
+     *
+     * <p><b>Bodies never ride this line.</b> They stay in the sidecar and the
+     * gated endpoint serves them on the gesture that asks — a session file that
+     * carried every prompt twice would double in size for a convenience.</p>
+     *
+     * @param xid           the sidecar's own id, which is what joins the two
+     *                      protocols: one line here, two lines there
+     * @param agentId       the agent whose call this was
+     * @param turn          the 1-based turn, or null where no turn exists (stt)
+     * @param kind          what the call was for: chat, compaction, image, stt
+     * @param provider      the backend label as the session knows it
+     * @param model         the model the request named
+     * @param transport     who owned the socket: http, sdk, websocket, process
+     * @param url           the full request URL, or the process:// pseudo-url
+     * @param status        the HTTP status, or null when nothing ever answered —
+     *                      a zero there would be a claim about a reply that
+     *                      never came
+     * @param requestBytes  the recorded request body's size
+     * @param responseBytes the recorded response's size
+     * @param responseLines how many stream lines came back
+     * @param aborted       true when a cancel tore the stream down mid-generation
+     * @param fidelity      what the recorded bytes ARE: bytes, sdk-json,
+     *                      sdk-events, encoded, process-output
+     * @param durationMs    send to close
+     * @param ts            epoch millis at close
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record LlmExchange(String xid, String agentId, Integer turn, String kind,
+                       String provider, String model, String transport, String url,
+                       Integer status, long requestBytes, long responseBytes,
+                       int responseLines, boolean aborted, String fidelity,
+                       long durationMs, long ts) implements RunEvent {}
 
     /**
      * A run-level failure, emitted right before the closing {@link RunEnd}.

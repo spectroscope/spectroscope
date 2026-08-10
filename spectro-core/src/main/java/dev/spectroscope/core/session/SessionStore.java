@@ -578,6 +578,7 @@ public final class SessionStore {
             case RunEvent.ContextInfo e -> e.agentId();
             case RunEvent.AgentMessage e -> e.from(); // the emitting side owns the message
             case RunEvent.Plan e -> e.agentId();
+            case RunEvent.LlmExchange e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             case RunEvent.RunEnd e -> null;
         });

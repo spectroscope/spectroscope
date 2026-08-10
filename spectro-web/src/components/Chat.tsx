@@ -20,6 +20,7 @@ import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
 import { useVoiceInput } from "./useVoiceInput";
 import { liveReading, type LiveRoute } from "./liveTranscription";
+import { composerHeight, showsPlaceholder } from "./composerGrowth";
 import { useLiveWanted } from "../state/liveWanted";
 import { voiceErrorKey } from "./voiceError";
 import { opensTheSheet, type SttStatus } from "./voiceNoticeReading";
@@ -129,6 +130,9 @@ export function Chat(props: {
   const translated = useTranslation(props.viewKey ?? "live");
   const [draft, setDraft] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // The live layer, measured by autosize. A ref rather than state: it is read
+  // during a layout pass, not rendered from.
+  const ghostRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   // A live view follows the edge; an archive does not. An import is a record
   // you read from the beginning, so it must not open at its own end.
@@ -279,12 +283,26 @@ export function Chat(props: {
   const hitClass = (i: number): string =>
     hitSet.has(i) ? (i === currentHit ? " chat-hit chat-hit--current" : " chat-hit") : "";
 
-  const autosize = (): void => {
+  // The box grows to whichever layer is taller: the draft, or the words a live
+  // session is still hearing. Measuring only the textarea was the defect — its
+  // value is empty while the live text is painted behind it, so a second line
+  // of speech grew the box by nothing.
+  // useCallback because the effect below depends on it: both refs are stable,
+  // so the identity never has to change and the growth pass never re-runs for
+  // a reason that is not new text.
+  const autosize = useCallback((): void => {
     const el = textareaRef.current;
     if (el === null) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, TEXTAREA_MAX_HEIGHT_PX)}px`;
-  };
+    el.style.height = `${composerHeight(el.scrollHeight, ghostRef.current?.scrollHeight ?? null, TEXTAREA_MAX_HEIGHT_PX)}px`;
+  }, []);
+
+  // Every partial changes how tall the ghost is, and nothing types a key while
+  // it happens — so the growth pass has to be driven by the text arriving.
+  // Declared after `autosize` on purpose: the hook rules read the order.
+  useEffect(() => {
+    autosize();
+  }, [voice.provisional, autosize]);
 
   // Card 78 #3: running no longer blocks — App queues the message and sends
   // it when the run ends (the chips above the composer show the waiting line).
@@ -508,65 +526,73 @@ export function Chat(props: {
   // absent from the screen that needs it most. Not folded into the tools row:
   // that row withholds itself on an empty chat, and this control still applies
   // there. One mount, two places to render it.
+  // The jump rail lives INSIDE the bar it floats above (owner 2026-08-10):
+  // anchored to the composer's own top edge with `bottom: 100%`, so it keeps its
+  // distance when the bar grows a second line or a row of chips. Pinned to a
+  // fixed offset from the window bottom it drifted onto whatever the bar happened
+  // to be that day — first a divider, then the send button.
+  // The trace's affordance: an imported session runs to hundreds of turns and
+  // scrolling it by hand is not navigation.
+  const jumpRail = (
+    <div className="chat-rail">
+      <button
+        type="button"
+        className="chat-rail-btn"
+        title={t(lang, "trace.toStart")}
+        aria-label={t(lang, "trace.toStart")}
+        onClick={() => {
+          scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+          pinnedRef.current = false;
+        }}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 3.5h8" />
+          <path d="M4 11.5 8 7.5l4 4" />
+        </svg>
+      </button>
+      <button
+        type="button"
+        className="chat-rail-btn"
+        title={t(lang, "trace.toEnd")}
+        aria-label={t(lang, "trace.toEnd")}
+        onClick={() => {
+          const el = scrollRef.current;
+          if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+          pinnedRef.current = true;
+        }}
+      >
+        <svg
+          viewBox="0 0 16 16"
+          width="14"
+          height="14"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M4 12.5h8" />
+          <path d="M4 4.5 8 8.5l4-4" />
+        </svg>
+      </button>
+    </div>
+  );
+
   const discMenu = <DisclosureMenu />;
 
   return (
     <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>
-      {/* Jump rail, the trace's affordance: an imported session runs to hundreds
-          of turns and scrolling it by hand is not navigation. */}
-      <div className="chat-rail">
-        <button
-          type="button"
-          className="chat-rail-btn"
-          title={t(lang, "trace.toStart")}
-          aria-label={t(lang, "trace.toStart")}
-          onClick={() => {
-            scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
-            pinnedRef.current = false;
-          }}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 3.5h8" />
-            <path d="M4 11.5 8 7.5l4 4" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="chat-rail-btn"
-          title={t(lang, "trace.toEnd")}
-          aria-label={t(lang, "trace.toEnd")}
-          onClick={() => {
-            const el = scrollRef.current;
-            if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-            pinnedRef.current = true;
-          }}
-        >
-          <svg
-            viewBox="0 0 16 16"
-            width="14"
-            height="14"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            aria-hidden="true"
-          >
-            <path d="M4 12.5h8" />
-            <path d="M4 4.5 8 8.5l4-4" />
-          </svg>
-        </button>
-      </div>
       <div
         className="chat-scroll"
         ref={scrollRef}
@@ -660,8 +686,8 @@ export function Chat(props: {
 
       {liveView ? (
         <div className="composer">
+          {jumpRail}
           <div className="composer-column">
-            {toolsRow}
             {/* The waiting line (card 78 #3): queued messages as removable
                 chips — they auto-send, oldest first, when the run ends. */}
             {props.queued !== undefined && props.queued.length > 0 && (
@@ -742,7 +768,7 @@ export function Chat(props: {
                     sent as if somebody had typed it. */}
                 <div className="composer-field">
                   {voice.provisional !== "" && (
-                    <div className="composer-ghost" aria-hidden="true">
+                    <div className="composer-ghost" aria-hidden="true" ref={ghostRef}>
                       <span className="said">{draft}</span>
                       <span className="heard">
                         {draft === "" ? "" : " "}
@@ -754,7 +780,9 @@ export function Chat(props: {
                     ref={textareaRef}
                     rows={1}
                     value={draft}
-                    placeholder={t(lang, "chat.placeholder")}
+                    placeholder={
+                      showsPlaceholder(draft, voice.provisional) ? t(lang, "chat.placeholder") : ""
+                    }
                     aria-label={t(lang, "chat.placeholder")}
                     onChange={(e) => {
                       setDraft(e.target.value);
@@ -817,6 +845,11 @@ export function Chat(props: {
                 {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
                     button, per the owner's placement. */}
                 {discMenu}
+                {/* Export and translation moved down here from above the box:
+                    floating over the first message they read as decoration, and
+                    they belong with every other control that is not the draft
+                    or its seat. */}
+                {toolsRow}
                 <button
                   type="button"
                   className="icon-button attach-button"
@@ -897,14 +930,17 @@ export function Chat(props: {
         </div>
       ) : (
         <div className="composer archive-bar">
-          {/* Same column wrapper as the live branch, so the tools row sits on
-              the reading width and the bar below it keeps the width it had. */}
+          {jumpRail}
+          {/* Same column wrapper as the live branch, so the bar keeps the width
+              it had. The tools sit INSIDE the bar now, next to the disclosure
+              menu — same move as the live branch, so the two screens do not
+              disagree about where export and translation live. */}
           <div className="composer-column">
-            {toolsRow}
             <div className="composer-inner">
               {/* Leftmost, as in the live bar: same control, same end of the
                   row, so the hand goes to the same place on both screens. */}
               {discMenu}
+              {toolsRow}
               <span className="archive-note">{t(lang, "lab.viewingArchive")}</span>
               {props.onResume !== undefined && (
                 <button

@@ -1182,33 +1182,41 @@ public final class SessionConnection {
         }
     }
 
+    /**
+     * A finished exchange becomes a line of the SESSION, not only a frame on the
+     * socket (card 184 leg 3).
+     *
+     * <p>It used to be socket-only, and that cost exactly what socket-only always
+     * costs: reopening a stored session lost the fact that any model call had
+     * happened, and the spectrum's second line per agent could only exist while
+     * somebody was watching. Now it is a {@link RunEvent} like every other, so it
+     * takes the ordinary road — appended to the file first, mirrored to the
+     * socket second, in that order, because a dead socket must never cost the
+     * record.</p>
+     *
+     * <p>Bodies still do not travel: they stay in the sidecar and the gated
+     * endpoint serves them on the gesture that asks.</p>
+     *
+     * @param meta the closed exchange, every field measured by the recorder
+     */
     private synchronized void sendLlmExchange(LlmWireRecorder.ExchangeMeta meta) {
-        if (!socket.isOpen()) {
-            return;
+        RunEvent.LlmExchange event = new RunEvent.LlmExchange(
+                meta.xid(), meta.agentId(), meta.turn(), meta.kind(),
+                meta.provider(), meta.model(), meta.transport(), meta.url(),
+                meta.status(), meta.requestBytes(), meta.responseBytes(),
+                meta.responseLines(), meta.aborted(), meta.fidelity(),
+                meta.durationMs(), meta.ts());
+        // The file first. A session whose socket died mid-run still has to be
+        // able to say what it spent.
+        if (store != null) {
+            try {
+                store.append(event);
+            } catch (RuntimeException unwritable) {
+                // The sidecar still holds the exchange; losing the mirror line is
+                // not worth losing the run.
+            }
         }
-        try {
-            Map<String, Object> payload = new java.util.LinkedHashMap<>();
-            payload.put("type", "llm_exchange");
-            payload.put("xid", meta.xid());
-            payload.put("agentId", meta.agentId());
-            payload.put("turn", meta.turn());
-            payload.put("kind", meta.kind());
-            payload.put("provider", meta.provider());
-            payload.put("model", meta.model());
-            payload.put("transport", meta.transport());
-            payload.put("url", meta.url());
-            payload.put("status", meta.status());
-            payload.put("requestBytes", meta.requestBytes());
-            payload.put("responseBytes", meta.responseBytes());
-            payload.put("responseLines", meta.responseLines());
-            payload.put("aborted", meta.aborted());
-            payload.put("fidelity", meta.fidelity());
-            payload.put("durationMs", meta.durationMs());
-            payload.put("ts", meta.ts());
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
-        } catch (Exception ignored) {
-            // A dead socket just misses the mirror; the sidecar already has it.
-        }
+        send(event);
     }
 
     /** The span names of an OTLP batch, bounded — the over-cap frame's summary. */

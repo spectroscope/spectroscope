@@ -127,12 +127,20 @@ public final class LiveSttSocketHandler extends TextWebSocketHandler {
                 case PARTIAL -> tell("partial", read.text(), null);
                 case FINAL -> {
                     tell("final", read.text(), null);
-                    // The transcript IS the end of this exchange, and closing the
-                    // record here rather than at disconnect is not tidiness: the
-                    // `wire` frame rides the browser socket, and by the time
+                    // The transcript IS the end of this exchange, so the record
+                    // closes here rather than at disconnect — the `wire` frame
+                    // rides the browser socket, and by the time
                     // afterConnectionClosed runs that socket is already gone.
-                    // Measured in a real browser — the frame never arrived.
+                    // Measured twice in a real browser: closed at disconnect the
+                    // frame never arrived, and closed by the BROWSER on `final`
+                    // it arrived at a socket that was already shutting. So the
+                    // server says the last word and then hangs up itself.
                     endRecord();
+                    try {
+                        browser.close(CloseStatus.NORMAL);
+                    } catch (IOException alreadyGone) {
+                        // The page hung up first. Nothing left to end.
+                    }
                 }
                 case ERROR -> {
                     // Kept for the outcome: a session that ends after a refusal

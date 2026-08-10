@@ -209,6 +209,12 @@
   width: 100%;
   height: 40px;
 }
+/* The second line's baseline (card 184 leg 4): fainter than the app protocol's,
+   because it is the quieter of the two stories and must not compete with the
+   marks above it. */
+.spectrum-baseline--wire {
+  opacity: 0.45;
+}
 
 /* The scrub line: a thin guide at the hovered event's x. */
 .spectrum-scrub {

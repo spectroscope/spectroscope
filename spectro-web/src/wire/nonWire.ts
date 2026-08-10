@@ -60,12 +60,16 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   "otlp_export",
   "fleet_roster",
   "fleet_event",
-  // The llm-wire mirror: metadata about one finished LLM exchange (wire/
-  // llmWire.ts). The bodies live in the sidecar next to the session file and
-  // are served on request; the frame is what the running app tells its own
-  // trace, and a session file that carried it would be a line the Java reader
-  // drops as torn.
-  "llm_exchange",
+  // `llm_exchange` USED to be here, and the reason it was is exactly the reason
+  // it no longer is: a session file that carried it would have been a line the
+  // Java reader drops as torn, because the sealed union had no such type. Card
+  // 184 leg 3 gave it one, so the file can hold it and a reopened session can
+  // finally say that a model was called at all. The drift guard next door is
+  // what noticed the moment the two facts disagreed.
+  //
+  // The two below stay socket-only: they are leg 2's live frames, not RunEvents,
+  // and the request half exists precisely to be seen BEFORE there is anything to
+  // record.
   "llm_request",
   "llm_response",
 ]);
