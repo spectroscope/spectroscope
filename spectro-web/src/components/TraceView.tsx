@@ -4,7 +4,17 @@
 // reducer state, so live and replay render through the same path (a replayed
 // archive is all dir "in" by construction).
 
-import { memo, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
+import { traceRowOffset, traceWindow } from "./traceWindow";
 import type { CSSProperties } from "react";
 import type { RunEvent } from "../events";
 import type { TraceEntry, UserAttachment } from "../state/reducer";
@@ -101,6 +111,17 @@ import { LlmExchangeDetail } from "./LlmExchangeDetail";
 /** agent_message summaries clip their text to this width (CLI parity). */
 const AGENT_MESSAGE_PREVIEW_CHARS = 60;
 /** This close to the bottom counts as "pinned" (auto-follow stays on). */
+/** Rows built beyond each edge of the viewport (card 117). Enough that a flick
+ *  of the wheel never reaches an unbuilt row before the next scroll event
+ *  lands, small enough that the build stays a fixed cost. */
+const TRACE_OVERSCAN_ROWS = 12;
+
+/** The window used before anything has been measured — see the note at the
+ *  call site. A tall viewport and a short row deliberately over-build rather
+ *  than risk a visible gap on the first frame. */
+const TRACE_FALLBACK_VIEWPORT_PX = 1200;
+const TRACE_FALLBACK_ROW_PX = 20;
+
 const SCROLL_PIN_THRESHOLD_PX = 80;
 
 /** The chip row's groups, in the order they are shown. Exported because the
@@ -1542,6 +1563,22 @@ export function TraceView(props: {
   const pinnedRef = useRef(false);
   const prevLen = useRef(entries.length);
 
+  // ---- the window (card 117) --------------------------------------------
+  // Only the rows in view are built. The RECORD stays whole — card 116 settled
+  // that a trace must never silently begin in the middle — so the two spacers
+  // below carry the full height of everything not built, and the scrollbar
+  // still measures the entire session.
+  //
+  // Every measurement here comes from the DOM rather than a constant, because a
+  // guessed row height is a scrollbar that drifts. Until they arrive (first
+  // frame, or any environment without layout) the window renders whole, which
+  // is exactly the behaviour that shipped before this card.
+  const headRef = useRef<HTMLDivElement>(null);
+  const [metrics, setMetrics] = useState({ viewportH: 0, rowH: 0, headH: 0, scrollTop: 0 });
+  const [openH, setOpenH] = useState(0);
+  /** A row the stepper wants focused once the window has built it. */
+  const focusPending = useRef<number | null>(null);
+
   const toggleCat = (c: Category): void => toggleTraceCategory(c, CATEGORIES);
 
   // Prepend the synthetic system_context frame once, at the top, when a run has
@@ -1637,6 +1674,51 @@ export function TraceView(props: {
       return searchText(e).toLowerCase().includes(q);
     });
   }, [allEntries, query, llmDir, active, agentFilter, capSeq, otelOn, callIndex]);
+
+  // The window itself. openIndex is looked up in the CURRENT filtered list, so
+  // a filter that hides the open row simply reports -1 and no offset bends.
+  const openIndex = useMemo(
+    () => (openSeq === null ? -1 : visible.findIndex((e) => e.seq === openSeq)),
+    [openSeq, visible],
+  );
+  // The fallbacks matter more than they look. Card 175 keeps this view MOUNTED
+  // but hidden behind `display: none`, so the rows are built while the trace tab
+  // is not showing — and a hidden element has clientHeight 0. Measuring first
+  // and windowing second would therefore leave the one cost this card is about
+  // (building 9,319 rows during the session load) completely unbounded, because
+  // at that moment there is nothing to measure.
+  //
+  // So an unmeasured view gets a plausible window instead of the whole list.
+  // These two numbers are only ever a first guess: the ResizeObserver replaces
+  // both the moment the tab is shown, and every offset is recomputed from the
+  // real ones. Guessing low would show a gap for one frame; guessing high only
+  // costs rows nobody sees, so they lean high.
+  const slice = traceWindow({
+    scrollTop: metrics.scrollTop - metrics.headH,
+    viewportH: metrics.viewportH > 0 ? metrics.viewportH : TRACE_FALLBACK_VIEWPORT_PX,
+    count: visible.length,
+    rowH: metrics.rowH > 0 ? metrics.rowH : TRACE_FALLBACK_ROW_PX,
+    openIndex,
+    openH,
+    overscan: TRACE_OVERSCAN_ROWS,
+  });
+
+  /** Scrolls row {@code index} to the middle without needing it in the DOM. */
+  const centreOn = (index: number): void => {
+    const el = scrollRef.current;
+    if (el === null || metrics.rowH <= 0) return;
+    const y = traceRowOffset(index, metrics.rowH, openIndex, openH) + metrics.headH;
+    const top = Math.max(0, y - el.clientHeight / 2 + metrics.rowH / 2);
+    el.scrollTop = top;
+    // The window is moved HERE rather than left to the scroll event this
+    // assignment will fire. Waiting for the event makes the stepper depend on
+    // the compositor delivering one, and when it does not, the view jumps to a
+    // row the window never builds — the reader lands on a blank band and the
+    // frame they stepped to is nowhere. Measured exactly that way before this
+    // line existed.
+    setMetrics((m) => (m.scrollTop === top ? m : { ...m, scrollTop: top }));
+    pinnedRef.current = false;
+  };
 
   // Timeline lens: waits normalized over the VISIBLE rows (filters change what
   // "the largest gap" means — the bars answer the question for what you see).
@@ -1894,9 +1976,21 @@ export function TraceView(props: {
   // handler sees this move like any other and releases the auto-follow pin.
   useEffect(() => {
     if (currentSeq === null) return;
-    scrollRef.current
-      ?.querySelector<HTMLElement>(`[data-seq="${currentSeq}"]`)
-      ?.scrollIntoView({ block: "center" });
+    const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${currentSeq}"]`);
+    if (row !== null && row !== undefined) {
+      row.scrollIntoView({ block: "center" });
+      return;
+    }
+    // The hit is outside the window (card 117) — walk there by arithmetic. A
+    // search that quietly refused to move for hits beyond the built rows would
+    // be worse than a slow search.
+    const at = visible.findIndex((e) => e.seq === currentSeq);
+    if (at >= 0) centreOn(at);
+    // Deps stay narrow ON PURPOSE. This effect walks to a hit; `visible` and
+    // `centreOn` change on every filter and every scroll, and re-running then
+    // would yank the reader's position around — the exact instability card 117
+    // asks to prevent. It must fire when the hit moves, and only then.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentSeq, searchQuery]);
 
   // Auto-follow: stick to the bottom while pinned (same pattern as the chat);
@@ -1921,17 +2015,89 @@ export function TraceView(props: {
     const pinned = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_PIN_THRESHOLD_PX;
     pinnedRef.current = pinned;
     if (pinned) setFreshCount(0);
+    // The window follows the scroll. Committed straight rather than through a
+    // frame callback: React already batches this, and a deferred scrollTop
+    // shows the reader a blank band for one frame at exactly the moment they
+    // are looking at it.
+    setMetrics((m) => (m.scrollTop === el.scrollTop ? m : { ...m, scrollTop: el.scrollTop }));
   };
 
+  // The three measurements the window runs on. Re-read on resize, because a
+  // pane drag changes the viewport and a font change changes the row.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el === null) return;
+    const read = (): void => {
+      const row = el.querySelector<HTMLElement>('.trace-row:not([aria-expanded="true"])');
+      setMetrics((m) => {
+        const next = {
+          viewportH: el.clientHeight,
+          rowH: row?.offsetHeight ?? m.rowH,
+          headH: headRef.current?.offsetHeight ?? m.headH,
+          scrollTop: el.scrollTop,
+        };
+        return next.viewportH === m.viewportH && next.rowH === m.rowH && next.headH === m.headH
+          ? m
+          : { ...m, ...next };
+      });
+    };
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [entries.length, tlOn, cols.host, cols.model]);
+
+  // A row the stepper asked for while it was outside the window: focus it the
+  // moment the window builds it. Without this the stepper would move the view
+  // and leave the keyboard behind, so the next Space would step from the old
+  // row — the subtle version of the bug, and the harder one to notice.
+  useLayoutEffect(() => {
+    const want = focusPending.current;
+    if (want === null) return;
+    const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${want}"]`);
+    if (row !== null && row !== undefined) {
+      row.focus({ preventScroll: true });
+      focusPending.current = null;
+    }
+  });
+
+  // The expanded row's height, measured after it renders. Nothing below it can
+  // be placed correctly without this, and it is the ONE row whose height is not
+  // known in advance.
+  useLayoutEffect(() => {
+    if (openSeq === null) {
+      setOpenH(0);
+      return;
+    }
+    const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${openSeq}"]`);
+    if (row === null || row === undefined) return;
+    // Observed rather than measured once: an open row's detail can still grow
+    // after it first paints — source lines and tool-call bodies arrive on their
+    // own schedule — and a height read a frame too early would leave every row
+    // below it placed against a number that is no longer true.
+    setOpenH(row.offsetHeight);
+    const ro = new ResizeObserver(() => setOpenH(row.offsetHeight));
+    ro.observe(row);
+    return () => ro.disconnect();
+  }, [openSeq]);
+
+  // Both jumps move the window themselves, for the same reason centreOn does:
+  // a smooth scroll's events are the compositor's to deliver, and the window
+  // must not be the thing that waits on them. Setting the destination up front
+  // simply builds the rows before the scroll arrives at them.
   const jumpToEnd = (): void => {
     const el = scrollRef.current;
-    if (el !== null) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    if (el !== null) {
+      el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      setMetrics((m) => ({ ...m, scrollTop: el.scrollHeight }));
+    }
     pinnedRef.current = true;
     setFreshCount(0);
   };
 
   const jumpToStart = (): void => {
     scrollRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+    setMetrics((m) => (m.scrollTop === 0 ? m : { ...m, scrollTop: 0 }));
     pinnedRef.current = false; // reading from the top — auto-follow stays off
   };
 
@@ -1946,12 +2112,21 @@ export function TraceView(props: {
     if (index < 0 || index >= visible.length) return;
     const target = visible[index];
     setOpenSeq(target.seq);
-    // The row button exists BEFORE the re-render (only the detail expands),
-    // so focus + centring can happen synchronously — no frame callback.
     const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${target.seq}"]`);
-    row?.focus({ preventScroll: true });
-    row?.scrollIntoView({ block: "center" });
+    if (row !== null && row !== undefined) {
+      // Already built: focus and centre synchronously, exactly as before.
+      row.focus({ preventScroll: true });
+      row.scrollIntoView({ block: "center" });
+      return;
+    }
+    // Outside the window. Before card 117 this could not happen, and the
+    // querySelector above WAS the whole implementation — leaving it that way
+    // would have made the stepper silently stop at the edge of the built rows.
+    // So the position is computed, and the focus waits for the row to exist.
+    centreOn(index);
+    focusPending.current = target.seq;
   };
+
   const openNextEntry = (): void => openAt(visible.findIndex((e) => e.seq === openSeq) + 1);
   const openPrevEntry = (): void => {
     const at = visible.findIndex((e) => e.seq === openSeq);
@@ -2253,7 +2428,7 @@ export function TraceView(props: {
             <p className="trace-empty">{t(lang, "trace.empty")}</p>
           ) : (
             <div className={traceTableClass(cols)}>
-              <div className="trace-head" aria-hidden="true">
+              <div className="trace-head" aria-hidden="true" ref={headRef}>
                 <span>#</span>
                 <span>time</span>
                 <span className="trace-col--dt">Δt ms</span>
@@ -2265,7 +2440,11 @@ export function TraceView(props: {
                 <span>type</span>
                 <span>summary</span>
               </div>
-              {visible.map((e, i) => {
+              {slice.padTop > 0 && (
+                <div style={{ height: slice.padTop }} aria-hidden="true" data-trace-pad="top" />
+              )}
+              {visible.slice(slice.start, slice.end).map((e, sliceIdx) => {
+                const i = slice.start + sliceIdx;
                 const pairSeq = lensOn ? pairs.get(e.seq) : undefined;
                 const pairTarget = pairSeq !== undefined ? bySeq.get(pairSeq) : undefined;
                 const ownText = lensOn ? blockTexts.get(e.seq) : undefined;
@@ -2316,6 +2495,9 @@ export function TraceView(props: {
                   />
                 );
               })}
+              {slice.padBottom > 0 && (
+                <div style={{ height: slice.padBottom }} aria-hidden="true" data-trace-pad="bottom" />
+              )}
               {visible.length === 0 && <p className="trace-empty">{t(lang, "trace.noMatch")}</p>}
             </div>
           )}
