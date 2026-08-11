@@ -13,7 +13,9 @@ import java.util.function.BinaryOperator;
  * <p>That distinction is the whole reason supersteps work. A superstep runs the
  * entire frontier, collects each node's partial update, and only then folds them
  * in — so two nodes writing the same reducing channel both survive, while two
- * nodes writing the same last-write-wins channel resolve in frontier order.</p>
+ * nodes writing the same last-write-wins channel REFUSE, the way LangGraph
+ * refuses. A silent frontier-order resolution was divergence D2, and it is
+ * closed.</p>
  *
  * <p>The python edition reads the reducer out of a channel's {@code Annotated}
  * metadata and has to check by hand that it can serve as {@code (a, b) -> c},

@@ -32,9 +32,10 @@ import static dev.spectroscope.core.graph.StateGraph.START;
  * be watched.</p>
  *
  * <p>Frontier order is declaration order throughout, never a hash set's order.
- * It decides how two nodes writing the same last-write-wins channel resolve, so
- * an unordered collection anywhere in the walk would make the same graph give
- * two answers.</p>
+ * It decides the fold order of a reducing channel two siblings write, so an
+ * unordered collection anywhere in the walk would make the same graph give two
+ * answers. (Two siblings writing the same NON-folding channel refuse outright —
+ * divergence D2, closed — so order no longer papers over that collision.)</p>
  *
  * <p>The frontier runs its nodes one after another. The python edition runs them
  * concurrently, and every property above survives either way: what makes a
@@ -262,6 +263,7 @@ public final class CompiledGraph {
                 for (String name : frontier) {
                     results.add(Map.entry(name, watched(name, state, config, runId, step)));
                 }
+                refuseCollidingWrites(results, step);
                 for (Map.Entry<String, StateUpdate> result : results) {
                     state = spec.schema().apply(state, result.getValue());
                 }
@@ -470,6 +472,42 @@ public final class CompiledGraph {
      */
     private static StateUpdate wrapped(StateUpdate update) {
         return update == null ? StateUpdate.none() : update;
+    }
+
+    /**
+     * Two siblings writing one non-folding channel in the same superstep refuse,
+     * the way LangGraph refuses — divergence D2, closed.
+     *
+     * <p>The silent alternative resolved in frontier order: deterministic, but an
+     * answer the caller never chose, and one that survives every smoke test until
+     * a branch is added. Undeclared channels refuse the same way — they carry
+     * last-write-wins semantics, and a collision does not become acceptable
+     * because nobody declared the channel. A single writer per superstep stays as
+     * free as it ever was, so the "node stashes a diagnostic field" case this
+     * schema deliberately tolerates is untouched.</p>
+     *
+     * <p>Checked after every node of the superstep has returned and before any
+     * update is applied, so a refused superstep changes no state at all.</p>
+     */
+    private void refuseCollidingWrites(List<Map.Entry<String, StateUpdate>> results, int superstep) {
+        Map<String, String> writtenBy = new LinkedHashMap<>();
+        for (Map.Entry<String, StateUpdate> result : results) {
+            for (String channel : result.getValue().channels().keySet()) {
+                Channel declared = spec.schema().channel(channel).orElse(null);
+                if (declared != null && declared.folds()) {
+                    continue;
+                }
+                String earlier = writtenBy.putIfAbsent(channel, result.getKey());
+                if (earlier != null) {
+                    throw new InvalidUpdateException("At key '" + channel + "': can receive only "
+                            + "one value per superstep — nodes '" + earlier + "' and '"
+                            + result.getKey() + "' both wrote it in superstep " + superstep
+                            + ". Declare Channel.reducing(\"" + channel + "\", …) or "
+                            + "Channel.appending(\"" + channel + "\") if concurrent writes are "
+                            + "meant to combine.");
+                }
+            }
+        }
     }
 
     /**

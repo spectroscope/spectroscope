@@ -1,13 +1,16 @@
 package dev.spectroscope.core.graph;
 
 /**
- * A node produced something other than a map of channel updates.
+ * An update the merge must refuse: a node produced something other than a map
+ * of channel updates, or two siblings wrote one non-folding channel in the same
+ * superstep.
  *
- * <p>Carries the name and the base of LangGraph's own error for the same
- * mistake, so an application that already catches one keeps working. Only
+ * <p>Carries the name and the base of LangGraph's own error for the same two
+ * mistakes ({@code InvalidUpdateError} covers both there as well), so an
+ * application that already catches one keeps working. The shape mistake is only
  * reachable through {@link StateUpdate#from(Object)} — the typed node interfaces
- * make the mistake unrepresentable everywhere else, which is the whole reason
- * the port is typed.</p>
+ * make it unrepresentable everywhere else; the collision is raised by the
+ * runtime after the superstep's nodes returned and before any update lands.</p>
  */
 public class InvalidUpdateException extends IllegalArgumentException {
 

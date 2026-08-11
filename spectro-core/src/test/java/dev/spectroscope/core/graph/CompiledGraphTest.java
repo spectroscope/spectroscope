@@ -66,13 +66,13 @@ class CompiledGraphTest {
     }
 
     @Test
-    void twoNodesWritingOnePlainChannelResolveInFrontierOrder() throws Exception {
-        GraphState end = fanOut(
+    void twoNodesWritingOnePlainChannelRefuseInsteadOfResolvingSilently() {
+        // The premise this test once carried — "the resolution is reproducible" —
+        // was divergence D2, and it is closed: reproducible was not the same as
+        // chosen. ConcurrentLastWriteTest pins the refusal's whole contract.
+        assertThrows(InvalidUpdateException.class, () -> fanOut(
                 state -> StateUpdate.of("answer", "left"),
-                state -> StateUpdate.of("answer", "right")).compile().invoke(GraphState.empty());
-
-        assertEquals("right", end.get("answer"),
-                "frontier order is declaration order, so the resolution is reproducible");
+                state -> StateUpdate.of("answer", "right")).compile().invoke(GraphState.empty()));
     }
 
     @Test

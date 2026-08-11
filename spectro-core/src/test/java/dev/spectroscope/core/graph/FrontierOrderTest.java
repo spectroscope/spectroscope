@@ -14,18 +14,17 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
  * <p>The walk is documented as: per source, first every static edge, then every
  * branch. Nothing measured that. Swapping the two emissions left the whole suite
  * green, and the order is not cosmetic — the frontier runs in this order, so it
- * decides which of two concurrent writes to a last-write-wins channel survives.
- * An appending channel records the order directly; a plain channel records the
- * consequence.</p>
+ * decides the fold order of a reducing channel the whole frontier writes. An
+ * appending channel records that order directly. (It no longer decides which
+ * concurrent last write survives — that collision refuses since D2 closed, and
+ * ConcurrentLastWriteTest pins the refusal.)</p>
  */
 class FrontierOrderTest {
 
-    private static final StateSchema SCHEMA = StateSchema.of(
-            Channel.appending("trace"),
-            Channel.lastWriteWins("answer"));
+    private static final StateSchema SCHEMA = StateSchema.of(Channel.appending("trace"));
 
     private static Node writing(String mark) {
-        return state -> StateUpdate.of("trace", List.of(mark)).and("answer", mark);
+        return state -> StateUpdate.of("trace", List.of(mark));
     }
 
     @Test
@@ -42,10 +41,8 @@ class FrontierOrderTest {
                 .compile().invoke(GraphState.empty());
 
         assertEquals(List.of("edge", "branch"), end.get("trace"),
-                "the static edge out of a source is walked before that source's branches");
-        assertEquals("branch", end.get("answer"),
-                "frontier order decides the last write, so swapping the two emissions "
-                        + "changes which concurrent write survives");
+                "the static edge out of a source is walked before that source's branches — "
+                        + "the fold order of the appending channel is the observable");
     }
 
     @Test
@@ -70,6 +67,5 @@ class FrontierOrderTest {
         assertEquals(List.of("a-direct", "a-branch", "b-direct", "b-branch"), end.get("trace"),
                 "one source is walked out completely before the next, so a per-kind sweep "
                         + "(every edge, then every branch) is a different frontier");
-        assertEquals("b-branch", end.get("answer"));
     }
 }
