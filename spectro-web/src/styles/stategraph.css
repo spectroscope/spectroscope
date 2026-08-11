@@ -72,6 +72,82 @@
   margin-left: auto;
 }
 
+/* ---------- the empty pane ----------
+   Deliberately plain, and awaiting the owner's call. The agreed template
+   (docs/graph-view-reference/graphview.html) opens with a run already loaded
+   and has no empty screen to carry across, so every rule below is the existing
+   vocabulary — the same tokens and the same rhythm — rather than a look
+   invented here. Anything expressive would be this file's idea of the brand,
+   not the owner's.
+
+   Every size below is a token that EXISTS: the fleet lobby's title reaches for
+   --fs-18, which tokens.css does not define, so that heading has silently been
+   inheriting its size. This file's opening warning, one sheet over. */
+.sg--empty {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.sg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+  padding: var(--sp-6) 22px;
+  text-align: center;
+}
+.sg-empty-h {
+  margin: 0;
+  font-size: var(--fs-20);
+  font-weight: 500;
+  color: var(--text);
+}
+.sg-empty-why {
+  margin: 0;
+  max-width: 52ch;
+  font-size: var(--fs-13);
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+.sg-empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--sp-2);
+}
+.sg-empty-actions button {
+  padding: 7px 14px;
+  font-size: var(--fs-13);
+}
+/* Primary and secondary said the way this surface already says them: the
+   accent on the border and on the word — the pair `.sg button.is-on` uses —
+   with the soft wash arriving on hover. No fill and no shadow, which is the
+   brand rule this whole file rests on. The second button keeps the plain
+   control chrome, which is what makes it read as the quieter one. */
+.sg .sg-empty-load {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: transparent;
+}
+.sg .sg-empty-load:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sg-empty-pair {
+  margin: 0;
+  max-width: 52ch;
+  font-size: var(--fs-11);
+  line-height: 1.55;
+  color: var(--text-faint);
+}
+/* The orphan warning keeps its 2px rule from the footer, so it has to hang off
+   a left edge rather than float in the centred column. */
+.sg-empty .sg-warn {
+  max-width: 52ch;
+  text-align: left;
+  font-size: var(--fs-12);
+}
+
 /* ---------- transport ---------- */
 .sg-transport {
   display: flex;

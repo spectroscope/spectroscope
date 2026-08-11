@@ -2,9 +2,20 @@
 // not a tab inside a session. A session's "graph" tab draws what a run DID; this
 // draws what a StateGraph IS, and the two answer different questions.
 //
-// The pane owns exactly one fact — which pair of artifacts is on screen. Reading
-// them is artifact.ts's job and drawing them is StateGraphView's, so App.tsx
-// mounts this in one line and hands it nothing.
+// The pane decides what a file pick MEANS; App holds which pair of artifacts is
+// on screen. Reading them is artifact.ts's job and drawing them is
+// StateGraphView's.
+//
+// That one fact sits in App and not here because App unmounts this arm the
+// moment `nav` leaves "stategraph": measured 2026-08-11, loading the demo and
+// stepping through sessions and back drew the invitation again, with the
+// artifacts gone. Card 175's other cure — keeping the pane mounted behind
+// `display: none` — would also work, and the view takes no layout measurements
+// that a hidden mount could get wrong. It loses on cost: a whole second
+// surface, its file input and its canvas, in the DOM of every session view, to
+// preserve one nullable field that belongs beside `nav` anyway. What the small
+// fix does NOT carry is the view's own state — orientation, cursor, picked
+// node — which still resets, because only the run was lifted.
 //
 // Nothing loads by itself, and there is no spinner. A StateGraph's topology is
 // fixed at compile(), before a token flows: an empty pane is not a pane waiting
@@ -115,17 +126,22 @@ export function foldViewLoad(
   return foldPick(current, picked);
 }
 
-export function StateGraphPane() {
+export interface StateGraphPaneProps {
+  /** The pair of artifacts on screen, or null while none is loaded. */
+  run: LoadedRun | null;
+  /** Where a pick lands. Called with the folded result, null included. */
+  onRun: (next: LoadedRun | null) => void;
+}
+
+export function StateGraphPane({ run, onRun }: StateGraphPaneProps) {
   const lang = useLang();
-  const [run, setRun] = useState<LoadedRun | null>(null);
   // A pick that changed nothing is the one case a user reads as a broken button:
-  // a lone values file with no drawing to attach it to.
+  // a lone values file with no drawing to attach it to. Local on purpose — it
+  // describes the last gesture, not the run, so losing it on a segment change
+  // is correct.
   const [orphan, setOrphan] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  // Not memoised, and it reads `run` from this render rather than through the
-  // updater form: deciding `orphan` is a second piece of state, and a state
-  // updater that also calls a setter runs twice under StrictMode.
   const openFiles = (files: FileList | null): void => {
     if (files === null || files.length === 0) return;
     const chosen = [...files];
@@ -135,13 +151,16 @@ export function StateGraphPane() {
         chosen.map((f, i) => ({ name: f.name, text: texts[i] })),
       );
       setOrphan(next === null);
-      setRun(next);
+      onRun(next);
     });
   };
 
-  const onViewLoad = useCallback((graphJsonl: string, stateJsonl: string | null, source: string) => {
-    setRun((cur) => foldViewLoad(cur, graphJsonl, stateJsonl, source));
-  }, []);
+  const onViewLoad = useCallback(
+    (graphJsonl: string, stateJsonl: string | null, source: string) => {
+      onRun(foldViewLoad(run, graphJsonl, stateJsonl, source));
+    },
+    [run, onRun],
+  );
 
   const picker = (
     <input
@@ -167,7 +186,7 @@ export function StateGraphPane() {
             <button type="button" className="sg-empty-load" onClick={() => fileRef.current?.click()}>
               {t(lang, K.load)}
             </button>
-            <button type="button" className="sg-empty-demo" onClick={() => setRun(demoRun())}>
+            <button type="button" className="sg-empty-demo" onClick={() => onRun(demoRun())}>
               {t(lang, K.demo)}
             </button>
           </div>

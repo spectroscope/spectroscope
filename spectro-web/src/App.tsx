@@ -92,7 +92,7 @@ import { TraceView } from "./components/TraceView";
 import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
-import { StateGraphPane } from "./stategraph/StateGraphPane";
+import { StateGraphPane, type LoadedRun } from "./stategraph/StateGraphPane";
 import type { PendingAttachment } from "./components/AttachmentPreview";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ParticleField } from "./components/ParticleField";
@@ -211,6 +211,15 @@ export function App() {
    * address.
    */
   const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph">("sessions");
+  /*
+   * The artifacts the state graph is drawing — up here because the arm below
+   * unmounts whenever `nav` moves off "stategraph". They lived in the pane,
+   * and a reader who loaded a run, looked at a session and came back found the
+   * invitation again with the run gone (measured 2026-08-11). A file pick is
+   * expensive to repeat and nothing on disk remembers it, so the fact belongs
+   * beside the segment that decides whether the pane is on screen at all.
+   */
+  const [stateGraphRun, setStateGraphRun] = useState<LoadedRun | null>(null);
   /**
    * How far back and forward this app can go — for the two buttons in the bar.
    *
@@ -1926,10 +1935,10 @@ export function App() {
             fleets, so fleets is what answers. */}
         {/* The state graph is the whole surface while its segment is showing —
             it answers a question no session tab asks, so it takes the area
-            outright rather than sitting inside one run's tab row. It is handed
-            nothing: the pane owns which artifacts are on screen. */}
+            outright rather than sitting inside one run's tab row. The run is
+            handed IN because this arm unmounts on every segment change. */}
         {nav === "stategraph" ? (
-          <StateGraphPane />
+          <StateGraphPane run={stateGraphRun} onRun={setStateGraphRun} />
         ) : nav === "fleets" && enteredFleet === null ? (
           <FleetLobby
             fleetCount={fleets.length}

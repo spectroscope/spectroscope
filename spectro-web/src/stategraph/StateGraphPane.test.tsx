@@ -22,6 +22,10 @@ import { readStateGraphRun } from "./artifact";
 import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 
+/** A sibling source file, read as text — for the checks that are about what the
+ *  tree says rather than what it renders. */
+const read = (p: string): string => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
+
 describe("the bundled demo run is a real artifact, not a stub", () => {
   const demo = demoRun();
 
@@ -154,7 +158,7 @@ describe("what the loaded view's own picker hands back", () => {
 
 describe("the empty pane is honest about having no run", () => {
   const lang = currentLang();
-  const html = renderToStaticMarkup(<StateGraphPane />);
+  const html = renderToStaticMarkup(<StateGraphPane run={null} onRun={() => {}} />);
 
   it("says the drawing exists before the first token", () => {
     expect(html).toContain(t(lang, "sg.claim"));
@@ -182,6 +186,50 @@ describe("the empty pane is honest about having no run", () => {
   });
 });
 
+// Measured in the running app on 2026-08-11: load the demo, press sessions,
+// press state graph — nothing drawn, the invitation again. The run lived in the
+// pane's own useState and App drops the pane out of the tree when `nav` moves
+// off "stategraph", so leaving the segment threw the loaded artifacts away.
+//
+// The fix is the pane owning nothing: it is handed the run and hands changes
+// back. These two tests are the pin — the first says the pane draws what it is
+// given, the second says App is the one holding it.
+describe("a loaded run outlives a trip to another segment", () => {
+  it("draws the run it is handed instead of one it loaded itself", () => {
+    const html = renderToStaticMarkup(<StateGraphPane run={demoRun()} onRun={() => {}} />);
+    expect(html).toContain("sg-canvas");
+    expect(html).toContain(DEMO_SOURCE);
+  });
+
+  it("keeps the fact in App, where unmounting the pane cannot reach it", () => {
+    const app = read("../App.tsx");
+    expect(app).toMatch(/useState<LoadedRun \| null>\(null\)/);
+    expect(app).toMatch(/<StateGraphPane run=\{stateGraphRun\} onRun=\{setStateGraphRun\} \/>/);
+  });
+});
+
+// The empty pane named six classes that appeared nowhere in stategraph.css
+// (grepped 2026-08-11), so it rendered edge-to-edge with a browser-default h2 —
+// invisible to every test in this file, because markup is not style. A class the
+// pane writes and the sheet never mentions is exactly the drift this catches.
+describe("the empty pane's classes reach the stylesheet", () => {
+  const css = read("../styles/stategraph.css");
+
+  for (const cls of [
+    "sg--empty",
+    "sg-empty",
+    "sg-empty-h",
+    "sg-empty-why",
+    "sg-empty-actions",
+    "sg-empty-pair",
+  ]) {
+    // The trailing guard stops `.sg-empty` from being satisfied by `.sg-empty-h`.
+    it(`declares a rule for .${cls}`, () => {
+      expect(css).toMatch(new RegExp(`\\.${cls}(?![\\w-])`));
+    });
+  }
+});
+
 describe("the pane's chrome is reachable by the localisation", () => {
   it("passes only sg.-namespaced keys to t()", () => {
     expect(PANE_KEYS.length).toBeGreaterThan(4);
@@ -204,10 +252,8 @@ describe("the pane's chrome is reachable by the localisation", () => {
 // that arm lives in App.tsx, where nothing in this suite can observe it. Read
 // off disk, the same shape as the drift tests under components/.
 describe("App mounts the pane as a view of its own", () => {
-  const read = (p: string): string => readFileSync(fileURLToPath(new URL(p, import.meta.url)), "utf8");
-
   it("renders it for the stategraph segment", () => {
-    expect(read("../App.tsx")).toMatch(/nav === "stategraph" \? \(\s*<StateGraphPane \/>/);
+    expect(read("../App.tsx")).toMatch(/nav === "stategraph" \? \(\s*<StateGraphPane/);
   });
 
   // `nav` is component state, deliberately not URL vocabulary: the artifacts
