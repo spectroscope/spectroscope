@@ -1,0 +1,13 @@
+{"type":"graph_topology","schema_version":1,"entry":"retrieve","nodes":[{"id":"__start__","label":"__start__"},{"id":"retrieve","label":"retrieve"},{"id":"rerank","label":"rerank"},{"id":"generate","label":"generate"},{"id":"__end__","label":"__end__"}],"edges":[{"from":"__start__","to":"retrieve","kind":"direct"},{"from":"retrieve","to":"rerank","kind":"direct"},{"from":"rerank","to":"generate","kind":"direct"},{"from":"generate","to":"__end__","kind":"direct"}],"branches":[],"ts":1786437733813}
+{"type":"graph_start","runId":"c16fac854ed9","ts":1786437733818}
+{"type":"edge_taken","runId":"c16fac854ed9","from":"__start__","to":"retrieve","superstep":0,"ts":1786437733819}
+{"type":"node_start","runId":"c16fac854ed9","node":"retrieve","superstep":0,"ts":1786437733820}
+{"type":"node_end","runId":"c16fac854ed9","node":"retrieve","superstep":0,"durationMs":0,"updateKeys":["docs","trace"],"updateBytes":455,"ts":1786437733821}
+{"type":"edge_taken","runId":"c16fac854ed9","from":"retrieve","to":"rerank","superstep":1,"ts":1786437733824}
+{"type":"node_start","runId":"c16fac854ed9","node":"rerank","superstep":1,"ts":1786437733824}
+{"type":"node_end","runId":"c16fac854ed9","node":"rerank","superstep":1,"durationMs":0,"updateKeys":["trace"],"updateBytes":57,"ts":1786437733824}
+{"type":"edge_taken","runId":"c16fac854ed9","from":"rerank","to":"generate","superstep":2,"ts":1786437733824}
+{"type":"node_start","runId":"c16fac854ed9","node":"generate","superstep":2,"ts":1786437733824}
+{"type":"node_end","runId":"c16fac854ed9","node":"generate","superstep":2,"durationMs":0,"updateKeys":["answer","citations","confidence","trace"],"updateBytes":238,"ts":1786437733826}
+{"type":"edge_taken","runId":"c16fac854ed9","from":"generate","to":"__end__","superstep":3,"ts":1786437733826}
+{"type":"graph_end","runId":"c16fac854ed9","steps":3,"durationMs":9,"ts":1786437733827}

@@ -1,0 +1,9 @@
+{"type":"state_policy","runId":"8d0a062dfa95","mode":"summary","allowed":["question","query_used","grade_ratio","answer","citations","trace"],"caps":{"answer":16384,"question":4096,"query_used":4096,"trace":8192,"citations":["sample",8,1024],"docs":["sample",3,512],"*":1024},"recordCap":8192,"denied":["principal"],"redaction":"patterns","ts":1786437733831}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"router","superstep":0,"channels":{"query_used":"Who releases a maintenance window?","trace":["router: vector search"]},"ts":1786437733831}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"retrieve","superstep":1,"channels":{"trace":["retrieve: narrow query, mostly noise"]},"ts":1786437733832}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"grade","superstep":2,"channels":{"grade_ratio":0.33,"trace":["grade: 0.33 of the chunks are on topic"]},"ts":1786437733832}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"rewrite","superstep":3,"channels":{"query_used":"maintenance window release signatures board","trace":["rewrite: query widened"]},"ts":1786437733833}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"router","superstep":4,"channels":{"query_used":"Who releases a maintenance window?","trace":["router: vector search"]},"ts":1786437733833}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"retrieve","superstep":5,"channels":{"trace":["retrieve: widened query, handbook sections"]},"ts":1786437733834}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"grade","superstep":6,"channels":{"grade_ratio":0.75,"trace":["grade: 0.75 of the chunks are on topic"]},"ts":1786437733834}
+{"type":"state_payload","runId":"8d0a062dfa95","node":"generate","superstep":7,"channels":{"answer":"Released by the change advisory board, against two signatures: operations owner and responsible engineer.","citations":["ops-handbook §7","ops-handbook §6"],"trace":["generate: answered from 2 citations"]},"ts":1786437733835}

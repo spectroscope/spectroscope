@@ -1,0 +1,9 @@
+{"type":"graph_topology","schema_version":1,"entry":"retrieve","nodes":[{"id":"__start__","label":"__start__"},{"id":"retrieve","label":"retrieve"},{"id":"generate","label":"generate"},{"id":"__end__","label":"__end__"}],"edges":[{"from":"__start__","to":"retrieve","kind":"direct"},{"from":"retrieve","to":"generate","kind":"direct"},{"from":"generate","to":"__end__","kind":"direct"}],"branches":[],"ts":1786437733843}
+{"type":"graph_start","runId":"826aee682af0","ts":1786437733844}
+{"type":"edge_taken","runId":"826aee682af0","from":"__start__","to":"retrieve","superstep":0,"ts":1786437733845}
+{"type":"node_start","runId":"826aee682af0","node":"retrieve","superstep":0,"ts":1786437733845}
+{"type":"node_end","runId":"826aee682af0","node":"retrieve","superstep":0,"durationMs":0,"updateKeys":["docs","trace"],"updateBytes":134,"ts":1786437733845}
+{"type":"edge_taken","runId":"826aee682af0","from":"retrieve","to":"generate","superstep":1,"ts":1786437733845}
+{"type":"node_start","runId":"826aee682af0","node":"generate","superstep":1,"ts":1786437733845}
+{"type":"node_error","runId":"826aee682af0","node":"generate","superstep":1,"durationMs":0,"error":"IllegalStateException","message":"GroundednessError: no retrieved chunk supports an answer","ts":1786437733845}
+{"type":"graph_end","runId":"826aee682af0","steps":1,"durationMs":1,"ts":1786437733846}
