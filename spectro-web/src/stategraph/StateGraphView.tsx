@@ -185,8 +185,10 @@ export function StateGraphView({
   const laid = useMemo(() => layoutStateGraph(run.topology, orientation), [run.topology, orientation]);
 
   // null cursor = the whole run, which is how the view opens: the reader is
-  // looking at a finished record, not watching it arrive.
-  const upto = cursor ?? run.records.length - 1;
+  // looking at a finished record, not watching it arrive. Clamped, because the
+  // sidebar rail can swap the run UNDER the lifted view — a cursor at 27 over
+  // a 14-record scenario must land on the end, not on records[27].
+  const upto = Math.min(cursor ?? run.records.length - 1, run.records.length - 1);
 
   // ---- replay (ported from the template's play/pause/schedule) ----
   // The clock is a DOM-free closure (player.ts); everything it reads goes

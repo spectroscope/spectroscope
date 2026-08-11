@@ -1709,6 +1709,13 @@ export function App() {
           refreshToken={refreshToken}
           onSelectLive={returnToLive}
           onSelectSession={(id) => void openSession(id)}
+          stateGraphSource={stateGraphRun?.source ?? null}
+          onStateGraphScenario={(run) => {
+            // The rail swaps the run UNDER the lifted view: cursor and pick
+            // belong to the OLD file, orientation is a preference and stays.
+            setStateGraphRun(run);
+            setStateGraphView((v) => ({ ...v, cursor: null, picked: null }));
+          }}
           onNewChat={newChat}
           onImport={() => setImportOpen(true)}
           onScenarios={() => setScenariosOpen(true)}
