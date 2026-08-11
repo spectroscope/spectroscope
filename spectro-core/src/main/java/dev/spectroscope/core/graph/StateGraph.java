@@ -315,7 +315,50 @@ public final class StateGraph {
      * @return the compiled graph
      */
     public CompiledGraph compile(Consumer<Map<String, Object>> sink, StatePolicy state) {
-        return new CompiledGraph(toSpec(), sink, state);
+        return new CompiledGraph(toSpec(), sink, state, null);
+    }
+
+    /**
+     * Validates, freezes, and hands the result to the runtime with a memory.
+     *
+     * <p>The checkpointer is what turns a run into a conversation: every
+     * superstep files the state under the caller's {@code thread_id}, and a
+     * second run on the same thread starts from where the first one stopped.
+     * The parameter comes first, matching the python edition's
+     * {@code compile(checkpointer=...)} — memory is the primary decision, the
+     * observers ride along.</p>
+     *
+     * @param checkpointer where each thread's supersteps are filed
+     * @return the compiled graph
+     */
+    public CompiledGraph compile(CheckpointSaver checkpointer) {
+        return new CompiledGraph(toSpec(), null, null, checkpointer);
+    }
+
+    /**
+     * Memory plus lifecycle observation — {@link #compile(CheckpointSaver)} with
+     * the sink of {@link #compile(Consumer)}.
+     *
+     * @param checkpointer where each thread's supersteps are filed
+     * @param sink         any consumer of a record map; {@code null} for none
+     * @return the compiled graph
+     */
+    public CompiledGraph compile(CheckpointSaver checkpointer,
+                                 Consumer<Map<String, Object>> sink) {
+        return new CompiledGraph(toSpec(), sink, null, checkpointer);
+    }
+
+    /**
+     * The full surface: memory, lifecycle observation, and recorded values.
+     *
+     * @param checkpointer where each thread's supersteps are filed
+     * @param sink         any consumer of a record map; {@code null} for none
+     * @param state        what may be recorded of what the nodes write
+     * @return the compiled graph
+     */
+    public CompiledGraph compile(CheckpointSaver checkpointer,
+                                 Consumer<Map<String, Object>> sink, StatePolicy state) {
+        return new CompiledGraph(toSpec(), sink, state, checkpointer);
     }
 
     // -- validation --------------------------------------------------------- //
