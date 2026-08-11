@@ -317,14 +317,19 @@ class OtlpSinkTest {
         sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
 
         assertTrue(done.await(5, TimeUnit.SECONDS));
-        java.util.Map<String, String> parent = parentsOf(posted.get(0));
-        java.util.Map<String, String> id = idsOf(posted.get(0));
+        List<Span> spans = spansOf(posted.get(0));
+        Span kid = spans.stream().filter(s -> s.name().equals("agent · kid")).findFirst().orElseThrow();
+        Span main = spans.stream().filter(s -> s.name().equals("agent · main")).findFirst().orElseThrow();
+        Span turn = spans.stream().filter(s -> s.name().startsWith("turn 1 · main")).findFirst().orElseThrow();
 
-        String mainSpan = id.get("agent · main");
-        String kidParent = parent.get("agent · kid");
-        assertEquals(mainSpan, kidParent,
-                "a spawned agent hangs under its spawner, not beside it: " + parent);
-        assertNotEquals("", mainSpan, "the spawner has a span at all");
+        // The spawner's span is an ANCESTOR, not necessarily the parent: this
+        // spawn happened inside main's open turn, and hanging the subagent one
+        // level higher would make it a sibling of the turn that contains it —
+        // the overlap the no-overlap criterion forbids. So: inside the turn,
+        // and inside main's subtree through it.
+        assertEquals(turn.id(), kid.parent(), "the subagent sits in the turn it was spawned from");
+        assertEquals(main.id(), turn.parent(), "and that turn belongs to the spawner");
+        assertEquals(List.of(), overlappingSiblings(spans), "with no overlapping siblings left");
     }
 
     @Test
@@ -377,6 +382,276 @@ class OtlpSinkTest {
                 .map(java.util.Map.Entry::getValue).findFirst().orElse("");
         assertNotEquals("", turnSpan, "there is a turn span: " + id.keySet());
         assertEquals(turnSpan, toolParent, "the tool sits inside its turn: " + parent);
+    }
+
+    /** One exported span, reduced to what a tree drawing needs. */
+    private record Span(String id, String parent, String name, long start, long end) {}
+
+    /** Every span in the payload, in wire order. */
+    private List<Span> spansOf(String body) throws Exception {
+        JsonNode spans = mapper.readTree(body).path("resourceSpans").get(0)
+                .path("scopeSpans").get(0).path("spans");
+        List<Span> out = new ArrayList<>();
+        spans.forEach(sp -> out.add(new Span(
+                sp.path("spanId").asText(),
+                sp.path("parentSpanId").asText(""),
+                sp.path("name").asText(),
+                Long.parseLong(sp.path("startTimeUnixNano").asText()),
+                Long.parseLong(sp.path("endTimeUnixNano").asText()))));
+        return out;
+    }
+
+    /** How deep the deepest branch runs; the session span alone counts as 1. */
+    private static int depthOf(List<Span> spans) {
+        java.util.Map<String, String> parent = new java.util.HashMap<>();
+        spans.forEach(s -> parent.put(s.id(), s.parent()));
+        int deepest = 0;
+        for (Span s : spans) {
+            int d = 1;
+            String up = s.parent();
+            while (up != null && !up.isEmpty() && parent.containsKey(up)) {
+                d++;
+                up = parent.get(up);
+            }
+            deepest = Math.max(deepest, d);
+        }
+        return deepest;
+    }
+
+    /** Sibling pairs whose time ranges genuinely intersect, as "a | b" labels.
+     *  Touching at an endpoint is not an overlap — a turn ending exactly where
+     *  the next begins is the normal shape, not a defect. */
+    private static List<String> overlappingSiblings(List<Span> spans) {
+        List<String> bad = new ArrayList<>();
+        for (int i = 0; i < spans.size(); i++) {
+            for (int j = i + 1; j < spans.size(); j++) {
+                Span a = spans.get(i);
+                Span b = spans.get(j);
+                if (!a.parent().equals(b.parent()) || a.parent().isEmpty()) {
+                    continue;
+                }
+                if (a.start() < b.end() && b.start() < a.end()) {
+                    bad.add(a.name() + " | " + b.name());
+                }
+            }
+        }
+        return bad;
+    }
+
+    /** The run every shape test folds: main spawns a subagent from inside a
+     *  tool call and waits for it — the shape the stored corpus actually has
+     *  (measured: every one of the 17 spawns in the store sits inside an open
+     *  tool call of its spawner). */
+    private String spawningSession(String sessionId) throws Exception {
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", sessionId, body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"build_plan\",\"input\":{\"task\":\"plan\"},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"agent_spawn\",\"agentId\":\"kid\",\"parentId\":\"main\",\"task\":\"plan it\",\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r2\",\"agentId\":\"kid\",\"parentId\":\"main\",\"prompt\":\"plan it\",\"provider\":\"anthropic\",\"ts\":1201}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"kid\",\"turn\":1,\"ts\":1210}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"kid\",\"callId\":\"c2\",\"name\":\"read_file\",\"input\":{},\"ts\":1220}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"kid\",\"callId\":\"c2\",\"output\":\"ok\",\"isError\":false,\"durationMs\":10,\"ts\":1240}"));
+        sink.onEvent(ev("{\"type\":\"text_delta\",\"agentId\":\"kid\",\"text\":\"done\",\"ts\":1250}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r2\",\"stopReason\":\"end_turn\",\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"plan\",\"isError\":false,\"durationMs\":150,\"ts\":1350}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS), "the post fires after the outer run_end");
+        return posted.get(0);
+    }
+
+    @Test
+    void noSiblingPairOverlapsInASessionThatSpawnedASubagent() throws Exception {
+        // Card 142, acceptance criterion 2. Two spans that share a parent are
+        // drawn side by side, so a pair that overlaps in TIME is a pair the
+        // exporter put in the wrong place: one of them belongs inside the other.
+        List<Span> spans = spansOf(spawningSession("sess-siblings"));
+        assertEquals(List.of(), overlappingSiblings(spans),
+                "siblings must not overlap — an overlap names a child drawn beside its parent");
+    }
+
+    @Test
+    void aSubagentHangsUnderTheToolCallThatSpawnedIt() throws Exception {
+        // The spawn happens INSIDE the spawner's open tool call (build_plan
+        // here) and the tool does not return until the subagent is finished.
+        // Hanging the subagent off the spawner's agent span instead makes it a
+        // sibling of the very tool call that is waiting for it.
+        List<Span> spans = spansOf(spawningSession("sess-under-tool"));
+        Span kid = spans.stream().filter(s -> s.name().equals("agent · kid")).findFirst().orElseThrow();
+        Span tool = spans.stream().filter(s -> s.name().equals("build_plan")).findFirst().orElseThrow();
+        assertEquals(tool.id(), kid.parent(),
+                "the subagent hangs off the tool call that spawned it");
+        assertTrue(kid.start() >= tool.start() && kid.end() <= tool.end(),
+                "and it lives entirely inside that tool call");
+    }
+
+    @Test
+    void aSpawnedSubagentMakesTheTreeDeeperThanOne() throws Exception {
+        // Card 142, acceptance criterion 1: session > agent > turn > tool >
+        // subagent > turn > tool. A flat list would measure 2.
+        List<Span> spans = spansOf(spawningSession("sess-depth"));
+        assertTrue(depthOf(spans) >= 6, "the exported tree is deep, not flat: depth " + depthOf(spans)
+                + " over " + spans.stream().map(Span::name).toList());
+    }
+
+    @Test
+    void anAgentWhoseOnlyParentEvidenceIsRunStartStillHangsUnderItsParent() throws Exception {
+        // Card 142, acceptance criterion 3: the parent must be READ off the
+        // wire, from every field that carries it. `parentId` rides on RunStart
+        // as well as on AgentSpawn, so a record that lost its spawn event (a
+        // truncated or replayed session) must still produce the real shape
+        // instead of quietly falling back to the root.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-runstart", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r2\",\"agentId\":\"kid\",\"parentId\":\"main\",\"prompt\":\"sub\",\"provider\":\"anthropic\",\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"text_delta\",\"agentId\":\"kid\",\"text\":\"x\",\"ts\":1250}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r2\",\"stopReason\":\"end_turn\",\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        Span kid = spans.stream().filter(s -> s.name().equals("agent · kid")).findFirst().orElseThrow();
+        Span session = spans.get(0);   // the session span is written first
+        assertNotEquals(session.id(), kid.parent(),
+                "a run that names its parent must not be exported as a root");
+    }
+
+    @Test
+    void anAgentSpanCoversTheTurnsThatRanInsideIt() throws Exception {
+        // 73 turn spans in the store end AFTER the agent span they hang under.
+        // The cause: an agent's extent is read off the events carrying its id,
+        // and a run_end carries only a RUN id — so the turn a subagent's run_end
+        // closes runs past the subagent itself. (A main-agent run_end is spared
+        // by accident: an event without an agentId is attributed to "main".)
+        // A child drawn outside its parent is the same lie as one drawn beside it.
+        List<Span> spans = spansOf(spawningSession("sess-bounds"));
+        Span agent = spans.stream().filter(s -> s.name().equals("agent · kid")).findFirst().orElseThrow();
+        Span turn = spans.stream().filter(s -> s.name().startsWith("turn 1 · kid")).findFirst().orElseThrow();
+        assertTrue(turn.end() <= agent.end(),
+                "the turn ends inside its agent: turn " + turn.start() + ".." + turn.end()
+                        + " agent " + agent.start() + ".." + agent.end());
+    }
+
+    @Test
+    void aSessionWithoutAMainAgentDoesNotGetOneInvented() throws Exception {
+        // Fallout of the same attribution bug, found by measuring rather than
+        // by reading: 230 of the 286 stored sessions contain no event at all
+        // for an agent called "main", and every one of them still exported an
+        // "agent · main" span — a zero-length node conjured out of the one
+        // event that names no agent, the run_end. 225 of 1564 spans were this
+        // phantom.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-noMain", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"worker-alpha\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"worker-alpha\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"text_delta\",\"agentId\":\"worker-alpha\",\"text\":\"hi\",\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1500}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        assertTrue(spans.stream().noneMatch(s -> s.name().equals("agent · main")),
+                "no agent called main ran, so none is exported: "
+                        + spans.stream().map(Span::name).toList());
+        assertTrue(spans.stream().anyMatch(s -> s.name().equals("agent · worker-alpha")),
+                "the agent that did run is there");
+    }
+
+    @Test
+    void anOldRecordsGateSitsInsideTheToolCallItGuarded() throws Exception {
+        // Measured over the stored corpus after the parenting fix: 109 of the
+        // 260 remaining overlapping sibling pairs are a gate span against the
+        // tool span of THE SAME call. In records written before card 111 the
+        // tool span covers call..result, so it CONTAINS its own gate — and the
+        // two were still exported side by side.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-oldgate", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"write_file\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"permission_request\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"write_file\",\"input\":{},\"ts\":1210}"));
+        sink.onEvent(ev("{\"type\":\"permission_decision\",\"callId\":\"c1\",\"allowed\":true,\"ts\":1260}"));
+        // no gateWaitMs: the historic shape, tool span = call .. result
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":40,\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        Span gate = spans.stream().filter(s -> s.name().startsWith("gate ·")).findFirst().orElseThrow();
+        Span tool = spans.stream().filter(s -> s.name().equals("write_file")).findFirst().orElseThrow();
+        assertEquals(tool.id(), gate.parent(), "the gate belongs to the call it guarded");
+        assertEquals(List.of(), overlappingSiblings(spans));
+    }
+
+    @Test
+    void aCard111GateStaysBesideTheExecutionItPrecedes() throws Exception {
+        // The other half: once the wire carries gateWaitMs the tool span is the
+        // EXECUTION only, so the gate runs before it rather than inside it.
+        // Nesting it there would draw a child entirely outside its parent, so
+        // the two stay siblings — and, being disjoint, do not overlap.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-newgate", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"run_command\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"permission_request\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"run_command\",\"input\":{},\"ts\":1210}"));
+        sink.onEvent(ev("{\"type\":\"permission_decision\",\"callId\":\"c1\",\"allowed\":true,\"ts\":3210}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":100,\"gateWaitMs\":2000,\"ts\":3310}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":3400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        Span gate = spans.stream().filter(s -> s.name().startsWith("gate ·")).findFirst().orElseThrow();
+        Span tool = spans.stream().filter(s -> s.name().equals("run_command")).findFirst().orElseThrow();
+        assertEquals(tool.parent(), gate.parent(), "wait and execution are two phases of one turn");
+        assertEquals(List.of(), overlappingSiblings(spans));
+    }
+
+    @Test
+    void anImageHangsUnderTheToolCallThatProducedIt() throws Exception {
+        // An ImageGenerated names the call it came out of. Exported beside that
+        // call it overlaps it (4 pairs in the store); exported inside it, the
+        // reader sees which invocation produced the picture.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-img", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"draw\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"generate_image\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"image_generated\",\"agentId\":\"main\",\"callId\":\"c1\",\"prompt\":\"a cat\",\"provider\":\"openai\",\"model\":\"m\",\"path\":\"a.png\",\"ts\":1250}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":100,\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        Span img = spans.stream().filter(s -> s.name().startsWith("image ·")).findFirst().orElseThrow();
+        Span tool = spans.stream().filter(s -> s.name().equals("generate_image")).findFirst().orElseThrow();
+        assertEquals(tool.id(), img.parent(), "the image hangs under the call that produced it");
     }
 
     @Test

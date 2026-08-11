@@ -51,11 +51,22 @@ cp -f "spectro-server/build/libs/spectro-server-${VERSION}.jar"                "
 cp -f "spectro-mcp-notes/build/distributions/spectro-mcp-notes-${VERSION}.zip" "$OUT/"
 
 # 3) desktop run kit (host platform; optional)
+DESKTOP_RC=0
 if [ "${SKIP_DESKTOP:-0}" = "1" ]; then
   echo "==> [3/5] desktop run kit SKIPPED (SKIP_DESKTOP=1)"
 else
   echo "==> [3/5] desktop run kit"
-  VERSION="$VERSION" ./scripts/build-desktop-runkit.sh
+  # Its status is CARRIED, not thrown. Under `set -e` a plain call aborts this
+  # script the moment the desktop build exits non-zero — which is the one case
+  # the report below exists for, so the run that most needs an artifact list was
+  # the only run that never printed one. Measured in a temp dir on 2026-08-11:
+  # the desktop step failed, three assets sat in build/release-assets/, the last
+  # line was the desktop script's own error and there was no [4/5] block at all.
+  # That leaves a reader who follows the playbook ("read the collected-assets
+  # block, not the exit code") looking for something that is not there, unable
+  # to tell a failed build from a log the wrapper truncated — the same confusion
+  # that shipped 0.6.1 with no dmg. An `if` condition is exempt from `set -e`.
+  if VERSION="$VERSION" ./scripts/build-desktop-runkit.sh; then :; else DESKTOP_RC=$?; fi
   # Deliberately not fatal on its own: step 4 below is the single place that
   # decides whether this build is a release, and it can name every miss at once
   # instead of dying on the first cp.
@@ -86,9 +97,14 @@ for a in $EXPECTED; do
     MISSING=$((MISSING + 1))
   fi
 done
-if [ "$MISSING" -ne 0 ]; then
-  echo ""
-  echo "!! $MISSING expected asset(s) missing or empty — this is not a release, do not upload."
+echo ""
+# Kept separate from MISSING because the two can disagree: a dmg left by an
+# earlier run in the same tree survives a later build that fails at
+# notarization, so the file list on its own would call that a release.
+[ "$DESKTOP_RC" -eq 0 ] || echo "!! the desktop run kit exited $DESKTOP_RC — see its output above."
+[ "$MISSING" -eq 0 ]    || echo "!! $MISSING expected asset(s) missing or empty."
+if [ "$MISSING" -ne 0 ] || [ "$DESKTOP_RC" -ne 0 ]; then
+  echo "!! this is not a release, do not upload."
   exit 1
 fi
 

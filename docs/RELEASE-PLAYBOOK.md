@@ -171,6 +171,23 @@ code 0)` while the script's own log recorded `1`, and three of four assets were
 sitting in the directory looking like a release. A green from anything that wraps
 a long build is a statement about the wrapper (card 174).
 
+**The block prints even when the desktop build dies**, which is what makes it
+usable as the check. Until 2026-08-11 it did not: `set -e` aborted the script at
+the desktop step, so the run that most needed an artifact list was the only run
+that never produced one, and a reader following the instruction above went
+looking for a block that was not there. Measured that day in a temp dir — the
+desktop step failed, three assets sat in `build/release-assets/`, and the last
+line was the desktop script's own error. If the block is missing, the log itself
+is truncated; that is now the only reading.
+
+`scripts/test-release-scripts.sh` holds this to it. It stages throwaway trees
+under `mktemp` — a directory nothing has ever built in, which is the only place
+this bug class is visible — and checks that a failed desktop build, a desktop
+build that quietly produces no dmg, and a zero-byte jar each still print the
+block and still exit non-zero. It also reads the entitlements plist back out of
+step 0 below and diffs it against DESKTOP-SIGNING.md. Seconds to run; run it
+after touching either script.
+
 **This step needs no file a fresh checkout lacks.** The entitlements plist the
 hardened runtime signs against lives under gitignored `build/`, so it exists in
 no clone and no new worktree; `build-desktop-runkit.sh` writes it in step 0 on

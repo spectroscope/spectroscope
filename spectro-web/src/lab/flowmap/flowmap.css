@@ -343,6 +343,66 @@
   color: var(--text);
 }
 
+/* ---- a launch is not another tool ---------------------------------------
+   The agent runs the seven itself; a launch it hands to a background task and
+   hears back from later, or never (card 146). The belt says so before anything
+   is running: a dashed edge, a fan-out mark, and its own colour when it lights,
+   so a workflow can never be mistaken for the tool call above it. */
+.pf-chip--launch {
+  border-style: dashed;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pf-chip__fan {
+  color: var(--sand);
+  font-size: 12px;
+  line-height: 1;
+}
+.pf-chip--launch.pf-chip--on {
+  background: transparent;
+  border-color: var(--sand);
+  color: var(--text);
+}
+
+/* ---- what the launched script SAYS it is made of ------------------------- */
+.pf-phases {
+  margin-top: 9px;
+  padding-left: 9px;
+  border-left: 2px dashed var(--sand);
+}
+.pf-phases__list {
+  list-style: none;
+  margin: 5px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  counter-reset: pf-phase;
+}
+.pf-phases__item {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  counter-increment: pf-phase;
+}
+.pf-phases__item::before {
+  content: counter(pf-phase) ".";
+  color: var(--text-faint);
+  margin-right: 3px;
+}
+/* The order is the script's, so the separator has to read as "then". */
+.pf-phases__item:not(:last-child)::after {
+  content: "→";
+  color: var(--text-faint);
+  margin-left: 5px;
+}
+.pf-phases__none {
+  margin-top: 5px;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 /* ---- Disclosure (expandable content) ------------------------------------ */
 .pf-disc {
   margin-top: 10px;

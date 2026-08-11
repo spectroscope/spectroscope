@@ -10,6 +10,7 @@ import { ExpandAllContext } from "./expandContext";
 import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
+import { agentBelt, declaredPhases } from "./belt";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { t } from "../../i18n/i18n";
@@ -63,16 +64,9 @@ interface Activity {
   color: string;
 }
 
-/** The tool chips the agent hub shows (the tool belt + the extension actions). */
-const AGENT_TOOL_CHIPS = [
-  "read_file",
-  "write_file",
-  "list_dir",
-  "run_command",
-  "use_skill",
-  "call_mcp",
-  "generate_image",
-];
+/** Why the launch chips look different: hovering one has to say the difference,
+ *  because the difference is the whole reason they are a separate kind. */
+const LAUNCH_TITLE = "a background task — this session holds the launch, not the run";
 
 /** A tiny "generated image" thumbnail (a placeholder, not a real asset) shown
  *  when the agent's active tool is generate_image. */
@@ -214,18 +208,51 @@ export function AgentNode({ data }: NodeProps) {
       </span>
     </div>
   );
+  // The belt, and — while a launch is on it — what that launch's script says it
+  // is made of. The phase list is the script's own header and is labelled as
+  // that: the agents that would run those phases are in other runs with other
+  // streams, so this session can say a workflow STARTED and never that a phase
+  // finished (card 146).
+  const belt = agentBelt(d.activeTool);
+  const launching = belt.some((c) => c.on && c.kind === "launch");
+  const phases = declaredPhases(d.tool);
   const toolsBlock = (
     <>
       <div className="pf-eyebrow" style={{ marginTop: 10 }}>
         Tools
       </div>
       <div className="pf-tools">
-        {AGENT_TOOL_CHIPS.map((tool) => (
-          <span key={tool} className={`pf-chip${d.activeTool === tool ? " pf-chip--on" : ""}`}>
-            {tool}
+        {belt.map((c) => (
+          <span
+            key={c.name}
+            className={`pf-chip pf-chip--${c.kind}${c.on ? " pf-chip--on" : ""}`}
+            title={c.kind === "launch" ? LAUNCH_TITLE : undefined}
+          >
+            {c.kind === "launch" && (
+              <span className="pf-chip__fan" aria-hidden="true">
+                ⇉
+              </span>
+            )}
+            {c.name}
           </span>
         ))}
       </div>
+      {launching && (
+        <div className="pf-phases">
+          <div className="pf-eyebrow">phases · declared, not observed</div>
+          {phases.length > 0 ? (
+            <ol className="pf-phases__list">
+              {phases.map((p, i) => (
+                <li className="pf-phases__item" key={`${p}-${i}`}>
+                  {p}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="pf-phases__none">the script is not in this call</div>
+          )}
+        </div>
+      )}
     </>
   );
   // a generated image has no competing right-column JSON, so in the wide edu

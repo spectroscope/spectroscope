@@ -232,6 +232,13 @@ public final class OtlpSink implements TracingPort {
     /** A built batch + its span count — the mirror wants the number. */
     private record Payload(String body, int spans) {}
 
+    /** A span that names a tool call and therefore cannot be placed until that
+     *  call has been measured: the gate that guarded it, the image it produced.
+     *  {@code fallbackParent} is where it lands when the call's own span turns
+     *  out not to contain it (or never arrives at all). */
+    private record Pending(String spanId, String callId, String fallbackParent, String name,
+                           long start, long end, Map<String, String> attrs) {}
+
     // ---- the fold: the whole session so far -> spans (deterministic ids) ----
 
     private Payload buildPayload(List<RunEvent> events) {
@@ -266,6 +273,8 @@ public final class OtlpSink implements TracingPort {
         Map<String, long[]> agentBounds = new LinkedHashMap<>();
         /** Who spawned whom, straight off the wire. Absent for a genuine root. */
         Map<String, String> spawnedBy = new HashMap<>();
+        /** Which agent opened which run — the only way to attribute a run_end. */
+        Map<String, String> boundsOwner = new HashMap<>();
         for (RunEvent e : events) {
             String aid = agentOf(e);
             long ts = tsOf(e);
@@ -282,12 +291,32 @@ public final class OtlpSink implements TracingPort {
             // agent off the root, so a subagent came out as its spawner's
             // SIBLING — which in a viewer that draws a tree is not a small
             // inaccuracy, it is the wrong shape.
+            //
+            // BOTH carriers are read. AgentSpawn is the one the orchestrator
+            // emits today (measured over the stored corpus: 17 spawns, 17 of
+            // them also named on a RunStart, so today the two agree), but
+            // RunStart.parentId is equally part of the wire and a record that
+            // reaches us without its spawn event — truncated, replayed, or
+            // written by another producer — must still export the real shape
+            // instead of quietly flattening onto the root. First mention wins;
+            // an agent is spawned once.
             if (e instanceof RunEvent.AgentSpawn sp && sp.parentId() != null) {
-                spawnedBy.put(sp.agentId(), sp.parentId());
+                spawnedBy.putIfAbsent(sp.agentId(), sp.parentId());
             }
-            if (aid != null && ts > 0) {
-                agentBounds.computeIfAbsent(aid, k -> new long[]{ts, ts});
-                long[] b = agentBounds.get(aid);
+            if (e instanceof RunEvent.RunStart sub && sub.parentId() != null) {
+                spawnedBy.putIfAbsent(sub.agentId(), sub.parentId());
+            }
+            if (e instanceof RunEvent.RunStart s) {
+                boundsOwner.put(s.runId(), aid);
+            }
+            // A run_end names only the RUN. Attributed by the "main" default it
+            // stretches the main agent instead of the one whose run it closed,
+            // and the closing turn then ends after its own agent span: 73 turn
+            // spans in the store were drawn outside their parent that way.
+            String owner = e instanceof RunEvent.RunEnd end
+                    ? boundsOwner.getOrDefault(end.runId(), aid) : aid;
+            if (owner != null && ts > 0) {
+                long[] b = agentBounds.computeIfAbsent(owner, k -> new long[]{ts, ts});
                 b[0] = Math.min(b[0], ts);
                 b[1] = Math.max(b[1], ts);
             }
@@ -303,41 +332,44 @@ public final class OtlpSink implements TracingPort {
 
         Map<String, String> agentSpan = new HashMap<>();
         for (String aid : agentBounds.keySet()) {
-            String sid = id("agent:" + sessionId + ":" + aid, 8);
-            agentSpan.put(aid, sid);
-            Map<String, String> attrs = new LinkedHashMap<>();
-            attrs.put("langfuse.observation.type", "agent");
-            attrs.put("gen_ai.operation.name", "invoke_agent");
-            attrs.put("langfuse.session.id", sessionId);
-            if (provider.containsKey(aid)) {
-                attrs.put("gen_ai.system", provider.get(aid));
-            }
-            long[] b = agentBounds.get(aid);
-            // Under its spawner when the wire says it had one, under the
-            // session only when it is genuinely a root. `getOrDefault` on the
-            // spawner's own span keeps a spawn whose parent never produced a
-            // span (a truncated record) attached to the session rather than
-            // orphaned — a dangling parentSpanId draws as nothing at all.
-            String parentOfAgent = spawnedBy.containsKey(aid)
-                    ? id("agent:" + sessionId + ":" + spawnedBy.get(aid), 8)
-                    : rootSpan;
-            span(spans, traceId, sid, parentOfAgent, "agent · " + aid, b[0], b[1], attrs, false, null);
+            agentSpan.put(aid, id("agent:" + sessionId + ":" + aid, 8));
         }
+        // Where each spawned agent hangs, filled in by the event walk below at
+        // the moment of the spawn — the agent spans themselves are written
+        // afterwards, because until the walk reaches the spawn nobody knows
+        // which of the spawner's spans was open around it.
+        Map<String, String> agentParent = new HashMap<>();
 
         // turns, tools, gates, images
         Map<String, Integer> turnSeq = new HashMap<>();
         Map<String, Long> turnStart = new HashMap<>();
         Map<String, StringBuilder> turnText = new HashMap<>();
         Map<String, int[]> turnUsage = new HashMap<>();
-        Map<String, Object[]> openTools = new HashMap<>();  // callId -> [aid, name, start, input]
+        // Insertion-ordered: when an agent has more than one call in flight the
+        // INNERMOST one is the most recently opened, and a spawn belongs to it.
+        Map<String, Object[]> openTools = new LinkedHashMap<>();  // callId -> [aid, name, start, input]
         Map<String, Object[]> openGates = new HashMap<>();
         Map<String, String> runOwner = new HashMap<>();
+        // Card 142: a gate and an image name the tool CALL they belong to, but
+        // that call's own span is only measured when its result arrives — later
+        // than both. So they are collected here and placed once the call's span
+        // exists; until then nobody can tell whether the call contains them.
+        Map<String, long[]> toolRange = new HashMap<>();   // callId -> {start, end}
+        List<Pending> pending = new ArrayList<>();
 
         for (RunEvent e : events) {
             String aid = agentOf(e);
             long ts = tsOf(e);
+            if (e instanceof RunEvent.AgentSpawn sp) {
+                agentParent.computeIfAbsent(sp.agentId(), k -> spawnContainer(
+                        agentSpan, turnSeq, turnStart, openTools, spawnedBy.get(k)));
+            }
             if (e instanceof RunEvent.RunStart s) {
                 runOwner.put(s.runId(), aid);
+                if (s.parentId() != null) {
+                    agentParent.computeIfAbsent(aid, k -> spawnContainer(
+                            agentSpan, turnSeq, turnStart, openTools, spawnedBy.get(k)));
+                }
             } else if (e instanceof RunEvent.TurnStart) {
                 closeTurn(spans, traceId, agentSpan, turnSeq, turnStart, turnText, turnUsage,
                         provider, aid, ts);
@@ -371,6 +403,7 @@ public final class OtlpSink implements TracingPort {
                         start = Math.max(start, ts - r.durationMs());
                         attrs.put("spectroscope.gate.wait_ms", String.valueOf(r.gateWaitMs()));
                     }
+                    toolRange.put(r.callId(), new long[]{start, ts});
                     span(spans, traceId, id("tool:" + sessionId + ":" + r.callId(), 8),
                             openTurnSpan(agentSpan, turnSeq, turnStart, (String) open[0]), (String) open[1],
                             start, ts, attrs, r.isError(),
@@ -388,9 +421,10 @@ public final class OtlpSink implements TracingPort {
                     if (!d.allowed()) {
                         attrs.put("langfuse.observation.level", "WARNING");
                     }
-                    span(spans, traceId, id("gate:" + sessionId + ":" + d.callId(), 8),
-                            openTurnSpan(agentSpan, turnSeq, turnStart, (String) open[0]), "gate · " + open[1],
-                            (long) open[2], ts, attrs, false, null);
+                    pending.add(new Pending(id("gate:" + sessionId + ":" + d.callId(), 8),
+                            d.callId(),
+                            openTurnSpan(agentSpan, turnSeq, turnStart, (String) open[0]),
+                            "gate · " + open[1], (long) open[2], ts, attrs));
                 }
             } else if (e instanceof RunEvent.ImageGenerated img) {
                 Map<String, String> attrs = new LinkedHashMap<>();
@@ -398,9 +432,9 @@ public final class OtlpSink implements TracingPort {
                 attrs.put("langfuse.session.id", sessionId);
                 attrs.put("gen_ai.request.model", img.model() == null ? "" : img.model());
                 attrs.put("langfuse.observation.input", cut(img.prompt(), CUT));
-                span(spans, traceId, id("img:" + sessionId + ":" + img.callId(), 8),
-                        openTurnSpan(agentSpan, turnSeq, turnStart, aid), "image · " + img.provider(),
-                        ts, ts, attrs, false, null);
+                pending.add(new Pending(id("img:" + sessionId + ":" + img.callId(), 8),
+                        img.callId(), openTurnSpan(agentSpan, turnSeq, turnStart, aid),
+                        "image · " + img.provider(), ts, ts, attrs));
             } else if (e instanceof RunEvent.RunEnd end) {
                 String owner = runOwner.getOrDefault(end.runId(), "main");
                 closeTurn(spans, traceId, agentSpan, turnSeq, turnStart, turnText, turnUsage,
@@ -410,6 +444,38 @@ public final class OtlpSink implements TracingPort {
         for (String aid : new ArrayList<>(turnStart.keySet())) {
             closeTurn(spans, traceId, agentSpan, turnSeq, turnStart, turnText, turnUsage,
                     provider, aid, t1);
+        }
+
+        for (Pending p : pending) {
+            // Inside the call it names when that call's span still covers it —
+            // an old record's tool span runs call..result and holds its own
+            // gate. Once the wire carries gateWaitMs the tool span is the
+            // EXECUTION alone and the wait sits BEFORE it, so nesting would
+            // draw a child entirely outside its parent; those stay in the turn,
+            // where they are the call's other phase and overlap nothing.
+            long[] call = toolRange.get(p.callId());
+            boolean insideTheCall = call != null && p.start() >= call[0] && p.end() <= call[1];
+            span(spans, traceId, p.spanId(),
+                    insideTheCall ? id("tool:" + sessionId + ":" + p.callId(), 8) : p.fallbackParent(),
+                    p.name(), p.start(), p.end(), p.attrs(), false, null);
+        }
+
+        for (String aid : agentBounds.keySet()) {
+            Map<String, String> attrs = new LinkedHashMap<>();
+            attrs.put("langfuse.observation.type", "agent");
+            attrs.put("gen_ai.operation.name", "invoke_agent");
+            attrs.put("langfuse.session.id", sessionId);
+            if (provider.containsKey(aid)) {
+                attrs.put("gen_ai.system", provider.get(aid));
+            }
+            long[] b = agentBounds.get(aid);
+            // Under whatever of its spawner was open around the spawn, under the
+            // session only when the wire never named a parent. The fallback is
+            // the root rather than nothing: a dangling parentSpanId draws as an
+            // empty tree, so a spawn whose parent left no span still lands
+            // somewhere a reader can find it.
+            span(spans, traceId, agentSpan.get(aid), agentParent.getOrDefault(aid, rootSpan),
+                    "agent · " + aid, b[0], b[1], attrs, false, null);
         }
 
         return new Payload(root.toString(), spans.size());
@@ -443,6 +509,41 @@ public final class OtlpSink implements TracingPort {
         }
         int n = turnSeq.getOrDefault(aid, 0) + 1;
         return id("turn:" + sessionId + ":" + aid + ":" + n, 8);
+    }
+
+    /**
+     * The span a newly spawned agent belongs INSIDE: the innermost thing its
+     * spawner had open at that instant.
+     *
+     * <p>Card 142 asked for the subagent to hang off its spawning agent, and
+     * that alone still draws the wrong picture. Measured over the stored
+     * corpus, every one of the 17 spawns arrives while the spawner has a tool
+     * call open — the tool that requested the work and does not return until
+     * the subagent is done. Hung off the agent, the subagent comes out as a
+     * SIBLING of that waiting tool call and of the turn around it, both of
+     * which contain it in time. So: the open tool call first, the open turn
+     * next, the spawner's own span last.</p>
+     *
+     * @param agentSpan the agent spans by id, for the fallback
+     * @param turnSeq how many turns have CLOSED per agent
+     * @param turnStart which agents currently have a turn open
+     * @param openTools the calls in flight, oldest first
+     * @param parentAid the spawning agent, or null when the wire named none
+     * @return the span id the spawned agent parents to
+     */
+    private String spawnContainer(Map<String, String> agentSpan, Map<String, Integer> turnSeq,
+                                  Map<String, Long> turnStart, Map<String, Object[]> openTools,
+                                  String parentAid) {
+        String innermost = null;
+        for (Map.Entry<String, Object[]> open : openTools.entrySet()) {
+            if (parentAid != null && parentAid.equals(open.getValue()[0])) {
+                innermost = open.getKey();
+            }
+        }
+        if (innermost != null) {
+            return id("tool:" + sessionId + ":" + innermost, 8);
+        }
+        return openTurnSpan(agentSpan, turnSeq, turnStart, parentAid);
     }
 
     private void closeTurn(ArrayNode spans, String traceId, Map<String, String> agentSpan,

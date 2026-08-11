@@ -163,6 +163,12 @@ heredoc's output is byte-identical (md5 `62bedbe76096b50428f2b281e47001e5`) to t
 file this machine had been signing with since 2026-07-22, and `codesign -d
 --entitlements -` reads all three keys back off a binary signed with it.
 
+That is now checked rather than remembered: `scripts/test-release-scripts.sh`
+runs step 0 in a `mktemp` directory that has never been built in, extracts the
+block below out of this file, and diffs the two. Re-measured 2026-08-11 — same
+md5, identical, and `codesign --options runtime --entitlements` accepts the
+written file and reads all three keys back.
+
 The content, which is also what the script writes:
 
 ```xml
