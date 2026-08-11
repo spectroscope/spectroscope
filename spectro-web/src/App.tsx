@@ -93,6 +93,7 @@ import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
 import { StateGraphPane, type LoadedRun } from "./stategraph/StateGraphPane";
+import { initialViewState, rememberOrientation, type StateGraphViewState } from "./stategraph/viewState";
 import type { PendingAttachment } from "./components/AttachmentPreview";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ParticleField } from "./components/ParticleField";
@@ -208,7 +209,9 @@ export function App() {
    * out of a file picker, so a #/stategraph link would reopen an empty pane and
    * lie about it. Adding the word to the route would also drag routeVocabulary,
    * appRouter and the leveling ladder along, for a view that has nothing to
-   * address.
+   * address. For the same reason the run does not survive a RELOAD either: the
+   * browser cannot re-read a picked file without a fresh user gesture, so any
+   * persistence would restore the frame and not the picture.
    */
   const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph">("sessions");
   /*
@@ -220,6 +223,18 @@ export function App() {
    * beside the segment that decides whether the pane is on screen at all.
    */
   const [stateGraphRun, setStateGraphRun] = useState<LoadedRun | null>(null);
+  /*
+   * The pane's view state — orientation, cursor, picked node — lifted the same
+   * way and for the same reason: it lived in the view, so every segment switch
+   * reset it. Only the orientation goes to localStorage (a view preference,
+   * like a theme); cursor and pick are facts about the loaded run, which a
+   * reload cannot restore anyway (see above).
+   */
+  const [stateGraphView, setStateGraphView] = useState<StateGraphViewState>(initialViewState);
+  const changeStateGraphView = useCallback((next: StateGraphViewState): void => {
+    rememberOrientation(next.orientation);
+    setStateGraphView(next);
+  }, []);
   /**
    * How far back and forward this app can go — for the two buttons in the bar.
    *
@@ -1939,7 +1954,12 @@ export function App() {
             outright rather than sitting inside one run's tab row. The run is
             handed IN because this arm unmounts on every segment change. */}
         {nav === "stategraph" ? (
-          <StateGraphPane run={stateGraphRun} onRun={setStateGraphRun} />
+          <StateGraphPane
+            run={stateGraphRun}
+            onRun={setStateGraphRun}
+            view={stateGraphView}
+            onView={changeStateGraphView}
+          />
         ) : nav === "fleets" && enteredFleet === null ? (
           <FleetLobby
             fleetCount={fleets.length}
