@@ -2737,6 +2737,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "sg.clipped": { de: "gekürzt", en: "clipped" },
   "sg.notRecorded": { de: "nicht aufgezeichnet", en: "not recorded" },
+  // The documents strip: the entries a list channel kept, per visit. The count
+  // is the recorder's own truth — kept out of how many there were.
+  "sg.documents": { de: "Dokumente", en: "documents" },
+  "sg.kept": { de: "{n} von {m} behalten", en: "{n} of {m} kept" },
+  "sg.item": { de: "{n} Eintrag", en: "{n} item" },
+  "sg.items": { de: "{n} Einträge", en: "{n} items" },
   "sg.source": { de: "Quelle", en: "source" },
   "sg.nodes": { de: "Knoten", en: "nodes" },
   "sg.edges": { de: "Kanten", en: "edges" },

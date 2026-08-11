@@ -17,7 +17,14 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import { ReactFlow, Background, Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { layoutStateGraph, type Orientation, type PlacedNode } from "./layout";
-import { readStateGraphRun, channelAbsence, type StateGraphRun, type Marker } from "./artifact";
+import {
+  readStateGraphRun,
+  channelAbsence,
+  type Absence,
+  type StateGraphRun,
+  type Marker,
+  type TimelineRecord,
+} from "./artifact";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -80,6 +87,40 @@ function lifecycleAt(run: StateGraphRun, upto: number, id: string): Lifecycle {
     else if (r.type === "node_error") seen = "error";
   }
   return seen;
+}
+
+/** The superstep of the visit the cursor stands in: the picked node's nearest
+ *  lifecycle record at or before `upto` — or its FIRST visit while the cursor
+ *  has not reached the node yet, because a picked node is a question about that
+ *  node and an empty panel would answer a different one. Null only for a node
+ *  the run never entered. */
+function visitSuperstepAt(run: StateGraphRun, upto: number, id: string): number | null {
+  let seen: number | null = null;
+  let first: number | null = null;
+  for (let i = 0; i < run.records.length; i++) {
+    const r = run.records[i];
+    if (r.node !== id || r.superstep === undefined) continue;
+    if (r.type !== "node_start" && r.type !== "node_end" && r.type !== "node_error") continue;
+    if (first === null) first = r.superstep;
+    if (i > upto) break;
+    seen = r.superstep;
+  }
+  return seen ?? first;
+}
+
+/** The current visit's failure, or null — the same fold the reference's
+ *  computeState runs: node_start clears it, node_error sets it. Unlike the
+ *  payload above, this never looks forward: a failure that has not happened
+ *  yet at the cursor is not shown early. */
+function visitErrorAt(run: StateGraphRun, upto: number, id: string): TimelineRecord | null {
+  let err: TimelineRecord | null = null;
+  for (let i = 0; i <= upto && i < run.records.length; i++) {
+    const r = run.records[i];
+    if (r.node !== id) continue;
+    if (r.type === "node_start") err = null;
+    else if (r.type === "node_error") err = r;
+  }
+  return err;
 }
 
 export interface StateGraphViewProps {
@@ -169,9 +210,6 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
       onLoadFile(g, s, graph.name),
     );
   };
-
-  const pickedRun = picked === null ? null : run.nodes.get(picked);
-  const pickedPayload = picked === null ? null : run.payloadFor(picked);
 
   return (
     <div className="sg">
@@ -291,72 +329,12 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
               <p className="sg-note">{t(lang, "sg.branchesWhy")}</p>
             </>
           ) : (
-            <>
-              <h3 className="sg-panel-h">{t(lang, "sg.nodeDetail")}</h3>
-              <p className="sg-panel-name mono">{picked}</p>
-              <dl className="sg-kv mono">
-                {/* "lifecycle", never "state" — a reader who sees "state" expects
-                    values and gets a status chip. Learned the expensive way. */}
-                <dt>{t(lang, "sg.lifecycle")}</dt>
-                <dd>
-                  <span className={`sg-life sg-life--${lifecycleAt(run, upto, picked)}`}>
-                    {t(lang, "sg.st." + lifecycleAt(run, upto, picked))}
-                  </span>
-                </dd>
-                <dt>{t(lang, "sg.rank")}</dt>
-                <dd>{laid.nodes.find((n) => n.id === picked)?.rank ?? "—"}</dd>
-                <dt>{t(lang, "sg.superstep")}</dt>
-                <dd>{pickedRun?.lastSuperstep ?? "—"}</dd>
-                <dt>{t(lang, "sg.duration")}</dt>
-                <dd>{pickedRun?.durationMs != null ? `${pickedRun.durationMs} ms` : "—"}</dd>
-                <dt>{t(lang, "sg.bytes")}</dt>
-                <dd>{pickedRun != null ? `wrote ${pickedRun.updateBytes} B` : "—"}</dd>
-                <dt>{t(lang, "sg.entered")}</dt>
-                <dd>{pickedRun?.entered ?? 0}×</dd>
-              </dl>
-
-              {(pickedRun?.updateKeys.length ?? 0) > 0 && (
-                <>
-                  <h3 className="sg-panel-h">{t(lang, "sg.updateKeys")}</h3>
-                  <div className="sg-chips">
-                    {pickedRun!.updateKeys.map((k) => (
-                      <span key={k} className="sg-chip mono">
-                        {k}
-                      </span>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <h3 className="sg-panel-h">{t(lang, "sg.state")}</h3>
-              {run.policy === null ? (
-                <p className="sg-note">{t(lang, "sg.noState")}</p>
-              ) : (
-                (pickedRun?.updateKeys ?? []).map((ch) => {
-                  const absence = channelAbsence(run.policy!, ch);
-                  const value = pickedPayload?.channels[ch];
-                  return (
-                    <div key={ch} className="sg-channel">
-                      <p className="sg-channel-h mono">
-                        {ch}
-                        {pickedPayload?.truncated.includes(ch) === true && (
-                          <span className="sg-badge">{t(lang, "sg.clipped")}</span>
-                        )}
-                      </p>
-                      {absence.absent ? (
-                        // Absence must be readable, and the reason must be the
-                        // real one: off the allow list is not the same as denied.
-                        <p className="sg-absent mono">
-                          {ch} → {t(lang, "sg.notRecorded")} · {absence.note}
-                        </p>
-                      ) : (
-                        <ChannelValue value={value} />
-                      )}
-                    </div>
-                  );
-                })
-              )}
-            </>
+            <NodeDetail
+              run={run}
+              rank={laid.nodes.find((n) => n.id === picked)?.rank ?? null}
+              upto={upto}
+              picked={picked}
+            />
           )}
         </aside>
       </div>
@@ -388,6 +366,225 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
   );
 }
 
+export interface NodeDetailProps {
+  run: StateGraphRun;
+  /** The picked node's rank in the drawing, or null when the layout lost it. */
+  rank: number | null;
+  /** Index of the record the transport stands on — the panel's clock. */
+  upto: number;
+  /** The picked node's id. */
+  picked: string;
+}
+
+/** The right panel's picked-node detail. Exported on its own because the pick
+ *  and the cursor live in view state a server render cannot reach: the tests
+ *  hand both in as props, the way the pane's own suite renders the empty
+ *  state. */
+export function NodeDetail({ run, rank, upto, picked }: NodeDetailProps) {
+  const lang = useLang();
+  const pickedRun = run.nodes.get(picked);
+  // The owner's ordered picture: the panel shows the picked node AT the step
+  // the transport stands in, not its last visit. payloadFor has carried the
+  // superstep argument since artifact.ts was written; this is the one caller.
+  const visitStep = visitSuperstepAt(run, upto, picked);
+  const pickedPayload = run.payloadFor(picked, visitStep ?? undefined);
+  const failure = visitErrorAt(run, upto, picked);
+  // The strip is scoped by the WRITE truth: every written channel whose
+  // recorded value is a list — plus every written channel the policy dropped,
+  // because a reader of the strip alone must find the absence reason there,
+  // never a silence that reads as "no documents".
+  const strip =
+    run.policy === null
+      ? []
+      : (pickedRun?.updateKeys ?? []).flatMap((ch) => {
+          const absence = channelAbsence(run.policy!, ch);
+          const value: unknown = pickedPayload?.channels[ch];
+          if (absence.absent) return [{ ch, absence, value: undefined as unknown }];
+          if (Array.isArray(value) || isListMarker(value)) return [{ ch, absence, value }];
+          return [];
+        });
+  return (
+    <>
+      <h3 className="sg-panel-h">{t(lang, "sg.nodeDetail")}</h3>
+      <p className="sg-panel-name mono">{picked}</p>
+      <dl className="sg-kv mono">
+        {/* "lifecycle", never "state" — a reader who sees "state" expects
+            values and gets a status chip. Learned the expensive way. */}
+        <dt>{t(lang, "sg.lifecycle")}</dt>
+        <dd>
+          <span className={`sg-life sg-life--${lifecycleAt(run, upto, picked)}`}>
+            {t(lang, "sg.st." + lifecycleAt(run, upto, picked))}
+          </span>
+        </dd>
+        <dt>{t(lang, "sg.rank")}</dt>
+        <dd>{rank ?? "—"}</dd>
+        {/* The visit's superstep, moving with the cursor — lastSuperstep here
+            would let the row contradict the state label two sections down. */}
+        <dt>{t(lang, "sg.superstep")}</dt>
+        <dd>{visitStep ?? "—"}</dd>
+        <dt>{t(lang, "sg.duration")}</dt>
+        <dd>{pickedRun?.durationMs != null ? `${pickedRun.durationMs} ms` : "—"}</dd>
+        <dt>{t(lang, "sg.bytes")}</dt>
+        <dd>{pickedRun != null ? `wrote ${pickedRun.updateBytes} B` : "—"}</dd>
+        <dt>{t(lang, "sg.entered")}</dt>
+        <dd>{pickedRun?.entered ?? 0}×</dd>
+      </dl>
+
+      {(pickedRun?.updateKeys.length ?? 0) > 0 && (
+        <>
+          <h3 className="sg-panel-h">{t(lang, "sg.updateKeys")}</h3>
+          <div className="sg-chips">
+            {pickedRun!.updateKeys.map((k) => (
+              <span key={k} className="sg-chip mono">
+                {k}
+              </span>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* One string, one text node: "state · s5" says WHICH visit's values
+          follow, in the card's own s{superstep} idiom. */}
+      <h3 className="sg-panel-h">
+        {`${t(lang, "sg.state")}${visitStep !== null ? ` · s${visitStep}` : ""}`}
+      </h3>
+      {run.policy === null ? (
+        <p className="sg-note">{t(lang, "sg.noState")}</p>
+      ) : (
+        (pickedRun?.updateKeys ?? []).map((ch) => {
+          const absence = channelAbsence(run.policy!, ch);
+          const value = pickedPayload?.channels[ch];
+          return (
+            <div key={ch} className="sg-channel">
+              <p className="sg-channel-h mono">
+                {ch}
+                {pickedPayload?.truncated.includes(ch) === true && (
+                  <span className="sg-badge">{t(lang, "sg.clipped")}</span>
+                )}
+              </p>
+              {absence.absent ? (
+                // Absence must be readable, and the reason must be the
+                // real one: off the allow list is not the same as denied.
+                <p className="sg-absent mono">
+                  {ch} → {t(lang, "sg.notRecorded")} · {absence.note}
+                </p>
+              ) : (
+                <ChannelValue value={value} />
+              )}
+            </div>
+          );
+        })
+      )}
+
+      {strip.length > 0 && (
+        <>
+          <h3 className="sg-panel-h">{t(lang, "sg.documents")}</h3>
+          {strip.map((s) => (
+            <DocChannel key={s.ch} ch={s.ch} absence={s.absence} value={s.value} />
+          ))}
+        </>
+      )}
+
+      {/* The reference's errbox, in this file's grammar: the colour rides the
+          2px rule, never the word. Rendered only for the CURRENT visit — a
+          failure the cursor has stepped back before is not shown early. */}
+      {failure !== null && (
+        <div className="sg-errbox mono">
+          <b>{failure.errorClass ?? t(lang, "sg.st.error")}</b>
+          {failure.errorMessage}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** One list channel of the documents strip: the kept entries as rows — or the
+ *  channel's absence, which stays an absence and never an empty list. */
+function DocChannel({ ch, absence, value }: { ch: string; absence: Absence; value: unknown }) {
+  const lang = useLang();
+  if (absence.absent) {
+    return (
+      <div className="sg-docs">
+        <p className="sg-channel-h mono">{ch}</p>
+        <p className="sg-absent mono">
+          {ch} → {t(lang, "sg.notRecorded")} · {absence.note}
+        </p>
+      </div>
+    );
+  }
+  const marker = isListMarker(value) ? (value as Marker) : null;
+  const entries: unknown[] = marker !== null ? (marker.items as unknown[]) : (value as unknown[]);
+  // The n-of-m truth comes out of the MARKER's own fields, never the row
+  // count: eight were there, three were kept, and the strip says so.
+  const kept = marker !== null && typeof marker.sampled === "number" ? marker.sampled : entries.length;
+  const len = marker !== null && typeof marker.len === "number" ? marker.len : entries.length;
+  return (
+    <div className="sg-docs">
+      <p className="sg-channel-h mono">
+        {ch}
+        {marker !== null ? (
+          <span className="sg-badge">
+            {t(lang, "sg.kept", { n: kept, m: len })}
+            {typeof marker.bytes === "number" && ` · ${marker.bytes} B`}
+          </span>
+        ) : (
+          <span className="sg-docs-count mono">
+            {t(lang, entries.length === 1 ? "sg.item" : "sg.items", { n: entries.length })}
+          </span>
+        )}
+      </p>
+      {entries.map((e, i) => (
+        <div key={i} className="sg-doc">
+          <span className="sg-doc-i mono">[{i}]</span>
+          <DocEntry value={e} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** One entry — a document. A string is its own text, a marker entry stays a
+ *  marker line, an object shows the reference's preview: the first key out of
+ *  PREVIEW_KEYS that carries text, a clipped text field lending its head. */
+function DocEntry({ value }: { value: unknown }) {
+  const m = markerOf(value);
+  if (m !== null) return <MarkerLine m={m} />;
+  if (typeof value === "string") return <p className="sg-doc-text">{value}</p>;
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    return <p className="sg-doc-text">{previewOf(value as Record<string, unknown>)}</p>;
+  }
+  return <p className="sg-doc-text mono">{JSON.stringify(value)}</p>;
+}
+
+const PREVIEW_KEYS = ["title", "name", "label", "question", "text", "snippet", "id", "chunk_id", "url"];
+
+function previewOf(item: Record<string, unknown>): string {
+  for (const k of PREVIEW_KEYS) {
+    const v = item[k];
+    if (typeof v === "string" && v !== "") return v.slice(0, 90);
+    const m = markerOf(v);
+    if (m?.kind === "str") return String(m.head ?? "").slice(0, 90);
+  }
+  const first = Object.keys(item)[0];
+  return first === undefined ? "{}" : `${first}: ${String(item[first])}`.slice(0, 90);
+}
+
+/** The reference's rule: a marker is recognised by its companion fields, never
+ *  by `kind` alone — a caller may legitimately name a document field `kind`,
+ *  and mistaking one would print a truncation that never happened. */
+function markerOf(v: unknown): Marker | null {
+  if (typeof v !== "object" || v === null || Array.isArray(v)) return null;
+  const m = v as Marker;
+  if (m.kind === "str" && typeof m.head === "string") return m;
+  if (m.kind === "list" && Array.isArray(m.items)) return m;
+  if (m.kind === "redacted" && typeof m.rule === "string") return m;
+  if (m.kind === "channel" && m.omitted === "recordCap") return m;
+  if (m.kind === "unserializable") return m;
+  return null;
+}
+
+const isListMarker = (v: unknown): boolean => markerOf(v)?.kind === "list";
+
 /** One channel's recorded value — a real value, or a marker that says which
  *  ceiling fired. A marker is NEVER rendered as if it were the value. */
 function ChannelValue({ value }: { value: unknown }) {
@@ -405,14 +602,20 @@ function ChannelValue({ value }: { value: unknown }) {
     );
   }
   if (typeof value === "object" && value !== null && "kind" in value) {
-    const m = value as Marker;
-    return (
-      <p className="sg-marker mono">
-        {t(lang, "sg.marker." + m.kind)} · {String(m.bytes ?? "?")} B
-        {m.omitted !== undefined && ` · ${t(lang, "sg.omitted." + m.omitted)}`}
-      </p>
-    );
+    return <MarkerLine m={value as Marker} />;
   }
   if (value === undefined) return <p className="sg-absent mono">{t(lang, "sg.notRecorded")}</p>;
   return <p className="sg-value mono">{JSON.stringify(value)}</p>;
+}
+
+/** The marker's one-line statement: which ceiling fired, the TRUE size, why.
+ *  Shared between a channel's value and a strip entry — one line, one place. */
+function MarkerLine({ m }: { m: Marker }) {
+  const lang = useLang();
+  return (
+    <p className="sg-marker mono">
+      {t(lang, "sg.marker." + m.kind)} · {String(m.bytes ?? "?")} B
+      {m.omitted !== undefined && ` · ${t(lang, "sg.omitted." + m.omitted)}`}
+    </p>
+  );
 }
