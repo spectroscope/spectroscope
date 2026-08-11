@@ -19,11 +19,16 @@ import java.util.function.Consumer;
  * light it up as the run moves through it. Everything here serves that one
  * property, which is also why validation lives here and is loud.</p>
  *
- * <p>Thirteen refusals in all. Four fire eagerly at {@link #addNode}, two at
- * {@link #addEdge}, two at {@link #addConditionalEdges} — none of those can be
- * repaired by a later call, and an error at the offending line beats one at the
- * bottom of a builder function. The remaining five wait for {@link #toSpec()},
- * because an edge is routinely declared before the node it points at.</p>
+ * <p>Seventeen refusal sites, counted 2026-08-11 with
+ * {@code grep -c "throw new GraphValidationException" StateGraph.java} rather
+ * than from memory — an earlier version of this paragraph said fifteen, was
+ * "corrected" to thirteen by re-reading the prose, and both were wrong.
+ * Eleven fire EAGERLY: five at {@link #addNode}, two at {@link #addEdge}, two at
+ * {@link #addConditionalEdges}, and one each in the two helpers those methods
+ * call. None can be repaired by a later call, and an error at the offending line
+ * beats one at the bottom of a builder function. The remaining six wait for
+ * {@link #toSpec()}, because an edge is routinely declared before the node it
+ * points at.</p>
  *
  * <p>Every method returns {@code this}. Callers chain, and a drop-in that breaks
  * a chained call is not a drop-in.</p>
