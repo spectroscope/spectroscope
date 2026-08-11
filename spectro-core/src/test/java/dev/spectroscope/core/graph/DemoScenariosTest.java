@@ -207,9 +207,13 @@ class DemoScenariosTest {
                 null, Map.of("question",
                         "How does a maintenance window get released, and who signs it?"));
 
+        // crag records its DOCUMENTS: the narrow first retrieval (3 chunks,
+        // plain) and the widened second one (4 chunks, sampled 3-of-4) put both
+        // strip shapes on screen — a demo that hid the corpus would teach the
+        // reference fixture's absence lesson twice and its own not at all.
         write(directory.resolve("crag.jsonl"), crag(),
-                StatePolicy.summary().withAllowed(List.of("question", "query_used",
-                        "grade_ratio", "answer", "citations", "trace")),
+                StatePolicy.sample().withAllowed(List.of("question", "query_used",
+                        "grade_ratio", "answer", "citations", "trace", "docs")),
                 null, Map.of("question", "Who releases a maintenance window?"));
 
         // react-tools: TWO turns on ONE thread — the checkpointer's memory is
@@ -235,7 +239,10 @@ class DemoScenariosTest {
              StateArtifact values = new StateArtifact(failing)) {
             CompiledGraph graph = failingRun().compile(null,
                     new MultiSink(lifecycle, values),
-                    StatePolicy.summary().withAllowed(List.of("question", "trace")));
+                    // docs on the allow list on purpose: the two off-topic
+                    // chunks ARE the story — the reader sees what grounded
+                    // nothing before generate refuses.
+                    StatePolicy.summary().withAllowed(List.of("question", "docs", "trace")));
             assertThrows(IllegalStateException.class,
                     () -> graph.invoke(GraphState.of(Map.of("question",
                             "What does the cafeteria serve on friday?")), RunConfig.defaults()));

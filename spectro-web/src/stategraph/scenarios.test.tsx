@@ -47,6 +47,21 @@ describe("the scenario shelf", () => {
     expect(rag.stateJsonl).toContain('"sampled":3');
   });
 
+  it("the demos SHOW documents — an empty strip would teach the wrong lesson", () => {
+    // The reference fixture keeps demonstrating honest absence (docs off the
+    // allow list, byte-pinned). The generated demos are the opposite lesson:
+    // the strip with real contents, including a sampled kept-of-N marker.
+    const bySource = new Map(SCENARIOS.map((s) => [s.source, s.run()]));
+    const crag = bySource.get("crag.graph.jsonl")!.stateJsonl!;
+    expect(crag).toContain('"docs"');
+    expect(crag).toContain("ops-handbook");
+    expect(crag).toContain('"sampled":3');
+
+    const failing = bySource.get("failing-run.graph.jsonl")!.stateJsonl!;
+    expect(failing).toContain('"docs"');
+    expect(failing).toContain("cafeteria");
+  });
+
   it("the empty state offers every scenario as its own button", () => {
     const html = renderToStaticMarkup(
       <StateGraphPane run={null} onRun={() => {}} view={DEFAULT_VIEW} onView={() => {}} />,
