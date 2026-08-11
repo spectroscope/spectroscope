@@ -53,9 +53,9 @@ export function Sidebar(props: {
    *  it was a private useState, pressing `fleets` re-rendered the sidebar's own
    *  list and NOTHING else — App was never told, so the whole right-hand side
    *  stood still until something was loaded. */
-  nav: "sessions" | "fleets";
+  nav: "sessions" | "fleets" | "stategraph";
   /** Switch segment. App owns the state so the surface can answer the press. */
-  onNav: (next: "sessions" | "fleets") => void;
+  onNav: (next: "sessions" | "fleets" | "stategraph") => void;
   /** Fold the sidebar away. Offered here as well as in the header because the
    *  header's own control is the first thing a narrow window takes away. */
   onCollapse?: () => void;
@@ -250,6 +250,18 @@ export function Sidebar(props: {
               {t(lang, "nav.fleets")}
               {fleets.length > 0 && <span className="sidebar-seg-badge tabular">{fleets.length}</span>}
             </button>
+            {/* Not gated on the fleet lock: the state graph reads two files off
+                the disk and starts no process, so there is nothing here for a
+                level to protect the reader from. */}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={nav === "stategraph"}
+              className={`sidebar-seg-btn${nav === "stategraph" ? " active" : ""}`}
+              onClick={() => props.onNav("stategraph")}
+            >
+              {t(lang, "nav.stategraph")}
+            </button>
           </div>
           {nav === "sessions" && (
             <button
@@ -382,6 +394,12 @@ export function Sidebar(props: {
             ))}
           </nav>
         </>
+      ) : nav === "stategraph" ? (
+        /* No rail of its own, because there is nothing on the server to list:
+           a state graph arrives as two files through the pane's own picker.
+           Saying that beats leaving the reader in front of an empty list and
+           letting him wonder whether it failed to load. */
+        <p className="sidebar-note">{t(lang, "nav.stategraphNote")}</p>
       ) : (
         <>
           <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>

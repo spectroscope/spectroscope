@@ -1,0 +1,526 @@
+/* ============================================================ state graph
+   The state-graph view (StateGraphView.tsx), carried across from the agreed
+   template docs/graph-view-reference/graphview.html: header, transport with the
+   timeline band, canvas, right panel, footer.
+
+   Every colour here is a token out of tokens.css and nothing else. bus.css once
+   named --line/--fg/--fg-dim, tokens that do not exist, so every border it
+   declared resolved to nothing and nobody saw it for months. If a value below
+   needs a role name, it points at a real token instead of minting one.
+
+   The brand rules the template honours and this file keeps: colour ONLY on
+   lines (edges, ticks, the 2px rule left of a chip), no shadows — depth is a
+   surface step plus a hairline — and both designs are first class, which comes
+   for free as long as nothing here hard-codes a hex. */
+
+.sg {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* Controls: scoped to .sg so this wins over base.css without !important. */
+.sg button {
+  font: inherit;
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color var(--t-fast),
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.sg button:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--surface-2);
+}
+.sg button.is-on {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* ---------- header ---------- */
+.sg-head {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  flex-wrap: wrap;
+  padding: 14px 22px 12px;
+  border-bottom: 1px solid var(--border);
+}
+.sg-claim {
+  margin: 0;
+  flex: 1 1 320px;
+  min-width: 240px;
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.sg-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-left: auto;
+}
+
+/* ---------- transport ---------- */
+.sg-transport {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: 10px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.sg-transport button {
+  min-width: 34px;
+  padding: 5px 9px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+}
+
+/* The band: one thin line per record, coloured by record type. It IS the
+   scrubber — a reader clicks the red tick to land on the moment a node raised,
+   so the ticks stay clickable and never shrink below a pointer-sized target. */
+.sg-band {
+  flex: 1 1 240px;
+  min-width: 0;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+  height: 40px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* Two elements per record on purpose: the BUTTON is a pointer-sized slot so a
+   nine-record run is still clickable, and its ::before is the 3px line the
+   reader actually sees. Painting the button itself would turn a short run into
+   a row of coloured slabs and lose the band's one job — being a spectrum.
+   `.sg button.sg-tick` and not `.sg-tick`: the control rule above is (0,1,1)
+   and would otherwise win, dressing every tick in button chrome. */
+.sg button.sg-tick {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.sg button.sg-tick:hover {
+  background: var(--surface-2);
+}
+.sg-tick::before {
+  content: "";
+  position: absolute;
+  inset: 6px auto 6px 50%;
+  width: 3px;
+  transform: translateX(-50%);
+  border-radius: 1px;
+  background: var(--border-strong);
+  opacity: 0.3;
+}
+/* Everything up to the cursor has happened; what follows has not. */
+.sg-tick.is-past::before {
+  opacity: 1;
+}
+/* The cursor grows its own line to full height and gets an accent underline
+   beneath the slot. It never repaints the tick: an accent fill would swallow
+   the record-type colour, which is the one thing the band is for. */
+.sg-tick.is-at::before {
+  inset-block: 0;
+}
+.sg-tick.is-at::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0;
+  border-bottom: 2px solid var(--accent);
+}
+.sg-tick--node_start::before {
+  background: var(--accent);
+}
+.sg-tick--node_end::before {
+  background: var(--ok);
+}
+.sg-tick--node_error::before {
+  background: var(--error);
+}
+.sg-tick--edge_taken::before {
+  background: var(--sp-ocean);
+}
+/* The frame records are structure, not work — they wear the quiet lifecycle
+   tone so a band of 400 records still reads as node activity. */
+.sg-tick--graph_start::before,
+.sg-tick--graph_end::before {
+  background: var(--ev-lifecycle);
+}
+
+.sg-count,
+.sg-state {
+  font-size: var(--fs-11);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.sg-state {
+  color: var(--text-faint);
+}
+
+/* ---------- stage ---------- */
+.sg-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 306px;
+  min-height: 0;
+}
+.sg-canvas {
+  position: relative;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+
+  /* @xyflow's own API — its variables, our values. */
+  --xy-background-pattern-color: var(--border);
+  --xy-edge-stroke: var(--border-strong);
+  --xy-node-border-radius: var(--radius-card);
+}
+.sg-canvas .react-flow {
+  background: var(--bg);
+}
+
+/* The node card. The width matches NW/NH in layout.ts, so the boxes the router
+   avoided are the boxes the reader sees; a card that grows past the layout's
+   idea of it puts arcs through text. */
+.sg-card {
+  box-sizing: border-box;
+  width: 132px;
+  min-height: 46px;
+  padding: 5px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-card);
+  cursor: pointer;
+  transition:
+    border-color var(--t-fast),
+    background var(--t-fast);
+}
+.sg-card:hover {
+  border-color: var(--text-dim);
+}
+/* Four states, and they must stay visibly four: a node that was never reached
+   is a different fact from one that ran and wrote nothing. */
+.sg-card--pending {
+  border-color: var(--border-strong);
+  background: var(--bg);
+}
+.sg-card--active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sg-card--done {
+  border-color: var(--ok);
+}
+.sg-card--error {
+  border-color: var(--error);
+}
+/* Outline, not a thicker border: a border change would resize the card and
+   walk it out from under the routed edges. */
+.sg-card.is-selected {
+  outline: 1px solid var(--accent);
+  outline-offset: 2px;
+}
+.sg-card-name {
+  font-size: var(--fs-12);
+  line-height: 1.3;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.sg-card-times {
+  margin-left: 5px;
+  font-size: var(--fs-11);
+  color: var(--accent);
+}
+.sg-card-meta {
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.sg-card-step {
+  color: var(--text-faint);
+}
+.sg-card-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+.sg-card-chips .sg-chip {
+  font-size: 9.5px;
+  padding: 0 4px;
+}
+/* Anchors only. React Flow needs a handle to attach an edge to; drawing one
+   would put a dot on a picture whose lines are the whole message. */
+.sg-handle {
+  width: 1px;
+  min-width: 1px;
+  height: 1px;
+  min-height: 1px;
+  border: 0;
+  background: transparent;
+  opacity: 0;
+}
+
+/* ---------- edges ----------
+   Order matters below: the state classes come after the shape classes, because
+   a conditional edge that WAS walked must read as walked (solid, green) and not
+   fall back to the dashed "might happen" pattern. */
+.sg-edge .react-flow__edge-path {
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+  opacity: 0.6;
+}
+.sg-edge--cond .react-flow__edge-path {
+  stroke-dasharray: 5 4;
+}
+/* The path NOT taken stays on the canvas and steps back — it is never removed.
+   Removing it would turn this view into a trace, which is the one thing it is
+   not. */
+.sg-edge.is-untaken .react-flow__edge-path {
+  opacity: 0.34;
+  stroke-dasharray: 4 4;
+}
+.sg-edge.is-walked .react-flow__edge-path {
+  stroke: var(--ok);
+  stroke-width: 2;
+  stroke-dasharray: none;
+  opacity: 0.95;
+}
+/* A returning edge keeps its direction and its own colour, walked or not: the
+   loop is the most interesting thing on the canvas, and dagre's habit of
+   reversing it tells the reader the opposite of what happened. */
+.sg-edge--back .react-flow__edge-path {
+  stroke: var(--sp-violet);
+}
+
+/* The lane overlay: loops bow below the node field, rank-skipping edges above.
+   Purely decorative here (aria-hidden), so it never eats a click. */
+.sg-arcs {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+.sg-arc {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 1.25;
+  opacity: 0.4;
+}
+.sg-arc--back {
+  stroke: var(--sp-violet);
+}
+.sg-arc--skip {
+  stroke-dasharray: 5 4;
+}
+
+/* ---------- right panel ---------- */
+.sg-panel {
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+  padding: 14px 16px 18px;
+  min-width: 0;
+}
+.sg-panel-h {
+  margin: 16px 0 8px;
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: lowercase;
+  letter-spacing: 0.2em;
+  color: var(--text-faint);
+}
+.sg-panel-h:first-child {
+  margin-top: 0;
+}
+.sg-panel-name {
+  margin: 0;
+  font-size: var(--fs-16);
+  color: var(--text);
+  word-break: break-all;
+}
+.sg-kv {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 10px 0 0;
+  font-size: var(--fs-12);
+}
+.sg-kv dt {
+  color: var(--text-faint);
+  font-family: var(--font-ui);
+}
+.sg-kv dd {
+  margin: 0;
+  min-width: 0;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* The lifecycle wears its colour on a 2px rule, never on the word: a coloured
+   status word breaks the one brand rule this whole surface rests on. */
+.sg-life {
+  display: inline-block;
+  padding-left: 7px;
+  border-left: 2px solid var(--border-strong);
+}
+.sg-life--active {
+  border-left-color: var(--accent);
+}
+.sg-life--done {
+  border-left-color: var(--ok);
+}
+.sg-life--error {
+  border-left-color: var(--error);
+}
+.sg-life--pending {
+  border-left-color: var(--border-strong);
+  color: var(--text-faint);
+}
+.sg-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+.sg-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.sg-chip {
+  font-size: var(--fs-11);
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+/* ---------- recorded values ----------
+   Two rules shape all of it: a clipped value must LOOK clipped, and a value
+   that was never recorded must not look like a value that was empty. */
+.sg-channel {
+  padding: 8px 0;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.sg-channel-h {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0 0 4px;
+  font-size: 11.5px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.sg-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  border-left: 2px solid var(--warn);
+  border-radius: 0 var(--radius-chip) var(--radius-chip) 0;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+/* A 4 KB document squeezed into a 306px column is technically shown and
+   practically unreadable, so a long value scrolls in its own well. */
+.sg-value {
+  margin: 0;
+  max-height: 208px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 1px 0 1px 8px;
+  border-left: 1px solid var(--border);
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sg-list {
+  margin: 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text-faint);
+}
+.sg-list .sg-value {
+  max-height: 92px;
+}
+/* A marker is a statement about the value, never the value: it keeps the warn
+   rule so it can never be read as the whole thing in a shorter form. */
+.sg-marker {
+  margin: 0;
+  padding: 4px 0 4px 8px;
+  border-left: 2px solid var(--warn);
+  font-size: 10.5px;
+  color: var(--text-dim);
+}
+.sg-absent {
+  margin: 0;
+  padding: 4px 0 4px 8px;
+  border-left: 2px solid var(--border-strong);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+/* ---------- footer ---------- */
+.sg-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  padding: 8px 22px;
+  border-top: 1px solid var(--border);
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+.sg-warn {
+  padding-left: 7px;
+  border-left: 2px solid var(--warn);
+  color: var(--text-dim);
+}
+.sg-offline {
+  margin-left: auto;
+}
+
+@media (max-width: 900px) {
+  .sg-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .sg-panel {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+    max-height: 40vh;
+  }
+  .sg-transport {
+    flex-wrap: wrap;
+  }
+}

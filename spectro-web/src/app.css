@@ -25,6 +25,7 @@
 @import "./styles/work.css"; /* Chat v2 (branch chat-v2): the work panel + its chip */
 @import "./styles/about.css"; /* About: the licence notice panel + its footer entry */
 @import "./styles/audio-clip.css"; /* Trace: the audio face of an stt exchange (card 184/187) */
+@import "./styles/stategraph.css";
 
 /* Back and forward in the tab bar (card 179). The desktop shell draws no URL
    bar, so these are the only way back there. Same weight as a tab, set apart by

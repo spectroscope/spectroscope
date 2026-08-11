@@ -28,7 +28,13 @@ describe("the fleets segment reaches App", () => {
   });
 
   it("owns the segment in App and hands it down", () => {
-    expect(app).toMatch(/const \[nav, setNav\] = useState<"sessions" \| "fleets">\("sessions"\)/);
+    // The union widened to a third segment when the state graph became a view
+    // of its own. Card 179's claim was never "there are exactly two segments" —
+    // it was "App owns which one is showing, so the surface can answer the
+    // press". A CLOSED union measured the spelling instead, and it would go red
+    // again for every segment after this one, so it names what it is about.
+    expect(app).toMatch(/const \[nav, setNav\] = useState<[^>]*"sessions"[^>]*>\("sessions"\)/);
+    expect(app).toMatch(/const \[nav, setNav\] = useState<[^>]*"fleets"[^>]*>\("sessions"\)/);
     expect(app).toMatch(/nav=\{nav\}/);
     expect(app).toMatch(/onNav=\{setNav\}/);
   });

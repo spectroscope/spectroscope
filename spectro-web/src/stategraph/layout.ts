@@ -97,9 +97,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   }
   // An edge naming a node that is not in the topology is dropped rather than
   // invented: artifacts come off disk and can be truncated mid-write.
-  const edges = topo.edges
-    .filter((e) => known.has(e.from) && known.has(e.to))
-    .map((e, i) => ({ ...e, i }));
+  const edges = topo.edges.filter((e) => known.has(e.from) && known.has(e.to)).map((e, i) => ({ ...e, i }));
 
   const out = new Map<string, typeof edges>(nodes.map((n) => [n.id, [] as typeof edges]));
   edges.forEach((e) => out.get(e.from)!.push(e));
@@ -222,9 +220,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
           : fwd.filter((e) => e.from === id && rank.get(e.to)! > r).map((e) => pos.get(e.to)!);
         bary.set(id, rel.length > 0 ? rel.reduce((a, b) => a + b, 0) / rel.length : pos.get(id)!);
       });
-      layer.sort(
-        (a, b) => bary.get(a)! - bary.get(b)! || discovery.get(a)! - discovery.get(b)!,
-      );
+      layer.sort((a, b) => bary.get(a)! - bary.get(b)! || discovery.get(a)! - discovery.get(b)!);
       layer.forEach((id, i) => pos.set(id, i));
     }
   }
@@ -304,8 +300,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     }
     return false;
   };
-  const curve = (p: number[]): string =>
-    `M${p[0]},${p[1]} C${p[2]},${p[3]} ${p[4]},${p[5]} ${p[6]},${p[7]}`;
+  const curve = (p: number[]): string => `M${p[0]},${p[1]} C${p[2]},${p[3]} ${p[4]},${p[5]} ${p[6]},${p[7]}`;
 
   let bx0 = fx0;
   let by0 = fy0;
@@ -342,8 +337,26 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
 
     // Forward. Try the plain connector first; only bow it if it would cut a box.
     const plain = horiz
-      ? [a.x + a.w, a.y + a.h / 2, a.x + a.w + gapAlong, a.y + a.h / 2, b.x - gapAlong, b.y + b.h / 2, b.x, b.y + b.h / 2]
-      : [a.x + a.w / 2, a.y + a.h, a.x + a.w / 2, a.y + a.h + gapAlong, b.x + b.w / 2, b.y - gapAlong, b.x + b.w / 2, b.y];
+      ? [
+          a.x + a.w,
+          a.y + a.h / 2,
+          a.x + a.w + gapAlong,
+          a.y + a.h / 2,
+          b.x - gapAlong,
+          b.y + b.h / 2,
+          b.x,
+          b.y + b.h / 2,
+        ]
+      : [
+          a.x + a.w / 2,
+          a.y + a.h,
+          a.x + a.w / 2,
+          a.y + a.h + gapAlong,
+          b.x + b.w / 2,
+          b.y - gapAlong,
+          b.x + b.w / 2,
+          b.y,
+        ];
     if (!cutsThrough(plain, e.from, e.to)) {
       return { ...base, skip: false, path: curve(plain) };
     }

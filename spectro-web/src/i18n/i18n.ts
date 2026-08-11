@@ -18,7 +18,9 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.back": { de: "zurück (⌘←)", en: "back (⌘←)" },
   "nav.forward": { de: "vorwärts (⌘→)", en: "forward (⌘→)" },
   "nav.fleets": { de: "Flotten", en: "Fleets" },
-  "nav.navMode": { de: "Sessions oder Flotten", en: "Sessions or fleets" },
+  "nav.navMode": { de: "Sessions, Flotten oder State-Graph", en: "Sessions, fleets or state graph" },
+  "nav.stategraph": { de: "State-Graph", en: "State graph" },
+  "nav.stategraphNote": { de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.", en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right." },
   "nav.noFleets": { de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.", en: "No running fleets. Start nodes against the hub and they appear here." },
   "nav.scenarios": { de: "Szenarien", en: "Scenarios" },
   "nav.starters": { de: "Starter", en: "Starters" },
@@ -1646,6 +1648,68 @@ export const dict: Record<string, { de: string; en: string }> = {
   "about.marks": { de: "Logo, Icon und Wortmarke von spectroscope fallen nicht unter die CC-BY-Lizenz; alle Rechte vorbehalten. Sie bezeichnen dieses Projekt. Du darfst sie zeigen, wenn du dich auf spectroscope beziehst; du darfst mit ihnen kein abgeleitetes oder fremdes Produkt kennzeichnen und sie nicht so verwenden, dass sie eine Befürwortung oder eine Verbindung nahelegen.", en: "The spectroscope logo, icon and wordmark are not covered by the CC BY grant; all rights reserved. They identify this project. You may show them when referring to spectroscope; you may not use them to brand a derived or unrelated product, and you may not present them in a way that implies endorsement or affiliation." },
   "about.repo": { de: "Repository", en: "Repository" },
   "about.openTitle": { de: "Version, Lizenzen und Copyright", en: "Version, licenses and copyright" },
+
+  // state graph — the view over a run's two artifacts. Three families are
+  // interpolated rather than written out, so a value added to the runtime
+  // without its word would ship as the bare key: sg.st.<Lifecycle>,
+  // sg.marker.<Marker["kind"]> and sg.omitted.<Marker["omitted"]>.
+  "sg.claim": { de: "Die Topologie steht bei compile() fest, vor dem ersten Token — der Graph wird zuerst gezeichnet, der Ereignisstrom beleuchtet ihn nur. Beobachten, ohne anzufassen.", en: "The topology is fixed at compile(), before the first token — so the graph is drawn first and the event stream only lights it up. Observe without touching." },
+  "sg.horizontal": { de: "horizontal", en: "horizontal" },
+  "sg.vertical": { de: "vertikal", en: "vertical" },
+  "sg.load": { de: "Datei laden …", en: "load file …" },
+  "sg.demo": { de: "Beispiel-Lauf ansehen", en: "look at the reference run" },
+  // The empty pane. It says "nothing is loaded", never "loading": a topology is
+  // fixed at compile() and arrives as a file, so there is nothing on its way.
+  "sg.empty.title": { de: "Kein Graph geladen", en: "No graph loaded" },
+  "sg.empty.why": { de: "Diese Ansicht wartet nicht auf etwas, sie hat nichts. Ein StateGraph steht bei compile() fest und wird als Dateipaar neben dem Lauf abgelegt — ohne dieses Paar gibt es keine Topologie zu zeichnen.", en: "This view is not waiting for something to arrive, it has nothing. A StateGraph is fixed at compile() and lands beside the run as a pair of files — without that pair there is no topology to draw." },
+  "sg.empty.pair": { de: "Das Paar heißt <stem>.graph.jsonl für die Form und <stem>.state.jsonl für die Werte. Die Form allein genügt; die Werte sind optional.", en: "The pair is <stem>.graph.jsonl for the shape and <stem>.state.jsonl for the values. The shape alone is enough; the values are optional." },
+  "sg.empty.orphanState": { de: "Das war eine .state.jsonl allein. Werte brauchen eine Form — lade die passende .graph.jsonl dazu.", en: "That was a .state.jsonl on its own. Values need a shape — load the matching .graph.jsonl with it." },
+  "sg.rewind": { de: "erster Datensatz", en: "first record" },
+  "sg.scrub": { de: "Zeitleiste der Datensätze", en: "record timeline" },
+  "sg.complete": { de: "vollständig", en: "complete" },
+  "sg.inFlight": { de: "mitten im Lauf", en: "mid-run" },
+  "sg.currentRecord": { de: "aktueller Datensatz", en: "current record" },
+  "sg.record": { de: "Datensatz", en: "record" },
+  "sg.node": { de: "Knoten", en: "node" },
+  "sg.superstep": { de: "Superstep", en: "superstep" },
+  "sg.branches": { de: "Verzweigungen, bekannt seit compile()", en: "branches, known at compile()" },
+  "sg.branchesWhy": { de: "Jede Kante bleibt auf der Fläche, auch die nicht genommene. Sie verschwindet nicht, sie tritt zurück — genau das unterscheidet diese Ansicht von einer Spur.", en: "Every edge stays on the canvas, the untaken one included. It does not disappear, it steps back — that is what separates this view from a trace." },
+  "sg.nodeDetail": { de: "Knoten im Detail", en: "node detail" },
+  // "Lebenszyklus", never "Zustand": a reader who sees "Zustand" expects values
+  // and gets a status chip. sg.state below is the one that carries values.
+  "sg.lifecycle": { de: "Lebenszyklus", en: "lifecycle" },
+  "sg.rank": { de: "Rang", en: "rank" },
+  "sg.duration": { de: "Dauer", en: "duration" },
+  "sg.bytes": { de: "Bytes", en: "bytes" },
+  "sg.entered": { de: "betreten", en: "entered" },
+  "sg.updateKeys": { de: "geschriebene Kanäle", en: "channels written" },
+  "sg.state": { de: "Zustand", en: "state" },
+  "sg.noState": { de: "Keine .state.jsonl geladen — die Form ist vollständig, nur die Werte fehlen.", en: "No .state.jsonl loaded — the shape is complete, only the values are missing." },
+  "sg.clipped": { de: "gekürzt", en: "clipped" },
+  "sg.notRecorded": { de: "nicht aufgezeichnet", en: "not recorded" },
+  "sg.source": { de: "Quelle", en: "source" },
+  "sg.nodes": { de: "Knoten", en: "nodes" },
+  "sg.edges": { de: "Kanten", en: "edges" },
+  "sg.supersteps": { de: "Supersteps", en: "supersteps" },
+  "sg.noStateFile": { de: "keine .state.jsonl", en: "no .state.jsonl" },
+  "sg.badLines": { de: "{n} Zeilen waren kein JSON", en: "{n} lines were not JSON" },
+  "sg.misfiled": { de: "{n} Datensätze lagen in der falschen Datei", en: "{n} records sat in the wrong file" },
+  "sg.offline": { de: "offline · keine Netzwerkaufrufe", en: "offline · no network calls" },
+  // The four lifecycle words. "nie betreten" and "fertig" must stay
+  // distinguishable in one glance: a run that never reached a node is a
+  // different fact from one that reached it and wrote nothing.
+  "sg.st.pending": { de: "nie betreten", en: "never entered" },
+  "sg.st.active": { de: "läuft", en: "running" },
+  "sg.st.done": { de: "fertig", en: "done" },
+  "sg.st.error": { de: "Fehler", en: "error" },
+  "sg.marker.str": { de: "gekürzter Text", en: "clipped text" },
+  "sg.marker.list": { de: "gekürzte Liste", en: "clipped list" },
+  "sg.marker.redacted": { de: "geschwärzt", en: "redacted" },
+  "sg.marker.unserializable": { de: "nicht serialisierbar", en: "unserializable" },
+  "sg.marker.channel": { de: "Kanal über der Grenze", en: "channel over the cap" },
+  "sg.omitted.cap": { de: "an der Kanal-Grenze", en: "at the channel cap" },
+  "sg.omitted.error": { de: "beim Serialisieren gescheitert", en: "serialization failed" },
+  "sg.omitted.recordCap": { de: "an der Datensatz-Grenze", en: "at the record cap" },
 };
 
 /** Chrome string for `key` in `lang`; `{var}` placeholders fill from `vars`.

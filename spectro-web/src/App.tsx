@@ -92,6 +92,7 @@ import { TraceView } from "./components/TraceView";
 import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
+import { StateGraphPane } from "./stategraph/StateGraphPane";
 import type { PendingAttachment } from "./components/AttachmentPreview";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { ParticleField } from "./components/ParticleField";
@@ -196,7 +197,20 @@ export function App() {
    * the surface can answer the press: `fleets` with nothing entered opens the
    * lobby instead of leaving the last session standing.
    */
-  const [nav, setNav] = useState<"sessions" | "fleets">("sessions");
+  /*
+   * `stategraph` joins the pair as a third SEGMENT, not a fourth tab: a
+   * session's tabs are lenses on one run's event stream, and a StateGraph is
+   * not a run — its shape is fixed at compile(), before a token flows, so it
+   * has nothing to be a lens on.
+   *
+   * Deliberately NOT in route.ts's vocabulary. `nav` is component state and an
+   * address is a promise to reopen the same thing; the pane's artifacts come
+   * out of a file picker, so a #/stategraph link would reopen an empty pane and
+   * lie about it. Adding the word to the route would also drag routeVocabulary,
+   * appRouter and the leveling ladder along, for a view that has nothing to
+   * address.
+   */
+  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph">("sessions");
   /**
    * How far back and forward this app can go — for the two buttons in the bar.
    *
@@ -1518,7 +1532,10 @@ export function App() {
   // another tab is showing. Kept next to the entries it renders, so the two
   // cannot drift apart.
   const traceMounted =
-    !(nav === "fleets" && enteredFleet === null) &&
+    // Both segment arms of the chain collapse into this one term under
+    // `enteredFleet === null`: only the sessions segment reaches the tabs at
+    // all, so the hidden trace must not survive a move to fleets or stategraph.
+    nav === "sessions" &&
     enteredFleet === null &&
     tab === "trace" &&
     // The chain's leveling gate reads `tab !== "chat" && …`; under `tab ===
@@ -1744,7 +1761,11 @@ export function App() {
         {/* Brand voice: tab labels are lowercase wire vocabulary. */}
         {/* Variant B (0.7 A/B): an entered fleet swaps the whole nav for its
             own bar — [bus] [one tab per agent] [+]. */}
-        {nav === "fleets" && enteredFleet === null ? null : enteredFleet !== null ? (
+        {/* The stategraph arm sits FIRST and asks nothing about a fleet: it
+            carries its own header, and a reader who left a fleet entered must
+            not get that fleet's bar over a graph the fleet has no part in. */}
+        {nav === "stategraph" ? null : nav === "fleets" && enteredFleet === null ? null : enteredFleet !==
+          null ? (
           <FleetBar
             model={enteredFleetModel}
             active={fleetTab}
@@ -1903,7 +1924,13 @@ export function App() {
             session left standing. This branch sits ABOVE the entered-fleet one
             because "which segment" outranks "which fleet" — the reader pressed
             fleets, so fleets is what answers. */}
-        {nav === "fleets" && enteredFleet === null ? (
+        {/* The state graph is the whole surface while its segment is showing —
+            it answers a question no session tab asks, so it takes the area
+            outright rather than sitting inside one run's tab row. It is handed
+            nothing: the pane owns which artifacts are on screen. */}
+        {nav === "stategraph" ? (
+          <StateGraphPane />
+        ) : nav === "fleets" && enteredFleet === null ? (
           <FleetLobby
             fleetCount={fleets.length}
             hubPort={fleetHubPort}

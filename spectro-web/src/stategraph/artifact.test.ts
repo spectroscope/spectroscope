@@ -23,8 +23,16 @@ const run = readStateGraphRun(GRAPH, STATE);
 describe("the topology, which is known before the first token", () => {
   it("reads every node and edge the compiler declared", () => {
     expect(run.topology.nodes.map((n) => n.id)).toEqual([
-      "__start__", "router", "retrieve", "rerank", "grade",
-      "rewrite", "web", "generate", "verify", "__end__",
+      "__start__",
+      "router",
+      "retrieve",
+      "rerank",
+      "grade",
+      "rewrite",
+      "web",
+      "generate",
+      "verify",
+      "__end__",
     ]);
     expect(run.topology.edges).toHaveLength(14);
     // `entry` names the first REAL node, not the virtual __start__ — measured
@@ -152,7 +160,7 @@ describe("a clipped value never looks like a whole one", () => {
     // A viewer that shows the marker's own length would report the lie.
     const m = marker({ kind: "str", bytes: 9000, chars: 8000, omitted: "cap", head: "abc" })!;
     expect(m.bytes).toBe(9000);
-    expect((m as { head: string }).head).toBe("abc");
+    expect((m as unknown as { head: string }).head).toBe("abc");
   });
 
   it("treats a redaction as a redaction, not as a truncation", () => {
@@ -180,7 +188,9 @@ describe("what a broken file does", () => {
     // The safety property, enforced at the reader too: the L1 file is the one
     // that must stay attachable to a bug report. If a state_payload ever shows
     // up in it, the reader counts it and drops it rather than rendering it.
-    const poisoned = GRAPH + '\n{"type":"state_payload","runId":"x","node":"n","superstep":0,"channels":{"secret":"leak"},"ts":1}\n';
+    const poisoned =
+      GRAPH +
+      '\n{"type":"state_payload","runId":"x","node":"n","superstep":0,"channels":{"secret":"leak"},"ts":1}\n';
     const r = readStateGraphRun(poisoned, null);
     expect(r.payloads).toHaveLength(0);
     expect(r.misfiled).toBe(1);

@@ -91,8 +91,13 @@ export interface StateGraphRun {
 
 /** The L1 vocabulary. Anything else in the graph file is misfiled. */
 const L1 = new Set([
-  "graph_topology", "graph_start", "graph_end",
-  "node_start", "node_end", "edge_taken", "node_error",
+  "graph_topology",
+  "graph_start",
+  "graph_end",
+  "node_start",
+  "node_end",
+  "edge_taken",
+  "node_error",
 ]);
 
 interface Parsed {
@@ -244,9 +249,10 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
         if (L1.has(type ?? "")) misfiled++;
         continue;
       }
-      const channels = (typeof r.channels === "object" && r.channels !== null
-        ? r.channels
-        : {}) as Record<string, unknown>;
+      const channels = (typeof r.channels === "object" && r.channels !== null ? r.channels : {}) as Record<
+        string,
+        unknown
+      >;
       payloads.push({
         runId: str(r.runId) ?? "",
         node: str(r.node) ?? "",

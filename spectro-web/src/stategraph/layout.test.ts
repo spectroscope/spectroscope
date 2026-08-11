@@ -49,8 +49,7 @@ const CRAG: Topology = {
   ],
 };
 
-const byId = (l: ReturnType<typeof layoutStateGraph>, id: string) =>
-  l.nodes.find((n) => n.id === id)!;
+const byId = (l: ReturnType<typeof layoutStateGraph>, id: string) => l.nodes.find((n) => n.id === id)!;
 const edge = (l: ReturnType<typeof layoutStateGraph>, from: string, to: string) =>
   l.edges.find((e) => e.from === from && e.to === to)!;
 
@@ -67,7 +66,10 @@ describe("the cycle is kept, not broken", () => {
 
   it("finds every cycle in the real topology, and only those", () => {
     const l = layoutStateGraph(CRAG, "horizontal");
-    const backs = l.edges.filter((e) => e.back).map((e) => `${e.from}->${e.to}`).sort();
+    const backs = l.edges
+      .filter((e) => e.back)
+      .map((e) => `${e.from}->${e.to}`)
+      .sort();
     // Two loops: the rewrite loop back to the router, and verify's retry of
     // generate. Everything else flows forward.
     expect(backs).toEqual(["rewrite->router", "verify->generate"]);
@@ -125,8 +127,7 @@ describe("placement", () => {
       for (let j = i + 1; j < l.nodes.length; j++) {
         const a = l.nodes[i];
         const b = l.nodes[j];
-        const apart =
-          a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
+        const apart = a.x + a.w <= b.x || b.x + b.w <= a.x || a.y + a.h <= b.y || b.y + b.h <= a.y;
         expect(apart, `${a.id} overlaps ${b.id}`).toBe(true);
       }
     }
@@ -148,7 +149,14 @@ describe("placement", () => {
 
   it("survives a node with no edges at all", () => {
     const l = layoutStateGraph(
-      { entry: "a", nodes: [{ id: "a", label: "a" }, { id: "lonely", label: "lonely" }], edges: [] },
+      {
+        entry: "a",
+        nodes: [
+          { id: "a", label: "a" },
+          { id: "lonely", label: "lonely" },
+        ],
+        edges: [],
+      },
       "horizontal",
     );
     expect(l.nodes).toHaveLength(2);

@@ -14,7 +14,7 @@
 //   - absence is legible: "not recorded" and "was empty" are different claims
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { ReactFlow, Background, Handle, Position, type NodeProps } from "@xyflow/react";
+import { ReactFlow, Background, Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
 import { layoutStateGraph, type Orientation, type PlacedNode } from "./layout";
 import { readStateGraphRun, channelAbsence, type StateGraphRun, type Marker } from "./artifact";
@@ -37,6 +37,7 @@ interface CardData extends Record<string, unknown> {
 
 function NodeCard({ data }: NodeProps) {
   const d = data as CardData;
+  const lang = useLang();
   return (
     <div className={`sg-card sg-card--${d.lifecycle}${d.selected ? " is-selected" : ""}`}>
       <Handle type="target" position={Position.Left} className="sg-handle" />
@@ -45,7 +46,7 @@ function NodeCard({ data }: NodeProps) {
         {d.entered > 1 && <span className="sg-card-times">×{d.entered}</span>}
       </div>
       <div className="sg-card-meta mono">
-        {d.durationMs !== null ? `${d.durationMs} ms` : t("en", "sg.st." + d.lifecycle)}
+        {d.durationMs !== null ? `${d.durationMs} ms` : t(lang, "sg.st." + d.lifecycle)}
         {d.lifecycle !== "pending" && <span className="sg-card-step"> · s{d.placed.rank}</span>}
       </div>
       {d.updateKeys.length > 0 && (
@@ -160,8 +161,8 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
     const wanted = [...files];
     const graph = wanted.find((f) => f.name.endsWith(".graph.jsonl")) ?? wanted[0];
     const state = wanted.find((f) => f.name.endsWith(".state.jsonl")) ?? null;
-    void Promise.all([graph.text(), state === null ? Promise.resolve(null) : state.text()]).then(
-      ([g, s]) => onLoadFile(g, s, graph.name),
+    void Promise.all([graph.text(), state === null ? Promise.resolve(null) : state.text()]).then(([g, s]) =>
+      onLoadFile(g, s, graph.name),
     );
   };
 
@@ -250,15 +251,23 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
             proOptions={{ hideAttribution: true }}
           >
             <Background gap={24} size={1} />
-            <svg className="sg-arcs" aria-hidden="true">
-              {laid.edges.map((e) => (
-                <path
-                  key={`${e.from}->${e.to}`}
-                  d={e.path}
-                  className={`sg-arc${e.back ? " sg-arc--back" : ""}${e.skip ? " sg-arc--skip" : ""}`}
-                />
-              ))}
-            </svg>
+            {/* Inside the ViewportPortal, so the arcs pan and zoom WITH the
+                nodes. A plain overlay is a sibling of the viewport pane and
+                carries no transform: its paths would be drawn in raw layout
+                coordinates while the cards are drawn transformed, and the two
+                would drift apart the moment anybody scrolled. Caught by
+                rendering it, not by reading it. */}
+            <ViewportPortal>
+              <svg className="sg-arcs" aria-hidden="true" style={{ overflow: "visible" }}>
+                {laid.edges.map((e) => (
+                  <path
+                    key={`${e.from}->${e.to}`}
+                    d={e.path}
+                    className={`sg-arc${e.back ? " sg-arc--back" : ""}${e.skip ? " sg-arc--skip" : ""}`}
+                  />
+                ))}
+              </svg>
+            </ViewportPortal>
           </ReactFlow>
         </div>
 
@@ -295,9 +304,9 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
                 <dt>{t(lang, "sg.superstep")}</dt>
                 <dd>{pickedRun?.lastSuperstep ?? "—"}</dd>
                 <dt>{t(lang, "sg.duration")}</dt>
-                <dd>{pickedRun?.durationMs !== undefined && pickedRun?.durationMs !== null ? `${pickedRun.durationMs} ms` : "—"}</dd>
+                <dd>{pickedRun?.durationMs != null ? `${pickedRun.durationMs} ms` : "—"}</dd>
                 <dt>{t(lang, "sg.bytes")}</dt>
-                <dd>{pickedRun !== undefined ? `wrote ${pickedRun.updateBytes} B` : "—"}</dd>
+                <dd>{pickedRun != null ? `wrote ${pickedRun.updateBytes} B` : "—"}</dd>
                 <dt>{t(lang, "sg.entered")}</dt>
                 <dd>{pickedRun?.entered ?? 0}×</dd>
               </dl>
@@ -363,7 +372,9 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
           {t(lang, "sg.supersteps")} {run.supersteps}
         </span>
         <span>
-          {run.policy === null ? t(lang, "sg.noStateFile") : `${t(lang, "sg.state")} ${run.policy.mode} · ${run.payloads.length}`}
+          {run.policy === null
+            ? t(lang, "sg.noStateFile")
+            : `${t(lang, "sg.state")} ${run.policy.mode} · ${run.payloads.length}`}
         </span>
         {run.badLines > 0 && <span className="sg-warn">{t(lang, "sg.badLines", { n: run.badLines })}</span>}
         {run.misfiled > 0 && <span className="sg-warn">{t(lang, "sg.misfiled", { n: run.misfiled })}</span>}
