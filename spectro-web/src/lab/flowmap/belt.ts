@@ -5,8 +5,12 @@
 // and a `Workflow` — the call that hands a whole fan-out to a background task —
 // matched none of them, so it lit nothing and read as an ordinary step. The
 // counts are the reason that mattered: over ~/.claude/projects on 2026-08-11,
-// 408 `"name":"Workflow"` lines across 82 of 5686 transcripts and 86 `Monitor`,
+// 409 Workflow and 86 Monitor tool_use blocks across 109 of 5695 transcripts,
 // against zero occurrences of any of the seven.
+//
+// The earlier count here said "408 `"name":"Workflow"` lines". That measured
+// LINES containing the substring, not calls; two launches in one assistant
+// message counted once. Parsing the blocks gives 409.
 //
 // A launch is therefore its OWN kind on the belt, not an eighth tool. What the
 // agent runs itself and what it hands to a task it will only hear back from
@@ -61,21 +65,51 @@ export function agentBelt(activeTool: string | null): BeltChip[] {
 }
 
 /**
- * The phases a launch in flight DECLARES — read off the script it was called
- * with, through the same reader the tool card uses, so there is no second
- * parser to disagree with the first.
+ * Why a launch has the phase list it has.
  *
- * Declared is all this can ever be. The phases are the script's own header; the
- * agents that would run them live in other runs with other event streams, and
- * nothing in this session says a phase finished. A launch given by saved name
- * or by path returns nothing at all: that script is not here, and a phase list
- * invented for it would be the map describing content it never saw.
+ * - `declared` — the script travelled inline and named its phases.
+ * - `silent` — the script is here and declares none.
+ * - `elsewhere` — a saved name or a path: the script exists, this call is only
+ *   a reference to it.
+ * - `scriptless` — the launch has no script at all. A `Monitor` waits on a
+ *   shell loop with its stop condition inside the command.
+ * - `unknown` — nothing is in flight, or what is in flight is not a launch.
+ */
+export type LaunchScript =
+  | { state: "declared"; phases: string[] }
+  | { state: "silent" }
+  | { state: "elsewhere" }
+  | { state: "scriptless" }
+  | { state: "unknown" };
+
+/**
+ * Read a launch's script the way the tool card reads it, and keep the reason
+ * the answer came out the way it did.
+ *
+ * The four empty answers are four different facts and the map has to say which
+ * one it means. Measured over ~/.claude/projects on 2026-08-11 by running this
+ * reader across the corpus: of 495 launches, 358 declare phases and 137 do not
+ * — but only 51 of those 137 are the by-name/by-path case. The other 86 are
+ * `Monitor` calls, which carry a shell command and no script field at all, and
+ * whose view never comes back as `workflow` because describeTool routes them
+ * into the Bash/command case. Collapsing all 137 into one sentence sent the
+ * reader of 86 of them hunting for a script that was never written.
  *
  * @param tool the call in flight (name + input), or null between calls
- * @return the declared phase names in script order, empty when none are readable
+ * @return the launch's phase list together with the reason for it
  */
-export function declaredPhases(tool: { name: string; input: unknown } | null): string[] {
-  if (tool === null || !LAUNCH_CHIPS.includes(tool.name)) return [];
+export function launchScript(tool: { name: string; input: unknown } | null): LaunchScript {
+  if (tool === null || !LAUNCH_CHIPS.includes(tool.name)) return { state: "unknown" };
   const view = describeTool(tool.name, tool.input, undefined, false);
-  return view.kind === "workflow" ? view.phases : [];
+  if (view.kind !== "workflow") return { state: "scriptless" };
+  if (view.phases.length > 0) return { state: "declared", phases: view.phases };
+  return view.script === null ? { state: "elsewhere" } : { state: "silent" };
 }
+
+/** What the map prints instead of a phase list, one sentence per reason. */
+export const LAUNCH_SCRIPT_NOTE: Record<Exclude<LaunchScript["state"], "declared">, string> = {
+  silent: "the script is in this call and declares no phases",
+  elsewhere: "the script is not in this call",
+  scriptless: "this launch waits on a command, not a script",
+  unknown: "the call is not in this view",
+};

@@ -313,8 +313,17 @@ public final class OtlpSink implements TracingPort {
             // stretches the main agent instead of the one whose run it closed,
             // and the closing turn then ends after its own agent span: 73 turn
             // spans in the store were drawn outside their parent that way.
+            //
+            // Card 142: only an event that NAMES an agent may open one. Two
+            // records name none — permission_decision carries a callId,
+            // agent_message carries from/to — and both fell through agentOf()'s
+            // "main" default, conjuring an agent span for an agent nobody ran.
+            // Measured over the 287 stored sessions on 2026-08-11: 5 such
+            // phantoms, each of them an overlapping sibling of the agent that
+            // did run. Their own spans are placed elsewhere from the call they
+            // name, so dropping them here loses no information.
             String owner = e instanceof RunEvent.RunEnd end
-                    ? boundsOwner.getOrDefault(end.runId(), aid) : aid;
+                    ? boundsOwner.get(end.runId()) : namedAgentOf(e);
             if (owner != null && ts > 0) {
                 long[] b = agentBounds.computeIfAbsent(owner, k -> new long[]{ts, ts});
                 b[0] = Math.min(b[0], ts);
@@ -659,12 +668,20 @@ public final class OtlpSink implements TracingPort {
     }
 
     private static String agentOf(RunEvent event) {
+        String named = namedAgentOf(event);
+        return named != null ? named : "main";
+    }
+
+    /** The agent an event NAMES on the wire, or null when it names none —
+     *  the difference {@link #agentOf}'s "main" default papers over, and the
+     *  only safe basis for deciding that an agent existed at all. */
+    private static String namedAgentOf(RunEvent event) {
         try {
             JsonNode node = JSON.valueToTree(event);
             JsonNode aid = node.get("agentId");
-            return aid != null && aid.isTextual() && !aid.asText().isEmpty() ? aid.asText() : "main";
+            return aid != null && aid.isTextual() && !aid.asText().isEmpty() ? aid.asText() : null;
         } catch (RuntimeException e) {
-            return "main";
+            return null;
         }
     }
 

@@ -10,7 +10,7 @@ import { ExpandAllContext } from "./expandContext";
 import { ToolCallPanel } from "./ToolCallPanel";
 import { NeuralNet } from "./NeuralNet";
 import { AluChip, Keyboard, Router } from "./glyphs";
-import { agentBelt, declaredPhases } from "./belt";
+import { agentBelt, launchScript, LAUNCH_SCRIPT_NOTE } from "./belt";
 import type { AgentStream, CtxPart } from "./sceneToFlow";
 import type { Focus, GateState, SubagentInfo } from "../labScene";
 import { t } from "../../i18n/i18n";
@@ -215,7 +215,7 @@ export function AgentNode({ data }: NodeProps) {
   // finished (card 146).
   const belt = agentBelt(d.activeTool);
   const launching = belt.some((c) => c.on && c.kind === "launch");
-  const phases = declaredPhases(d.tool);
+  const script = launchScript(d.tool);
   const toolsBlock = (
     <>
       <div className="pf-eyebrow" style={{ marginTop: 10 }}>
@@ -240,16 +240,16 @@ export function AgentNode({ data }: NodeProps) {
       {launching && (
         <div className="pf-phases">
           <div className="pf-eyebrow">phases · declared, not observed</div>
-          {phases.length > 0 ? (
+          {script.state === "declared" ? (
             <ol className="pf-phases__list">
-              {phases.map((p, i) => (
+              {script.phases.map((p, i) => (
                 <li className="pf-phases__item" key={`${p}-${i}`}>
                   {p}
                 </li>
               ))}
             </ol>
           ) : (
-            <div className="pf-phases__none">the script is not in this call</div>
+            <div className="pf-phases__none">{LAUNCH_SCRIPT_NOTE[script.state]}</div>
           )}
         </div>
       )}

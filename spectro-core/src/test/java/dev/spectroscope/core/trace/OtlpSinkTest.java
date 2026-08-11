@@ -572,6 +572,101 @@ class OtlpSinkTest {
     }
 
     @Test
+    void aGateDecisionDoesNotInventTheAgentItNamesNoId() throws Exception {
+        // The run_end leak was closed by attributing a run_end through its runId.
+        // Two carriers were left open, and measuring the corpus rather than
+        // reading the code found them: permission_decision names only a callId,
+        // agent_message names from/to. Both fall through agentOf()'s "main"
+        // default and open an agent nobody ran. Measured over the 287 stored
+        // sessions on 2026-08-11: 5 phantom "agent · main" spans in 5 sessions,
+        // each of them also an overlapping sibling of the agent that did run.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-phantom", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"security-1\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"security-1\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"security-1\",\"callId\":\"c1\",\"name\":\"write_file\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"permission_request\",\"agentId\":\"security-1\",\"callId\":\"c1\",\"name\":\"write_file\",\"input\":{},\"ts\":1210}"));
+        sink.onEvent(ev("{\"type\":\"permission_decision\",\"callId\":\"c1\",\"allowed\":true,\"ts\":1260}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"security-1\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":40,\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        assertTrue(spans.stream().noneMatch(s -> s.name().equals("agent · main")),
+                "a gate decision carries no agentId and must not conjure an agent: "
+                        + spans.stream().map(Span::name).toList());
+    }
+
+    @Test
+    void anAgentMessageDoesNotInventAnAgentEither() throws Exception {
+        // The A2A-lite record names from/to rather than agentId, so it takes the
+        // same fall. In the stored corpus this is what produced the phantom in
+        // 20260723-151500-auth-refactor-three-lenses: ten agent_message events
+        // and an "agent · main" span 22 seconds long, in a session whose agents
+        // are conductor and three workers.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-a2a", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"conductor\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"conductor\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"agent_message\",\"from\":\"conductor\",\"to\":\"worker-1\",\"role\":\"task\",\"state\":\"submitted\",\"text\":\"look\",\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"agent_message\",\"from\":\"worker-1\",\"to\":\"conductor\",\"role\":\"result\",\"state\":\"completed\",\"text\":\"done\",\"ts\":1300}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1400}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        assertTrue(spans.stream().noneMatch(s -> s.name().equals("agent · main")),
+                "an A2A message names from/to, not agentId, and must not conjure an agent: "
+                        + spans.stream().map(Span::name).toList());
+    }
+
+    @Test
+    void toolCallsThatRanAtTheSameTimeStayPeersAndAreAllowedToOverlap() throws Exception {
+        // Card 142, AC2 corrected on 2026-08-11. "Zero overlapping sibling pairs
+        // across the whole corpus" cannot hold for an orchestrator: the wire
+        // records genuinely parallel work. Measured over the 287 stored sessions:
+        // 139 tool-call intervals of ONE agent overlap another of the same agent
+        // across 16 sessions, peaking at 12 calls open at once — 8 tool_call
+        // events on one millisecond, results interleaved. Nesting those to
+        // reach a zero would invent a causal order the run never had.
+        //
+        // So the rule this pins is the narrower true one: peers stay peers, and
+        // the export reports the simultaneity instead of hiding it.
+        List<String> posted = new ArrayList<>();
+        CountDownLatch done = new CountDownLatch(1);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-parallel", body -> {
+            posted.add(body);
+            done.countDown();
+        });
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"r1\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":1000}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":1100}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c1\",\"name\":\"grep\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"tool_call\",\"agentId\":\"main\",\"callId\":\"c2\",\"name\":\"read_file\",\"input\":{},\"ts\":1200}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c1\",\"output\":\"ok\",\"isError\":false,\"durationMs\":300,\"ts\":1500}"));
+        sink.onEvent(ev("{\"type\":\"tool_result\",\"agentId\":\"main\",\"callId\":\"c2\",\"output\":\"ok\",\"isError\":false,\"durationMs\":400,\"ts\":1600}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"r1\",\"stopReason\":\"end_turn\",\"ts\":1700}"));
+        assertTrue(done.await(5, TimeUnit.SECONDS));
+
+        List<Span> spans = spansOf(posted.get(0));
+        Span grep = spans.stream().filter(s -> s.name().equals("grep")).findFirst().orElseThrow();
+        Span read = spans.stream().filter(s -> s.name().equals("read_file")).findFirst().orElseThrow();
+        Span turn = spans.stream().filter(s -> s.name().startsWith("turn 1")).findFirst().orElseThrow();
+
+        assertEquals(turn.id(), grep.parent(), "both calls belong to the turn that issued them");
+        assertEquals(turn.id(), read.parent(), "and neither is nested under the other");
+        assertTrue(grep.start() < read.end() && read.start() < grep.end(),
+                "the export keeps the simultaneity the run had: grep " + grep.start() + ".."
+                        + grep.end() + " read_file " + read.start() + ".." + read.end());
+    }
+
+    @Test
     void anOldRecordsGateSitsInsideTheToolCallItGuarded() throws Exception {
         // Measured over the stored corpus after the parenting fix: 109 of the
         // 260 remaining overlapping sibling pairs are a gate span against the

@@ -27,7 +27,7 @@ check(){ if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 (expected '$3', got '$2'
 # A tree with no history: the scripts under test, a version to read, and stubs
 # for everything that would take a JDK, a network or an Apple account.
 #   $1  what the stubbed build-desktop-runkit.sh should do:
-#       fail | nodmg | dmg | (unused when SKIP_DESKTOP=1)
+#       fail | nodmg | dmg | stale | (unused when SKIP_DESKTOP=1)
 stage() {
   local mode="$1" d
   d="$(mktemp -d)"
@@ -54,6 +54,15 @@ GRADLE
              > "$d/scripts/build-desktop-runkit.sh" ;;
     dmg)   printf '#!/usr/bin/env bash\necho dmg > spectro-desktop/release/spectroscope-%s-%s.dmg\n' \
              "$VERSION" "$ARCH" > "$d/scripts/build-desktop-runkit.sh" ;;
+    # the case no file list can see: an earlier run in this same tree left a dmg
+    # behind, and today's desktop build dies (notarization, a revoked cert, a
+    # stalled Apple queue). Four files are on disk, all four non-empty, so the
+    # asset check is happy — only the carried exit status knows the dmg is from
+    # yesterday. This is the shape the dmg is staged BEFORE the stub runs, and
+    # the stub never touches it.
+    stale) printf '#!/usr/bin/env bash\necho "!! notarization failed"\nexit 1\n' \
+             > "$d/scripts/build-desktop-runkit.sh"
+           echo "yesterday" > "$d/spectro-desktop/release/spectroscope-${VERSION}-${ARCH}.dmg" ;;
   esac
   chmod +x "$d/gradlew" "$d/stub/npm" "$d/scripts/build-desktop-runkit.sh" 2>/dev/null
 
@@ -117,6 +126,23 @@ RC="$(run "$D")"
 check "an empty jar fails the run" "$RC" "1"
 grep -q "MISSING  spectro-server-${VERSION}.jar" "$LOG" \
   && ok "the empty jar is named" || bad "the empty jar is not named"
+
+echo "== a dmg left by an earlier run does not launder a failed desktop build =="
+D="$(stage stale)"; LOG="$D/out.log"
+RC="$(run "$D")"
+# The premise first: if the stale dmg were NOT collected this whole case would
+# pass for the wrong reason, and the exit-status verdict below would be pinned by
+# nothing again. So assert that the asset check is satisfied, then assert that
+# the run fails anyway.
+grep -q "MISSING" "$LOG" \
+  && bad "the stale dmg was not collected — this case no longer tests the exit status" \
+  || ok "all four assets are present, so the file list alone would call this green"
+check "a failed desktop build with a stale dmg is not a release" "$RC" "1"
+grep -q "the desktop run kit exited 1" "$LOG" \
+  && ok "the desktop exit status is reported" \
+  || bad "nothing tells the reader WHY a build with four assets on disk failed"
+grep -q "this is not a release" "$LOG" \
+  && ok "the verdict is stated" || bad "no verdict — a stale dmg would ship"
 
 echo "== the entitlements plist exists in a directory nobody has signed in =="
 D="$(mktemp -d)"
