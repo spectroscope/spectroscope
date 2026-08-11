@@ -53,13 +53,10 @@ for (const { rel, text } of files) {
     // `--line` — a BEM modifier followed by a pseudo-element — and the guard
     // then swears a phantom token exists. That is how this guard was refuted the
     // first time it ran, and it made its own count 20 too high.
-    for (const m of code(text).matchAll(/(--[a-zA-Z0-9_-]+)\s*:(?!:)\s*[^;{}]+[;}]/g))
-      defined.add(m[1]);
+    for (const m of code(text).matchAll(/(--[a-zA-Z0-9_-]+)\s*:(?!:)\s*[^;{}]+[;}]/g)) defined.add(m[1]);
   // `{ "--sidebar-w": x }` and `{ ["--lvl-c" as string]: x }` both count.
   if (/\.tsx?$/.test(rel))
-    for (const m of text.matchAll(
-      /["'](--[a-zA-Z0-9_-]+)["'](\s+as\s+string)?\s*\]?\s*:/g,
-    ))
+    for (const m of text.matchAll(/["'](--[a-zA-Z0-9_-]+)["'](\s+as\s+string)?\s*\]?\s*:/g))
       defined.add(m[1]);
 }
 
@@ -97,9 +94,7 @@ describe("no stylesheet reaches for a token that does not exist", () => {
   });
 
   it("leaves no var() whose fallback is the only value it can ever have", () => {
-    const found = stylesheets.flatMap(
-      (f) => phantoms(f.text, f.rel).withFallback,
-    );
+    const found = stylesheets.flatMap((f) => phantoms(f.text, f.rel).withFallback);
     expect(found).toEqual([]);
   });
 });

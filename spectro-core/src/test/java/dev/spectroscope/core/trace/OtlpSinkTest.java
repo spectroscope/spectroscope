@@ -7,7 +7,10 @@ import dev.spectroscope.core.events.RunEvent;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -401,6 +404,25 @@ class OtlpSinkTest {
         return out;
     }
 
+    /** The same reduction as {@link #spansOf}, callable from a poster lambda
+     *  running on an export thread rather than on the test's own. */
+    private static List<Span> spansOfStatic(String body) {
+        try {
+            JsonNode spans = new ObjectMapper().readTree(body).path("resourceSpans").get(0)
+                    .path("scopeSpans").get(0).path("spans");
+            List<Span> out = new ArrayList<>();
+            spans.forEach(sp -> out.add(new Span(
+                    sp.path("spanId").asText(),
+                    sp.path("parentSpanId").asText(""),
+                    sp.path("name").asText(),
+                    Long.parseLong(sp.path("startTimeUnixNano").asText()),
+                    Long.parseLong(sp.path("endTimeUnixNano").asText()))));
+            return out;
+        } catch (Exception e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     /** How deep the deepest branch runs; the session span alone counts as 1. */
     private static int depthOf(List<Span> spans) {
         java.util.Map<String, String> parent = new java.util.HashMap<>();
@@ -784,5 +806,199 @@ class OtlpSinkTest {
             checked = true;
         }
         assertTrue(checked, "the tool span is in the payload at all");
+    }
+
+    // ---- card 75: the exports are serialized ------------------------------
+
+    /** One finished prompt on a reused sink: run start, one turn, run end.
+     *  Each call leaves no run open, so it is exactly one idle point — one
+     *  cumulative snapshot handed to the poster. */
+    private static void prompt(OtlpSink sink, String runId, long start, long end) {
+        sink.onEvent(ev("{\"type\":\"run_start\",\"runId\":\"" + runId
+                + "\",\"agentId\":\"main\",\"prompt\":\"go\",\"provider\":\"anthropic\",\"ts\":" + start + "}"));
+        sink.onEvent(ev("{\"type\":\"turn_start\",\"agentId\":\"main\",\"turn\":1,\"ts\":" + (start + 100) + "}"));
+        sink.onEvent(ev("{\"type\":\"text_delta\",\"agentId\":\"main\",\"text\":\"x\",\"ts\":" + (start + 200) + "}"));
+        sink.onEvent(ev("{\"type\":\"run_end\",\"runId\":\"" + runId
+                + "\",\"stopReason\":\"end_turn\",\"ts\":" + end + "}"));
+    }
+
+    /** Child spans that outlive the parent they hang under, as readable labels.
+     *  This is what a viewer draws as a parent ending before its own children. */
+    private static List<String> childrenOutlivingTheirParent(Map<String, Span> committed) {
+        List<String> bad = new ArrayList<>();
+        for (Span child : committed.values()) {
+            Span parent = committed.get(child.parent());
+            if (parent != null && child.end() > parent.end()) {
+                bad.add(child.name() + " ends " + child.end() + " > " + parent.name()
+                        + " ends " + parent.end());
+            }
+        }
+        return bad;
+    }
+
+    @Test
+    void aReorderedExportCannotRegressTheParentSpan() throws Exception {
+        // Card 75, the whole point. Span ids are deterministic, so every backend
+        // (Langfuse, Jaeger, Phoenix) UPSERTS a re-exported span: last write
+        // wins. Two cumulative snapshots in flight at once are two independent
+        // HTTP/1.1 requests with no ordering guarantee, so the older one can
+        // land last and drag the root and agent spans' end times back below the
+        // turn spans the newer snapshot already committed.
+        //
+        // The poster below makes that race deterministic instead of hoping for
+        // it: it delays the FIRST post, so unless the sink serializes, the two
+        // export threads finish in reverse order.
+        Map<String, Span> committed = Collections.synchronizedMap(new LinkedHashMap<>());
+        List<String> commitOrder = Collections.synchronizedList(new ArrayList<>());
+        AtomicInteger posts = new AtomicInteger();
+        CountDownLatch bothCommitted = new CountDownLatch(2);
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-reorder", body -> {
+            if (posts.incrementAndGet() == 1) {
+                Thread.sleep(400);   // the slow leg — the older snapshot lands late
+            }
+            List<Span> batch = spansOfStatic(body);
+            batch.forEach(s -> committed.put(s.id(), s));
+            commitOrder.add("root ends " + batch.get(0).end());
+            bothCommitted.countDown();
+        });
+
+        prompt(sink, "r1", 1000, 2000);   // prompt K
+        prompt(sink, "r2", 3000, 4000);   // prompt K+1
+
+        assertTrue(bothCommitted.await(10, TimeUnit.SECONDS), "both snapshots reach the backend");
+        assertEquals(List.of(), childrenOutlivingTheirParent(committed),
+                "the newest snapshot is the last one committed; commit order was " + commitOrder);
+    }
+
+    @Test
+    void atMostOnePostIsEverInFlight() throws Exception {
+        // The ordering property above is bought by a bound: one POST at a time.
+        // This drives twelve idle points back to back against a poster that
+        // holds the wire for 20 ms and counts how many callers are inside it at
+        // once — a genuine race between the export threads, not a choreography.
+        AtomicInteger live = new AtomicInteger();
+        AtomicInteger peak = new AtomicInteger();
+        List<String> bodies = Collections.synchronizedList(new ArrayList<>());
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-inflight", body -> {
+            peak.accumulateAndGet(live.incrementAndGet(), Math::max);
+            try {
+                Thread.sleep(20);
+                bodies.add(body);
+            } finally {
+                live.decrementAndGet();
+            }
+        });
+
+        for (int i = 1; i <= 12; i++) {
+            prompt(sink, "r" + i, i * 1000L, i * 1000L + 900);
+        }
+
+        // The newest snapshot must reach the wire whatever gets coalesced on the
+        // way, so waiting for it is also the final-flush check.
+        long deadline = System.currentTimeMillis() + 15_000;
+        while (System.currentTimeMillis() < deadline && turnsInLastBody(bodies) < 12) {
+            Thread.sleep(20);
+        }
+        assertEquals(12, turnsInLastBody(bodies),
+                "the newest snapshot went out: " + bodies.size() + " posts");
+        assertEquals(1, peak.get(), "at most one POST is ever in flight");
+    }
+
+    /** How many turn spans the last posted body carries. Twelve prompts on one
+     *  reused sink accumulate twelve turns, so this counts up to the newest
+     *  cumulative snapshot and no further. */
+    private static int turnsInLastBody(List<String> bodies) {
+        if (bodies.isEmpty()) {
+            return 0;
+        }
+        return (int) spansOfStatic(bodies.get(bodies.size() - 1)).stream()
+                .filter(s -> s.name().startsWith("turn ")).count();
+    }
+
+    @Test
+    void aSnapshotHeldWhileAPostWasInFlightStillGoesOut() throws Exception {
+        // The final-flush half of single-flight: snapshots that arrive while the
+        // wire is busy are held, and the newest of them must still be posted
+        // once the in-flight one completes. Losing it would trade a reordering
+        // bug for a missing-export bug.
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<String> bodies = Collections.synchronizedList(new ArrayList<>());
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-flush", body -> {
+            bodies.add(body);
+            if (bodies.size() == 1) {
+                firstEntered.countDown();
+                release.await(10, TimeUnit.SECONDS);
+            }
+        });
+
+        prompt(sink, "r1", 1000, 2000);
+        assertTrue(firstEntered.await(5, TimeUnit.SECONDS), "the first post is in flight");
+
+        prompt(sink, "r2", 3000, 4000);
+        prompt(sink, "r3", 5000, 6000);
+        Thread.sleep(500);   // long enough for an unserialized sink to have posted both
+        assertEquals(1, bodies.size(),
+                "nothing else goes out while a POST is in flight: " + bodies.size() + " posts");
+
+        release.countDown();
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline && bodies.size() < 2) {
+            Thread.sleep(20);
+        }
+        assertEquals(2, bodies.size(), "the two held snapshots coalesce into one further post");
+        List<String> names = spansOfStatic(bodies.get(1)).stream().map(Span::name).toList();
+        assertTrue(names.contains("turn 1 · main") && names.stream()
+                        .filter(n -> n.startsWith("turn ")).count() == 3,
+                "and the one that goes out is the NEWEST snapshot: " + names);
+    }
+
+    @Test
+    void anErrorOnTheWireStrandsNeitherTheHeldSnapshotNorLaterExports() throws Exception {
+        // Single-flight buys the ordering with one flag deciding whether
+        // anything may go out at all, and that is a new place to get wedged: an
+        // export thread killed by an ERROR rather than an Exception (OOM,
+        // StackOverflow — the class of failure that froze openRuns in card 73)
+        // leaves the flag set and silently ends exporting on a sink that lives
+        // as long as the connection. Before serialization each export was its
+        // own detached thread and one dying cost exactly that one snapshot, so
+        // this regression would be introduced BY the fix.
+        //
+        // Two things have to survive it, and only the stronger one distinguishes
+        // a real fix from merely unlocking the wire again: the snapshot already
+        // held behind the dying post must still be exported, not dropped.
+        AtomicInteger entered = new AtomicInteger();
+        CountDownLatch firstEntered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        List<String> posted = Collections.synchronizedList(new ArrayList<>());
+        OtlpSink sink = new OtlpSink("http://x/api/public/otel", "pk:sk", "sess-error", body -> {
+            if (entered.incrementAndGet() == 1) {
+                firstEntered.countDown();
+                release.await(10, TimeUnit.SECONDS);
+                throw new StackOverflowError("the wire blew up");
+            }
+            posted.add(body);
+        });
+
+        prompt(sink, "r1", 1000, 2000);
+        assertTrue(firstEntered.await(5, TimeUnit.SECONDS), "the doomed post is in flight");
+        prompt(sink, "r2", 3000, 4000);   // held behind it
+        release.countDown();
+
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline && posted.isEmpty()) {
+            Thread.sleep(20);
+        }
+        assertEquals(1, posted.size(), "the held snapshot survives the Error that killed the post");
+        assertEquals(2, spansOfStatic(posted.get(0)).stream()
+                        .filter(s -> s.name().startsWith("turn ")).count(),
+                "and it is the newest snapshot, both prompts folded in");
+
+        prompt(sink, "r3", 5000, 6000);
+        deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline && posted.size() < 2) {
+            Thread.sleep(20);
+        }
+        assertEquals(2, posted.size(), "and the wire is not wedged shut for later prompts");
     }
 }

@@ -6,6 +6,30 @@
 // the provider history, so they are deliberately NOT counted.
 
 import type { RunEvent } from "../events";
+import { windowTrace, type UiState } from "./reducer";
+
+/**
+ * The state a resumed session hands to the live socket.
+ *
+ * A resume is the one seam in the app where a finished record turns into a
+ * stream that has no end: the JSONL is folded whole (card 116 — a finite fold
+ * keeps every row), and then the very same object is what new frames append to.
+ * Seeding it unbounded left the live path without the limit every other live
+ * state has, and the cut still came — at whichever later frame happened to
+ * arrive, taking thousands of rows out from under a reader who had done nothing.
+ *
+ * Cutting here instead costs the same rows and buys two things: the pane states
+ * its window on the first render rather than on some later one, and each
+ * following frame copies a bounded array (measured over 2000 live frames on top
+ * of a 9000-row history: 12.9 ms seeded whole, 7.4 ms seeded windowed).
+ *
+ * Not "keep the seeded rows and window only what grows": that leaves the array
+ * unbounded for a long session, and unbounded is what the window is for — a
+ * 50 000-frame stream folds in 179.8 ms windowed and 2998.9 ms uncapped.
+ */
+export function seedResumedLive(folded: UiState): UiState {
+  return windowTrace(folded);
+}
 
 export interface ResumeSummary {
   /** Every stored JSONL line that will be re-folded into the UI. */
