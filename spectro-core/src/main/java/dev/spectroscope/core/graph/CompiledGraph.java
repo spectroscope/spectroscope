@@ -204,6 +204,49 @@ public final class CompiledGraph {
         return invoke(input, RunConfig.defaults());
     }
 
+    /** One streamable moment of a run: which lens produced it, and what it holds. */
+    public record StreamChunk(StreamMode mode, Object chunk) {
+    }
+
+    /** The three lenses of {@link #stream}, the python edition's stream modes. */
+    public enum StreamMode {
+        /** The whole state, as a fresh shallow copy, after each superstep boundary. */
+        VALUES,
+        /** Each node's OWN write — never the merge — after its superstep applied. */
+        UPDATES,
+        /** Whatever a node or a routing decision wrote through {@link #streamWriter()}. */
+        CUSTOM
+    }
+
+    /** The writer of the run executing on this thread, or nothing. */
+    private static final ThreadLocal<StreamWriter> WRITER = new ThreadLocal<>();
+
+    /** The writer a run installs when nobody asked for {@link StreamMode#CUSTOM}. */
+    private static final StreamWriter SWALLOW = chunk -> {
+    };
+
+    /**
+     * The stream writer of the run currently executing on this thread.
+     *
+     * <p>Inside a run this is always a real writer, never {@code null} — when no
+     * consumer asked for {@link StreamMode#CUSTOM}, writes simply cost nothing,
+     * so a node branching on the writer's presence still takes its streaming
+     * path. Outside a run it raises: callers use the raise as "this code is not
+     * being streamed", exactly as the python edition's
+     * {@code get_stream_writer()} does.</p>
+     *
+     * @return the writer of the running graph
+     * @throws IllegalStateException outside a run
+     */
+    public static StreamWriter streamWriter() {
+        StreamWriter writer = WRITER.get();
+        if (writer == null) {
+            throw new IllegalStateException("streamWriter() only answers inside a run: it is the "
+                    + "writer OF a run, and no graph is executing on this thread.");
+        }
+        return writer;
+    }
+
     /**
      * Runs to completion.
      *
@@ -224,10 +267,58 @@ public final class CompiledGraph {
      * @throws Exception               whatever a node or a decision threw
      */
     public GraphState invoke(GraphState input, RunConfig config) throws Exception {
+        return run(input, config, null, null);
+    }
+
+    /**
+     * Runs to completion, delivering the run's moments to the caller AS THEY
+     * HAPPEN — the python edition's {@code astream}, synchronously: chunks
+     * arrive inline on the caller's own thread, so what makes it streaming is
+     * WHEN a chunk is seen, not which thread carries it.
+     *
+     * <p>The consumer is the caller's own code asking for the chunks — unlike a
+     * sink it is not observation riding along, so an exception it throws is a
+     * real failure and reaches the caller undamped.</p>
+     *
+     * @param input    the starting state
+     * @param config   the ceiling and the caller's addressing map
+     * @param modes    which lenses to deliver; asking for none is refused, the
+     *                 way the python edition refuses an empty mode list
+     * @param consumer where every requested chunk goes
+     * @return the end state
+     * @throws Exception whatever a node, a decision or the consumer threw
+     */
+    public GraphState stream(GraphState input, RunConfig config, java.util.Set<StreamMode> modes,
+                             Consumer<StreamChunk> consumer) throws Exception {
+        if (modes == null || modes.isEmpty()) {
+            throw new IllegalArgumentException("stream() was asked for no modes; pass at least "
+                    + "one of VALUES, UPDATES, CUSTOM — an empty request is a caller bug, not "
+                    + "a silent no-op.");
+        }
+        java.util.Objects.requireNonNull(consumer, "consumer");
+        return run(input, config, java.util.EnumSet.copyOf(modes), consumer);
+    }
+
+    /** The one loop every entry point runs through. */
+    private GraphState run(GraphState input, RunConfig config, java.util.Set<StreamMode> modes,
+                           Consumer<StreamChunk> consumer) throws Exception {
         int limit = config.resolvedRecursionLimit();
         String runId = newRunId();
         long began = System.nanoTime();
         int step = 0;
+
+        boolean wantsValues = modes != null && modes.contains(StreamMode.VALUES);
+        boolean wantsUpdates = modes != null && modes.contains(StreamMode.UPDATES);
+        boolean wantsCustom = modes != null && modes.contains(StreamMode.CUSTOM);
+        // The writer is installed for EVERY run, streaming or not: inside a run
+        // it must be real and never null, so a node branching on its presence
+        // takes its streaming path and an unconsumed write costs nothing. The
+        // previous binding is restored on the way out — a node that invokes a
+        // nested graph must get its own writer back afterwards.
+        StreamWriter previous = WRITER.get();
+        WRITER.set(wantsCustom
+                ? chunk -> consumer.accept(new StreamChunk(StreamMode.CUSTOM, chunk))
+                : SWALLOW);
 
         try {
             // The threadId is on the wire only when a checkpointer is configured
@@ -245,6 +336,10 @@ public final class CompiledGraph {
             GraphState state = loaded(input, config);
             List<String> frontier = nextFrontier(List.of(START), state, config, runId, step);
             persist(config, state, frontier);
+            if (wantsValues) {
+                consumer.accept(new StreamChunk(StreamMode.VALUES,
+                        new LinkedHashMap<>(state.values())));
+            }
             Deque<List<String>> recent = new ArrayDeque<>();
 
             while (!frontier.isEmpty()) {
@@ -267,14 +362,29 @@ public final class CompiledGraph {
                 for (Map.Entry<String, StateUpdate> result : results) {
                     state = spec.schema().apply(state, result.getValue());
                 }
+                if (wantsUpdates) {
+                    for (Map.Entry<String, StateUpdate> result : results) {
+                        consumer.accept(new StreamChunk(StreamMode.UPDATES,
+                                Map.of(result.getKey(), result.getValue().channels())));
+                    }
+                }
 
                 step++;
                 List<String> sources = results.stream().map(Map.Entry::getKey).toList();
                 frontier = nextFrontier(sources, state, config, runId, step);
                 persist(config, state, frontier);
+                if (wantsValues) {
+                    consumer.accept(new StreamChunk(StreamMode.VALUES,
+                            new LinkedHashMap<>(state.values())));
+                }
             }
             return state;
         } finally {
+            if (previous == null) {
+                WRITER.remove();
+            } else {
+                WRITER.set(previous);
+            }
             int steps = step;
             long elapsed = (System.nanoTime() - began) / 1_000_000L;
             // From a finally, so a raised run, a recursion abort and a consumer
