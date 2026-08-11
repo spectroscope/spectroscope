@@ -83,6 +83,13 @@ describe("the view is a pure function of the lifted state", () => {
 
   // An unmount/remount with App-held state IS a second render from the same
   // object; if these two differ, something inside the view still owns state.
+  it("clamps a stale cursor to the last record instead of pointing past the file", () => {
+    // The sidebar rail can swap the run UNDER the lifted view: a cursor at
+    // 9999 over a 36-record run must land on the end, not on records[9999].
+    const html = render({ orientation: "horizontal", cursor: 9999, picked: null });
+    expect(html).toMatch(/record 36\/36/);
+  });
+
   it("renders identically twice from one state object — the remount case", () => {
     expect(render(view)).toBe(render(view));
   });

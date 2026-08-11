@@ -18,6 +18,7 @@ import {
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
+import { ScenarioRail, type LoadedRun } from "../stategraph/StateGraphPane";
 import { loc, type Dsl } from "../scenario/dsl";
 
 export function Sidebar(props: {
@@ -40,6 +41,10 @@ export function Sidebar(props: {
   onStarters: () => void;
   /** Play a scenario inline from the list — replays it like a session. */
   onSelectScenario: (dsl: Dsl) => void;
+  /** The state-graph run on screen (its source names the active rail row). */
+  stateGraphSource: string | null;
+  /** Load a bundled state-graph scenario from the rail — replaces the run. */
+  onStateGraphScenario: (run: LoadedRun) => void;
   /** The entered fleet's contextId, or null when a session is shown. */
   activeFleet: string | null;
   /** Enter a fleet — inspect its agents like a session. */
@@ -395,11 +400,15 @@ export function Sidebar(props: {
           </nav>
         </>
       ) : nav === "stategraph" ? (
-        /* No rail of its own, because there is nothing on the server to list:
-           a state graph arrives as two files through the pane's own picker.
-           Saying that beats leaving the reader in front of an empty list and
-           letting him wonder whether it failed to load. */
-        <p className="sidebar-note">{t(lang, "nav.stategraphNote")}</p>
+        /* The scenario rail, the fleet list's idiom — offered PERMANENTLY,
+           because the empty-state shelf disappears the moment a run loads
+           (owner's call, 2026-08-11). The note stays: files through the
+           picker remain the other way in. */
+        <>
+          <p className="sidebar-note">{t(lang, "nav.stategraphNote")}</p>
+          <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
+          <ScenarioRail active={props.stateGraphSource} onSelect={props.onStateGraphScenario} />
+        </>
       ) : (
         <>
           <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>

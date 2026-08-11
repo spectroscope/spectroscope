@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SCENARIOS, StateGraphPane } from "./StateGraphPane";
+import { SCENARIOS, ScenarioRail, StateGraphPane } from "./StateGraphPane";
 import { readStateGraphRun } from "./artifact";
 import { DEFAULT_VIEW } from "./viewState";
 
@@ -60,6 +60,23 @@ describe("the scenario shelf", () => {
     const failing = bySource.get("failing-run.graph.jsonl")!.stateJsonl!;
     expect(failing).toContain('"docs"');
     expect(failing).toContain("cafeteria");
+  });
+
+  it("every scenario carries a human title in both languages", () => {
+    for (const s of SCENARIOS) {
+      expect(s.title.de.length, s.source).toBeGreaterThan(3);
+      expect(s.title.en.length, s.source).toBeGreaterThan(3);
+    }
+  });
+
+  it("the rail lists every scenario, marks the active one, and keeps the fleet idiom", () => {
+    // The owner's call: once a run is loaded the shelf is gone — the sidebar
+    // rail offers the scenarios permanently, the way the fleet list does.
+    const html = renderToStaticMarkup(<ScenarioRail active="crag.graph.jsonl" onSelect={() => {}} />);
+    expect((html.match(/scenario-row/g) ?? []).length).toBeGreaterThanOrEqual(SCENARIOS.length);
+    expect(html).toContain("Simple RAG");
+    expect(html).toContain("state graph scenario · demo");
+    expect(html).toMatch(/scenario-row[^"]*active/);
   });
 
   it("the empty state offers every scenario as its own button", () => {
