@@ -1,5 +1,6 @@
 package dev.spectroscope.core.session;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider.ImageContent;
@@ -19,6 +20,7 @@ import java.nio.file.attribute.FileTime;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
+import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
@@ -160,6 +162,120 @@ class SessionStoreTest {
         assertEquals(130, row.tokens(), "the usage appended after the first list counts");
         assertEquals("end_turn", row.stopReason());
         assertEquals(4L, row.endedAt(), "and the span ends at the last event, not the folded one");
+    }
+
+    // ---- the sidecar index (the cold half) ----------------------
+
+    @Test
+    void aColdListReadsTheSidecarIndexInsteadOfEverySessionFile() throws IOException {
+        // Same read-counting trick as the warm test, one process boundary later:
+        // the file's CONTENT is swapped for one of exactly the same length under
+        // the same pinned modification time, so the (mtime, size) key is what it
+        // was. A cold list that opened the file would report the new prompt.
+        // Reporting the old one proves it came out of the index instead.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        store.append(new RunEvent.RunStart("r1", "main", null, "first", "ollama", null, 42L));
+        Path file = SessionStore.SESSIONS_DIR.resolve(id + ".jsonl");
+        FileTime pinned = FileTime.fromMillis(1_700_000_000_000L);
+        Files.setLastModifiedTime(file, pinned);
+        long lengthBefore = Files.size(file);
+
+        assertEquals("first", listedRow(id).firstPrompt()); // folds, and persists the index
+
+        SessionStore.forgetFoldedRows(); // the process restarts; only the disk survives
+
+        Files.writeString(file,
+                Files.readString(file, StandardCharsets.UTF_8).replace("first", "swapd"),
+                StandardCharsets.UTF_8);
+        Files.setLastModifiedTime(file, pinned);
+        assertEquals(lengthBefore, Files.size(file), "the test's premise: the swap kept the length");
+
+        assertEquals("first", listedRow(id).firstPrompt(),
+                "a cold list must come from the sidecar index, not from the file");
+    }
+
+    @Test
+    void aSessionThatGrewWhileTheIndexSleptIsRefoldedNotServedStale() {
+        // The index is written by one process and read by the next, so its rows
+        // are older than the store by construction. A row whose file has moved
+        // since must lose to the file, or a session that was running when the
+        // server stopped would be frozen mid-run for good.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        store.append(new RunEvent.RunStart("r1", "main", null, "Count the files", "ollama", null, 1L));
+        store.append(new RunEvent.Usage("main", 100, 20, 2L));
+        assertEquals(120, listedRow(id).tokens());
+
+        SessionStore.forgetFoldedRows();
+        store.append(new RunEvent.Usage("main", 5, 5, 3L));
+        store.append(new RunEvent.RunEnd("r1", "end_turn", 4L));
+
+        SessionStore.SessionInfo row = listedRow(id);
+        assertEquals(130, row.tokens(), "the growth after the index was written must count");
+        assertEquals("end_turn", row.stopReason());
+        assertEquals(4L, row.endedAt());
+    }
+
+    @Test
+    void everyFieldOfARowSurvivesTheSidecarIndexRoundTrip() throws IOException {
+        // AC 4 of card 151: the twelve fields must be what they were. Compared as
+        // whole records, so a field added later is covered without touching this
+        // test — and each one is asserted non-default first, or a round trip that
+        // dropped everything would pass by agreeing with itself.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        var input = JSON.createObjectNode().put("command", "ls");
+        store.append(new RunEvent.RunStart("r1", "main", null, "Do the thing",
+                "ollama", "glm-5.2", null, null, 10L));
+        store.append(new RunEvent.TurnStart("main", 1, 11L));
+        store.append(new RunEvent.Usage("main", 100, 20, 12L));
+        store.append(new RunEvent.PermissionRequest("main", "c1", "run_command", input, 13L));
+        store.append(new RunEvent.PermissionDecision("c1", false, 14L));
+        store.append(new RunEvent.AgentSpawn("worker-1", "main", "sub task", 15L));
+        store.append(new RunEvent.RunStart("r2", "worker-1", "main", "sub task",
+                "ollama", "glm-5.2", null, null, 16L));
+        store.append(new RunEvent.RunEnd("r1", "end_turn", 17L));
+
+        SessionStore.SessionInfo folded = listedRow(id);
+        assertEquals(new SessionStore.SessionInfo(id, 10L, "Do the thing", 120, "ollama",
+                2, 1, "glm-5.2", "end_turn", 1, 1, 17L), folded,
+                "the fold itself, so the round trip below is compared against a known row");
+
+        // What is ON DISK, compared field by field against the row itself. The
+        // reload below cannot make this claim on its own: an index that matched
+        // nothing would re-fold and agree with itself, and the test would pass
+        // while the file was empty.
+        JsonNode persisted = JSON.readTree(SessionStore.sessionIndexFile().toFile());
+        JsonNode entry = StreamSupport.stream(persisted.spliterator(), false)
+                .filter(node -> node.get("name").asText().equals(id + ".jsonl"))
+                .findFirst().orElseThrow();
+        // Compared as text, not as trees: a tree comparison calls 10L and 10
+        // different numbers, and "byte-identical" is the claim anyway.
+        assertEquals(JSON.writeValueAsString(folded), entry.get("row").toString(),
+                "the sidecar index must carry all twelve fields, not a subset");
+
+        SessionStore.forgetFoldedRows();
+
+        assertEquals(folded, listedRow(id),
+                "every field must come back out of the index exactly as it went in");
+    }
+
+    @Test
+    void aCorruptSidecarIndexIsIgnoredAndTheStoreIsFoldedAgain() throws IOException {
+        // The index is a cache, never the record. Half a file (a crash mid-write,
+        // an older format) must cost a cold fold, never a listing.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        store.append(new RunEvent.RunStart("r1", "main", null, "Count the files", "ollama", null, 7L));
+        assertEquals("Count the files", listedRow(id).firstPrompt());
+
+        SessionStore.forgetFoldedRows();
+        Files.writeString(SessionStore.sessionIndexFile(), "[{\"name\":\"tru",
+                StandardCharsets.UTF_8);
+
+        assertEquals("Count the files", listedRow(id).firstPrompt(),
+                "a torn index is dropped, the store is read instead");
     }
 
     /** This id's row out of the sessions overview. */

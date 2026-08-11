@@ -1536,6 +1536,16 @@ describe("the window says how much it dropped (card 116)", () => {
     expect(state.traceDropped).toBe(400);
   });
 
+  it("cannot contradict the seq of the row it leaves on top (card 116 AC 3)", () => {
+    // A reader has two signals and will check one against the other: the pane
+    // says "{n} older rows fell out", and the first row on screen says which
+    // frame the record now begins at. They have to be the same statement.
+    let state = windowTrace(reduceAll(initialState, frames(5100)));
+    state = windowTrace(reduceAll(state, frames(300)));
+    expect(state.traceDropped).toBe(400);
+    expect(state.trace[0].seq).toBe(401);
+  });
+
   it("is untouched when the window does not apply", () => {
     const before = reduceAll(initialState, frames(100));
     expect(windowTrace(before)).toBe(before); // same object: nothing happened

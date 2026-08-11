@@ -41,6 +41,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * Span/trace ids are deterministic (sha256 of session/run/call seeds), so a
  * re-export upserts instead of duplicating.</p>
  *
+ * <p>Because those ids make every export an UPSERT, the exports are
+ * single-flight (card 75): one POST on the wire at a time, the newest snapshot
+ * held until it finishes. Two snapshots racing could otherwise be committed
+ * reversed, and the older one would pull a parent span's end time back below
+ * its own children.</p>
+ *
  * <p>Semconv: both {@code langfuse.observation.type} (Langfuse's priority
  * registry) and {@code gen_ai.operation.name} (OpenLLMetry-style consumers)
  * ride on every span — agents as {@code invoke_agent}, turns as {@code chat}
@@ -101,6 +107,13 @@ public final class OtlpSink implements TracingPort {
     private final AtomicBoolean warned = new AtomicBoolean(false);
     private final AtomicBoolean overflowWarned = new AtomicBoolean(false);
     private final AtomicBoolean wedgeWarned = new AtomicBoolean(false);
+
+    /** Guards the two fields below together: whether the wire is busy and what
+     *  is waiting for it have to be read and written as one decision, which is
+     *  why neither is an atomic of its own. */
+    private final Object wire = new Object();
+    private boolean posting;
+    private Payload pendingSnapshot;
 
     /**
      * Build the sink when (and only when) the config carries an endpoint.
@@ -194,24 +207,86 @@ public final class OtlpSink implements TracingPort {
         }
     }
 
-    /** Fold the buffer-so-far and post it on a virtual thread — the one export
-     *  path, shared by the clean idle point and the wedge recovery. The snapshot
-     *  is copied on THIS thread before the VT starts, so the VT owns immutable
+    /** Fold the buffer-so-far and hand it to the wire — the one export path,
+     *  shared by the clean idle point and the wedge recovery. The snapshot is
+     *  copied on THIS thread before any VT starts, so the VT owns immutable
      *  state; a failed post warns once and never touches the run. */
     private void exportSnapshot() {
         Payload payload = buildPayload(new ArrayList<>(buffer));
-        Thread.startVirtualThread(() -> {
-            try {
-                poster.post(payload.body());
-                notifyExport(payload, true, null);
-            } catch (Exception failed) {
-                if (warned.compareAndSet(false, true)) {
-                    log.warn("otlp: export to {} failed ({}) — runs continue, further "
-                            + "failures stay quiet", endpoint, failed.getMessage());
-                }
-                notifyExport(payload, false, failed.getMessage());
+        synchronized (wire) {
+            if (posting) {
+                // SINGLE-FLIGHT (card 75). One sink is reused across a whole
+                // server connection, so prompt K's export could still be on the
+                // wire when prompt K+1 reaches its idle point. Two independent
+                // HTTP/1.1 requests have no ordering guarantee between them, and
+                // because span ids are deterministic every backend UPSERTS them:
+                // the older snapshot arriving last drags the root and agent
+                // spans' end times back below the turn spans the newer one
+                // already committed — a trace whose parent ends before its own
+                // children. It does not self-heal when it is the connection's
+                // last two exports that race.
+                //
+                // Holding rather than queueing is safe because a snapshot is
+                // CUMULATIVE: the newer one contains everything the older one
+                // said. So a superseded snapshot is dropped, not deferred, and
+                // the mirror (card 86) reports the posts that really happened.
+                pendingSnapshot = payload;
+                return;
             }
-        });
+            posting = true;
+        }
+        Thread.startVirtualThread(() -> drain(payload));
+    }
+
+    /** Post snapshots one at a time until nothing is held back. The flag is
+     *  only cleared while holding the lock AND finding nothing pending, so a
+     *  snapshot handed over during the last post still goes out instead of
+     *  being stranded by a drain loop that already decided it was done. */
+    private void drain(Payload first) {
+        Payload current = first;
+        try {
+            while (current != null) {
+                postOnce(current);
+                synchronized (wire) {
+                    current = pendingSnapshot;
+                    pendingSnapshot = null;
+                    if (current == null) {
+                        posting = false;
+                    }
+                }
+            }
+        } catch (Throwable never) {
+            // Belt and braces for the same reason onEvent has one: nothing in
+            // the loop above should be able to throw, and a thread that dies
+            // here with the flag still set would shut the wire for the rest of
+            // the connection rather than lose one snapshot.
+            synchronized (wire) {
+                pendingSnapshot = null;
+                posting = false;
+            }
+            throw never;
+        }
+    }
+
+    /** One POST plus its mirror report; never throws — the drain loop must keep
+     *  running so a held snapshot is not stranded by a dead backend.
+     *
+     *  <p>Throwable, not Exception: this is a REGISTERED port, so an OOM or a
+     *  StackOverflow raised on the export thread costs the run nothing — but
+     *  under single-flight it would take the wire down with it and silently end
+     *  exporting for the whole connection, which is card 73's openRuns wedge
+     *  reappearing behind a different field.</p> */
+    private void postOnce(Payload payload) {
+        try {
+            poster.post(payload.body());
+            notifyExport(payload, true, null);
+        } catch (Throwable failed) {
+            if (warned.compareAndSet(false, true)) {
+                log.warn("otlp: export to {} failed ({}) — runs continue, further "
+                        + "failures stay quiet", endpoint, failed.getMessage());
+            }
+            notifyExport(payload, false, failed.getMessage());
+        }
     }
 
     /** Tells the registered mirror (if any) — a mirror must never break the export. */

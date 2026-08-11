@@ -18,7 +18,7 @@ import {
 } from "./state/reducer";
 import type { UiState } from "./state/reducer";
 import { fetchLlmWireIndex, mergeLlmExchanges } from "./wire/llmWire";
-import { summarizeHistory } from "./state/resume";
+import { seedResumedLive, summarizeHistory } from "./state/resume";
 import { AppHeader } from "./components/AppHeader";
 import { Chat } from "./components/Chat";
 import { ChatV2 } from "./components/ChatV2";
@@ -1183,7 +1183,8 @@ export function App() {
         // Raw/Compact views show it line by line, exactly as it rides along.
         { sessionId: id, ...summarizeHistory(events), history: events },
       );
-      setLive(seeded);
+      // The fold above is finite and keeps every row; what it becomes is not.
+      setLive(seedResumedLive(seeded));
       setLiveEvents(events);
       setReplay(null);
       setImagesOpen(false);
@@ -2211,7 +2212,13 @@ export function App() {
         <div style={{ display: traceMounted ? "contents" : "none" }}>
           <TraceView
             entries={traceEntries}
-            droppedRows={live.traceDropped}
+            /* The count belongs to the record on screen, not to this browser's
+               socket: a stored session is folded whole and has dropped nothing,
+               and reading `live` here made a complete archive announce the live
+               window's losses as its own. Not `view` either — under a
+               translation that is a fresh fold whose count is 0 while the rows
+               beside it are still the windowed ones. */
+            droppedRows={recordedView.traceDropped}
             agentFilter={traceAgent}
             onAgentFilter={setTraceAgent}
             focusEvent={focusEvent}

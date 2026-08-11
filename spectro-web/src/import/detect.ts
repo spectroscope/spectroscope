@@ -100,9 +100,15 @@ function cut(text: string): { lines: string[]; at: number[] } {
   return { lines, at };
 }
 
+/** The three formats this importer reads. Named rather than repeated, because
+ *  a second module now answers a question PER format (contextRecording.ts: did
+ *  this one record the assembled request?) and two hand-written copies of the
+ *  same three words would drift the moment a fourth format arrives. */
+export type ImportKind = "spectroscope" | "claude-code" | "vscode-agent";
+
 export function detectAndLoad(text: string): {
   events: RunEvent[];
-  kind: "spectroscope" | "claude-code" | "vscode-agent";
+  kind: ImportKind;
   source: ImportSource;
   /** What the file said it was, when it was one agent's transcript rather than
    *  a session's (card 152). Absent for every other file, which is what keeps

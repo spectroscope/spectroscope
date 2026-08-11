@@ -15,11 +15,13 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -33,6 +35,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 /**
@@ -366,6 +369,7 @@ public final class SessionStore {
         if (!Files.isDirectory(SESSIONS_DIR)) {
             return List.of();
         }
+        loadIndexOnce();
         try (Stream<Path> files = Files.list(SESSIONS_DIR)) {
             List<Path> stored = files
                     .filter(path -> path.getFileName().toString().endsWith(".jsonl"))
@@ -377,11 +381,18 @@ public final class SessionStore {
             // exactly costs one set copy. A concurrent list may evict a row
             // another thread has just folded; that race costs one extra fold,
             // never a wrong row.
-            FOLDED.keySet().retainAll(Set.copyOf(stored));
-            return stored.stream()
-                    .map(SessionStore::describe)
+            AtomicBoolean moved = new AtomicBoolean(FOLDED.keySet().retainAll(Set.copyOf(stored)));
+            List<SessionInfo> rows = stored.stream()
+                    .map(path -> describe(path, moved))
                     .flatMap(Optional::stream)
                     .toList();
+            // Written only when this call actually changed something, so the
+            // warm case — the common one — stays a pile of stats and no write
+            // at all.
+            if (moved.get()) {
+                saveIndex();
+            }
+            return rows;
         } catch (IOException failure) {
             throw new UncheckedIOException("Cannot list " + SESSIONS_DIR, failure);
         }
@@ -400,6 +411,9 @@ public final class SessionStore {
      */
     private record FoldedRow(FileTime lastModified, long size, SessionInfo row) {}
 
+    /** Whether this process has already tried to read the sidecar index. */
+    private static final AtomicBoolean INDEX_LOADED = new AtomicBoolean(false);
+
     /**
      * Session file → its folded row. The twelve fields of a row are a pure
      * function of the file's bytes, and a session that has stopped never gains
@@ -410,6 +424,33 @@ public final class SessionStore {
      * Concurrent because the REST worker, the socket and the CLI all list.
      */
     private static final Map<Path, FoldedRow> FOLDED = new ConcurrentHashMap<>();
+
+    /**
+     * The sidecar index — the folded rows written down so the NEXT process does
+     * not pay for the whole history again.
+     *
+     * <p>Deliberately a sibling of the sessions directory rather than a file
+     * inside it. Everything in there is a session or a session's blob folder,
+     * and the delete path walks that directory by name; a cache file living
+     * among the records would have to be excluded in every one of those places
+     * forever.</p>
+     *
+     * @return the index path (it may not exist)
+     */
+    static Path sessionIndexFile() {
+        return SESSIONS_DIR.resolveSibling("sessions-index.json");
+    }
+
+    /**
+     * Drops the in-memory folds, leaving the sidecar index on disk — which is
+     * exactly the state a restarted process starts in. The only way to exercise
+     * the cold path without forking a JVM, so it exists for the tests and is
+     * package-private for that reason.
+     */
+    static void forgetFoldedRows() {
+        FOLDED.clear();
+        INDEX_LOADED.set(false);
+    }
 
     /**
      * Folds one session file into its overview row, reusing the previous fold
@@ -436,7 +477,7 @@ public final class SessionStore {
      * @param path the .jsonl file to summarize
      * @return the overview row, or empty when the file has no run_start or cannot be read
      */
-    private static Optional<SessionInfo> describe(Path path) {
+    private static Optional<SessionInfo> describe(Path path, AtomicBoolean moved) {
         BasicFileAttributes stamp;
         try {
             // ONE stat for both halves of the key, so length and time are a
@@ -455,7 +496,105 @@ public final class SessionStore {
         }
         Optional<SessionInfo> row = fold(path);
         FOLDED.put(path, new FoldedRow(stamp.lastModifiedTime(), stamp.size(), row.orElse(null)));
+        moved.set(true);
         return row;
+    }
+
+    /**
+     * One line of the sidecar index: a folded row plus the file state it was
+     * folded from, in a shape that survives a JSON round trip.
+     *
+     * <p>The modification time travels as an ISO-8601 instant rather than
+     * milliseconds on purpose. APFS and ext4 both keep nanoseconds, and a key
+     * truncated to the millisecond can never equal the stamp a later
+     * {@code readAttributes} reports — the index would load, match nothing, and
+     * quietly cost a full fold anyway while looking like it worked.</p>
+     *
+     * @param name         the session file's name inside the sessions directory
+     * @param lastModified the modification time the row was folded under
+     * @param size         the file length at that same moment
+     * @param row          the folded row, or null for a file with no run_start
+     */
+    private record IndexEntry(String name, String lastModified, long size, SessionInfo row) {}
+
+    /**
+     * Seeds the in-memory folds from the sidecar index, once per process.
+     *
+     * <p>This is the only part of the cache that survives a restart, and it is
+     * what keeps a cold start from re-reading the whole history. It seeds
+     * rather than answers: every loaded row still goes through
+     * {@link #describe} and still has to match the file's current stamp, so an
+     * index written before the last three sessions grew is not a source of
+     * stale rows — it is a source of rows that lose.</p>
+     *
+     * <p>Every failure mode ends the same way, silently: no file, half a file,
+     * an older shape. The index is a cache and the JSONL files are the record,
+     * so the worst an unusable index may cost is the fold it was meant to
+     * save.</p>
+     */
+    private static void loadIndexOnce() {
+        if (!INDEX_LOADED.compareAndSet(false, true)) {
+            return;
+        }
+        List<IndexEntry> entries;
+        try {
+            entries = JSON.readValue(Files.readAllBytes(sessionIndexFile()),
+                    JSON.getTypeFactory().constructCollectionType(List.class, IndexEntry.class));
+        } catch (IOException | RuntimeException unusable) {
+            return;
+        }
+        for (IndexEntry entry : entries) {
+            Path path;
+            try {
+                path = SESSIONS_DIR.resolve(entry.name()).normalize();
+                if (!SESSIONS_DIR.equals(path.getParent())) {
+                    continue; // a name that walks out of the store is not a session
+                }
+                // putIfAbsent, never put: a row this process folded itself is
+                // newer than anything on disk and must not lose to it.
+                FOLDED.putIfAbsent(path, new FoldedRow(
+                        FileTime.from(Instant.parse(entry.lastModified())), entry.size(), entry.row()));
+            } catch (RuntimeException malformed) {
+                // One bad entry costs one fold, not the whole index.
+            }
+        }
+    }
+
+    /**
+     * Writes the folded rows down for the next process.
+     *
+     * <p>Through a temporary file and an atomic move, because two spectro
+     * processes share one home: a reader must see either the old index or the
+     * new one, never half of either. Losing the race only costs the losing
+     * process's newest rows, which the next fold recomputes.</p>
+     *
+     * <p>An unwritable home is not an error here. The index buys speed and
+     * nothing else, so a store on read-only media lists exactly as it always
+     * did, slowly.</p>
+     */
+    private static void saveIndex() {
+        List<IndexEntry> entries = new ArrayList<>(FOLDED.size());
+        FOLDED.forEach((path, folded) -> entries.add(new IndexEntry(
+                path.getFileName().toString(),
+                folded.lastModified().toInstant().toString(),
+                folded.size(),
+                folded.row())));
+        Path index = sessionIndexFile();
+        Path scratch = null;
+        try {
+            scratch = Files.createTempFile(index.getParent(), "sessions-index", ".tmp");
+            Files.write(scratch, JSON.writeValueAsBytes(entries));
+            Files.move(scratch, index, StandardCopyOption.REPLACE_EXISTING,
+                    StandardCopyOption.ATOMIC_MOVE);
+        } catch (IOException | RuntimeException notWritten) {
+            if (scratch != null) {
+                try {
+                    Files.deleteIfExists(scratch);
+                } catch (IOException leftBehind) {
+                    // A stray temp file is not worth failing a listing over.
+                }
+            }
+        }
     }
 
     /**

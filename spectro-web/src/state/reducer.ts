@@ -413,7 +413,7 @@ function appendTrace(s: UiState, entry: Omit<TraceEntry, "seq">): UiState {
 /** How many frames a LIVE trace keeps. Measured, not picked: because an append
  *  copies the window, every live frame pays it — a 50 000-frame stream folds in
  *  164 ms at 5000 and 1.9 s at 20 000. Raising this needs the batched append. */
-const LIVE_TRACE_WINDOW = 5000;
+export const LIVE_TRACE_WINDOW = 5000;
 
 /**
  * Bound the trace of a state that is still growing — the live socket's, and only
