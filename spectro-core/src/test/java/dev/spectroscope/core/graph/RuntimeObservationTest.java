@@ -424,6 +424,12 @@ class RuntimeObservationTest {
     // runtime reads configurable.thread_id and hands THAT to the builder. A
     // CompiledGraph.threadId gutted to `return null` left all 163 graph tests
     // green, which made a shipped, documented field deletable in silence.
+    //
+    // Since the checkpointer arrived, the identity reaches the wire only on a
+    // graph compiled WITH one (harvested rule 103) — these runs therefore carry
+    // an InMemorySaver. They were rewritten from the placeholder era exactly as
+    // the placeholder's Javadoc said they would be; the checkpointer-less half
+    // of the predicate is pinned in ThreadMemoryTest.
 
     private static RunConfig addressedAs(Object threadId) {
         return RunConfig.defaults().withConfigurable(Map.of("thread_id", threadId));
@@ -436,14 +442,16 @@ class RuntimeObservationTest {
 
     @Test
     void theCallersThreadIdReachesGraphStartVerbatim() throws Exception {
-        linear().compile(collecting).invoke(GraphState.empty(), addressedAs("t-9f3c"));
+        linear().compile(new InMemorySaver(), collecting)
+                .invoke(GraphState.empty(), addressedAs("t-9f3c"));
 
         assertEquals("t-9f3c", start().get("threadId"));
     }
 
     @Test
     void aThreadIdIsNeverConfusedWithTheRunIdTheRuntimeMintsItself() throws Exception {
-        linear().compile(collecting).invoke(GraphState.empty(), addressedAs("t-9f3c"));
+        linear().compile(new InMemorySaver(), collecting)
+                .invoke(GraphState.empty(), addressedAs("t-9f3c"));
 
         assertNotEquals(start().get("runId"), start().get("threadId"),
                 "the run is minted here, the thread comes from the caller");
@@ -451,7 +459,7 @@ class RuntimeObservationTest {
 
     @Test
     void twoRunsOnOneThreadCarryOneThreadIdAndTwoRunIds() throws Exception {
-        CompiledGraph graph = linear().compile(collecting);
+        CompiledGraph graph = linear().compile(new InMemorySaver(), collecting);
 
         graph.invoke(GraphState.empty(), addressedAs("t-same"));
         graph.invoke(GraphState.empty(), addressedAs("t-same"));
@@ -487,7 +495,7 @@ class RuntimeObservationTest {
         // silently breaks the join and nothing here would have noticed.
         String awkward = "  Thread-ID_MiXeD  ";
         List<Map<String, Object>> seen = new ArrayList<>();
-        linear().compile(seen::add).invoke(GraphState.empty(),
+        linear().compile(new InMemorySaver(), seen::add).invoke(GraphState.empty(),
                 RunConfig.defaults().withConfigurable(Map.of("thread_id", awkward)));
 
         Map<String, Object> start = seen.stream()
@@ -499,7 +507,8 @@ class RuntimeObservationTest {
 
     @Test
     void aThreadIdThatArrivedAsANumberIsWrittenAsItsText() throws Exception {
-        linear().compile(collecting).invoke(GraphState.empty(), addressedAs(4711));
+        linear().compile(new InMemorySaver(), collecting)
+                .invoke(GraphState.empty(), addressedAs(4711));
 
         assertEquals("4711", start().get("threadId"),
                 "configurable is an untyped map; the wire field stays a string");
@@ -510,7 +519,8 @@ class RuntimeObservationTest {
             throws Exception {
         Path stem = directory.resolve("run.jsonl");
         try (GraphArtifact lifecycle = new GraphArtifact(stem)) {
-            linear().compile(lifecycle).invoke(GraphState.empty(), addressedAs("t-on-disk"));
+            linear().compile(new InMemorySaver(), lifecycle)
+                    .invoke(GraphState.empty(), addressedAs("t-on-disk"));
         }
 
         List<String> lines = Files.readAllLines(ArtifactPaths.graph(stem), StandardCharsets.UTF_8);

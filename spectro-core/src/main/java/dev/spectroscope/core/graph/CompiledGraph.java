@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
+import java.util.stream.Stream;
 
 import static dev.spectroscope.core.graph.StateGraph.END;
 import static dev.spectroscope.core.graph.StateGraph.START;
@@ -99,6 +100,7 @@ public final class CompiledGraph {
     private final Map<String, List<NamedBranch>> branchesFrom = new LinkedHashMap<>();
     private final Consumer<Map<String, Object>> sink;
     private final StatePolicy statePolicy;
+    private final CheckpointSaver checkpointer;
     private final AtomicInteger sinkFailures = new AtomicInteger();
     private final AtomicBoolean warned = new AtomicBoolean();
 
@@ -107,14 +109,20 @@ public final class CompiledGraph {
     }
 
     CompiledGraph(GraphSpec spec) {
-        this(spec, null, null);
+        this(spec, null, null, null);
     }
 
     CompiledGraph(GraphSpec spec, Consumer<Map<String, Object>> sink, StatePolicy statePolicy) {
+        this(spec, sink, statePolicy, null);
+    }
+
+    CompiledGraph(GraphSpec spec, Consumer<Map<String, Object>> sink, StatePolicy statePolicy,
+                  CheckpointSaver checkpointer) {
         this.spec = spec;
         this.topology = Topology.of(spec);
         this.sink = sink;
         this.statePolicy = statePolicy;
+        this.checkpointer = checkpointer;
         for (GraphSpec.Edge edge : spec.edges()) {
             edgesFrom.computeIfAbsent(edge.from(), key -> new ArrayList<>()).add(edge.to());
         }
@@ -221,7 +229,11 @@ public final class CompiledGraph {
         int step = 0;
 
         try {
-            emit(() -> GraphRecords.graphStart(runId, threadId(config), null));
+            // The threadId is on the wire only when a checkpointer is configured
+            // (harvested rule 103): a graph without memory has no threads, and a
+            // key nothing can look up would claim an identity that does not exist.
+            emit(() -> GraphRecords.graphStart(runId,
+                    checkpointer == null ? null : threadId(config), null));
             // Straight after graph_start and before any payload of this run: the
             // file is append-mode and holds several runs, so a reader meeting a
             // payload has to find the policy of THAT run above it. The tier is
@@ -229,9 +241,9 @@ public final class CompiledGraph {
             // halfway through would make this line a lie about the ones below it.
             emit(() -> policyRecord(runId));
 
-            GraphState state = spec.schema().apply(GraphState.empty(),
-                    StateUpdate.ofMap(input.values()));
+            GraphState state = loaded(input, config);
             List<String> frontier = nextFrontier(List.of(START), state, config, runId, step);
+            persist(config, state, frontier);
             Deque<List<String>> recent = new ArrayDeque<>();
 
             while (!frontier.isEmpty()) {
@@ -257,6 +269,7 @@ public final class CompiledGraph {
                 step++;
                 List<String> sources = results.stream().map(Map.Entry::getKey).toList();
                 frontier = nextFrontier(sources, state, config, runId, step);
+                persist(config, state, frontier);
             }
             return state;
         } finally {
@@ -355,26 +368,99 @@ public final class CompiledGraph {
     }
 
     /**
-     * The caller's own thread identity, and nothing else.
+     * The caller's own thread identity, and nothing else. A run that named no
+     * thread gets no invented one, because a minted identity would let two
+     * unrelated runs look like one conversation to a reader. Non-string values
+     * are stringified rather than refused: {@code configurable} is an untyped
+     * map, and the wire field is a string in every edition.
      *
-     * <p><strong>This is a placeholder shape awaiting a checkpointer, not the
-     * spec's rule.</strong> The spec has {@code threadId} present only when a
-     * checkpointer is configured. This edition has no checkpointer seam at all,
-     * so there is nothing to condition on; what ships instead is the only rule
-     * that can be honoured today — the key is written when the caller supplied
-     * {@code configurable.thread_id} and omitted entirely when they did not. A
-     * run that named no thread gets no invented one, because a minted identity
-     * would let two unrelated runs look like one conversation to a reader.</p>
-     *
-     * <p>When a checkpointer arrives, this predicate is what changes, and the
-     * tests in {@code RuntimeObservationTest} under "thread identity" are the
-     * ones that will have to be rewritten with it. Non-string values are
-     * stringified rather than refused: {@code configurable} is an untyped map,
-     * and the wire field is a string in every edition.</p>
+     * <p>Whether the identity reaches the WIRE is a separate predicate — the
+     * spec has {@code threadId} present only when a checkpointer is configured,
+     * and the {@code graph_start} call site conditions on exactly that. The
+     * placeholder that stood here until the checkpointer arrived is gone, as its
+     * own Javadoc promised; {@code ThreadMemoryTest} pins both halves now.</p>
      */
     private static String threadId(RunConfig config) {
         Object named = config.configurable().get("thread_id");
         return named == null ? null : String.valueOf(named);
+    }
+
+    // -- the checkpointer seam ------------------------------------------------ //
+
+    /**
+     * The state a run starts from.
+     *
+     * <p>With a checkpointer and a known thread, the incoming state is applied
+     * to the persisted one THROUGH the reducers. That is the whole multi-turn
+     * contract: the caller hands in a fresh, fully populated state every turn —
+     * an empty accumulating channel included — and merging appends nothing,
+     * while a plain overwrite would silently erase the history.</p>
+     */
+    private GraphState loaded(GraphState input, RunConfig config) {
+        GraphState base = GraphState.empty();
+        if (checkpointer != null && threadId(config) != null) {
+            StateSnapshot prior = checkpointer.get(config);
+            if (prior != null && !prior.values().isEmpty()) {
+                base = GraphState.of(prior.values());
+            }
+        }
+        return spec.schema().apply(base, StateUpdate.ofMap(input.values()));
+    }
+
+    /**
+     * Hands one superstep boundary to the saver: the values as merged, and the
+     * frontier that would run next. The step number is deliberately not passed —
+     * it numbers a THREAD's history, not a run's supersteps, and a second turn
+     * on the same thread has to continue the series rather than restart it.
+     *
+     * <p>Without a thread id there is nothing to file a snapshot under, so the
+     * run simply goes unrecorded rather than failing: a graph run from a script
+     * is a legitimate use; an unaddressable checkpoint is not. A saver that
+     * throws is NOT absorbed the way a sink is — a checkpoint that cannot be
+     * written is lost memory, not lost observation, and a caller relying on the
+     * thread must hear about it.</p>
+     */
+    private void persist(RunConfig config, GraphState state, List<String> frontier) {
+        if (checkpointer == null || threadId(config) == null) {
+            return;
+        }
+        checkpointer.put(config, state.values(), frontier);
+    }
+
+    /**
+     * The newest snapshot of a thread, or the one its config pins.
+     *
+     * <p>Raises without a checkpointer: a graph compiled without memory cannot
+     * answer a thread question, and an empty snapshot here would dress a
+     * configuration bug as an empty conversation. An unknown THREAD, by
+     * contrast, returns an empty snapshot — no history is the normal state of a
+     * first message. A third-party saver answering {@code null} is normalised to
+     * that same empty snapshot, so both arrive at the caller looking alike.</p>
+     *
+     * @param config the addressing map; {@code configurable.thread_id} required
+     * @return the snapshot; never {@code null}
+     * @throws MissingCheckpointerException when this graph was compiled without one
+     */
+    public StateSnapshot getState(RunConfig config) {
+        if (checkpointer == null) {
+            throw new MissingCheckpointerException();
+        }
+        StateSnapshot snapshot = checkpointer.get(config);
+        return snapshot == null ? StateSnapshot.empty(config) : snapshot;
+    }
+
+    /**
+     * Every snapshot of a thread, newest first.
+     *
+     * @param config the addressing map; {@code configurable.thread_id} required
+     * @return the thread's checkpoints, newest first, detached from the store
+     * @throws MissingCheckpointerException when this graph was compiled without one
+     */
+    public Stream<StateSnapshot> getStateHistory(RunConfig config) {
+        if (checkpointer == null) {
+            throw new MissingCheckpointerException();
+        }
+        return checkpointer.list(config);
     }
 
     /**
