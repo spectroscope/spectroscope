@@ -355,10 +355,22 @@ public final class CompiledGraph {
     }
 
     /**
-     * The caller's own thread identity, and nothing else. There is no
-     * checkpointer seam here yet, so {@code configurable.thread_id} is the only
-     * thing that can name a conversation; a run that named none omits the key
-     * rather than inventing one.
+     * The caller's own thread identity, and nothing else.
+     *
+     * <p><strong>This is a placeholder shape awaiting a checkpointer, not the
+     * spec's rule.</strong> The spec has {@code threadId} present only when a
+     * checkpointer is configured. This edition has no checkpointer seam at all,
+     * so there is nothing to condition on; what ships instead is the only rule
+     * that can be honoured today — the key is written when the caller supplied
+     * {@code configurable.thread_id} and omitted entirely when they did not. A
+     * run that named no thread gets no invented one, because a minted identity
+     * would let two unrelated runs look like one conversation to a reader.</p>
+     *
+     * <p>When a checkpointer arrives, this predicate is what changes, and the
+     * tests in {@code RuntimeObservationTest} under "thread identity" are the
+     * ones that will have to be rewritten with it. Non-string values are
+     * stringified rather than refused: {@code configurable} is an untyped map,
+     * and the wire field is a string in every edition.</p>
      */
     private static String threadId(RunConfig config) {
         Object named = config.configurable().get("thread_id");

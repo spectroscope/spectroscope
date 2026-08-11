@@ -56,8 +56,12 @@ public final class GraphRecords {
 
     /**
      * @param runId    the run every record below this line belongs to
-     * @param threadId the conversation, present only when a checkpointer is
-     *                 configured and omitted entirely otherwise
+     * @param threadId the conversation, or null to omit the key. NOTE: the
+     *                 spec's rule is "present only when a checkpointer is
+     *                 configured", and this edition has no checkpointer seam —
+     *                 see {@code CompiledGraph#threadId} for the placeholder
+     *                 predicate actually shipped. Two javadocs disagreeing about
+     *                 the same field is how a later reader builds the wrong one.
      * @param ts       epoch milliseconds, or {@code null} to let the sink stamp it
      * @return the record
      */

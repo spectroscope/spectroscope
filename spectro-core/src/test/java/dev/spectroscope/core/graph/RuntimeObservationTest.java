@@ -416,4 +416,107 @@ class RuntimeObservationTest {
         assertEquals(2, starts.size());
         assertNotEquals(starts.get(0), starts.get(1));
     }
+
+    // -- thread identity, from the caller's map to the wire ----------------------- //
+    //
+    // The record builder's own omit-when-null rule is already pinned in
+    // GraphRecordsTest. What these pin is the wiring between the two: that the
+    // runtime reads configurable.thread_id and hands THAT to the builder. A
+    // CompiledGraph.threadId gutted to `return null` left all 163 graph tests
+    // green, which made a shipped, documented field deletable in silence.
+
+    private static RunConfig addressedAs(Object threadId) {
+        return RunConfig.defaults().withConfigurable(Map.of("thread_id", threadId));
+    }
+
+    private Map<String, Object> start() {
+        assertEquals(1, ofType("graph_start").size());
+        return ofType("graph_start").get(0);
+    }
+
+    @Test
+    void theCallersThreadIdReachesGraphStartVerbatim() throws Exception {
+        linear().compile(collecting).invoke(GraphState.empty(), addressedAs("t-9f3c"));
+
+        assertEquals("t-9f3c", start().get("threadId"));
+    }
+
+    @Test
+    void aThreadIdIsNeverConfusedWithTheRunIdTheRuntimeMintsItself() throws Exception {
+        linear().compile(collecting).invoke(GraphState.empty(), addressedAs("t-9f3c"));
+
+        assertNotEquals(start().get("runId"), start().get("threadId"),
+                "the run is minted here, the thread comes from the caller");
+    }
+
+    @Test
+    void twoRunsOnOneThreadCarryOneThreadIdAndTwoRunIds() throws Exception {
+        CompiledGraph graph = linear().compile(collecting);
+
+        graph.invoke(GraphState.empty(), addressedAs("t-same"));
+        graph.invoke(GraphState.empty(), addressedAs("t-same"));
+
+        List<Map<String, Object>> starts = ofType("graph_start");
+        assertEquals(2, starts.size());
+        assertEquals(List.of("t-same", "t-same"),
+                starts.stream().map(record -> record.get("threadId")).toList());
+        assertNotEquals(starts.get(0).get("runId"), starts.get(1).get("runId"),
+                "joining a conversation back together needs the two to differ");
+    }
+
+    @Test
+    void aRunThatNamedNoThreadOmitsTheKeyRatherThanWritingNull() throws Exception {
+        linear().compile(collecting).invoke(GraphState.empty(), RunConfig.defaults());
+
+        assertFalse(start().containsKey("threadId"), start().toString());
+    }
+
+    @Test
+    void anAddressingMapWithoutAThreadIdOmitsTheKeyToo() throws Exception {
+        linear().compile(collecting).invoke(GraphState.empty(),
+                RunConfig.defaults().withConfigurable(Map.of("user_id", "u-1")));
+
+        assertFalse(start().containsKey("threadId"), start().toString());
+    }
+
+    @Test
+    void aThreadIdIsCarriedVERBATIM_notNormalised() throws Exception {
+        // A surviving mutation found this hole: lower-casing and trimming the id
+        // left every other thread test green. A thread_id is an identifier the
+        // caller will look up again, so folding its case or eating its spaces
+        // silently breaks the join and nothing here would have noticed.
+        String awkward = "  Thread-ID_MiXeD  ";
+        List<Map<String, Object>> seen = new ArrayList<>();
+        linear().compile(seen::add).invoke(GraphState.empty(),
+                RunConfig.defaults().withConfigurable(Map.of("thread_id", awkward)));
+
+        Map<String, Object> start = seen.stream()
+                .filter(r -> "graph_start".equals(r.get("type")))
+                .findFirst().orElseThrow();
+        assertEquals(awkward, start.get("threadId"),
+                "the caller's id reaches the wire byte for byte — no trim, no case fold");
+    }
+
+    @Test
+    void aThreadIdThatArrivedAsANumberIsWrittenAsItsText() throws Exception {
+        linear().compile(collecting).invoke(GraphState.empty(), addressedAs(4711));
+
+        assertEquals("4711", start().get("threadId"),
+                "configurable is an untyped map; the wire field stays a string");
+    }
+
+    @Test
+    void aThreadIdSurvivesIntoTheFileAReaderActuallyOpens(@TempDir Path directory)
+            throws Exception {
+        Path stem = directory.resolve("run.jsonl");
+        try (GraphArtifact lifecycle = new GraphArtifact(stem)) {
+            linear().compile(lifecycle).invoke(GraphState.empty(), addressedAs("t-on-disk"));
+        }
+
+        List<String> lines = Files.readAllLines(ArtifactPaths.graph(stem), StandardCharsets.UTF_8);
+        String line = lines.stream().filter(text -> text.contains("\"graph_start\"")).findFirst()
+                .orElseThrow();
+
+        assertTrue(line.contains("\"threadId\":\"t-on-disk\""), line);
+    }
 }
