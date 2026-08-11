@@ -47,10 +47,12 @@ describe("the SVG is the drawing, self-contained", () => {
 
   it("references nothing outside itself", () => {
     // The xmlns namespace NAME is an identifier, not a fetch — everything else
-    // that smells of the network is a broken promise in a mailed file.
+    // that smells of the network is a broken promise in a mailed file. A
+    // url(#fragment) stays: it points INTO this very file (the arrowhead defs),
+    // which is the opposite of a request.
     const stripped = svg.replace('xmlns="http://www.w3.org/2000/svg"', "");
     expect(stripped).not.toMatch(/https?:/);
-    expect(stripped).not.toContain("url(");
+    expect(stripped).not.toMatch(/url\((?!#)/);
     expect(stripped).not.toContain("<link");
     expect(stripped).not.toContain("@import");
   });
@@ -71,6 +73,20 @@ describe("the SVG is the drawing, self-contained", () => {
     const early = stateGraphSvg({ run, laid, upto: 0, source: "crag-payload.graph.jsonl" });
     const gen = early.slice(early.indexOf('data-id="generate"'), early.indexOf('data-id="generate"') + 120);
     expect(gen).toContain("x-n--pending");
+  });
+
+  it("arms the edges with state-swapped arrowheads and rules the field", () => {
+    // The canvas and the file must tell the same story: three markers, the
+    // cursor's edge live, a loop labelled, one rule per rank.
+    const svg = stateGraphSvg({ run, laid, upto: run.records.length - 1, source: "x" });
+    for (const id of ["xar-quiet", "xar-taken", "xar-live"]) {
+      expect(svg).toContain(`id="${id}"`);
+    }
+    expect(svg).toContain('marker-end="url(#xar-');
+    expect(svg).toContain('marker-end="url(#xar-live)"');
+    expect(svg).toContain("x-rule");
+    expect(svg).toContain("\u21ba");
+    expect((svg.match(/class="x-rule"/g) ?? []).length).toBe(laid.rankRules.length);
   });
 
   it("escapes a hostile node label instead of shipping markup", () => {

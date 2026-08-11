@@ -54,6 +54,21 @@ export interface RoutedEdge {
   skip: boolean;
   /** An SVG path, absolute, in the same space as the node boxes. */
   path: string;
+  /** Where this edge's ×N / ↺ label sits — a lane edge labels on its lane,
+   *  a plain connector on its midpoint, the template's own anchors. */
+  labelX: number;
+  labelY: number;
+}
+
+/** One full-length rule per rank, on the gutter before the rank's column —
+ *  the template's ruled field: it runs far past the content so the slack
+ *  around a wide, short graph reads as ruled space, not as emptiness. */
+export interface RankRule {
+  rank: number;
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
 }
 
 /** Where one rank's label sits — the template's own anchors: beside the
@@ -71,6 +86,8 @@ export interface StateGraphLayout {
   maxRank: number;
   /** One label per occupied rank, positioned for the chosen orientation. */
   rankLabels: RankLabel[];
+  /** One full-length rule per occupied rank, on its gutter. */
+  rankRules: RankRule[];
   /** The bounding box of everything drawn, arcs included. */
   bounds: { x0: number; y0: number; x1: number; y1: number };
 }
@@ -87,10 +104,37 @@ const GAP = {
   vertical: { along: 46, cross: 40 },
 } as const;
 
-/** How far outside the node field a returning arc bows, per back edge, so two
- *  loops do not sit on top of each other. */
-const BACK_LANE = 26;
-const SKIP_LANE = 22;
+/** The lane grammar, the template's own numbers: how far outside the node
+ *  field a returning (46) or skipping (42) lane clears, how much further each
+ *  additional lane steps (36) so two loops never share one, how far an edge
+ *  steps sideways into the gutter (30, capped below the gap), and the corner
+ *  radius that makes a lane read as a loop instead of a wiring diagram. */
+const BACK_CLEAR = 46;
+const SKIP_CLEAR = 42;
+const LANE_STEP = 36;
+const GUTTER = 30;
+const CORNER = 18;
+
+/** An orthogonal polyline with rounded corners — the template's orthoPath. */
+function orthoPath(pts: number[][], r: number): string {
+  let d = `M${pts[0][0]},${pts[0][1]}`;
+  for (let i = 1; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1];
+    const p1 = pts[i];
+    const p2 = pts[i + 1];
+    const l1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+    const l2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    if (l1 < 0.5 || l2 < 0.5) continue;
+    const rr = Math.min(r, l1 / 2, l2 / 2);
+    const ax = p1[0] - ((p1[0] - p0[0]) / l1) * rr;
+    const ay = p1[1] - ((p1[1] - p0[1]) / l1) * rr;
+    const bx = p1[0] + ((p2[0] - p1[0]) / l2) * rr;
+    const by = p1[1] + ((p2[1] - p1[1]) / l2) * rr;
+    d += ` L${ax},${ay} Q${p1[0]},${p1[1]} ${bx},${by}`;
+  }
+  const last = pts[pts.length - 1];
+  return d + ` L${last[0]},${last[1]}`;
+}
 
 /**
  * Lays out a topology: ranks along one axis, slots across it, and three edge
@@ -103,7 +147,14 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   const nodes = topo.nodes.map((n) => ({ id: n.id, label: n.label }));
   const known = new Set(nodes.map((n) => n.id));
   if (nodes.length === 0) {
-    return { nodes: [], edges: [], maxRank: 0, rankLabels: [], bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    return {
+      nodes: [],
+      edges: [],
+      maxRank: 0,
+      rankLabels: [],
+      rankRules: [],
+      bounds: { x0: 0, y0: 0, x1: 0, y1: 0 },
+    };
   }
   // An edge naming a node that is not in the topology is dropped rather than
   // invented: artifacts come off disk and can be truncated mid-write.
@@ -332,6 +383,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   let by1 = fy1;
   let backIdx = 0;
   let skipIdx = 0;
+  const gutter = Math.min(GUTTER, gapAlong - 10);
 
   const routed: RoutedEdge[] = edges.map((e) => {
     const a = byId.get(e.from)!;
@@ -339,66 +391,105 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     const back = cycleEdge.has(e.i);
     const base = { from: e.from, to: e.to, kind: e.kind, back };
 
-    if (back) {
-      // Out of the far side of the source, around, and into the far side of the
-      // target. The lane grows per back edge so two loops never overlap.
-      const lane = BACK_LANE * (1 + backIdx++);
+    // A lane never crosses the field: it steps sideways into a GUTTER (the
+    // free strip between two rank columns, where no box can ever sit), runs
+    // along a LANE outside the field, and steps back in through the target's
+    // gutter. Every segment lies in provably empty space, and the generous
+    // corner radius is what makes it read as a loop instead of a wiring
+    // diagram. A back edge re-enters through the target's ENTRY face, so its
+    // arrowhead points INTO the box — never a reversed arrow.
+    const lane = (side: -1 | 1, baseClear: number, idx: number) => {
+      const clear = baseClear + idx * LANE_STEP;
       if (horiz) {
-        const y = fy1 + lane;
-        const sx = a.x + a.w / 2;
-        const tx = b.x + b.w / 2;
-        const p = [sx, a.y + a.h, sx, y, tx, y, tx, b.y + b.h];
-        by1 = Math.max(by1, y);
-        return { ...base, skip: false, path: curve(p) };
-      }
-      const x = fx1 + lane;
-      const sy = a.y + a.h / 2;
-      const ty = b.y + b.h / 2;
-      const p = [a.x + a.w, sy, x, sy, x, ty, b.x + b.w, ty];
-      bx1 = Math.max(bx1, x);
-      return { ...base, skip: false, path: curve(p) };
-    }
-
-    // Forward. Try the plain connector first; only bow it if it would cut a box.
-    const plain = horiz
-      ? [
-          a.x + a.w,
-          a.y + a.h / 2,
-          a.x + a.w + gapAlong,
-          a.y + a.h / 2,
-          b.x - gapAlong,
-          b.y + b.h / 2,
-          b.x,
-          b.y + b.h / 2,
-        ]
-      : [
-          a.x + a.w / 2,
-          a.y + a.h,
-          a.x + a.w / 2,
-          a.y + a.h + gapAlong,
-          b.x + b.w / 2,
-          b.y - gapAlong,
-          b.x + b.w / 2,
-          b.y,
+        const laneAt = side < 0 ? fy0 - clear : fy1 + clear;
+        const sy = a.y + a.h / 2;
+        const ty = b.y + b.h / 2;
+        const sx = side < 0 ? a.x + a.w : a.x;
+        const g1 = side < 0 ? sx + gutter : sx - gutter;
+        const g2 = b.x - gutter;
+        const pts = [
+          [sx, sy],
+          [g1, sy],
+          [g1, laneAt],
+          [g2, laneAt],
+          [g2, ty],
+          [b.x, ty],
         ];
-    if (!cutsThrough(plain, e.from, e.to)) {
-      return { ...base, skip: false, path: curve(plain) };
-    }
-    const lane = SKIP_LANE * (1 + skipIdx++);
-    if (horiz) {
-      const y = fy0 - lane;
+        if (side < 0) by0 = Math.min(by0, laneAt - 22);
+        else by1 = Math.max(by1, laneAt + 22);
+        return {
+          path: orthoPath(pts, CORNER),
+          labelX: (g1 + g2) / 2,
+          labelY: laneAt + (side < 0 ? -9 : 17),
+        };
+      }
+      const laneAt = side < 0 ? fx0 - clear : fx1 + clear;
       const sx = a.x + a.w / 2;
       const tx = b.x + b.w / 2;
-      const p = [sx, a.y, sx, y, tx, y, tx, b.y];
-      by0 = Math.min(by0, y);
-      return { ...base, skip: true, path: curve(p) };
+      const sy = side < 0 ? a.y + a.h : a.y;
+      const g1 = side < 0 ? sy + gutter : sy - gutter;
+      const g2 = b.y - gutter;
+      const pts = [
+        [sx, sy],
+        [sx, g1],
+        [laneAt, g1],
+        [laneAt, g2],
+        [tx, g2],
+        [tx, b.y],
+      ];
+      if (side < 0) bx0 = Math.min(bx0, laneAt - 34);
+      else bx1 = Math.max(bx1, laneAt + 30);
+      return {
+        path: orthoPath(pts, CORNER),
+        labelX: laneAt + (side < 0 ? -11 : 13),
+        labelY: (g1 + g2) / 2,
+      };
+    };
+
+    if (back) {
+      return { ...base, skip: false, ...lane(1, BACK_CLEAR, backIdx++) };
     }
-    const x = fx0 - lane;
-    const sy = a.y + a.h / 2;
-    const ty = b.y + b.h / 2;
-    const p = [a.x, sy, x, sy, x, ty, b.x, ty];
-    bx0 = Math.min(bx0, x);
-    return { ...base, skip: true, path: curve(p) };
+
+    // Forward: the template's plain connector — straight when the two faces
+    // align, otherwise a cubic whose pull is max(24, 45% of the distance), so
+    // a short hop bends tightly instead of ballooning.
+    if (horiz) {
+      const x1 = a.x + a.w;
+      const y1 = a.y + a.h / 2;
+      const x2 = b.x;
+      const y2 = b.y + b.h / 2;
+      const c = Math.max(24, (x2 - x1) * 0.45);
+      const p = [x1, y1, x1 + c, y1, x2 - c, y2, x2, y2];
+      if (b.rank - a.rank > 1 && cutsThrough(p, e.from, e.to)) {
+        return { ...base, skip: true, ...lane(-1, SKIP_CLEAR, skipIdx++) };
+      }
+      const path = Math.abs(y1 - y2) < 0.5 ? `M${x1},${y1} L${x2},${y2}` : curve(p);
+      return { ...base, skip: false, path, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2 - 7 };
+    }
+    const x1 = a.x + a.w / 2;
+    const y1 = a.y + a.h;
+    const x2 = b.x + b.w / 2;
+    const y2 = b.y;
+    const c = Math.max(24, (y2 - y1) * 0.45);
+    const p = [x1, y1, x1, y1 + c, x2, y2 - c, x2, y2];
+    if (b.rank - a.rank > 1 && cutsThrough(p, e.from, e.to)) {
+      return { ...base, skip: true, ...lane(-1, SKIP_CLEAR, skipIdx++) };
+    }
+    const path = Math.abs(x1 - x2) < 0.5 ? `M${x1},${y1} L${x2},${y2}` : curve(p);
+    return { ...base, skip: false, path, labelX: (x1 + x2) / 2, labelY: (y1 + y2) / 2 - 7 };
+  });
+
+  // The ruled field: one thin line per rank, on the gutter before its column,
+  // running far past the content in both directions.
+  const FAR = 4000;
+  const rankRules: RankRule[] = rankLabels.map((l) => {
+    if (horiz) {
+      const x = l.x - gapAlong / 2;
+      return { rank: l.rank, x1: x, y1: -FAR, x2: x, y2: FAR };
+    }
+    const first = placed.filter((n) => n.rank === l.rank).reduce((p, q) => (q.x < p.x ? q : p));
+    const y = first.y - gapAlong / 2;
+    return { rank: l.rank, x1: -FAR, y1: y, x2: FAR, y2: y };
   });
 
   return {
@@ -406,6 +497,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     edges: routed,
     maxRank,
     rankLabels,
+    rankRules,
     bounds: { x0: bx0 - MARGIN, y0: by0 - MARGIN, x1: bx1 + MARGIN, y1: by1 + MARGIN },
   };
 }

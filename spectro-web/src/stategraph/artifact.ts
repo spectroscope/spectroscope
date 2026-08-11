@@ -331,6 +331,28 @@ export function takenUpTo(run: StateGraphRun, upto: number): Set<string> {
   return s;
 }
 
+/** How often each edge was walked up to `upto`, and which one was walked LAST
+ *  — the template's replay grammar: the last edge is the live one, a count
+ *  above one becomes its ×N label. One fold, shared by overlay and export. */
+export interface EdgeStats {
+  counts: Map<string, number>;
+  last: string | null;
+}
+
+export function edgeStatsUpTo(run: StateGraphRun, upto: number): EdgeStats {
+  const counts = new Map<string, number>();
+  let last: string | null = null;
+  for (let i = 0; i <= upto && i < run.records.length; i++) {
+    const r = run.records[i];
+    if (r.type === "edge_taken" && r.from !== undefined && r.to !== undefined) {
+      const key = `${r.from}->${r.to}`;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+      last = key;
+    }
+  }
+  return { counts, last };
+}
+
 /** Why a channel is not in a payload — and the two reasons are different. */
 export interface Absence {
   absent: boolean;
