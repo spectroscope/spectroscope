@@ -24,7 +24,12 @@ export interface TimelineRecord {
   durationMs?: number;
   updateKeys?: string[];
   updateBytes?: number;
-  error?: { class?: string; message?: string };
+  /** The failure's CLASS, as a flat string — the shape the reference writer
+   *  actually emits. Kept apart from the message because a viewer groups by
+   *  class, and a fused "Class: message" would force it to parse its way back
+   *  out of a string somebody built. */
+  errorClass?: string;
+  errorMessage?: string;
 }
 
 /** What a node did, folded over every visit. */
@@ -185,12 +190,12 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
     if (num(r.durationMs) !== undefined) rec.durationMs = num(r.durationMs);
     if (num(r.updateBytes) !== undefined) rec.updateBytes = num(r.updateBytes);
     if (Array.isArray(r.updateKeys)) rec.updateKeys = r.updateKeys.filter((k) => typeof k === "string");
-    if (typeof r.error === "object" && r.error !== null) {
-      const e = r.error as Record<string, unknown>;
-      // Class and message stay separate: a viewer groups by class, and a fused
-      // string would force it to parse its way back out.
-      rec.error = { class: str(e.class), message: str(e.message) };
-    }
+    // `error` is a flat string naming the class, `message` its sibling — read
+    // off the reference's own fixture, not guessed. This reader previously
+    // expected a nested {class, message} object, so a real run's failure record
+    // parsed to nothing and the node showed as failed with no reason.
+    if (str(r.error) !== undefined) rec.errorClass = str(r.error);
+    if (str(r.message) !== undefined) rec.errorMessage = str(r.message);
     records.push(rec);
 
     if (runId === null && str(r.runId) !== undefined) runId = str(r.runId)!;

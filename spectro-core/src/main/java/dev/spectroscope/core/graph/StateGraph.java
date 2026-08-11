@@ -8,6 +8,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
  * Collects nodes and edges, then hands out a validated {@link GraphSpec}.
@@ -274,7 +275,42 @@ public final class StateGraph {
      *         exists for
      */
     public CompiledGraph compile() {
-        return new CompiledGraph(toSpec());
+        return new CompiledGraph(toSpec(), null, null);
+    }
+
+    /**
+     * Validates, freezes, and hands the result to the runtime with somebody
+     * watching.
+     *
+     * <p>The sink receives the drawing before this call returns — the topology is
+     * knowable at compile time, so a viewer can have the picture in hand before a
+     * node has run. Only the LIFECYCLE is recorded here; a caller's values need a
+     * policy, which is the other overload and is off until it is asked for.</p>
+     *
+     * @param sink any consumer of a record map; {@code null} for no observation
+     * @return the compiled graph
+     */
+    public CompiledGraph compile(Consumer<Map<String, Object>> sink) {
+        return new CompiledGraph(toSpec(), sink, null);
+    }
+
+    /**
+     * Validates, freezes, and hands the result to the runtime with somebody
+     * watching the values too.
+     *
+     * <p>The tier is fixed for every run of this graph and is announced once per
+     * run in a {@code state_policy} record, which is the line that later explains
+     * why a channel a node wrote is missing from the file. Naming a tier is a
+     * visible line in the caller's own source or values are not recorded at
+     * all.</p>
+     *
+     * @param sink  any consumer of a record map; {@code null} for no observation
+     * @param state what may be recorded of what the nodes write; {@code null} or
+     *              {@link StatePolicy#off()} records nothing and builds nothing
+     * @return the compiled graph
+     */
+    public CompiledGraph compile(Consumer<Map<String, Object>> sink, StatePolicy state) {
+        return new CompiledGraph(toSpec(), sink, state);
     }
 
     // -- validation --------------------------------------------------------- //

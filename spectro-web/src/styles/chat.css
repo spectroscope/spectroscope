@@ -255,12 +255,16 @@
   padding-bottom: var(--sp-2);
   border-bottom: 1px solid var(--border);
 }
+/* The scale runs 20/16/14/13 because those are the steps tokens.css actually
+   has. h2 and h3 used to ask for --fs-18 and --fs-15, which do not exist, so
+   both headings inherited 14px from the body and h2 was indistinguishable from
+   the paragraph under it. */
 .md h2 {
-  font-size: var(--fs-18);
+  font-size: var(--fs-16);
   font-weight: 300;
 }
 .md h3 {
-  font-size: var(--fs-15);
+  font-size: var(--fs-14);
 }
 .md h4,
 .md h5,

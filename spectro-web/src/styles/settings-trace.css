@@ -512,7 +512,7 @@
   text-underline-offset: 2px;
 }
 .provider-settings-link:hover {
-  color: var(--accent-strong, var(--accent));
+  color: var(--accent);
 }
 
 .provider-pop-foot {

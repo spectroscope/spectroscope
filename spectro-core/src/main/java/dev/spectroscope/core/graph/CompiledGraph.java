@@ -1,5 +1,8 @@
 package dev.spectroscope.core.graph;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -8,6 +11,11 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 import static dev.spectroscope.core.graph.StateGraph.END;
 import static dev.spectroscope.core.graph.StateGraph.START;
@@ -32,8 +40,39 @@ import static dev.spectroscope.core.graph.StateGraph.START;
  * superstep a superstep is that no update is applied until every node has
  * returned, not that the nodes overlap in time. Concurrency here is a
  * performance question, and it is deliberately not answered yet.</p>
+ *
+ * <h2>Watching a run</h2>
+ *
+ * <p>A sink is any {@code Consumer} of a record map — that is the entire
+ * protocol, so an exporter stays a function until it needs to be more. Hand one
+ * to {@link StateGraph#compile(Consumer)} and the drawing is written IMMEDIATELY,
+ * in this constructor, before a node has run; the run then lights it up.
+ * A fan-out to both artifact files needs no class of its own, because each file
+ * refuses the other's vocabulary and the refusal IS the routing:</p>
+ *
+ * <pre>{@code
+ * try (GraphArtifact lifecycle = new GraphArtifact(stem);
+ *      StateArtifact values = new StateArtifact(stem)) {
+ *     graph.compile(record -> { lifecycle.accept(record); values.accept(record); },
+ *                   StatePolicy.summary());
+ * }
+ * }</pre>
+ *
+ * <p>Observation may never alter the observed. Both the BUILDING of a record and
+ * the writing of it sit inside an absorbing catch: a sink that throws cannot
+ * abort a run and cannot replace an exception already in flight — which matters
+ * because {@code graph_end} is written from a {@code finally}, so a naive
+ * implementation lets a full disk arrive at the caller with the real failure
+ * demoted to a cause. Records are built behind a supplier, so a run without a
+ * sink pays nothing: a retrieval node's update is the whole retrieved corpus, and
+ * measuring it for nobody would be a cost the caller never asked for.</p>
  */
 public final class CompiledGraph {
+
+    private static final Logger LOG = LoggerFactory.getLogger(CompiledGraph.class);
+
+    /** How many hex characters name a run. Long enough to tell two turns apart. */
+    private static final int RUN_ID_LENGTH = 12;
 
     /**
      * The superstep ceiling a run gets when the caller names none.
@@ -58,14 +97,24 @@ public final class CompiledGraph {
     private final Topology topology;
     private final Map<String, List<String>> edgesFrom = new LinkedHashMap<>();
     private final Map<String, List<NamedBranch>> branchesFrom = new LinkedHashMap<>();
+    private final Consumer<Map<String, Object>> sink;
+    private final StatePolicy statePolicy;
+    private final AtomicInteger sinkFailures = new AtomicInteger();
+    private final AtomicBoolean warned = new AtomicBoolean();
 
     /** A branch carried with the name the topology gave it. */
     private record NamedBranch(GraphSpec.Branch branch, String name) {
     }
 
     CompiledGraph(GraphSpec spec) {
+        this(spec, null, null);
+    }
+
+    CompiledGraph(GraphSpec spec, Consumer<Map<String, Object>> sink, StatePolicy statePolicy) {
         this.spec = spec;
         this.topology = Topology.of(spec);
+        this.sink = sink;
+        this.statePolicy = statePolicy;
         for (GraphSpec.Edge edge : spec.edges()) {
             edgesFrom.computeIfAbsent(edge.from(), key -> new ArrayList<>()).add(edge.to());
         }
@@ -79,11 +128,41 @@ public final class CompiledGraph {
             branchesFrom.computeIfAbsent(branch.source(), key -> new ArrayList<>())
                     .add(new NamedBranch(branch, name));
         }
+
+        // The drawing goes out HERE, before a node has run. That is the whole
+        // property this package exists for: a viewer draws the machine first and
+        // lights it up afterwards, so a run that dies in its first node still
+        // left a picture behind.
+        emit(() -> GraphRecords.graphTopology(topology, null));
     }
 
     /** The frozen graph this was compiled from. */
     public GraphSpec spec() {
         return spec;
+    }
+
+    /**
+     * How much observation this graph has lost.
+     *
+     * <p>Silence would make a truncated artifact indistinguishable from a
+     * crashed process, and a warning per record would let one full disk bury the
+     * run in noise. This counter is the middle answer: readable afterwards, by
+     * anyone who was not watching stderr at the time.</p>
+     *
+     * @return the number of records that could not be built or handed over since
+     *         this graph was compiled
+     */
+    public int sinkFailures() {
+        return sinkFailures.get();
+    }
+
+    /**
+     * The tier every run of this graph records its values at.
+     *
+     * @return the policy, or {@code null} when values are not recorded at all
+     */
+    public StatePolicy statePolicy() {
+        return statePolicy;
     }
 
     /**
@@ -137,37 +216,153 @@ public final class CompiledGraph {
      */
     public GraphState invoke(GraphState input, RunConfig config) throws Exception {
         int limit = config.resolvedRecursionLimit();
-        GraphState state = spec.schema().apply(GraphState.empty(), StateUpdate.ofMap(input.values()));
-
+        String runId = newRunId();
+        long began = System.nanoTime();
         int step = 0;
-        List<String> frontier = nextFrontier(List.of(START), state, config);
-        Deque<List<String>> recent = new ArrayDeque<>();
 
-        while (!frontier.isEmpty()) {
-            if (step >= limit) {
-                throw new GraphRecursionException(cycleMessage(limit, recent));
-            }
-            if (recent.size() == RETAINED_FRONTIERS) {
-                recent.removeFirst();
-            }
-            recent.addLast(frontier);
+        try {
+            emit(() -> GraphRecords.graphStart(runId, threadId(config), null));
+            // Straight after graph_start and before any payload of this run: the
+            // file is append-mode and holds several runs, so a reader meeting a
+            // payload has to find the policy of THAT run above it. The tier is
+            // read once here and carried down unchanged — one that could change
+            // halfway through would make this line a lie about the ones below it.
+            emit(() -> policyRecord(runId));
 
-            // The whole frontier runs against ONE state and every update is held
-            // back until the last node has returned. Collecting first is what
-            // makes a superstep a superstep.
-            List<Map.Entry<String, StateUpdate>> results = new ArrayList<>();
-            for (String name : frontier) {
-                results.add(Map.entry(name, wrapped(spec.nodes().get(name).run(state, config))));
-            }
-            for (Map.Entry<String, StateUpdate> result : results) {
-                state = spec.schema().apply(state, result.getValue());
-            }
+            GraphState state = spec.schema().apply(GraphState.empty(),
+                    StateUpdate.ofMap(input.values()));
+            List<String> frontier = nextFrontier(List.of(START), state, config, runId, step);
+            Deque<List<String>> recent = new ArrayDeque<>();
 
-            step++;
-            List<String> sources = results.stream().map(Map.Entry::getKey).toList();
-            frontier = nextFrontier(sources, state, config);
+            while (!frontier.isEmpty()) {
+                if (step >= limit) {
+                    throw new GraphRecursionException(cycleMessage(limit, recent));
+                }
+                if (recent.size() == RETAINED_FRONTIERS) {
+                    recent.removeFirst();
+                }
+                recent.addLast(frontier);
+
+                // The whole frontier runs against ONE state and every update is held
+                // back until the last node has returned. Collecting first is what
+                // makes a superstep a superstep.
+                List<Map.Entry<String, StateUpdate>> results = new ArrayList<>();
+                for (String name : frontier) {
+                    results.add(Map.entry(name, watched(name, state, config, runId, step)));
+                }
+                for (Map.Entry<String, StateUpdate> result : results) {
+                    state = spec.schema().apply(state, result.getValue());
+                }
+
+                step++;
+                List<String> sources = results.stream().map(Map.Entry::getKey).toList();
+                frontier = nextFrontier(sources, state, config, runId, step);
+            }
+            return state;
+        } finally {
+            int steps = step;
+            long elapsed = (System.nanoTime() - began) / 1_000_000L;
+            // From a finally, so a raised run, a recursion abort and a consumer
+            // that walked away all leave an ending behind. A run whose last
+            // record is a node_start is indistinguishable from a viewer that
+            // lost a line.
+            emit(() -> GraphRecords.graphEnd(runId, steps, elapsed, null));
         }
-        return state;
+    }
+
+    /**
+     * Runs one node with its lifecycle recorded around it.
+     *
+     * <p>A node that fails leaves a {@code node_error} and then throws on
+     * unchanged — a {@code node_start} with no ending would be unreadable. The
+     * value payload comes AFTER the {@code node_end} it belongs to and carries
+     * the node's OWN update rather than the merged state, so the two files join
+     * on {@code (runId, node, superstep)} and a reader can see what was written
+     * next to what was recorded.</p>
+     */
+    private StateUpdate watched(String name, GraphState state, RunConfig config, String runId,
+                                int superstep) throws Exception {
+        emit(() -> GraphRecords.nodeStart(runId, name, superstep, null));
+        // Two clocks on purpose: ts is wall time, so the artifacts interleave
+        // with the RunEvent wire; a duration is monotonic, so an NTP step cannot
+        // make a node look instantaneous or negative.
+        long began = System.nanoTime();
+        StateUpdate update;
+        try {
+            update = wrapped(spec.nodes().get(name).run(state, config));
+        } catch (Exception failure) {
+            long elapsed = (System.nanoTime() - began) / 1_000_000L;
+            emit(() -> GraphRecords.nodeError(runId, name, superstep, failure, elapsed, null));
+            throw failure;
+        }
+        long elapsed = (System.nanoTime() - began) / 1_000_000L;
+        StateUpdate written = update;
+        emit(() -> GraphRecords.nodeEnd(runId, name, superstep, elapsed, written.channels(), null));
+        emit(() -> StateRecords.statePayload(name, superstep, written.channels(), statePolicy,
+                runId, null));
+        return update;
+    }
+
+    /**
+     * Builds a record and hands it over, or absorbs whatever that costs.
+     *
+     * <p>Lazy on purpose: with no sink the supplier is never called, so a run
+     * nobody is watching never serializes an update to measure it. A builder
+     * returning {@code null} is a DECLINE — the policy had nothing to record —
+     * and is not a failure, so it is not counted.</p>
+     *
+     * <p>Only the ordinary tier is caught. An {@link Error} is the process
+     * failing rather than the observation failing, and swallowing it here would
+     * turn a dying JVM into a slightly larger counter.</p>
+     */
+    private void emit(Supplier<Map<String, Object>> builder) {
+        if (sink == null) {
+            return;
+        }
+        try {
+            Map<String, Object> record = builder.get();
+            if (record == null) {
+                return;
+            }
+            sink.accept(record);
+        } catch (RuntimeException failure) {
+            sinkFailures.incrementAndGet();
+            if (warned.compareAndSet(false, true)) {
+                LOG.warn("a graph sink failed and the run went on unchanged: {}. Later failures "
+                        + "are counted in sinkFailures() and not warned about again.",
+                        failure.toString(), failure);
+            }
+        }
+    }
+
+    /**
+     * At {@code off} nothing is built and no line is written — not even one
+     * saying so. A library upgrade that silently began opening a
+     * {@code .state.jsonl} would be a data incident, and a zero-byte file is
+     * indistinguishable from "this run recorded nothing" to every reader there
+     * is. Declining is not a failure, so it is not counted.
+     */
+    private Map<String, Object> policyRecord(String runId) {
+        if (statePolicy == null || !statePolicy.enabled()) {
+            return null;
+        }
+        return StateRecords.statePolicy(statePolicy, runId, null);
+    }
+
+    /** Twelve hex characters, enough to tell a retry from a second turn. */
+    private static String newRunId() {
+        return UUID.randomUUID().toString().replace("-", "").substring(0, RUN_ID_LENGTH);
+    }
+
+    /**
+     * The caller's own thread identity, and nothing else. There is no
+     * checkpointer seam here yet, so {@code configurable.thread_id} is the only
+     * thing that can name a conversation; a run that named none omits the key
+     * rather than inventing one.
+     */
+    private static String threadId(RunConfig config) {
+        Object named = config.configurable().get("thread_id");
+        return named == null ? null : String.valueOf(named);
     }
 
     /**
@@ -191,14 +386,28 @@ public final class CompiledGraph {
      * <p>Conditional edges are evaluated against the state as it stands AFTER the
      * superstep merged. Deciding on the pre-merge state would route on the answer
      * to the previous question.</p>
+     *
+     * <p>Every edge actually walked is recorded, the one into END included, and
+     * before the duplicates collapse — two routes reaching the same node are two
+     * arrows even though the node runs once. The superstep on the record is the
+     * one the edge leads INTO, which is why {@code into} is a parameter rather
+     * than something read off the loop: a reader then sees arrows into a frontier
+     * and afterwards that frontier's nodes lighting up.</p>
      */
-    private List<String> nextFrontier(List<String> sources, GraphState state, RunConfig config)
-            throws Exception {
+    private List<String> nextFrontier(List<String> sources, GraphState state, RunConfig config,
+                                      String runId, int into) throws Exception {
         LinkedHashSet<String> targets = new LinkedHashSet<>();
         for (String source : sources) {
-            targets.addAll(edgesFrom.getOrDefault(source, List.of()));
+            for (String target : edgesFrom.getOrDefault(source, List.of())) {
+                emit(() -> GraphRecords.edgeTaken(runId, source, target, null, into, null));
+                targets.add(target);
+            }
             for (NamedBranch named : branchesFrom.getOrDefault(source, List.of())) {
-                targets.addAll(route(named.branch(), state, config));
+                for (String target : route(named.branch(), state, config)) {
+                    emit(() -> GraphRecords.edgeTaken(runId, source, target, named.name(), into,
+                            null));
+                    targets.add(target);
+                }
             }
         }
         targets.remove(END);

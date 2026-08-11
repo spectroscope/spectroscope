@@ -339,7 +339,10 @@
 }
 .fleet-home-inner { width: 100%; max-width: 560px; }
 .fleet-home-eyebrow { margin: 0; font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.1em; }
-.fleet-home-title { margin: 2px 0 var(--sp-2); font-size: var(--fs-18); color: var(--text); }
+/* --fs-20 is the token for panel titles, and this is a panel title. It asked for
+   --fs-18 for months, which tokens.css does not define, so the heading fell back
+   to the inherited 14px and sat at the same size as its own lead paragraph. */
+.fleet-home-title { margin: 2px 0 var(--sp-2); font-size: var(--fs-20); color: var(--text); }
 .fleet-home-lead { margin: 0 0 var(--sp-4); font-size: var(--fs-13); line-height: 1.55; color: var(--text-dim); }
 .fleet-home-card { border: 1px solid var(--border); border-radius: var(--radius-control); background: var(--shade); padding: var(--sp-3); }
 .fleet-home-card-label { margin: 0 0 var(--sp-2); font-size: var(--fs-11); color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
@@ -508,7 +511,7 @@
    only what the lobby needs: a row of playable scenarios, and the two honest
    notes that say when an offer cannot work on this machine. */
 .fleet-lobby .fleet-home-title {
-  font-family: var(--font-sans);
+  font-family: var(--font-ui);
   letter-spacing: -0.01em;
 }
 .lobby-scenarios {

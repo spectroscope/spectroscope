@@ -203,3 +203,44 @@ describe("what a broken file does", () => {
     expect(r.runId).toBeNull();
   });
 });
+
+describe("an error record, in the shape the reference actually writes", () => {
+  // Measured against the owner's template, whose embedded fixture writes
+  //   {"type":"node_error","node":"verify","error":"GroundednessError",
+  //    "message":"claim 3 cites doc[2] …"}
+  // — `error` is a FLAT string naming the class and `message` is its sibling.
+  // This reader used to expect a nested {class, message} object, so a real
+  // Java run's failure record parsed to nothing at all: the node showed as
+  // failed with no reason. Found by writing the file from Java and reading it
+  // back through the view, which is the only place the two sides meet.
+  const line = (o: object) => JSON.stringify(o);
+  const ERR = line({
+    type: "node_error",
+    runId: "r1",
+    node: "verify",
+    superstep: 11,
+    durationMs: 410,
+    error: "GroundednessError",
+    message: "claim 3 cites doc[2] but no supporting span was found in it",
+    ts: 5,
+  });
+
+  it("keeps the class and the message apart", () => {
+    const r = readStateGraphRun(`${line({ type: "graph_start", runId: "r1", ts: 1 })}\n${ERR}`, null);
+    const rec = r.records.find((x) => x.type === "node_error")!;
+    expect(rec.errorClass).toBe("GroundednessError");
+    expect(rec.errorMessage).toMatch(/no supporting span/);
+  });
+
+  it("marks the node as failed", () => {
+    const r = readStateGraphRun(ERR, null);
+    expect(r.nodes.get("verify")!.failed).toBe(true);
+  });
+
+  it("survives an error record carrying only a class", () => {
+    const r = readStateGraphRun(line({ type: "node_error", node: "n", error: "Boom", ts: 1 }), null);
+    const rec = r.records.find((x) => x.type === "node_error")!;
+    expect(rec.errorClass).toBe("Boom");
+    expect(rec.errorMessage).toBeUndefined();
+  });
+});

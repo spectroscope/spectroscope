@@ -43,6 +43,20 @@ final class GraphJson {
         }
     }
 
+    /**
+     * A value as the key-ordered map it serializes to.
+     *
+     * <p>Used to fold the topology into a record without naming any of its keys
+     * a second time. Going through the mapper is what keeps the wrapper honest:
+     * the omitted-null rule and the {@code schema_version} spelling stay the
+     * topology's own decisions, and a wrapper that re-listed them would be a
+     * second place for them to drift.</p>
+     */
+    @SuppressWarnings("unchecked")
+    static LinkedHashMap<String, Object> asMap(Object value) {
+        return MAPPER.convertValue(value, LinkedHashMap.class);
+    }
+
     /** One record as the single line it becomes on disk, without its line end. */
     static String line(Map<String, Object> record) {
         try {

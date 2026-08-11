@@ -154,9 +154,9 @@
   gap: 10px;
   max-width: min(1400px, 96vw);
   max-height: 94vh;
-  background: var(--bg-raise);
+  background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-modal);
   padding: 12px 14px 10px;
 }
 .img-bar {
@@ -309,7 +309,7 @@
   padding: 1px 12px;
 }
 .img-line.is-target {
-  background: var(--bg-raise);
+  background: var(--surface);
   /* The mark is on the LINE, in the accent, because this is the answer to
      "where exactly in the file". */
   box-shadow: inset 2px 0 0 var(--accent);
@@ -343,5 +343,5 @@
   cursor: pointer;
 }
 .img-blobmark:hover {
-  background: var(--bg-raise);
+  background: var(--surface);
 }

@@ -189,7 +189,7 @@
   flex: 1;
   min-width: 0;
   color: var(--text-dim);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-13);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -461,7 +461,7 @@
 .provider-local-note {
   margin: 0.4rem 0 0.2rem;
   font-size: 0.82rem;
-  color: var(--ink-dim, #9a8f80);
+  color: var(--text-dim);
   line-height: 1.4;
 }
 .lm-modal {
@@ -480,7 +480,7 @@
   overflow-y: auto;
 }
 .lm-row {
-  border: 1px solid var(--line-faint, rgba(140, 130, 115, 0.25));
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 0.5rem 0.65rem;
 }
@@ -500,7 +500,7 @@
 }
 .lm-goodfor {
   font-size: 0.78rem;
-  color: var(--ink-dim, #9a8f80);
+  color: var(--text-dim);
 }
 .lm-row-meta {
   margin-left: auto;
@@ -514,8 +514,8 @@
   font-size: 0.68rem;
   padding: 0.05rem 0.4rem;
   border-radius: 999px;
-  border: 1px solid var(--line-faint, rgba(140, 130, 115, 0.35));
-  color: var(--ink-dim, #9a8f80);
+  border: 1px solid var(--border);
+  color: var(--text-dim);
 }
 .lm-badge.ok {
   color: var(--ok, #2dd4a7);
@@ -527,16 +527,16 @@
 }
 .lm-badge.think,
 .lm-badge.lm-default {
-  color: var(--ink-dim, #9a8f80);
+  color: var(--text-dim);
 }
 .lm-fit {
   display: block;
   margin: 0.25rem 0 0 1.6rem;
   font-size: 0.75rem;
-  color: var(--ink-dim, #9a8f80);
+  color: var(--text-dim);
 }
 .lm-fit.blocked {
-  color: var(--err, #d9695f);
+  color: var(--error);
 }
 .lm-detail {
   margin: 0.35rem 0 0 1.6rem;
@@ -572,7 +572,7 @@
 .lm-progress-track {
   height: 8px;
   border-radius: 999px;
-  background: var(--line-faint, rgba(140, 130, 115, 0.25));
+  background: var(--border);
   overflow: hidden;
 }
 .lm-progress-fill {
@@ -584,7 +584,7 @@
 .lm-error {
   margin: 0.4rem 0;
   font-size: 0.82rem;
-  color: var(--err, #d9695f);
+  color: var(--error);
 }
 .lm-foot {
   display: flex;

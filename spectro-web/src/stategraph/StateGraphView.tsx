@@ -47,7 +47,11 @@ function NodeCard({ data }: NodeProps) {
       </div>
       <div className="sg-card-meta mono">
         {d.durationMs !== null ? `${d.durationMs} ms` : t(lang, "sg.st." + d.lifecycle)}
-        {d.lifecycle !== "pending" && <span className="sg-card-step"> · s{d.placed.rank}</span>}
+        {/* The RANK, labelled as a rank. It used to print "· s{rank}", and `s`
+            means superstep everywhere else in this view — so a node that ran at
+            supersteps 1 and 5 read as "· s2", which is its column, not a step it
+            ever took. The right panel carries the true superstep. */}
+        {d.lifecycle !== "pending" && <span className="sg-card-step"> · r{d.placed.rank}</span>}
       </div>
       {d.updateKeys.length > 0 && (
         <div className="sg-card-chips">

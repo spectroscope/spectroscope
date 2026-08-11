@@ -91,6 +91,10 @@ tasks.test {
     // SessionStore/SpectroConfig resolve ~/.spectro from user.home at class-load time;
     // pointing user.home into the build directory keeps tests off the real home.
     systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
+    // ProofOfChainTest only writes outside the build directory when a stem is
+    // named on the command line; forwarded here because a Test JVM inherits none
+    // of Gradle's own -D flags.
+    System.getProperty("proof.out")?.let { systemProperty("proof.out", it) }
 }
 
 // Maven Central (card 23): this library publishes through the Central
