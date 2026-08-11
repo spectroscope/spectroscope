@@ -2693,6 +2693,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sg.vertical": { de: "vertikal", en: "vertical" },
   "sg.load": { de: "Datei laden …", en: "load file …" },
   "sg.demo": { de: "Beispiel-Lauf ansehen", en: "look at the reference run" },
+  "sg.scenarios": { de: "oder ein Szenario laden — echte Läufe der Engine", en: "or load a scenario — real runs of the engine" },
   // The empty pane. It says "nothing is loaded", never "loading": a topology is
   // fixed at compile() and arrives as a file, so there is nothing on its way.
   "sg.empty.title": { de: "Kein Graph geladen", en: "No graph loaded" },

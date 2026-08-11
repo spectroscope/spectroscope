@@ -10,7 +10,7 @@
 // NAME, which is an identifier, not a request.
 
 import type { StateGraphLayout } from "./layout";
-import { lifecycleAt, takenUpTo, type StateGraphRun } from "./artifact";
+import { edgeStatsUpTo, lifecycleAt, type StateGraphRun } from "./artifact";
 import { themeById } from "../export/themes";
 import { escapeHtml } from "../export/markup";
 
@@ -38,7 +38,7 @@ export function stateGraphSvg({ run, laid, upto, source, theme }: SvgInput): str
   const b = laid.bounds;
   const w = Math.max(1, Math.round(b.x1 - b.x0));
   const h = Math.max(1, Math.round(b.y1 - b.y0));
-  const walked = takenUpTo(run, upto);
+  const stats = edgeStatsUpTo(run, upto);
 
   const css = [
     `.x-bg{fill:${tk.bg}}`,
@@ -49,24 +49,60 @@ export function stateGraphSvg({ run, laid, upto, source, theme }: SvgInput): str
     `.x-n--error{stroke:${tk.error}}`,
     `.x-name{font:11px ${tk["font-mono"]};fill:${tk.text}}`,
     `.x-r{font:10px ${tk["font-mono"]};fill:${tk["text-faint"]};letter-spacing:.14em}`,
-    `.x-e{fill:none;stroke:${tk["border-strong"]};stroke-width:1.25;opacity:.4}`,
+    // The template's edge grammar, the same story the canvas tells: quiet,
+    // dimmed once passed over, walked, live — dashes only ever mean "a branch
+    // that MIGHT happen", so the dim state does not add its own.
+    `.x-e{fill:none;stroke:${tk["border-strong"]};stroke-width:1.25;opacity:.6}`,
     `.x-e--cond{stroke-dasharray:5 4}`,
-    `.x-e--untaken{opacity:.3;stroke-dasharray:4 4}`,
+    `.x-e--untaken{opacity:.34}`,
     `.x-e--walked{stroke:${tk.ok};stroke-width:2;stroke-dasharray:none;opacity:.95}`,
-    `.x-e--back{stroke:${tk["sp-violet"]}}`,
+    `.x-e--live{stroke:${tk.accent};stroke-width:2.4;stroke-dasharray:none;opacity:1}`,
+    `.x-rule{stroke:${tk["border-strong"]};stroke-width:1;opacity:.35}`,
+    `.x-el{font:11px ${tk["font-mono"]};fill:${tk["text-faint"]}}`,
+    `.x-el--on{fill:${tk.ok}}`,
+    `.x-el--now{fill:${tk.accent}}`,
   ].join("\n");
+
+  const arrows = (
+    [
+      ["xar-quiet", tk["border-strong"]],
+      ["xar-taken", tk.ok],
+      ["xar-live", tk.accent],
+    ] as const
+  )
+    .map(
+      ([id, fill]) =>
+        `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6"` +
+        ` markerHeight="6" orient="auto-start-reverse" markerUnits="strokeWidth">` +
+        `<path d="M0,1 L9,5 L0,9 z" fill="${fill}"/></marker>`,
+    )
+    .join("");
+
+  const rules = laid.rankRules
+    .map((r) => `<line class="x-rule" x1="${r.x1}" y1="${r.y1}" x2="${r.x2}" y2="${r.y2}"/>`)
+    .join("\n");
 
   const edges = laid.edges
     .map((e) => {
+      const key = `${e.from}->${e.to}`;
+      const walked = stats.counts.has(key);
+      const live = stats.last === key;
+      const marker = live ? "xar-live" : walked ? "xar-taken" : "xar-quiet";
       const cls = [
         "x-e",
         e.kind === "conditional" ? "x-e--cond" : "",
-        walked.has(`${e.from}->${e.to}`) ? "x-e--walked" : "x-e--untaken",
-        e.back ? "x-e--back" : "",
+        live ? "x-e--live" : walked ? "x-e--walked" : "x-e--untaken",
       ]
         .filter((c) => c !== "")
         .join(" ");
-      return `<path class="${cls}" d="${escapeHtml(e.path)}"/>`;
+      const taken = stats.counts.get(key) ?? 0;
+      const label = taken > 1 ? `×${taken}` : e.back ? "↺" : "";
+      const text =
+        label === ""
+          ? ""
+          : `<text class="x-el${live ? " x-el--now" : walked ? " x-el--on" : ""}"` +
+            ` x="${e.labelX}" y="${e.labelY}" text-anchor="middle">${label}</text>`;
+      return `<path class="${cls}" d="${escapeHtml(e.path)}" marker-end="url(#${marker})"/>${text}`;
     })
     .join("\n");
 
@@ -91,7 +127,8 @@ export function stateGraphSvg({ run, laid, upto, source, theme }: SvgInput): str
     ` width="${w}" height="${h}" role="img" aria-label="${escapeHtml(source)}">\n` +
     `<title>${escapeHtml(source)}</title>\n` +
     `<style>\n${css}\n</style>\n` +
+    `<defs>${arrows}</defs>\n` +
     `<rect class="x-bg" x="${b.x0}" y="${b.y0}" width="${w}" height="${h}"/>\n` +
-    `${edges}\n${nodes}\n${ranks}\n</svg>\n`
+    `${rules}\n${edges}\n${nodes}\n${ranks}\n</svg>\n`
   );
 }

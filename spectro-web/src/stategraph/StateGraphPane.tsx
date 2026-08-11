@@ -40,6 +40,14 @@ import { useLang } from "../state/lang";
 // StateGraphPane.test.tsx hashes both copies so the mirror cannot fork.
 import demoGraph from "./demo/crag-payload.graph.jsonl?raw";
 import demoState from "./demo/crag-payload.state.jsonl?raw";
+import ragGraph from "./demo/simple-rag.graph.jsonl?raw";
+import ragState from "./demo/simple-rag.state.jsonl?raw";
+import cragGraph from "./demo/crag.graph.jsonl?raw";
+import cragState from "./demo/crag.state.jsonl?raw";
+import reactGraph from "./demo/react-tools.graph.jsonl?raw";
+import reactState from "./demo/react-tools.state.jsonl?raw";
+import failingGraph from "./demo/failing-run.graph.jsonl?raw";
+import failingState from "./demo/failing-run.state.jsonl?raw";
 
 /** The two artifacts of one run, plus where they came from — the view's props. */
 export interface LoadedRun {
@@ -66,6 +74,7 @@ const K = {
   orphanState: "sg.empty.orphanState",
   load: "sg.load",
   demo: "sg.demo",
+  scenarios: "sg.scenarios",
 } as const;
 
 export const PANE_KEYS: readonly string[] = Object.values(K);
@@ -76,6 +85,47 @@ export const PANE_KEYS: readonly string[] = Object.values(K);
 export function demoRun(): LoadedRun {
   return { graphJsonl: demoGraph, stateJsonl: demoState, source: DEMO_SOURCE };
 }
+
+/** One bundled scenario: a real pair off a real run, offered by name. */
+export interface Scenario {
+  source: string;
+  run: () => LoadedRun;
+}
+
+/** The scenario shelf, the way the agent scenarios are offered: a named list,
+ *  one click each. Every entry was WRITTEN BY the Java engine
+ *  (DemoScenariosTest, -Ddemos.out) — a hand-written artifact would drift from
+ *  the writer the first time a field moves, and the point of a demo is that it
+ *  is true. The reference run leads; then the four shapes worth teaching: the
+ *  linear rag, the corrective loop, a two-turn conversation on one thread, and
+ *  a run that dies honestly. */
+export const SCENARIOS: readonly Scenario[] = [
+  { source: DEMO_SOURCE, run: demoRun },
+  {
+    source: "simple-rag.graph.jsonl",
+    run: () => ({ graphJsonl: ragGraph, stateJsonl: ragState, source: "simple-rag.graph.jsonl" }),
+  },
+  {
+    source: "crag.graph.jsonl",
+    run: () => ({ graphJsonl: cragGraph, stateJsonl: cragState, source: "crag.graph.jsonl" }),
+  },
+  {
+    source: "react-tools.graph.jsonl",
+    run: () => ({
+      graphJsonl: reactGraph,
+      stateJsonl: reactState,
+      source: "react-tools.graph.jsonl",
+    }),
+  },
+  {
+    source: "failing-run.graph.jsonl",
+    run: () => ({
+      graphJsonl: failingGraph,
+      stateJsonl: failingState,
+      source: "failing-run.graph.jsonl",
+    }),
+  },
+];
 
 type Half = "graph" | "state" | "unknown";
 
@@ -192,9 +242,22 @@ export function StateGraphPane({ run, onRun, view, onView }: StateGraphPaneProps
             <button type="button" className="sg-empty-load" onClick={() => fileRef.current?.click()}>
               {t(lang, K.load)}
             </button>
-            <button type="button" className="sg-empty-demo" onClick={() => onRun(demoRun())}>
-              {t(lang, K.demo)}
-            </button>
+          </div>
+          {/* The scenario shelf, offered the way the agent scenarios are: one
+              named chip per bundled run. Mono and by file name — the name IS
+              the story, and a prettier label would be a second name to drift. */}
+          <p className="sg-empty-scenarios-h">{t(lang, K.scenarios)}</p>
+          <div className="sg-empty-scenarios">
+            {SCENARIOS.map((s) => (
+              <button
+                key={s.source}
+                type="button"
+                className="sg-empty-scenario mono"
+                onClick={() => onRun(s.run())}
+              >
+                {s.source.replace(".graph.jsonl", "")}
+              </button>
+            ))}
           </div>
           <p className="sg-empty-pair">{t(lang, K.emptyPair)}</p>
           {orphan && <p className="sg-warn">{t(lang, K.orphanState)}</p>}

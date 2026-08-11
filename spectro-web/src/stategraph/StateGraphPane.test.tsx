@@ -175,9 +175,13 @@ describe("the empty pane is honest about having no run", () => {
     expect(html).not.toMatch(/spinner|is-loading|progressbar/);
   });
 
-  it("offers both ways in: a file pick and the bundled run", () => {
+  it("offers both ways in: a file pick and the scenario shelf", () => {
+    // The single demo button grew into the shelf; the reference run leads it.
+    // scenarios.test.tsx pins the shelf's contents — this pins that both ways
+    // in are on the empty screen.
     expect(html).toContain(t(lang, "sg.load"));
-    expect(html).toContain(t(lang, "sg.demo"));
+    expect(html).toContain(t(lang, "sg.scenarios"));
+    expect(html).toContain("sg-empty-scenario");
     expect(html).toContain('type="file"');
   });
 

@@ -14,8 +14,16 @@
 //   - absence is legible: "not recorded" and "was empty" are different claims
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ReactFlow, Background, Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
-import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
+import {
+  ReactFlow,
+  Background,
+  Handle,
+  Position,
+  ViewportPortal,
+  useReactFlow,
+  type NodeProps,
+} from "@xyflow/react";
+import type { Node as FlowNode } from "@xyflow/react";
 import { layoutStateGraph, type PlacedNode, type StateGraphLayout } from "./layout";
 import { StateGraphExport } from "./StateGraphExport";
 import type { StateGraphViewState } from "./viewState";
@@ -30,9 +38,10 @@ import {
 import {
   readStateGraphRun,
   channelAbsence,
+  edgeStatsUpTo,
   lifecycleAt,
-  takenUpTo,
   type Absence,
+  type EdgeStats,
   type Lifecycle,
   type StateGraphRun,
   type Marker,
@@ -87,6 +96,19 @@ function NodeCard({ data }: NodeProps) {
 }
 
 const NODE_TYPES = { sgCard: NodeCard };
+
+/** Re-fits the viewport when the DRAWING changes shape — an orientation flip
+ *  or a new run. React Flow's own fitView prop fires on mount only, so without
+ *  this the flipped graph kept the old transform and sat small in a corner
+ *  (seen live, not read). A child component because useReactFlow needs the
+ *  provider ReactFlow itself creates. */
+function RefitOnLayout({ laid }: { laid: StateGraphLayout }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    void fitView({ padding: 0.1 });
+  }, [laid, fitView]);
+  return null;
+}
 
 /** The superstep of the visit the cursor stands in: the picked node's nearest
  *  lifecycle record at or before `upto` — or its FIRST visit while the cursor
@@ -276,26 +298,11 @@ export function StateGraphView({
     [laid, run, upto, picked],
   );
 
-  const takenSoFar = useMemo(() => takenUpTo(run, upto), [run, upto]);
-
-  const flowEdges: FlowEdge[] = useMemo(
-    () =>
-      laid.edges.map((e) => {
-        const walked = takenSoFar.has(`${e.from}->${e.to}`);
-        return {
-          id: `${e.from}->${e.to}`,
-          source: e.from,
-          target: e.to,
-          type: "straight",
-          // The not-taken path STAYS and steps back — it is not removed. That is
-          // the difference from a trace, and removing it would turn this into one.
-          className: `sg-edge${e.back ? " sg-edge--back" : ""}${walked ? " is-walked" : " is-untaken"}${e.kind === "conditional" ? " sg-edge--cond" : ""}`,
-          data: { path: e.path },
-          selectable: false,
-        };
-      }),
-    [laid, takenSoFar],
-  );
+  // One fold feeds the one renderer: which edges were walked how often, and
+  // which one the cursor stands on. The not-taken path STAYS and steps back —
+  // it is not removed. That is the difference from a trace, and removing it
+  // would turn this into one.
+  const edgeStats = useMemo(() => edgeStatsUpTo(run, upto), [run, upto]);
 
   const onPick = useCallback((_: unknown, n: FlowNode) => patch({ picked: n.id }), [patch]);
 
@@ -404,7 +411,10 @@ export function StateGraphView({
         <div className="sg-canvas">
           <ReactFlow
             nodes={flowNodes}
-            edges={flowEdges}
+            // No React Flow edges at all: they drew a straight stateful line
+            // UNDER the overlay's routed path, and every edge appeared twice —
+            // once wrong. The overlay is the one renderer.
+            edges={[]}
             nodeTypes={NODE_TYPES}
             onNodeClick={onPick}
             onPaneClick={() => patch({ picked: null })}
@@ -421,8 +431,9 @@ export function StateGraphView({
                 coordinates while the cards are drawn transformed, and the two
                 would drift apart the moment anybody scrolled. Caught by
                 rendering it, not by reading it. */}
+            <RefitOnLayout laid={laid} />
             <ViewportPortal>
-              <CanvasOverlay laid={laid} />
+              <CanvasOverlay laid={laid} stats={edgeStats} started={upto >= 0} />
             </ViewportPortal>
           </ReactFlow>
         </div>
@@ -480,19 +491,82 @@ export function StateGraphView({
   );
 }
 
-/** The canvas overlay: the routed arcs plus one label per rank column. Its own
+/** The template's three arrowheads, one per edge state. Swapped, not recoloured:
+ *  a marker's fill cannot follow its path's class, so each tint is its own def. */
+const ARROWS = [
+  ["ar-quiet", "var(--border-strong)"],
+  ["ar-taken", "var(--ok)"],
+  ["ar-live", "var(--accent)"],
+] as const;
+
+export interface CanvasOverlayProps {
+  laid: StateGraphLayout;
+  /** Per-edge walk counts and the cursor's last edge, from edgeStatsUpTo. */
+  stats?: EdgeStats;
+  /** Whether the run has begun — an untaken edge only DIMS once it has. */
+  started?: boolean;
+}
+
+/** The canvas overlay — since the double-rendering died, the ONE place edges
+ *  are drawn: the ruled field, the three routings with their state-swapped
+ *  arrowheads, the ×N / ↺ labels, and one label per rank column. Its own
  *  exported component because a ViewportPortal renders nothing server-side, and
- *  the suite that holds "rank 0..maxRank are on the canvas" renders THIS. */
-export function CanvasOverlay({ laid }: { laid: StateGraphLayout }) {
+ *  the suites that pin the picture render THIS. */
+export function CanvasOverlay({ laid, stats, started = false }: CanvasOverlayProps) {
+  const counts = stats?.counts ?? new Map<string, number>();
+  const last = stats?.last ?? null;
   return (
     <svg className="sg-arcs" aria-hidden="true" style={{ overflow: "visible" }}>
-      {laid.edges.map((e) => (
-        <path
-          key={`${e.from}->${e.to}`}
-          d={e.path}
-          className={`sg-arc${e.back ? " sg-arc--back" : ""}${e.skip ? " sg-arc--skip" : ""}`}
-        />
+      <defs>
+        {ARROWS.map(([id, fill]) => (
+          <marker
+            key={id}
+            id={id}
+            viewBox="0 0 10 10"
+            refX={9}
+            refY={5}
+            markerWidth={6}
+            markerHeight={6}
+            orient="auto-start-reverse"
+            markerUnits="strokeWidth"
+          >
+            <path d="M0,1 L9,5 L0,9 z" fill={fill} />
+          </marker>
+        ))}
+      </defs>
+      {/* The ruled field: one thin line per rank, far past the content, so
+          the stages read as separated columns rather than floating labels. */}
+      {laid.rankRules.map((r) => (
+        <line key={r.rank} className="sg-rankline" x1={r.x1} y1={r.y1} x2={r.x2} y2={r.y2} />
       ))}
+      {laid.edges.map((e) => {
+        const key = `${e.from}->${e.to}`;
+        const walked = counts.has(key);
+        const live = last === key;
+        const marker = live ? "ar-live" : walked ? "ar-taken" : "ar-quiet";
+        const state = live ? " is-live" : walked ? " is-walked" : started ? " is-dim" : "";
+        const taken = counts.get(key) ?? 0;
+        const label = taken > 1 ? `×${taken}` : e.back ? "↺" : "";
+        return (
+          <g key={key}>
+            <path
+              d={e.path}
+              markerEnd={`url(#${marker})`}
+              className={`sg-arc${e.back ? " sg-arc--back" : ""}${e.skip ? " sg-arc--skip" : ""}${e.kind === "conditional" ? " sg-arc--cond" : ""}${state}`}
+            />
+            {label !== "" && (
+              <text
+                className={`sg-elabel${live ? " now" : walked ? " on" : ""}`}
+                x={e.labelX}
+                y={e.labelY}
+                textAnchor="middle"
+              >
+                {label}
+              </text>
+            )}
+          </g>
+        );
+      })}
       {/* layout.ts:62 promised one labelled column per rank; this delivers it.
           Lowercase, mono, faint — the template's .ranklabel in this file's
           token vocabulary. */}

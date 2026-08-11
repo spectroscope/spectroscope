@@ -371,39 +371,11 @@
 }
 
 /* ---------- edges ----------
-   Order matters below: the state classes come after the shape classes, because
-   a conditional edge that WAS walked must read as walked (solid, green) and not
-   fall back to the dashed "might happen" pattern. */
-.sg-edge .react-flow__edge-path {
-  stroke: var(--border-strong);
-  stroke-width: 1.25;
-  opacity: 0.6;
-}
-.sg-edge--cond .react-flow__edge-path {
-  stroke-dasharray: 5 4;
-}
-/* The path NOT taken stays on the canvas and steps back — it is never removed.
-   Removing it would turn this view into a trace, which is the one thing it is
-   not. */
-.sg-edge.is-untaken .react-flow__edge-path {
-  opacity: 0.34;
-  stroke-dasharray: 4 4;
-}
-.sg-edge.is-walked .react-flow__edge-path {
-  stroke: var(--ok);
-  stroke-width: 2;
-  stroke-dasharray: none;
-  opacity: 0.95;
-}
-/* A returning edge keeps its direction and its own colour, walked or not: the
-   loop is the most interesting thing on the canvas, and dagre's habit of
-   reversing it tells the reader the opposite of what happened. */
-.sg-edge--back .react-flow__edge-path {
-  stroke: var(--sp-violet);
-}
-
-/* The lane overlay: loops bow below the node field, rank-skipping edges above.
-   Purely decorative here (aria-hidden), so it never eats a click. */
+   ONE renderer since the double-rendering died: React Flow carries no edges
+   any more, the overlay draws them all — the template's grammar, token for
+   token. Order matters below: the state classes come after the shape classes,
+   because a conditional edge that WAS walked must read as walked (solid,
+   green) and not fall back to the dashed "might happen" pattern. */
 .sg-arcs {
   position: absolute;
   inset: 0;
@@ -416,13 +388,49 @@
   fill: none;
   stroke: var(--border-strong);
   stroke-width: 1.25;
-  opacity: 0.4;
+  opacity: 0.6;
 }
-.sg-arc--back {
-  stroke: var(--sp-violet);
-}
-.sg-arc--skip {
+.sg-arc--cond {
   stroke-dasharray: 5 4;
+}
+/* The path NOT taken stays on the canvas and steps back — it is never removed.
+   Removing it would turn this view into a trace, which is the one thing it is
+   not. The loop keeps its direction either way; its ↺ label says what it is,
+   so it needs no colour of its own. */
+.sg-arc.is-dim {
+  opacity: 0.34;
+}
+.sg-arc.is-walked {
+  stroke: var(--ok);
+  stroke-width: 2;
+  stroke-dasharray: none;
+  opacity: 0.95;
+}
+.sg-arc.is-live {
+  stroke: var(--accent);
+  stroke-width: 2.4;
+  stroke-dasharray: none;
+  opacity: 1;
+}
+/* The ruled field: the template's rankline — thin, quiet, far past the
+   content, so the stages read as separated columns. */
+.sg-rankline {
+  stroke: var(--border-strong);
+  stroke-width: 1;
+  opacity: 0.35;
+}
+/* The ×N / ↺ labels, the template's .elabel: 11px mono, tinted with their
+   edge's state. */
+.sg-elabel {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  fill: var(--text-faint);
+}
+.sg-elabel.on {
+  fill: var(--ok);
+}
+.sg-elabel.now {
+  fill: var(--accent);
 }
 /* The template's .ranklabel, token for token: 10px mono, faint, wide-tracked.
    Lowercase comes from the markup ("rank 3"), never from a transform. */
@@ -684,4 +692,31 @@
   .sg-transport {
     flex-wrap: wrap;
   }
+}
+
+/* The scenario shelf on the empty state: named chips, the agent scenarios'
+   idiom. Mono because the name is a file name, and the file name is the story. */
+.sg-empty-scenarios-h {
+  margin: 18px 0 8px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.sg-empty-scenarios {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+.sg-empty-scenario {
+  font-size: 11.5px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.sg-empty-scenario:hover {
+  border-color: var(--border-strong);
+  color: var(--text);
 }
