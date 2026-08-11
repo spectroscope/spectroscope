@@ -13,9 +13,10 @@
 // `display: none` — would also work, and the view takes no layout measurements
 // that a hidden mount could get wrong. It loses on cost: a whole second
 // surface, its file input and its canvas, in the DOM of every session view, to
-// preserve one nullable field that belongs beside `nav` anyway. What the small
-// fix does NOT carry is the view's own state — orientation, cursor, picked
-// node — which still resets, because only the run was lifted.
+// preserve one nullable field that belongs beside `nav` anyway. The view's own
+// state — orientation, cursor, picked node — is lifted the same way now
+// (viewState.ts holds the shape; App holds the object), so a segment switch
+// resets nothing.
 //
 // Nothing loads by itself, and there is no spinner. A StateGraph's topology is
 // fixed at compile(), before a token flows: an empty pane is not a pane waiting
@@ -24,6 +25,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { StateGraphView } from "./StateGraphView";
+import type { StateGraphViewState } from "./viewState";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 // The reference pair — the same CRAG run the owner's template page embeds, so
@@ -131,9 +133,13 @@ export interface StateGraphPaneProps {
   run: LoadedRun | null;
   /** Where a pick lands. Called with the folded result, null included. */
   onRun: (next: LoadedRun | null) => void;
+  /** Orientation, cursor and pick — App-owned like the run, and for the same
+   *  reason: this pane unmounts on every segment switch. */
+  view: StateGraphViewState;
+  onView: (next: StateGraphViewState) => void;
 }
 
-export function StateGraphPane({ run, onRun }: StateGraphPaneProps) {
+export function StateGraphPane({ run, onRun, view, onView }: StateGraphPaneProps) {
   const lang = useLang();
   // A pick that changed nothing is the one case a user reads as a broken button:
   // a lone values file with no drawing to attach it to. Local on purpose — it
@@ -203,6 +209,8 @@ export function StateGraphPane({ run, onRun }: StateGraphPaneProps) {
       graphJsonl={run.graphJsonl}
       stateJsonl={run.stateJsonl}
       source={run.source}
+      view={view}
+      onView={onView}
       onLoadFile={onViewLoad}
     />
   );

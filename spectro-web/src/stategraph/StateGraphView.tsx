@@ -13,14 +13,27 @@
 //     nothing"
 //   - absence is legible: "not recorded" and "was empty" are different claims
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ReactFlow, Background, Handle, Position, ViewportPortal, type NodeProps } from "@xyflow/react";
 import type { Edge as FlowEdge, Node as FlowNode } from "@xyflow/react";
-import { layoutStateGraph, type Orientation, type PlacedNode } from "./layout";
+import { layoutStateGraph, type PlacedNode, type StateGraphLayout } from "./layout";
+import { StateGraphExport } from "./StateGraphExport";
+import type { StateGraphViewState } from "./viewState";
+import {
+  createReplayClock,
+  stepDelayMs,
+  transportIntent,
+  SPEED_CHOICES,
+  type ReplayClock,
+  type SpeedChoice,
+} from "./player";
 import {
   readStateGraphRun,
   channelAbsence,
+  lifecycleAt,
+  takenUpTo,
   type Absence,
+  type Lifecycle,
   type StateGraphRun,
   type Marker,
   type TimelineRecord,
@@ -28,10 +41,9 @@ import {
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-/** The four states a node can be in, and they must stay four: a run that never
- *  reached a node is a different fact from one that reached it and wrote
- *  nothing. */
-export type Lifecycle = "pending" | "active" | "done" | "error";
+// Lifecycle and its fold moved to artifact.ts when the export SVG became a
+// second consumer — re-exported so the type keeps its old address.
+export type { Lifecycle } from "./artifact";
 
 interface CardData extends Record<string, unknown> {
   placed: PlacedNode;
@@ -76,19 +88,6 @@ function NodeCard({ data }: NodeProps) {
 
 const NODE_TYPES = { sgCard: NodeCard };
 
-/** How far through the record list the transport currently stands. */
-function lifecycleAt(run: StateGraphRun, upto: number, id: string): Lifecycle {
-  let seen: Lifecycle = "pending";
-  for (let i = 0; i <= upto && i < run.records.length; i++) {
-    const r = run.records[i];
-    if (r.node !== id) continue;
-    if (r.type === "node_start") seen = "active";
-    else if (r.type === "node_end") seen = "done";
-    else if (r.type === "node_error") seen = "error";
-  }
-  return seen;
-}
-
 /** The superstep of the visit the cursor stands in: the picked node's nearest
  *  lifecycle record at or before `upto` — or its FIRST visit while the cursor
  *  has not reached the node yet, because a picked node is a question about that
@@ -130,14 +129,34 @@ export interface StateGraphViewProps {
   stateJsonl: string | null;
   /** Where the artifacts came from, for the footer. */
   source: string;
+  /** Orientation, cursor and pick — App-owned, like the run itself, so a
+   *  segment switch cannot reset them. This component holds no view state of
+   *  its own beyond the replay clock's play flag. */
+  view: StateGraphViewState;
+  onView: (next: StateGraphViewState) => void;
   onLoadFile?: (graph: string, state: string | null, source: string) => void;
 }
 
-export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: StateGraphViewProps) {
+export function StateGraphView({
+  graphJsonl,
+  stateJsonl,
+  source,
+  view,
+  onView,
+  onLoadFile,
+}: StateGraphViewProps) {
   const lang = useLang();
-  const [orientation, setOrientation] = useState<Orientation>("horizontal");
-  const [cursor, setCursor] = useState<number | null>(null);
-  const [picked, setPicked] = useState<string | null>(null);
+  const { orientation, cursor, picked } = view;
+  // The clock and the keyboard live outside the render (timers, one bound
+  // listener), so their writes go through refs to the LATEST view — merging
+  // onto a captured one would resurrect a cursor from three steps ago.
+  const viewRef = useRef(view);
+  viewRef.current = view;
+  const onViewRef = useRef(onView);
+  onViewRef.current = onView;
+  const patch = useCallback((p: Partial<StateGraphViewState>): void => {
+    onViewRef.current({ ...viewRef.current, ...p });
+  }, []);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const run = useMemo(() => readStateGraphRun(graphJsonl, stateJsonl), [graphJsonl, stateJsonl]);
@@ -146,6 +165,94 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
   // null cursor = the whole run, which is how the view opens: the reader is
   // looking at a finished record, not watching it arrive.
   const upto = cursor ?? run.records.length - 1;
+
+  // ---- replay (ported from the template's play/pause/schedule) ----
+  // The clock is a DOM-free closure (player.ts); everything it reads goes
+  // through refs because it is created once and the timer outlives any render.
+  const [playing, setPlaying] = useState(false);
+  const [speed, setSpeed] = useState<SpeedChoice>("1");
+  const speedRef = useRef(speed);
+  const uptoRef = useRef(upto);
+  uptoRef.current = upto;
+  const recordsRef = useRef(run.records);
+  recordsRef.current = run.records;
+  const clockRef = useRef<ReplayClock | null>(null);
+  if (clockRef.current === null) {
+    clockRef.current = createReplayClock({
+      count: () => recordsRef.current.length,
+      cursor: () => uptoRef.current,
+      // A replay that reaches the last record has watched the WHOLE run, and
+      // null is this view's word for that — a numeric cursor there would leave
+      // the state chip saying "mid-run" about a finished one (seen live).
+      seek: (i) => patch({ cursor: i >= recordsRef.current.length - 1 ? null : i }),
+      delay: (at) =>
+        speedRef.current === "instant"
+          ? "instant"
+          : stepDelayMs(recordsRef.current, at, Number(speedRef.current)),
+      onPlaying: setPlaying,
+    });
+  }
+  const clock = clockRef.current;
+  // Unmount teardown — the pane is unmounted whenever `nav` leaves
+  // "stategraph", and a timer surviving that would keep stepping a dead view.
+  useEffect(() => () => clockRef.current?.dispose(), []);
+
+  /** Every manual seek pauses first, like the template's step()/scrub. */
+  const jump = useCallback(
+    (i: number | null): void => {
+      clock.pause();
+      patch({ cursor: i });
+    },
+    [clock, patch],
+  );
+
+  const changeSpeed = (v: SpeedChoice): void => {
+    // The ref flips before reschedule() reads it — state alone would hand the
+    // clock the OLD speed for one step.
+    speedRef.current = v;
+    setSpeed(v);
+    clock.reschedule();
+  };
+
+  // The keyboard, scoped by mounting: the listener exists only while this pane
+  // is on screen (App unmounts the whole arm off "stategraph"), so it can
+  // never fire in another segment. Bound once; state is read through refs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = e.target as HTMLElement | null;
+      // The export sheet is a dialog OVER the view: while focus is inside it,
+      // every key is the sheet's — the same courtesy the panel gets for space.
+      if (el?.closest?.(".xd-modal") != null) return;
+      const intent = transportIntent({
+        key: e.key,
+        tag: (el?.tagName ?? "").toLowerCase(),
+        inputType: el instanceof HTMLInputElement ? el.type : undefined,
+        inPanel: el?.closest?.(".sg-panel") != null,
+        editable: el?.isContentEditable === true,
+        modified: e.metaKey || e.ctrlKey || e.altKey,
+      });
+      if (intent === null) return;
+      e.preventDefault();
+      const c = clockRef.current;
+      const last = recordsRef.current.length - 1;
+      if (intent === "toggle") c?.toggle();
+      else if (intent === "next") {
+        c?.pause();
+        patch({ cursor: Math.min(last, uptoRef.current + 1) });
+      } else if (intent === "prev") {
+        c?.pause();
+        patch({ cursor: Math.max(0, uptoRef.current - 1) });
+      } else if (intent === "first") {
+        c?.pause();
+        patch({ cursor: 0 });
+      } else {
+        c?.pause();
+        patch({ cursor: null });
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [patch]);
 
   const flowNodes: FlowNode[] = useMemo(
     () =>
@@ -169,16 +276,7 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
     [laid, run, upto, picked],
   );
 
-  const takenSoFar = useMemo(() => {
-    const s = new Set<string>();
-    for (let i = 0; i <= upto && i < run.records.length; i++) {
-      const r = run.records[i];
-      if (r.type === "edge_taken" && r.from !== undefined && r.to !== undefined) {
-        s.add(`${r.from}->${r.to}`);
-      }
-    }
-    return s;
-  }, [run, upto]);
+  const takenSoFar = useMemo(() => takenUpTo(run, upto), [run, upto]);
 
   const flowEdges: FlowEdge[] = useMemo(
     () =>
@@ -199,7 +297,7 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
     [laid, takenSoFar],
   );
 
-  const onPick = useCallback((_: unknown, n: FlowNode) => setPicked(n.id), []);
+  const onPick = useCallback((_: unknown, n: FlowNode) => patch({ picked: n.id }), [patch]);
 
   const openFiles = (files: FileList | null): void => {
     if (files === null || files.length === 0 || onLoadFile === undefined) return;
@@ -219,17 +317,18 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
           <button
             type="button"
             className={orientation === "horizontal" ? "is-on" : ""}
-            onClick={() => setOrientation("horizontal")}
+            onClick={() => patch({ orientation: "horizontal" })}
           >
             {t(lang, "sg.horizontal")}
           </button>
           <button
             type="button"
             className={orientation === "vertical" ? "is-on" : ""}
-            onClick={() => setOrientation("vertical")}
+            onClick={() => patch({ orientation: "vertical" })}
           >
             {t(lang, "sg.vertical")}
           </button>
+          <StateGraphExport run={run} laid={laid} upto={upto} source={source} />
           <button type="button" onClick={() => fileRef.current?.click()}>
             {t(lang, "sg.load")}
           </button>
@@ -245,18 +344,41 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
       </header>
 
       <div className="sg-transport">
-        <button type="button" onClick={() => setCursor(0)} title={t(lang, "sg.rewind")}>
+        <button type="button" onClick={() => jump(0)} title={t(lang, "sg.rewind")}>
           |&lt;
         </button>
-        <button type="button" onClick={() => setCursor(Math.max(0, upto - 1))}>
+        <button type="button" onClick={() => jump(Math.max(0, upto - 1))}>
           &lt;
         </button>
-        <button type="button" onClick={() => setCursor(Math.min(run.records.length - 1, upto + 1))}>
+        {/* The template's primary control between the two steppers: one button,
+            two words. The symbol flips; the accessible name says which. */}
+        <button
+          type="button"
+          className={playing ? "is-on" : ""}
+          onClick={() => clock.toggle()}
+          title={t(lang, playing ? "sg.pause" : "sg.play")}
+          aria-label={t(lang, playing ? "sg.pause" : "sg.play")}
+        >
+          {playing ? "❚❚" : "▶"}
+        </button>
+        <button type="button" onClick={() => jump(Math.min(run.records.length - 1, upto + 1))}>
           &gt;
         </button>
-        <button type="button" onClick={() => setCursor(null)}>
+        <button type="button" onClick={() => jump(null)}>
           &gt;|
         </button>
+        <select
+          className="sg-speed mono"
+          value={speed}
+          aria-label={t(lang, "sg.speed")}
+          onChange={(e) => changeSpeed(e.target.value as SpeedChoice)}
+        >
+          {SPEED_CHOICES.map((v) => (
+            <option key={v} value={v}>
+              {v === "instant" ? t(lang, "sg.instant") : `${v}×`}
+            </option>
+          ))}
+        </select>
         {/* One tick per record, coloured by type and clickable — the band IS the
             scrubber, so a reader can jump to the moment a node turned red. */}
         <div className="sg-band" role="group" aria-label={t(lang, "sg.scrub")}>
@@ -266,7 +388,7 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
               type="button"
               className={`sg-tick sg-tick--${r.type}${i === upto ? " is-at" : ""}${i <= upto ? " is-past" : ""}`}
               title={`${r.type}${r.node !== undefined ? ` · ${r.node}` : ""}`}
-              onClick={() => setCursor(i)}
+              onClick={() => jump(i)}
             />
           ))}
         </div>
@@ -285,7 +407,7 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
             edges={flowEdges}
             nodeTypes={NODE_TYPES}
             onNodeClick={onPick}
-            onPaneClick={() => setPicked(null)}
+            onPaneClick={() => patch({ picked: null })}
             // The owner's rule from GraphCanvas.tsx: right and middle drag pan,
             // left selects. Keeping the same grammar across both canvases.
             panOnDrag={[1, 2]}
@@ -300,15 +422,7 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
                 would drift apart the moment anybody scrolled. Caught by
                 rendering it, not by reading it. */}
             <ViewportPortal>
-              <svg className="sg-arcs" aria-hidden="true" style={{ overflow: "visible" }}>
-                {laid.edges.map((e) => (
-                  <path
-                    key={`${e.from}->${e.to}`}
-                    d={e.path}
-                    className={`sg-arc${e.back ? " sg-arc--back" : ""}${e.skip ? " sg-arc--skip" : ""}`}
-                  />
-                ))}
-              </svg>
+              <CanvasOverlay laid={laid} />
             </ViewportPortal>
           </ReactFlow>
         </div>
@@ -363,6 +477,31 @@ export function StateGraphView({ graphJsonl, stateJsonl, source, onLoadFile }: S
         <span className="sg-offline">{t(lang, "sg.offline")}</span>
       </footer>
     </div>
+  );
+}
+
+/** The canvas overlay: the routed arcs plus one label per rank column. Its own
+ *  exported component because a ViewportPortal renders nothing server-side, and
+ *  the suite that holds "rank 0..maxRank are on the canvas" renders THIS. */
+export function CanvasOverlay({ laid }: { laid: StateGraphLayout }) {
+  return (
+    <svg className="sg-arcs" aria-hidden="true" style={{ overflow: "visible" }}>
+      {laid.edges.map((e) => (
+        <path
+          key={`${e.from}->${e.to}`}
+          d={e.path}
+          className={`sg-arc${e.back ? " sg-arc--back" : ""}${e.skip ? " sg-arc--skip" : ""}`}
+        />
+      ))}
+      {/* layout.ts:62 promised one labelled column per rank; this delivers it.
+          Lowercase, mono, faint — the template's .ranklabel in this file's
+          token vocabulary. */}
+      {laid.rankLabels.map((l) => (
+        <text key={l.rank} className="sg-ranklabel" x={l.x} y={l.y}>
+          rank {l.rank}
+        </text>
+      ))}
+    </svg>
   );
 }
 

@@ -56,11 +56,21 @@ export interface RoutedEdge {
   path: string;
 }
 
+/** Where one rank's label sits — the template's own anchors: beside the
+ *  rank's node nearest the axis, in the margin the boxes never enter. */
+export interface RankLabel {
+  rank: number;
+  x: number;
+  y: number;
+}
+
 export interface StateGraphLayout {
   nodes: PlacedNode[];
   edges: RoutedEdge[];
-  /** Highest rank present — the renderer draws one labelled column per rank. */
+  /** Highest rank present — one labelled column per rank, via rankLabels. */
   maxRank: number;
+  /** One label per occupied rank, positioned for the chosen orientation. */
+  rankLabels: RankLabel[];
   /** The bounding box of everything drawn, arcs included. */
   bounds: { x0: number; y0: number; x1: number; y1: number };
 }
@@ -93,7 +103,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   const nodes = topo.nodes.map((n) => ({ id: n.id, label: n.label }));
   const known = new Set(nodes.map((n) => n.id));
   if (nodes.length === 0) {
-    return { nodes: [], edges: [], maxRank: 0, bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
+    return { nodes: [], edges: [], maxRank: 0, rankLabels: [], bounds: { x0: 0, y0: 0, x1: 0, y1: 0 } };
   }
   // An edge naming a node that is not in the topology is dropped rather than
   // invented: artifacts come off disk and can be truncated mid-write.
@@ -257,6 +267,20 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
   });
   const byId = new Map(placed.map((n) => [n.id, n]));
 
+  // One label per occupied rank, riding the rank's node nearest the axis —
+  // the template's anchors: (first.x, MARGIN-12) along, (MARGIN-22, first.y-8)
+  // across. Computed here rather than in the renderer so the export SVG and
+  // the live overlay cannot disagree about where a column is.
+  const rankLabels: RankLabel[] = [];
+  for (let r = 0; r <= maxRank; r++) {
+    const inRank = placed.filter((n) => n.rank === r);
+    if (inRank.length === 0) continue;
+    const first = inRank.reduce((a, b) => ((horiz ? b.y < a.y : b.x < a.x) ? b : a));
+    rankLabels.push(
+      horiz ? { rank: r, x: first.x, y: MARGIN - 12 } : { rank: r, x: MARGIN - 22, y: first.y - 8 },
+    );
+  }
+
   // The node field's bounds. Every arc is aimed to clear them, which is what
   // makes a returning edge read as a loop instead of a line through the middle.
   let fx0 = Infinity;
@@ -381,6 +405,7 @@ export function layoutStateGraph(topo: Topology, orientation: Orientation): Stat
     nodes: placed,
     edges: routed,
     maxRank,
+    rankLabels,
     bounds: { x0: bx0 - MARGIN, y0: by0 - MARGIN, x1: bx1 + MARGIN, y1: by1 + MARGIN },
   };
 }

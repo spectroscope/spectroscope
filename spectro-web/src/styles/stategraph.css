@@ -163,6 +163,21 @@
   font-family: var(--font-mono);
   font-size: var(--fs-13);
 }
+/* The speed select wears the same chrome as the buttons beside it — the
+   template's #speed, said in this surface's own control vocabulary. */
+.sg-speed {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-chip);
+  padding: 5px 6px;
+  cursor: pointer;
+}
+.sg-speed:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
 
 /* The band: one thin line per record, coloured by record type. It IS the
    scrubber — a reader clicks the red tick to land on the moment a node raised,
@@ -408,6 +423,14 @@
 }
 .sg-arc--skip {
   stroke-dasharray: 5 4;
+}
+/* The template's .ranklabel, token for token: 10px mono, faint, wide-tracked.
+   Lowercase comes from the markup ("rank 3"), never from a transform. */
+.sg-ranklabel {
+  font-size: 10px;
+  font-family: var(--font-mono);
+  fill: var(--text-faint);
+  letter-spacing: 0.14em;
 }
 
 /* ---------- right panel ---------- */

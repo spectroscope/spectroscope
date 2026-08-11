@@ -2709,6 +2709,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "That was a .state.jsonl on its own. Values need a shape — load the matching .graph.jsonl with it.",
   },
   "sg.rewind": { de: "erster Datensatz", en: "first record" },
+  "sg.play": { de: "abspielen (Leertaste)", en: "play (space)" },
+  "sg.pause": { de: "anhalten (Leertaste)", en: "pause (space)" },
+  "sg.speed": { de: "Abspielgeschwindigkeit", en: "replay speed" },
+  "sg.instant": { de: "sofort", en: "instant" },
   "sg.scrub": { de: "Zeitleiste der Datensätze", en: "record timeline" },
   "sg.complete": { de: "vollständig", en: "complete" },
   "sg.inFlight": { de: "mitten im Lauf", en: "mid-run" },
@@ -2761,6 +2765,21 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sg.st.active": { de: "läuft", en: "running" },
   "sg.st.done": { de: "fertig", en: "done" },
   "sg.st.error": { de: "Fehler", en: "error" },
+  // The export sheet (net-new view): two total files, no options — so every
+  // string here says what a file IS, not what a switch would do.
+  "sg.thread": { de: "Thread", en: "thread" },
+  "sg.export.close": { de: "Schließen", en: "close" },
+  "sg.export.download": { de: "herunterladen", en: "download" },
+  "sg.export.svg": { de: "Zeichnung als SVG", en: "drawing as SVG" },
+  "sg.export.svgHint": {
+    de: "Der Graph am aktuellen Datensatz — Knoten, Kanten, Rang-Beschriftungen. Eine Datei, keine externen Verweise.",
+    en: "The graph at the current record — nodes, edges, rank labels. One file, no external references.",
+  },
+  "sg.export.md": { de: "Lauf-Zusammenfassung als Markdown", en: "run summary as Markdown" },
+  "sg.export.mdHint": {
+    de: "Quelle, Run- und Thread-Identität, Zähler und die Knoten-Tabelle — zum Einfügen in ein Ticket.",
+    en: "Source, run and thread identity, the counts and the node table — ready to paste into a ticket.",
+  },
   "sg.marker.str": { de: "gekürzter Text", en: "clipped text" },
   "sg.marker.list": { de: "gekürzte Liste", en: "clipped list" },
   "sg.marker.redacted": { de: "geschwärzt", en: "redacted" },

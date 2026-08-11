@@ -79,6 +79,9 @@ export interface Marker {
 export interface StateGraphRun {
   topology: Topology;
   runId: string | null;
+  /** The conversation the run belongs to, when the writer named one — the
+   *  checkpointer seam's graph_start carries it. Null for a threadless run. */
+  threadId: string | null;
   supersteps: number;
   records: TimelineRecord[];
   nodes: Map<string, NodeRun>;
@@ -148,6 +151,7 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
   const nodes = new Map<string, NodeRun>();
   const taken = new Set<string>();
   let runId: string | null = null;
+  let threadId: string | null = null;
   let maxSuperstep = -1;
   // The writer's own step count, from graph_end. Preferred over the maximum
   // superstep seen: the field runs 0..N and counting its values prints one step
@@ -199,6 +203,7 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
     records.push(rec);
 
     if (runId === null && str(r.runId) !== undefined) runId = str(r.runId)!;
+    if (threadId === null && str(r.threadId) !== undefined) threadId = str(r.threadId)!;
     if (type === "graph_end" && num(r.steps) !== undefined) declaredSteps = num(r.steps)!;
     if (rec.superstep !== undefined) maxSuperstep = Math.max(maxSuperstep, rec.superstep);
 
@@ -274,6 +279,7 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
   return {
     topology,
     runId,
+    threadId,
     supersteps: declaredSteps ?? maxSuperstep + 1,
     records,
     nodes,
@@ -291,6 +297,38 @@ export function readStateGraphRun(graphJsonl: string, stateJsonl: string | null)
       return hits.length > 0 ? hits[hits.length - 1] : null;
     },
   };
+}
+
+/** The four states a node can be in, and they must stay four: a run that never
+ *  reached a node is a different fact from one that reached it and wrote
+ *  nothing. Lives here rather than in the view because the export SVG folds
+ *  the same truth, and two folds would drift. */
+export type Lifecycle = "pending" | "active" | "done" | "error";
+
+/** The node's lifecycle with the transport standing on record `upto`. */
+export function lifecycleAt(run: StateGraphRun, upto: number, id: string): Lifecycle {
+  let seen: Lifecycle = "pending";
+  for (let i = 0; i <= upto && i < run.records.length; i++) {
+    const r = run.records[i];
+    if (r.node !== id) continue;
+    if (r.type === "node_start") seen = "active";
+    else if (r.type === "node_end") seen = "done";
+    else if (r.type === "node_error") seen = "error";
+  }
+  return seen;
+}
+
+/** `from->to` for every edge walked up to record `upto` — the whole-run
+ *  `taken` set, cut to where the transport stands. */
+export function takenUpTo(run: StateGraphRun, upto: number): Set<string> {
+  const s = new Set<string>();
+  for (let i = 0; i <= upto && i < run.records.length; i++) {
+    const r = run.records[i];
+    if (r.type === "edge_taken" && r.from !== undefined && r.to !== undefined) {
+      s.add(`${r.from}->${r.to}`);
+    }
+  }
+  return s;
 }
 
 /** Why a channel is not in a payload — and the two reasons are different. */

@@ -19,6 +19,7 @@ import {
   type LoadedRun,
 } from "./StateGraphPane";
 import { readStateGraphRun } from "./artifact";
+import { DEFAULT_VIEW } from "./viewState";
 import { t } from "../i18n/i18n";
 import { currentLang } from "../state/lang";
 
@@ -158,7 +159,9 @@ describe("what the loaded view's own picker hands back", () => {
 
 describe("the empty pane is honest about having no run", () => {
   const lang = currentLang();
-  const html = renderToStaticMarkup(<StateGraphPane run={null} onRun={() => {}} />);
+  const html = renderToStaticMarkup(
+    <StateGraphPane run={null} onRun={() => {}} view={DEFAULT_VIEW} onView={() => {}} />,
+  );
 
   it("says the drawing exists before the first token", () => {
     expect(html).toContain(t(lang, "sg.claim"));
@@ -196,7 +199,9 @@ describe("the empty pane is honest about having no run", () => {
 // given, the second says App is the one holding it.
 describe("a loaded run outlives a trip to another segment", () => {
   it("draws the run it is handed instead of one it loaded itself", () => {
-    const html = renderToStaticMarkup(<StateGraphPane run={demoRun()} onRun={() => {}} />);
+    const html = renderToStaticMarkup(
+      <StateGraphPane run={demoRun()} onRun={() => {}} view={DEFAULT_VIEW} onView={() => {}} />,
+    );
     expect(html).toContain("sg-canvas");
     expect(html).toContain(DEMO_SOURCE);
   });
@@ -204,7 +209,14 @@ describe("a loaded run outlives a trip to another segment", () => {
   it("keeps the fact in App, where unmounting the pane cannot reach it", () => {
     const app = read("../App.tsx");
     expect(app).toMatch(/useState<LoadedRun \| null>\(null\)/);
-    expect(app).toMatch(/<StateGraphPane run=\{stateGraphRun\} onRun=\{setStateGraphRun\} \/>/);
+    expect(app).toMatch(/run=\{stateGraphRun\}/);
+    expect(app).toMatch(/onRun=\{setStateGraphRun\}/);
+    // The view state rides the same lift: orientation, cursor and pick are
+    // App's, so a segment switch resets nothing (viewState.test.tsx holds the
+    // component side of this).
+    expect(app).toMatch(/useState<StateGraphViewState>\(initialViewState\)/);
+    expect(app).toMatch(/view=\{stateGraphView\}/);
+    expect(app).toMatch(/onView=\{changeStateGraphView\}/);
   });
 });
 
