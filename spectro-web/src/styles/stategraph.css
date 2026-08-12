@@ -20,6 +20,14 @@
   min-height: 0;
   background: var(--bg);
   color: var(--text);
+  /* The AA floor (owner call 2026-08-12): in this view the quiet tiers carry
+     facts — "not recorded", "never entered", the step numbers — and the design
+     literals sit near 2.3:1 at 10.5 px. Derived from the design's own ink and
+     ground rather than minted, so every design clears 4.5:1 on both grounds;
+     quietTiersFloor.drift.test.ts resolves this arithmetic against each
+     palette and fails the build when a design or a percentage breaks it. */
+  --text-faint: color-mix(in srgb, var(--text) 62%, var(--bg));
+  --text-dim: color-mix(in srgb, var(--text) 78%, var(--bg));
 }
 
 /* Controls: scoped to .sg so this wins over base.css without !important. */
