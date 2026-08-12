@@ -92,7 +92,9 @@ import { TraceView } from "./components/TraceView";
 import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
-import { StateGraphPane, type LoadedRun } from "./stategraph/StateGraphPane";
+import { SCENARIOS, StateGraphPane, type LoadedRun } from "./stategraph/StateGraphPane";
+import { onShellCommand } from "./state/shellCommands";
+import { runShellCommand, type ShellDeps } from "./state/shellCommandRouter";
 import { initialViewState, rememberOrientation, type StateGraphViewState } from "./stategraph/viewState";
 import type { PendingAttachment } from "./components/AttachmentPreview";
 import { SettingsPanel } from "./components/SettingsPanel";
@@ -1170,6 +1172,44 @@ export function App() {
     navNonce.issue(); // a fresh chat supersedes any in-flight session open
     commitUrl({ kind: "live", tab: null }, "gesture");
   };
+
+  /*
+   * The desktop menu bar, wired to the app that draws under it.
+   *
+   * The shell has no IPC — the window exposes no Node API on purpose — so a
+   * menu click arrives as one CustomEvent carrying a command id, and this is
+   * the single place that answers. The mapping lives in shellCommandRouter so
+   * a test can walk every id and fail on any that moves nothing; App only
+   * supplies the callbacks it already owns.
+   *
+   * Through a ref, not a dependency list: every callback below is rebuilt each
+   * render, and the alternative is re-subscribing on every one of them. The
+   * ref is assigned during render, so the effect's first read is already
+   * current. Same idiom as fleetsLockedRef and beaconRef above.
+   */
+  const shellDeps = useRef<ShellDeps>(null as unknown as ShellDeps);
+  shellDeps.current = {
+    newChat,
+    openImport: () => setImportOpen(true),
+    openStarters: () => setStartersOpen(true),
+    openScenarios: () => setScenariosOpen(true),
+    loadStateGraphDemo: (source) => {
+      const scenario = SCENARIOS.find((s) => s.source === source);
+      if (!scenario) return; // a shell newer than this bundle named a demo it does not carry
+      setStateGraphRun(scenario.run());
+      // Cursor and pick belong to the OLD file; orientation is a preference.
+      setStateGraphView((v) => ({ ...v, cursor: null, picked: null }));
+    },
+    setNav,
+    fleetsLocked,
+    openLevelPanel: () => setLevelPanelOpen(true),
+    changeTab,
+    openDoctor: () => setDoctorOpen(true),
+    openKeymap: () => setKeymapOpen(true),
+    toggleImages: () => setImagesOpen((open) => !open),
+    abort,
+  };
+  useEffect(() => onShellCommand((c) => runShellCommand(c, shellDeps.current)), []);
 
   // Resume a stored session AS the live session: seed the UI from its JSONL
   // (chat, graph, trace and Lab show the full history), then reconnect the
