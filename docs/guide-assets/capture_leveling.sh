@@ -19,7 +19,10 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-JAR="$ROOT/spectro-server/build/libs/spectro-server-0.3.0.jar"
+# Pinned to 0.3.0 until 2026-08-13, five releases behind — these plates were
+# therefore re-shot against chrome the product had already replaced. Resolve
+# the newest built jar instead of naming a version that ages out.
+JAR="${SPECTRO_SHOT_JAR:-$(ls -t "$ROOT"/spectro-server/build/libs/spectro-server-*.jar | grep -v -- "-plain" | head -1)}"
 MODEL="${SPECTRO_SHOT_MODEL:-qwen3.5:27b-q4_K_M}"
 DARK_HOME=/tmp/spectro-shots-dark
 CLIMB_HOME=/tmp/spectro-shots
