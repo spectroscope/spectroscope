@@ -1,0 +1,25 @@
+{"type":"run_start","runId":"darkmode","agentId":"main","prompt":"Draft a five-step plan for adding dark mode to the web app.","provider":"anthropic","ts":1783020000000}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1783020000001}
+{"type":"thinking_delta","agentId":"main","text":"Design ","ts":1783020003100}
+{"type":"thinking_delta","agentId":"main","text":"tokens ","ts":1783020003220}
+{"type":"thinking_delta","agentId":"main","text":"first, ","ts":1783020003340}
+{"type":"thinking_delta","agentId":"main","text":"then ","ts":1783020003460}
+{"type":"thinking_delta","agentId":"main","text":"the ","ts":1783020003580}
+{"type":"thinking_delta","agentId":"main","text":"toggle, ","ts":1783020003700}
+{"type":"thinking_delta","agentId":"main","text":"then ","ts":1783020003820}
+{"type":"thinking_delta","agentId":"main","text":"persistence, ","ts":1783020003940}
+{"type":"thinking_delta","agentId":"main","text":"then ","ts":1783020004060}
+{"type":"thinking_delta","agentId":"main","text":"the ","ts":1783020004180}
+{"type":"thinking_delta","agentId":"main","text":"audit. ","ts":1783020004300}
+{"type":"tool_call","agentId":"main","callId":"c1","name":"write_file","input":{"path":"docs/dark-mode.md","content":"1. tokens\n2. toggle\n3. persist\n4. audit\n5. ship\n"},"ts":1783020004670}
+{"type":"tool_result","agentId":"main","callId":"c1","output":"ok, wrote 78 bytes to docs/dark-mode.md","isError":false,"durationMs":12,"ts":1783020004682}
+{"type":"text_delta","agentId":"main","text":"Plan ","ts":1783020004882}
+{"type":"text_delta","agentId":"main","text":"saved: ","ts":1783020004974}
+{"type":"text_delta","agentId":"main","text":"five ","ts":1783020005066}
+{"type":"text_delta","agentId":"main","text":"steps, ","ts":1783020005158}
+{"type":"text_delta","agentId":"main","text":"tokens ","ts":1783020005250}
+{"type":"text_delta","agentId":"main","text":"first, ","ts":1783020005342}
+{"type":"text_delta","agentId":"main","text":"ship ","ts":1783020005434}
+{"type":"text_delta","agentId":"main","text":"last. ","ts":1783020005526}
+{"type":"usage","agentId":"main","inputTokens":410,"outputTokens":58,"ts":1783020005718}
+{"type":"run_end","runId":"darkmode","stopReason":"end_turn","ts":1783020005818}

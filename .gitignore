@@ -57,3 +57,14 @@ logs/
 
 # graphify AST-cache droppings (knowledge-graph tooling in the product home)
 graphify-out/
+
+# the guide generator caches its lossless WebP re-encodes here; the PNG
+# masters in shots/ and shots-light/ are the tracked source of truth
+docs/guide-assets/.webp-cache/
+
+# the guide is photographed against a curated home (demo-home/README.md);
+# the server regenerates these on every boot, only sessions/ + settings.json are ours
+docs/guide-assets/demo-home/.spectro/logs/
+docs/guide-assets/demo-home/.spectro/skills/
+docs/guide-assets/demo-home/.spectro/leveling.json
+docs/guide-assets/demo-home/.spectro/sessions-index.json

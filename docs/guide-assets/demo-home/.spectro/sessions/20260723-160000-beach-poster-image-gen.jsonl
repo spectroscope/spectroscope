@@ -1,0 +1,30 @@
+{"type":"run_start","runId":"beach-poster","agentId":"main","prompt":"Make a poster: a cat lounging on a beach with sunglasses and a cocktail.","provider":"gemini","ts":1783200000000}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1783200000001}
+{"type":"thinking_delta","agentId":"main","text":"A ","ts":1783200000900}
+{"type":"thinking_delta","agentId":"main","text":"sunny, ","ts":1783200001010}
+{"type":"thinking_delta","agentId":"main","text":"cheerful ","ts":1783200001120}
+{"type":"thinking_delta","agentId":"main","text":"scene ","ts":1783200001230}
+{"type":"thinking_delta","agentId":"main","text":"— ","ts":1783200001340}
+{"type":"thinking_delta","agentId":"main","text":"photorealistic, ","ts":1783200001450}
+{"type":"thinking_delta","agentId":"main","text":"warm ","ts":1783200001560}
+{"type":"thinking_delta","agentId":"main","text":"light. ","ts":1783200001670}
+{"type":"thinking_delta","agentId":"main","text":"I ","ts":1783200001780}
+{"type":"thinking_delta","agentId":"main","text":"render ","ts":1783200001890}
+{"type":"thinking_delta","agentId":"main","text":"it. ","ts":1783200002000}
+{"type":"tool_call","agentId":"main","callId":"img1","name":"generate_image","input":{"prompt":"A cute fluffy cat relaxing on a beach lounge chair, wearing sunglasses, holding a colorful cocktail, palm trees and turquoise ocean, sunny, photorealistic, high detail"},"ts":1783200002310}
+{"type":"image_generated","agentId":"main","callId":"img1","prompt":"A cute fluffy cat relaxing on a beach lounge chair, wearing sunglasses, holding a colorful cocktail, palm trees and turquoise ocean, sunny, photorealistic, high detail","provider":"gemini","model":"imagen-3.0","mediaType":"image/png","blobPath":"images/3db33d8b83a038c017a5424dfe2ece553d33b1cce7ef633684a91bd77600c688.png","sha256":"3db33d8b83a038c017a5424dfe2ece553d33b1cce7ef633684a91bd77600c688","ts":1783200006510}
+{"type":"tool_result","agentId":"main","callId":"img1","output":"ok · wrote 1 image (1024×1024)","isError":false,"durationMs":4200,"ts":1783200006530}
+{"type":"text_delta","agentId":"main","text":"Here ","ts":1783200006550}
+{"type":"text_delta","agentId":"main","text":"it ","ts":1783200006635}
+{"type":"text_delta","agentId":"main","text":"is ","ts":1783200006720}
+{"type":"text_delta","agentId":"main","text":"— ","ts":1783200006805}
+{"type":"text_delta","agentId":"main","text":"a ","ts":1783200006890}
+{"type":"text_delta","agentId":"main","text":"beach ","ts":1783200006975}
+{"type":"text_delta","agentId":"main","text":"cat ","ts":1783200007060}
+{"type":"text_delta","agentId":"main","text":"with ","ts":1783200007145}
+{"type":"text_delta","agentId":"main","text":"shades ","ts":1783200007230}
+{"type":"text_delta","agentId":"main","text":"and ","ts":1783200007315}
+{"type":"text_delta","agentId":"main","text":"a ","ts":1783200007400}
+{"type":"text_delta","agentId":"main","text":"cocktail. ","ts":1783200007485}
+{"type":"usage","agentId":"main","inputTokens":48,"outputTokens":210,"ts":1783200007670}
+{"type":"run_end","runId":"beach-poster","stopReason":"end_turn","ts":1783200007770}

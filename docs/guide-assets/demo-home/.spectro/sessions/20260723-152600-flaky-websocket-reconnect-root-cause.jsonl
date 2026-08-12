@@ -1,0 +1,34 @@
+{"type":"run_start","runId":"flaky-ws","agentId":"main","prompt":"Trace the flaky websocket reconnect and write up the root cause.","provider":"anthropic","ts":1783030000000}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1783030000001}
+{"type":"thinking_delta","agentId":"main","text":"The ","ts":1783030009400}
+{"type":"thinking_delta","agentId":"main","text":"reconnect ","ts":1783030009520}
+{"type":"thinking_delta","agentId":"main","text":"loop ","ts":1783030009640}
+{"type":"thinking_delta","agentId":"main","text":"retries ","ts":1783030009760}
+{"type":"thinking_delta","agentId":"main","text":"with ","ts":1783030009880}
+{"type":"thinking_delta","agentId":"main","text":"zero ","ts":1783030010000}
+{"type":"thinking_delta","agentId":"main","text":"backoff ","ts":1783030010120}
+{"type":"thinking_delta","agentId":"main","text":"— ","ts":1783030010240}
+{"type":"thinking_delta","agentId":"main","text":"that ","ts":1783030010360}
+{"type":"thinking_delta","agentId":"main","text":"is ","ts":1783030010480}
+{"type":"thinking_delta","agentId":"main","text":"the ","ts":1783030010600}
+{"type":"thinking_delta","agentId":"main","text":"storm. ","ts":1783030010720}
+{"type":"thinking_delta","agentId":"main","text":"Let ","ts":1783030010840}
+{"type":"thinking_delta","agentId":"main","text":"me ","ts":1783030010960}
+{"type":"thinking_delta","agentId":"main","text":"confirm ","ts":1783030011080}
+{"type":"thinking_delta","agentId":"main","text":"from ","ts":1783030011200}
+{"type":"thinking_delta","agentId":"main","text":"the ","ts":1783030011320}
+{"type":"thinking_delta","agentId":"main","text":"log. ","ts":1783030011440}
+{"type":"tool_call","agentId":"main","callId":"c1","name":"run_command","input":{"command":"grep reconnect app.log"},"ts":1783030011810}
+{"type":"tool_result","agentId":"main","callId":"c1","output":"reconnect storm at 14:02:11, backoff=0ms, 240 attempts/s","isError":false,"durationMs":210,"ts":1783030012020}
+{"type":"text_delta","agentId":"main","text":"Root ","ts":1783030012220}
+{"type":"text_delta","agentId":"main","text":"cause: ","ts":1783030012312}
+{"type":"text_delta","agentId":"main","text":"zero-backoff ","ts":1783030012404}
+{"type":"text_delta","agentId":"main","text":"reconnect ","ts":1783030012496}
+{"type":"text_delta","agentId":"main","text":"loop; ","ts":1783030012588}
+{"type":"text_delta","agentId":"main","text":"add ","ts":1783030012680}
+{"type":"text_delta","agentId":"main","text":"jitter ","ts":1783030012772}
+{"type":"text_delta","agentId":"main","text":"+ ","ts":1783030012864}
+{"type":"text_delta","agentId":"main","text":"a ","ts":1783030012956}
+{"type":"text_delta","agentId":"main","text":"cap. ","ts":1783030013048}
+{"type":"usage","agentId":"main","inputTokens":640,"outputTokens":66,"ts":1783030013240}
+{"type":"run_end","runId":"flaky-ws","stopReason":"end_turn","ts":1783030013340}

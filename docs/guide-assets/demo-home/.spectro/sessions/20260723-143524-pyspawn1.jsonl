@@ -1,0 +1,40 @@
+{"type":"run_start","runId":"ca66e102-7204-44dc-9756-78b262986883","agentId":"main","prompt":"Prepare the release: write the steps and map the workspace — in parallel.","provider":"scripted","ts":1784810124450}
+{"type":"turn_start","agentId":"main","turn":1,"ts":1784810124450}
+{"type":"text_delta","agentId":"main","text":"I fan out a worker and an explorer.\n","ts":1784810124450}
+{"type":"tool_call","agentId":"main","callId":"c1","name":"spawn_agents","input":{"agents":[{"type":"worker","task":"Write build.txt with the release steps"},{"type":"explore","task":"List the workspace and read notes.md"}]},"ts":1784810124450}
+{"type":"agent_spawn","agentId":"worker-1","parentId":"main","task":"Write build.txt with the release steps","ts":1784810124450}
+{"type":"agent_message","from":"main","to":"worker-1","role":"task","state":"submitted","text":"Write build.txt with the release steps","ts":1784810124450}
+{"type":"run_start","runId":"92020e69-60e0-4be8-b6fb-7d25635167c4","agentId":"worker-1","parentId":"main","prompt":"Write build.txt with the release steps","provider":"scripted","ts":1784810124450}
+{"type":"turn_start","agentId":"worker-1","turn":1,"ts":1784810124450}
+{"type":"tool_call","agentId":"worker-1","callId":"c2","name":"report_status","input":{"message":"drafting the release steps"},"ts":1784810124450}
+{"type":"agent_message","from":"worker-1","to":"main","role":"status","state":"working","text":"drafting the release steps","ts":1784810124450}
+{"type":"tool_result","agentId":"worker-1","callId":"c2","output":"ok","isError":false,"durationMs":0,"ts":1784810124450}
+{"type":"turn_start","agentId":"worker-1","turn":2,"ts":1784810124450}
+{"type":"tool_call","agentId":"worker-1","callId":"c3","name":"write_file","input":{"path":"build.txt","content":"1. build\n2. sign\n3. ship\n"},"ts":1784810124450}
+{"type":"permission_request","agentId":"worker-1","callId":"c3","name":"write_file","input":{"path":"build.txt","content":"1. build\n2. sign\n3. ship\n"},"ts":1784810124450}
+{"type":"permission_decision","callId":"c3","allowed":true,"ts":1784810124450}
+{"type":"tool_result","agentId":"worker-1","callId":"c3","output":"ok, wrote 25 bytes to build.txt","isError":false,"durationMs":0,"ts":1784810124450}
+{"type":"turn_start","agentId":"worker-1","turn":3,"ts":1784810124450}
+{"type":"text_delta","agentId":"worker-1","text":"Wrote build.txt with three steps.","ts":1784810124450}
+{"type":"usage","agentId":"worker-1","inputTokens":310,"outputTokens":55,"ts":1784810124450}
+{"type":"run_end","runId":"92020e69-60e0-4be8-b6fb-7d25635167c4","stopReason":"end_turn","ts":1784810124450}
+{"type":"agent_message","from":"worker-1","to":"main","role":"result","state":"completed","text":"[worker-1] result (tokens: 310 in / 55 out):\nWrote build.txt with three steps.","ts":1784810124450}
+{"type":"agent_spawn","agentId":"explore-1","parentId":"main","task":"List the workspace and read notes.md","ts":1784810124450}
+{"type":"agent_message","from":"main","to":"explore-1","role":"task","state":"submitted","text":"List the workspace and read notes.md","ts":1784810124450}
+{"type":"run_start","runId":"f81dbd8c-aeb1-466c-8770-2a95286d06fe","agentId":"explore-1","parentId":"main","prompt":"List the workspace and read notes.md","provider":"scripted","ts":1784810124450}
+{"type":"turn_start","agentId":"explore-1","turn":1,"ts":1784810124450}
+{"type":"tool_call","agentId":"explore-1","callId":"c4","name":"list_dir","input":{"path":"."},"ts":1784810124450}
+{"type":"tool_result","agentId":"explore-1","callId":"c4","output":"build.txt\nnotes.md","isError":false,"durationMs":0,"ts":1784810124450}
+{"type":"turn_start","agentId":"explore-1","turn":2,"ts":1784810124450}
+{"type":"tool_call","agentId":"explore-1","callId":"c5","name":"read_file","input":{"path":"notes.md"},"ts":1784810124450}
+{"type":"tool_result","agentId":"explore-1","callId":"c5","output":"release notes draft","isError":false,"durationMs":3,"ts":1784810124454}
+{"type":"turn_start","agentId":"explore-1","turn":3,"ts":1784810124454}
+{"type":"text_delta","agentId":"explore-1","text":"Workspace holds notes.md ('release notes draft') and build.txt.","ts":1784810124454}
+{"type":"usage","agentId":"explore-1","inputTokens":150,"outputTokens":31,"ts":1784810124454}
+{"type":"run_end","runId":"f81dbd8c-aeb1-466c-8770-2a95286d06fe","stopReason":"end_turn","ts":1784810124454}
+{"type":"agent_message","from":"explore-1","to":"main","role":"result","state":"completed","text":"[explore-1] result (tokens: 150 in / 31 out):\nWorkspace holds notes.md ('release notes draft') and build.txt.","ts":1784810124454}
+{"type":"tool_result","agentId":"main","callId":"c1","output":"--- Subagent 1 ---\n[worker-1] result (tokens: 310 in / 55 out):\nWrote build.txt with three steps.\n\n--- Subagent 2 ---\n[explore-1] result (tokens: 150 in / 31 out):\nWorkspace holds notes.md ('release notes draft') and build.txt.","isError":false,"durationMs":0,"ts":1784810124454}
+{"type":"turn_start","agentId":"main","turn":2,"ts":1784810124454}
+{"type":"text_delta","agentId":"main","text":"Both subagents are done: build steps written, workspace mapped.","ts":1784810124454}
+{"type":"usage","agentId":"main","inputTokens":420,"outputTokens":64,"ts":1784810124454}
+{"type":"run_end","runId":"ca66e102-7204-44dc-9756-78b262986883","stopReason":"end_turn","ts":1784810124454}

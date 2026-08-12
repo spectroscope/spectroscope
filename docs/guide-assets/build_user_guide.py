@@ -11,6 +11,17 @@ Inputs
   mermaid/*.svg          pre-rendered mermaid diagrams (render_mermaid.mjs)
   ../diagrams/*.svg      the 15 generated architecture SVGs
 
+Why the plates go in as WebP (2026-08-12)
+  The PNGs are the masters and stay PNGs — capture writes them, git tracks
+  them, they are what you open to check a frame. But embedding them raw put
+  the edition at 22.8 MiB against Cloudflare's 25 MiB per-asset ceiling, so
+  the state-graph chapter would not have fit behind spectroscope.ai/guide.
+  Every plate is therefore re-encoded to LOSSLESS WebP on the way in: same
+  pixels, measured 41 % of the bytes over the whole set. Lossy q90 measured
+  39 % — two points, not worth a single soft glyph in a screenshot full of
+  code. Conversions are cached in .webp-cache/ keyed by source mtime+size,
+  so a rebuild after one reshoot re-encodes one plate, not 54.
+
 Placeholders inside parts
   <!--SHOT:name|caption-->      figure with the screenshot as data URI
   <!--SHOT:name|caption|half--> half-width variant
@@ -58,6 +69,8 @@ Known lag, 2026-08-03: the editions are four rows behind the parts
 import base64
 import html as html_mod
 import re
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -75,10 +88,34 @@ SHOTS = HERE / ("shots-light" if THEME == "light" else "shots")
 OUT = HERE.parent / ("USER-GUIDE-LIGHT.html" if THEME == "light" else "USER-GUIDE.html")
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+WEBP_CACHE = HERE / ".webp-cache"
 
 
 def b64(path: Path) -> str:
     return base64.b64encode(path.read_bytes()).decode()
+
+
+def webp_bytes(png: Path) -> bytes:
+    """Lossless WebP for a plate, cached on (mtime, size) of the PNG master.
+
+    Hard-fails rather than falling back to PNG: a silent fallback would build
+    a green 22.8 MiB edition that only dies later, at deploy, past Cloudflare's
+    25 MiB per-asset ceiling. Better to stop here and name the missing tool.
+    """
+    if not shutil.which("cwebp"):
+        sys.exit("cwebp not found — install it with `brew install webp` "
+                 "(the guide embeds plates as lossless WebP; see the module docstring)")
+    st = png.stat()
+    WEBP_CACHE.mkdir(exist_ok=True)
+    cached = WEBP_CACHE / f"{png.parent.name}--{png.stem}--{int(st.st_mtime)}-{st.st_size}.webp"
+    if not cached.exists():
+        for stale in WEBP_CACHE.glob(f"{png.parent.name}--{png.stem}--*.webp"):
+            stale.unlink()  # one entry per plate; the key carries the version
+        r = subprocess.run(["cwebp", "-quiet", "-lossless", "-z", "9",
+                            str(png), "-o", str(cached)], capture_output=True)
+        if r.returncode != 0 or not cached.exists():
+            sys.exit(f"cwebp failed on {png}: {r.stderr.decode().strip()}")
+    return cached.read_bytes()
 
 
 def shot_figure(m: re.Match) -> str:
@@ -89,11 +126,12 @@ def shot_figure(m: re.Match) -> str:
     png = SHOTS / f"{name}.png"
     if not png.exists():
         sys.exit(f"missing screenshot: {png}")
+    data = base64.b64encode(webp_bytes(png)).decode()
     cls = "shot shot--half" if half else "shot"
     cap = f"<figcaption>{caption}</figcaption>" if caption else ""
     return (
         f'<figure class="{cls}"><img alt="{html_mod.escape(caption or name)}" '
-        f'src="data:image/png;base64,{b64(png)}">{cap}</figure>'
+        f'src="data:image/webp;base64,{data}">{cap}</figure>'
     )
 
 
