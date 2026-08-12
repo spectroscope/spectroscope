@@ -220,10 +220,14 @@ public class ModelCapabilityController {
         }
     }
 
-    /** The configured Ollama root — the same rule the model list uses. */
+    /** The configured Ollama root, through {@link SpectroConfig#endpointFor} —
+     *  the one resolution point the model list, the run and the doctor line all
+     *  go through (card 193). This method used to read the legacy shared
+     *  {@code baseUrl} directly while its javadoc claimed to follow the model
+     *  list, which stopped being true the moment the list moved: a remote
+     *  ollama then had its capabilities guessed from the family table, because
+     *  the probe dialled localhost and the fallback swallowed the failure. */
     private static String configuredOllamaBase() {
-        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
-        return config.baseUrl() == null || config.baseUrl().isBlank()
-                ? "http://localhost:11434" : config.baseUrl();
+        return SpectroConfig.load(SpectroConfig.Overrides.none()).endpointFor("ollama");
     }
 }
