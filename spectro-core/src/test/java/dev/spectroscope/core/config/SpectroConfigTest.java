@@ -670,6 +670,45 @@ class SpectroConfigTest {
     }
 
     @Test
+    void switchingProviderSwitchesTheEndpointAndBackAgain(@TempDir Path projectDir)
+            throws IOException {
+        // Card 192's scenario, satisfied here: ollama configured at one host,
+        // LM Studio at another; a provider switch switches the endpoint with
+        // it, switching back restores the first, and neither host is ever
+        // handed to the other provider.
+        writeProjectSettings(projectDir, """
+                { "provider": "ollama",
+                  "ollamaBaseUrl": "http://ollama-box:11434",
+                  "lmstudioBaseUrl": "http://lmstudio-box:1234" }
+                """);
+        SpectroConfig onOllama = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("ollama-box:11434", onOllama.providerHost());
+
+        SpectroConfig onLmstudio = onOllama.withProvider("lmstudio", "some-model");
+        assertEquals("lmstudio-box:1234", onLmstudio.providerHost(),
+                "the switch carries LM Studio to ITS host, not ollama's");
+
+        SpectroConfig backOnOllama = onLmstudio.withProvider("ollama", "qwen3");
+        assertEquals("ollama-box:11434", backOnOllama.providerHost(),
+                "switching back restores the first host");
+    }
+
+    @Test
+    void aLanPerProviderAddressStaysKeylessAndClassifiedLocal() {
+        // Card 192's other measurement, kept intact: isLocalEndpoint accepts
+        // private-range hosts, so a workstation on the LAN needs no cloud key.
+        // The per-provider address must flow through the SAME classification.
+        SpectroConfig config = configFor("lmstudio", "http://localhost:11434",
+                null, "http://192.168.1.50:1234");
+        String endpoint = config.endpointFor("lmstudio");
+        assertTrue(SpectroConfig.isLocalEndpoint(endpoint),
+                "a LAN address counts as the operator's own network: " + endpoint);
+        assertEquals("local", SpectroConfig.onboardingStatusAt("lmstudio", endpoint, false),
+                "keyless and honest — never needs-key against the operator's own box");
+    }
+
+    @Test
     void endpointForRefusesProvidersWithoutAConfigurableEndpoint() {
         // anthropic's endpoint is fixed in the SDK; spectro-local is a
         // subprocess, not an address. Answering something would be a lie.
