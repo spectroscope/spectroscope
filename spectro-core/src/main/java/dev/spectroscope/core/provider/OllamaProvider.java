@@ -89,6 +89,14 @@ public final class OllamaProvider implements LlmProvider {
         return model;
     }
 
+    /** The Ollama root this provider dials, trailing slash already stripped —
+     *  card 193: the face that reports it unreachable must name THIS string and
+     *  not a config field re-read after the fact. */
+    @Override
+    public String endpoint() {
+        return baseUrl;
+    }
+
     /**
      * Opens one NDJSON chat stream per iteration — lazy like the Anthropic twin.
      *

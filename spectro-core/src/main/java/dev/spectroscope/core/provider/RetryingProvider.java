@@ -70,6 +70,12 @@ public final class RetryingProvider implements LlmProvider {
         return delegate.providerName();
     }
 
+    /** Delegates, so the address survives the retry wrapper the faces hold. */
+    @Override
+    public String endpoint() {
+        return delegate.endpoint();
+    }
+
     /**
      * Returns a lazy iterable whose {@code iterator()} runs the retrying establishment.
      *

@@ -64,4 +64,11 @@ public final class SwitchableProvider implements LlmProvider {
     public String providerName() {
         return name.get();
     }
+
+    /** The CURRENT delegate's address — a mid-session provider switch moves the
+     *  endpoint, and a face printing the pre-switch one would be stale. */
+    @Override
+    public String endpoint() {
+        return delegate.get().endpoint();
+    }
 }

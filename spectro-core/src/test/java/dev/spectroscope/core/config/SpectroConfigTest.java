@@ -699,9 +699,20 @@ class SpectroConfigTest {
         // Card 192's other measurement, kept intact: isLocalEndpoint accepts
         // private-range hosts, so a workstation on the LAN needs no cloud key.
         // The per-provider address must flow through the SAME classification.
-        SpectroConfig config = configFor("lmstudio", "http://localhost:11434",
+        //
+        // The fallback is a PUBLIC gateway on purpose. This test used to leave
+        // the legacy baseUrl at ollama's default, whose lmstudio fallback is
+        // http://localhost:1234 — also local, also keyless. Both assertions
+        // therefore passed just as well when the per-provider address was
+        // ignored ENTIRELY (measured: endpointFor patched to drop it, test
+        // still green), so it pinned isLocalEndpoint and not the flow-through
+        // its comment claimed. A test green in both directions pins nothing.
+        SpectroConfig config = configFor("lmstudio", "https://gateway.example.com",
                 null, "http://192.168.1.50:1234");
         String endpoint = config.endpointFor("lmstudio");
+        assertEquals("http://192.168.1.50:1234", endpoint,
+                "the LAN address is what lmstudio dials — the shared fallback is a"
+                        + " public gateway and must not be reached at all");
         assertTrue(SpectroConfig.isLocalEndpoint(endpoint),
                 "a LAN address counts as the operator's own network: " + endpoint);
         assertEquals("local", SpectroConfig.onboardingStatusAt("lmstudio", endpoint, false),
@@ -902,6 +913,51 @@ class SpectroConfigTest {
         // Card 193: a mid-session switch must not drop the per-provider addresses.
         assertEquals("http://gpu-box:11434", switched.ollamaBaseUrl());
         assertEquals("http://gpu-box:1234", switched.lmstudioBaseUrl());
+    }
+
+    @Test
+    void withProviderCopiesEveryRecordComponentWithoutBeingToldTheirNames() throws Exception {
+        // The named-field test above asserts six of twenty-three components, so
+        // it is blind to exactly the failure a positional copy produces: growing
+        // the record forces a COMPILE error when a component is forgotten, but a
+        // component handed the wrong VALUE — ollamaBaseUrl copied into
+        // lmstudioBaseUrl, the two Strings that sit side by side — compiles,
+        // ships, and points a run at the other provider's machine.
+        //
+        // Every String below is distinct on purpose: two components that carry
+        // the same value cannot be told apart after a swap. The canonical
+        // constructor is used deliberately — a new component breaks THIS line,
+        // and whoever fixes it has to give it a value of its own before the loop
+        // can mean anything.
+        SpectroConfig base = new SpectroConfig(
+                "anthropic", "model-component", "baseUrl-component", 12345, "auto",
+                List.of("run_command:ls*"), "openai", false, List.of(), 7, false, List.of(),
+                "workspace-component", "debug", "imageModel-component", "sttModel-component",
+                "local", "de", "chromeBinary-component",
+                "otlpEndpoint-component", "otlpBasicAuth-component",
+                "ollamaBaseUrl-component", "lmstudioBaseUrl-component");
+
+        SpectroConfig switched = base.withProvider("ollama", "qwen3");
+
+        var components = SpectroConfig.class.getRecordComponents();
+        assertTrue(components.length >= 23,
+                "reflection found " + components.length + " components — if this list ever"
+                        + " shrinks to nothing the loop below silently asserts nothing");
+        int checked = 0;
+        for (var component : components) {
+            String name = component.getName();
+            if ("provider".equals(name) || "model".equals(name)) {
+                continue; // the two the switch is FOR
+            }
+            assertEquals(component.getAccessor().invoke(base),
+                    component.getAccessor().invoke(switched),
+                    "withProvider dropped or mis-copied \"" + name + "\" — it copies"
+                            + " positionally, so a component handed the neighbouring value"
+                            + " compiles and ships silently");
+            checked++;
+        }
+        assertEquals(components.length - 2, checked,
+                "every component except provider and model must be compared");
     }
 
     // ---- the precedence flip (settings productization Task 4) --------------------------

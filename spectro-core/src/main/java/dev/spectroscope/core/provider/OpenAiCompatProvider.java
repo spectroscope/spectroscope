@@ -111,6 +111,14 @@ public final class OpenAiCompatProvider implements LlmProvider {
         return model;
     }
 
+    /** The OpenAI-compatible root this provider dials — LM Studio's own address
+     *  when card 193's per-provider field is set, the shared legacy chain
+     *  otherwise. The faces print what is here, never a config field. */
+    @Override
+    public String endpoint() {
+        return baseUrl;
+    }
+
     /**
      * Opens one SSE chat-completions stream per iteration — lazy like the other providers.
      *

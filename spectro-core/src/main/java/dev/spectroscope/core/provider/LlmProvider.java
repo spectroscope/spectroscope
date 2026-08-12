@@ -40,6 +40,25 @@ public interface LlmProvider {
         return null;
     }
 
+    /**
+     * The server root this provider was BUILT with, or {@code null} when it has
+     * no address to name — anthropic's is fixed in the SDK, and the built-in
+     * runtime is a subprocess rather than a host.
+     *
+     * <p>Card 193: a face that prints "unreachable at …" must print the address
+     * the run really dials. Reading a config field back is a second copy of
+     * that fact, and since ollama and LM Studio grew their own addresses the
+     * two disagree — the CLI banner named {@code localhost} about a probe that
+     * had gone to another machine. The decorators (retry, logging proxy,
+     * tracing, the mid-session switch) all forward this, so the value survives
+     * the wrappers the faces actually hold.</p>
+     *
+     * @return the base url this provider dials, or null when it names none
+     */
+    default String endpoint() {
+        return null;
+    }
+
     // ---- request ----------------------------------------------------------
 
     /**
