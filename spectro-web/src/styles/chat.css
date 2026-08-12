@@ -505,7 +505,6 @@
 .thinking-body {
   max-height: 240px;
   overflow-y: auto;
-  overscroll-behavior: contain;
   padding: var(--sp-2) var(--sp-3) var(--sp-3);
   border-top: 1px solid var(--border);
   color: var(--text-dim);
