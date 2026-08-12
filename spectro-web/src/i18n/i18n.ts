@@ -2327,8 +2327,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The model id at the chosen provider. Every provider names its own.",
   },
   "wsg.local.desc.baseUrl": {
-    de: "Die Adresse für ollama und openai-kompatible Provider. Anthropic ignoriert sie.",
-    en: "The address for ollama and OpenAI-compatible providers. Anthropic ignores it.",
+    de: "Die Ausweich-Adresse. ollama nimmt ollamaBaseUrl, LM Studio nimmt lmstudioBaseUrl — dieses Feld gilt für die beiden nur, solange ihr eigenes leer ist. Für openai, openrouter und gemini bleibt es die Adresse; anthropic ignoriert sie.",
+    en: "The fallback address. ollama reads ollamaBaseUrl and LM Studio reads lmstudioBaseUrl, so this field only applies to those two while their own is empty. For openai, openrouter and gemini it is still the address; anthropic ignores it.",
   },
   "wsg.local.desc.thinking": {
     de: "Den Denk-Kanal des Modells mitschreiben und anzeigen.",

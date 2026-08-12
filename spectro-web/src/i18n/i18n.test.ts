@@ -211,6 +211,26 @@ describe("the import bar says what it means", () => {
   });
 });
 
+// Card 193 gave ollama and LM Studio addresses of their own, which demoted the
+// shared baseUrl to a fallback. The workspace gear's description was written
+// before that and still called it "the address for ollama and OpenAI-compatible
+// providers" — a sentence that sends someone to the wrong field and then leaves
+// them wondering why their remote box is not being dialled.
+describe("the workspace gear describes baseUrl as what it now is", () => {
+  it("does not claim to be ollama's address, in either language", () => {
+    expect(dict["wsg.local.desc.baseUrl"].en).not.toMatch(/^The address for ollama/);
+    expect(dict["wsg.local.desc.baseUrl"].de).not.toMatch(/^Die Adresse für ollama/);
+  });
+
+  it("names the two fields that outrank it, in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      const desc = dict["wsg.local.desc.baseUrl"][lang];
+      expect(desc, `${lang} names ollamaBaseUrl`).toContain("ollamaBaseUrl");
+      expect(desc, `${lang} names lmstudioBaseUrl`).toContain("lmstudioBaseUrl");
+    }
+  });
+});
+
 describe("t", () => {
   it("resolves a key per language", () => {
     expect(t("de", "nav.newChat")).toBe("Neuer Chat");
