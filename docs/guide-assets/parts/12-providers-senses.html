@@ -270,22 +270,103 @@ seams, and everything degrades readably when a piece is missing.</p>
       never a crash.</li>
 </ul>
 
-<h2 id="ch-senses-voice-in">Voice input — local push-to-talk</h2>
-<p>One-time setup: <code>bash scripts/setup-stt.sh</code> — installs whisper.cpp and
-ffmpeg (Homebrew on macOS) and downloads the ggml-small model (~460 MB) with a
-<strong>pinned SHA-256</strong>: a mismatch deletes the file and aborts. Recording is
-16 kHz mono WAV (whisper's required format); transcription runs with automatic language
-detection, so German dictation is not forced through English.</p>
+<h2 id="ch-senses-voice-in">Voice input — two routes to the same text</h2>
+<p>A recording becomes text on one of two routes, chosen the way the chat providers are.
+The <strong>hosted</strong> route posts the clip to OpenAI's transcription endpoint
+(<code>gpt-transcribe</code> at <code>api.openai.com/v1/audio/transcriptions</code>, keyed
+by <code>OPENAI_API_KEY</code> — the same key image generation already uses) and needs
+nothing installed, which is what makes dictation work in a downloaded app. The
+<strong>local</strong> route runs whisper.cpp as a child process and sends nothing anywhere,
+which is why it stays. Neither is ranked above the other: <code>sttProvider</code> takes
+<code>auto</code> (the default — hosted when a key is there, local otherwise),
+<code>local</code>, or <code>openai</code>, and an explicit choice wins
+even when it cannot run right now, because naming what is missing is more use than a
+silent reroute — and in the local direction a reroute would mean somebody's voice leaving
+a machine whose owner asked for the offline path.</p>
+
+<p>The local route's one-time setup is <code>bash scripts/setup-stt.sh</code>: whisper.cpp
+through Homebrew on macOS (<code>brew install whisper-cpp</code>; on Linux the script names
+the build and stops), then the ggml-small model, ~460 MB, against a <strong>pinned
+SHA-256</strong> — a mismatch deletes the file and aborts. ffmpeg left this path: the
+browser converts its own recording now, so the app needs exactly one binary and whisper.cpp
+is MIT. The CLI's <code>/voice</code> still records with ffmpeg, a job the browser cannot do
+for it, which is why the script reports ffmpeg as absent and never requires it. Recording
+for whisper is 16 kHz mono WAV, its one input format. <code>sttLanguage</code> rides both
+routes — <code>auto</code> by default, so German dictation is not forced through English,
+or <code>de</code>/<code>en</code> to pin it.</p>
+
+<p><em>Settings → Speech to text</em> shows the whole thing without a terminal: the route,
+the dictation language, the model file with a download button when it is absent, every
+binary with the path that proves it was found, and one true install line when it is not.
+There is a button only for the half an app can honestly do — the model is a checksummed
+download, the binaries belong to a package manager this app must not drive.</p>
 <ul>
   <li><strong>REPL <code>/voice</code>:</strong> record until Enter, transcribe, then an
       <em>editable confirmation</em> — Enter sends, typing replaces, blank discards. An STT
       error never reaches the agent unreviewed. The turn is audited by a
       <code>voice_input</code> event that never enters the provider history.</li>
-  <li><strong>Web mic button:</strong> records in the browser, transcribes via
-      <code>POST /api/transcribe</code> (the server reuses the same Transcriber), and drops
-      the text into the composer draft. STT not installed → the endpoint answers 503 and
-      the button disables itself with the setup hint.</li>
+  <li><strong>Web mic button:</strong> a toggle, not a held key — one press arms and
+      records (the tooltip flips to “Stop recording”, a level meter moves with your voice,
+      a “Recording 0:04” line counts up), a second press commits. The clip goes to
+      <code>POST /api/transcribe</code> and the transcript lands in the composer
+      <em>draft</em>, never at the agent. Each route reports its own obstacle with a 503:
+      “Speech-to-text is not installed — run bash scripts/setup-stt.sh.” locally, a missing
+      <code>OPENAI_API_KEY</code> hosted. Telling somebody to run a shell script when what
+      is missing is a key is the failure this split was built to end.</li>
+  <li><strong>Before any of it:</strong> the first reach for the microphone opens a sheet
+      titled “Speak instead of typing” <em>instead</em> of recording, so on the hosted route
+      nobody's audio leaves the machine before a sentence has said that it will. A caret
+      beside the glyph opens “Choose a microphone”, which lists “System default” and the
+      named inputs — and before permission has been granted once, a sentence explaining why
+      the browser is withholding the names rather than five blank rows.</li>
+  <li><strong>Seven named failures, seven sentences:</strong> denied, no device, device
+      busy, STT missing, request failed, convert failed, unknown. Only “no microphone
+      found” and “speech to text is not set up on this server” take the button away — a
+      denial is an event, so somebody who then allows it in the site settings can press
+      again without reloading.</li>
 </ul>
+
+<h2 id="ch-senses-live">Live transcription — text while you are still speaking</h2>
+<p>On the hosted route the text does not have to wait for the end of the recording. Tick
+“Write along live” (“Live mitschreiben”) in <em>Settings → Speech to text</em> and the next
+press opens a websocket to your own server at <code>/ws/stt</code>, which bridges to
+OpenAI's realtime transcription session (<code>gpt-live-transcribe</code>) and holds the
+key: the browser never talks to the provider directly. Audio goes up in pieces as it is
+spoken, at 24&thinsp;000&nbsp;Hz, because the realtime session refuses 16&thinsp;000 and
+whisper reads nothing else — the rate is therefore a function of the route, decided before
+the audio graph is built rather than discovered by being refused after somebody has already
+spoken. Anything spoken before the session is configured is held and flushed in order, so
+the cost is a few hundred milliseconds once instead of the first word of every take.</p>
+
+<p>What arrives is two layers of text in one box. The textarea keeps the draft, crisp, with
+its caret and its selection; a ghost layer under it repeats that draft in transparent ink
+and continues it with the provisional words in faint ink, so the faded part begins exactly
+where the typed text ends. Those words are unselectable, are not in the draft and cannot be
+sent — only a <code>final</code> frame is committed. A guess is never one Enter away from
+being sent as though somebody had typed it, which is the entire design.</p>
+
+<p>The switch is <strong>off until you turn it on</strong>, and that is a decision rather
+than caution: a live session is metered by the minute where a clip is billed per clip. It
+is also never hidden and never quietly honoured. It carries a sentence in every one of its
+four states, greyed included, because a grey switch with no reason is a vanished button
+with extra steps: the local route “only writes once the recording is complete — it reads a
+finished file”, and a hosted route with no key says so and points at the providers page.
+Wanting live text is not consent to send the audio of somebody who chose the offline path
+off their machine, so no branch anywhere upgrades one route to the other to satisfy a
+setting.
+The server refuses the socket by those same two names, plus a third when the provider
+itself cannot be reached, and a refused session records nothing at all — no model was
+called and no audio left. Both paths stop at 300 seconds, and on the live one that ceiling
+is also the only thing that ends a metered session somebody walked away from mid-sentence.</p>
+
+<div class="callout"><div class="co-title">what the record says, and what it does not</div>
+<p>One live socket is one exchange on the llm-wire record: the handshake is the request,
+every frame the provider sends is a response line kept verbatim with the provider's own
+type, so a reader can tell a partial from the answer without this code flattening one into
+the other. The asymmetry is named rather than discovered — the spoken bytes are
+<em>not</em> on the request line, because a websocket has no single request body and the
+audio flows after it. The record is complete about what the model said and incomplete about
+what it heard; the batch route, which posts one body, carries the audio itself.</p></div>
 
 <h2 id="ch-senses-voice-out">Voice output — spoken answers</h2>
 <p>Setup: <code>bash scripts/setup-tts.sh</code> (piper + the <code>en_US-lessac-medium</code>

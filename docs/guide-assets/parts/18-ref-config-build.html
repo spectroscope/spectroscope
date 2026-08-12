@@ -1,7 +1,7 @@
 <!-- ============================== CH 30 ============================== -->
 <h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
 
-<p class="lead">Seven layers, seventeen keys (three of them whole-block), plus a small
+<p class="lead">Seven layers, twenty-one keys (three of them whole-block), plus a small
 handful of true environment-only secrets. Missing files are fine at every layer;
 malformed JSON fails loudly — a broken config is a programming error, not a fallback
 case.</p>
@@ -99,6 +99,8 @@ BASE — but is deprecated in favor of the settings field it feeds:</p>
   <tr><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td><code>imageProvider</code></td></tr>
   <tr><td><code>SPECTRO_IMAGE_MODEL</code></td><td><code>imageModel</code></td></tr>
   <tr><td><code>SPECTRO_STT_MODEL</code></td><td><code>sttModel</code></td></tr>
+  <tr><td><code>SPECTRO_STT_PROVIDER</code></td><td><code>sttProvider</code></td></tr>
+  <tr><td><code>SPECTRO_STT_LANGUAGE</code></td><td><code>sttLanguage</code></td></tr>
   <tr><td><code>SPECTRO_CHROME</code></td><td><code>chromeBinary</code></td></tr>
   <tr><td><code>SPECTRO_MAX_RETRIES</code></td><td><code>maxRetries</code></td></tr>
   <tr><td><code>SPECTRO_PROMPT_CACHING</code></td><td><code>promptCaching</code></td></tr>
@@ -127,6 +129,8 @@ true secrets and never graduate into a settings file.</p>
   <tr><td><code>logLevel</code></td><td><code>error</code>|<code>warn</code>|<code>info</code>|<code>debug</code>|<code>trace</code> · <code>info</code></td><td><code>SPECTRO_LOG_LEVEL</code></td><td>operator-log detail (chapter 31); process-global — one log file per JVM, refused in a workspace scope, user scope only</td></tr>
   <tr><td><code>imageModel</code></td><td>string · <em>unset</em></td><td><code>SPECTRO_IMAGE_MODEL</code></td><td>overrides the image backend's own default model; machine-tool path — belongs in user or workspace-local scope</td></tr>
   <tr><td><code>sttModel</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_STT_MODEL</code></td><td>absolute path to the whisper.cpp model (default <code>~/.spectro/models/ggml-small.bin</code>); machine-tool path</td></tr>
+  <tr><td><code>sttProvider</code></td><td><code>auto</code> | <code>local</code> | <code>openai</code> · <code>auto</code></td><td><code>SPECTRO_STT_PROVIDER</code></td><td>which way speech to text goes (chapter 17): <code>auto</code> is hosted when a key is there and local otherwise; an explicit choice is never rerouted, even when it cannot run</td></tr>
+  <tr><td><code>sttLanguage</code></td><td><code>auto</code> | <code>de</code> | <code>en</code> · <code>auto</code></td><td><code>SPECTRO_STT_LANGUAGE</code></td><td>the language dictation is transcribed in, on both routes; <code>auto</code> lets the model detect it</td></tr>
   <tr><td><code>chromeBinary</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_CHROME</code></td><td>override for the system-Chrome binary <code>browse_page</code> discovers automatically; machine-tool path</td></tr>
   <tr><td><code>hooks</code></td><td>array · <code>[]</code></td><td>—</td><td>pre/post tool hooks — whole-block (chapter 13)</td></tr>
   <tr><td><code>otlpEndpoint</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_OTLP_ENDPOINT</code></td><td>the OTLP/HTTP traces endpoint; unset = the exporter is off (see Observability below)</td></tr>
@@ -214,20 +218,20 @@ suite that never needs an API key.</p>
 <h2 id="ch-build-modules">Modules</h2>
 <table class="tbl">
   <tr><th>module</th><th>role</th><th>key facts</th></tr>
-  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code> (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code> — no other class may import it; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
-  <tr><td><code>spectro-cli</code></td><td>terminal face</td><td>application; picocli; slf4j-nop keeps output clean; registers the <code>tour</code> task; stdin wired for the REPL</td></tr>
+  <tr><td><code>spectro-core</code></td><td>the headless library</td><td>java-library; Jackson is <code>api</code>, through its BOM (JsonNode appears in public contracts); the Anthropic SDK is <code>implementation</code> — no other class may import it; Spring <em>Framework</em> as a library (RestClient + HTTP interfaces); cron-utils</td></tr>
+  <tr><td><code>spectro-cli</code></td><td>terminal face</td><td>application; picocli; Logback keeps the console WARN-quiet so the ANSI face stays clean and the diagnostics go to the log file; registers the <code>tour</code> task; stdin wired for the REPL</td></tr>
   <tr><td><code>spectro-server</code></td><td>web backend</td><td>Spring Boot 3.5.3 (only here); starters web + websocket; depends on core <em>and</em> cli; serves the built UI from <code>static/</code></td></tr>
   <tr><td><code>spectro-mcp-notes</code></td><td>example MCP server</td><td>standalone; Jackson only; its test spawns the real child JVM</td></tr>
   <tr><td><code>spectro-orchestrator</code></td><td>the fleet facade</td><td>java-library; Spectro.panel() lanes as core agents on a bus; POM pins spectro-core at the same version; Maven Central library</td></tr>
   <tr><td><code>spectro-web</code></td><td>browser UI</td><td>npm/Vite; React 19, React Flow 12, dagre; <code>npm run build</code> writes straight into the server's resources</td></tr>
-  <tr><td><code>spectro-desktop</code></td><td>desktop shell</td><td>npm/Electron 37; TypeScript strict; zero runtime dependencies (health polling via built-in fetch)</td></tr>
+  <tr><td><code>spectro-desktop</code></td><td>desktop shell</td><td>npm/Electron 43; TypeScript strict; zero runtime dependencies (health polling via built-in fetch)</td></tr>
 </table>
 
 <h2 id="ch-build-versions">Version pins</h2>
 <table class="tbl dense">
   <tr><th>library</th><th>version</th><th></th></tr>
   <tr><td><code>com.anthropic:anthropic-java</code></td><td>2.34.0</td><td>owns SSE; client built with maxRetries(0)</td></tr>
-  <tr><td><code>jackson-databind</code></td><td>2.17.2</td><td>the one <code>api</code> dependency</td></tr>
+  <tr><td><code>com.fasterxml.jackson:jackson-bom</code></td><td>2.18.2</td><td>a platform, not a number: <code>jackson-databind</code> is declared under it with no version of its own and is the one <code>api</code> dependency</td></tr>
   <tr><td><code>info.picocli:picocli</code></td><td>4.7.6</td><td>CLI framework</td></tr>
   <tr><td><code>org.springframework:spring-web</code></td><td>6.2.8</td><td>Framework as library — no Boot in the core</td></tr>
   <tr><td><code>com.cronutils:cron-utils</code></td><td>9.2.1</td><td>computes slots; a ScheduledExecutorService fires them</td></tr>
@@ -235,8 +239,22 @@ suite that never needs an API key.</p>
   <tr><td>Gradle wrapper</td><td>9.6.1</td><td>checked in</td></tr>
   <tr><td>Spring Boot</td><td>3.5.3</td><td>spectro-server only</td></tr>
   <tr><td>react / @xyflow/react / dagre</td><td>19.1 / 12.11 / 0.8.5</td><td>spectro-web</td></tr>
-  <tr><td>electron / electron-builder</td><td>37.2 / 26.0</td><td>spectro-desktop</td></tr>
+  <tr><td>electron / electron-builder</td><td>43.3 / 26.0</td><td>spectro-desktop</td></tr>
+  <tr><td><code>org.slf4j:slf4j-api</code> / <code>ch.qos.logback:logback-classic</code></td><td>2.0.18 / 1.5.38</td><td>the two library modules speak the API only; the faces run Logback, lifted off Boot 3.5.3's managed 1.5.18</td></tr>
 </table>
+
+<p><strong>The Jackson row is a platform import, and that is the interesting one.</strong>
+The published POM used to declare <code>jackson-databind</code> at 2.17.2 while
+<code>anthropic-java</code> 2.34.0 brings the 2.18.2 family in behind it, and every build in
+this repository passed anyway — Gradle resolves highest-wins and quietly landed the whole
+tree on 2.18.2. A resolver that chooses differently does not: Maven's nearest-wins, or the
+classpath an editor extension assembles, can pair a 2.18 databind with a 2.17 core, and a
+databind newer than its own core throws <code>NoSuchMethodError</code> on
+<code>ParserMinimalBase.&lt;init&gt;(StreamReadConstraints)</code> the first time anything is
+deserialized. Importing the BOM pins the family together instead, and the import travels
+into the generated POM, so the guarantee holds for every consumer and not only inside this
+build. For a published library the POM is the contract — and the contract was the part that
+was wrong.</p>
 
 <h2 id="ch-build-tests">The test suite</h2>
 <table class="tbl">

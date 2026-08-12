@@ -48,7 +48,7 @@ card with its own packet (chapter 7); the Agents panel keeps the roster with tok
 specialization is prompt + skill:</p>
 
 <table class="tbl">
-  <tr><th>tool</th><th>persona</th><th>loads skill</th><th>delegates</th></tr>
+  <tr><th>tool</th><th>persona</th><th>asks for skill</th><th>delegates</th></tr>
   <tr><td><code>build_plan</code></td><td>senior PLANNER</td><td><code>writing-plans</code></td><td>a feature request → a step-by-step implementation plan (a written document)</td></tr>
   <tr><td><code>write_spec</code></td><td>requirements ANALYST</td><td><code>brainstorming</code></td><td>a rough idea → a design/spec with decisions and trade-offs</td></tr>
   <tr><td><code>develop</code></td><td>IMPLEMENTER</td><td><code>test-driven-development</code></td><td>a development task, carried out in small verified steps</td></tr>
@@ -60,6 +60,15 @@ via <code>report_status</code> + your task text; the A2A task message shows <em>
 task with the tool name as its label — which is exactly how the UI badges the thread.
 <em>Try: “build_plan: draft a plan for adding CSV export to the sessions list.”</em></p>
 
+<p>Read that third column as a request, not an inventory. The preamble says “if a
+<code>use_skill</code> tool is available, load the skill '<code>writing-plans</code>'
+first”, and only <code>verification</code> is still seeded into a fresh home (chapter 15).
+The other three live in the catalogue's <code>superpowers</code> pack, where an installed
+copy answers to <code>superpowers:writing-plans</code>, so the bare name comes back as
+<code>ERROR: unknown skill 'writing-plans'. Available: …</code> with the qualified names in
+the list that follows. The child can take the hop itself — nothing rewrites the request
+for it.</p>
+
 <!-- ============================== CH 15 ============================== -->
 <h1 data-ch="15" id="ch-skills"><span class="ch-num">Chapter 15</span>Skills</h1>
 
@@ -68,36 +77,170 @@ packages the agent loads when a task matches. The loop is untouched, no new even
 exists — a skill use is an ordinary tool call you can see in every view.</p>
 
 <h2 id="ch-skills-format">The package format</h2>
-<pre>~/.spectro/skills/&lt;folder&gt;/SKILL.md        (user scope)
-&lt;project&gt;/.spectro/skills/&lt;folder&gt;/SKILL.md   (project scope — wins by name)
+<pre>~/.spectro/skills/&lt;skill&gt;/SKILL.md           (user scope — a bare name)
+~/.spectro/skills/&lt;pack&gt;/&lt;skill&gt;/SKILL.md    (user scope, inside a pack — &lt;pack&gt;:&lt;skill&gt;)
+&lt;project&gt;/.spectro/skills/…/SKILL.md         (project scope — wins by name)
 
 ---
-name: test-driven-development
-description: Red-green-refactor discipline for every change - write the failing
-  test first, watch it fail for the right reason, make it pass minimally, then clean up.
+name: humanizer
+description: |
+  Remove signs of AI-generated writing from text. Use when editing or reviewing
+  text to make it sound more natural and human-written. Based on Wikipedia's
+  comprehensive "Signs of AI writing" guide. Detects and fixes patterns including:
+  inflated symbolism, promotional language, superficial -ing analyses, vague
+  attributions, em dash overuse, rule of three, AI vocabulary words, passive
+  voice, negative parallelisms, and filler phrases.
 ---
 # The skill body — full markdown instructions…</pre>
 
-<p>Frontmatter is hand-parsed (<code>name:</code>, <code>description:</code>); a file
-without it falls back to the folder name and the first body line. Broken skills are
-skipped with a warning — they never take the harness down.</p>
+<p>The frontmatter above is the catalogue's <code>humanizer</code>, cut after its
+description. A directory under a root is a skill when it holds a <code>SKILL.md</code>. A
+directory that holds no <code>SKILL.md</code> of its own but does hold skills is a
+<strong>pack</strong>, and its skills are advertised as <code>&lt;pack&gt;:&lt;skill&gt;</code> —
+the name the system prompt lists and the name <code>use_skill</code> answers to, not a
+label printed beside one. The rule adds exactly one level and stops there: a skill three
+directories deep is invisible, and everything installed before packs existed sits at the
+top level and keeps its bare name. That is the whole purpose of the colon — somebody else's
+<code>brainstorming</code> lands beside yours instead of on top of it.</p>
+
+<p>Both roots are scanned in order, user first, project second, so a project skill of the
+same name wins — the settings hierarchy again. A <code>.disabled</code> file inside a skill
+folder hides that skill from the loader; the same marker on a pack folder skips the pack and
+everything under it. A broken <code>SKILL.md</code> is skipped with one warning line: a bad
+skill must never take the harness down.</p>
+
+<p>Frontmatter is hand-parsed — two flat <code>key: value</code> lines do not earn a YAML
+dependency — but flat is not the whole story. A value of <code>|</code>, <code>|-</code>,
+<code>&gt;</code> or <code>&gt;-</code> opens a block scalar, and the indented lines under it
+are folded into one, because both readers of that string put it on a single line: the
+prompt's bullet and the settings row. Reading the marker alone was the bug 0.7.0 had to fix
+before the catalogue could ship — the skill above reached the model as
+<code>- humanizer: |</code>, unfindable, and its continuation line ending in a colon was
+then read as a further key. One matching pair of surrounding quotes is stripped, since YAML
+treats them as delimiters. Missing keys fall back: the name to the folder, the description
+to the first non-blank body line, capped at 120 characters.</p>
 
 <h2 id="ch-skills-disclosure">Progressive disclosure</h2>
 <p>Only the <em>catalog</em> — one <code>name: description</code> bullet per skill —
 rides in the system prompt under a <code>## Skills</code> header, with the standing
 instruction to call <code>use_skill</code> before matching work. The body loads on
 demand. That keeps the context small however many skills you install, and makes skill
-usage visible: you can watch the agent fetch its instructions in the chat and trace.</p>
+usage visible: you can watch the agent fetch its instructions in the chat and trace.
+It is also the reason the shelf described below is carried but not installed — every skill
+under a root is a bullet in every run's prompt, and fifty-seven foreign bullets would be a
+standing tax rather than a gift.</p>
 
-<h2 id="ch-skills-shipped">The four shipped skills</h2>
+<h2 id="ch-skills-seeded">What a fresh home gets</h2>
+<p>One skill. <code>verification</code> — evidence before claims, report what you observed
+in this run and nothing else — is copied out of the artifact into
+<code>~/.spectro/skills</code> the first time a server starts, and that is the entire seed
+set. Until 0.7.0 there were four; <code>brainstorming</code>, <code>test-driven-development</code>
+and <code>writing-plans</code> left it because the catalogue carries versions between three
+and five times longer, and only a name and a description ever reach the prompt anyway.
+<code>verification</code> stayed because nothing on the shelf replaces it.</p>
+
+<p>Seeding is deliberately timid, and both promises are pinned by tests. An existing folder
+is never written over, so your edit survives every upgrade. And a <code>.seeded</code>
+ledger in the skills root records every name ever offered, so a skill you deleted stays
+deleted instead of reappearing on the next boot. Dropping three skills from the seed set
+therefore removed nothing from any machine: an installation that already had them still
+has them.</p>
+
+<h2 id="ch-skills-catalogue">The bundled catalogue</h2>
+<p>Four collections of foreign skills ride inside every build as classpath resources under
+<code>skills-catalogue/</code>, vendored verbatim at a named commit:</p>
+
 <table class="tbl">
-  <tr><th>skill</th><th>teaches</th></tr>
-  <tr><td><code>brainstorming</code></td><td>turn a vague idea into an agreed design before code: one question per turn, real alternatives, decisions recorded</td></tr>
-  <tr><td><code>test-driven-development</code></td><td>red → green → refactor with honest verification rules (no network in tests, one behavior per test)</td></tr>
-  <tr><td><code>writing-plans</code></td><td>plans a fresh engineer could execute: exact files, verifiable steps, no open questions</td></tr>
-  <tr><td><code>verification</code></td><td>evidence before claims — never state what you did not observe in this run; report VERIFIED / FAILED / UNVERIFIABLE per claim</td></tr>
+  <tr><th>pack</th><th>skills</th><th>vendored from</th><th>licence</th></tr>
+  <tr><td><code>humanizer</code></td><td>1</td><td>github.com/blader/humanizer</td><td>MIT</td></tr>
+  <tr><td><code>matt-pocock</code></td><td>35</td><td>github.com/mattpocock/skills</td><td>MIT</td></tr>
+  <tr><td><code>superpowers</code></td><td>14</td><td>github.com/obra/superpowers</td><td>MIT</td></tr>
+  <tr><td><code>ui-ux-pro-max</code></td><td>7</td><td>github.com/nextlevelbuilder/ui-ux-pro-max-skill</td><td>MIT</td></tr>
 </table>
 
-<p><code>/skills</code> lists what is installed; <code>spectro doctor</code> counts them;
-the System-context panel shows the catalog exactly as the model sees it. The four
-development tools of chapter 14 point their children at these skills.</p>
+<p>Fifty-seven skills across those four packs — and both totals carry the commands that
+produced them rather than a memory of a release note:</p>
+
+<pre>$ find .spectro/skills-catalogue -mindepth 1 -maxdepth 1 -type d | wc -l
+       4
+$ find .spectro/skills-catalogue -name SKILL.md | wc -l
+      57</pre>
+
+<p>The shelf is enumerated exactly the way that second command works: a skill is <em>the
+directory that holds a SKILL.md</em>, found by walking the resources, so neither of the two
+nesting depths the catalogue uses — <code>&lt;pack&gt;/skills/&lt;skill&gt;</code> and
+<code>&lt;pack&gt;/skills/&lt;category&gt;/&lt;skill&gt;</code> — ever enters the code as a number. Each
+row the settings page receives carries an opaque id (<code>&lt;pack&gt;/&lt;name&gt;</code>), the pack,
+the description parsed out of the frontmatter exactly as the model would read it, the
+licence, the upstream repo and commit, a file count and a byte count, plus whether that
+skill is already on disk.</p>
+
+<p>Every pack keeps its upstream <code>LICENSE</code> beside it and a
+<code>PROVENANCE.json</code> naming the repo, the exact commit and the date it was taken —
+MIT permits the copy, what it requires is that the notice travels with it. One pack goes
+further because it had to: <code>ui-ux-pro-max</code> ships 54 font files, and a typeface's
+licence is not covered by a repository's MIT statement, so they carry 27 SIL OFL notices of
+their own, checked rather than assumed.</p>
+
+<h2 id="ch-skills-install">Installing one</h2>
+<p>The skills section of the settings page lists the shelf under <strong>Catalogue</strong>,
+below the skills you already have. Each row that is not installed yet ends in an
+<strong>install</strong> button, and its tooltip names the pack and the licence
+<em>before</em> you press it: “From superpowers, licensed MIT — LICENSE and
+PROVENANCE.json travel with it”. A row already on disk says <strong>installed</strong>
+instead. Nothing is fetched. The whole section works with the network unplugged.</p>
+
+<p>The press posts the row's id to <code>POST /api/skills/install</code> as
+<code>{"skill": "&lt;pack&gt;/&lt;name&gt;"}</code>, and that id is matched against the enumerated
+index by string equality — never resolved as a path. The destination is not something the
+caller can name: it is the pack and leaf folder the index already carries, which is why a
+one-line request cannot become a write anywhere else. The copy is assembled in a staging
+directory that is a <em>sibling</em> of the skills root, never inside it, because a
+half-built folder already holds a <code>SKILL.md</code> and the loader would read it as a
+pack mid-write. Files are written byte for byte out of the jar with no permission carried
+across — thirteen catalogue files have an execute bit upstream and none of them arrives
+runnable — and the finished folder is promoted with one atomic move. Beside the skill land
+the pack's <code>LICENSE</code>, its <code>PROVENANCE.json</code>, and a
+<code>spectro-install.json</code> recording pack, skill, repo, commit, licence and the date
+you installed it.</p>
+
+<table class="tbl">
+  <tr><th>answer</th><th>when</th></tr>
+  <tr><td>200 with the facts</td><td>installed — name, pack, files, bytes, licence, commit</td></tr>
+  <tr><td>409</td><td>already installed (“delete it first to install it again” — copying over it would lose your edits and its off switch), or the project already carries it and would win anyway</td></tr>
+  <tr><td>413</td><td>over the ceilings: 400 files or 24 MiB, with the measured numbers in the body</td></tr>
+  <tr><td>400 / 404</td><td>no id in the body; an id that is not on the shelf; <em>any</em> request from a non-local origin</td></tr>
+  <tr><td>500</td><td>the copy failed — including a pack whose LICENSE could not be read, which is refused rather than installed unlicensed</td></tr>
+</table>
+
+<p>One install runs at a time, and a refusal is said rather than swallowed: the panel prints
+the server's own sentence and deliberately does <em>not</em> reload the list, because
+redrawing rows after a failed copy is how a failure comes to look like a success.</p>
+
+<p>What is installed is managed in the same list. The switch on each row writes or removes
+the <code>.disabled</code> marker. The delete button is armed by the first click and deletes
+on a second within four seconds, the same two-step the session archive uses, and it appears
+only for user-scope skills — a project skill answers <code>a project skill belongs to the
+repo — remove it there</code>. Deleting the last skill out of a pack takes the empty pack
+folder with it. Every route comes in a
+one-segment and a two-segment form (<code>/api/skills/{name}/disabled</code> and
+<code>/api/skills/{pack}/{name}/disabled</code>, the same for <code>DELETE</code>), because
+the pack is a real directory and travels as a real path segment; the colon in
+<code>superpowers:brainstorming</code> is a display name, not a path.</p>
+
+<div class="callout">
+  <div class="co-title">what the shelf is not</div>
+  <p>Nothing is installed from a live git remote and there is no update check — each pack is
+  pinned to the commit it was vendored at, and a skill that quietly moves under a run nobody
+  re-read is worse than one that does not move. Re-installing is refused rather than treated
+  as a no-op. The catalogue rides in the artifact whether you ever install from it or not.
+  And spectroscope publishes nothing of its own to it: this is a client, not a registry.</p>
+</div>
+
+<p><code>/skills</code> lists what is installed, under the names the model uses;
+<code>spectro doctor</code> names the same set on one line, which on a fresh home reads
+<code>skills: 1 installed (verification)</code>; the System-context panel shows the catalog
+exactly as the model sees it. All three read the library rather than the directory, so a
+skill you switched off is missing from all three. Changes reach the <em>next</em> session
+rather than the running one — the library is loaded once per connection, and the settings
+panel says so above the list.</p>

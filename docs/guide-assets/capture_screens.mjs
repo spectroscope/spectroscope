@@ -1,11 +1,19 @@
 // capture_screens.mjs — deterministic screenshot suite for USER-GUIDE.html
 //
 // Reproduce (once per theme):
-//   1. start the backend from the demo workspace:
-//        cd ~/spectro-demo && java -jar .../spectro-server/build/libs/spectro-server-0.0.1.jar
-//      (Ollama running for the live shots; any vite dev server or :8080 as BASE_URL)
+//   1. start the backend from the demo workspace, against the CURATED home so
+//      the left rail never prints a real session list (demo-home/README.md):
+//        cd ~/spectro-demo
+//        java -Duser.home=<repo>/spectro/docs/guide-assets/demo-home \
+//             -jar /tmp/spectro-doc-080.jar --server.port=8090
+//      (Ollama running for the live shots)
 //   2. dark set:   node capture_screens.mjs                    -> shots/
 //      light set:  THEME=light node capture_screens.mjs        -> shots-light/
+//
+//   Do NOT point this at the vite dev server on :8739. Its /api proxy targets
+//   :8080, which reads the real ~/.spectro and puts 304 of the owner's own
+//   sessions down the left rail of every frame. That is how the guide shipped
+//   a working chat history in July.
 //
 // Every shot uses the EN chrome (localStorage spectroscope:lang=en) and the
 // matching brand design, both seeded before load: spectro dark (espresso) or —
@@ -24,7 +32,10 @@ import { fileURLToPath } from "url";
 const LIGHT = (process.env.THEME || "dark").toLowerCase() === "light";
 const OUT = process.env.OUT_DIR || join(dirname(fileURLToPath(import.meta.url)), LIGHT ? "shots-light" : "shots");
 const DESIGN = LIGHT ? "paper" : "spectroscope";      // spectro bright | spectro dark
-const DESIGN_NAME = LIGHT ? "spectro bright" : "spectro dark";
+// The design names were renamed: "spectro dark"/"spectro bright" became
+// "spectro espresso"/"spectro paper" (there is also white and graphite).
+// The old strings made the settings plate skip and left 19-design-white stale.
+const DESIGN_NAME = LIGHT ? "spectro paper" : "spectro espresso";
 mkdirSync(OUT, { recursive: true });
 
 const browser = await chromium.launch({ channel: "chrome", headless: true });
@@ -63,19 +74,57 @@ async function shoot(name) {
 async function step(fn, label) {
   try { await fn(); } catch (e) { console.log("SKIP", label, "—", e.message.split("\n")[0]); }
 }
+// The Lab's step control. It was `button.lab-step` until 2026-07-22, when the
+// transport was rebuilt into `.lab-ctrl-btns` with aria-labelled buttons. The
+// old selector was left in this file and cost six plates for three weeks —
+// silently, which is the part worth fixing. See stepLab() below.
+const LAB_STEP = 'button[aria-label="Step forward"]';
+
+/** One click of the Lab transport. Throws if the control is not there.
+ *
+ * The previous version of this returned "done" when the button was MISSING,
+ * which is indistinguishable from "the dam is empty". So when the class name
+ * changed, every lab plate quietly kept whatever PNG was already on disk and
+ * the run still printed a clean log. A capture script that cannot tell "there
+ * is nothing left to do" from "I cannot find the control" is worse than one
+ * that crashes, because it launders a stale plate as a fresh one. */
+async function stepLab() {
+  const state = await page.evaluate((sel) => {
+    const b = document.querySelector(sel);
+    if (!b) return "missing";
+    if (b.disabled) return "drained";
+    b.click();
+    return "stepped";
+  }, LAB_STEP);
+  if (state === "missing") throw new Error("lab transport not found: " + LAB_STEP);
+  return state;
+}
+
 // step the Lab dam until empty (fast, no Flow timer)
 async function drainLab(max = 500) {
   for (let i = 0; i < max; i++) {
-    const done = await page.evaluate(() => {
-      const b = document.querySelector(".lab-step");
-      if (!b || b.disabled) return true;
-      b.click();
-      return false;
-    });
-    if (done) return;
+    if (await stepLab() === "drained") return;
     await page.waitForTimeout(20);
   }
 }
+/** Pick a scenario from the modal. The picker grew a tab row ("chats / agents"
+ * and "fleet"), so a bare .scn-row search only ever sees the active tab — which
+ * is why "Coding" and "Review fan-out" stopped being found: both moved to the
+ * fleet tab. Naming the tab is now part of naming the scenario.
+ *
+ * Entering a FLEET scenario replaces the app's six tabs with the fleet bar
+ * (bus · spectrum · trace · one tab per node), so there is no Lab there. The
+ * Lab plates must come from a chats/agents scenario. */
+async function pickScenario(tab, name) {
+  await page.evaluate((t) => {
+    const el = [...document.querySelectorAll(".scn-tab")].find(x => x.textContent.includes(t));
+    if (!el) throw new Error("no scenario tab " + t);
+    el.click();
+  }, tab);
+  await page.waitForTimeout(350);
+  await jsClickByText(".scn-row", name);
+}
+
 const openRightPanel = async () => {
   const open = await page.evaluate(() => !!document.querySelector(".right-panel"));
   if (open) return;
@@ -95,7 +144,10 @@ const clickPanelTab = async (match) => {
   }, match);
 };
 
-const BASE = process.env.BASE_URL || "http://localhost:8739";
+// Default to the curated-home server (demo-home/README.md), NOT the dev server
+// on :8739 whose proxy reaches the real ~/.spectro and prints a working chat
+// history down the left rail of every plate.
+const BASE = process.env.BASE_URL || "http://localhost:8090";
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForTimeout(900);
 
@@ -111,13 +163,17 @@ await step(async () => {
 
 // ---------- 03–04b the Lab on the "coding" scenario ----------
 await step(async () => {
-  await jsClickByText(".scn-row", "Coding"); // "Coding · 4 phases, parallel workers"
-  await page.waitForSelector(".lab-step");
+  // Was "Coding · 4 phases" until that scenario moved to the fleet tab, where
+  // the fleet bar replaces the tab row and there is no Lab at all.
+  await pickScenario("chats / agents", "build_plan · 1 subagent");
+  await page.waitForTimeout(1200);
+  await jsClickByText('.tab-nav [role="tab"]', "lab");   // the picker no longer lands on it
+  await page.waitForSelector(LAB_STEP);
   await shoot("03-lab-flow-start");
-  for (let i = 0; i < 10; i++) { await jsClick(".lab-step"); await page.waitForTimeout(200); }
+  for (let i = 0; i < 10; i++) { await stepLab(); await page.waitForTimeout(200); }
   await shoot("04-lab-flow-mid");
   // a state with both subagent loops alive: step further
-  for (let i = 0; i < 14; i++) { await jsClick(".lab-step"); await page.waitForTimeout(120); }
+  for (let i = 0; i < 14; i++) { await stepLab(); await page.waitForTimeout(120); }
   await shoot("04b-lab-flow-subagents");
 }, "lab flow");
 
@@ -204,8 +260,8 @@ await step(async () => {
 await step(async () => {
   await jsClick(".sidebar-scenarios");
   await page.waitForSelector(".scn-modal");
-  await jsClickByText(".scn-row", "Review fan-out");
-  await page.waitForSelector(".lab-step");
+  await pickScenario("fleet", "Review fan-out");
+  await page.waitForSelector(LAB_STEP);
   await drainLab();
   // these two are the guide's big detail plates — collapse the sidebar
   await page.evaluate(() => document.querySelector('button[aria-label*="sidebar" i]')?.click());
@@ -268,8 +324,24 @@ await step(async () => {
 
 // ---------- import dialog ----------
 await step(async () => {
-  await jsClick(".sidebar-import");
+  // .sidebar-import is TWO different buttons: the Import button while the
+  // sidebar is on Sessions (Sidebar.tsx:274) and the "spawn a node" button
+  // while it is on Fleets (Sidebar.tsx:286, same class plus .sidebar-spawn).
+  // The fan-out block above leaves the sidebar on Fleets, so this used to shoot
+  // the spawn dialog and file it under the name 20-import-dialog — a plate that
+  // is wrong rather than missing, which the generator cannot catch.
+  await page.evaluate(() => {
+    const seg = [...document.querySelectorAll("button")]
+      .find(x => /^sessions$/i.test(x.textContent.trim()));
+    if (seg) seg.click();
+  });
+  await page.waitForTimeout(500);
+  await jsClick(".sidebar-import:not(.sidebar-spawn)");
+  await page.waitForSelector(".import-modal, .modal", { timeout: 8000 });
   await page.waitForTimeout(1200);
+  const looksRight = await page.evaluate(() =>
+    /import|transcript/i.test(document.querySelector(".modal, .import-modal")?.textContent || ""));
+  if (!looksRight) throw new Error("the open modal is not the import room");
   await shoot("20-import-dialog");
   await page.keyboard.press("Escape");
   await page.evaluate(() => {
@@ -280,6 +352,31 @@ await step(async () => {
 }, "import dialog");
 
 // ---------- LIVE 1: update_plan → the Plan tab (local Ollama) ----------
+/** Start a fresh live session. The three LIVE blocks below run against a real
+ * backend, and every one of them used to inherit whatever the previous block
+ * left on screen — after the import dialog that is an archived session in
+ * read-only replay, which has no composer at all, so the send click found
+ * nothing. Opening a new chat first is the whole fix. */
+const newChat = async () => {
+  // Whatever the previous block left open has to go first: a settings page or
+  // an import modal sits over the composer, and clicking "New chat" behind it
+  // does nothing a selector can see. Dismissing them one by one is a losing
+  // game as the app grows dialogs, so reload instead — the seeded design and
+  // language survive it because they live in localStorage.
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1100);
+  await page.evaluate(() => {
+    const b = [...document.querySelectorAll("button")]
+      .find(x => /new chat/i.test(x.textContent) && x.offsetParent !== null);
+    if (!b) throw new Error("no New chat button");
+    b.click();
+  });
+  await page.waitForTimeout(900);
+  const ok = await page.evaluate(() => !!document.querySelector('button[aria-label="Send"]'));
+  if (!ok) throw new Error("composer did not open (a modal is probably still up)");
+  await page.waitForTimeout(300);
+};
+
 const send = async (text) => {
   await page.evaluate((msg) => {
     const ta = document.querySelector(".chat textarea") || document.querySelector("textarea");
@@ -288,11 +385,12 @@ const send = async (text) => {
     ta.dispatchEvent(new Event("input", { bubbles: true }));
   }, text);
   await page.waitForTimeout(300);
-  await jsClickByText("button", "Send");
+  await jsClick('button[aria-label="Send"]');   // was a text button until 2026-08-09
 };
 await step(async () => {
   await jsClick(".new-chat");
   await page.waitForTimeout(500);
+  await newChat();
   await send("Call the update_plan tool exactly once with these three steps: step 1 'Read the project README' with status completed, step 2 'Summarize the build setup' with status in_progress, step 3 'Report back to the user' with status pending. After the tool call, just say: Plan published.");
   // wait for the plan to land in the Plan tab (badge appears)
   await openRightPanel();
@@ -309,6 +407,7 @@ await step(async () => {
 await step(async () => {
   await jsClick(".new-chat");
   await page.waitForTimeout(500);
+  await newChat();
   await send("Use the run_command tool to run exactly: pwd");
   await page.waitForSelector("[class*=thinking]", { timeout: 60000 }).catch(() => {});
   await page.waitForTimeout(1500);
@@ -339,6 +438,7 @@ await step(async () => {
 await step(async () => {
   await jsClick(".new-chat");
   await page.waitForTimeout(500);
+  await newChat();
   await send("Write a file hello.txt with the text hi. Use the write_file tool exactly once.");
   await page.waitForSelector(".gate-bar", { timeout: 180000 });
   await page.waitForTimeout(500);

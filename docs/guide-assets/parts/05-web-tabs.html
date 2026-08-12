@@ -34,7 +34,7 @@ the left button only clicks — on both React Flow canvases in the app.</p>
 
 <h2 id="ch-tabs-trace">The Trace tab</h2>
 
-<!--SHOT:11-trace|The wire view: every frame in both directions with time, Δt, LLM direction, wire protocol, agent, type and a token-highlighted summary. The tab badge counts frames live; the slim rail on the right jumps to the first or the newest frame.-->
+<!--SHOT:11-trace|The wire view of one run, 33 of 33 frames: clock, Δt, LLM direction, the proto and host each payload really rode, agent, type and a token-highlighted summary, with the synthetic system_context row first. The face row above sets every row at once, the chips filter by category — image among them — and in the columns control model is switched off, so that column is not in the rows at all. The slim rail on the right edge jumps to the first frame or the newest.-->
 
 <p>“What Wireshark is to packets, this is to the harness protocol.” Every frame lands
 here — RunEvents inbound, client messages outbound — before the reducer even looks at
@@ -44,15 +44,24 @@ it, so unknown event types are visible too.</p>
   <li><strong>Columns:</strong> sequence · wall-clock time with milliseconds · Δt since the
       previous visible row · <strong>LLM direction</strong> (↑ going to the model with the
       next request, ↓ produced by the model, · internal) · <strong>proto</strong> ·
-      <strong>host</strong> · agent · type · summary.</li>
-  <li><strong>The proto column</strong> names the wire each payload actually rides — the
-      protocol breakdown as a column: <code>SSE</code> for the cloud LLM streams (Claude and
-      OpenAI-compatible), <code>NDJSON</code> for Ollama, <code>JSON-RPC</code> for
-      <code>mcp__*</code> tool rows (a result resolves its tool through the callId),
-      <code>HTTP</code> for <code>web_fetch</code> and image generation, <code>local</code>
-      for the file tools, and <code>—</code> for everything harness-internal (the gate, the
-      plan, introspection, A2A) that never leaves the process.</li>
-  <li><strong>The host column</strong> names the network counterpart: LLM rows show where the
+      <strong>host</strong> · agent · type · summary. Host and <strong>model</strong> — the
+      model serving each run — are the two optional ones, switched from the toolbar's columns
+      control; a column that is off is left out of the row entirely.</li>
+  <li><strong>The proto column</strong> names the wire each payload actually rides, and it
+      answers for the <em>frame</em> rather than for the work behind it. Most rows therefore
+      read <code>WebSocket</code>: a <code>text_delta</code> is our own frame about the
+      model's output, not the model's output arriving, and it never left this machine. Only a
+      recorded exchange says what went out to the provider — <code>HTTPS/SSE</code> for the
+      cloud streams (Claude and OpenAI-compatible), <code>HTTPS/NDJSON</code> for Ollama,
+      plain <code>HTTPS</code> for the one-shot calls (transcription, an image) and
+      <code>process</code> when the provider runs as a local child process. Tool rows name
+      their <em>execution</em> transport instead: <code>JSON-RPC</code> for
+      <code>mcp__*</code> (a result resolves its tool through the callId), <code>HTTP</code>
+      for <code>web_fetch</code> and image generation, <code>local</code> for the file
+      tools.</li>
+  <li><strong>The host column</strong> names the network counterpart. A frame that only rode
+      the socket names this server's own origin; an import, which cannot know the machine the
+      other app ran on, leaves it at a dash. LLM rows show where the
       request really goes (<code>api.anthropic.com</code>, <code>localhost:11434</code> …) —
       live from the socket-only <code>provider_info</code> frame the server sends on connect
       and after every provider switch, so a switch is a visible trace row, never a silent
@@ -60,8 +69,10 @@ it, so unknown event types are visible too.</p>
       host, image events their backend endpoint; replays only know the provider, so anthropic
       maps to its fixed endpoint and local backends show an honest <code>—</code>.</li>
   <li><strong>Filters:</strong> free-text (matches type, agent and payload), an LLM-direction
-      segment, and toggleable category chips (run, turn, text, tool, permission, usage,
-      image, context, other).</li>
+      segment, and fourteen toggleable category chips — run, turn, text, thinking, tool,
+      workflow, mcp, permission, usage, image, llm, context, client, other. Tool traffic has
+      three of them rather than one, so the MCP calls and the workflow steps can be taken out
+      without taking the local tools with them.</li>
   <li><strong>Summaries with token highlighting:</strong> the model's own words in sand,
       punctuation faint, numbers tabular, the literal <code>ERROR</code> red — lossless, the
       full payload is one click away (collapsible JSON tree + copy).</li>
@@ -77,10 +88,27 @@ it, so unknown event types are visible too.</p>
   <li><strong>Auto-follow</strong> engages once you scroll down to the live end; while you are
       reading further up, arrivals accumulate into a “{n} new ↓” pill instead of yanking the
       view.</li>
-  <li><strong>Three detail modes</strong> per row: <em>Insight</em> (the JSON tree),
-      <em>Compact</em> (one token-highlighted line per real wire line, horizontally
-      scrollable) and <em>Raw</em> (plain text). The <code>session_resume</code> marker's
-      detail carries the entire re-uploaded history as its JSONL lines — chapter 8.</li>
+  <li><strong>Four faces</strong> per row: <em>structured</em> opens a frame as the thing it
+      is (a call as its tool card, an answer as its text), <em>insight</em> as an expanded
+      JSON tree, <em>wire</em> as plain text — exactly the lines that crossed the wire, one
+      row each — and <em>source</em> as the line of the imported file the frame was read from.
+      The view control above the list is a master switch: flipping it brings every row back to
+      that face, and a single row can still be switched afterwards. A face with nothing behind
+      it is left out rather than shown empty, so a recorded LLM exchange offers no
+      <em>source</em>; the two retired names, <code>raw</code> and <code>compact</code>, both
+      land on <em>wire</em>. The <code>session_resume</code> marker's detail carries the entire
+      re-uploaded history as its JSONL lines — chapter 8.</li>
+  <li><strong>Pictures.</strong> A picture an imported transcript carried is a frame like any
+      other (<code>attachment_image</code>), and it answers to the <code>image</code> chip
+      beside the generated ones — that chip is the one gesture a reader makes to find the
+      pictures, and until it knew this type it hid every one of them. The
+      collapsed row prints the file's own note, <code>[image/png · 31.0 KB]</code>, and never
+      the bytes: a row's summary is also the text a find in the page matches, and one
+      140-picture file put 19.87&thinsp;MB of base64 there before this had a case of its own.
+      Open the row and the picture is drawn in a section of its own, labelled with the payload
+      field it came out of, that note underneath. An imported picture carries its bytes on the
+      frame, so clicking it opens the lightbox and the arrow-key walk (chapter 5); a generated
+      one is a store URL rather than bytes in the page, so it renders and does not open.</li>
 </ul>
 
 <h2 id="ch-tabs-text">The Text tab</h2>
@@ -107,6 +135,14 @@ copy button for the whole thing:</p>
       Socket-only UI frames (<code>provider_info</code>, <code>workspace_info</code>)
       are deliberately absent: they never enter the file, and this view IS the file.</li>
 </ul>
+
+<p>An <strong>extended</strong> toggle sits above the feed, and it is the honesty control: the
+reading leaves things out, extended puts them back — the assembled request the model was handed,
+its parts each headed by a character count and a token estimate, plus the usage lines, the turn
+boundaries and the published plan. The setting travels into the exported document, so the file
+says what the screen said.</p>
+
+<!--SHOT:50-chat-text-extended|The text feed with extended on. Above the conversation stands the request as it was actually assembled — the system prompt at 981 chars, ~245 tokens, then the tool schemas at 6792 chars, ~1698 tokens, each tool with its real JSON schema. Normal reading starts at the run and never shows any of this.-->
 
 <h3 id="ch-tabs-explain">Explain: have a model read the run</h3>
 
@@ -206,7 +242,9 @@ server-side against the hidden/ignored rule.</p>
 <p>When the agent generates images (chapter 17), a gallery column opens next to the chat:
 cards newest-first with the prompt as caption, provider and model badges, full-size link,
 and a provider dropdown (<code>gemini</code> / <code>openai</code>) that switches the image
-backend for the next generation. Bytes never cross the socket — cards load from
+backend for the next generation. Only generated images live here: a picture an imported
+transcript carried belongs to the message or the tool card it came with (chapter 5), and the
+two provenances are kept apart on purpose. Bytes never cross the socket — cards load from
 <code>GET /api/images/&lt;sha256&gt;.&lt;ext&gt;</code>, where the content address doubles as
 the traversal guard (64 hex chars or 400, before any filesystem access).</p>
 

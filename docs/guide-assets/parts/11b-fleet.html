@@ -1,13 +1,14 @@
+<!-- ============================== CH 15b ============================== -->
 <h1 data-ch="15b" id="ch-fleet">the fleet: many agents, one spectrum</h1>
 
 <p>Subagents fan out under one main agent. The fleet is the next level:
 several full agents, each with its own model, tools and workspace, run in
 parallel and merge into one spectrum. They can share a single JVM, or run
 as separate processes on separate machines that report to a hub. Either
-way you enter a fleet like a session and watch it on the lenses you
-already know. That is the <code>spectro-orchestrator</code> module
-(migration phase 5), and its facade follows the frozen five-lines style
-exactly:</p>
+way you enter a fleet from the sidebar, and what opens is not a session
+with more lanes in it — a fleet has a bar, a rail and a vocabulary of its
+own. That is the <code>spectro-orchestrator</code> module (migration
+phase 5), and its facade follows the frozen five-lines style exactly:</p>
 
 <pre><code>var panel = Spectro.panel().model(Anthropic.opus());
 panel.agent("bugs").task("Find bugs in the diff");
@@ -77,86 +78,180 @@ until a stop arrives over the hub (or, in production, SIGTERM).
 answer over the hub instead of a fixed yes or no (see the control plane
 below).</p>
 
+<p>A node can also be given a run loop, and that is the difference
+between a node you can only stop and a node you can talk to. Three flags
+do it: <code>--watch &lt;dir&gt;</code> runs the prompt again on changes
+in that directory, non-recursively, with a burst of changes debounced
+into one run; <code>--listen &lt;port&gt;</code> runs it on a POST to
+<code>/trigger</code> at that port, where the bind is always
+<code>127.0.0.1</code> and the bearer token is printed at start; and
+<code>--every &lt;n&gt;ms|s|m|h</code> runs it on a timer, at least a
+second apart. None of them fires at start — the prompt of a triggered
+node is written against an event, and running it with no event executes
+half a sentence, so the node boots straight to waiting and says so. Plain
+<code>--linger</code> gives no loop at all: that node parks on its stop
+latch and has nowhere to put anything you send it.</p>
+
 <h2 id="fleet-hub">code fleets on the hub</h2>
 
 <p>A <code>Spectro.panel()</code> fleet runs in one JVM by default and
 returns one merged EventStream. Set <code>$SPECTRO_HUB</code> (or build
 the panel with a hub address) and each lane also mirrors its frames to
 the hub as a node, so a code fleet becomes live-visible in a running
-cockpit and the canvas draws its real spawn edges. The invariant holds
-where it matters: the returned EventStream stays byte-identical on the
-local in-memory spine, the hub is a purely additive mirror, and a dead
-hub never delays the run's close.</p>
+cockpit and each lane arrives on the bus rail as its own card. The
+invariant holds where it matters: the returned EventStream stays
+byte-identical on the local in-memory spine, the hub is a purely additive
+mirror, and a dead hub never delays the run's close.</p>
 
 <h2 id="fleet-enter">entering a fleet</h2>
 
-<p>Fleets are first-class, like sessions. The sidebar has two segments,
-<code>sessions</code> and <code>fleets</code>; switch to fleets and every
-one the hub has seen is a row with its sigil, its name, and its agent
-count (online of total). A fleet with a parked gate floats to the top and
-wears a pulsing <code>gate open</code> chip. Click a row to enter the
-fleet: its events feed the same tabs. The chat tab becomes the fleet's
-home — a short getting-started panel with the spawn form, instead of a
-stale session chat — and the Spectrum shows every agent at once, one
-lane each. A browser opened after the fact is not blind to history:
-entering pulls each node's recent frames from the hub's replay ring, so
-a gate parked before you arrived is still there waiting. The ring is
-bounded and the view says so; the node's own JSONL stays the full
-record.</p>
+<p>Fleets are first-class, like sessions. The sidebar's segment row
+carries three of them — <code>sessions</code>, <code>fleets</code> and
+<code>state graph</code> — and switching to fleets lists every fleet the
+hub has seen: a row with its sigil, its context id, and its agent count
+as online of total. A fleet with a parked gate floats to the top and
+wears a pulsing <code>gate open</code> chip.
+Click a row to enter it. A browser opened after the fact is not blind to
+history: entering pulls each node's recent frames from the hub's replay
+ring, so a gate parked before you arrived is still there waiting. The
+ring is bounded; the node's own JSONL stays the full record.</p>
 
-<!--SHOT:26-fleet-home|An entered fleet: the fleets segment in the sidebar, the fleet's sigil and counts, and the fleet home with its getting-started panel and spawn form.-->
+<p>With nothing entered, the segment lands on a lobby rather than on the
+last session left standing, and the lobby's machine-dependent offers say
+they cannot work <em>before</em> they are pressed rather than after. With
+no hub running, the spawn button is disabled and the place where the
+ready-made <code>spectro node …</code> command would stand carries the
+sentence that names the variable it needs instead. With a hub up, the
+lobby adds the part the server cannot answer: spawning also wants
+<code>SPECTRO_ALLOW_SPAWN</code>, and the API does not report whether it
+is set.</p>
 
-<p>No hub at hand? The scenario dialog has a <code>fleet</code> tab with
-scripted fleet runs — deterministic, no LLM, no key — that load as a
-replay fleet and light up every fleet view, including the canvas and the
-machine room below. That is the fastest way to see the whole surface
-before wiring a real hub.</p>
+<p>No hub at hand? The lobby's first offer is five recorded fleet
+scenarios — deterministic, no hub, no key, no provider — that load as a
+replay fleet and enter it. That is the fastest way to see the whole
+surface before wiring a real one. A fleet also has an address,
+<code>#/fleet/{contextId}</code>, and pasting one moves the sidebar with
+it; the address carries the fleet and nothing else, no tab and no
+reading, so it lands on the bus.</p>
 
-<p>The graph tab, for an entered fleet, becomes the fleet canvas: a
-spectral DAG. One node per agent (never one per event), its body a
-compact spectral band folded from that agent's slice of the stream, plus
-an activity span that answers "who was slow" at a glance; causal rails
-wire the topology, read from the event payloads (spawn ocean, task an
-amber comet in flight, result teal). Click an agent to open its own
-trace. A wide fan-out of same-role siblings folds into one group card
-(marked with a count) — an <code>aggregated&nbsp;·&nbsp;expanded</code>
-toggle in the corner switches between the folded reading and every card
-on its own — and the canvas shrinks node bodies as the fleet grows, so a
-large fleet stays readable rather than turning to hairball. A MiniMap
-and pan-zoom come with it. Export a fleet run to JSONL and the import
-dialog replays the whole thing, exactly as recorded.</p>
+<h2 id="fleet-bar">the fleet bar</h2>
 
-<!--SHOT:27-fleet-canvas|The fleet canvas: one spectral node per agent, spawn and task rails between them, the aggregated · expanded toggle, and the MiniMap.-->
+<p>While a fleet is entered, the app's tab row is replaced by the fleet's
+own bar: <code>bus</code>, <code>spectrum</code>, <code>trace</code>, a
+separator, one tab per agent, and a <code>+</code> that docks another
+node. Spectrum and trace survive the swap because both read across the
+whole fleet rather than one agent of it. Chat, graph, text and lab have
+no fleet face and are not on the bar. Each agent tab carries a state dot
+— working, failed, completed or idle, pulsing while a working agent is
+still connected — and an agent with a decision parked marks its own
+tab.</p>
 
-<h2 id="fleet-machine">the machine room</h2>
+<p>Picking an agent tab pins the trace filter with it, so the trace for
+one agent is one click away and already scoped. There is no way off the
+bar itself: leaving a fleet is a sidebar move, to a session, to the live
+row, or to another fleet. The back and forward chevrons are absent here,
+because the fleet bar stands where they live, though ⌘← and ⌘→ still
+walk your history.</p>
 
-<p>The lab tab of an entered fleet is the machine room: the whole fleet
-as ONE agent-system diagram, drawn with the same pieces as the
-single-run map. Every node is its own small agent loop — task, lifecycle
-state, gate color, and the exact thing it is doing right now — and they
-all share one machine: the OS band (disk, shell, MCP chain) lights up
-for whichever node is on it, and packets ride the rails exactly as in
-the single-run lab.</p>
+<div class="callout"><div class="co-title">what a 0.6.1 reader will miss</div>
+<p>Two views 0.6.1 offered have no way in any more. The fleet
+canvas — one spectral node per agent, spawn and task rails between them —
+was reached through the graph tab of an entered fleet, and the machine
+room, the whole fleet drawn as one agent-system diagram, through the lab
+tab. Neither tab is on the fleet bar. The machine room's fold survives
+where it matters: a bus card is built from exactly the same scene, with
+the same loop, gate and wiring chips on it. The canvas is out of the app
+entirely. The surface decision is not closed.</p></div>
 
-<p>The LLM stations are honest about locality. Nodes on a remote
-provider rail across the network boundary to a station outside; a node
-on Ollama rides to a local station inside the machine. A mixed fleet
-shows both stations with each node wired to its own; a purely local
-fleet shows no remote box at all, because there is no traffic that would
-cross the boundary. A process fleet without a <code>main</code> node
-draws no user station either — nothing enters from a person there, so
-nothing pretends to.</p>
+<h2 id="fleet-rail">the rail and its cards</h2>
 
-<!--SHOT:28-fleet-machine-room|The machine room mid-replay: four nodes as agent loops on one shared machine, the gate line green on the working node, rails fanning into the local LLM station.-->
+<p>The bus is where an entered fleet opens. Every node docks on one rail
+as a full agent card, and the rail draws with nothing on it too. That is
+deliberate: the one surface that explains what this application is used
+to answer an empty fleet with a line of placeholder text, so it only
+appeared once it no longer needed to explain anything. Now the sentence
+sits on the rail — “No nodes on the bus yet.”, beside the button that
+docks one.</p>
 
-<p>Below the map sits its own transport: a scrubber over the fleet's
-event stream, step buttons, and play. At the right edge the room follows
-the live stream; scrub back and a counter says how many events you are
-behind. Play from the edge restarts from the beginning — the same
-recording, replayed at a followable pace. Arrow keys step, space toggles
-play. A live fleet and a loaded scenario drive it identically, because
-the whole room is a pure fold over the same events every other lens
-reads.</p>
+<p>A card carries the id, the role and the provider; a restart marker
+when the node came back with a new epoch, since a restart is a new stream
+and never a silent continuation; an <code>offline</code> label when the
+node has left; and the task line. Under that sit four chips for what the
+agent is wired to — <code>disk</code>, <code>shell</code>, <code>mcp</code> and
+<code>llm</code>, each naming the file, command, server or provider in
+use while it is in use, the <code>llm</code> chip wearing a cloud mark
+when that provider is remote — then a gate row while a decision is
+parked, the agent's own spectral band, tokens in and out, and a stop
+control.</p>
+
+<p>Spawn ancestry orders the row and draws no tree. A spawned node docks
+immediately right of its spawner and carries the parent id above it, but
+the nodes stay peers on one line, because that is what they are on a bus.
+Traffic rides the rail underneath them: every <code>agent_message</code>
+is a mark between the two agents' drops, coloured by its role — task,
+result or status — with its direction written under it, and the most
+recent one animates from sender to receiver. The rail shows the last
+twenty-four; the trace keeps every one.</p>
+
+<p>The card head and the card's band are doors. The head opens that
+agent's own tab; the band opens the trace, already filtered to that
+agent.</p>
+
+<h2 id="fleet-agent">one agent's tab</h2>
+
+<p>An agent tab shows that agent's activity as a feed: one row per event,
+with a timestamp relative to that agent's own first frame, the event type
+and a one-line preview, dot-coloured across eleven kinds of event. The
+feed follows the live edge as frames arrive. An agent that has done
+nothing yet says so instead of showing an empty pane.</p>
+
+<h2 id="fleet-message">talking to a node</h2>
+
+<p>Until 0.8.0 both composers were disabled inputs that said why on
+hover, because the bus control op carried <code>stop</code> and
+<code>gate</code> and nothing else. It carries words now.</p>
+
+<p>One component draws the box on both faces — on every bus card, and at
+the foot of an agent feed — so the two can never disagree about who may
+be talked to. It is a text input with the placeholder “message this agent
+…” and a <code>→</code> button; Enter sends, Shift+Enter does not. The
+box is live only for a node that is connected <em>and</em> announced a
+trigger, and the border is the tell: dashed is dead, solid is live. Those
+two dead states are different problems with different fixes, so the
+tooltip names which one you have — “the node is not connected”, or “this
+node cannot take messages — it has no trigger, so it has no run loop.
+Start it with a trigger to talk to it”.</p>
+
+<p>A send posts to <code>/api/fleet/{node}/message</code> behind the same
+local-origin fence as stop and the gate. The server dispatches a
+<code>ctl</code> frame carrying your words to the node's live connection,
+and the node's bus reader drops them into the fire slot its trigger loop
+is already waiting on. The node simply runs again — the operator's words
+are another thing that fires it, not a second machinery beside the
+triggers — and the words stay out of stderr, because they are content and
+that is not where content belongs. Messages that arrive faster than the
+node fires merge in order rather than being refused, since the endpoint
+already answered and nobody is left holding a retry.</p>
+
+<p>The answer is one of four short sentences under the box, and none of
+them claims more than it knows. “sent — best-effort, no ack” is the 202:
+the words reached the node's connection, which is the most anyone can
+say, because the control plane has no acknowledgement. “the node cannot
+take that” is the 409 for a node with no run loop. “the node is gone” is
+the 404. “not sent” covers everything else, a request that never landed
+included, and a failed send keeps your draft rather than eating it. Stop
+is idempotent and its own note tells you to re-issue until the node
+leaves the roster; a message is not, and says so — sending it twice says
+it twice.</p>
+
+<p>The bus wire version moved from 3 to 4 for this one verb, which is
+worth the cost in writing. The gate form could stay on 3, because a
+pre-gate node dispatches on the call id and simply never enters that
+branch. A message has no such luck: every shipped version-3 handler reads
+<code>if ("stop".equals(action))</code>, so a v3 node handed
+<code>action:"message"</code> would have dropped the words with no log
+line at either end — a 202 at the endpoint, silence at the node. The bump
+makes the line unreadable to v3 rather than quietly misread by it.</p>
 
 <h2 id="fleet-control">the control plane</h2>
 
@@ -165,16 +260,23 @@ most driving still happens from the CLI (<code>spectro node</code>) or
 from code (<code>Spectro.panel()</code>). What the cockpit adds is a
 small set of first-class controls over the hub.</p>
 
-<p><strong>Spawn.</strong> The canvas carries a "spawn a node" panel, and
-the sidebar opens the same form as a dialog so you can start the first
-node before any exists. The web spawn is deliberately read-only: the
-endpoint is reachable from a browser, so it must never launch a node that
-writes or runs code. It is also opt-in
+<p><strong>Spawn.</strong> Four affordances open the same form: the
+<code>+</code> at the end of the fleet bar, the “dock a node” button at
+the end of the rail, the sidebar's <code>+ node</code> once at least one
+fleet is listed, and the lobby's own spawn button while none is — that
+last one is how a first node gets started before there is a fleet to dock
+into. The web spawn is deliberately read-only: the endpoint is reachable
+from a browser, so it must never launch a node that writes or runs code,
+and the server forces a UI-spawned node to <code>--permissions
+readonly</code> rather than trusting the request. It is also opt-in
 (<code>SPECTRO_ALLOW_SPAWN</code>, off by default) and needs a running
-hub. For a node with full rights the form hands you a copy-paste
-<code>spectro node …</code> command, built from the same fields plus the
-live hub port, with an ask-or-auto toggle. You run that in your own
-terminal.</p>
+hub and a reachable node launcher, and because every refusal is a
+uniform 404 the form names all three instead of pinning one. For a node with full rights it hands
+you a copy-paste <code>spectro node …</code> command, built from the same
+fields plus the live hub port, with an ask-or-auto toggle. You run that
+in your own terminal. A replayed scenario fleet offers neither the bar's
+<code>+</code> nor the rail's dock button — there is no hub behind it to
+dock into.</p>
 
 <p><strong>Stop.</strong> A connected agent card carries a
 <code>&#x2297;</code> button that sends a stop to the node over the hub.
@@ -185,15 +287,15 @@ SIGTERM is the ultimate backstop.</p>
 
 <p><strong>Answer a gate.</strong> A node started with
 <code>--permissions ask</code> parks each gated tool instead of denying
-it. The parked gate surfaces in the fleet's Spectrum lane and in the same
-gate bar you use for your own session, docked above the footer — on
-every tab of the entered fleet, the machine room included. Approve
-or deny inline and the answer travels to the node over the hub. There is
-no "remember" here: a remote node keeps its own allowlist, not yours.
-Like stop it is best-effort; if the node left first, its own close denies
-the orphaned gate, so the gate clears either way.</p>
-
-<!--SHOT:29-fleet-gate|A real parked gate: the security node waits at its write_file, the lane and the sidebar row wear the gate-open chip, and the gate bar offers deny or allow — the answer rides the hub.-->
+it. The parked gate surfaces on the node's card, on its lane in the
+fleet's spectrum, and in the same gate bar you use for your own session,
+docked above the footer — on every tab of the entered fleet, the agent
+tabs included, because that bar sits outside the view chain by
+construction. Approve or deny inline and the answer travels to the node
+over the hub. There is no “remember” here: a remote node keeps its own
+allowlist, not yours. Like stop it is best-effort; if the node left
+first, its own close denies the orphaned gate, so the gate clears either
+way.</p>
 
 <div class="callout"><div class="co-title">who can drive</div>
 <p>Every fleet write, and the roster read itself, is gated to a local
@@ -202,3 +304,9 @@ check is the DNS-rebinding defense). A remote or rebound page gets a 404
 with no hint the endpoint exists. Spawn adds its opt-in flag and forces
 the node read-only on top. The bus carries prompts, reasoning and tool
 I/O, so its face is treated as sensitively as the ability to spawn.</p></div>
+
+<p>A fleet is still not an object anyone creates. No endpoint makes one,
+and the only path to one is spawning a node into a hub that is already
+running behind two variables that both default to off. The message verb
+makes an existing fleet talkable; it does not make a fleet easier to
+have.</p>

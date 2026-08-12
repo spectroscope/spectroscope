@@ -98,6 +98,19 @@ small generated-image thumbnail with its prompt caption. The LLM node reveals pe
 answer streams; the disk shows its file, the shell its command, the MCP client its call. Subagents pop
 in as their own loop cards with lifecycle badges and disappear when the root run ends.</p>
 
+<p>Two picture panels can sit on that same shelf, and the label says which is which.
+<em>generated image</em> is the last one the agent painted, captioned with the prompt that asked for
+it. <em>pictures handed over</em> is what an imported transcript handed the agent — a pasted
+screenshot, a browser tool's answer — captioned with the file's own note, in arrival order, and
+capped at six per card, because a session that pasted forty screenshots would otherwise draw forty
+on one node; the rest are still in the chat and the trace. The panel reads the stream's
+<strong>root</strong> agent rather than the literal <code>main</code>, and that distinction is the
+whole feature on an imported subagent transcript: such a file roots at the child's own id, and two
+thirds of the pictures in the measured corpus sit in exactly such a sidecar. In
+<strong>expanded</strong> both panels leave the context disclosure and span the whole card under the
+two columns. Neither thumbnail opens the lightbox — that walk belongs to the chat bubble, the tool
+card and the trace row (chapters 5 and 6).</p>
+
 <h2 id="ch-lab-keymap">The keymap</h2>
 
 <p>Press <code>?</code> anywhere (or the header's keyboard button) to open the <strong>keymap</strong>:

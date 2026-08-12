@@ -48,28 +48,183 @@ the button.</p>
 
 <h2 id="ch-sessions-import">Import</h2>
 
-<!--SHOT:20-import-dialog|Three ways in: one-click list of your local Claude Code transcripts (the ~/.claude store is Finder-invisible — a file picker cannot reach it), a file picker, or paste.-->
-
-<p>The Import dialog replays <em>foreign</em> files through the same pipeline:</p>
+<p>The Import dialog replays <em>foreign</em> files through the same pipeline, and it is a room
+rather than a picker: full screen, with only the row list scrolling. Three ways in. The
+transcripts the server finds under <code>~/.claude/projects</code> are listed and load on one
+click — that folder is Finder-invisible, so a file picker cannot reach it — and beside the list
+sit an ordinary file picker and a paste box for everything else. Detection reads records rather
+than the first line, because a real transcript opens with metadata records before its first
+message, and the first record naming a format decides which of three it is.</p>
 <ul>
-  <li><strong>Raw spectroscope JSONL</strong> — recognized by its event types, replayed verbatim.
-      Files from the TypeScript edition work identically (the format is the contract).</li>
+  <li><strong>Raw spectroscope JSONL</strong> — recognized by its event types, eighteen of them,
+      and replayed verbatim. Files from the TypeScript edition work identically (the format is
+      the contract).</li>
   <li><strong>Claude Code transcripts</strong> — recognized by their <code>message</code>
       records and translated by an adapter: tool uses become <code>tool_call</code>s,
       <code>Task</code>/<code>Agent</code> spawns become <code>agent_spawn</code> + A2A messages,
       thinking becomes <code>thinking_delta</code>, sidechains fold under their owning task.
       You can watch a real Claude Code session step through the Lab's map.</li>
+  <li><strong>VS Code agent-mode exports</strong> — dotted type names over a <code>data</code>
+      object. That export records which tools ran and whether they succeeded, never what they
+      returned, so the dialog states it in one line rather than leaving a screen of empty tool
+      bodies to read as a broken import.</li>
 </ul>
 
-<!--MERMAID:12-import-flow|Import detection: spectroscope JSONL replays verbatim; Claude Code transcripts run through the adapter; both feed the same replay path as stored sessions.-->
+<p>A file matching none of the three is refused by name: the message lists up to five of the type
+names it actually found and says where each format lives, because “unrecognized format” sends you
+back to the file with no idea what to look at.</p>
+
+<!--SHOT:20-import-dialog|Three ways in: the store list from ~/.claude/projects, an ordinary file picker, and a paste box. The filter bar, the statistics line and the filled-in rows described below stand where the list does, once the store has transcripts in it.-->
+
+<p>Two axes narrow the list, and they behave differently on purpose. The <code>model</code> chips
+are the families the facts have turned up so far, and picking a second one <em>widens</em> the
+result; the three <code>with</code> chips — <code>workflow</code>, <code>subagents</code>,
+<code>images</code> — all have to hold, so picking a second one cuts deeper. A search box matches
+file, project, model and opening prompt. One statistics line then adds up whatever is left
+standing: the transcripts, the span they cover, each model family with the number of sessions it
+spoke in, and the workflow, subagent and picture totals. Beside those stands “<em>n</em> not read
+yet”, because a total that silently omits forty rows is not a total.</p>
+
+<p>Facts arrive per visible row. The listing is one directory walk and answers in milliseconds;
+reading transcript bodies does not, so rows render from the listing and fill in behind it. They
+are batched as you scroll, twenty-four to a request, and the cap comes from a number the server
+publishes in its own answer so the client cannot drift past it. A row that has not answered is
+neither a match nor a miss — it is pending, and the dialog says how many are still out instead of
+quietly shrinking the list to whatever happened to be cached.</p>
+
+<p>A row carries the file name, the opening prompt, the project, the age and the size, then chips
+for what is inside it: the model families (the tooltip keeps the verbatim ids), <code>workflow
+×n</code>, <code>subagents ×n</code>, <code>workflow-agents ×n</code>, <code>images ×n</code> and
+the language. None of that says what the session was <em>about</em> — an opening prompt is often
+“read the card first” or four thousand characters of pasted log — so one button asks the
+configured model and writes one line per row. It is a press and never a side effect of opening
+the dialog, because it is the only thing on the row that costs a model call. One call per
+session, sixty per press at most, and the answer is capped at 120 tokens. The instruction is to
+write twelve words at most, and to answer <em>unclear from the opening prompt</em> rather than
+invent a subject. The lines live on disk keyed by each file's size and modification time, so a
+transcript that has grown is offered again and its old line is marked stale; the tooltip names
+the model that wrote it.</p>
+
+<p>Two ceilings govern what you get to see. The listing is the three hundred newest transcripts,
+and it says so when that cap fired — a bigger store is never quietly reported as a store of three
+hundred. The content endpoint serves at most 128&thinsp;MiB, so a transcript above that is
+disabled before the click, with the reason on the row rather than a status code after it. A
+refusal you still get means the file grew between the render and the press, and the server names
+both numbers. Nothing about an import is written to disk, and the bar over the replay says so
+along with the file's own counts: how many lines arrived, how many frames the view is built from,
+and how many lines nothing was read from.</p>
+
+<!--MERMAID:12-import-flow|Detection scans past the metadata records for the first line that names a format: spectroscope JSONL replays verbatim, a Claude Code transcript runs through the adapter, and both feed the same replay path as a stored session. The picture predates the VS Code branch, which sits beside the Claude Code one.-->
+
+<h2 id="ch-sessions-imported">What an imported transcript says</h2>
+
+<p>A Claude Code record carries the conversation and everything the client wrote down around it,
+and the second half used to reach nobody. It does now, and every reading below obeys the same two
+rules: a line that does not carry a field produces <em>nothing</em> — not an empty row, not a dash
+— and values travel verbatim, because each of these is a vocabulary somebody else extends without
+asking.</p>
+<ul>
+  <li><strong>The tool's own return value.</strong> A record with a tool result can carry a
+      <code>toolUseResult</code> beside it, structured, while the block holds the flattened text
+      the model was shown. A <code>Read</code> sheds the line-number gutter the block welds onto
+      the body, and states the page that came back instead of counting the flattened text.
+      <code>Bash</code> keeps <code>stdout</code> and <code>stderr</code> apart, which the block
+      runs together with no marker. An edit's <code>structuredPatch</code> says where the change
+      landed, where the block says only that the file was updated, and a task update carries the
+      state it moved out of. Two shapes are refused rather than half-read — a string, which is
+      always an error the block already states, and an array, which is MCP output the block
+      duplicates byte for byte.</li>
+  <li><strong>Compaction.</strong> A boundary becomes the <code>compaction</code> frame the wire
+      has carried all along, counting the turns that went and how long the summary ran. The
+      machine-written summary is out of the chat bubble, where it had been rendering as your own
+      words — and it is now readable nowhere in the app, because every face hangs off a row and a
+      line that produces no frame has no row. The bytes stay in the transcript on disk. Giving
+      them a carrier is an open call rather than an oversight.</li>
+  <li><strong>Failures that read as failures.</strong> An API error record, and the outage text
+      the client writes into the assistant channel, both become <code>error</code> frames. A
+      retry ladder used to be a silent gap in the clock, and an overload message used to read as
+      the model's own answer.</li>
+  <li><strong>What a subagent cost.</strong> A modern transcript does not contain its own
+      children. Everything about one therefore comes off the single record the parent wrote when
+      the call came back: the child's token bill, which maps onto the wire's <code>usage</code>
+      event under the child's own id, its wall time, its tool count, and whether it was launched
+      in the background and never reported back inside this file. The model it ran on travels
+      with it, verbatim down to the context-window suffix. It is read and never inherited: a
+      child runs a different model from its parent often enough, and sometimes a whole tier
+      down.</li>
+  <li><strong>Who was driving.</strong> Chips on the trace row name the skill, the MCP server and
+      its tool, the effort the turn was told to spend, who wrote a user turn when it was not a
+      person, an answer that stopped on a limit rather than on its own ending, and a model
+      swapped under the run. Names travel with their plugin prefix; spectroscope looks nothing
+      up.</li>
+  <li><strong>Where the run stood.</strong> The working directory, the git branch and the client
+      version are announced once and again at every move, each with what it left behind. Nearly
+      two thirds of the session transcripts this was measured over stand in more than one
+      directory, and every relative path in every tool result after a move means something else
+      than it did before.</li>
+</ul>
+
+<p>None of this touches the wire. These are readings of somebody else's file, and the readings
+with no home on the wire ride frames that are import-only — no writer in the Java or Python core
+constructs them, and they can never land in a session file.</p>
+
+<h2 id="ch-sessions-beside">The agents beside a session</h2>
+
+<p>A session transcript holds only its own start. Every word its agents said lives in sibling
+files, under a folder derived from the transcript's own name — direct spawns in it, and the
+agents of a workflow run one level below, under the run id. Opening a session asks the server
+which of them are there, and that costs one directory walk and no transcript read. The work panel
+lists what came back: how many sit beside this file, each row an agent id and a size, each
+openable as a session in its own right. Where the task's own claim and the files disagree, both
+are shown and neither is corrected.</p>
+
+<p>On the chat and on the trace, buttons open the folders a recorded session left behind — the
+transcript's folder, the workflow folder, the scratchpad. These are the ones the app reads constantly and could
+never reach, because the store hides under a dot-folder and the scratchpad under a temp path
+nobody would guess. The server decides which of the three exist, since only it can stat them, and
+only the <em>kind</em> travels back: an endpoint that opened a path off the wire would be a way to
+run your file manager on any file on the machine.</p>
+
+<p>A standalone agent transcript imports as a session too, and the shape decides rather than the
+name. A file whose every record is a sidechain, with nothing in it that could own them, is not a
+session with orphans in it — it is one agent's transcript, and it names that agent on every line.
+The bar says which agent, what kind of agent it was and which session it ran under, for as much
+of that as the file states. A copied or renamed file is read for what it holds.</p>
 
 <div class="callout">
   <div class="co-title">Known limitation</div>
-  <p>Newer Claude Code versions store subagent transcripts as separate files
-  (<code>…/subagents/agent-*.jsonl</code>). Importing a main transcript shows each spawn
-  and its result, but not the child's inner steps — a multi-file merge is a future
-  candidate.</p>
+  <p>The agents beside a session are a <em>listing</em>, not a join. Opening one replaces the
+  view, and the parent's trace, spectrum and graph gain no child rows, because a real join would
+  mean reading several thousand files to open one session. The folder is derived from the
+  transcript's location, so a session split across two project directories answers “none”,
+  indistinguishable from one that spawned nothing. And a pasted or file-picked transcript has no
+  address in the store at all: no facts row, no gist, and no agents beside it.</p>
 </div>
+
+<h2 id="ch-sessions-address">The address of what you are looking at</h2>
+
+<p>There is no copy-link button anywhere in spectroscope, and that is the design: the browser's
+address bar <em>is</em> the link, and the app keeps it current as you move. A stored session reads
+<code>#/session/&lt;id&gt;</code>, with <code>@&lt;n&gt;</code> for the frame you are standing on
+and a trailing segment for the tab — <code>chat</code>, <code>spectrum</code>, <code>graph</code>,
+<code>trace</code>, <code>text</code> or <code>lab</code>, the six literals being the six words in
+the tab row. A transcript opened from the store is an address as well,
+<code>#/import/&lt;path&gt;</code>, the path percent-encoded so its own slashes cannot be misread
+as the tab. A paste, a picked file and a scenario are views and not addresses: there is nothing on
+disk for them to point at, so the bar falls back to the live default rather than invent an id. Two
+tabs add <em>how</em> they are being read — the trace its open row and the categories left on, the
+spectrum its zoom window as two fractions of the span. No other tab reports anything, so a lab or
+a graph link says only which session and which tab.</p>
+
+<p>Following an address plans the smallest change that gets you there. One naming the session
+already on screen is a seek or a tab flip, never a refetch. Anything the app cannot believe — a
+malformed frame index, an unknown tab, a filter category this build does not know — is dropped in
+favour of what it does understand, because landing wrong is worse than landing home. Reading down
+a trace or dragging a zoom <em>replaces</em> the history entry instead of pushing a new one, so
+fifty readings of one place do not bury the place you came from. The tab row draws its own back
+and forward chevrons, dark when there is nothing behind them, and ⌘←/⌘→ do the same. The desktop
+shell is a bare window with no browser chrome, which is why a deep link is something you read in a
+browser at <code>localhost</code> and not in the packaged app.</p>
 
 <h2 id="ch-sessions-newchat">New chat semantics</h2>
 <p>One socket connection is one server-side session — one agent, one JSONL file. “New

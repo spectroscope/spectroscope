@@ -53,6 +53,39 @@ tracked; the rest is regenerated on every boot and is ignored.
 carries an `otlpBasicAuth` pair, which is why this file was written by hand
 rather than copied.
 
+## The live plates need a backend, and its address is not in here
+
+Five plates come from real runs rather than replays: `21-panel-plan-live`,
+`22-thinking-live`, `23-permission-dialog`, `23b-permission-dialog-remember`
+and `24-after-deny`. They need a reachable model.
+
+`settings.json` here names a provider and no address on purpose. This repo is
+public, and the test backend lives on a private Tailscale node whose address
+belongs in the product home's own CLAUDE.md and nowhere else. Before a capture
+run, add the address locally:
+
+```json
+{ "provider": "lmstudio", "baseUrl": "http://<your-backend>:1234",
+  "workspace": "~/spectro-demo", "thinking": true }
+```
+
+and put this file back the way it is now before committing. `git diff` for the
+address is a cheap last check.
+
+## Reset between capture runs
+
+The live plates write real sessions into this home, so a second run would show
+sixteen rows in the left rail where the first showed seven, and the plates
+would stop being reproducible. The seven curated sessions are tracked and
+everything a run adds is not, so one command puts it back:
+
+```bash
+git clean -fd docs/guide-assets/demo-home
+```
+
+Run it before every capture, not after — that way a crashed run still leaves
+the evidence behind for you to look at.
+
 ## The one thing to remember
 
 A fresh home has never seen the onboarding dialog, so the first load shows

@@ -1,0 +1,321 @@
+<!-- ============================== CH 15c ============================== -->
+<h1 data-ch="15c" id="ch-stategraph"><span class="ch-num">Chapter 15c</span>The state graph: drawn before the run</h1>
+
+<p class="lead">Every other view in this book is reconstruction — a run happened, events
+arrived, and the picture was folded out of them afterwards. A state graph is the one
+drawing that already exists before the first token, because its topology is fixed at
+<code>compile()</code>, and the run only lights it up.</p>
+
+<h2 id="ch-stategraph-why">Why this one is not a reconstruction</h2>
+
+<p>The spectrum, the trace, the flow view, the machine room: each of them reads the same
+event stream and folds a picture out of it, so each of them can only ever know what already
+happened. A <code>StateGraph</code> is different in kind. You declare its nodes and edges in
+your own code, <code>compile()</code> validates and freezes the topology, and the drawing is
+knowable at that moment — before a node has run, before a token has moved. The sink receives
+the topology before the compile call even returns. What the event stream adds afterwards is
+light, not shape: nodes as they enter and leave, edges as they are taken, values as they are
+written. The header of a loaded view states the whole idea in one line, on every frame:
+“The topology is fixed at compile(), before the first token — so the graph is drawn first and
+the event stream only lights it up. Observe without touching.”</p>
+
+<p>The runtime lives in <code>spectro-core</code>, in the published library, not in the app.
+The app never runs your graph and never asks a server for one; it reads two files your run
+wrote and draws them. The footer of every loaded run says <code>offline&nbsp;·&nbsp;no network
+calls</code>, which is the point rather than a disclaimer. One warning before you start: the
+session tab called <em>graph</em> is a different thing entirely, and the last section of this
+chapter separates the two.</p>
+
+<!--SVG:21-state-graph|The whole path in one picture: your code builds a StateGraph, compile() freezes the topology and hands it to the sink before the first node runs, the runtime in spectro-core writes structure and lifecycle into one file and whatever the policy allows into a second, and the browser view reads that pair from disk. Nothing crosses a network on the way.-->
+
+<h2 id="ch-stategraph-reach">Reaching it, and the address it does not have</h2>
+
+<p>The sidebar carries a segmented control with three buttons: sessions, fleets, and the
+state graph. The third one is the whole surface. Clicking it hands the entire content area to
+the view — no session tabs above it, because a graph is not a session. It needs no hub, no
+provider and no key, and unlike the fleets segment beside it, the tutorial in chapter 6c
+never closes it: this view reads two files off your disk and starts no process, so there is
+nothing here for a level to protect you from. Under the segment sits a note that
+says where a graph comes from: “A state graph sits beside the session as a pair of files, not
+on the server — load it in the view on the right.” Below that, an eyebrow reading
+<code>Scenarios</code> and five rows, one per bundled run.</p>
+
+<p>Now the honest part. The state graph has no address. It is deliberately absent from the
+router, so there is no <code>#/stategraph</code> to bookmark, no deep link into a record, and
+no way to send a colleague the run you are looking at — the deep links that exist for trace rows
+and spectrum windows stop at this door. A reload empties the pane, and it has to:
+the browser cannot re-open a file from your disk without you picking it again. Exactly one
+piece of view state survives, the horizontal-or-vertical orientation, kept in local storage
+under <code>spectroscope:sg-orientation</code> and defaulting to horizontal. Cursor and picked
+node reset, because the run they pointed into is gone.</p>
+
+<div class="callout"><div class="co-title">what a reload costs you</div>
+<p>Loading is a gesture, not a state. Reload the page or open a second tab, and the pane is
+empty again with its five scenarios on offer. A switch to sessions and back costs nothing —
+the run, the cursor and the pick are held above the pane, so the segment hands them back. If
+you want to keep what you are looking at, export it — two files, one click each, described at
+the end of this chapter.</p></div>
+
+<!--SHOT:60-sg-empty|The pane before anything is loaded: the third sidebar segment is active, the five bundled runs stand in the rail under their human titles, and the shelf in the middle offers the same five runs under their bare file stems. Two pickers, two label sets, one set of runs.-->
+
+<h2 id="ch-stategraph-scenarios">Five bundled runs, under two sets of labels</h2>
+
+<p>The empty pane offers a <code>load file …</code> button and, under the line “or load a
+scenario — real runs of the engine”, five chips. The sidebar rail offers the same five runs
+one column to the left. They do not read the same, and that trips people: the rail prints
+human titles, the shelf prints bare file stems in mono. Name the surface when you tell someone
+what to click, because “click <code>crag</code>” and “click <code>CRAG&nbsp;·&nbsp;corrective
+loop</code>” are instructions for two different places on one screen.</p>
+
+<table class="tbl">
+  <tr><th>rail title</th><th>shelf chip</th><th>what ran</th><th>values</th></tr>
+  <tr><td>Reference run · the measured template</td><td><code>crag-payload</code></td>
+      <td>the widest of the five — ten nodes, fourteen edges, eleven supersteps</td><td>summary</td></tr>
+  <tr><td>Simple RAG · linear pipeline</td><td><code>simple-rag</code></td>
+      <td>start, retrieve, rerank, generate, end — one line, no branch</td><td>sample</td></tr>
+  <tr><td>CRAG · corrective loop</td><td><code>crag</code></td>
+      <td>a router, a grade that branches, and a rewrite that returns to the router</td><td>sample</td></tr>
+  <tr><td>ReAct tools · two turns, one thread</td><td><code>react-tools</code></td>
+      <td>two runs filed under one thread id, with act returning to plan</td><td>summary</td></tr>
+  <tr><td>Failing run · an honest node_error</td><td><code>failing-run</code></td>
+      <td>four nodes, three edges, and a generate that ends in an exception</td><td>summary</td></tr>
+</table>
+
+<p>All five were written by the engine itself in real runs, never typed by hand: the demo files
+are the output of a test that runs the graphs and keeps what they wrote. The two-turn scenario
+also shows a limitation the view states rather than hides — when one file pair carries several
+runs, the footer describes the first while the transport walks them all.</p>
+
+<h2 id="ch-stategraph-pair">The pair of files, and why the shape alone is enough</h2>
+
+<p>A run writes two files beside itself. <code>&lt;stem&gt;.graph.jsonl</code> carries the
+structure and the lifecycle — the topology record, graph start and end, node start, node end,
+node error, and every edge taken. <code>&lt;stem&gt;.state.jsonl</code> carries what the nodes
+wrote. The split is enforced by the writers and not by whoever calls them: the structure file
+accepts those seven record types and nothing else, the values file accepts only value records,
+and anything misfiled is dropped and counted rather than smuggled through. The counter surfaces
+in the footer, next to the count of lines that were not JSON.</p>
+
+<p>The naming is mechanical: the values path is the structure path with its family suffix
+re-pointed, so <code>run.graph.jsonl</code> always pairs with <code>run.state.jsonl</code> and
+never with <code>run.graph.state.jsonl</code>. The file picker takes both at once, and it is
+worth selecting both, because picking only the values half of a pair with nothing drawn yet
+earns the reply “That was a .state.jsonl on its own. Values need a shape — load the matching
+.graph.jsonl with it.” The other way round is fine, and this is the sentence the empty pane
+closes with: the shape alone is enough, the values are optional. A graph with no values file
+draws completely, counts its supersteps, colours its edges and marks its loops; only the panel
+goes quiet, saying “No .state.jsonl loaded — the shape is complete, only the values are
+missing.” while the footer wears a <code>no .state.jsonl</code> chip.</p>
+
+<h2 id="ch-stategraph-tiers">Four tiers, and why the default is off</h2>
+
+<p>What a run may write into its values file is decided once, at compile time, and carried
+unchanged to every node. There are four tiers, and the default is the one that records
+nothing.</p>
+
+<table class="tbl">
+  <tr><th>tier</th><th>what lands in the values file</th></tr>
+  <tr><td><code>off</code></td><td>nothing — and nothing is even built. This is the default.</td></tr>
+  <tr><td><code>summary</code></td><td>only the ten channels on the allow list:
+      <code>question</code>, <code>query_used</code>, <code>route</code>, <code>answer</code>,
+      <code>citations</code>, <code>confidence</code>, <code>abstained</code>,
+      <code>grade_ratio</code>, <code>rewrites</code>, <code>trace</code>. Its promise is that no
+      document corpus reached the file.</td></tr>
+  <tr><td><code>sample</code></td><td>every channel that is not denied, cut to the per-channel
+      caps — <code>docs</code> keeps its first three entries and clips the strings under it at
+      512&thinsp;B, an unnamed channel falls back to 1024&thinsp;B, and a whole record is capped
+      at 8192&thinsp;B.</td></tr>
+  <tr><td><code>full</code></td><td>every channel that is not denied, uncapped. It will not
+      construct unless you say so: <code>full(false)</code> throws.</td></tr>
+</table>
+
+<p>The reason for that default is worth a sentence, because it is a design decision and not an
+oversight. A library upgrade that quietly started writing a user's document corpus to disk
+would be a data incident, not a feature — so there is no ambient switch, no environment
+variable and no settings toggle that turns recording on behind your back. Recording is switched
+on by choosing a <code>compile()</code> overload, which means it is one visible line in your own
+source, in a file you own, where you will find it again:</p>
+
+<pre><code>var app = graph.compile(sink, StatePolicy.summary());</code></pre>
+
+<p>A null policy or <code>StatePolicy.off()</code> records nothing; the lifecycle-only overload
+<code>compile(sink)</code> still writes the structure file, so the drawing exists either way.
+The tier is frozen for the length of the run and announced once, in a
+<code>state_policy</code> record — the one line that later explains why a channel a node wrote
+is missing from the file. Wherever recording happens at all, one channel is denied by default:
+<code>principal</code>. And no policy field promises redaction: it says
+<code>patterns</code>, never <code>true</code>, because patterns catch credential shapes and
+cannot catch confidential prose.</p>
+
+<div class="callout"><div class="co-title">off is the default, and no demo can show it</div>
+<p>None of the five bundled scenarios ships at the <code>off</code> tier — two record at
+<code>sample</code> and three at <code>summary</code>, because a demo of nothing teaches
+nothing. The tier you will meet on your own first run is the one the app cannot show you.</p></div>
+
+<h2 id="ch-stategraph-transport">The transport, and the speed that is not one</h2>
+
+<p>Under the header sits the transport: five glyph buttons — <code>|&lt;</code>,
+<code>&lt;</code>, play, <code>&gt;</code>, <code>&gt;|</code> — a speed select, a band of
+ticks, a counter and a state chip. Only two of the buttons have a name to quote: the rewind
+announces itself as “first record” and the play button as “play (space)”, flipping to a pause
+glyph and “pause (space)” while it runs. The other three carry no title and no label, so this
+book describes them by glyph, as you will have to as well.</p>
+
+<p>The speed select offers <code>0.5×</code>, <code>1×</code>, <code>2×</code>, <code>4×</code>
+and <code>instant</code>. The last of those is not a speed. It jumps straight to the last record
+and pauses — a promise of no waiting, kept literally, because playing a four-hundred record run
+at a nominal top speed is still half a minute of watching. The four real speeds divide the
+recorded gap between two records by the speed and clamp the result into a 45–760&thinsp;ms
+window. That window is what keeps a run with a two-minute think from stalling the replay, and a
+burst of ten records in one millisecond from flickering past. A pair carrying no usable
+timestamps steps at 260&thinsp;ms divided by the speed.</p>
+
+<p>The band is one clickable tick per record, each tick titled with its record type and node,
+so you can aim at a node error instead of hunting for it. Every manual seek — any button, any
+tick — pauses playback first, because a transport that keeps running under your click is a
+transport that argues with you. Pressing play on a finished replay starts it again from record
+zero rather than doing nothing. The counter reads <code>record N/M</code> and the chip beside it
+reads <code>complete</code> when the cursor stands on the whole run, <code>mid-run</code>
+otherwise. That counter is the one string in this view that never translates; a German session
+shows <code>record 13/27</code> next to <code>mitten im Lauf</code>.</p>
+
+<p>The keyboard is shorter than the toolbar: <code>space</code> toggles play, <code>→</code> and
+<code>←</code> step one record, <code>Home</code> returns to the first record, and
+<code>End</code> jumps to the whole run. Keys stay out of the way where they would do damage —
+they are ignored while a modifier is held, while you are typing in a field, and entirely while
+your focus sits inside the export dialog; space alone is ignored while focus sits inside the
+right-hand panel.</p>
+
+<!--SHOT:62-sg-transport|The transport, cropped: five glyph buttons, the speed select, one clickable tick per record with the cursor's tick raised, and the counter. The chip reads mid-run because the cursor is parked at record 13 of 27; at the end of the run it reads complete.-->
+
+<h2 id="ch-stategraph-reading">Reading the drawing</h2>
+
+<p>The field is organised by rank. Every occupied rank gets a thin ruler drawn in the gutter
+before its column, running far past the content in both directions, so the stages read as
+separated columns instead of a cloud of boxes. Each ruler carries a lowercase label:
+<code>rank 0</code>, <code>rank 1</code>, and so on. Each node card repeats its own rank
+in its meta line as <code>· r2</code>, with an <code>r</code> and not an <code>s</code>, because
+<code>s</code> means superstep everywhere else in this view and the two numbers are not the same
+thing. The meta line also carries the duration in milliseconds once the node has one, and the
+lifecycle word until then: <code>never entered</code>, <code>running</code>, <code>done</code>,
+<code>error</code>.</p>
+
+<p>Two badges read <code>×N</code>. They run on different clocks, which is worth knowing before
+you catch them disagreeing on screen. On a node card, <code>×2</code> means the run entered that
+node twice — counted over the whole file, never scoped to where the cursor stands, so a card can
+already say <code>×2</code> while the transport is still walking the first visit. On an edge,
+<code>×2</code> means that edge has been walked twice <em>up to the cursor</em>, and it climbs as
+you play. An edge that closes a cycle is marked <code>↺</code> instead — but only while it has
+been walked at most once. From the second walk on, the count replaces the marker, because a loop
+you have taken three times is better described by the three than by the fact that it loops.</p>
+
+<p>Colour on an edge is three-state and follows the same clock as the edge badge: a quiet
+arrowhead for an edge not yet taken, the success tint for one that has been walked, and the
+accent for the edge the cursor is standing on. The untaken edge is the detail to notice. It does
+not vanish when the run goes the other way; it dims and stays exactly where the compiler put it.
+The panel explains why, in the view's own words: “Every edge stays on the canvas, the untaken one
+included. It does not disappear, it steps back — that is what separates this view from a trace.”
+A trace can only show the path taken. A graph shows the branch that was available and declined,
+which is usually the more interesting half of the question.</p>
+
+<!--SHOT:61-sg-crag-complete|CRAG played to the end. Rank rulers separate six occupied columns, each carrying its lowercase label; router, retrieve and grade each wear a ×2 for their second entry; and the long return lane from rewrite back to router carries ↺ because it has been walked exactly once. Walk it twice and the marker becomes ×2.-->
+
+<h2 id="ch-stategraph-panel">The panel: what one node wrote at this visit</h2>
+
+<p>With nothing picked, the right-hand panel describes the cursor: a heading reading
+<code>current record</code> over three rows — record, node, superstep, with an em dash where the
+file does not carry one — followed by <code>branches, known at compile()</code> and the paragraph
+about the edge that steps back. Click a node card and the panel switches to
+<code>node detail</code>: the node id in mono, then lifecycle, rank, superstep, duration, bytes
+(<code>wrote 592 B</code>) and entry count (<code>2×</code>).</p>
+
+<p>The superstep row is the one that repays attention. It is the superstep of the visit the
+cursor is standing in — not the node's last word. Before the cursor has reached the node the row
+falls back to its first visit, and it is empty only for a node the run never entered. Everything
+below it follows the same rule: the <code>channels written</code> chips, the heading
+<code>state · s1</code>, and the values under it are what that node wrote at <em>that</em>
+visit, not a merge of everything it ever wrote. A documents strip renders list channels as
+numbered rows with an item count, and a <code>clipped</code> badge marks a value a cap cut short.
+Where the recorder sampled a list, a badge says how many of how many entries were kept — taken
+from the recorder's own count of the original, never from the number of rows on screen.</p>
+
+<!--SHOT:63-sg-panel-visit|A node picked mid-run. The panel joins what retrieve wrote at the visit the cursor stands in — superstep 1, 592 B, the docs and trace channels — while the card badge reads ×2 and the entered row 2×, because that count is over the whole run and not over the cursor.-->
+
+<p>The most useful thing the panel does is refuse to be silent about absence. A channel a node
+wrote but the policy did not record is printed in its own place, followed by
+<code>not recorded</code> and the actual reason: recording is off, the channel was denied, or it
+is not on the allow list. An empty box would teach you that the node wrote nothing, which is
+false and expensive to believe.</p>
+
+<!--SHOT:66-sg-not-recorded|The reference run records at the summary tier, where docs is not on the allow list. The panel prints the channel, the words not recorded, and the reason, beside the channels that did make it into the file. Absence with a reason beats a blank space.-->
+
+<h2 id="ch-stategraph-failure">A node that failed</h2>
+
+<p>A failure shows up in four places at once, and none of them is a shrug. The card takes an
+error-tinted border, and its meta line prints <code>error</code> where a duration would be,
+since a node that threw has no end to subtract from. In the panel, the lifecycle chip reads
+<code>error</code> and an error box carries the exception class in bold on its own line, with the
+message under it — for the bundled failing run, <code>IllegalStateException</code> over
+“GroundednessError: no retrieved chunk supports an answer”. Both halves come straight from the
+record; an earlier reader looked for a nested object, found none, and drew a failed node with no
+reason at all.</p>
+
+<p>The box is scoped to the visit the cursor is in: entering the node clears it, the error
+record sets it, and nothing looks forward. Scrub back to before the failure and the node looks
+healthy again, because at that record it was.</p>
+
+<!--SHOT:64-sg-failed-node|The failing run at its last record: generate carries the error border and prints error where a duration would be, and the panel names the class before the message. Four nodes, three edges, one superstep, and one honest node_error.-->
+
+<h2 id="ch-stategraph-export">Export: two files, no options</h2>
+
+<p>The <code>export</code> button in the header opens a dialog titled export, with the source
+file name as its subtitle, a close button, and Escape as the other way out. There is nothing to
+configure — two groups, one download button each.</p>
+
+<p>The SVG is the drawing at the current record, and it is self-contained: colours resolved to
+literal values from the export theme, no external references, no fonts to fetch, the source name
+as its title. It speaks the same visual language as the screen, rank rulers and lowercase rank
+labels included, and it carries the same <code>×N</code> and <code>↺</code> grammar, so a
+picture pasted into a ticket does not need a legend. The Markdown is the run as text: a heading
+naming the source, a bullet list of source, run and thread identity, node and edge counts,
+supersteps and the recording policy, then a six-column table of every node — node, rank,
+lifecycle, superstep, duration, channels written — in the order the drawing reads. Both file
+names come from the source stem, so <code>crag-payload.graph.jsonl</code> leaves as
+<code>crag-payload.svg</code> and <code>crag-payload.md</code>.</p>
+
+<!--SHOT:65-sg-export|Export has no options because there is nothing to choose: the drawing at the current record as one self-contained SVG, and the run summary as Markdown, each behind a single download button that names the file it will write.-->
+
+<h2 id="ch-stategraph-layout">Why the layout is not dagre</h2>
+
+<p>The session graph tab is laid out by dagre; this drawing is laid out by code written for it.
+That was not a preference. Dagre breaks cycles the way most layered layout
+engines do — by reversing an offending edge, laying out the resulting acyclic graph, and
+declaring the job done. Pointed at the corrective loop, it drew <code>rewrite → router</code> as
+<code>router → rewrite</code>: the exact opposite of what ran, rendered cleanly and confidently.
+A graph view that shows the reverse of the truth is worse than no graph view, because it is
+believed.</p>
+
+<p>What replaced it is a rank layout with gutter routing. A cycle-closing edge is marked as one
+and routed as a returning lane through the gutters, re-entering its target through the same face
+every other edge uses, so the arrowhead still points into the box and the direction on screen is
+the direction that ran. The lane costs vertical space, which is the honest price of drawing a
+loop as a loop. The session Graph tab keeps dagre and is welcome to it: that graph has no cycles
+to break.</p>
+
+<h2 id="ch-stategraph-two-graphs">Two things called graph</h2>
+
+<p>The app ships both words, and both of them stay, because they name two different jobs.
+Chapter 6 documents the session tab: a DAG of one run, one node per prompt, turn, tool call,
+subagent and answer, reconstructed from the events after they arrived. This chapter documents a
+segment beside sessions and fleets that draws a topology fixed before the run started. Renaming
+either one would only have made the other harder to find.</p>
+
+<table class="tbl">
+  <tr><th></th><th>the session tab named graph</th><th>the state graph segment</th></tr>
+  <tr><td>where it lives</td><td>a tab inside one session</td><td>the third button of the sidebar's segmented control</td></tr>
+  <tr><td>what a node is</td><td>a prompt, a turn, a tool call, a subagent, an answer</td><td>a node you declared in your own code</td></tr>
+  <tr><td>where it comes from</td><td>folded out of the event stream after the fact</td><td>the topology record written at <code>compile()</code></td></tr>
+  <tr><td>when it exists</td><td>after events arrive</td><td>before the first token</td></tr>
+  <tr><td>layout</td><td>React Flow with dagre</td><td>this project's own rank layout with gutter routing</td></tr>
+  <tr><td>cycles</td><td>none to draw</td><td>marked, routed as returning lanes, never reversed</td></tr>
+</table>

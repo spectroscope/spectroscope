@@ -18,7 +18,7 @@ small set of client frames in the other. Open <code>http://localhost:8080</code>
       the <strong>DE/EN</strong> toggle, the design drawer, the <strong>provider picker</strong>
       chip, the <strong>context ring</strong> (appears once tokens flow) and the Stop button
       while a run is active.</li>
-  <li><strong>Tab bar</strong>: chat · spectrum · trace · graph · text · lab — six lowercase lenses over the same state (the labels are wire vocabulary; trace carries a live frame count).</li>
+  <li><strong>Tab bar</strong>: chat · spectrum · trace · graph · text · lab — six lowercase lenses over the same state (the labels are wire vocabulary; trace carries a live frame count). Entering a fleet swaps the whole row for the fleet's own bar — chapter 15b.</li>
   <li><strong>Footer</strong>: run and session token totals in tabular numerals, a run status
       dot, and the connection dot.</li>
 </ul>
@@ -33,7 +33,7 @@ view in this chapter works identically for both.</p>
 
 <h2 id="ch-chat-conversation">The conversation</h2>
 
-<!--SHOT:08-chat-scenario-top|A full conversation (here: the deterministic “coding” scenario): user prompt, collapsible Thinking disclosure, tool cards with gate chips, markdown answer cards.-->
+<!--SHOT:43-chat-answer|A real two-turn run against local Ollama: your prompt as a flat bubble on the right, the answer as bare text on the left, the finished reasoning collapsed to its character count, and each call as a hairline — read_file plain, run_command carrying “gate: allowed”. The faint line under every turn is what it cost: tokens in and out, duration, the clock and the model that served it.-->
 
 <ul>
   <li><strong>Markdown answers.</strong> Assistant turns render through a dependency-free
@@ -49,7 +49,13 @@ view in this chapter works identically for both.</p>
       preview + <strong>gate chip</strong> + duration. The gate chip is the didactic point —
       <em>Gate: allowed / denied / waiting</em> appears only for permission-gated calls, so
       the three control paths (free tool, gated tool, hook-blocked call) read differently at
-      a glance. Expanding shows full input and output JSON with copy buttons.</li>
+      a glance. Expanding gives the call <strong>three faces</strong>: <code>structured</code>
+      draws it as the thing it is (a shell call as its command and its output, a read as the
+      file and its content), <code>json</code> as collapsible input and output trees, and
+      <code>raw</code> as the untouched pair — with a copy button for the output beside them.
+      The face is a reading mode rather than card state: switching it on one card switches
+      every card, and the browser remembers the choice. Where an imported call handed back a
+      picture, the picture sits under the body — the section after this one.</li>
   <li><strong>Subagent threads.</strong> Consecutive turns of one child nest under a
       pastel-edged thread block (header: agent id, role label, task). Interleaving splits
       threads honestly — the Trace keeps the flat truth. More in chapter 14.</li>
@@ -57,7 +63,73 @@ view in this chapter works identically for both.</p>
       lines (localized live); a failed run gets an error card with a “Send again” link.</li>
 </ul>
 
-<!--SHOT:08b-chat-scenario-threads|Subagent threads: two parallel workers from a fan-out, each with its own pastel-edged thread, status lines and tool cards; the A2A result closes each thread.-->
+<!--SHOT:46-chat-tool-open|One call opened: the face row reads structured · json · raw, and structured has drawn the shell call as COMMAND and OUTPUT instead of a JSON pair. The head keeps the gate chip, the OK and the duration, so a shut card still says what happened.-->
+
+<!--SHOT:08b-chat-scenario-threads|Subagent threads: the planner child the build_plan scenario spawns rides in its own edged block, here shut to its id and its 12 s. The parent's own calls read on around it, each carrying its gate chip — an allowed run_command, a denied MCP call.-->
+
+<h2 id="ch-chat-pictures">Pictures out of an imported transcript</h2>
+
+<p>An imported Claude Code transcript usually carries pictures — a screenshot pasted into a
+prompt, a browser tool handing back what it saw — and the importer used to read the base64
+block, count its bytes, write <code>[image/png · 31.0 KB]</code> and drop the bytes on the
+floor. The bytes are in the file and are already in memory by the time anything reads them,
+so they now ride on the frame itself (<code>attachment_image</code>, a type that exists for
+imports and never crosses the wire) and are drawn where they belong. That old sentence
+survives as the picture's label. Chapter 8 covers the import itself.</p>
+
+<ul>
+  <li><strong>In the bubble.</strong> A picture that arrived with a message sits above its
+      words as a bounded thumbnail (at most 160&nbsp;px wide, 120&nbsp;px tall). Where the
+      record said nothing else — no sentence, just the screenshot — the picture <em>is</em>
+      the message and gets a bubble of its own instead of gluing itself to whatever was
+      typed next, which is a different message. A picture pasted into a prompt that was
+      queued behind a running turn arrives the same way.</li>
+  <li><strong>On the tool card.</strong> What a tool handed back is drawn under the card's
+      body, bounded at 320&nbsp;px tall and loaded lazily. This is the common case by a wide
+      margin: of the 8,788 image blocks in the corpus this was measured against, roughly
+      7,300 sat in a tool result rather than in a person's message.</li>
+</ul>
+
+<p>The same picture appears twice more — as its own section in the trace row that carried it
+(chapter 6), and on the Lab's agent card (chapter 7). In the bubble and on the card it also
+opens: the cursor becomes a magnifier over a picture that does, and an accent hairline draws
+itself on hover. Clicking one opens the <strong>lightbox</strong>, which is mounted at app level
+rather than inside the chat, because the walk has to cross surfaces. <code>←</code> and
+<code>→</code> step through every picture in the session in stream order — the ones a message
+brought and the ones a tool returned, interleaved as they happened — wrapping at both ends,
+with a counter saying which of how many; Esc closes. The bar above the picture names where it
+came from (“from a message”, or “from” and the tool's name) and carries the file's own note
+beside it.</p>
+
+<p>A picture also has <strong>three faces</strong>, in the trace's own idiom:
+<code>picture</code>, <code>base64</code> and <code>file</code>. <code>base64</code> is the
+string itself, headed with the media type and its character count, copyable in one press.
+<code>file</code> is the <code>.jsonl</code> line the picture lives on, with three lines
+either side for orientation — the neighbours clipped, the line itself cut into segments of
+readable JSON with every base64 blob standing in as a measured absence you can click to land
+on the string. Every blob, not only this picture's: one record often carries several, and the
+head says how many. Nothing is fetched for any of this, because the import holds the file's
+lines byte for byte and knows which line produced which frame. The face survives a step to the
+next picture, deliberately — comparing where three screenshots sit in one file should not cost
+three presses.</p>
+
+<p>Two buttons finish the bar. <strong>save</strong> writes bytes that are already in the page,
+so nothing leaves the machine and the picture really is a file afterwards.
+<strong>folder</strong> opens the <em>transcript's</em> folder, and its tooltip says why it is
+not the picture's: the picture is not a file on disk, it is base64 inside the
+<code>.jsonl</code>. That button appears only for a session opened from the store — a picked
+file and a paste have no address behind them, though both still get the <code>file</code> face,
+because the lines came in with them.</p>
+
+<div class="callout">
+  <div class="co-title">what the pictures do not do</div>
+  <p>Nothing reads what is <em>in</em> a picture: no OCR, no caption, no search by what a
+  screenshot shows, and the viewer neither zooms nor pans. Generated images (chapter 17) keep
+  their own gallery and stay out of this walk — handed over and painted here are different
+  provenances, and the app refuses to blur them. And the frame is import-only by construction,
+  so all three JSONL formats an export can write drop every picture; only the HTML export
+  carries the bytes out.</p>
+</div>
 
 <h2 id="ch-chat-composer">The composer</h2>
 <ul>
@@ -77,29 +149,37 @@ view in this chapter works identically for both.</p>
       disables itself with a setup hint. Chapter 17 has the setup.</li>
 </ul>
 
-<h2 id="ch-chat-permission">The permission dialog</h2>
+<h2 id="ch-chat-permission">The permission gate</h2>
 
 <p>When the agent wants to run a gated tool and no allowlist rule covers it, the run
-genuinely pauses — the agent's virtual thread parks on a future server-side — and the
-dialog takes over:</p>
+genuinely pauses — the agent's virtual thread parks on a future server-side — and a
+<strong>gate bar</strong> rises at the foot of the chat. A bar rather than a modal, on
+purpose: the pending request is first-class UI, the conversation it is about stays
+readable behind it, and the run waits either way.</p>
 
-<!--SHOT:23-permission-dialog|The serious moment: run_command wants to execute uname -a. The input is shown in full — you approve what you see. Deny is the focused default; Escape denies.-->
+<!--SHOT:23-permission-dialog|The serious moment: run_command wants to run pwd. The bar names the gate, the agent that asked and the call; the card above it stands at “gate: waiting …” with its timer running, and Deny sits left of Allow.-->
 
 <ul>
-  <li>The input is shown <strong>in full</strong> as pretty JSON — you approve what you see,
-      never a summary.</li>
-  <li><strong>Deny is the safe default</strong>: it holds focus, Escape denies, Tab is trapped,
-      and clicking the backdrop does nothing — a decision must be deliberate.</li>
-  <li>When a subagent asks, the dialog names it (“requested by worker-1”).</li>
-  <li>Multiple pending requests queue with a counter (“1 of 3”).</li>
+  <li>The row itself is a glance — the tool and its input as one compact line, the whole of
+      it in the title. The chevron opens the <strong>read</strong>: the input in full as
+      pretty JSON, unclipped, in a box that scrolls with the buttons above it, so no payload
+      can push them anywhere. You approve what you see, never a summary.</li>
+  <li>Neither button is preselected and the bar takes no focus of its own — a decision has to
+      be made deliberately, and the rest of the app stays usable while the run waits.</li>
+  <li>The agent that asked wears its own colour beside the word <code>gate</code>, so a
+      subagent's request is never read as the main agent's.</li>
+  <li>Further requests queue behind the one on screen and say so: <code>+2 waiting</code>.</li>
+  <li>Opened, the bar also keeps the <strong>record</strong> — the last six decisions of this
+      session, newest first, each as allowed or denied with its tool and its agent.</li>
 </ul>
 
-<p>The two checkboxes appear once you tick the first:</p>
+<p>The two checkboxes appear one behind the other:</p>
 
-<!--SHOT:23b-permission-dialog-remember|“Always allow: run_command (this session)” — and, gated behind it, “Persist (project settings, .spectro/settings.json)”. Only Allow carries the flags.-->
+<!--SHOT:23b-permission-dialog-remember|Opened, with “always allow (session)” ticked — which is what makes “save to project” appear beside it — and the input standing underneath in full. Only Allow carries the flags.-->
 
-<p><strong>Always allow (this session)</strong> remembers the approval for this browser
-tab only. <strong>Persist</strong> appends the rule to the project's
+<p><strong>always allow (session)</strong> remembers the approval for this browser
+tab only. <strong>save to project</strong>, which appears once the first is ticked and only
+for a session that has a workspace, appends the rule to that workspace's
 <code>.spectro/settings.json</code> — the same <code>autoApprove</code> list the CLI reads,
 so a web decision is honored by the terminal on its next run. Remembered rules are
 <strong>prefix-scoped</strong> for risky tools (a <code>git status</code> approval becomes

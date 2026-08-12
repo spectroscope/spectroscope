@@ -68,3 +68,8 @@ docs/guide-assets/demo-home/.spectro/logs/
 docs/guide-assets/demo-home/.spectro/skills/
 docs/guide-assets/demo-home/.spectro/leveling.json
 docs/guide-assets/demo-home/.spectro/sessions-index.json
+
+# a capture run leaves its live sessions in the demo home; the seven curated
+# ones are tracked, everything the run adds is byproduct (see demo-home/README.md)
+docs/guide-assets/demo-home/.spectro/llm-wire/
+docs/guide-assets/demo-home/spectro-demo/

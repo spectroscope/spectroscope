@@ -1,0 +1,238 @@
+<!-- ============================== CH 26b ============================== -->
+<h1 data-ch="26b" id="ch-llmwire"><span class="ch-num">Chapter 26b</span>The llm-wire</h1>
+
+<p class="lead">The session file records what the app said about a run; this file records what
+the backend actually posted to a model and what came back, verbatim. One NDJSON sidecar per
+session, written at send time — a crash mid-generation still leaves the request on record.</p>
+
+<!--SVG:22-llm-wire|One exchange end to end: the request line written the moment the call leaves, the stream lines buffered as they arrive, the response line appended at close, the two halves joined by xid — and the three places a reader meets that pair again, the trace rows, the second spectrum baseline and the download in the archive bar.-->
+
+<h2 id="ch-llmwire-file">The sidecar file</h2>
+
+<p>One file per session at <code>~/.spectro/llm-wire/&lt;session-id&gt;.llm.jsonl</code> — beside
+the sessions directory and deliberately not inside it, because the session list folds every
+<code>sessions/*.jsonl</code> in full and a wire file can be orders of magnitude larger than the
+session it records. The id is never trusted as a path: the one path rule the recorder and all
+three read endpoints share refuses anything that is not a plain basename
+(<code>[A-Za-z0-9][A-Za-z0-9-]*</code>), so a <code>?resume=</code> parameter cannot steer the
+sidecar into another directory.</p>
+
+<p>Voice happens before any session exists, so both speech routes share a day file named
+<code>stt-&lt;yyyy-MM-dd&gt;.llm.jsonl</code> in the same folder — the batch transcription POST and
+the live socket append to the same one. The sidecar is per session everywhere else, per day for
+speech, and a reader hunting their dictation under a session id will not find it.</p>
+
+<p>Every line is one atomic write. The recorder opens the file with <code>O_APPEND</code>, writes
+the whole serialized line in a single channel write and closes again, holding no handle in
+between, so two recorders on the same file — the speech day file, a doubly resumed session —
+cannot interleave fragments mid-line. A write failure prints one line to stderr and is silent
+afterwards: the record is an additive mirror of a run and must never be the thing that kills
+it.</p>
+
+<p>The ceiling is 256&thinsp;MiB per file and it latches. The first payload that would cross it
+writes a single <code>llm_wire_truncated</code> line carrying <code>reachedBytes</code> and
+<code>ceilingBytes</code>; from then on every body is dropped and its line says
+<code>omitted:"ceiling"</code> while the ledger keeps the measured <code>bodyBytes</code> — the
+history of the calls survives even when their contents do not. The byte count is seeded from a
+file that already exists, so a resumed session gets no fresh allowance, and a file already past
+the ceiling latches without a second marker because the line that crossed it wrote one.</p>
+
+<h2 id="ch-llmwire-lines">The three line types</h2>
+
+<p>An exchange is two lines. <code>llm_request</code> is written the moment the call leaves,
+<code>llm_response</code> when it closes, and the two are joined by <code>xid</code> — a UUID,
+never a position, because parallel subagents share one recorder and their lines interleave.
+Serialization is <code>NON_NULL</code> throughout: an absent field is missing from the line, never
+present as <code>null</code>.</p>
+
+<div class="ref"><div class="ref-head"><code class="name">llm_request</code><span class="meta">written at send time</span></div><div class="ref-body">
+<table class="tbl dense"><tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>xid</code></td><td>string</td><td>UUID — the only join between the two halves of one exchange</td></tr>
+<tr><td><code>agentId</code></td><td>string</td><td>the calling agent; the provider itself knows neither agent nor turn</td></tr>
+<tr><td><code>turn</code></td><td>int?</td><td>1-based; absent where no turn exists (speech)</td></tr>
+<tr><td><code>kind</code></td><td>string</td><td><code>chat</code> | <code>compaction</code> | <code>image</code> | <code>stt</code> — the call site's knowledge, not the provider's</td></tr>
+<tr><td><code>provider</code> · <code>model</code></td><td>string</td><td>the backend label as the session knows it, and the model id the request names</td></tr>
+<tr><td><code>transport</code></td><td>string</td><td>who owned the socket</td></tr>
+<tr><td><code>method</code></td><td>string?</td><td><code>POST</code> on every HTTP and SDK route; absent where no verb exists (the speech socket, the local process)</td></tr>
+<tr><td><code>url</code></td><td>string</td><td>the full request URL; a route with no host names itself there instead</td></tr>
+<tr><td><code>headers</code></td><td>object?</td><td>the headers as the provider set them, credential values redacted, key-sorted; absent when none were recorded</td></tr>
+<tr><td><code>fidelity</code></td><td>string</td><td>what the recorded body is worth</td></tr>
+<tr><td><code>body</code></td><td>string?</td><td>the request body, verbatim; absent past the ceiling</td></tr>
+<tr><td><code>bodyBytes</code></td><td>number</td><td>UTF-8 size of that body — measured whether or not the body survives</td></tr>
+<tr><td><code>omitted</code></td><td>string?</td><td><code>"ceiling"</code>, and nothing else today</td></tr>
+<tr><td><code>ts</code></td><td>number</td><td>epoch millis at send time</td></tr></table></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">llm_response</code><span class="meta">written at close</span></div><div class="ref-body">
+<table class="tbl dense"><tr><th>field</th><th>type</th><th></th></tr>
+<tr><td><code>xid</code> · <code>agentId</code> · <code>turn</code></td><td></td><td>as on the request; the <code>xid</code> is what pairs them</td></tr>
+<tr><td><code>status</code></td><td>int?</td><td>the HTTP status — absent when the connection never answered, and absent on a natural Anthropic finish, where the SDK exposes none</td></tr>
+<tr><td><code>fidelity</code></td><td>string</td><td>this half's own label, which may differ from the request's</td></tr>
+<tr><td><code>lines</code></td><td>string[]?</td><td>the received stream lines, verbatim, without their trailing newline</td></tr>
+<tr><td><code>body</code></td><td>string?</td><td>a single-payload response (image generation, an error detail) instead of lines — the two are mutually exclusive</td></tr>
+<tr><td><code>lineCount</code></td><td>int?</td><td>appears only when a streamed body was dropped at the ceiling; while the lines themselves are on the line, counting them is the reader's job</td></tr>
+<tr><td><code>bodyBytes</code></td><td>number</td><td>UTF-8 size of the body, or of the summed lines</td></tr>
+<tr><td><code>aborted</code></td><td>bool?</td><td><code>true</code> when a cancel tore the stream down; absent otherwise, never <code>false</code></td></tr>
+<tr><td><code>error</code></td><td>string?</td><td>the failure in one line; absent on a clean close</td></tr>
+<tr><td><code>durationMs</code></td><td>number</td><td>close minus send, computed from the request's own stamp</td></tr>
+<tr><td><code>omitted</code> · <code>ts</code></td><td></td><td>as on the request; <code>ts</code> is the close</td></tr></table></div></div>
+
+<div class="ref"><div class="ref-head"><code class="name">llm_wire_truncated</code><span class="meta">at most once per file</span></div><div class="ref-body">
+<p><code>reachedBytes</code>, <code>ceilingBytes</code>, <code>ts</code> — no <code>xid</code>, because
+the marker belongs to the file and not to an exchange. It means “bodies stop here”, and the ledger
+rows after it are still complete.</p></div></div>
+
+<p>An aborted exchange records the lines that were consumed before the teardown. Bytes the server
+had sent but nothing had read are dropped on purpose — draining them to make the record look
+tidier would resurrect the slow-cancel bug that the abort path exists to avoid.</p>
+
+<p>A finished exchange is written a third time, into the session file itself, as the additive
+RunEvent <code>llm_exchange</code> — file first, socket second — so a session reopened next month
+still knows every model call it made even when the sidecar has been deleted. It carries the
+summary and no bodies. The <code>llm_request</code> frame is the counterexample and the one
+exception to chapter 25's rule that server-to-client traffic is nothing but serialized RunEvents:
+it is a hand-built frame, sent and never stored, because the only facts that exist at send time
+are the ones that say nothing about how the call went.</p>
+
+<h2 id="ch-llmwire-fidelity">Fidelity and transport</h2>
+
+<p>Fidelity is part of the record and never an implication. Each value is a separately measured
+promise about what the recorded string is worth, and the two halves of one exchange can carry
+different labels.</p>
+
+<table class="tbl">
+  <tr><th>fidelity</th><th>the promise</th></tr>
+  <tr><td><code>bytes</code></td><td>the recorded string <em>is</em> what went over the socket — the harness's own HTTP providers post the exact string they hand the tap</td></tr>
+  <tr><td><code>sdk-json</code></td><td>the SDK owned the socket and the recorded request body is byte-equal to what it posts, proven over loopback</td></tr>
+  <tr><td><code>sdk-events</code></td><td>the stream reconstructed from the SDK's typed events: content-equal per event, field order not guaranteed, keep-alives absent</td></tr>
+  <tr><td><code>encoded</code></td><td>the recording's own base64 of real input bytes that never rode a socket as a string — the speech audio</td></tr>
+</table>
+
+<p>Anthropic therefore writes <code>sdk-json</code> on the request and <code>sdk-events</code> on
+the response, while Ollama and the OpenAI-compatible provider write <code>bytes</code> on both
+halves: they own their connection and record the string they post. The detail pane prints one
+honest sentence per fidelity, per side, rather than one verdict for the exchange.</p>
+
+<p><code>transport</code> is the second recorded label and names who owned the socket:
+<code>sdk</code> a vendor SDK, <code>http</code> the harness's own client, <code>websocket</code>
+the live speech route, <code>process</code> the local <code>whisper-cli</code> — whose URL is
+spelled <code>process://whisper-cli</code> and whose trace row prints the executable instead of an
+invented HTTP verb. No comment in the source lists all four; the field is the word the call site
+chose, and those are the words on disk.</p>
+
+<h2 id="ch-llmwire-switch">Always on, with one exception</h2>
+
+<p>There is no flag, no environment variable and no settings key. The web server opens a recorder
+wherever it mints a session store, fresh and resumed alike; the command line opens one beside its
+own store; the headless and cron runner does the same. Recording the backend conversation is what
+running spectroscope means, not a mode you enter — and the state-graph file that ships in the same
+release is the opposite case, where value recording stays off until you turn it on.</p>
+
+<p>The exception is the library. <code>AgentOptions.llmWire</code> is nullable, and a provider that
+gets no tap records nothing and behaves byte-identically to a build without the feature; the
+pre-wire constructor arity still exists for exactly that. An embedder who wants the record hands
+the builder an <code>LlmWireRecorder</code>, and a session id is all the recorder needs to place
+the file.</p>
+
+<h2 id="ch-llmwire-redaction">What is redacted</h2>
+
+<p>Exactly one thing: the value of a credential header. Seven names are matched
+case-insensitively — <code>authorization</code>, <code>proxy-authorization</code>,
+<code>x-api-key</code>, <code>api-key</code>, <code>x-goog-api-key</code>, <code>cookie</code>,
+<code>set-cookie</code> — and each match's value becomes the literal
+<code>REDACTED(<em>n</em> chars)</code>. Every other header passes through untouched, and the map
+is sorted by key so the same request writes the same line twice.</p>
+
+<p>The rule lives in the recorder and not in the adapters: a provider hands over the headers it
+really set, real values included, so no adapter can forget to scrub. Two ordinary local setups
+therefore record no credential at all — a keyless LM Studio sets nothing but
+<code>Content-Type</code>, and the Anthropic path records no headers whatsoever because the SDK
+owns the socket, which the detail pane says in those words: “no headers recorded — the SDK owns
+the socket here.”</p>
+
+<div class="callout">
+  <div class="co-title">nothing in the body is scrubbed</div>
+  <p>Bodies are recorded as they are: the full system prompt, the entire replayed history, every
+  tool schema, base64 images and documents, the compaction summary. A secret pasted into a prompt
+  is a secret in this file. The twelve pattern rules that <em>do</em> catch credentials by shape —
+  private keys, provider keys, bearer strings, JWTs and the rest — belong to a different file, the
+  state graph's <code>.state.jsonl</code>, where the clipper applies them to recorded values; they
+  never run over the llm-wire. Treat <code>~/.spectro/llm-wire/</code> as being exactly as
+  sensitive as the conversations it holds.</p>
+</div>
+
+<h2 id="ch-llmwire-reading">Reading a recorded exchange</h2>
+
+<p>There is no llm-wire tab. The surface is the session's <code>trace</code> tab, where a finished
+exchange arrives as three consecutive rows: <code>llm_request</code> with an ↑ at the instant it
+was sent, <code>llm_response</code> with a ↓ at the instant it closed, and
+<code>llm_exchange</code> as the closing summary. Only the first and the third are lines anywhere
+— the response row is manufactured for display, half a step in front of the summary, and exists in
+no file.</p>
+
+<p>Two filters find them. <code>llm</code> is a filter chip of its own rather than a fold into
+<code>other</code>, and beside it sits an LLM-direction filter with three settings: to the LLM
+(↑ request), from the LLM (↓ response), harness-internal (·). A vertical glyph means the row
+actually left this machine; the dot means it never did.</p>
+
+<p>An expanded llm row offers three faces where other rows offer four. <strong>Structured</strong>
+breaks the request into its parts — the system prompt with its character count, the messages with
+their per-message block counts, the tool schemas — and a body in a shape it does not recognize says
+so and hands over to the tree, because an empty pane would read as “the request was empty”.
+<strong>Insight</strong> is a tree over the parsed body. <strong>Wire</strong> prints the request
+line as HTTP writes it, then the recorded headers, then the body, then the response one numbered
+line at a time. <strong>Source</strong> is not offered for these three types: the endpoint
+re-serializes parsed nodes, so the line this frame was read from, byte for byte, is not a thing
+that exists here.</p>
+
+<p>Two caps keep that pane readable and both announce themselves. The response stops at 200 lines
+with “showing X of Y response lines.” and a button for the rest. Base64 is never printed anywhere:
+each run of it is cut out and replaced by a mark carrying the length measured on the recorded line.
+The answer is not reassembled either — the reassembled text is the chat, and a second reassembly in
+the browser would be a second truth. Bodies never travel on the socket at all; the live frames
+carry metadata only and the pane fetches one exchange's bodies on the gesture that opens it.</p>
+
+<p>Spectrum draws a second baseline under every agent lane, carrying that agent's exchanges on the
+same time axis as the app-protocol ticks above it, so a call sits under the moment that caused it.
+The two tracks stay apart on purpose: the app protocol and the conversation with the model are two
+stories about one moment. A lane whose agent never called a model is empty rather than absent, and
+a mark is coloured by what was measured and nothing else — it came back, or it never answered.</p>
+
+<p>The whole file downloads from the archive bar of a stored session, as a plain link labelled
+<code>llm wire</code> next to <code>export</code>, saving as
+<code>&lt;session-id&gt;.llm.jsonl</code>. It is offered only when the index answered non-empty, so
+the link never names an empty file, and it is offered only there — a live session shows no download
+button, so open the stored session first or read the route directly.</p>
+
+<h2 id="ch-llmwire-rest">The three reads</h2>
+
+<p>All three sit behind the same front door as the session reads of chapter 26: a loopback peer, a
+localhost <code>Host</code> header and an <code>Origin</code> that is loopback or absent. Every
+refusal answers 404 and explains nothing — a foreign caller, a malformed id and a session that
+never called a model are indistinguishable from outside.</p>
+
+<table class="tbl dense">
+  <tr><th>endpoint</th><th>returns</th><th>notes &amp; guards</th></tr>
+  <tr><td><code>GET /api/sessions/{id}/llm-wire</code></td><td>the sidecar verbatim</td><td>the wire-record twin of the session export: <code>application/x-ndjson</code>, <code>X-Content-Type-Options: nosniff</code>, served as an attachment named <code>&lt;id&gt;.llm.jsonl</code> — recorded model traffic is caller-shaped text and must never reach an HTML parsing context</td></tr>
+  <tr><td><code>GET /api/sessions/{id}/llm-wire/index</code></td><td>the bodiless ledger: one object per exchange, in file order</td><td>the two halves pair by <code>xid</code> <em>while</em> the file streams past; bodies and stream lines are read, counted and never returned, because one sidecar can dwarf the session it records. A torn tail line is skipped; an exchange still open reports <code>status</code> null</td></tr>
+  <tr><td><code>GET /api/sessions/{id}/llm-wire/exchange/{xid}</code></td><td><code>{request, response}</code>, both lines parsed</td><td>the drill-in behind one ledger row: <code>xid</code> must be UUID-shaped, and the scan stops as soon as both lines are found, so an early exchange in a huge file never costs a full read. <code>response</code> is null while the exchange is open</td></tr>
+  <tr><td><code>DELETE /api/sessions/{id}</code></td><td>204 · 400 · 404</td><td>the session delete of chapter 26 cascades here <strong>unconditionally</strong>, not gated on the session file existing — which is what makes the speech day files and an orphaned sidecar deletable at all. 404 only when neither the session nor a sidecar was there</td></tr>
+</table>
+
+<h2 id="ch-llmwire-gaps">What it does not record</h2>
+
+<p>The session-less endpoints — explain and translate — and the orchestrator's panel lanes are
+declared, not captured, and the interface says so rather than implying coverage it does not have.
+A live speech session is complete about what the model said and deliberately incomplete about what
+it heard: the spoken bytes ride the socket in pieces and are not on the request line, which the
+record names instead of hiding. What the file holds is the model traffic of a session — not every
+model call the application makes.</p>
+
+<p>One finding is open, recorded rather than quietly carried: the header redaction prints the
+credential's exact length. The number in <code>REDACTED(<em>n</em> chars)</code> narrows the search
+for anyone who obtains the file, and it is taken with Java's <code>String.length()</code>, so it
+counts UTF-16 code units and not UTF-8 bytes — equal for an ASCII key, unequal in general, and not
+a byte count whatever it looks like. The graph layer, reviewed in the same week, already answers
+with a coarse band instead — <code>1-8</code>, <code>9-16</code>, <code>17-32</code>,
+<code>33-64</code>, <code>65-128</code>, <code>129+</code>, measured in UTF-8 bytes — and its own
+source names the exact length here as the reason. The wire is to follow; until it does, that number
+is real.</p>
