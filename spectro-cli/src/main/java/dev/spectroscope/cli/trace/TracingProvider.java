@@ -54,6 +54,18 @@ public final class TracingProvider implements LlmProvider {
         return new TracedStream(delegate.stream(request));
     }
 
+    /**
+     * Delegates: {@code --verbose} wraps the provider the banner then reads its
+     * address off, and an observer must not change what the observed thing says
+     * about itself (card 193).
+     *
+     * @return the wrapped provider's own endpoint
+     */
+    @Override
+    public String endpoint() {
+        return delegate.endpoint();
+    }
+
     // ------------------------------------------------------------- ⇢ request
 
     /**

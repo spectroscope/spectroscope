@@ -243,6 +243,99 @@ class DoctorProviderCheckTest {
                 "lmstudio", "http://localhost:1234", false));
     }
 
+    // ── card 193: the two doctor lines that print an address ─────────────────
+    // Both were moved onto endpointFor by the card and neither was pinned:
+    // reverting line 203 to config.baseUrl() and line 216 to
+    // effectiveOpenAiBaseUrl(provider, config.baseUrl()) left the whole
+    // :spectro-cli:test module green. Two of the card's five surfaces had no
+    // guard at all, which is the same as not having been changed.
+
+    @Test
+    void theOllamaDoctorLineProbesAndNamesThePerProviderAddress() throws IOException {
+        // Two closed ports: only WHICH one the line names is under test.
+        String out = doctorOutputForSettings("""
+                { "provider": "ollama", "model": "qwen3",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "ollamaBaseUrl": "http://127.0.0.1:5222" }
+                """);
+
+        assertTrue(out.contains("ollama at http://127.0.0.1:5222"),
+                "doctor must probe and name ollama's OWN address, got:\n" + out);
+        assertFalse(out.contains("5111"),
+                "the legacy shared baseUrl is not what an ollama run dials, got:\n" + out);
+    }
+
+    @Test
+    void theOpenAiCompatDoctorLineProbesAndNamesLmStudiosOwnAddress() throws IOException {
+        String out = doctorOutputForSettings("""
+                { "provider": "lmstudio", "model": "local-model",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "lmstudioBaseUrl": "http://127.0.0.1:5222" }
+                """);
+
+        assertTrue(out.contains("openai-compatible server at http://127.0.0.1:5222"),
+                "doctor must probe and name LM Studio's OWN address, got:\n" + out);
+        assertFalse(out.contains("5111"),
+                "the legacy shared baseUrl is not what an lmstudio run dials, got:\n" + out);
+    }
+
+    // ── card 193, finding 5: the fixed priority, made visible ────────────────
+
+    @Test
+    void aPerProviderAddressOutrankingAHigherLayerBaseUrlIsSaidOutLoud() {
+        // The measured case: --base-url on the command line, the per-provider
+        // address in the environment. endpointFor applies a FIXED field
+        // priority on top of the folded layers, so the flag loses — and the
+        // env shadow report says nothing, because it keys per field and both
+        // fields won their own.
+        List<DoctorCommand.Line> lines = DoctorCommand.perProviderAddressLines(
+                "ollama", "http://env-box:11434",
+                new SpectroConfig.Origin("env", List.of()),
+                new SpectroConfig.Origin("flags", List.of()));
+
+        assertEquals(1, lines.size(), "exactly one line, and it is a note: " + lines);
+        String note = lines.get(0).message();
+        assertEquals(DoctorCommand.Kind.INFO, lines.get(0).kind(),
+                "a per-provider address is a legitimate configuration, not a fault");
+        assertTrue(note.contains("ollamaBaseUrl"), note);
+        assertTrue(note.contains("http://env-box:11434"),
+                "name the address that actually wins: " + note);
+        assertTrue(note.contains("from env"), "name the layer the winner came from: " + note);
+        assertTrue(note.contains("from flags"),
+                "and the layer of the value that is being ignored — that is the whole"
+                        + " point of the line: " + note);
+    }
+
+    @Test
+    void nothingIsSaidWhenThereIsNoShadowingToReport() {
+        // No per-provider address: the legacy chain decides, nothing is hidden.
+        assertTrue(DoctorCommand.perProviderAddressLines("ollama", "http://localhost:11434",
+                new SpectroConfig.Origin("defaults", List.of()),
+                new SpectroConfig.Origin("user", List.of())).isEmpty());
+        // A per-provider address and NO baseUrl anywhere: nothing is being
+        // overridden, so a line would be noise.
+        assertTrue(DoctorCommand.perProviderAddressLines("lmstudio", "http://gpu-box:1234",
+                new SpectroConfig.Origin("user", List.of()),
+                new SpectroConfig.Origin("defaults", List.of())).isEmpty());
+        // A provider with no per-provider address field at all.
+        assertTrue(DoctorCommand.perProviderAddressLines("openai", "https://api.openai.com",
+                new SpectroConfig.Origin("defaults", List.of()),
+                new SpectroConfig.Origin("user", List.of())).isEmpty());
+    }
+
+    @Test
+    void theDoctorRunItselfCarriesTheShadowNote() throws IOException {
+        String out = doctorOutputForSettings("""
+                { "provider": "lmstudio", "model": "local-model",
+                  "baseUrl": "http://127.0.0.1:5111",
+                  "lmstudioBaseUrl": "http://127.0.0.1:5222" }
+                """);
+
+        assertTrue(out.contains("lmstudioBaseUrl"),
+                "a doctor that probes 5222 while a baseUrl of 5111 sits in the same file"
+                        + " must say which one it obeyed and why, got:\n" + out);
+    }
+
     // ── the built-in provider's model swap ───────────────────────────────────
 
     @Test
@@ -330,9 +423,13 @@ class DoctorProviderCheckTest {
 
     /** Runs the whole doctor against a user settings file naming {@code provider}. */
     private static String doctorOutputFor(String provider) throws IOException {
+        return doctorOutputForSettings("{\"provider\": \"" + provider + "\"}");
+    }
+
+    /** Runs the whole doctor against a complete user settings document. */
+    private static String doctorOutputForSettings(String json) throws IOException {
         Files.createDirectories(SpectroConfig.USER_SETTINGS_PATH.getParent());
-        Files.writeString(SpectroConfig.USER_SETTINGS_PATH,
-                "{\"provider\": \"" + provider + "\"}");
+        Files.writeString(SpectroConfig.USER_SETTINGS_PATH, json);
         PrintStream original = System.out;
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         System.setOut(new PrintStream(buffer, true, StandardCharsets.UTF_8));
