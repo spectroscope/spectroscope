@@ -393,6 +393,9 @@ export function App() {
   // Per-provider onboarding status from /api/config (ready | needs-key | local),
   // so the picker shows 'add a key to .env' instead of a fake list.
   const [providerStatus, setProviderStatus] = useState<Record<string, string> | null>(null);
+  // Card 193: the address each local-model provider would dial (from
+  // /api/config) — the settings page and the unreachable note name it.
+  const [providerAddress, setProviderAddress] = useState<Record<string, string> | null>(null);
   const [configNonce, setConfigNonce] = useState(0); // bump to re-read /api/config after a key is saved
   // Key PRESENCE per image backend (from /api/config, never values). Drives
   // the gallery dropdown's "no key in .env" hints and the smart default below.
@@ -712,6 +715,11 @@ export function App() {
         // Older servers do not report provider status — leave null (no hints).
         if (alive && c && c.providerStatus && typeof c.providerStatus === "object") {
           setProviderStatus(c.providerStatus as Record<string, string>);
+        }
+        // Older servers do not report the per-provider addresses (card 193) —
+        // leave null and the note falls back to its addressless sentence.
+        if (alive && c && c.providerAddress && typeof c.providerAddress === "object") {
+          setProviderAddress(c.providerAddress as Record<string, string>);
         }
       })
       .catch(() => {});
@@ -1770,6 +1778,7 @@ export function App() {
           viewingLive={viewingLive}
           provider={curProvider}
           providerStatus={providerStatus ?? undefined}
+          providerAddress={providerAddress ?? undefined}
           model={curModel}
           archiveProvider={view.provider ?? undefined}
           status={conn.status}
@@ -2342,7 +2351,9 @@ export function App() {
         onClose={closeSettings}
         section={settingsSection}
         providerStatus={providerStatus ?? undefined}
+        providerAddress={providerAddress ?? undefined}
         onKeySaved={() => setConfigNonce((n) => n + 1)}
+        onAddressSaved={() => setConfigNonce((n) => n + 1)}
         leveling={leveling}
         onShowLocalNotice={() => {
           // The deliberate way back (card 144): settings folds away so the
@@ -2393,6 +2404,23 @@ export function App() {
             /* ignore */
           }
           setLocalChooserOpen(true);
+        }}
+        onOpenSettings={() => {
+          // Card 193: the remote-machine reader goes straight to the address
+          // field — the sheet's job is done (count it as seen), Settings opens
+          // at the session defaults with the same history manners as the gear.
+          setOnboardingOpen(false);
+          setOnboardingDismissed(true);
+          try {
+            localStorage.setItem(ONBOARDED_KEY, "1");
+          } catch {
+            /* ignore */
+          }
+          setSettingsOpen(true);
+          setSettingsSection("session");
+          if (commitUrl({ kind: "settings", section: "session" }, "gesture") === "push") {
+            settingsPushed.current = true;
+          }
         }}
       />
       {localChooserOpen && (

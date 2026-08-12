@@ -31,6 +31,10 @@ export function Onboarding(props: {
   /** "start with the built-in model": closes the sheet and opens the local
    *  chooser — the zero-install path a newcomer should meet first. */
   onStartLocal?: () => void;
+  /** Card 193: the reader whose ollama / LM Studio runs on another machine —
+   *  closes the sheet and opens Settings at the session defaults, where the
+   *  address field sits beside the provider. */
+  onOpenSettings?: () => void;
 }) {
   const de = useLang() === "de";
   if (!props.open) return null;
@@ -166,6 +170,31 @@ export function Onboarding(props: {
             }
           />
         </ul>
+
+        {/* Card 193: the first-run reader with the GPU box across the room is
+            exactly the person the two local options just spoke to — say where
+            the address goes before they conclude "local machine only". */}
+        {props.onOpenSettings && (
+          <p className="ob-remote">
+            {de ? (
+              <>
+                ollama oder LM Studio laufen auf einer anderen Maschine? trag die Adresse in den{" "}
+                <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
+                  Einstellungen
+                </button>{" "}
+                ein — das Feld liegt direkt neben dem Anbieter.
+              </>
+            ) : (
+              <>
+                ollama or LM Studio running on another machine? put its address in{" "}
+                <button type="button" className="ob-opt-cta" onClick={props.onOpenSettings}>
+                  settings
+                </button>{" "}
+                — the field sits right beside the provider.
+              </>
+            )}
+          </p>
+        )}
 
         <div className="ob-foot">
           <p className="ob-foot-note">

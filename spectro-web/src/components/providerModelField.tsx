@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from "react";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { localDownNote } from "./providerAddress";
 import { modelFieldMode, pickModel, type ModelFieldMode } from "./providerPickerMode";
 import { modelAbsentFromList } from "./settingsModelPolicy";
 
@@ -28,7 +29,15 @@ const CUSTOM = "__custom__";
 export function useProviderModels(
   provider: string,
   providerStatus: Record<string, string> | undefined,
-  opts: { model: string; onModelChange: (m: string) => void; autoPick: boolean },
+  opts: {
+    model: string;
+    onModelChange: (m: string) => void;
+    autoPick: boolean;
+    /** Card 193: bump to re-run the probe after something OTHER than the
+     *  provider or its status changed the picture — a saved address moves the
+     *  endpoint without touching either fetch key. */
+    probeEpoch?: number;
+  },
 ): { models: string[]; mode: ModelFieldMode } {
   const { model, onModelChange, autoPick } = opts;
   const [models, setModels] = useState<string[]>([]);
@@ -72,7 +81,9 @@ export function useProviderModels(
     // needs-key→ready when a key is saved, which must refetch the real list with
     // no provider round-trip. model/callbacks are read fresh from `latest` so a
     // snap can't loop back into another fetch and can't act on a stale model.
-  }, [provider, providerStatus?.[provider]]);
+    // probeEpoch joins for card 193: a saved address changes the endpoint the
+    // server-side probe dials while provider and status both stay put.
+  }, [provider, providerStatus?.[provider], opts.probeEpoch]);
 
   return { models, mode: modelFieldMode(provider, providerStatus, models) };
 }
@@ -90,6 +101,7 @@ export function ModelField({
   model,
   onModelChange,
   providerStatus,
+  providerAddress,
   keyAffordance,
   onKeySaved,
   onOpenSettings,
@@ -102,6 +114,9 @@ export function ModelField({
   model: string;
   onModelChange: (m: string) => void;
   providerStatus?: Record<string, string>;
+  /** Card 193: the address each local-model provider would dial, from
+   *  /api/config — the unreachable note names it instead of guessing. */
+  providerAddress?: Record<string, string>;
   keyAffordance: "inline" | "link";
   onKeySaved?: () => void;
   onOpenSettings?: () => void;
@@ -175,7 +190,14 @@ export function ModelField({
     );
   }
 
-  // freetext: no list (backend down / unreachable) — free text, honestly labelled.
+  // freetext: no list (backend down / unreachable) — free text, honestly
+  // labelled. For a local backend the note names the address the probe tried
+  // (card 193): "start ollama" was the wrong advice whenever the backend ran
+  // fine one hostname away.
+  const note =
+    providerStatus?.[provider] === "local"
+      ? localDownNote(provider, providerAddress)
+      : { key: "pp.noList", vars: undefined };
   return (
     <>
       <input
@@ -188,9 +210,7 @@ export function ModelField({
           if (e.key === "Enter") onEnter?.();
         }}
       />
-      <span className="provider-field-note">
-        {t(lang, providerStatus?.[provider] === "local" ? "pp.localDown" : "pp.noList")}
-      </span>
+      <span className="provider-field-note">{t(lang, note.key, note.vars)}</span>
     </>
   );
 }

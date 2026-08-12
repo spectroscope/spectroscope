@@ -28,7 +28,7 @@ export interface Origin {
 /** The settings API's read shape (GET /api/settings), verbatim — see
  *  SettingsController#settings on the server. */
 export interface SettingsView {
-  /** All 17 SpectroConfig fields, resolved across every layer; nulls included. */
+  /** Every SpectroConfig field, resolved across every layer; nulls included. */
   effective: Record<string, unknown>;
   /** Per-field provenance, keyed by field name. */
   origins: Record<string, Origin>;

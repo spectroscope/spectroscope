@@ -163,6 +163,14 @@
 .ob-opt-body a {
   color: var(--accent);
 }
+/* Card 193: the remote-machine pointer under the local options — the reader
+   whose ollama runs on another box learns where the address goes. */
+.ob-remote {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-dim);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
 .ob-foot {
   display: flex;
   align-items: center;

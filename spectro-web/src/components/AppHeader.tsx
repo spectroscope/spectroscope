@@ -43,6 +43,8 @@ export function AppHeader(props: {
   provider?: string;
   /** Per-provider onboarding status from /api/config, forwarded to the picker. */
   providerStatus?: Record<string, string>;
+  /** Card 193: per-provider addresses from /api/config, forwarded to the picker. */
+  providerAddress?: Record<string, string>;
   model?: string;
   archiveProvider?: string;
   status: ConnectionStatus;
@@ -238,6 +240,7 @@ export function AppHeader(props: {
           model={props.model ?? ""}
           status={props.status}
           providerStatus={props.providerStatus}
+          providerAddress={props.providerAddress}
           onApply={props.onApplyProvider}
           onOpenSettings={() => {
             if (!props.settingsOpen) props.onToggleSettings();
