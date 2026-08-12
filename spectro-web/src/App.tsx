@@ -1709,6 +1709,9 @@ export function App() {
           refreshToken={refreshToken}
           onSelectLive={returnToLive}
           onSelectSession={(id) => void openSession(id)}
+          onSettings={openSettingsPage}
+          liveRunning={live.running}
+          resumeId={resumeId}
           stateGraphSource={stateGraphRun?.source ?? null}
           onStateGraphScenario={(run) => {
             // The rail swaps the run UNDER the lifted view: cursor and pick

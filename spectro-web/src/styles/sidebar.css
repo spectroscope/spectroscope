@@ -14,8 +14,11 @@
   background-image: linear-gradient(var(--glint), transparent 140px);
   border-right: 1px solid var(--border);
   /* The top padding moved into .sidebar-head, or a sticky head at top:0 would
-     let the list slide through the gap above it. */
-  padding: 0 var(--sp-3) var(--sp-4);
+     let the list slide through the gap above it. The BOTTOM padding moved into
+     .sidebar-foot for the same reason one turn later: a sticky-bottom child
+     cannot cover padding it does not own, so the list showed through beneath
+     the settings row. */
+  padding: 0 var(--sp-3);
 }
 
 /* The brand, the three actions and the sessions/fleets switch, as one block
@@ -49,17 +52,75 @@
 }
 .brand-mark { flex-shrink: 0; }
 
-/* The three actions read as one block, so they sit closer to each other than to
-   anything else in the column. The wrapper is what keeps the sidebar's own
-   var(--sp-3) rhythm above and below this group. */
-.sidebar-actions {
+/* ---------- The nav list ----------
+   One recipe for seven rows: New chat, Scenarios, Starters, the three segments
+   and Settings. No border, no fill, no button box — the rail's controls stop
+   competing with the session list for the attention the list should win. The
+   left hairline is the same rail-marker idiom .session-row already uses, so a
+   pressed row and a selected session mark themselves the same way. */
+.sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: 1px;
 }
 
-/* Layout only — the look comes from the shared .soft-primary (base.css). */
-.new-chat { width: 100%; }
+/* One hairline between "start something" and "look at something". Without it
+   the rail reads as one undifferentiated column of six identical rows. */
+.sidebar-nav-seg {
+  border-top: 1px solid var(--border);
+  padding-top: var(--sp-2);
+}
+
+.nav-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: 100%;
+  background: none;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-dim);
+  font: inherit;
+  font-size: var(--fs-13);
+  padding: 6px var(--sp-2) 6px 10px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.nav-row:hover { background: var(--surface-2); color: var(--text); }
+.nav-row.active {
+  background: var(--accent-soft);
+  border-left-color: var(--accent);
+  color: var(--text);
+}
+/* Locked by the ladder: dimmed and unpressable, still listed. A feature nobody
+   can see is a feature nobody adopts. */
+.nav-row.is-locked { color: var(--text-faint); cursor: not-allowed; }
+.nav-row.is-locked:hover { background: none; color: var(--text-faint); }
+.nav-row-icon { display: inline-flex; flex: none; }
+.nav-row-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Import, "+ node", the fleet count. Flex-none so a long label gives way first. */
+.nav-row-trailing { display: inline-flex; align-items: center; flex: none; }
+
+/* Settings, at the floor. margin-top:auto puts it there when the list is short;
+   sticky keeps it reachable when the list overflows — and the list must scroll
+   UNDER it, so the background is opaque. */
+.sidebar-foot {
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  background-color: var(--surface);
+  padding: var(--sp-2) 0 var(--sp-4);
+  border-top: 1px solid var(--border);
+}
 
 .sidebar-eyebrow { padding: var(--sp-2) var(--sp-1) 0; }
 .sidebar-eyebrow::before {
@@ -69,7 +130,6 @@
   margin-right: var(--sp-2);
   vertical-align: 1px;
 }
-.sidebar-eyebrow-row { display: flex; align-items: baseline; justify-content: space-between; }
 .scenario-eyebrow { margin-top: var(--sp-2); }
 .scenario-glyph { margin-right: 5px; color: var(--sand); flex: none; vertical-align: -1px; }
 .scenario-row .session-title { color: var(--text-dim); }
@@ -260,17 +320,6 @@
 .import-store-meta { display: flex; gap: var(--sp-2); font-size: var(--fs-11); color: var(--text-dim); }
 .import-store-project { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
 
-/* Sidebar "Szenarien" — its own area (owner decision), separate from Sessions. */
-.sidebar-scenarios {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-2);
-  font-size: var(--fs-13);
-}
-.sidebar-scenarios svg { color: var(--accent); }
-
 /* Scenario dialog — the dedicated surface listing the scripted demo runs. */
 .scn-modal { width: min(640px, 92vw); }
 .scn-tabs {
@@ -460,47 +509,10 @@
   .session-row.active .session-model { color: var(--text-dim); }
 }
 
-/* ---------- A pile: rows too alike to list one by one ---------- */
-
-.session-pile { display: flex; flex-direction: column; gap: 2px; }
-
-.pile-count {
-  flex: none;
-  color: var(--text-faint);
-  font-size: var(--fs-11);
-  font-family: var(--font-mono);
-}
-.pile-chevron {
-  flex: none;
-  color: var(--text-faint);
-  transition: transform var(--t-fast);
-}
-.pile-row.open .pile-chevron { transform: rotate(180deg); }
-.pile-row:hover .pile-count,
-.pile-row:hover .pile-chevron { color: var(--accent); }
-
-/* The pile head sits on a stack: two hairlines peeking out below say "there is
-   more of this underneath" before anything is unfolded. Drawn on the row's own
-   background so it disappears the moment the pile opens. */
-.pile-row:not(.open) {
-  background-image:
-    linear-gradient(var(--border-strong), var(--border-strong)),
-    linear-gradient(var(--border), var(--border));
-  background-repeat: no-repeat;
-  background-size: calc(100% - 46px) 1px, calc(100% - 76px) 1px;
-  background-position: 22px calc(100% - 3px), 37px calc(100% - 1px);
-  padding-bottom: calc(var(--sp-2) + 4px);
-}
-
-/* Members of an unfolded pile: stepped in, and hung off one continuous line
-   so the eye reads them as belonging to the head rather than to the list. */
-.piled-row {
-  margin-left: var(--sp-3);
-  border-left: 1px solid var(--border);
-  border-radius: 0 var(--radius-control) var(--radius-control) 0;
-}
-.piled-row:hover { border-left-color: var(--border-strong); }
-.piled-row.active { border-left-color: var(--accent); }
+/* The fold that used to live here — a stack of look-alike rows behind one head
+   with a count and a chevron — is gone with its markup (owner, 2026-08-12). The
+   rules went with it: an orphan rule is invisible, nothing checks CSS against
+   markup, and the whole visual vocabulary of a deleted feature can outlive it. */
 
 /* Sidebar empty/error state: a quiet dashed slot, not a warning. */
 .sidebar-note {

@@ -1,14 +1,11 @@
-// The sidebar list's two folds: what a session's glyph says, and which rows
-// are so alike that showing all of them is noise.
+// What a session's glyph says, and how a row spells itself out.
+//
+// The second fold this file used to cover — which rows are so alike that
+// showing all of them is noise — is gone with the pile (owner, 2026-08-12).
+// The list is flat, so there is nothing left to group.
 import { describe, expect, it } from "vitest";
 import type { SessionMeta } from "../events";
-import {
-  countLabel,
-  groupSessions,
-  sessionSignal,
-  sessionModelLabel,
-  sessionTitleLines,
-} from "./sessionRows";
+import { countLabel, sessionSignal, sessionModelLabel, sessionTitleLines } from "./sessionRows";
 
 function session(over: Partial<SessionMeta> = {}): SessionMeta {
   return {
@@ -166,109 +163,5 @@ describe("sessionTitleLines", () => {
   it("speaks German too", () => {
     const text = sessionTitleLines(session({ stopReason: "aborted" }), "de", 100_000);
     expect(text).toContain("vorzeitig gestoppt (aborted)");
-  });
-});
-
-describe("groupSessions", () => {
-  const throwaway = (id: string, startedAt: number): SessionMeta =>
-    session({ id, startedAt, firstPrompt: "report your pid" });
-
-  it("leaves a list of distinct sessions alone", () => {
-    const groups = groupSessions([
-      session({ id: "a", firstPrompt: "one" }),
-      session({ id: "b", firstPrompt: "two" }),
-      session({ id: "c", firstPrompt: "three" }),
-    ]);
-    expect(groups).toHaveLength(3);
-    expect(groups.every((g) => g.sessions.length === 1)).toBe(true);
-  });
-
-  it("collapses a run of indistinguishable sessions into one group", () => {
-    const groups = groupSessions([
-      throwaway("a", 5),
-      throwaway("b", 4),
-      throwaway("c", 3),
-      throwaway("d", 2),
-    ]);
-    expect(groups).toHaveLength(1);
-    expect(groups[0].sessions.map((s) => s.id)).toEqual(["a", "b", "c", "d"]);
-  });
-
-  it("leaves a pair alone — two rows are not yet noise", () => {
-    const groups = groupSessions([throwaway("a", 5), throwaway("b", 4)]);
-    expect(groups).toHaveLength(2);
-  });
-
-  it("lets a session that differs in SHAPE out of the group", () => {
-    // Same prompt ten times, but one of them fanned out. That one is the
-    // session a reader is looking for, so it must not hide inside the pile.
-    const groups = groupSessions([
-      throwaway("a", 9),
-      throwaway("b", 8),
-      throwaway("c", 7),
-      session({ id: "fan", startedAt: 6, firstPrompt: "report your pid", agentCount: 4 }),
-      throwaway("d", 5),
-      throwaway("e", 4),
-      throwaway("f", 3),
-    ]);
-    expect(groups.map((g) => g.sessions.map((s) => s.id))).toEqual([
-      ["a", "b", "c"],
-      ["fan"],
-      ["d", "e", "f"],
-    ]);
-  });
-
-  it("keeps an errored run out of a pile of clean ones", () => {
-    const groups = groupSessions([
-      throwaway("a", 5),
-      throwaway("b", 4),
-      throwaway("c", 3),
-      session({ id: "bad", startedAt: 2, firstPrompt: "report your pid", stopReason: "error" }),
-    ]);
-    expect(groups).toHaveLength(2);
-    expect(groups[1].sessions.map((s) => s.id)).toEqual(["bad"]);
-  });
-
-  it("keeps a gated run out of a pile of ungated ones", () => {
-    const groups = groupSessions([
-      throwaway("a", 5),
-      throwaway("b", 4),
-      throwaway("c", 3),
-      session({ id: "gated", startedAt: 2, firstPrompt: "report your pid", gateCount: 1 }),
-    ]);
-    expect(groups).toHaveLength(2);
-    expect(groups[1].sessions[0].id).toBe("gated");
-  });
-
-  it("never groups across different prompts", () => {
-    const groups = groupSessions([
-      throwaway("a", 6),
-      throwaway("b", 5),
-      throwaway("c", 4),
-      session({ id: "x", startedAt: 3, firstPrompt: "something else" }),
-      session({ id: "y", startedAt: 2, firstPrompt: "something else" }),
-      session({ id: "z", startedAt: 1, firstPrompt: "something else" }),
-    ]);
-    expect(groups).toHaveLength(2);
-    expect(groups[0].sessions[0].firstPrompt).toBe("report your pid");
-    expect(groups[1].sessions[0].firstPrompt).toBe("something else");
-  });
-
-  it("gives every group a key that survives a refresh", () => {
-    const first = groupSessions([throwaway("a", 5), throwaway("b", 4), throwaway("c", 3)]);
-    const again = groupSessions([throwaway("a", 5), throwaway("b", 4), throwaway("c", 3)]);
-    expect(first[0].key).toBe(again[0].key);
-    // A key is the group's own, not a neighbour's.
-    const mixed = groupSessions([
-      throwaway("a", 5),
-      throwaway("b", 4),
-      throwaway("c", 3),
-      session({ id: "x", startedAt: 2, firstPrompt: "other" }),
-    ]);
-    expect(new Set(mixed.map((g) => g.key)).size).toBe(mixed.length);
-  });
-
-  it("survives an empty list", () => {
-    expect(groupSessions([])).toEqual([]);
   });
 });

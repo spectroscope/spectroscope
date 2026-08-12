@@ -1,20 +1,23 @@
-// Session navigation. "New chat" is the sidebar's only primary action; the
-// Live row returns to the current socket session; every stored session below
-// it opens as a replay through the same reducer as the live stream.
+// Session navigation. The rail is a nav LIST: New chat, Scenarios and Starters
+// are rows rather than buttons, the three segments are rows rather than a
+// segmented control, and Settings is pinned to the foot. The Live row returns
+// to the current socket session; every stored session below it opens as a
+// replay through the same reducer as the live stream.
+//
+// The list is flat. It used to fold look-alike rows into a pile with a count
+// and a chevron; the owner cut it, and the reason it existed — 229 files from
+// one smoke test that still fires — is an upstream mess, not a list problem.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { SessionMeta } from "../events";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
-import {
-  SessionSigil,
-  countLabel,
-  groupSessions,
-  sessionModelLabel,
-  sessionSignal,
-  sessionTitleLines,
-} from "./sessionRows";
+import { SessionSigil, countLabel, sessionModelLabel, sessionSignal, sessionTitleLines } from "./sessionRows";
+import { NavIcon, NavRow } from "./NavRow";
+import { navActionRows, navSegmentRows } from "./navRows";
+import { RunDot } from "./RunDot";
+import { runState } from "./runIndicator";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
@@ -33,6 +36,17 @@ export function Sidebar(props: {
   onSelectLive: () => void;
   onSelectSession: (id: string) => void;
   onNewChat: () => void;
+  /** Opens the settings overlay — the same door the header gear opens. Two
+   *  doors on purpose: the header's is the first thing a narrow window takes
+   *  away, and the rail is where a reader looks for the app's own switches. */
+  onSettings: () => void;
+  /** True while THIS page's socket has a run in flight. The only source of a
+   *  "running" indicator anywhere in the rail: no endpoint reports which
+   *  sessions are live, so nothing else may claim it. */
+  liveRunning: boolean;
+  /** The stored session this page's socket is continuing, when it is
+   *  continuing one. That row — and only that row — is live as well as stored. */
+  resumeId: string | null;
   /** Opens the session-import dialog (spectroscope JSONL or Claude Code transcript). */
   onImport: () => void;
   /** Opens the scenario picker modal — kept alongside the inline scenario rows
@@ -68,9 +82,6 @@ export function Sidebar(props: {
   const [sessions, setSessions] = useState<SessionMeta[] | null>(null);
   const [failed, setFailed] = useState(false);
   const nav = props.nav;
-  /** Piles the reader has unfolded, by group key. Piles start folded: the
-   *  reason a pile exists is that its rows do not repay the space. */
-  const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   const lang = useLang();
   const fleets = useFleets();
   // Attention-first: a fleet with a pending gate floats to the top, then by
@@ -101,28 +112,85 @@ export function Sidebar(props: {
     };
   }, [props.refreshToken]);
 
-  // Folded once per fetch, not once per render: the list is refetched whenever
-  // a run finishes and can hold hundreds of rows, and every unrelated re-render
-  // of this sidebar (a fleet frame, a language flip) would otherwise redo it.
-  const groups = useMemo(() => groupSessions(sessions ?? []), [sessions]);
+  const actionPress: Record<string, () => void> = {
+    newChat: props.onNewChat,
+    scenarios: props.onScenarios,
+    starters: props.onStarters,
+  };
 
-  const toggleGroup = (key: string): void =>
-    setUnfolded((open) => {
-      const next = new Set(open);
-      if (!next.delete(key)) next.add(key);
-      return next;
-    });
+  /** Which segment each row asks App for. Spelled out one call at a time
+   *  rather than passed through from the row id: App owns `nav`, and this is
+   *  the seam where the surface answers the press (card 179). */
+  const segmentPress: Record<string, () => void> = {
+    sessions: () => props.onNav("sessions"),
+    fleets: () => props.onNav("fleets"),
+    stategraph: () => props.onNav("stategraph"),
+  };
 
-  /** One stored session. Rows inside an unfolded pile are indented, nothing else. */
-  const sessionRow = (s: SessionMeta, inPile: boolean) => (
+  /**
+   * A row-level action, riding INSIDE the row's own button. A nested <button>
+   * is invalid markup, so this is the same span+role idiom the fleet row's
+   * remove control already uses — and it stops the press from also reaching
+   * the segment underneath.
+   */
+  const rowAction = (className: string, title: string, run: () => void, body: string) => (
+    <span
+      role="button"
+      tabIndex={0}
+      className={className}
+      title={title}
+      onClick={(e) => {
+        e.stopPropagation();
+        run();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          e.stopPropagation();
+          run();
+        }
+      }}
+    >
+      {body}
+    </span>
+  );
+
+  /** The row-level action a segment row carries on its right, as markup. */
+  const trailingFor = (kind: "import" | "spawn" | "count" | null) => {
+    if (kind === "import")
+      return rowAction("sidebar-import", t(lang, "nav.importTitle"), props.onImport, "Import");
+    if (kind === "spawn")
+      return rowAction(
+        "sidebar-import sidebar-spawn",
+        lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)",
+        props.onSpawnNode,
+        "+ node",
+      );
+    if (kind === "count") return <span className="sidebar-seg-badge tabular">{fleets.length}</span>;
+    return null;
+  };
+
+  /** One stored session. Flat — there is no second level any more. */
+  const sessionRow = (s: SessionMeta) => (
     <button
       type="button"
       key={s.id}
-      className={`session-row${inPile ? " piled-row" : ""}${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
+      className={`session-row${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
       title={sessionTitleLines(s, lang)}
       onClick={() => props.onSelectSession(s.id)}
     >
       <span className="session-title session-title-line">
+        {/* Stored rows can only ever say "unfinished" or "finished" — the list
+            is stored JSONL and nothing reports who is live. The one exception
+            is the row this page's socket is resuming. */}
+        <RunDot
+          state={runState({
+            live: props.resumeId === s.id,
+            running: props.liveRunning,
+            stopReason: s.stopReason,
+          })}
+          lang={lang}
+        />
         <SessionSigil signal={sessionSignal(s)} />
         <span className="session-name">
           {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
@@ -191,177 +259,67 @@ export function Sidebar(props: {
           )}
         </div>
 
-        {/* One wrapper so the three actions carry their OWN gap; the sidebar's column
-          gap still sets the distance to the wordmark above and the segmented
-          control below, which stay where they were. */}
-        <div className="sidebar-actions">
-          <button type="button" className="soft-primary new-chat" onClick={props.onNewChat}>
-            {t(lang, "nav.newChat")}
-          </button>
-
-          {/* Owner (2026-07-22) reversed the earlier "own area" call: scenarios are now
-            ALSO listed inline in the session list below. This button + its modal are
-            kept for now (a redundant second path — owner may retire them). */}
-          <button
-            type="button"
-            className="ghost sidebar-scenarios"
-            onClick={props.onScenarios}
-            title={t(lang, "nav.scenariosTitle")}
-          >
-            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-              <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
-            </svg>
-            {t(lang, "nav.scenarios")}
-          </button>
-
-          <button
-            type="button"
-            className="ghost sidebar-scenarios"
-            onClick={props.onStarters}
-            title={t(lang, "nav.startersTitle")}
-          >
-            <svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true">
-              <path
-                d="M8 2v12M2 8h12"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                fill="none"
-              />
-            </svg>
-            {t(lang, "nav.starters")}
-          </button>
+        {/* The three actions, as rows. They were buttons — a filled primary and
+          two ghosts — and three boxes at the top of a rail argue with the list
+          underneath for the attention the list should win. Scenarios keeps its
+          modal alongside the inline scenario rows below (a redundant second
+          path; owner may retire it). */}
+        <div className="sidebar-nav">
+          {navActionRows().map((row) => (
+            <NavRow
+              key={row.id}
+              icon={<NavIcon id={row.icon} />}
+              label={t(lang, row.labelKey)}
+              title={row.titleKey !== undefined ? t(lang, row.titleKey) : undefined}
+              onClick={actionPress[row.id]}
+            />
+          ))}
         </div>
 
-        <div className="sidebar-eyebrow-row">
-          <div className="sidebar-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
-            <button
-              type="button"
+        {/* The same recipe again for the segments. One hairline separates the
+          two groups: without it the rail is one undifferentiated column of
+          rows, and "start something" and "look at something" are not the same
+          kind of press. */}
+        <div className="sidebar-nav sidebar-nav-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
+          {navSegmentRows({
+            active: nav,
+            fleetsLocked: props.fleetsLocked === true,
+            fleetCount: orderedFleets.length,
+          }).map((row) => (
+            <NavRow
+              key={row.id}
               role="tab"
-              aria-selected={nav === "sessions"}
-              className={`sidebar-seg-btn${nav === "sessions" ? " active" : ""}`}
-              onClick={() => props.onNav("sessions")}
-            >
-              Sessions
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={nav === "fleets"}
-              className={`sidebar-seg-btn${nav === "fleets" ? " active" : ""}`}
-              onClick={() => !props.fleetsLocked && props.onNav("fleets")}
-              aria-disabled={props.fleetsLocked ? true : undefined}
-            >
-              {t(lang, "nav.fleets")}
-              {fleets.length > 0 && <span className="sidebar-seg-badge tabular">{fleets.length}</span>}
-            </button>
-            {/* Not gated on the fleet lock: the state graph reads two files off
-                the disk and starts no process, so there is nothing here for a
-                level to protect the reader from. */}
-            <button
-              type="button"
-              role="tab"
-              aria-selected={nav === "stategraph"}
-              className={`sidebar-seg-btn${nav === "stategraph" ? " active" : ""}`}
-              onClick={() => props.onNav("stategraph")}
-            >
-              {t(lang, "nav.stategraph")}
-            </button>
-          </div>
-          {nav === "sessions" && (
-            <button
-              type="button"
-              className="sidebar-import"
-              onClick={props.onImport}
-              title={t(lang, "nav.importTitle")}
-            >
-              Import
-            </button>
-          )}
-          {/* Only when fleets EXIST — the empty state below carries its own spawn
-            button, so two "+ node" affordances never show at once (owner). */}
-          {nav === "fleets" && orderedFleets.length > 0 && (
-            <button
-              type="button"
-              className="sidebar-import sidebar-spawn"
-              onClick={props.onSpawnNode}
-              title={lang === "de" ? "einen node starten (read-only)" : "spawn a node (read-only)"}
-            >
-              + node
-            </button>
-          )}
+              ariaSelected={row.active}
+              active={row.active}
+              disabled={row.disabled}
+              icon={<NavIcon id={row.icon} />}
+              label={t(lang, row.labelKey)}
+              trailing={trailingFor(row.trailing)}
+              onClick={segmentPress[row.id]}
+            />
+          ))}
         </div>
       </div>
 
       {nav === "sessions" ? (
         <>
           <nav className="session-list" aria-label="Sessions">
+            {/* The live row wears the same dot as every other row — the only
+                one in the rail that may ever say "running", because it is the
+                only session this page holds a socket to. */}
             <button
               type="button"
               className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
               onClick={props.onSelectLive}
             >
               <span className="session-title">
-                <span className="dot accent" aria-hidden="true" /> {t(lang, "nav.live")}
+                <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
+                {t(lang, "nav.live")}
               </span>
               <span className="session-meta">{t(lang, "nav.liveSub")}</span>
             </button>
 
-            {groups.map((group) => {
-              if (group.sessions.length === 1) return sessionRow(group.sessions[0], false);
-              // A pile the reader is standing in stays open whatever the fold
-              // says: collapsing the row you just opened loses your place.
-              const holdsActive =
-                props.activeFleet === null && group.sessions.some((s) => s.id === props.activeId);
-              const open = unfolded.has(group.key) || holdsActive;
-              const head = group.sessions[0];
-              const total = group.sessions.reduce((sum, s) => sum + s.tokens, 0);
-              return (
-                <div className="session-pile" key={group.key}>
-                  <button
-                    type="button"
-                    className={`session-row pile-row${open ? " open" : ""}`}
-                    aria-expanded={open}
-                    title={t(lang, "sess.pileTitle", { n: group.sessions.length })}
-                    onClick={() => toggleGroup(group.key)}
-                  >
-                    <span className="session-title session-title-line">
-                      <SessionSigil signal={sessionSignal(head)} />
-                      <span className="session-name">
-                        {head.firstPrompt !== "" ? head.firstPrompt : t(lang, "nav.emptySession")}
-                      </span>
-                      <span className="pile-count tabular">{group.sessions.length}&times;</span>
-                      <svg
-                        className="pile-chevron"
-                        viewBox="0 0 16 16"
-                        width="9"
-                        height="9"
-                        aria-hidden="true"
-                      >
-                        <path
-                          d="M4 6l4 4 4-4"
-                          stroke="currentColor"
-                          strokeWidth="1.8"
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          fill="none"
-                        />
-                      </svg>
-                    </span>
-                    <span className="session-meta session-meta-line tabular">
-                      <span className="session-facts">
-                        {relativeTime(head.startedAt, Date.now(), lang)} &middot;{" "}
-                        {countLabel(lang, "token", total, formatTokens(total))}
-                      </span>
-                      {sessionModelLabel(head) !== "" && (
-                        <span className="session-model mono">{sessionModelLabel(head)}</span>
-                      )}
-                    </span>
-                  </button>
-                  {open && group.sessions.map((s) => sessionRow(s, true))}
-                </div>
-              );
-            })}
+            {(sessions ?? []).map((s) => sessionRow(s))}
           </nav>
 
           {sessions !== null && sessions.length === 0 && !failed && (
@@ -501,6 +459,14 @@ export function Sidebar(props: {
           </nav>
         </>
       )}
+
+      {/* Outside the segment branch on purpose: settings is not a fact about
+          sessions, and a control that exists on one of three segments is a
+          control a reader learns not to look for. The head solved the same
+          problem at the other end of this scroll container. */}
+      <div className="sidebar-foot">
+        <NavRow icon={<NavIcon id="gear" />} label={t(lang, "hdr.settings")} onClick={props.onSettings} />
+      </div>
     </aside>
   );
 }

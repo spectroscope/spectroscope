@@ -27,7 +27,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.back": { de: "zurück (⌘←)", en: "back (⌘←)" },
   "nav.forward": { de: "vorwärts (⌘→)", en: "forward (⌘→)" },
   "nav.fleets": { de: "Flotten", en: "Fleets" },
+  "nav.sessions": { de: "Sessions", en: "Sessions" },
   "nav.navMode": { de: "Sessions, Flotten oder State-Graph", en: "Sessions, fleets or state graph" },
+  // What the circle in front of a row says, spelled out. Colour alone never
+  // carries meaning here, and "unfinished" is deliberately not a synonym for
+  // "running": a stored file with no run_end is not a process.
+  "nav.run.running": { de: "läuft", en: "running" },
+  "nav.run.live": { de: "verbunden", en: "connected" },
+  "nav.run.open": { de: "nicht abgeschlossen", en: "unfinished" },
+  "nav.run.idle": { de: "beendet", en: "finished" },
   "nav.stategraph": { de: "State-Graph", en: "State graph" },
   "nav.stategraphNote": {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",
@@ -80,11 +88,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sess.out.open": { de: "kein run_end aufgezeichnet", en: "no run_end recorded" },
   "sess.gateAsked": { de: "Gate: {n}× gefragt, alle erlaubt", en: "gate: asked {n}×, all allowed" },
   "sess.gateDenied": { de: "Gate: {n}× gefragt, {d}× verweigert", en: "gate: asked {n}×, refused {d}×" },
-  "sess.pile": { de: "{n} gleiche Läufe", en: "{n} identical runs" },
-  "sess.pileTitle": {
-    de: "{n} Läufe mit demselben Prompt und derselben Form. Klicken zum Aufklappen — was sich unterscheidet, steht ohnehin als eigene Zeile da.",
-    en: "{n} runs with the same prompt and the same shape. Click to unfold — anything that differs already stands as its own row.",
-  },
+  // The pile is gone (the list is flat now), and so are the two strings that
+  // described it. `sess.pile` had already lost its last caller before that.
 
   // header
   "hdr.archive": { de: "Archiv", en: "Archive" },
