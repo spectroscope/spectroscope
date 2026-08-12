@@ -206,7 +206,11 @@
    lines-plus-padding with no border term. */
 .composer-box {
   display: flex;
-  align-items: flex-end;
+  /* A COLUMN since 2026-08-12: the waiting pictures ride inside the border and
+     the caret continues below them, so the box stacks strip over row. The row
+     underneath keeps the alignment the box itself used to carry. */
+  flex-direction: column;
+  align-items: stretch;
   width: 100%;
   background: var(--surface-2);
   border: 1px solid var(--border);
@@ -221,6 +225,72 @@
 .composer-box:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft), inset 0 1px 2px var(--shade);
+}
+
+/* The draft and its one action seat. This is what .composer-box was before the
+   pictures moved in, and it keeps flex-end so the seat stays at the bottom
+   right while the textarea grows upward. */
+.composer-row {
+  display: flex;
+  align-items: flex-end;
+}
+
+/* The pictures waiting to be sent, INSIDE the border and above the caret. The
+   horizontal padding matches the textarea's (--sp-4) so the first thumbnail
+   starts exactly where the text does — anything else reads as a misalignment
+   rather than as a strip. A SIBLING of the textarea, never a child: inside it,
+   scrollHeight would count pictures as lines and the ten-line cap would stop
+   meaning ten lines. */
+.composer-thumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4) 0;
+}
+
+.composer-thumb {
+  position: relative;
+  flex: none;
+  line-height: 0; /* no descender gap under the picture */
+}
+
+.composer-thumb-img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--radius-chip);
+  border: 1px solid var(--border);
+}
+
+/* The cross sits ON the corner of its own picture: with several thumbnails in a
+   row, a remove control beside them would be ambiguous about which one it
+   throws out. It keeps a 44px hit area through a padded ::before, so the touch
+   target stays honest without a 44px lid over a 40px picture. */
+.composer-thumb-x {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+}
+.composer-thumb-x::before {
+  content: "";
+  position: absolute;
+  inset: -14px; /* 16 + 2 x 14 = 44px of reachable cross */
+}
+.composer-thumb-x:hover {
+  background: var(--error-soft);
+  border-color: var(--error);
+  color: var(--error);
 }
 
 /* The field: the textarea, plus the ghost layer that shows what a live session

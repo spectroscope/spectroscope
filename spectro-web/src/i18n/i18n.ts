@@ -1561,11 +1561,26 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "img.noKey": { de: "kein Key in .env", en: "no key in .env" },
   "chat.recording": { de: "Aufnahme {t}", en: "Recording {t}" },
+  // The tooltip is the only place ⌘V is discoverable — a paste affordance
+  // nobody is told about is a paste affordance nobody uses.
   "chat.attach": {
-    de: "Bild anhängen (oder eins in den Chat ziehen)",
-    en: "Attach image (or drag one into the chat)",
+    de: "Bild anhängen (hineinziehen oder mit ⌘V einfügen)",
+    en: "Attach an image (drag one in, or paste with ⌘V)",
   },
   "chat.attachAria": { de: "Bild anhängen", en: "Attach image" },
+  "chat.attachedAria": { de: "Angehängte Bilder", en: "Attached images" },
+  "chat.attachRemove": { de: "{name} entfernen", en: "Remove {name}" },
+  /* A clipboard blob can arrive without a name; the thumbnail says what it is
+     rather than leaving the remove label dangling. */
+  "chat.attachPasted": { de: "Eingefügtes Bild", en: "Pasted image" },
+  "chat.attachFailed": {
+    de: "Dieses Bild konnte nicht gelesen werden.",
+    en: "That image could not be read.",
+  },
+  "chat.attachTooMany": {
+    de: "Mehr als {n} Bilder pro Nachricht gehen nicht.",
+    en: "No more than {n} images per message.",
+  },
   // Card 183: the composer's slash completion. The invocation is a SENTENCE
   // the reader can see and edit, not a hidden instruction — a skill is
   // instructions in the system prompt, so asking for it by name is all there is

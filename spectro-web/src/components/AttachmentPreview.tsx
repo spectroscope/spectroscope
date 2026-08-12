@@ -1,8 +1,10 @@
-// The preview widget: shows attached images BEFORE sending. Nothing
-// leaves the browser until the user hits send; the remove cross throws a chip
-// out again. Plus the size hygiene of this stage: canvas downscaling, because
-// an unscaled 4000-pixel photo is the most expensive mistake of the stage
-// (roughly width x height / 750 tokens).
+// The size hygiene of the attachment stage: canvas downscaling, because an
+// unscaled 4000-pixel photo is the most expensive mistake here (roughly
+// width x height / 750 tokens), plus the shape a pending picture has while it
+// waits. Nothing leaves the browser until the user hits send.
+//
+// Every intake route lands on downscaleImage — drop, file picker and ⌘V alike
+// (useAttachments). The drawing of the waiting pictures is AttachmentThumbs.
 
 export type PendingAttachment = {
   name: string;
@@ -62,43 +64,7 @@ export function formatSize(bytes: number): string {
     : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function AttachmentPreview(props: {
-  attachments: PendingAttachment[];
-  onRemove: (index: number) => void;
-}) {
-  if (props.attachments.length === 0) return null;
-  return (
-    <div className="attach-strip" role="list" aria-label="Attached images">
-      {props.attachments.map((a, i) => (
-        <div key={`${a.name}-${i}`} className="attach-chip" role="listitem">
-          <img className="attach-thumb" src={`data:${a.mediaType};base64,${a.dataBase64}`} alt={a.name} />
-          <div className="attach-meta">
-            <span className="attach-name" title={a.name}>
-              {a.name}
-            </span>
-            <span className="attach-size">{formatSize(a.sizeBytes)}</span>
-          </div>
-          <button
-            type="button"
-            className="attach-remove"
-            aria-label={`Remove ${a.name}`}
-            onClick={() => props.onRemove(i)}
-          >
-            <svg
-              viewBox="0 0 16 16"
-              width="12"
-              height="12"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-              aria-hidden="true"
-            >
-              <path d="M4 4l8 8M12 4l-8 8" />
-            </svg>
-          </button>
-        </div>
-      ))}
-    </div>
-  );
-}
+// The chip strip that used to live here moved INTO the composer's border on
+// 2026-08-12 and is now AttachmentThumbs. What stays is the size hygiene of
+// this stage — downscaleImage, formatSize and the PendingAttachment shape — all
+// three imported across the tree, formatSize by the new thumbnails' title.
