@@ -213,6 +213,12 @@ class SpeechRendererTest {
 
             // The running player was destroyed (which also releases the gate) and the
             // queue was cleared.
+            // Waited for, not assumed: the abort travels to the playback thread,
+            // so reading the counter the instant runEnd returns is a race the
+            // assertion loses under load. It lost it once during the 0.8.0 gate
+            // and passed on every isolated re-run, which is the signature. The
+            // threshold is unchanged, only the deadline is now explicit.
+            waitUntil(() -> engine.stopsCalled.get() >= 1);
             assertTrue(engine.stopsCalled.get() >= 1, "the running player is stopped on abort");
 
             Thread.sleep(150); // give any (wrongly) surviving queued playback a chance to run
@@ -350,4 +356,5 @@ class SpeechRendererTest {
         }
         throw new AssertionError("condition did not become true within the timeout");
     }
+
 }
