@@ -14,8 +14,9 @@ This is the *whole* ritual. [`RELEASING.md`](../RELEASING.md) is the narrower
 >
 > **Version counter — bump this line with every cut.** Published so far:
 > **0.1.0, 0.2.0, 0.3.0, 0.4.0, 0.4.1** (2026-07-27), **0.5.0** (2026-07-31),
-> **0.6.0** and **0.6.1** (both 2026-08-04), **0.7.0** (2026-08-07). Those
-> numbers are burned forever; the next release MUST be **0.7.1 or higher**.
+> **0.6.0** and **0.6.1** (both 2026-08-04), **0.7.0** (2026-08-07),
+> **0.8.0** (2026-08-12). Those numbers are burned forever; the next release
+> MUST be **0.8.1 or higher**.
 > Do not trust this line over the measurement: `git tag --list 'v*'` plus
 > central.sonatype.com is the state, this counter is the reminder — it once
 > missed a release for five days. Pick the number by what is in
