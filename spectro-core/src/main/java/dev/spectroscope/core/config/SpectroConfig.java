@@ -103,6 +103,17 @@ import java.util.function.Function;
  * @param chromeBinary        override for the system-Chrome binary used by
  *                            {@code browse_page}; {@code null} means the
  *                            built-in discovery — env {@code SPECTRO_CHROME}
+ * @param ollamaBaseUrl       ollama's OWN address (card 193); {@code null}/blank
+ *                            falls back to the legacy shared {@code baseUrl},
+ *                            then ollama's preset. Unlike the legacy field, a
+ *                            value equal to some provider's default is still a
+ *                            value — only null/blank means unset. Env
+ *                            {@code SPECTRO_OLLAMA_BASE_URL}
+ * @param lmstudioBaseUrl     LM Studio's OWN address (card 193); {@code null}/
+ *                            blank falls back to the legacy openai-compat rule
+ *                            over {@code baseUrl} (see
+ *                            {@link #effectiveOpenAiBaseUrl}). Env
+ *                            {@code SPECTRO_LMSTUDIO_BASE_URL}
  */
 public record SpectroConfig(
         String provider,
@@ -125,7 +136,9 @@ public record SpectroConfig(
         String sttLanguage,
         String chromeBinary,
         String otlpEndpoint,
-        String otlpBasicAuth) {
+        String otlpBasicAuth,
+        String ollamaBaseUrl,
+        String lmstudioBaseUrl) {
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -182,7 +195,8 @@ public record SpectroConfig(
             "auto", // sttProvider: hosted when a key is there, local otherwise
             "auto", // sttLanguage: the model detects; a code pins dictation
             null, // chromeBinary: built-in discovery
-            null, null); // otlpEndpoint/otlpBasicAuth: exporter off by default
+            null, null, // otlpEndpoint/otlpBasicAuth: exporter off by default
+            null, null); // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -228,7 +242,7 @@ public record SpectroConfig(
 
     /**
      * The effective configuration alongside a full provenance trail: which
-     * layer won each of the 17 fields (see {@link Origin}), and the raw
+     * layer won each resolvable field (see {@link Origin}), and the raw
      * non-empty scopes as JSON — the settings API's "layers" view.
      *
      * @param config  the effective, validated configuration — identical to
@@ -321,7 +335,7 @@ public record SpectroConfig(
 
     /**
      * Session-moment load with a full provenance trail: which layer won each
-     * of the 17 fields (see {@link Origin}) and the non-empty scopes as raw
+     * resolvable field (see {@link Origin}) and the non-empty scopes as raw
      * JSON (the settings API's "layers" view) — the same resolution
      * {@link #load}/{@link #loadForWorkspace} perform, with the "why" kept
      * instead of thrown away. Reads {@code System.getenv()} for the
@@ -499,7 +513,8 @@ public record SpectroConfig(
                         base.workspace(), base.logLevel(),
                         base.imageModel(), base.sttModel(), base.sttProvider(),
                         base.sttLanguage(), base.chromeBinary(),
-                        base.otlpEndpoint(), base.otlpBasicAuth());
+                        base.otlpEndpoint(), base.otlpBasicAuth(),
+                        base.ollamaBaseUrl(), base.lmstudioBaseUrl());
             }
         }
         return base;
@@ -544,7 +559,9 @@ public record SpectroConfig(
             new FieldProbe("sttLanguage", p -> p.sttLanguage),
             new FieldProbe("chromeBinary", p -> p.chromeBinary),
             new FieldProbe("otlpEndpoint", p -> p.otlpEndpoint),
-            new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth));
+            new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth),
+            new FieldProbe("ollamaBaseUrl", p -> p.ollamaBaseUrl),
+            new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl));
 
     /** Circularity + process-global rule: a workspace settings file must not
      *  re-point the workspace itself, nor reconfigure the one-per-process log
@@ -578,7 +595,8 @@ public record SpectroConfig(
                 imageProvider, thinking, mcpServers,
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
-                chromeBinary, otlpEndpoint, otlpBasicAuth);
+                chromeBinary, otlpEndpoint, otlpBasicAuth,
+                ollamaBaseUrl, lmstudioBaseUrl);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -702,11 +720,11 @@ public record SpectroConfig(
      */
     public LlmProvider providerFromConfig() {
         LlmProvider real = switch (provider) {
-            case "ollama" -> new OllamaProvider(new OllamaOptions(baseUrl, model));
+            case "ollama" -> new OllamaProvider(new OllamaOptions(endpointFor("ollama"), model));
             case "openai", "lmstudio", "openrouter", "gemini" -> new OpenAiCompatProvider(
                     // The label rides along as the wire dialect — the reasoning
                     // fields differ per provider (card 88), nothing else does.
-                    new OpenAiCompatProvider.Options(openAiBaseUrl(), model, openAiCompatKey(), provider));
+                    new OpenAiCompatProvider.Options(endpointFor(provider), model, openAiCompatKey(), provider));
             case "anthropic" -> new AnthropicProvider(model, promptCaching, resolveApiKey("ANTHROPIC_API_KEY"));
             case "spectro-local" -> throw new IllegalStateException(
                     "spectro-local runs through the bundled local runtime "
@@ -737,6 +755,75 @@ public record SpectroConfig(
             return baseUrl; // an explicit endpoint always wins
         }
         return openAiCompatPreset(provider);
+    }
+
+    /**
+     * The effective ollama endpoint (card 193): the per-provider address when
+     * set, the legacy shared {@code baseUrl} otherwise, ollama's preset when
+     * neither says anything. Deliberately NO sentinel on the per-provider
+     * field — any non-blank value is taken verbatim, even one that equals some
+     * provider's preset. The legacy field's literal
+     * {@code http://localhost:11434} doubling as "unset" is exactly the trap
+     * this card closes: a deliberately typed default must never be silently
+     * rerouted.
+     *
+     * @param ollamaBaseUrl the per-provider address ({@code null}/blank = unset)
+     * @param baseUrl       the legacy shared base url, kept working for old configs
+     * @return the endpoint ollama is dialled at
+     */
+    public static String effectiveOllamaBaseUrl(String ollamaBaseUrl, String baseUrl) {
+        if (ollamaBaseUrl != null && !ollamaBaseUrl.isBlank()) {
+            return ollamaBaseUrl;
+        }
+        if (baseUrl != null && !baseUrl.isBlank()) {
+            return baseUrl;
+        }
+        return "http://localhost:11434";
+    }
+
+    /**
+     * The effective LM Studio endpoint (card 193): the per-provider address
+     * when set — verbatim, no sentinel, see {@link #effectiveOllamaBaseUrl} —
+     * otherwise the legacy openai-compat rule over the shared {@code baseUrl}
+     * (where ollama's default DOES still read as "unset", for old configs).
+     *
+     * @param lmstudioBaseUrl the per-provider address ({@code null}/blank = unset)
+     * @param baseUrl         the legacy shared base url, kept working for old configs
+     * @return the endpoint LM Studio is dialled at
+     */
+    public static String effectiveLmstudioBaseUrl(String lmstudioBaseUrl, String baseUrl) {
+        if (lmstudioBaseUrl != null && !lmstudioBaseUrl.isBlank()) {
+            return lmstudioBaseUrl;
+        }
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return openAiCompatPreset("lmstudio");
+        }
+        return effectiveOpenAiBaseUrl("lmstudio", baseUrl);
+    }
+
+    /**
+     * The base URL this config would dial for {@code provider} — the single
+     * source behind the provider construction, the server's model-list probes,
+     * the doctor lines and the settings page's address display, so every face
+     * names the SAME address (card 193: the failure sentence must name the
+     * address the probe actually tried). The local-model providers resolve
+     * their own per-provider field first; the OpenAI-compatible cloud
+     * providers keep the legacy shared rule.
+     *
+     * @param provider one of ollama, lmstudio, openai, openrouter, gemini
+     * @return the effective endpoint for {@code provider} under this config
+     * @throws IllegalArgumentException for providers without a configurable
+     *         endpoint (anthropic's is fixed in the SDK; spectro-local is a
+     *         subprocess, not an address)
+     */
+    public String endpointFor(String provider) {
+        return switch (provider) {
+            case "ollama" -> effectiveOllamaBaseUrl(ollamaBaseUrl, baseUrl);
+            case "lmstudio" -> effectiveLmstudioBaseUrl(lmstudioBaseUrl, baseUrl);
+            case "openai", "openrouter", "gemini" -> effectiveOpenAiBaseUrl(provider, baseUrl);
+            default -> throw new IllegalArgumentException(
+                    "no configurable endpoint for provider: " + provider);
+        };
     }
 
     /** The preset endpoint root for each OpenAI-compatible provider (before an
@@ -1008,18 +1095,12 @@ public record SpectroConfig(
         return resolveApiKey(keyEnvFor(provider)); // null keyEnv (lmstudio) -> no key
     }
 
-    /** The effective openai-compatible endpoint for THIS config.
-     *  @return the effective base URL */
-    private String openAiBaseUrl() {
-        return effectiveOpenAiBaseUrl(provider, baseUrl);
-    }
-
     /**
      * The network host the active provider actually talks to — presentation
      * truth for the UI (header chip, trace host column, provider_info frame):
      * the Anthropic SDK's fixed endpoint, or the host[:port] of the EFFECTIVE
-     * base URL for the local backends (including the openai LM-Studio default
-     * swap). An unparseable base URL degrades to the raw value.
+     * base URL for the local backends (per-provider address included, card
+     * 193). An unparseable base URL degrades to the raw value.
      *
      * @return e.g. "api.anthropic.com", "localhost:11434", "localhost:1234"
      */
@@ -1027,7 +1108,8 @@ public record SpectroConfig(
         if ("anthropic".equals(provider)) {
             return "api.anthropic.com";
         }
-        String effective = isOpenAiCompat(provider) ? openAiBaseUrl() : baseUrl;
+        String effective = isOpenAiCompat(provider) || "ollama".equals(provider)
+                ? endpointFor(provider) : baseUrl;
         try {
             java.net.URI url = java.net.URI.create(effective);
             String host = url.getHost();
@@ -1199,6 +1281,8 @@ public record SpectroConfig(
         public String chromeBinary;
         public String otlpEndpoint;
         public String otlpBasicAuth;
+        public String ollamaBaseUrl;
+        public String lmstudioBaseUrl;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1233,6 +1317,8 @@ public record SpectroConfig(
             out.chromeBinary = Optional.ofNullable(higher.chromeBinary).orElse(chromeBinary);
             out.otlpEndpoint = Optional.ofNullable(higher.otlpEndpoint).orElse(otlpEndpoint);
             out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
+            out.ollamaBaseUrl = Optional.ofNullable(higher.ollamaBaseUrl).orElse(ollamaBaseUrl);
+            out.lmstudioBaseUrl = Optional.ofNullable(higher.lmstudioBaseUrl).orElse(lmstudioBaseUrl);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1264,7 +1350,9 @@ public record SpectroConfig(
                     Optional.ofNullable(sttLanguage).orElse(DEFAULTS.sttLanguage()),
                     Optional.ofNullable(chromeBinary).orElse(DEFAULTS.chromeBinary()),
                     Optional.ofNullable(otlpEndpoint).orElse(DEFAULTS.otlpEndpoint()),
-                    Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()));
+                    Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()),
+                    Optional.ofNullable(ollamaBaseUrl).orElse(DEFAULTS.ollamaBaseUrl()),
+                    Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()));
         }
 
         /**
@@ -1285,6 +1373,10 @@ public record SpectroConfig(
             out.provider = env.get("SPECTRO_PROVIDER");
             out.model = env.get("SPECTRO_MODEL");
             out.baseUrl = env.get("SPECTRO_BASE_URL");
+            // Card 193: each local-model provider's OWN address, kept apart
+            // from the shared legacy baseUrl above.
+            out.ollamaBaseUrl = env.get("SPECTRO_OLLAMA_BASE_URL");
+            out.lmstudioBaseUrl = env.get("SPECTRO_LMSTUDIO_BASE_URL");
             // SPECTRO_WORKSPACE names the agent's working directory; unset keeps the
             // per-session temp folder (resolved later, when the session id exists).
             out.workspace = env.get("SPECTRO_WORKSPACE");

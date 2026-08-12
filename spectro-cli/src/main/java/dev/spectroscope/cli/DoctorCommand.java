@@ -199,17 +199,21 @@ public final class DoctorCommand implements Callable<Integer> {
                                     ? " is set" : " is NOT set (export it, or save it in the app)"));
                 }
                 case OLLAMA -> {
-                    var version = new OllamaProvider(new OllamaOptions(config.baseUrl(), config.model()))
+                    // endpointFor resolves ollama's OWN address (card 193) over
+                    // the legacy shared baseUrl — probe and printed line carry
+                    // the same string a run would dial, never a stale field.
+                    String endpoint = config.endpointFor("ollama");
+                    var version = new OllamaProvider(new OllamaOptions(endpoint, config.model()))
                             .serverVersion();
-                    report(version.isPresent(), "ollama at " + config.baseUrl()
+                    report(version.isPresent(), "ollama at " + endpoint
                             + version.map(v -> " (version " + v + ")").orElse(" — unreachable"));
                 }
                 case OPENAI_COMPAT -> {
                     // The EFFECTIVE endpoint, not the raw baseUrl: unset, the raw
                     // value is still ollama's :11434, so doctor used to probe the
                     // wrong port and print it as if it were the openai server.
-                    String endpoint = SpectroConfig.effectiveOpenAiBaseUrl(
-                            config.provider(), config.baseUrl());
+                    // endpointFor also honours lmstudio's own address (card 193).
+                    String endpoint = config.endpointFor(config.provider());
                     emit(openAiCompatLines(config.provider(), endpoint,
                             probe(endpoint + "/v1/models"),
                             SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(config.provider()))));

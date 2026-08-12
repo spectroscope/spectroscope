@@ -57,7 +57,7 @@ public final class SettingsWriter {
             "autoApprove", "imageProvider", "thinking", "mcpServers", "maxRetries",
             "promptCaching", "hooks", "workspace", "logLevel",
             "imageModel", "sttModel", "sttProvider", "sttLanguage", "chromeBinary",
-            "otlpEndpoint", "otlpBasicAuth");
+            "otlpEndpoint", "otlpBasicAuth", "ollamaBaseUrl", "lmstudioBaseUrl");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting either is refused. This is the

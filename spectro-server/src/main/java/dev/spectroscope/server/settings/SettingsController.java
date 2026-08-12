@@ -124,7 +124,7 @@ public class SettingsController {
      *
      * @param session optional session id; absent/blank answers the process-moment
      *                view, present answers that session's workspace-joined view
-     * @return {@code effective} (the resolved config, all 17 fields, nulls
+     * @return {@code effective} (the resolved config, every field, nulls
      *         included), {@code origins} (per-field winner + shadowed layers),
      *         {@code layers} (each non-empty scope's own settings as raw JSON),
      *         {@code files} (the concrete paths for this view) and

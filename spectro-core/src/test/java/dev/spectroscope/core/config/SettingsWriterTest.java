@@ -118,6 +118,28 @@ class SettingsWriterTest {
     }
 
     @Test
+    void perProviderAddressesAreWritableSettingsKeys(@TempDir Path dir) throws IOException {
+        // Card 193: the settings page's address field writes these through the
+        // settings API — the writer must know both keys, and null must clear.
+        Path file = dir.resolve(".spectro/settings.json");
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("""
+                        { "ollamaBaseUrl": "http://gpu-box:11434",
+                          "lmstudioBaseUrl": "http://gpu-box:1234" }
+                        """));
+        JsonNode root = JSON.readTree(Files.readString(file));
+        assertEquals("http://gpu-box:11434", root.path("ollamaBaseUrl").asText());
+        assertEquals("http://gpu-box:1234", root.path("lmstudioBaseUrl").asText());
+
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("""
+                        { "ollamaBaseUrl": null }
+                        """));
+        assertFalse(JSON.readTree(Files.readString(file)).has("ollamaBaseUrl"),
+                "null clears the per-provider address");
+    }
+
+    @Test
     void workspaceScopesRejectProcessGlobals(@TempDir Path dir) {
         Path file = dir.resolve(".spectro/settings.json");
         assertThrows(IllegalArgumentException.class, () -> SettingsWriter.patch(file,

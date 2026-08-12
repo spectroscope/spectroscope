@@ -499,9 +499,15 @@ class SpectroConfigTest {
     }
 
     private static SpectroConfig configFor(String provider, String baseUrl) {
+        return configFor(provider, baseUrl, null, null);
+    }
+
+    private static SpectroConfig configFor(String provider, String baseUrl,
+            String ollamaBaseUrl, String lmstudioBaseUrl) {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
-                null, null, "auto", "auto", null, null, null);
+                null, null, "auto", "auto", null, null, null,
+                ollamaBaseUrl, lmstudioBaseUrl);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -583,6 +589,94 @@ class SpectroConfigTest {
                 SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://my-box:8000"));
         assertEquals("http://my-box:8000",
                 SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://my-box:8000"));
+    }
+
+    // ---- per-provider addresses (card 193) ------------------------------------------
+
+    @Test
+    void perProviderAddressesKeepOllamaAndLmstudioApart(@TempDir Path projectDir) throws IOException {
+        // Card 193: ONE baseUrl used to serve every provider, so pointing it at
+        // an LM Studio box made ollama dial the same host, wrong port and all.
+        // Each local-model provider now carries its own address.
+        writeProjectSettings(projectDir, """
+                { "ollamaBaseUrl": "http://gpu-box:11434", "lmstudioBaseUrl": "http://gpu-box:1234" }
+                """);
+        SpectroConfig config = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("http://gpu-box:11434", config.endpointFor("ollama"));
+        assertEquals("http://gpu-box:1234", config.endpointFor("lmstudio"));
+    }
+
+    @Test
+    void legacyBaseUrlConfigsKeepWorkingWhenNoPerProviderAddressIsSet(@TempDir Path projectDir)
+            throws IOException {
+        // Backward compatibility: a config that only knows the shared baseUrl
+        // behaves exactly as before this card — both local providers read it.
+        writeProjectSettings(projectDir, """
+                { "baseUrl": "http://legacy-box:9999" }
+                """);
+        SpectroConfig config = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("http://legacy-box:9999", config.endpointFor("ollama"));
+        assertEquals("http://legacy-box:9999", config.endpointFor("lmstudio"));
+    }
+
+    @Test
+    void withNothingConfiguredEachLocalProviderDialsItsOwnPreset(@TempDir Path projectDir) {
+        SpectroConfig config = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("http://localhost:11434", config.endpointFor("ollama"));
+        assertEquals("http://localhost:1234", config.endpointFor("lmstudio"));
+    }
+
+    @Test
+    void aProvidersOwnDefaultIsNeverAnUnsetSentinelForThePerProviderFields() {
+        // The second trap of card 193: on the legacy field, the literal
+        // http://localhost:11434 doubles as "unset". The NEW fields take every
+        // non-blank value verbatim — a deliberately typed default is a value,
+        // never a silent reroute to some preset.
+        assertEquals("http://localhost:11434",
+                SpectroConfig.effectiveLmstudioBaseUrl("http://localhost:11434", null));
+        assertEquals("http://localhost:1234",
+                SpectroConfig.effectiveOllamaBaseUrl("http://localhost:1234", "http://elsewhere:1"));
+        // Only null/blank means unset on the new fields — then the legacy chain runs.
+        assertEquals("http://legacy:2", SpectroConfig.effectiveOllamaBaseUrl(" ", "http://legacy:2"));
+        // The legacy sentinel itself survives on the legacy field: an untouched
+        // shared baseUrl still routes lmstudio to its own preset.
+        assertEquals("http://localhost:1234",
+                SpectroConfig.effectiveLmstudioBaseUrl(null, "http://localhost:11434"));
+    }
+
+    @Test
+    void perProviderAddressesRideTheEnvLayer(@TempDir Path projectDir) {
+        var env = java.util.Map.of(
+                "SPECTRO_OLLAMA_BASE_URL", "http://gpu-box:11434",
+                "SPECTRO_LMSTUDIO_BASE_URL", "http://gpu-box:1234");
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, env);
+        assertEquals("http://gpu-box:11434", config.ollamaBaseUrl());
+        assertEquals("http://gpu-box:1234", config.lmstudioBaseUrl());
+    }
+
+    @Test
+    void providerHostFollowsThePerProviderAddress() {
+        // The header chip / trace host column says where requests really go —
+        // including a per-provider address.
+        assertEquals("gpu-box:11434",
+                configFor("ollama", "http://localhost:11434", "http://gpu-box:11434", null)
+                        .providerHost());
+        assertEquals("gpu-box:1234",
+                configFor("lmstudio", "http://localhost:11434", null, "http://gpu-box:1234")
+                        .providerHost());
+    }
+
+    @Test
+    void endpointForRefusesProvidersWithoutAConfigurableEndpoint() {
+        // anthropic's endpoint is fixed in the SDK; spectro-local is a
+        // subprocess, not an address. Answering something would be a lie.
+        assertThrows(IllegalArgumentException.class,
+                () -> configFor("anthropic", null).endpointFor("anthropic"));
+        assertThrows(IllegalArgumentException.class,
+                () -> configFor("ollama", null).endpointFor("spectro-local"));
     }
 
     @Test
@@ -754,7 +848,8 @@ class SpectroConfigTest {
     @Test
     void withProviderCopiesEveryOtherField(@TempDir Path projectDir) throws IOException {
         writeProjectSettings(projectDir, """
-                { "autoApprove": ["run_command:ls*"], "imageModel": "gpt-image-2", "thinking": false }
+                { "autoApprove": ["run_command:ls*"], "imageModel": "gpt-image-2", "thinking": false,
+                  "ollamaBaseUrl": "http://gpu-box:11434", "lmstudioBaseUrl": "http://gpu-box:1234" }
                 """);
         SpectroConfig base = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
 
@@ -765,6 +860,9 @@ class SpectroConfigTest {
         assertEquals("gpt-image-2", switched.imageModel());
         assertFalse(switched.thinking());
         assertEquals(base.baseUrl(), switched.baseUrl());
+        // Card 193: a mid-session switch must not drop the per-provider addresses.
+        assertEquals("http://gpu-box:11434", switched.ollamaBaseUrl());
+        assertEquals("http://gpu-box:1234", switched.lmstudioBaseUrl());
     }
 
     // ---- the precedence flip (settings productization Task 4) --------------------------
