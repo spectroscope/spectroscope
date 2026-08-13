@@ -1,7 +1,7 @@
 <!-- ============================== CH 30 ============================== -->
 <h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
 
-<p class="lead">Seven layers, 24 keys (three of them whole-block), plus a small
+<p class="lead">Seven layers, 25 keys (three of them whole-block), plus a small
 handful of true environment-only secrets. Missing files are fine at every layer;
 malformed JSON fails loudly — a broken config is a programming error, not a fallback
 case.</p>
@@ -127,7 +127,8 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>compactionThreshold</code></td><td>int · <code>100000</code></td><td>— (flag only)</td><td>compaction trigger in input tokens</td></tr>
   <tr><td><code>permissionMode</code></td><td><code>ask</code> | <code>auto</code> | <code>readonly</code> · <code>ask</code></td><td>—</td><td>chapter 13; headless <code>run</code> has its own <code>--permissions</code>; live via the composer gear's <code>set_permission_mode</code></td></tr>
   <tr><td><code>workspace</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_WORKSPACE</code> / <code>--workspace</code></td><td>the agent's working directory (file tools, glob/grep, run_command); unset = a per-session folder <code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code> — a resume finds its files again, and the project you started spectroscope in stays clean; process-global — a workspace scope may not set this (a folder must not repoint the agent)</td></tr>
-  <tr><td><code>autoApprove</code></td><td>string[] · <code>[]</code></td><td>—</td><td>allowlist rules: <code>tool</code> or <code>tool:prefix*</code> — whole-block; lives in the workspace project file once one is pinned</td></tr>
+  <tr><td><code>autoApprove</code></td><td>string[] · <code>[]</code></td><td>—</td><td>allowlist rules: <code>tool#tier</code>, <code>tool#tier:prefix*</code> or <code>family*#tier</code> (chapter 13) — whole-block; lives in the workspace project file once one is pinned</td></tr>
+  <tr><td><code>allowLocalhost</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_ALLOW_LOCALHOST</code></td><td>the net fence's local-verify-loop opt-in: <code>web_fetch</code>/<code>browse_page</code> may reach loopback. Never widens to RFC 1918, the 100.64/10 tailnet or <code>file://</code> (chapter 13)</td></tr>
   <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
   <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle)</td></tr>
   <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18)</td></tr>
