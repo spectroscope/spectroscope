@@ -410,16 +410,23 @@ use — a config written for those drops straight in:</p>
     "search": { "url": "http://localhost:9000/mcp", "type": "sse" }   // or HTTP/SSE
 } }</pre>
 
-<p>Servers connect eagerly at startup; one that fails to start is logged and
-<strong>skipped</strong> — a broken entry never takes the harness down. Each advertised
-tool registers as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, always permission-gated:
-its inputs are model output and its effects are external. <code>/mcp</code> lists
-servers and tools in the REPL; <code>spectro doctor</code> probes reachability; the
-System-context panel names the servers.</p>
+<p>Servers connect eagerly at startup. One that fails to start is logged and
+<strong>skipped</strong>, and startup carries on with the rest. How long that costs you
+depends on how it is broken: a command that does not exist fails in milliseconds, while
+a command that <em>does</em> start and then goes silent spends the full
+<strong>20-second</strong> handshake budget before it is written off. Either way the
+entry is skipped, the child process is destroyed, and the line you get names the server
+and says what went wrong:
+<code>mcp: notes UNREACHABLE at /usr/bin/notes-server — no answer to 'initialize'
+within 20000 ms</code>. Each advertised tool registers as
+<code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, always permission-gated: its inputs are
+model output and its effects are external. <code>/mcp</code> lists servers and tools in
+the REPL; <code>spectro doctor</code> probes reachability; the System-context panel
+names the servers.</p>
 
 <h2 id="ch-mcp-semantics">Call semantics: at-most-once</h2>
 
-<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport and degrades to an ERROR string — never re-issued, so a slow-but-successful side effect is never doubled.-->
+<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport, and poisoning it destroys the child process first — killing the server is what releases a read that is parked on a pipe nobody will write to. The call then degrades to an ERROR string, never re-issued, so a slow-but-successful side effect is never doubled.-->
 
 <p>Every call is issued <em>exactly once</em> with a 20-second budget. If the transport
 died between calls, it is re-established once, lazily. But a call that fails or times
@@ -428,6 +435,16 @@ out on an established transport is <strong>not retried</strong> — a slow-but-s
 call reconnects) and the model receives a readable
 <code>ERROR: MCP tool '…' on server '…' failed: …</code>. A dead or slow server degrades;
 it never crashes the harness.</p>
+
+<p>Poisoning a stdio transport <strong>destroys the server process</strong>, and the order
+matters. A read waiting on a child that has gone silent cannot be cancelled: it ignores
+an interrupt, and it holds the stream's own lock, so closing the stream to abandon the
+read only waits on the read. Destroying the child is what ends it. The pipe closes and
+the read returns. Earlier versions closed the stream first, so a server that spawned and
+then said nothing parked <code>spectro doctor</code>, the REPL and any web session for
+good, and left the child running after the process that started it was gone. Against a
+server that never speaks, the probe now reports it unreachable inside the 20-second
+budget, the rest of the output prints, and no orphan survives.</p>
 
 <h2 id="ch-mcp-notes">The example server: spectro-mcp-notes</h2>
 <p>The repository ships a complete, runnable MCP server as its own module — a stdio
