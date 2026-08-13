@@ -24,6 +24,23 @@ import java.util.function.Supplier;
  * discovery). The URL is model output, so Chrome is exec'd with an ARGV —
  * never through a shell line — and only http/https schemes pass (a file://
  * URL would dump local files). Permission-gated like web_fetch.
+ *
+ * <p><b>The fence here is an ENTRY check, and that is the whole truth of it.</b>
+ * The address the model names is judged before Chrome starts. After that Chrome
+ * is on its own: it follows redirects, and page JavaScript can navigate
+ * anywhere, and none of those requests come back through this process. So a
+ * page reached with this tool can still walk to a private address, and a reader
+ * of the docs is told exactly that rather than a sentence that is nicer and
+ * false. {@code web_fetch}, which does its own fetching, judges every hop.
+ *
+ * <p>The two ways to close it are both real and both cost something. Pinning
+ * Chrome's resolver to the one host (a {@code --host-resolver-rules} exclusion)
+ * would break every page whose script or styling comes from another origin,
+ * which is exactly the class of page this tool exists for. Running Chrome
+ * through a local proxy that applies {@link dev.spectroscope.core.net.NetFence}
+ * per request would close it completely, subresources included — a new
+ * listening socket and a component with its own security surface. That is a
+ * card, not a footnote, and it is not this one.
  */
 public final class BrowsePageTool implements Tool {
 

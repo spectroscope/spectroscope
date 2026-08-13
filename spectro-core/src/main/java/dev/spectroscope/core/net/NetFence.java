@@ -29,8 +29,29 @@ import java.util.Locale;
  *   <li>link-local 169.254/16 (which is where a cloud metadata service lives)
  *       and IPv6 fe80::/10;</li>
  *   <li>IPv6 unique-local fc00::/7, and the unspecified address;</li>
+ *   <li>multicast and the limited broadcast — "every host on this segment" is
+ *       not an address a page may send an agent to;</li>
  *   <li>loopback — unless the operator opted in for the local verify loop, which
  *       is the one legitimate reason to point this product at itself.</li>
+ * </ul>
+ *
+ * <p><b>How far the fence actually reaches, tool by tool.</b> This class judges
+ * ONE address. Whether the whole journey is judged depends on who does the
+ * travelling:
+ *
+ * <ul>
+ *   <li>{@code web_fetch} walks its own redirect chain and puts EVERY hop here
+ *       first (see {@code WebFetchTool}). One 302 used to be enough to step
+ *       around this class entirely, and that is measured, not hypothetical.</li>
+ *   <li>{@code browse_page} is judged at the address it is HANDED, and no
+ *       further. Once Chrome is running it follows redirects and executes
+ *       JavaScript that can navigate wherever it likes, and nothing in this
+ *       process sees those requests. Pinning Chrome to one host would close it
+ *       and would also stop every page whose script lives on a CDN — which is
+ *       the entire reason browse_page exists. The honest statement is therefore
+ *       the one written here and in the guide: for that tool the fence is an
+ *       entry check. Policing the browser's own traffic needs a proxy Chrome
+ *       runs through, and that is its own card.</li>
  * </ul>
  *
  * <p><b>A name is judged by where it points.</b> {@code localtest.me} looks
@@ -174,17 +195,27 @@ public final class NetFence {
     }
 
     /** An IPv4 address in any spelling a parser might accept — dotted decimal,
-     *  a bare integer, octal with a leading zero, hex with 0x. All of them are
-     *  ways to write 127.0.0.1 without typing it. */
+     *  a bare integer, octal with a leading zero, hex with 0x. The pattern is
+     *  deliberately wide: what matters is that a spelling like this is treated
+     *  as an ADDRESS and never handed to the resolver as if it were a name. */
     private static final java.util.regex.Pattern IPV4_ISH = java.util.regex.Pattern
             .compile("(0[xX][0-9a-fA-F]+|\\d+)(\\.(0[xX][0-9a-fA-F]+|\\d+)){0,3}");
 
     /** Whether the host is already an address rather than a name. An address is
      *  judged directly; only a NAME goes to the resolver seam. The check is
-     *  deliberately wider than "dotted quad": {@code 2130706433},
-     *  {@code 0177.0.0.1} and {@code 0x7f.1} are all ways of writing loopback
-     *  without typing it, and a spelling that reaches this branch and then fails
-     *  to parse is refused as unreadable rather than waved through as a name. */
+     *  deliberately wider than "dotted quad" — {@code 2130706433} and
+     *  {@code 0x7f.1} both mean 127.0.0.1 — and a spelling that reaches this
+     *  branch and then fails to parse is refused as unreadable rather than
+     *  waved through as a name.
+     *
+     *  <p>How each spelling PARSES is {@link InetAddress}'s business, not this
+     *  class's, and the two do not always agree with the textbook: this JDK
+     *  reads {@code 0177.0.0.1} as 177.0.0.1 rather than as octal loopback.
+     *  That is not a gap, because the connector resolves the same string through
+     *  the same {@code InetAddress} — the fence judges precisely the address the
+     *  request will dial. (The comment here used to claim the octal reading, and
+     *  a review measured otherwise; the rule is "judge what it resolves to",
+     *  never "know what it should resolve to".) */
     private static boolean isIpLiteral(String host) {
         return !host.isEmpty()
                 && (host.indexOf(':') >= 0 || IPV4_ISH.matcher(host).matches());
@@ -208,10 +239,18 @@ public final class NetFence {
         if (address.isLinkLocalAddress()) {
             return "link-local";
         }
+        if (address.isMulticastAddress()) {
+            // Not a host a page has any business pointing at, and it reaches the
+            // local segment — 224.0.0.1 and ff02::1 are "everyone here".
+            return "multicast";
+        }
         if (address instanceof Inet4Address v4) {
             byte[] octets = v4.getAddress();
             int first = octets[0] & 0xFF;
             int second = octets[1] & 0xFF;
+            if ((octets[0] & octets[1] & octets[2] & octets[3]) == (byte) 0xFF) {
+                return "broadcast";   // 255.255.255.255, the limited broadcast
+            }
             if (first == 10
                     || (first == 172 && second >= 16 && second <= 31)
                     || (first == 192 && second == 168)) {
@@ -245,6 +284,8 @@ public final class NetFence {
             case "link-local" -> "it is a link-local address";
             case "unique-local" -> "it is a unique-local address";
             case "unspecified" -> "it is the unspecified address";
+            case "multicast" -> "it is a multicast address, which means every host on the segment";
+            case "broadcast" -> "it is the broadcast address";
             default -> "the net fence refuses it";
         };
         return new Refusal(where, rule, sentence(where, rule, why));

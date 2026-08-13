@@ -53,6 +53,34 @@ class DefaultHttpFetcherTest {
                 "the raw body must be capped before the HTML strip pipeline");
     }
 
+    /**
+     * The root cause behind review finding F1: {@code HttpURLConnection} follows
+     * same-protocol redirects all by itself, so the fetcher used to walk to an
+     * address the fence had never been shown. A redirect must come back as DATA.
+     */
+    @Test
+    void aRedirectComesBackAsDataInsteadOfBeingFollowed() throws IOException {
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/", exchange -> {
+            boolean hop = exchange.getRequestURI().getPath().startsWith("/hop");
+            byte[] body = (hop ? "moved" : "ARRIVED").getBytes(StandardCharsets.UTF_8);
+            if (hop) {
+                exchange.getResponseHeaders().add("Location", "/here");
+            }
+            exchange.sendResponseHeaders(hop ? 302 : 200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+
+        HttpFetcher.Fetched fetched = new DefaultHttpFetcher()
+                .fetch("http://127.0.0.1:" + server.getAddress().getPort() + "/hop");
+
+        assertEquals(302, fetched.status(), "the transport must not follow the hop itself");
+        assertEquals("/here", fetched.location(), "the Location is handed up verbatim");
+    }
+
     @Test
     void nonOkStatusesPassThroughWithoutThrowing() throws IOException {
         HttpFetcher.Fetched fetched = new DefaultHttpFetcher()

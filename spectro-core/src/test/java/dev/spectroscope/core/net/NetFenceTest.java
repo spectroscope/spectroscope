@@ -149,6 +149,18 @@ class NetFenceTest {
     }
 
     @Test
+    void broadcastAndMulticastAreNotAddressesAPageMayPointAt() {
+        // Review finding F8: both passed the first build. Neither is an address a
+        // web page has any business sending an agent to, and both reach the local
+        // segment — the same private world the rest of this fence is about.
+        NetFence fence = fenced();
+        assertEquals("broadcast", fence.refuse("http://255.255.255.255/").rule());
+        assertEquals("multicast", fence.refuse("http://224.0.0.1/").rule());
+        assertEquals("multicast", fence.refuse("http://[ff02::1]/").rule(),
+                "IPv6 all-nodes is the same idea in the other family");
+    }
+
+    @Test
     void aHostNameMadeOfHexLettersIsStillAName() {
         // beef.cafe is a real domain shape. It must reach the resolver seam and
         // not be mistaken for an address.
