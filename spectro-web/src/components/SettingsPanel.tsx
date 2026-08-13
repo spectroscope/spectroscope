@@ -863,6 +863,7 @@ export function SettingsPanel({
                 {t(lang, "set.secNetFence")}
               </div>
               <p className="settings-note">{t(lang, "set.netFenceHint")}</p>
+              <p className="settings-note">{t(lang, "set.netFenceBrowserNote")}</p>
               <div className="settings-toggles">
                 <Switch
                   label={t(lang, "set.allowLocalhost")}

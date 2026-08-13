@@ -2477,6 +2477,7 @@ a request leaves:</p>
   <tr><td>10/8, 172.16/12, 192.168/16</td><td>the private networks (RFC 1918)</td></tr>
   <tr><td>100.64/10</td><td>the range a tailnet hands out</td></tr>
   <tr><td>169.254/16, fe80::/10, fc00::/7</td><td>link-local (where a cloud metadata service lives) and unique-local</td></tr>
+  <tr><td>multicast, 255.255.255.255</td><td>"every host on this segment" is not somewhere a page may send an agent</td></tr>
   <tr><td>loopback</td><td>unless <code>allowLocalhost</code> is set — see below</td></tr>
 </table>
 
@@ -2485,9 +2486,28 @@ a request leaves:</p>
 and every answer is checked. A name that does not resolve at all is left to fail on its own
 — the fence does not invent an answer.</p>
 
+<h3>How far the fence reaches, per tool</h3>
+
+<p><strong><code>web_fetch</code> is fenced at every hop.</strong> It follows redirects
+itself — up to five — and each address in the chain goes to the fence before a request is
+made. It has to work that way: the Java HTTP client follows same-protocol redirects on its
+own, and a first build that asked the fence once let a public page answer <code>302</code>
+and hand back a LAN page and a tailnet page with the fence never consulted for either.</p>
+
+<p><strong><code>browse_page</code> is fenced at the address you give it, and no
+further.</strong> Once Chrome is running it follows its own redirects and runs the page's
+JavaScript, which can navigate anywhere, and none of that comes back past the fence. Two
+things would close it and both cost something real: pinning Chrome to a single host breaks
+every page whose script lives on a CDN — which is the reason this tool exists — and running
+Chrome through a fencing proxy closes it completely but is a component of its own. Until
+one of them ships, treat <code>browse_page</code> as an entry check and prefer
+<code>web_fetch</code> when the page does not need JavaScript.</p>
+
 <p><code>allowLocalhost: true</code> (Settings → Net fence) is the deliberate opt-in for the
 local verify loop: this product on 8746, ollama on 11434. It opens loopback and nothing else
-— not the LAN, not the tailnet, never a file URL.</p>
+— not the LAN, not the tailnet, never a file URL, and not through a redirect either. It is
+<em>process-global</em>: a workspace scope may not set it, because the workspace is the
+folder the agent itself writes into, and a switch inside the sandbox is not a switch.</p>
 
 <p>A refusal names the address and the rule and carries nothing else:
 <code>ERROR: browse_page refused 192.168.1.10:8746: it is a private network address,
@@ -5087,7 +5107,7 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>permissionMode</code></td><td><code>ask</code> | <code>auto</code> | <code>readonly</code> · <code>ask</code></td><td>—</td><td>chapter 13; headless <code>run</code> has its own <code>--permissions</code>; live via the composer gear's <code>set_permission_mode</code></td></tr>
   <tr><td><code>workspace</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_WORKSPACE</code> / <code>--workspace</code></td><td>the agent's working directory (file tools, glob/grep, run_command); unset = a per-session folder <code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code> — a resume finds its files again, and the project you started spectroscope in stays clean; process-global — a workspace scope may not set this (a folder must not repoint the agent)</td></tr>
   <tr><td><code>autoApprove</code></td><td>string[] · <code>[]</code></td><td>—</td><td>allowlist rules: <code>tool#tier</code>, <code>tool#tier:prefix*</code> or <code>family*#tier</code> (chapter 13) — whole-block; lives in the workspace project file once one is pinned</td></tr>
-  <tr><td><code>allowLocalhost</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_ALLOW_LOCALHOST</code></td><td>the net fence's local-verify-loop opt-in: <code>web_fetch</code>/<code>browse_page</code> may reach loopback. Never widens to RFC 1918, the 100.64/10 tailnet or <code>file://</code> (chapter 13)</td></tr>
+  <tr><td><code>allowLocalhost</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_ALLOW_LOCALHOST</code></td><td>the net fence's local-verify-loop opt-in: <code>web_fetch</code>/<code>browse_page</code> may reach loopback. Never widens to RFC 1918, the 100.64/10 tailnet or <code>file://</code> — <code>web_fetch</code> fences every redirect hop, while <code>browse_page</code> is fenced only on the address you hand it (Chrome's own redirects and script navigation are outside it — chapter 13). Process-global: refused in a workspace scope, user scope only</td></tr>
   <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
   <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle)</td></tr>
   <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18)</td></tr>
