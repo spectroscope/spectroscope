@@ -1,4 +1,4 @@
-# 07 — search variant: SearXNG
+# 09 — search variant: SearXNG
 
 No Java code lives here on purpose. `web_search` already speaks to a SearXNG
 instance; what this directory adds is the other half — a SearXNG to point at.
@@ -25,7 +25,7 @@ the other half — SearXNG refuses to start on the placeholder it ships with.
 ## Run it
 
 ```bash
-cd samples/07-searxng
+cd samples/09-searxng
 ./install.sh
 ```
 

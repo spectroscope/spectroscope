@@ -12,7 +12,7 @@ import { dockerOffer, type DockerOffer, type DockerStatus } from "./dockerOffer"
 /** The shipped setup, relative to the repository root. Pinned here because the
  *  command below is only true while this path exists; webSearchSetup.test.ts
  *  reads it off disk so a moved sample fails the suite instead of the user. */
-export const SEARXNG_SAMPLE_PATH = "samples/07-searxng";
+export const SEARXNG_SAMPLE_PATH = "samples/09-searxng";
 
 /**
  * The command handed to an operator whose daemon is ready.
