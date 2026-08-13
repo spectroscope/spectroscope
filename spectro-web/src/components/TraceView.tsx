@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { traceRowOffset, traceWindow } from "./traceWindow";
-import type { CSSProperties } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { RunEvent } from "../events";
 import type { TraceEntry, UserAttachment } from "../state/reducer";
 import { agentAccent, compactJson, formatTokens, prettyJson } from "../format";
@@ -597,6 +597,23 @@ const TraceRow = memo(function TraceRow(props: {
    *  scenario, a fleet. Session-wide like `provenance`, and one stable string,
    *  so it rides every row without waking the memo. */
   llmWireSessionId: string | null;
+  /**
+   * Where the OPEN row reports its height from, and nothing else uses it
+   * (card 211).
+   *
+   * The height that matters is the whole block a row occupies — the button
+   * plus its detail, which is a sibling and not a child of it. Measuring
+   * `[data-seq=…]` measured the button alone: 25 px under a 1,143 px detail,
+   * on the owner's own session. The window then placed every row below the
+   * open one against a total that was 1,143 px short, and the browser clamped
+   * the reader back to where that shorter total ended.
+   *
+   * It is a ref callback rather than an effect on purpose: React calls it on
+   * every mount and unmount of this node, so a row that is remounted — by a
+   * filter, by a scroll, by anything — measures itself again without the view
+   * having to notice.
+   */
+  blockRef?: (el: HTMLDivElement | null) => void;
   onJump?: (seq: number) => void;
   onToggle: (seq: number) => void;
 }) {
@@ -622,7 +639,13 @@ const TraceRow = memo(function TraceRow(props: {
         ? t(lang, "trace.resumeRowTitle")
         : `${dirLabel[ld]} · Socket: ${socket}`;
   return (
-    <>
+    // One element around everything this row occupies — the button, the lens
+    // strips, the detail. It exists so the open row's height can be MEASURED
+    // rather than guessed from the button (card 211). `data-seq` deliberately
+    // stays on the button: the stepper, the search walk and the jump all
+    // querySelector it and then call focus() on what they find, and a div is
+    // not focusable.
+    <div className="trace-rowblock" data-block-seq={entry.seq} ref={props.blockRef}>
       <button
         type="button"
         className={`trace-row${entry.type === "system_context" || entry.type === "session_resume" ? " trace-row--sys" : ""}${lens === "" ? "" : ` trace-row--${lens}`}${tl !== null && tl > 0 ? " trace-row--tl" : ""}${hit === "" ? "" : ` trace-row--${hit}`}`}
@@ -747,7 +770,7 @@ const TraceRow = memo(function TraceRow(props: {
           onJump={(seq) => props.onJump?.(seq)}
         />
       )}
-    </>
+    </div>
   );
 });
 
@@ -2047,39 +2070,67 @@ export function TraceView(props: {
     return () => ro.disconnect();
   }, [entries.length, tlOn, cols.host, cols.model]);
 
-  // A row the stepper asked for while it was outside the window: focus it the
-  // moment the window builds it. Without this the stepper would move the view
-  // and leave the keyboard behind, so the next Space would step from the old
-  // row — the subtle version of the bug, and the harder one to notice.
+  // Where the stepper lands. The row is focused AND centred here rather than in
+  // `openAt`, and both for the same reason: at the moment the reader presses the
+  // key, the row that is closing still holds its detail and the row that is
+  // opening has none, so the document the scroll would be computed against is
+  // one React commit out of date. This effect runs after that commit, with the
+  // real layout in front of it.
+  //
+  // Card 211 measured what the synchronous version cost once the spacers became
+  // exact: stepping onto a row left it 849 px ABOVE the viewport, because the
+  // scroll was aimed at a geometry that changed a millisecond later. It also
+  // covers the case this effect was written for — a row still outside the
+  // window — where without it the stepper moved the view and left the keyboard
+  // on the old row, so the next Space stepped from the wrong place.
   useLayoutEffect(() => {
     const want = focusPending.current;
     if (want === null) return;
     const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${want}"]`);
     if (row !== null && row !== undefined) {
       row.focus({ preventScroll: true });
+      row.scrollIntoView({ block: "center" });
       focusPending.current = null;
     }
   });
 
-  // The expanded row's height, measured after it renders. Nothing below it can
-  // be placed correctly without this, and it is the ONE row whose height is not
-  // known in advance.
-  useLayoutEffect(() => {
-    if (openSeq === null) {
-      setOpenH(0);
-      return;
-    }
-    const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${openSeq}"]`);
-    if (row === null || row === undefined) return;
-    // Observed rather than measured once: an open row's detail can still grow
-    // after it first paints — source lines and tool-call bodies arrive on their
-    // own schedule — and a height read a frame too early would leave every row
-    // below it placed against a number that is no longer true.
-    setOpenH(row.offsetHeight);
-    const ro = new ResizeObserver(() => setOpenH(row.offsetHeight));
-    ro.observe(row);
-    return () => ro.disconnect();
+  // The expanded row's height. Nothing below it can be placed correctly without
+  // this, and it is the ONE row whose height is not known in advance.
+  //
+  // Card 211 rewrote how it is taken, twice over. It used to be an effect keyed
+  // on [openSeq] that measured `[data-seq=…]`, and both halves were wrong:
+  //
+  //   - `[data-seq=…]` is the row BUTTON, and the detail is its sibling. The
+  //     effect therefore measured 25 px under a 1,143 px detail and the window
+  //     placed everything below the open row against a total that was short by
+  //     the whole detail. Now the block wrapper is measured, which is the thing
+  //     the row actually occupies.
+  //   - An effect keyed on [openSeq] runs once per opened row. If the row was
+  //     not in the DOM at that moment it returned WITHOUT measuring and without
+  //     observing, and nothing ever re-ran it. A ref callback cannot miss: React
+  //     calls it on every mount and every unmount of that node.
+  //
+  // On unmount the last height is KEPT rather than zeroed. A row that is not
+  // built still occupies its height in the arithmetic — that is what the two
+  // spacers are for — and zeroing it here is precisely the too-small total that
+  // makes the browser clamp `scrollTop` and throw the reader backwards.
+  const openRo = useRef<ResizeObserver | null>(null);
+  const measureOpen = useCallback((el: HTMLDivElement | null): void => {
+    openRo.current?.disconnect();
+    openRo.current = null;
+    if (el === null) return;
+    setOpenH(el.offsetHeight);
+    // Observed as well as measured: an open row's detail can still grow after it
+    // first paints — the llm bodies arrive from the sidecar a few ms later, and
+    // source lines and tool-call bodies come on their own schedule.
+    const ro = new ResizeObserver(() => setOpenH(el.offsetHeight));
+    ro.observe(el);
+    openRo.current = ro;
+  }, []);
+  useEffect(() => {
+    if (openSeq === null) setOpenH(0);
   }, [openSeq]);
+  useEffect(() => () => openRo.current?.disconnect(), []);
 
   // Both jumps move the window themselves, for the same reason centreOn does:
   // a smooth scroll's events are the compositor's to deliver, and the window
@@ -2112,19 +2163,18 @@ export function TraceView(props: {
     if (index < 0 || index >= visible.length) return;
     const target = visible[index];
     setOpenSeq(target.seq);
+    // Focus and centring both wait for the commit (see the layout effect above).
+    // They used to happen right here whenever the row was already built, which
+    // aimed the scroll at the layout the step was in the act of replacing.
+    focusPending.current = target.seq;
     const row = scrollRef.current?.querySelector<HTMLElement>(`[data-seq="${target.seq}"]`);
-    if (row !== null && row !== undefined) {
-      // Already built: focus and centre synchronously, exactly as before.
-      row.focus({ preventScroll: true });
-      row.scrollIntoView({ block: "center" });
-      return;
-    }
+    if (row !== null && row !== undefined) return;
     // Outside the window. Before card 117 this could not happen, and the
     // querySelector above WAS the whole implementation — leaving it that way
     // would have made the stepper silently stop at the edge of the built rows.
-    // So the position is computed, and the focus waits for the row to exist.
+    // So the position is computed, and the row is built before anyone asks the
+    // DOM for it.
     centreOn(index);
-    focusPending.current = target.seq;
   };
 
   const openNextEntry = (): void => openAt(visible.findIndex((e) => e.seq === openSeq) + 1);
@@ -2132,6 +2182,84 @@ export function TraceView(props: {
     const at = visible.findIndex((e) => e.seq === openSeq);
     if (at > 0) openAt(at - 1);
   };
+  /** One row of the list, wherever it is built — inside the window or pinned
+   *  beside it. Same call, same key, so the two are the same element to React. */
+  const renderRow = (i: number): ReactNode => {
+    const e = visible[i];
+    const pairSeq = lensOn ? pairs.get(e.seq) : undefined;
+    const pairTarget = pairSeq !== undefined ? bySeq.get(pairSeq) : undefined;
+    const ownText = lensOn ? blockTexts.get(e.seq) : undefined;
+    const fromSeq = lensOn ? reach.get(e.seq) : undefined;
+    const fromText = fromSeq === undefined ? undefined : blockTexts.get(fromSeq);
+    return (
+      <TraceRow
+        key={e.seq}
+        entry={e}
+        dt={i === 0 ? null : Math.max(0, e.ts - visible[i - 1].ts)}
+        tl={tlFractions === null ? null : tlFractions[i]}
+        proto={metaBySeq.get(e.seq)?.proto ?? "—"}
+        host={metaBySeq.get(e.seq)?.host ?? "—"}
+        showHost={cols.host}
+        showModel={cols.model}
+        hit={hitSeqs.has(e.seq) ? (e.seq === currentSeq ? "hit-cur" : "hit") : ""}
+        open={openSeq === e.seq}
+        lang={lang}
+        lens={lensOn ? lensRole(e.type, ownText !== undefined && ownText !== "") : ""}
+        pair={
+          pairTarget !== undefined
+            ? {
+                seq: pairTarget.seq,
+                label: `${pairTarget.type} · ${summarize(pairTarget, lang).slice(0, 60)}`,
+              }
+            : undefined
+        }
+        blockText={ownText}
+        from={
+          fromSeq !== undefined && fromText !== undefined && fromText !== ""
+            ? { seq: fromSeq, lead: reasoningLead(fromText) }
+            : undefined
+        }
+        notes={
+          e.sourceLine !== undefined && anchors?.get(e.sourceLine) === e.seq
+            ? noteIndex.get(e.sourceLine)
+            : undefined
+        }
+        chain={openSeq === e.seq ? openChain : undefined}
+        calls={openSeq === e.seq ? openCalls : undefined}
+        details={openSeq === e.seq ? openDetails : undefined}
+        source={openSeq === e.seq ? openSource : undefined}
+        provenance={provenance}
+        translated={props.translated ?? false}
+        llmWireSessionId={props.llmWireSessionId ?? null}
+        blockRef={openSeq === e.seq ? measureOpen : undefined}
+        onJump={jumpTo}
+        onToggle={onToggle}
+      />
+    );
+  };
+
+  /** A spacer standing in for rows nobody needs to build. */
+  const pad = (key: string, height: number, mark: string): ReactNode =>
+    height > 0 ? <div key={key} style={{ height }} aria-hidden="true" data-trace-pad={mark} /> : null;
+
+  // The table's children, in document order, as ONE keyed array. The open row
+  // is built even when the scroll position has left it behind (card 211), and
+  // because every child carries a key, the row keeps its DOM node — and with it
+  // its ResizeObserver — as it moves between the pinned slot and the window.
+  const rowChildren: ReactNode[] = [];
+  const pinnedAbove = slice.pinIndex >= 0 && slice.pinBefore;
+  rowChildren.push(pad("pad-top", slice.padTop, "top"));
+  if (pinnedAbove) {
+    rowChildren.push(renderRow(slice.pinIndex));
+    rowChildren.push(pad("pad-pin", slice.padPin, "pin"));
+  }
+  for (let i = slice.start; i < slice.end; i += 1) rowChildren.push(renderRow(i));
+  if (slice.pinIndex >= 0 && !slice.pinBefore) {
+    rowChildren.push(pad("pad-pin", slice.padPin, "pin"));
+    rowChildren.push(renderRow(slice.pinIndex));
+  }
+  rowChildren.push(pad("pad-bottom", slice.padBottom, "bottom"));
+
   // Space or → step to the next frame, ← to the previous — the trace reads like
   // the Lab stepper: open a frame, tap through the stream both ways.
   const onKeyDown = (e: React.KeyboardEvent): void => {
@@ -2440,64 +2568,14 @@ export function TraceView(props: {
                 <span>type</span>
                 <span>summary</span>
               </div>
-              {slice.padTop > 0 && (
-                <div style={{ height: slice.padTop }} aria-hidden="true" data-trace-pad="top" />
-              )}
-              {visible.slice(slice.start, slice.end).map((e, sliceIdx) => {
-                const i = slice.start + sliceIdx;
-                const pairSeq = lensOn ? pairs.get(e.seq) : undefined;
-                const pairTarget = pairSeq !== undefined ? bySeq.get(pairSeq) : undefined;
-                const ownText = lensOn ? blockTexts.get(e.seq) : undefined;
-                const fromSeq = lensOn ? reach.get(e.seq) : undefined;
-                const fromText = fromSeq === undefined ? undefined : blockTexts.get(fromSeq);
-                return (
-                  <TraceRow
-                    key={e.seq}
-                    entry={e}
-                    dt={i === 0 ? null : Math.max(0, e.ts - visible[i - 1].ts)}
-                    tl={tlFractions === null ? null : tlFractions[i]}
-                    proto={metaBySeq.get(e.seq)?.proto ?? "—"}
-                    host={metaBySeq.get(e.seq)?.host ?? "—"}
-                    showHost={cols.host}
-                    showModel={cols.model}
-                    hit={hitSeqs.has(e.seq) ? (e.seq === currentSeq ? "hit-cur" : "hit") : ""}
-                    open={openSeq === e.seq}
-                    lang={lang}
-                    lens={lensOn ? lensRole(e.type, ownText !== undefined && ownText !== "") : ""}
-                    pair={
-                      pairTarget !== undefined
-                        ? {
-                            seq: pairTarget.seq,
-                            label: `${pairTarget.type} · ${summarize(pairTarget, lang).slice(0, 60)}`,
-                          }
-                        : undefined
-                    }
-                    blockText={ownText}
-                    from={
-                      fromSeq !== undefined && fromText !== undefined && fromText !== ""
-                        ? { seq: fromSeq, lead: reasoningLead(fromText) }
-                        : undefined
-                    }
-                    notes={
-                      e.sourceLine !== undefined && anchors?.get(e.sourceLine) === e.seq
-                        ? noteIndex.get(e.sourceLine)
-                        : undefined
-                    }
-                    chain={openSeq === e.seq ? openChain : undefined}
-                    calls={openSeq === e.seq ? openCalls : undefined}
-                    details={openSeq === e.seq ? openDetails : undefined}
-                    source={openSeq === e.seq ? openSource : undefined}
-                    provenance={provenance}
-                    translated={props.translated ?? false}
-                    llmWireSessionId={props.llmWireSessionId ?? null}
-                    onJump={jumpTo}
-                    onToggle={onToggle}
-                  />
-                );
-              })}
-              {slice.padBottom > 0 && (
-                <div style={{ height: slice.padBottom }} aria-hidden="true" data-trace-pad="bottom" />
-              )}
+              {/* The children are ONE keyed array rather than three JSX slots,
+                  because the open row moves between the pinned position and the
+                  window as the reader scrolls. Keyed inside one array, React
+                  reconciles it by seq and the same DOM node travels with it —
+                  which is the whole point: an unmounted row is a row nobody is
+                  measuring. Split across slots it would unmount and remount at
+                  every crossing, and the ResizeObserver with it. */}
+              {rowChildren}
               {visible.length === 0 && <p className="trace-empty">{t(lang, "trace.noMatch")}</p>}
             </div>
           )}

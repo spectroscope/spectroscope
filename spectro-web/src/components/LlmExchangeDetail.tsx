@@ -47,6 +47,11 @@ import {
  *  button below it lifts it. */
 const RESPONSE_LINES_SHOWN = 200;
 
+/** How many lines the structured face's response facts print before it says it
+ *  stopped. Named because the reservation below has to agree with it: a
+ *  reservation for lines the pane will not paint is a reservation for nothing. */
+const RESPONSE_LINES_IN_FACTS = 20;
+
 /** How many messages and tools open unfolded. A replayed history is the whole
  *  conversation every turn, and 60 open blocks is the wall of JSON again in a
  *  different typeface. */
@@ -54,6 +59,62 @@ const PARTS_SHOWN = 40;
 
 /** A count the way the reader's language groups it (TraceView's `counted`). */
 const counted = (n: number, lang: Lang): string => n.toLocaleString(lang === "de" ? "de-DE" : "en-US");
+
+// Card 211, the second half. This is the ONE detail in the trace that arrives
+// late: it paints a single line, fetches the bodies from the sidecar, and a few
+// milliseconds later replaces that line with hundreds of pixels. Measured on the
+// owner's session: 82 px at first paint, 1,143 px six milliseconds later, under
+// a reader who did not scroll. So the pane says up front roughly how much room
+// it is going to need — and the frame already knows, because the collapsed row
+// prints it: "20 lines · 2 kB · 4.5 s" comes from `llmResponseSummary`, off the
+// same `responseLines` read below.
+//
+// The three constants are MEASURED, not chosen. Instrumented in Chrome at
+// 1440x880 on 20260810-230306-72871659, seq 5.5, the structured face:
+//   face strip 27 + expand strip 27 + label 17 + fidelity sentence 19 +
+//   facts line 17 + the detail's own 8/12 padding  = 107 px of chrome
+//   the response section was 1,041 px over 20 printed lines = 52 px a line
+
+/** Everything above and below the printed lines, in pixels. */
+const LW_CHROME_PX = 107;
+/** One recorded line as this pane prints it, wrapping included. */
+const LW_LINE_PX = 52;
+/** No reservation is taller than this. A reserved height is an estimate, and an
+ *  estimate that opens a screen-and-a-half of empty pane is worse than the step
+ *  it prevents. */
+const LW_RESERVE_MAX_PX = 2400;
+
+/**
+ * How tall the loaded pane is expected to be, read off the FRAME alone — before
+ * a byte of the body has been fetched.
+ *
+ * Deliberately an estimate and never a promise: it is applied as a `min-height`
+ * on the loading note and released the moment the bodies land, so a body that
+ * turns out taller simply grows past it and a shorter one is never padded. The
+ * measured residual on the owner's row is +43 px, against +1,061 px without it.
+ *
+ * @param lines what the frame says came back (`responseLines`)
+ * @param face which face is about to render
+ * @param half which half of the exchange this row is
+ * @return the pixels to hold open, or 0 when the frame says nothing usable —
+ *         a non-streamed body carries no line count, and guessing a height from
+ *         a byte size would be a guess dressed as a measurement
+ */
+export function llmReservePx(
+  lines: number,
+  face: "structured" | "insight" | "wire",
+  half: "request" | "response" | "both",
+): number {
+  // Which panes print the received lines at all. The structured face shows them
+  // only on the RESPONSE row — under a request they would bury it — while the
+  // wire and insight faces print them for every half that has a response.
+  const printsLines = face === "structured" ? half === "response" : half !== "request";
+  if (!printsLines || lines <= 0) return 0;
+  // Each face stops at its own count, and reserving past that would hold open
+  // room for lines the pane is never going to paint.
+  const cap = face === "structured" ? RESPONSE_LINES_IN_FACTS : RESPONSE_LINES_SHOWN;
+  return Math.min(LW_CHROME_PX + Math.min(lines, cap) * LW_LINE_PX, LW_RESERVE_MAX_PX);
+}
 
 /** The fidelity sentence for one side — or, for a fidelity nobody wrote a
  *  sentence for, the bare word itself: honest, and loud enough to notice. */
@@ -342,7 +403,7 @@ function ResponseFacts({
   if (side.bodyBytes > 0) facts.push(formatBytes(side.bodyBytes));
   if (durationMs > 0) facts.push(formatDuration(durationMs));
   if (side.aborted) facts.push(t(lang, "trace.llm.res.aborted"));
-  const cap = expandAll ? side.lines.length : Math.min(side.lines.length, 20);
+  const cap = expandAll ? side.lines.length : Math.min(side.lines.length, RESPONSE_LINES_IN_FACTS);
   return (
     <>
       {facts.length > 0 && <div className="ed-path mono">{facts.join(" · ")}</div>}
@@ -531,9 +592,25 @@ export function LlmExchangeDetail({
     return <p className="trace-source-note">{t(lang, "trace.llm.imported")}</p>;
   }
   if (state.kind === "loading") {
-    return <p className="trace-source-note">{t(lang, "trace.llm.loading")}</p>;
+    // The room the answer is going to need, held open while it travels (card
+    // 211). A min-height, so a taller body grows past it rather than being
+    // clipped, and it is gone the instant the pane renders for real.
+    const reserve = llmReservePx(meta.responseLines, face, half);
+    return (
+      <p
+        className="trace-source-note"
+        style={reserve > 0 ? { minHeight: reserve } : undefined}
+        data-llm-reserve={reserve > 0 ? reserve : undefined}
+      >
+        {t(lang, "trace.llm.loading")}
+      </p>
+    );
   }
   if (state.kind === "failed") {
+    // No reservation on the way out. `failed` and the imported sentence above
+    // are terminal one-liners: nothing further will arrive to fill the room, and
+    // holding a screenful open under a permanent sentence is the "padded
+    // forever" the card rules out. The step here is downwards, once, and rare.
     return <p className="trace-source-note">{t(lang, "trace.llm.failed")}</p>;
   }
   if (bodies === null || parts === null) {

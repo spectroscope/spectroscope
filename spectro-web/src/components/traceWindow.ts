@@ -30,12 +30,36 @@ export interface TraceWindowInput {
   overscan: number;
 }
 
-/** The slice to build, and the two spacers that stand in for the rest. */
+/** The slice to build, the spacers that stand in for the rest, and the one row
+ *  that is built whether or not the scroll position asks for it. */
 export interface TraceWindowSlice {
   start: number;
   end: number;
+  /** The spacer before the first thing built — the pinned row when there is
+   *  one above the window, otherwise the window's first row. */
   padTop: number;
+  /** The spacer after the last thing built, by the same rule. */
   padBottom: number;
+  /**
+   * The open row's index when it sits OUTSIDE {@code [start, end)} and is
+   * therefore built out of band, or -1 when the window already contains it.
+   *
+   * Card 211: the open row's height is the single excess the whole arithmetic
+   * rests on, and a height can only be measured from a row that exists. Left
+   * to the scroll position alone the open row unmounts as soon as the reader
+   * moves far enough — and then {@code total} counts a detail the document no
+   * longer holds, the scroller's real {@code scrollHeight} collapses under it,
+   * and the browser clamps {@code scrollTop} back to a place the reader never
+   * asked for. Measured on the owner's session: scrollTop 1600 → 463, and the
+   * detail gone. So the open row is pinned into the build for as long as it is
+   * open, and the two numbers can no longer disagree.
+   */
+  pinIndex: number;
+  /** The spacer between the pinned row and the window. 0 when nothing is
+   *  pinned, and 0 as well when the pinned row is the window's neighbour. */
+  padPin: number;
+  /** Whether the pinned row is built BEFORE the window rather than after it. */
+  pinBefore: boolean;
 }
 
 /**
@@ -68,11 +92,12 @@ export function traceRowOffset(index: number, rowH: number, openIndex: number, o
  */
 export function traceWindow(input: TraceWindowInput): TraceWindowSlice {
   const { viewportH, count, rowH, overscan } = input;
+  const nothingPinned = { pinIndex: -1, padPin: 0, pinBefore: false };
   if (count <= 0) {
-    return { start: 0, end: 0, padTop: 0, padBottom: 0 };
+    return { start: 0, end: 0, padTop: 0, padBottom: 0, ...nothingPinned };
   }
   if (viewportH <= 0 || rowH <= 0) {
-    return { start: 0, end: count, padTop: 0, padBottom: 0 };
+    return { start: 0, end: count, padTop: 0, padBottom: 0, ...nothingPinned };
   }
 
   // A stale open index — the filter can hide the open row while openSeq lives
@@ -107,10 +132,34 @@ export function traceWindow(input: TraceWindowInput): TraceWindowSlice {
   // position — harmless-looking, and wrong about what "visible" means.
   const end = clamp(indexAt(top + viewportH - 1) + 1 + overscan);
 
+  const padTop = offsetOf(start);
+  const padBottom = total - offsetOf(end);
+  if (openIndex < 0 || (openIndex >= start && openIndex < end)) {
+    return { start, end, padTop, padBottom, ...nothingPinned };
+  }
+
+  // The open row is out of the window's reach, so it is built beside it and the
+  // spacer it used to hide inside is split in two: what lies before it, and what
+  // lies between it and the window. Both halves are whole rows, which is why
+  // neither can go negative — the excess belongs to the pinned row itself.
+  if (openIndex < start) {
+    return {
+      start,
+      end,
+      padTop: openIndex * rowH,
+      padBottom,
+      pinIndex: openIndex,
+      padPin: padTop - openIndex * rowH - openH,
+      pinBefore: true,
+    };
+  }
   return {
     start,
     end,
-    padTop: offsetOf(start),
-    padBottom: total - offsetOf(end),
+    padTop,
+    padBottom: total - openIndex * rowH - openH,
+    pinIndex: openIndex,
+    padPin: openIndex * rowH - offsetOf(end),
+    pinBefore: false,
   };
 }
