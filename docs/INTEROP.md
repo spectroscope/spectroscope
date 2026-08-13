@@ -34,6 +34,16 @@ the providers' own per-image wire limit); a bigger one is refused with a
 note naming its size and the cap, decided on the encoded payload before
 anything is decoded. A text-only result is exactly what it always was.
 
+The server also names the type of what it sends, and that name is checked
+before anything is kept: **`image/png`, `image/jpeg` and `image/webp`** are
+carried (`ImageStore.servableMediaTypes()` — the types the image store can
+file under a name `/api/images/{file}` serves back, spelling and parameters
+normalized away, so `IMAGE/PNG` is `image/png`). Any other type is refused
+with a note naming it: nothing is stored, nothing is announced, and nothing
+goes to the provider. An image the session could not show is worse than an
+image that never arrived, and a type the provider does not know fails the
+whole request rather than just that picture.
+
 Because MCP is the interop point, any MCP server a foreign agent framework
 uses can serve spectroscope too, and the other way around —
 `spectro-mcp-notes` (a release asset) is a small notes server any MCP

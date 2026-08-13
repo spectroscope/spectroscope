@@ -152,10 +152,28 @@ public final class McpTool implements Tool {
     }
 
     /**
-     * Carries one image block to the model: the size is decided on the ENCODED
-     * payload, so an oversized image is refused before a decoded copy of it exists;
-     * within the cap the bytes are stored content-addressed, announced as an
+     * Carries one image block to the model. Two gates run before anything is kept,
+     * both because the block comes from a remote server nobody here vouches for:
+     *
+     * <ol>
+     *   <li><b>The type.</b> The server names the media type, and both ends of this
+     *       path are picky about it. The store writes an unknown type as {@code .bin},
+     *       which {@code GET /api/images/{file}} refuses — the image would be
+     *       announced to a session that cannot show it, against AC 5 of card 198.
+     *       The provider is worse: {@code Base64ImageSource.MediaType} carries an
+     *       {@code _UNKNOWN} case, so a bogus value travels all the way to the API
+     *       and fails the whole request. So the type is canonicalized against
+     *       {@link dev.spectroscope.core.image.ImageStore#servableMediaType}, and
+     *       anything else is refused with its type named — nothing stored, nothing
+     *       announced, nothing on the wire.</li>
+     *   <li><b>The size</b>, decided on the ENCODED payload, so an oversized image is
+     *       refused before a decoded copy of it exists.</li>
+     * </ol>
+     *
+     * <p>Within both gates the bytes are stored content-addressed, announced as an
      * {@code image_generated} reference event, and attached for the model to see.
+     * The store, the event and the wire all get the canonical type, never the
+     * server's spelling of it.
      *
      * <p>The event reuses the store-and-reference shape {@code generate_image}
      * established, with the fields that name a generation naming the MCP origin
@@ -168,6 +186,15 @@ public final class McpTool implements Tool {
      * @return the one-line note that stands where the image stood
      */
     private String carry(McpContent.Image image, int imageNumber, ToolContext context) {
+        String mediaType = dev.spectroscope.core.image.ImageStore
+                .servableMediaType(image.mediaType());
+        if (mediaType == null) {
+            return "[image " + imageNumber + " not attached: the server called it "
+                    + describeMediaType(image.mediaType())
+                    + ", and spectroscope carries only "
+                    + String.join(", ", dev.spectroscope.core.image.ImageStore.servableMediaTypes())
+                    + "]";
+        }
         long bytes = decodedLength(image.dataBase64());
         if (bytes > MAX_IMAGE_BYTES) {
             return "[image " + imageNumber + " not attached: " + bytes
@@ -181,18 +208,51 @@ public final class McpTool implements Tool {
         }
         try {
             dev.spectroscope.core.image.ImageStore.Ref ref =
-                    imageStore.put(decoded, image.mediaType());
+                    imageStore.put(decoded, mediaType);
             context.emit().accept(new dev.spectroscope.core.events.RunEvent.ImageGenerated(
                     context.agentId(), context.callId(), qualifiedName, "mcp", serverName,
-                    image.mediaType(), ref.blobPath(), ref.sha256(), System.currentTimeMillis()));
+                    mediaType, ref.blobPath(), ref.sha256(), System.currentTimeMillis()));
         } catch (RuntimeException notStored) {
             return "[image " + imageNumber + " not attached: it could not be stored: "
                     + notStored.getMessage() + "]";
         }
-        context.attach().accept(
-                new Tool.AttachedImage(image.mediaType(), image.dataBase64()));
-        return "[image " + imageNumber + " attached (" + image.mediaType() + ", " + bytes
+        context.attach().accept(new Tool.AttachedImage(mediaType, image.dataBase64()));
+        return "[image " + imageNumber + " attached (" + mediaType + ", " + bytes
                 + " bytes) — it is included with this result for you to see]";
+    }
+
+    /**
+     * Names an untrusted media type inside a model-facing sentence. The notice reads
+     * as the harness speaking, so whatever the server wrote there is an injection
+     * surface: only the media-type-shaped head of the value is quoted — the run of
+     * characters a media type may consist of — and everything from the first
+     * character that cannot belong to one is dropped, newline and all.
+     *
+     * @param mediaType the media type exactly as the server sent it, possibly null
+     * @return a bounded, single-line rendering safe to put in a sentence
+     */
+    private static String describeMediaType(String mediaType) {
+        if (mediaType == null) {
+            return "an unnamed type";
+        }
+        String stripped = mediaType.strip();
+        int end = 0;
+        while (end < stripped.length() && end < 60 && isMediaTypeCharacter(stripped.charAt(end))) {
+            end++;
+        }
+        return end == 0 ? "an unnamed type" : stripped.substring(0, end);
+    }
+
+    /**
+     * True for the characters a media type is made of (RFC 6838's restricted set,
+     * ASCII only — a letter outside ASCII cannot be part of a media type and can be
+     * part of a sentence in another language).
+     */
+    private static boolean isMediaTypeCharacter(char character) {
+        return (character >= 'a' && character <= 'z')
+                || (character >= 'A' && character <= 'Z')
+                || (character >= '0' && character <= '9')
+                || "/+-._".indexOf(character) >= 0;
     }
 
     /**

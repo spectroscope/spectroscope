@@ -14,6 +14,8 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -65,5 +67,36 @@ class ImageStoreTest {
         assertTrue(store.put(new byte[] {2}, "image/webp").blobPath().endsWith(".webp"));
         assertTrue(store.put(new byte[] {3}, "application/octet-stream").blobPath().endsWith(".bin"),
                 "unknown media types fall back to .bin");
+    }
+
+    @Test
+    void everyServableTypeStoresUnderARealExtensionAndTheRestFallsToTheUnreadableBin() {
+        ImageStore store = new ImageStore(dir);
+
+        for (String mediaType : ImageStore.servableMediaTypes()) {
+            String blobPath = store.put(mediaType.getBytes(StandardCharsets.UTF_8), mediaType)
+                    .blobPath();
+            assertFalse(blobPath.endsWith(".bin"),
+                    mediaType + " is declared servable and must not land as .bin: " + blobPath);
+        }
+
+        // The other half of the promise, and the reason an untrusted media type is
+        // checked BEFORE the put: what the store cannot name, no endpoint serves.
+        assertNull(ImageStore.servableMediaType("image/gif"));
+        assertTrue(store.put(new byte[] {4}, "image/gif").blobPath().endsWith(".bin"),
+                "a type outside the set still falls back — the caller must not get there");
+    }
+
+    @Test
+    void aMediaTypeIsCanonicalizedBeforeItIsJudged() {
+        // RFC 2045: the type is case-insensitive and may carry parameters. A correct
+        // server writing IMAGE/PNG must not have its picture filed as unreadable .bin.
+        assertEquals("image/png", ImageStore.servableMediaType("IMAGE/PNG"));
+        assertEquals("image/webp", ImageStore.servableMediaType("image/WebP; charset=binary"));
+        assertEquals("image/jpeg", ImageStore.servableMediaType("  image/jpeg  "));
+        assertNull(ImageStore.servableMediaType(null));
+        assertNull(ImageStore.servableMediaType(""));
+        assertTrue(new ImageStore(dir).put(new byte[] {5}, "IMAGE/PNG").blobPath().endsWith(".png"),
+                "the store files it under the canonical extension, not .bin");
     }
 }

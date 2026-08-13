@@ -7,6 +7,9 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 
 /**
  * Content-addressed image store: bytes land under {@code <dir>/<sha256>.<ext>},
@@ -73,18 +76,59 @@ public final class ImageStore {
     }
 
     /**
+     * The media types this store can write under a name the session is able to
+     * serve back: {@code GET /api/images/{file}} accepts 64 hex characters plus one
+     * of these extensions, and so do the copy-to-workspace endpoint and the web's
+     * own stored-image guard. Anything else lands as {@code .bin}, which no
+     * endpoint serves — a blob nothing can read.
+     *
+     * <p>That fallback is fine for a caller that controls its own media type
+     * ({@code generate_image} does), and a trap for one that does not: an MCP
+     * server names the type of the image it returns, so {@code McpTool} asks
+     * {@link #servableMediaType} first and refuses rather than storing a picture
+     * the session could never show (card 198, AC 5).
+     */
+    private static final Map<String, String> SERVABLE_EXTENSIONS =
+            Map.of("image/png", "png", "image/jpeg", "jpg", "image/webp", "webp");
+
+    /**
+     * The media types the store-and-serve chain carries end to end, in a stable
+     * order — the set {@link #servableMediaType} accepts, for callers that need to
+     * name it in a message or walk it in a test.
+     *
+     * @return the servable media types, sorted
+     */
+    public static List<String> servableMediaTypes() {
+        return SERVABLE_EXTENSIONS.keySet().stream().sorted().toList();
+    }
+
+    /**
+     * Canonicalizes an <b>untrusted</b> media type, or refuses it. Media types are
+     * case-insensitive and may carry parameters (RFC 2045), so {@code IMAGE/PNG} and
+     * {@code image/png; charset=binary} are the same type as {@code image/png} and
+     * are answered with that one spelling — the value a caller should then use for
+     * the store, the event and the provider wire alike.
+     *
+     * @param mediaType the type as some other party named it, possibly null
+     * @return the canonical type, or {@code null} when this chain cannot carry it
+     */
+    public static String servableMediaType(String mediaType) {
+        if (mediaType == null) {
+            return null;
+        }
+        String canonical = mediaType.split(";", 2)[0].strip().toLowerCase(Locale.ROOT);
+        return SERVABLE_EXTENSIONS.containsKey(canonical) ? canonical : null;
+    }
+
+    /**
      * Maps a media type to its file extension; anything unrecognized stores as {@code .bin}.
      *
      * @param mediaType MIME type as reported by the provider
      * @return the extension, without the dot
      */
     private static String extensionFor(String mediaType) {
-        return switch (mediaType) {
-            case "image/png" -> "png";
-            case "image/jpeg" -> "jpg";
-            case "image/webp" -> "webp";
-            default -> "bin";
-        };
+        String canonical = servableMediaType(mediaType);
+        return canonical == null ? "bin" : SERVABLE_EXTENSIONS.get(canonical);
     }
 
     /**
