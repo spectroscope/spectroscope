@@ -270,6 +270,27 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
   });
 });
 
+// The browser segment's fence note (card 201, review finding 4). The settings
+// text used to promise a fence that a redirect walked around: with the loopback
+// opt-in OFF, a 302 to a public name resolving to 127.0.0.1 loaded and titled
+// itself PWNED. The hole is closed; what is still outside anybody's reach has to
+// be where the OPERATOR reads it, not only in a source comment.
+describe("the browser segment states the fence, and its limit", () => {
+  it("names the opt-in and the redirect hop, in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      const note = dict["browser.fenceNote"][lang];
+      expect(note, `${lang} names the opt-in`).toContain("allowLocalhost");
+      expect(note, `${lang} names file://`).toContain("file://");
+      expect(note.length, `${lang} says something`).toBeGreaterThan(80);
+    }
+  });
+
+  it("admits what no fence catches rather than only what it blocks", () => {
+    expect(dict["browser.fenceNote"].en).toMatch(/DNS answer that changes/);
+    expect(dict["browser.fenceNote"].de).toMatch(/DNS-Antwort, die sich/);
+  });
+});
+
 describe("t", () => {
   it("resolves a key per language", () => {
     expect(t("de", "nav.newChat")).toBe("Neuer Chat");
