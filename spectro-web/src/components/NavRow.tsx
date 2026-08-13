@@ -101,6 +101,16 @@ const PATHS: Record<NavIconId, ReactNode> = {
       <path d="M4.6 6.4v3.6a1.6 1.6 0 0 0 1.6 1.6h2.6" />
     </>
   ),
+  // A window with a title bar — the pane, not a globe: what this segment shows
+  // is a browser INSIDE the app, and a globe would promise the open internet
+  // when the measured use is a dev server on localhost.
+  browser: (
+    <>
+      <rect x="1.8" y="3" width="12.4" height="10" rx="1.4" />
+      <path d="M1.8 6.2h12.4" />
+      <circle cx="4" cy="4.6" r="0.5" fill="currentColor" stroke="none" />
+    </>
+  ),
   // The same gear the header wears, redrawn in this box: one door's icon must
   // not be a different picture from the other's.
   gear: (

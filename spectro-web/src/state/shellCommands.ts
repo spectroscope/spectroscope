@@ -30,6 +30,7 @@ export const SHELL_COMMAND_IDS = [
   "nav.sessions",
   "nav.fleets",
   "nav.stategraph",
+  "nav.browser",
   "tab.set",
   "doctor.open",
   "keymap.open",

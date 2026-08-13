@@ -43,6 +43,7 @@ import {
   reportedViewFor,
   subscribeReportedViews,
 } from "./state/viewReport";
+import { BrowserSegment } from "./browser/BrowserSegment";
 import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
 import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
 import {
@@ -216,7 +217,7 @@ export function App() {
    * browser cannot re-read a picked file without a fresh user gesture, so any
    * persistence would restore the frame and not the picture.
    */
-  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph">("sessions");
+  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "browser">("sessions");
   /*
    * The artifacts the state graph is drawing — up here because the arm below
    * unmounts whenever `nav` moves off "stategraph". They lived in the pane,
@@ -1751,6 +1752,12 @@ export function App() {
         ? t(lang, "hdr.newSession")
         : t(lang, "hdr.archivedSession");
 
+  /* The two segments that take the WHOLE surface. Neither belongs to one run —
+     a state graph is a topology and the browser is a page the agent is driving
+     right now — so the session tab row is suppressed on both. Hoisted out of
+     the ternary because the chain below is already three deep. */
+  const wholeSurface = nav === "stategraph" || nav === "browser";
+
   return (
     <div
       className={`layout${sidebarOpen ? "" : " sidebar-closed"}`}
@@ -1883,8 +1890,7 @@ export function App() {
         {/* The stategraph arm sits FIRST and asks nothing about a fleet: it
             carries its own header, and a reader who left a fleet entered must
             not get that fleet's bar over a graph the fleet has no part in. */}
-        {nav === "stategraph" ? null : nav === "fleets" && enteredFleet === null ? null : enteredFleet !==
-          null ? (
+        {wholeSurface ? null : nav === "fleets" && enteredFleet === null ? null : enteredFleet !== null ? (
           <FleetBar
             model={enteredFleetModel}
             active={fleetTab}
@@ -2047,7 +2053,14 @@ export function App() {
             it answers a question no session tab asks, so it takes the area
             outright rather than sitting inside one run's tab row. The run is
             handed IN because this arm unmounts on every segment change. */}
-        {nav === "stategraph" ? (
+        {/* The browser takes the whole surface for the same reason the state
+            graph does: it is a page the agent is driving, not a view of one
+            run. It is also the one arm whose pixels are NOT React's — the
+            desktop shell lays a real WebContentsView over this rectangle
+            (card 201), so what is drawn here is the frame and the sign. */}
+        {nav === "browser" ? (
+          <BrowserSegment active={true} />
+        ) : nav === "stategraph" ? (
           <StateGraphPane
             run={stateGraphRun}
             onRun={setStateGraphRun}

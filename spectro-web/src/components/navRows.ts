@@ -8,7 +8,7 @@
 // here; the settings row has no state to decide and is written where it sits.
 
 /** Which glyph leads a row. Names, not paths — NavIcon owns the geometry. */
-export type NavIconId = "plus" | "play" | "stack" | "sessions" | "fleets" | "stategraph" | "gear";
+export type NavIconId = "plus" | "play" | "stack" | "sessions" | "fleets" | "stategraph" | "browser" | "gear";
 
 /**
  * The row-level action a segment row carries on its right.
@@ -21,7 +21,7 @@ export type NavIconId = "plus" | "play" | "stack" | "sessions" | "fleets" | "sta
 export type NavTrailing = "import" | "spawn" | "count" | null;
 
 export type NavActionId = "newChat" | "scenarios" | "starters";
-export type NavSegmentId = "sessions" | "fleets" | "stategraph";
+export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "browser";
 
 export interface NavRowSpec {
   id: string;
@@ -66,7 +66,12 @@ export function navActionRows(): NavRowSpec[] {
 }
 
 /**
- * The three segments, as rows rather than as a segmented control.
+ * The segments, as rows rather than as a segmented control.
+ *
+ * <p>Browser is the fourth (card 201). It is listed on every face, including the
+ * one that cannot show a pane: the segment's own panel says why there is nothing
+ * behind it, and a row that vanished on the web face would leave a reader
+ * wondering whether the product has a browser at all.
  *
  * @param input.active       which segment is showing
  * @param input.fleetsLocked the ladder has not opened fleets yet
@@ -115,6 +120,16 @@ export function navSegmentRows(input: {
       // disk and starts no process, so a level has nothing to protect here.
       disabled: false,
       active: input.active === "stategraph",
+      trailing: null,
+    },
+    {
+      id: "browser",
+      labelKey: "nav.browser",
+      icon: "browser",
+      // Not gated on the fleet lock either: the browser starts no fleet and
+      // spawns no node. What bounds it is the net fence and the tier map.
+      disabled: false,
+      active: input.active === "browser",
       trailing: null,
     },
   ];

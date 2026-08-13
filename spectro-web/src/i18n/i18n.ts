@@ -49,6 +49,29 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",
     en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right.",
   },
+  "nav.browser": { de: "Browser", en: "Browser" },
+  "browser.title": { de: "Der sichtbare Browser", en: "The visible browser" },
+  "browser.noPage": { de: "noch keine Seite geöffnet", en: "no page open yet" },
+  "browser.attachedNote": {
+    de: "Der Agent fährt diese Seite, und du siehst dieselbe Seite.",
+    en: "The agent drives this page, and you are watching the same page.",
+  },
+  "browser.loadingNote": {
+    de: "Verbindung zum Browser-Fenster wird geprüft …",
+    en: "Checking for a browser pane …",
+  },
+  "browser.noShellNote": {
+    de: "Kein Browser-Fenster angehängt. Der sichtbare Browser ist eine Fläche IN der Desktop-App; ein Reader, der spectro web im eigenen Browser öffnet, bekommt hier keine Seite.",
+    en: "No browser pane attached. The visible browser is a surface INSIDE the desktop app; a reader who opens spectro web in their own browser gets no page here.",
+  },
+  "browser.noShellHint": {
+    de: "Öffne die Desktop-App, dann fährt der Agent die Seite dort — und für localhost muss allowLocalhost in den Einstellungen an sein.",
+    en: "Open the desktop app and the agent drives the page there — and reaching localhost needs allowLocalhost turned on in the settings.",
+  },
+  "browser.railNote": {
+    de: "Eine sichtbare Browser-Fläche, die der Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Primär für den lokalen Test-Loop.",
+    en: "One visible browser surface the agent drives: navigate, click, evaluate JavaScript in the page, screenshot. Primarily for the local verify loop.",
+  },
   "nav.noFleets": {
     de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.",
     en: "No running fleets. Start nodes against the hub and they appear here.",

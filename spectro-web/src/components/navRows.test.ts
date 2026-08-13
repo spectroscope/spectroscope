@@ -40,8 +40,20 @@ describe("navSegmentRows", () => {
   const at = (over: Partial<Parameters<typeof navSegmentRows>[0]> = {}) =>
     navSegmentRows({ active: "sessions", fleetsLocked: false, fleetCount: 0, ...over });
 
-  it("keeps the three segments in the order the strip had them", () => {
-    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph"]);
+  it("keeps the segments in the order the strip had them, browser last", () => {
+    // Browser joined as the fourth (card 201) rather than beside sessions: the
+    // three that were here answer "what has run", and a browser the agent is
+    // driving right now is a different question.
+    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph", "browser"]);
+  });
+
+  it("offers the browser row on every face, including the one with no pane", () => {
+    // A row that vanished on the web face would leave a reader wondering
+    // whether the product has a browser at all. The segment's own panel says
+    // why there is nothing behind it.
+    const browser = at().find((r) => r.id === "browser");
+    expect(browser?.disabled).toBe(false);
+    expect(at({ active: "browser" }).find((r) => r.id === "browser")?.active).toBe(true);
   });
 
   it("gives every row a label key that exists in both languages", () => {
