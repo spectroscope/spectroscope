@@ -64,6 +64,35 @@ are bumped in steps 8b to 9: the Homebrew cask (macOS), the apt repository
 
 ---
 
+## Content gates — what a cut may not leave behind
+
+A gate here is not a build step. It is a pair of cards that must move together,
+written down at the place a release is actually cut so a cut can be checked
+against a line rather than against somebody's memory of a decision.
+
+### The browser ships with its replay path — cards 201 and 204
+
+**0.9 carries both halves of the line** (owner, 2026-08-12): the research half
+and the browser half. So for **0.9 the gate has nothing to decide** — card 201's
+visible browser and card 204's replay path are in the same release by schedule,
+not by rule, and the release-scope question that produced it (split 0.9, or
+knowingly suspend the three-to-five-day cadence) was answered by suspending the
+cadence on purpose for this one cut.
+
+The reason the pair exists is the product's own category. spectroscope is *the
+agent orchestrator you can watch*; a browser the agent drives is the surface
+hardest to reason about after the fact, and a run that leaves no record can be
+observed only while it happens. A release that shipped the browser without the
+record would ship a surface you can witness exactly once.
+
+**Still open beyond 0.9 (owner call):** whether this is a **standing rule** —
+hard, so no future release may cut a browser change without its replay path — or
+**soft**, decided per release. Until the owner rules, this section records what
+happened for 0.9 and blocks nothing later. Whichever way it goes, cards 201 and
+204 take the same word in the same pass.
+
+---
+
 ## The steps
 
 ### 1. Preflight
@@ -72,6 +101,8 @@ are bumped in steps 8b to 9: the Homebrew cask (macOS), the apt repository
   published (`git tag --list 'v*'`, and check central.sonatype.com).
 - Skim `release-notes/v<next>.md` — the draft grows during development; the
   release day should be an edit, not archaeology.
+- Read **Content gates** above. For a cut carrying a browser change, cards 201
+  and 204 are the pair to check.
 
 ### 2. Bump versions
 Move together:
