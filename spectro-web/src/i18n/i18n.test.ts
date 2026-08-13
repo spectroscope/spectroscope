@@ -291,6 +291,75 @@ describe("the browser segment states the fence, and its limit", () => {
   });
 });
 
+// Card 204: the replay. Both languages, every key — and two sentences carry
+// facts the reader acts on, so they are checked for saying them rather than for
+// merely existing. The empty state must name BOTH ways of having no record
+// (never drove one / it was deleted), because otherwise a reader whose record
+// was deleted concludes the feature is broken. And the fence note must say what
+// the record does not carry, since that is the promise the card was written on.
+describe("the browser replay says what it is and what it is not", () => {
+  const keys = [
+    "browser.replay.title",
+    "browser.replay.loading",
+    "browser.replay.emptyTitle",
+    "browser.replay.empty",
+    "browser.replay.emptyHint",
+    "browser.replay.noPage",
+    "browser.replay.browserLabel",
+    "browser.replay.browserN",
+    "browser.replay.stepN",
+    "browser.replay.prev",
+    "browser.replay.next",
+    "browser.replay.scrubber",
+    "browser.replay.shotAlt",
+    "browser.replay.shotAt",
+    "browser.replay.noShotYet",
+    "browser.replay.held",
+    "browser.replay.detailGone",
+    "browser.replay.ceiling",
+    "browser.replay.stillOpen",
+    "browser.replay.redacted",
+    "browser.replay.note",
+  ];
+
+  it("has every key in both languages", () => {
+    for (const key of keys) {
+      expect(dict[key], key).toBeTruthy();
+      expect(dict[key].en.trim(), `${key} en`).not.toBe("");
+      expect(dict[key].de.trim(), `${key} de`).not.toBe("");
+    }
+  });
+
+  it("keeps its interpolation slots in both languages", () => {
+    // A dropped {n} is silent: t() simply leaves the sentence without the
+    // number, and "Step of" reads as a typo rather than as a missing fact.
+    expect(dict["browser.replay.stepN"].en).toContain("{n}");
+    expect(dict["browser.replay.stepN"].de).toContain("{n}");
+    expect(dict["browser.replay.stepN"].en).toContain("{count}");
+    expect(dict["browser.replay.stepN"].de).toContain("{count}");
+    expect(dict["browser.replay.browserN"].en).toContain("{n}");
+    expect(dict["browser.replay.browserN"].de).toContain("{n}");
+    expect(dict["browser.replay.redacted"].en).toContain("{rule}");
+    expect(dict["browser.replay.redacted"].de).toContain("{rule}");
+    expect(dict["browser.replay.shotAt"].en).toContain("{w}");
+    expect(dict["browser.replay.shotAt"].de).toContain("{h}");
+  });
+
+  it("names both ways of having no record, so an empty pane is not read as a bug", () => {
+    expect(dict["browser.replay.empty"].en).toMatch(/drove no browser/);
+    expect(dict["browser.replay.empty"].en).toMatch(/deleted/);
+    expect(dict["browser.replay.empty"].de).toMatch(/keinen Browser gefahren/);
+    expect(dict["browser.replay.empty"].de).toMatch(/gel\u00f6scht/);
+  });
+
+  it("states what the record does not carry", () => {
+    expect(dict["browser.replay.note"].en).toMatch(/cookies/i);
+    expect(dict["browser.replay.note"].en).toMatch(/never enter/);
+    expect(dict["browser.replay.note"].de).toMatch(/Cookies/);
+    expect(dict["browser.replay.note"].de).toMatch(/nie hinein/);
+  });
+});
+
 // Card 218: the browser belongs to a session, and the two states that are new
 // because of it have to say so in both languages — a reader who sees an empty
 // frame and no sentence reads a bug, and a reader told "no browser" without

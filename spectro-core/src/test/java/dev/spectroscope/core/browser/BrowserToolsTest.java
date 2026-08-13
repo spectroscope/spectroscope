@@ -22,6 +22,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -243,7 +244,18 @@ class BrowserToolsTest {
         assertTrue(out.startsWith("ERROR: "), out);
         assertTrue(out.contains("image/tiff"), out);
         assertTrue(attachments.isEmpty(), "nothing on the wire the session cannot serve back");
-        assertTrue(events.isEmpty(), "and nothing announced either");
+        // The threshold is unchanged — no picture was stored, so no picture may
+        // be announced. What it is measured against had to be replaced: card 204
+        // made EVERY browser call announce itself, so "no events" stopped being
+        // the way to say "no image". The claim underneath is now stated directly,
+        // and the one event that is here is checked for saying the right thing.
+        assertTrue(events.stream().noneMatch(RunEvent.ImageGenerated.class::isInstance),
+                "and nothing announced either");
+        RunEvent.BrowserAction refused = events.stream()
+                .filter(RunEvent.BrowserAction.class::isInstance)
+                .map(RunEvent.BrowserAction.class::cast).findFirst().orElseThrow();
+        assertFalse(refused.ok());
+        assertNull(refused.sha256(), "no blob was stored, so no blob may be named");
     }
 
     @Test
@@ -415,7 +427,15 @@ class BrowserToolsTest {
         assertTrue(out.startsWith("ERROR: "), out);
         assertTrue(out.contains("over the " + BrowserTools.MAX_SCREENSHOT_BYTES + " byte limit"),
                 "the size is what was refused, so the size is what the sentence names: " + out);
-        assertTrue(attachments.isEmpty() && events.isEmpty(), "nothing stored, nothing announced");
+        assertTrue(attachments.isEmpty(), "nothing stored");
+        // Same replacement as above, same reason (card 204).
+        assertTrue(events.stream().noneMatch(RunEvent.ImageGenerated.class::isInstance),
+                "nothing announced");
+        RunEvent.BrowserAction refused = events.stream()
+                .filter(RunEvent.BrowserAction.class::isInstance)
+                .map(RunEvent.BrowserAction.class::cast).findFirst().orElseThrow();
+        assertFalse(refused.ok());
+        assertNull(refused.sha256(), "no blob was stored, so no blob may be named");
     }
 
     private static Tool byName(BrowserTools family, String name) {

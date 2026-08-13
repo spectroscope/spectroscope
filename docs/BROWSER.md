@@ -435,11 +435,88 @@ SPECTRO_LIVE_BROWSER=1 ./gradlew :spectro-server:test --tests '*BrowserLiveDrive
 neither runs in CI. The pure half does: `gate.yml` has a `desktop-gate` job,
 which is the test runner card 200 section 7 said this card owed.
 
+## The record: `.browser.jsonl` (card 204)
+
+Watching live is half the promise. Every browser tool call is also recorded,
+beside the session rather than in it:
+
+```
+~/.spectro/browser-wire/<session-id>.browser.jsonl
+```
+
+Two lines per call, paired by `cid`. The `browser_call` line is written the
+moment the tool is entered — before there is any outcome, so a navigate into a
+page that hangs is still on record — and `browser_result` closes it. A
+`browser_open` marker stands at the head of each **epoch**: a session can outlive
+its browser (closing the session retires it, a resume opens a fresh one with
+fresh cookies), and both append here, so a replay that could not tell them apart
+would narrate two logins as one story.
+
+Each call also emits an additive `browser_action` RunEvent into the session
+itself — metadata only, carrying the `cid` that joins the line to the record and
+the `sha256` that joins it to the screenshot. The byte-frozen RunEvent wire grows
+a new type and no existing event changes.
+
+**What the record carries is only what the model already saw:** the arguments,
+the result string, the address, and a *reference* to a screenshot blob. Cookies,
+page storage and the credentials the page holds are not filtered out of it — they
+never cross the recording seam, because `BrowserWireTap` takes no
+`BrowserFace.Reply` in any signature. Every recorded string passes the same
+`Redaction` rule table the state sidecar uses; a credential-shaped string is
+replaced **whole** with a marker naming the rule and a size **band** rather than
+an exact length, which is card 184's open finding answered instead of inherited.
+
+Screenshots are references, never bytes: the blob lives in the `ImageStore` and
+the record names it. That is what keeps a thousand-action run a text file.
+Measured on the card-204 integration run (a real Chromium pane, four actions —
+navigate, eval, screenshot, a refused navigate):
+
+| | |
+|---|---|
+| the sidecar | **2,429 bytes**, 9 lines, ~600 bytes per action |
+| the one screenshot blob | **7,828 bytes**, in the store, referenced once |
+| the ledger read back | **3–7 ms** over loopback, five runs |
+| the blob read back | **3.5 ms** |
+
+The blob for a single screenshot is three times the whole text record of the run
+that produced it, which is the arithmetic the stress test warned about: at a PNG
+per action inline, the measured real traffic (3,447 calls) would be tens of
+megabytes of JSONL. By reference it is roughly 60 KB of text per session at the
+measured ~98 calls per session, and the pictures dedupe in the store.
+
+    ./gradlew :spectro-server:test --tests '*BrowserLiveDriveTest*' \
+        --rerun-tasks --no-build-cache   # with SPECTRO_LIVE_BROWSER=1
+
+Served back through one gated, loopback-fenced endpoint per session, in the
+`LlmWireController` shape:
+
+| | |
+|---|---|
+| `GET /api/sessions/{id}/browser-wire` | the whole file, as an NDJSON download |
+| `GET /api/sessions/{id}/browser-wire/index` | the bodiless ledger the scrubber walks |
+| `GET /api/sessions/{id}/browser-wire/action/{cid}` | one action's two lines |
+
+The id becomes a file name, so it wears the same shape check the session export
+does — nothing with a slash, a dot or a `..` reaches the file system, and a
+malformed `cid` answers 400 before the file is opened. Deleting a session deletes
+its browser record with it.
+
+The **replay view** is the session's own `browser` tab when the shown session is
+a stored one: a scrubber over that session's trace, loading exactly the sidecar
+and the blobs its steps reference. The stage holds the last screenshot while
+later steps take none — the measured run shape is one navigate, one screenshot,
+then a run of evals — and says so in words and by dimming, because showing a
+later picture at an earlier step would be a claim about a moment nobody
+photographed.
+
+**Live frames never enter any of this.** The pixels the operator watches are a
+native `WebContentsView` driven over `/ws/browser`; that protocol's verbs are
+pinned out of the RunEvent union by `wireOnly.drift.test.ts`, so no control
+reply — least of all `screenshot`'s base64 — can ever be appended to a session
+file.
+
 ## What is not here
 
-- **The replay sidecar** — `.browser.jsonl`, screenshot-referencing events and
-  the scrubber — is card 204. The brand rule still binds the line: the browser
-  does not ship in a release without a replay path.
 - **Launch configurations** are card 202.
 - **Tabs.** `tab_id` is on every schema and **still refused**, and card 218
   changed the reason rather than the answer. Card 201 recorded its meaning as
@@ -451,5 +528,7 @@ which is the test runner card 200 section 7 said this card owed.
   browser, there is one page per session today, and an id is refused naming the
   id and the page. Dedicated tab verbs stay on card 201's "later" list along with
   `form_input`, `get_text` and `read_network`.
-- **A browser for a replayed session.** A stored transcript has no live browser;
-  opening one shows the frame and the sign.
+- **A browser for a replayed session.** A stored transcript has no live browser.
+  Its `browser` tab shows the **replay** instead (card 204, above); the rail's
+  Browser segment stays live, because it is the view onto the CURRENT session's
+  browser rather than onto whichever run is being read.

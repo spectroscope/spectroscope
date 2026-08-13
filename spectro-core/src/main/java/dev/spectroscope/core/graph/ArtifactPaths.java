@@ -19,9 +19,11 @@ public final class ArtifactPaths {
      * The suffixes that are re-pointed rather than kept. {@code .llm.jsonl} is in
      * here because it is the third file of the same family (the provider
      * exchange) and a caller who hands its path to a graph writer means the run,
-     * not the transcript.
+     * not the transcript. {@code .browser.jsonl} is the fourth for the same
+     * reason (card 204, the browser trace).
      */
-    private static final List<String> FAMILY = List.of(".graph.jsonl", ".state.jsonl", ".llm.jsonl");
+    private static final List<String> FAMILY =
+            List.of(".graph.jsonl", ".state.jsonl", ".llm.jsonl", ".browser.jsonl");
 
     private ArtifactPaths() {
     }
@@ -40,6 +42,17 @@ public final class ArtifactPaths {
      */
     public static Path state(Path path) {
         return retarget(path, ".state.jsonl");
+    }
+
+    /**
+     * The sibling that carries the browser trace (card 204): one line per
+     * browser tool call and one per its outcome, screenshots by reference only.
+     *
+     * @param path any path of the family, or a bare session path
+     * @return the sibling that carries the browser records
+     */
+    public static Path browser(Path path) {
+        return retarget(path, ".browser.jsonl");
     }
 
     private static Path retarget(Path path, String suffix) {

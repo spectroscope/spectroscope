@@ -53,14 +53,15 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.ContextInfo.class,        name = "context_info"),  // additive
     @JsonSubTypes.Type(value = RunEvent.AgentMessage.class,       name = "agent_message"), // A2A-lite, additive
     @JsonSubTypes.Type(value = RunEvent.Plan.class,               name = "plan"),          // additive
-    @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange")   // additive (card 184 leg 3)
+    @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange"),  // additive (card 184 leg 3)
+    @JsonSubTypes.Type(value = RunEvent.BrowserAction.class,      name = "browser_action") // additive (card 204)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
         RunEvent.PermissionDecision, RunEvent.ToolResult, RunEvent.AgentSpawn,
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
-        RunEvent.AgentMessage, RunEvent.Plan {
+        RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -385,6 +386,49 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     record ImageGenerated(String agentId, String callId, String prompt, String provider,
                           String model, String mediaType, String blobPath, String sha256,
                           long ts) implements RunEvent {}
+
+    /**
+     * Additive (card 204): one browser tool call happened.
+     *
+     * <p>The browser twin of {@link LlmExchange}, and for the same reason. The
+     * trace itself is a sidecar beside the session
+     * ({@code ~/.spectro/browser-wire/&lt;id&gt;.browser.jsonl}) because a browser run
+     * is arguments, results and pictures and none of that belongs in the
+     * byte-frozen wire. But a session file that said nothing at all could not
+     * even tell a reader that a browser had been driven, so this line carries the
+     * metadata: which tool, on which page, how it went, and the two keys that
+     * join it to the record — {@code cid} for the sidecar's pair of lines and
+     * {@code sha256} for the screenshot blob that {@link ImageGenerated}
+     * announced.
+     *
+     * <p><b>{@code epoch} is the field that would be easy to leave out and must
+     * not be.</b> Closing a session retires its browser and a resume opens a
+     * fresh one, with fresh cookies, appending to the same sidecar (card 218). A
+     * replay that could not tell those apart would narrate two logins as one
+     * continuous story.
+     *
+     * <p>No bytes ride here, ever: a picture is a blob in the store and a hash on
+     * this line, which is what keeps a thousand-action run a text file.
+     *
+     * @param agentId     the agent whose tool call this was
+     * @param callId      the provider's tool_use id, or null where none exists
+     * @param cid         the sidecar's own id for this call — pairs the two lines
+     * @param epoch       which browser of this session's life it drove, 1-based;
+     *                    0 when nothing was recording
+     * @param tool        the wire name of the tool ({@code browser_navigate}, …)
+     * @param url         the address the call happened on, or null when no page
+     *                    was open; redacted by the same rules as the sidecar
+     * @param ok          whether the tool answered rather than refused
+     * @param resultBytes UTF-8 size of the result string the model read back
+     * @param durationMs  entry-to-answer wall clock
+     * @param sha256      the screenshot blob's content hash, or null for a call
+     *                    that took no picture
+     * @param ts          epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record BrowserAction(String agentId, String callId, String cid, int epoch, String tool,
+                         String url, boolean ok, long resultBytes, long durationMs,
+                         String sha256, long ts) implements RunEvent {}
 
     /**
      * Additive: what sits in the context window right now. Emitted

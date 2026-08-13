@@ -9,6 +9,10 @@ import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.net.NetFence;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolOutput;
+import dev.spectroscope.core.wire.BrowserWireRecorder;
+import dev.spectroscope.core.wire.BrowserWireTap;
+
+import java.nio.charset.StandardCharsets;
 
 import java.util.Base64;
 import java.util.List;
@@ -114,9 +118,12 @@ public final class BrowserTools {
     private final Supplier<BrowserFace> face;
     private final Supplier<NetFence> fence;
     private final ImageStore images;
+    private final Supplier<BrowserWireTap> wire;
 
     /**
-     * Builds the family against a browser, a fence and an image store.
+     * Builds the family against a browser, a fence and an image store, with
+     * nothing recording — the CLI's shape, and every caller that predates card
+     * 204.
      *
      * @param face   where the browser is, read per call — the desktop shell can
      *               attach, detach and restart between two tool calls
@@ -125,9 +132,29 @@ public final class BrowserTools {
      * @param images the content-addressed store screenshots land in (card 198)
      */
     public BrowserTools(Supplier<BrowserFace> face, Supplier<NetFence> fence, ImageStore images) {
+        this(face, fence, images, BrowserWireTap::none);
+    }
+
+    /**
+     * The recording form (card 204): the same seven tools, writing the session's
+     * browser sidecar as they go.
+     *
+     * <p>The tap is read per call for the reason its neighbours are: a session
+     * mints its store — and with it its sidecar — after this registry is built,
+     * and a recorder captured once would be the one that did not exist yet.
+     *
+     * @param face   where the browser is, read per call
+     * @param fence  the net fence, read per call
+     * @param images the content-addressed store screenshots land in (card 198)
+     * @param wire   the session's browser recorder, read per call; never null,
+     *               {@link BrowserWireTap#none()} for a run with no sidecar
+     */
+    public BrowserTools(Supplier<BrowserFace> face, Supplier<NetFence> fence, ImageStore images,
+            Supplier<BrowserWireTap> wire) {
         this.face = face;
         this.fence = fence;
         this.images = images;
+        this.wire = wire;
     }
 
     /**
@@ -161,7 +188,8 @@ public final class BrowserTools {
                 true) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 String url = text(input, "url");
                 if (url.isBlank()) {
                     return "ERROR: browser_navigate needs a url.";
@@ -232,7 +260,8 @@ public final class BrowserTools {
                 true) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 String action = text(input, "action").toLowerCase(Locale.ROOT);
                 if (!COMPUTER_ACTIONS.contains(action)) {
                     return "ERROR: browser_computer does not know the action \""
@@ -240,7 +269,7 @@ public final class BrowserTools {
                             + String.join(", ", COMPUTER_ACTIONS) + ".";
                 }
                 if ("screenshot".equals(action)) {
-                    return screenshot(input, context, browser);
+                    return screenshot(input, context, browser, recording);
                 }
                 ObjectNode args = input.deepCopy();
                 BrowserFace.Reply reply = browser.send("input", args);
@@ -269,7 +298,8 @@ public final class BrowserTools {
      * @param browser the attached face
      * @return the one-line note that stands where the picture stood
      */
-    private String screenshot(JsonNode input, Tool.ToolContext context, BrowserFace browser) {
+    private String screenshot(JsonNode input, Tool.ToolContext context, BrowserFace browser,
+            BrowserWireTap.Call recording) {
         ObjectNode args = JSON.createObjectNode();
         BrowserFace.Reply reply = browser.send("screenshot", args);
         if (!reply.ok()) {
@@ -315,6 +345,12 @@ public final class BrowserTools {
         context.attach().accept(new Tool.AttachedImage(mediaType, base64));
         int width = reply.value().path("width").asInt(0);
         int height = reply.value().path("height").asInt(0);
+        // Card 204: the REFERENCE goes on the record, next to the same hash the
+        // event above just announced. Not the base64, which is right here in
+        // scope — a screenshot per action is tens of megabytes a run, and the
+        // sidecar is what has to stay a text file for a replay to be worth
+        // opening.
+        recording.image(mediaType, ref.blobPath(), ref.sha256(), width, height, bytes.length);
         return "Screenshot of " + page + " (" + width + "x" + height + ", " + mediaType + ", "
                 + bytes.length + " bytes) — attached for you to see.";
     }
@@ -356,7 +392,8 @@ public final class BrowserTools {
                 true) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 String action = text(input, "action");
                 if (!action.isBlank() && !"javascript_exec".equals(action)) {
                     return "ERROR: browser_eval has one action, javascript_exec — not \""
@@ -406,7 +443,8 @@ public final class BrowserTools {
                 false) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 ObjectNode args = JSON.createObjectNode();
                 args.put("filter", text(input, "filter").isBlank()
                         ? "interactive" : text(input, "filter"));
@@ -443,7 +481,8 @@ public final class BrowserTools {
                 false) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 String query = text(input, "query");
                 if (query.isBlank()) {
                     return "ERROR: browser_find needs a query for " + where(browser, null) + ".";
@@ -485,7 +524,8 @@ public final class BrowserTools {
                 false) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 ObjectNode args = JSON.createObjectNode();
                 args.put("limit", input.path("limit").asInt(50));
                 args.put("onlyErrors", input.path("only_errors").asBoolean(false));
@@ -533,7 +573,8 @@ public final class BrowserTools {
                 true) {
 
             @Override
-            String run(JsonNode input, ToolContext context, BrowserFace browser) {
+            String run(JsonNode input, ToolContext context, BrowserFace browser,
+                    BrowserWireTap.Call recording) {
                 int width = input.path("width").asInt(0);
                 int height = input.path("height").asInt(0);
                 String preset = text(input, "preset").toLowerCase(Locale.ROOT);
@@ -690,9 +731,16 @@ public final class BrowserTools {
         }
 
         /**
-         * The one call. Attachment first, then the tool's own work, and any
+         * The one call. The record opens FIRST, then the tool's own work, and any
          * escaped runtime failure becomes an "ERROR: " sentence rather than a
          * stack trace in the transcript.
+         *
+         * <p><b>Card 204 sits here rather than in each of the seven.</b> The
+         * record is opened before anything is decided and closed with whatever
+         * sentence the model ends up reading — so a fence refusal, a {@code
+         * tab_id} refusal and a detached browser are on the record exactly like a
+         * page that loaded. A recorder that only saw successful calls would leave
+         * the runs worth replaying blank.
          *
          * @param input   the model's arguments
          * @param context the run's per-call environment
@@ -701,6 +749,40 @@ public final class BrowserTools {
         @Override
         public final String execute(JsonNode input, ToolContext context) {
             BrowserFace browser = face.get();
+            BrowserWireTap tap = wire.get();
+            BrowserWireTap.Call recording = (tap == null ? BrowserWireTap.none() : tap)
+                    .open(name, context.agentId(), context.callId(), input,
+                            browser == null ? null : browser.pageUrl());
+            long started = System.currentTimeMillis();
+            String answer = answer(input, context, browser, recording);
+            // The one place the outcome is decided, and it is decided from what
+            // the MODEL reads: every failure path in this family answers with the
+            // "ERROR: " prefix the loop itself uses to set isError.
+            boolean ok = !answer.startsWith("ERROR:");
+            String endedOn = browser == null ? null : browser.pageUrl();
+            recording.end(ok, answer, endedOn);
+            context.emit().accept(new RunEvent.BrowserAction(context.agentId(), context.callId(),
+                    recording.cid(), recording.epoch(), name,
+                    BrowserWireRecorder.recordableUrl(endedOn), ok,
+                    answer.getBytes(StandardCharsets.UTF_8).length,
+                    System.currentTimeMillis() - started, recording.imageSha256(),
+                    System.currentTimeMillis()));
+            return answer;
+        }
+
+        /**
+         * Everything that can produce the model's sentence, with nothing that
+         * records it — so {@link #execute} has exactly one exit and the record
+         * cannot be closed twice or not at all.
+         *
+         * @param input     the model's arguments
+         * @param context   the run's per-call environment
+         * @param browser   the face, possibly detached or null
+         * @param recording the open record, for the one tool that produces a blob
+         * @return the tool result
+         */
+        private String answer(JsonNode input, ToolContext context, BrowserFace browser,
+                BrowserWireTap.Call recording) {
             if (browser == null || !browser.attached()) {
                 return "ERROR: " + name + " could not reach " + detachedNoun(input)
                         + " — " + BrowserFace.DETACHED + ".";
@@ -718,7 +800,7 @@ public final class BrowserTools {
                         + "decided by the server.";
             }
             try {
-                return run(input, context, browser);
+                return run(input, context, browser, recording);
             } catch (RuntimeException failure) {
                 return "ERROR: " + name + " failed on " + where(browser, null) + " — "
                         + failure.getMessage();
@@ -738,12 +820,15 @@ public final class BrowserTools {
         /**
          * The tool's own work, with a live face in hand.
          *
-         * @param input   the model's arguments
-         * @param context the run's per-call environment
-         * @param browser the attached face
+         * @param input     the model's arguments
+         * @param context   the run's per-call environment
+         * @param browser   the attached face
+         * @param recording the open record — only the screenshot branch uses it,
+         *                  to name the blob it stored
          * @return the tool result
          */
-        abstract String run(JsonNode input, ToolContext context, BrowserFace browser);
+        abstract String run(JsonNode input, ToolContext context, BrowserFace browser,
+                BrowserWireTap.Call recording);
     }
 
     /**

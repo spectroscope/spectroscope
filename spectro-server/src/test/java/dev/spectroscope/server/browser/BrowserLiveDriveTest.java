@@ -8,6 +8,8 @@ import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.net.NetFence;
 import dev.spectroscope.core.tools.Tool;
+import dev.spectroscope.core.wire.BrowserWireRecorder;
+import dev.spectroscope.server.observability.BrowserWireController;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -149,6 +151,9 @@ class BrowserLiveDriveTest {
     /** A second one, for the card-218 isolation drive. */
     private static final String OTHER_SESSION = "20260813-live-drive-two";
 
+    /** The card-204 drive's own session, so its sidecar holds nothing else. */
+    private static final String REPLAY_SESSION = "20260813-live-replay";
+
     private Tool tool(String name) {
         return tool(name, SESSION);
     }
@@ -162,9 +167,23 @@ class BrowserLiveDriveTest {
      * @return the tool
      */
     private Tool tool(String name, String session) {
+        return tool(name, session, null);
+    }
+
+    /**
+     * The same, recording (card 204).
+     *
+     * @param name     the tool's wire name
+     * @param session  whose browser it drives
+     * @param recorder the session's browser record, or null for none
+     * @return the tool
+     */
+    private Tool tool(String name, String session, BrowserWireRecorder recorder) {
         return new BrowserTools(() -> control.forSession(session),
                 () -> NetFence.withSystemDns(true),  // the verify loop, opted in
-                new ImageStore(blobs))
+                new ImageStore(blobs),
+                () -> recorder == null
+                        ? dev.spectroscope.core.wire.BrowserWireTap.none() : recorder)
                 .all().stream().filter(t -> name.equals(t.name())).findFirst().orElseThrow();
     }
 
@@ -385,5 +404,115 @@ class BrowserLiveDriveTest {
                 .execute(args("{\"url\":\"http://192.168.1.1/admin\"}"), context());
         assertTrue(refused.startsWith("ERROR"), refused);
         assertTrue(refused.contains("192.168.1.1"), refused);
+    }
+
+    /**
+     * Card 204, criterion 7, on the same live chain: a real browser run is
+     * recorded, served back through the real gated endpoint, and rebuilt into
+     * exactly the trace the replay view scrubs.
+     *
+     * <p>Nothing is faked between the Chromium pane and the file: the tools are
+     * the ones a session registers, the recorder is the one
+     * {@code SessionConnection} opens, the reads go through
+     * {@code BrowserWireController} with its fences on, and the screenshot is
+     * loaded back from the store by the reference the record kept. The size of
+     * the sidecar is printed, because "the JSONL stays text-sized" is a claim
+     * this card has to measure rather than assert.
+     *
+     * @throws Exception when the drive or the read-back fails
+     */
+    @Test
+    void aRecordedBrowserRunReplaysFromItsSidecar() throws Exception {
+        Files.deleteIfExists(BrowserWireRecorder.fileFor(REPLAY_SESSION));
+        List<RunEvent> recorded = new ArrayList<>();
+        List<Tool.Attachment> shown = new ArrayList<>();
+        Tool.ToolContext context = new Tool.ToolContext(blobs, new CancelSignal(), "main",
+                "toolu_live", recorded::add, shown::add);
+
+        try (BrowserWireRecorder recorder = BrowserWireRecorder.forSession(REPLAY_SESSION)) {
+            // The three the card names, in the order a real run does them.
+            assertFalse(tool("browser_navigate", REPLAY_SESSION, recorder)
+                    .execute(args("{\"url\":\"" + base + "\"}"), context).startsWith("ERROR"));
+            assertFalse(tool("browser_eval", REPLAY_SESSION, recorder).execute(
+                    args("{\"action\":\"javascript_exec\",\"text\":\""
+                            + "(()=>{document.getElementById('go').click();"
+                            + "return document.getElementById('head').textContent;})()\"}"),
+                    context).startsWith("ERROR"));
+            assertFalse(tool("browser_computer", REPLAY_SESSION, recorder)
+                    .execute(args("{\"action\":\"screenshot\"}"), context).startsWith("ERROR"));
+            // And the refusal, because a run worth replaying is usually one that
+            // went wrong somewhere.
+            assertTrue(tool("browser_navigate", REPLAY_SESSION, recorder)
+                    .execute(args("{\"url\":\"http://192.168.1.1/admin\"}"), context)
+                    .startsWith("ERROR"));
+        }
+
+        // ---- what reached the file -------------------------------------- //
+        Path sidecar = BrowserWireRecorder.fileFor(REPLAY_SESSION);
+        assertTrue(Files.exists(sidecar), "the run left a record beside the session");
+        String raw = Files.readString(sidecar);
+        long bytes = Files.size(sidecar);
+        System.out.println("CARD-204 sidecar " + sidecar + " = " + bytes + " bytes, "
+                + Files.readAllLines(sidecar).size() + " lines for 4 actions");
+        Tool.AttachedImage picture = (Tool.AttachedImage) shown.stream()
+                .filter(a -> a instanceof Tool.AttachedImage).findFirst().orElseThrow();
+        assertFalse(raw.contains(picture.dataBase64().substring(0, 64)),
+                "not one byte of the real screenshot is in the JSONL");
+        assertFalse(raw.contains("dataBase64"), "and not even the field name");
+
+        // ---- what the endpoint serves back ------------------------------- //
+        BrowserWireController reads = new BrowserWireController();
+        List<java.util.Map<String, Object>> ledger =
+                reads.index(REPLAY_SESSION, new org.springframework.mock.web
+                        .MockHttpServletRequest()).getBody();
+        assertEquals(4, ledger.size(), "four actions in, four steps out");
+        assertEquals(List.of("browser_navigate", "browser_eval", "browser_computer",
+                "browser_navigate"), ledger.stream().map(r -> r.get("tool")).toList());
+        assertEquals(List.of(true, true, true, false),
+                ledger.stream().map(r -> r.get("ok")).toList(),
+                "the refusal replays as a refusal");
+
+        // The screenshot step names the blob that is really on disk, and it is
+        // the same one image_generated announced — the join a replay needs.
+        String sha = String.valueOf(ledger.get(2).get("sha256"));
+        assertTrue(Files.exists(blobs.resolve(sha + ".png")),
+                "the replay loads a blob that exists: " + sha);
+        RunEvent.ImageGenerated announced = recorded.stream()
+                .filter(RunEvent.ImageGenerated.class::isInstance)
+                .map(RunEvent.ImageGenerated.class::cast).findFirst().orElseThrow();
+        assertEquals(announced.sha256(), sha);
+
+        // Every step also became an additive browser_action carrying the key the
+        // drill-in opens with.
+        List<RunEvent.BrowserAction> actions = recorded.stream()
+                .filter(RunEvent.BrowserAction.class::isInstance)
+                .map(RunEvent.BrowserAction.class::cast).toList();
+        assertEquals(4, actions.size());
+        assertEquals(ledger.stream().map(r -> r.get("cid")).toList(),
+                actions.stream().map(RunEvent.BrowserAction::cid).toList());
+        assertEquals(1, actions.get(0).epoch());
+
+        // ---- the drill-in the scrubber opens ------------------------------ //
+        java.util.Map<String, Object> pair = reads.action(REPLAY_SESSION,
+                String.valueOf(ledger.get(1).get("cid")),
+                new org.springframework.mock.web.MockHttpServletRequest()).getBody();
+        JsonNode call = (JsonNode) pair.get("call");
+        assertEquals("browser_eval", call.path("tool").asText());
+        assertTrue(call.path("input").path("text").asText().contains("getElementById('go')"),
+                "the script the model wrote is what comes back");
+        // Verbatim, JSON quotes and all: browser_eval hands the model a
+        // JSON-serialized value, and the record's job is to be what the model
+        // read rather than a tidied version of it.
+        assertEquals("\"clicked\"", ((JsonNode) pair.get("result")).path("result").asText(),
+                "and the verdict the model read, exactly as it read it");
+
+        // ---- and a foreign id is refused, on the live server too ---------- //
+        assertEquals(404, reads.index("20260813-live-nobody",
+                new org.springframework.mock.web.MockHttpServletRequest())
+                .getStatusCode().value());
+        org.springframework.mock.web.MockHttpServletRequest remote =
+                new org.springframework.mock.web.MockHttpServletRequest();
+        remote.setRemoteAddr("203.0.113.7");
+        assertEquals(404, reads.index(REPLAY_SESSION, remote).getStatusCode().value());
     }
 }

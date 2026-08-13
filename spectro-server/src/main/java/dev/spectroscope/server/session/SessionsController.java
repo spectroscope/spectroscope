@@ -156,7 +156,12 @@ public class SessionsController {
             boolean hadSession = SessionStore.deleteSession(id);
             boolean hadWire = Files.deleteIfExists(
                     dev.spectroscope.core.wire.LlmWireRecorder.fileFor(id));
-            if (!hadSession && !hadWire) {
+            // Card 204, the fourth file of the family and the same contract: the
+            // browser record holds every address the agent visited, so a deleted
+            // session must not leave it lying in the home folder.
+            boolean hadBrowser = Files.deleteIfExists(
+                    dev.spectroscope.core.wire.BrowserWireRecorder.fileFor(id));
+            if (!hadSession && !hadWire && !hadBrowser) {
                 return ResponseEntity.notFound().build();
             }
             return ResponseEntity.noContent().build();

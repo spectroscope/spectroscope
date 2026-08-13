@@ -55,6 +55,32 @@ function unionTypes(): string[] {
   return found;
 }
 
+const BROWSER_TOOLS = "spectro-core/src/main/java/dev/spectroscope/core/browser/BrowserTools.java";
+const BROWSER_SOCKET =
+  "spectro-server/src/main/java/dev/spectroscope/server/browser/BrowserControlSocket.java";
+
+/**
+ * Every verb the browser control channel carries — the LIVE half of card 201.
+ *
+ * These ride /ws/browser between the server and the desktop shell, and they are
+ * a different protocol from the session socket entirely: their replies carry an
+ * accessibility tree, a console dump and, for `screenshot`, the picture itself
+ * as base64. None of that is a RunEvent and none of it may become one.
+ *
+ * Read off the two files that actually send them rather than listed by hand, for
+ * the reason this whole file exists: the first version of NON_WIRE_TYPES was
+ * written from memory and named three of six.
+ */
+function browserVerbs(): string[] {
+  const tools = java(BROWSER_TOOLS);
+  const found = [...tools.matchAll(/browser\.send\("([a-z_]+)"/g)].map((m) => m[1]);
+  if (found.length === 0) throw new Error(`${BROWSER_TOOLS} no longer sends any verb by name`);
+  const socket = java(BROWSER_SOCKET);
+  found.push(...[...socket.matchAll(/"verb",\s*"([a-z_]+)"/g)].map((m) => m[1]));
+  found.push(...[...socket.matchAll(/send\(sessionId,\s*"([a-z_]+)"/g)].map((m) => m[1]));
+  return [...new Set(found)];
+}
+
 describe("the wire gate against the Java seam", () => {
   it("holds every frame the server invents for the socket", () => {
     // Six of them, each saying so in its own javadoc: workspace_info,
@@ -65,6 +91,28 @@ describe("the wire gate against the Java seam", () => {
     for (const type of frames) {
       expect(NON_WIRE_TYPES.has(type), `${type} rides the socket and is not in the gate`).toBe(true);
     }
+  });
+
+  it("keeps the browser's LIVE control frames out of the file format entirely", () => {
+    // Card 204, criterion 5. What the operator watches live is a native
+    // WebContentsView driven over its own socket; the screenshot verb's reply
+    // carries the PNG as base64. A verb name that had also become a RunEvent
+    // type would be a reader's invitation to append one of those replies to a
+    // session file, which is how a text-sized trace turns into tens of megabytes
+    // of pictures — the exact cost the stress test named.
+    const verbs = browserVerbs();
+    expect(verbs).toContain("screenshot");
+    expect(verbs).toContain("eval");
+    expect(verbs).toContain("navigate");
+    const union = unionTypes();
+    for (const verb of verbs) {
+      expect(union, `${verb} is a live control verb and must never be a wire event`).not.toContain(verb);
+    }
+    // And the one browser thing that IS a session event goes the other way: it
+    // is in the union, so it must NOT be in the gate, or every browser run would
+    // be dropped on the way to the file it belongs in.
+    expect(union).toContain("browser_action");
+    expect(NON_WIRE_TYPES.has("browser_action")).toBe(false);
   });
 
   it("refuses to write nothing the file format can hold", () => {

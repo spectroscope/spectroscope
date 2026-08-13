@@ -163,3 +163,152 @@
   line-height: 1.45;
   color: var(--text-faint);
 }
+
+/* ---- the browser replay (card 204) ---------------------------------------
+   The same frame the live segment wears, so switching between "watching it now"
+   and "watching it back" does not move a single edge. What is different is what
+   fills the hole: a recorded screenshot rather than a native pane, and a
+   scrubber under it.
+
+   Tokens only, so espresso, graphite, still and paper each answer without a
+   second rule here. Colour rides the hairline and the status dot, never a fill;
+   no shadow and no glow, per the brand's non-negotiables. */
+.replay-epoch {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+}
+
+.replay-epoch select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1rem 0.3rem;
+  font: inherit;
+}
+
+/* Height 100% and border-box rather than max-height: a PERCENTAGE max-height
+   resolves against the parent's height, and a parent whose own height is auto
+   makes it compute to `none`. Measured on the card-204 integration run: an
+   800x740 recorded screenshot rendered at natural size and spilled over the
+   scrubber and the detail strip below it. The live segment never showed this
+   because its hole holds a native pane rather than an element with an intrinsic
+   size. */
+.replay-stage {
+  margin: 0;
+  padding: 0.75rem;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* The picture is evidence, so it is shown whole rather than cropped to fit:
+   object-fit contain scales it down, never crops. min-height 0 is what lets a
+   flex item shrink below its content size at all. */
+.replay-shot {
+  max-width: 100%;
+  min-height: 0;
+  flex: 0 1 auto;
+  object-fit: contain;
+  border: 1px solid var(--border);
+}
+
+/* A held screenshot is dimmed, because the alternative is a reader believing
+   the page looked like this at a step where nobody photographed it. The caption
+   below says it in words; this says it at a glance. */
+.replay-shot[data-stale="true"] {
+  opacity: 0.55;
+}
+
+.replay-held {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.replay-scrub {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border);
+  border-top: 0;
+  background: var(--surface);
+}
+
+.replay-range {
+  flex: 1 1 auto;
+  accent-color: var(--accent);
+}
+
+.replay-step-button {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 0.45rem;
+  line-height: 1.5;
+  font-size: 0.9rem;
+}
+
+.replay-step-button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.replay-count {
+  flex: 0 0 auto;
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.replay-detail {
+  border: 1px solid var(--border);
+  border-top: 0;
+  background: var(--surface);
+  padding: 0.5rem 0.75rem;
+  max-height: 30vh;
+  overflow: auto;
+}
+
+.replay-line {
+  margin: 0 0 0.3rem;
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  font-family: var(--font-mono, monospace);
+}
+
+.replay-line--dim {
+  color: var(--text-faint);
+}
+
+/* Recorded arguments and results are model- and page-authored text: wrapped
+   rather than allowed to widen the pane, and never rendered as markup. */
+.replay-payload {
+  margin: 0 0 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-dim);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 14rem;
+  overflow: auto;
+}

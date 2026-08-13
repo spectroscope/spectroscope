@@ -76,6 +76,58 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Der Netz-Zaun ist an. Private Adressen, das Tailnet und file:// bleiben bei jedem Redirect-Hop abgelehnt, und ein Hostname wird aufgelöst, bevor die Seite ihn erreicht; für localhost braucht es allowLocalhost. Was kein Zaun fängt: eine DNS-Antwort, die sich zwischen Prüfung und Verbindung ändert.",
     en: "The net fence is on. Private addresses, the tailnet and file:// stay refused on every redirect hop, and a host name is resolved before the page reaches it; localhost needs allowLocalhost. What no fence catches: a DNS answer that changes between the check and the connection.",
   },
+  // Card 204 — the replay. The live pane is half a promise; these are the words
+  // for the other half, and the empty state is the one that has to work hardest:
+  // a session that never drove a browser and a session whose record was deleted
+  // look identical on screen, so the sentence says which question was asked.
+  "browser.replay.title": { de: "Browser-Aufzeichnung", en: "Browser replay" },
+  "browser.replay.loading": { de: "Aufzeichnung wird geladen \u2026", en: "Loading the record \u2026" },
+  "browser.replay.emptyTitle": { de: "keine browser-aufzeichnung", en: "no browser record" },
+  "browser.replay.empty": {
+    de: "Diese Session hat keinen Browser gefahren \u2014 oder ihre Aufzeichnung wurde mit ihr gel\u00f6scht.",
+    en: "This session drove no browser \u2014 or its record was deleted along with it.",
+  },
+  "browser.replay.emptyHint": {
+    de: "Aufgezeichnet wird jeder Browser-Werkzeugaufruf, sobald ein Agent den sichtbaren Browser fährt. Die Datei liegt neben der Session, nicht in ihr.",
+    en: "Every browser tool call is recorded as soon as an agent drives the visible browser. The file lives beside the session, not inside it.",
+  },
+  "browser.replay.noPage": { de: "keine Seite offen", en: "no page open" },
+  "browser.replay.browserLabel": { de: "Browser", en: "Browser" },
+  "browser.replay.browserN": { de: "Browser {n} \u00b7 {count} Schritte", en: "Browser {n} \u00b7 {count} steps" },
+  "browser.replay.stepN": { de: "Schritt {n} von {count}", en: "Step {n} of {count}" },
+  "browser.replay.prev": { de: "Ein Schritt zur\u00fcck", en: "One step back" },
+  "browser.replay.next": { de: "Ein Schritt vor", en: "One step forward" },
+  "browser.replay.scrubber": { de: "Durch die Aufzeichnung ziehen", en: "Scrub the record" },
+  "browser.replay.shotAlt": { de: "Aufgezeichneter Screenshot der Seite", en: "Recorded screenshot of the page" },
+  "browser.replay.shotAt": { de: "Screenshot, {w}\u00d7{h}", en: "Screenshot, {w}\u00d7{h}" },
+  "browser.replay.noShotYet": {
+    de: "Bis hierher wurde nichts fotografiert. Der Lauf begann mit Aufrufen, die kein Bild erzeugen.",
+    en: "Nothing was photographed up to here. The run started with calls that produce no picture.",
+  },
+  "browser.replay.held": {
+    de: "Letzter Screenshot \u2014 dieser Schritt hat keinen gemacht.",
+    en: "The last screenshot \u2014 this step took none.",
+  },
+  "browser.replay.detailGone": {
+    de: "Zu diesem Schritt lie\u00df sich nichts nachladen.",
+    en: "Nothing could be loaded back for this step.",
+  },
+  "browser.replay.ceiling": {
+    de: "Text bei der Gr\u00f6\u00dfengrenze der Aufzeichnung weggelassen; die gemessene Gr\u00f6\u00dfe steht oben.",
+    en: "Text dropped at the record\u2019s size ceiling; the measured size is above.",
+  },
+  "browser.replay.stillOpen": {
+    de: "Dieser Aufruf hat nie geantwortet \u2014 aufgezeichnet ist, dass er losging.",
+    en: "This call never answered \u2014 what is on record is that it went out.",
+  },
+  "browser.replay.redacted": {
+    de: "Ersetzt: hier stand etwas in der Form {rule}.",
+    en: "Replaced: something shaped like {rule} stood here.",
+  },
+  "browser.replay.note": {
+    de: "Die Aufzeichnung tr\u00e4gt nur, was das Modell ohnehin gesehen hat: Aufrufe, Ergebnisse, Verweise. Cookies, Seiten-Speicher und Zugangsdaten des Browsers kommen nie hinein, und Screenshots liegen als Blobs im Bildspeicher \u2014 die Datei selbst bleibt Text.",
+    en: "The record carries only what the model already saw: calls, results, references. The browser\u2019s cookies, page storage and credentials never enter it, and screenshots live as blobs in the image store \u2014 the file itself stays text.",
+  },
   "browser.railNote": {
     de: "Die sichtbare Browser-Fläche der aktuellen Session, die ihr Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Jede Session hat ihre eigene, mit eigenen Cookies; dieselbe Fläche steht auch als Tab in der Session. Primär für den lokalen Test-Loop.",
     en: "The current session's own visible browser, driven by its agent: navigate, click, evaluate JavaScript in the page, screenshot. Every session has its own, with its own cookies; the same surface is also a tab inside the session. Primarily for the local verify loop.",
