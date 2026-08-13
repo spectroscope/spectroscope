@@ -154,6 +154,22 @@ class ArtifactSinkTest {
     }
 
     @Test
+    void theBrowserSidecarIsAMemberOfTheFamily() {
+        // Card 204. The fifth file beside a run, and the reason it has to be in
+        // FAMILY rather than merely written: a stem that already carries the
+        // browser suffix must be RE-POINTED like every sibling, not extended.
+        // Without the registration `state(run.browser.jsonl)` lands on
+        // `run.browser.state.jsonl` — a sixth file nobody reads, named after a
+        // recorder that has nothing to do with the values.
+        assertEquals(Path.of("run.state.jsonl"), ArtifactPaths.state(Path.of("run.browser.jsonl")));
+        assertEquals(Path.of("run.graph.jsonl"), ArtifactPaths.graph(Path.of("run.browser.jsonl")));
+        assertEquals(Path.of("run.browser.jsonl"), ArtifactPaths.browser(Path.of("run.graph.jsonl")));
+        assertEquals(Path.of("run.browser.jsonl"), ArtifactPaths.browser(Path.of("run.browser.jsonl")));
+        assertEquals(Path.of("run.browser.jsonl"), ArtifactPaths.browser(Path.of("run.llm.jsonl")));
+        assertEquals(Path.of("/tmp/run.browser.jsonl"), ArtifactPaths.browser(Path.of("/tmp/run")));
+    }
+
+    @Test
     void oneStemHandedToBothWritersLandsInTwoFiles(@TempDir Path directory) throws Exception {
         Path stem = directory.resolve("run.graph.jsonl");
         List<Path> written = new ArrayList<>();

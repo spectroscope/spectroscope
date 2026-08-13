@@ -15,8 +15,13 @@ import java.util.regex.Pattern;
  * <p>What this is not: a promise that confidential prose is caught. It catches
  * shapes, and only shapes — which is exactly why the policy field is the string
  * {@code "patterns"} and never a boolean.</p>
+ *
+ * <p><b>Public since card 204</b>, unchanged in behaviour. The browser sidecar
+ * has to redact the same shapes in the same order, and one rule table read by
+ * both writers is the only arrangement in which the two cannot drift — the
+ * lesson {@code nonWire.ts} paid for with two hand-kept lists.</p>
  */
-final class Redaction {
+public final class Redaction {
 
     /** A named shape. The order of the list is the order the rules fire in. */
     private record Rule(String name, Pattern pattern) {
@@ -68,10 +73,12 @@ final class Redaction {
     }
 
     /**
+     * Asks every rule, in order, whether this string is unrecordable.
+     *
      * @param value the string a node wrote
      * @return the name of the first rule that fires, or {@code null} for none
      */
-    static String firstRule(String value) {
+    public static String firstRule(String value) {
         for (Rule rule : RULES) {
             if (rule.pattern().matcher(value).find()) {
                 return rule.name();
@@ -87,8 +94,11 @@ final class Redaction {
      * recorded open finding against the llm-wire, and a defect on the books is not
      * repeated here. Measured in UTF-8 bytes, like every other size in this
      * dialect.</p>
+     *
+     * @param value the string that was redacted
+     * @return the band its UTF-8 size falls in, e.g. {@code "33-64"}
      */
-    static String bucket(String value) {
+    public static String bucket(String value) {
         int bytes = value.getBytes(StandardCharsets.UTF_8).length;
         if (bytes <= 8) {
             return "1-8";
