@@ -107,6 +107,18 @@ async function say(text, { shotAtGate = null } = {}) {
   // slot is the stop button, so a turn fired too early finds nothing at all.
   await page.locator('button[aria-label="Send"]').waitFor({ state: "visible", timeout: 240_000 });
   await page.locator('button[aria-label="Send"]').click();
+
+  // Wait for the run to START before watching for it to END. Right after the
+  // click nothing is in flight yet, so the busy probe below is false on its
+  // first look and `if (!busy) break` leaves immediately — measured: the gate
+  // on `python3 run_checks.py` parks 46 s after the click, long after this
+  // loop had already returned sawGate=false and the caller had thrown.
+  await page
+    .locator(".composer-seat--stop, .caret.pulse, .thinking--active")
+    .first()
+    .waitFor({ state: "attached", timeout: 30_000 })
+    .catch(() => console.log("  (run never signalled a start — watching anyway)"));
+
   const deadline = Date.now() + 240_000;
   let sawGate = false;
   while (Date.now() < deadline) {
