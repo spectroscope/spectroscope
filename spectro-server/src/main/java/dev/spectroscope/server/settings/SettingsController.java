@@ -1,9 +1,13 @@
 package dev.spectroscope.server.settings;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import dev.spectroscope.core.config.HookConfig;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import dev.spectroscope.core.graph.Redaction;
+import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.permission.Allowlist;
 import dev.spectroscope.core.permission.ToolTier;
 import dev.spectroscope.core.permission.ToolTierMap;
@@ -64,6 +68,10 @@ public class SettingsController {
      *  shape — never a path, never a dot (same rule as {@code SessionsController}
      *  and {@code WorkspaceController}). */
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
+
+    /** Reads one raw {@code hooks} entry into the core's own record, so the
+     *  read-out and the runner agree about what an entry means. */
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Workspace-local settings file, relative to the workspace root — now taken
      *  from {@code SpectroConfig} rather than spelled again here. It used to be a
@@ -211,6 +219,101 @@ public class SettingsController {
         java.util.List<String> raw = new java.util.ArrayList<>();
         array.forEach(node -> raw.add(node.asText()));
         return Allowlist.fromEntries(raw, ToolTierMap.shipped()).readings();
+    }
+
+    /**
+     * {@code GET /api/settings/hooks}: the configured shell hooks READ OUT — per
+     * scope and folded, each with the matcher and the timeout it will ACTUALLY
+     * run under (card 195).
+     *
+     * <p>This endpoint exists for the same reason the allowlist one above does:
+     * so the page renders a decision instead of making one. Two defaults live in
+     * the core — {@code matcherOrDefault()} turns an unset matcher into
+     * {@code "*"}, and {@link HookRunner#DEFAULT_TIMEOUT_SECONDS} is what an
+     * unset timeout becomes — and a page that worked either out again in
+     * TypeScript would print the wrong number the day the runner's default moved.
+     * So both are resolved here and both travel BESIDE the raw value, because a
+     * page that showed only the resolved one could not tell an operator whether
+     * a hook set its own timeout or inherited one.
+     *
+     * <p>{@code tier} is the honest label for what a hook IS, in card 199's own
+     * vocabulary: {@link ToolTier#EVAL_EXECUTE}. A hook is arbitrary shell that
+     * this product executes, and a {@code pre_tool_use} hook runs BEFORE the
+     * permission gate, so it is not merely as wide as the widest tool — it is
+     * that wide and ungated. The word is answered from the enum rather than
+     * spelled in the page, so it moves with the enum.
+     *
+     * <p>A command is the one settings value an operator pastes a token into
+     * (a hook that curls a webhook), so it is run past {@link Redaction} on the
+     * way out and the page is told which rule hid it. Writes go through the
+     * existing {@code PUT /api/settings/{scope}} with a {@code hooks} array —
+     * one validated write path, not two.
+     *
+     * @param session optional session id — with it, the workspace scopes join
+     * @param request the servlet request, for the local-origin fence
+     * @return the tier and the runner default, the two events that exist, the
+     *         entries per scope, the folded effective list and the files
+     */
+    @GetMapping("/api/settings/hooks")
+    public Map<String, Object> hooks(
+            @RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        requireLocal(request, false);
+        Path workspace = resolveWorkspace(session);
+        SpectroConfig.Resolved resolved = SpectroConfig.loadResolved(
+                SpectroConfig.Overrides.none(), launchDir, workspace);
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("tier", ToolTier.EVAL_EXECUTE.wireName());
+        out.put("defaultTimeoutSeconds", HookRunner.DEFAULT_TIMEOUT_SECONDS);
+        out.put("events", HookConfig.EVENTS);
+
+        Map<String, Object> scopes = new LinkedHashMap<>();
+        resolved.layers().forEach((layer, raw) -> {
+            JsonNode entries = raw.path("hooks");
+            if (entries.isArray()) {
+                scopes.put(layer, hookReadings(entries));
+            }
+        });
+        out.put("scopes", scopes);
+        out.put("effective", resolved.config().hooks().stream().map(SettingsController::reading).toList());
+        out.put("files", files(workspace));
+        return out;
+    }
+
+    /** One layer's raw {@code hooks} array, read out through the core's own record.
+     *  A malformed entry is skipped rather than failing the whole read: the page's
+     *  job is to show what IS configured, and {@link SpectroConfig} shouts about
+     *  the broken one on its own path.
+     *  @param array the layer's raw hooks array
+     *  @return the readings, in file order */
+    private static java.util.List<Map<String, Object>> hookReadings(JsonNode array) {
+        java.util.List<Map<String, Object>> out = new java.util.ArrayList<>();
+        for (JsonNode node : array) {
+            try {
+                out.add(reading(JSON.treeToValue(node, HookConfig.class)));
+            } catch (IllegalArgumentException | com.fasterxml.jackson.core.JsonProcessingException broken) {
+                out.add(Map.of("invalid", String.valueOf(broken.getMessage())));
+            }
+        }
+        return out;
+    }
+
+    /** One hook as the page needs it: what the file says, beside what it resolves to.
+     *  @param hook the parsed entry
+     *  @return the reading, ready to serialize */
+    private static Map<String, Object> reading(HookConfig hook) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("event", hook.event());
+        out.put("matcher", hook.matcherOrDefault());
+        out.put("rawMatcher", hook.matcher());
+        String rule = Redaction.firstRule(hook.command());
+        out.put("command", rule == null ? hook.command() : "");
+        out.put("redactedBy", rule == null ? "" : rule);
+        out.put("timeoutSeconds", hook.timeoutSeconds());
+        out.put("effectiveTimeoutSeconds",
+                hook.timeoutOrDefault(HookRunner.DEFAULT_TIMEOUT_SECONDS));
+        return out;
     }
 
     /**

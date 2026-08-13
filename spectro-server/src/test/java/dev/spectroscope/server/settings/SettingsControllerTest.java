@@ -3,6 +3,7 @@ package dev.spectroscope.server.settings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SettingsWriter;
+import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.permission.ToolTierMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -239,5 +240,120 @@ class SettingsControllerTest {
         rebound.addHeader("Host", "evil.example.com");
         assertThrows(org.springframework.web.server.ResponseStatusException.class,
                 () -> controller.allowlist(null, rebound));
+    }
+
+    // ---- the hooks read-out (card 195) ---------------------------------------------
+    //
+    // Same rule as the allowlist block above and for the same reason: the server
+    // answers what it RESOLVED — the defaulted matcher, the timeout a hook will
+    // actually run under, the tier this capability carries — and the page renders
+    // it. A default worked out a second time in TypeScript drifts the day the
+    // runner's default moves.
+
+    @Test
+    void theHooksReadOutResolvesTheDefaultsRatherThanLeavingThemToThePage(@TempDir Path launchDir)
+            throws Exception {
+        Files.createDirectories(launchDir.resolve(".spectro"));
+        Files.writeString(launchDir.resolve(".spectro/settings.json"), """
+                { "hooks": [
+                    { "event": "pre_tool_use", "command": "guard.sh" },
+                    { "event": "post_tool_use", "matcher": "write_*",
+                      "command": "notify.sh", "timeoutSeconds": 3 } ] }
+                """);
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+
+        JsonNode view = JSON.valueToTree(controller.hooks(null, local()));
+        JsonNode entries = view.path("scopes").path("launch-dir");
+        assertEquals(2, entries.size());
+        assertEquals("*", entries.get(0).path("matcher").asText(),
+                "an unset matcher is answered as the * the runner will actually use");
+        assertTrue(entries.get(0).path("timeoutSeconds").isNull(),
+                "what the file says stays visible beside what it resolves to");
+        assertEquals(HookRunner.DEFAULT_TIMEOUT_SECONDS,
+                entries.get(0).path("effectiveTimeoutSeconds").asLong());
+        assertEquals(3, entries.get(1).path("effectiveTimeoutSeconds").asLong());
+        assertEquals("write_*", entries.get(1).path("matcher").asText());
+        assertEquals(2, view.path("effective").size(), "the folded list is answered too");
+    }
+
+    @Test
+    void theHooksReadOutStatesTheTierAndTheTwoEventsThatExist(@TempDir Path launchDir) {
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+        JsonNode view = JSON.valueToTree(controller.hooks(null, local()));
+
+        // A hook is arbitrary shell this product executes, so it carries the
+        // widest tier card 199 defined. The page shows that word; it does not
+        // choose it.
+        assertEquals("eval-execute", view.path("tier").asText());
+        assertEquals(HookRunner.DEFAULT_TIMEOUT_SECONDS, view.path("defaultTimeoutSeconds").asLong());
+        assertEquals(2, view.path("events").size());
+        assertEquals("pre_tool_use", view.path("events").get(0).asText());
+        assertEquals("post_tool_use", view.path("events").get(1).asText());
+        assertTrue(view.path("scopes").isObject());
+        assertTrue(view.path("files").path("user").asText().endsWith(".spectro/settings.json"));
+    }
+
+    @Test
+    void aHookCommandThatLooksLikeACredentialIsNotEchoedBack(@TempDir Path launchDir) throws Exception {
+        // The settings API already echoes otlpBasicAuth and is fenced for it.
+        // The hooks block is read by a page that renders commands as text, and a
+        // command is the one settings value an operator pastes a token into.
+        String secret = "curl -H 'Authorization: Bearer " + "ghp_"
+                + "0123456789abcdefghij0123456789abcdef" + "'";
+        Files.createDirectories(launchDir.resolve(".spectro"));
+        Files.writeString(launchDir.resolve(".spectro/settings.json"),
+                JSON.writeValueAsString(JSON.readTree("""
+                        { "hooks": [ { "event": "post_tool_use", "command": "%s" } ] }
+                        """.formatted(secret))));
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+
+        JsonNode entry = JSON.valueToTree(controller.hooks(null, local()))
+                .path("scopes").path("launch-dir").get(0);
+        assertFalse(entry.path("command").asText().contains("ghp_"), entry.toString());
+        assertTrue(entry.path("redactedBy").asText().length() > 0,
+                "a hidden command must say WHY it is hidden, or it reads as a broken hook");
+    }
+
+    @Test
+    void theHooksReadOutIsFencedLikeEveryOtherReadingOfTheSettings(@TempDir Path launchDir) {
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+        MockHttpServletRequest rebound = new MockHttpServletRequest();
+        rebound.addHeader("Host", "evil.example.com");
+        assertThrows(ResponseStatusException.class, () -> controller.hooks(null, rebound));
+    }
+
+    @Test
+    void aHookWithAnUnknownEventIsRefusedByTheWriteRatherThanStoredAndIgnored(
+            @TempDir Path launchDir) throws Exception {
+        // HookConfig's constructor is the guard; this proves the settings PUT
+        // surfaces it as a 400 with the message instead of a 500 stack trace, so
+        // the page can show the operator what it did not like.
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+        ResponseStatusException refused = assertThrows(ResponseStatusException.class,
+                () -> controller.putUser(JSON.readTree("""
+                        { "hooks": [ { "event": "pre-tool-use", "command": "guard.sh" } ] }
+                        """), local()));
+        assertEquals(400, refused.getStatusCode().value());
+        assertTrue(String.valueOf(refused.getReason()).contains("pre-tool-use"),
+                String.valueOf(refused.getReason()));
+    }
+
+    @Test
+    void aHookWrittenThroughTheSettingsPutIsWhatTheNextRunWouldLoad(@TempDir Path launchDir)
+            throws Exception {
+        // The page has no write endpoint of its own: one validated write path,
+        // not two (the rule card 199 set for the allowlist). This is the proof
+        // that the ordinary PUT carries a hooks array end to end.
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+        controller.putUser(JSON.readTree("""
+                { "hooks": [ { "event": "pre_tool_use", "matcher": "run_command",
+                               "command": "guard.sh", "timeoutSeconds": 5 } ] }
+                """), local());
+
+        JsonNode view = JSON.valueToTree(controller.hooks(null, local()));
+        JsonNode entry = view.path("scopes").path("user").get(0);
+        assertEquals("run_command", entry.path("matcher").asText());
+        assertEquals("guard.sh", entry.path("command").asText());
+        assertEquals(5, entry.path("effectiveTimeoutSeconds").asLong());
     }
 }

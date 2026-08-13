@@ -21,10 +21,17 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record HookConfig(String matcher, String event, String command, Integer timeoutSeconds) {
 
+    /** The events a hook may name, in the order they happen around a call. The
+     *  guard below and the settings surface read the SAME list — a page offering
+     *  an event the constructor rejects would produce a form whose only outcome
+     *  is a 400. */
+    public static final java.util.List<String> EVENTS =
+            java.util.List.of("pre_tool_use", "post_tool_use");
+
     /** A typo like {@code "pre-tool-use"} would otherwise match no dispatch branch
      *  and the guard would silently never run — malformed config fails loudly. */
     public HookConfig {
-        if (!"pre_tool_use".equals(event) && !"post_tool_use".equals(event)) {
+        if (!EVENTS.contains(event)) {
             throw new IllegalArgumentException("Unknown hook event \"" + event
                     + "\" — use \"pre_tool_use\" or \"post_tool_use\".");
         }
