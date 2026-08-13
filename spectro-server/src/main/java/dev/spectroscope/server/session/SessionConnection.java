@@ -211,6 +211,17 @@ public final class SessionConnection {
      *  browser and can name no other. */
     private dev.spectroscope.core.browser.BrowserFaces browsers =
             dev.spectroscope.core.browser.BrowserFaces.none();
+    /** What this session has launched (card 202) — one supervisor per session,
+     *  for the same reason the browser is one per session: a dev server this
+     *  session started is live state, and the session going away is the only
+     *  event that can honestly be called "done with it". Closed in
+     *  {@link #onClose()} beside the browser, and reaped by a JVM shutdown hook
+     *  when nothing gets to run onClose at all. Package-visible so
+     *  {@code SessionLaunchLifetimeTest} can put a REAL process under it and
+     *  then ask the operating system whether closing the session killed it —
+     *  the same move {@code LocalRuntime} makes for its reaper hook. */
+    final dev.spectroscope.core.launch.LaunchSupervisor launches =
+            dev.spectroscope.core.launch.LaunchSupervisor.real();
     /** This connection's fleet tap; registered on start, removed on close. */
     private FleetAggregator.Listener fleetListener;
     /** Pending fleet frames, drained to the socket on this connection's OWN
@@ -737,6 +748,12 @@ public final class SessionConnection {
         if (opened != null) {
             browsers.closeSession(opened.id());
         }
+        // Card 202: and so does everything this session launched. Same event,
+        // same reasoning as the browser — a dev server left holding a port after
+        // the session that started it is gone is an orphan nobody will remember
+        // to kill. Unconditional: the supervisor exists from the constructor,
+        // and closing an empty one costs nothing.
+        launches.close();
         // Card 212: stop listening BEFORE releasing, so this dying socket is not
         // one of the viewers its own departure is announced to; then let the id
         // go, which is what makes a reload or a dropped connection safe rather
@@ -967,6 +984,18 @@ public final class SessionConnection {
                 () -> dev.spectroscope.core.net.NetFence.withSystemDns(
                         activeConfig.get().allowLocalhost()),
                 ImageStore.inUserHome())
+                .all().forEach(registry::register);
+        // Card 202: the five launch tools, which start the app the browser above
+        // is meant to look at. Registered beside the browser family and on the
+        // same two suppliers: this session's own browser, and a fence read per
+        // call so an allowLocalhost opt-in saved mid-session reaches the next
+        // call. The supervisor is the connection's own field, so what a session
+        // starts dies when that session's socket does.
+        new dev.spectroscope.core.launch.LaunchTools(
+                launches,
+                this::ownBrowser,
+                () -> dev.spectroscope.core.net.NetFence.withSystemDns(
+                        activeConfig.get().allowLocalhost()))
                 .all().forEach(registry::register);
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it
