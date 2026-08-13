@@ -21,13 +21,28 @@
   padding: 0 var(--sp-3);
 }
 
-/* The brand, the three actions and the sessions/fleets switch, as one block
-   that stays (card 179). The collapse control lives on the brand so a narrow
-   window can still reach it — and a control you can lose by scrolling is a
+/* The brand, the three actions, the sessions/fleets switch and — on the
+   sessions segment — the session list's own head, as one block that stays
+   (card 179, extended by card 216). The collapse control lives on the brand so
+   a narrow window can still reach it, and the list's options control rides the
+   same block for the same reason: a control you can lose by scrolling is a
    control that is only sometimes there.
 
-   Opaque, because the list scrolls UNDER it. The sidebar's glint gradient is a
-   top gradient, so covering it here costs nothing: this block is the top. */
+   Opaque, because the list scrolls UNDER it, and everything in it depends on
+   that — a transparent sticky block is a control with session titles running
+   through it. The sidebar's glint gradient is a top gradient, so covering it
+   here costs nothing: this block is the top.
+
+   `z-index: 2` is not decoration either. `.session-row:hover` carries a
+   transform, and a transformed element paints in the positioned layer: without
+   a z-index the head is a sticky box at `auto` that comes EARLIER in the tree,
+   so a hovered row paints straight through it. Measured with the line deleted —
+   the topmost element inside the head's own band becomes `session-row`.
+
+   NO `overflow` here, ever. Since card 216 this block CONTAINS a popover that
+   opens downward out of it — 99.1px of its 101.1px falls outside the head's
+   box — so any clipping here deletes the control. That was harmless before the
+   options row moved in, which is exactly why it needs writing down now. */
 .sidebar-head {
   position: sticky;
   top: 0;
@@ -37,6 +52,27 @@
   gap: var(--sp-3);
   padding: var(--sp-4) 0 var(--sp-2);
   background-color: var(--surface);
+}
+
+/* The one raise, and it lasts exactly as long as an open panel does.
+
+   Sticky plus a z-index makes the block above a STACKING CONTEXT, so the
+   options panel's `z-index: var(--z-dropdown)` (100) now ranks inside the head
+   and the head's 2 is what the rail sees. `.sidebar-foot` carries the same 2
+   and comes later in the DOM, so the Settings row won and painted over the
+   panel: measured at 1440x460, 15.8px of the panel under the foot, coverage
+   starting below 476px of window height at the default 240px rail (475px:
+   0.8px covered, `sidebar-foot` topmost; 476px: clear).
+
+   Scoped rather than permanent, on purpose. A head that always outranked the
+   foot would hide the Settings row in a window too short to hold both, with
+   nothing open and no way to ask for it back. This way the cost is bounded and
+   reversible — while a panel is open it covers the foot's top edge, and
+   closing it puts the rail back. `:has()` is the right tool for it: the state
+   is "a popover is open in here", which is a fact about the subtree and needs
+   no prop threaded up from the control to the rail. */
+.sidebar-head:has(.wsg-pop) {
+  z-index: 3;
 }
 
 /* The wordmark: lowercase, sans, medium-heavy, the M1 line bundle in front.
@@ -399,10 +435,30 @@
   overflow: hidden;
 }
 
-/* ---------- The head of the session list (card 214) ----------
+/* ---------- The head of the session list (card 214, pinned by card 216) ----
    One thin row above the list, holding the control that governs it. No label
    on the left: the segment row two lines up already says "Sessions", and a
-   second copy of that word would be the rail explaining itself twice. */
+   second copy of that word would be the rail explaining itself twice.
+
+   NO `position` of its own, and that is the point. This row is the last child
+   of `.sidebar-head`, so it is sticky because that block is — one sticky top
+   and one sticky foot in the rail's single scroll container, which is the
+   arrangement that cannot fight. Sticking it a second time here would need a
+   `top:` equal to the head's height, and that height is a brand plus six nav
+   rows: a literal that goes stale the next time a row is added.
+
+   It inherits the head's opaque `--surface` too, which is what a sticky row
+   needs — transparent, the sessions would scroll straight through the control
+   and it would be least readable exactly when it is reached for.
+
+   What it costs, at the size it was measured: the sticky block is 36.9px taller
+   on the sessions segment for carrying this row (319.5px against 282.6px on
+   fleets, where no list head is drawn), and unlike a row that scrolls, those
+   pixels are spent at EVERY scroll position. That is the price of the feature
+   rather than a defect — but it is the price, and it is 36.9px and not 8.
+
+   And NO `overflow` here either: the popover this row anchors opens downward
+   out of this box as well as out of the head's. See `.sidebar-head`. */
 .session-list-head {
   display: flex;
   align-items: center;
@@ -445,6 +501,26 @@
   width: min(216px, calc(100cqi - 12px));
   padding: var(--sp-3);
   gap: var(--sp-2);
+}
+
+/* …and upward when down does not fit on the screen. Since card 216 the trigger
+   is pinned, so its bottom is a constant 311.5px down the rail while the panel
+   needs a 418.7px window to land in one — a 107px band of window heights in
+   which a reader could open a panel they could not touch, and could not scroll
+   to either, because it is anchored inside the block that does not scroll.
+   There is room the other way: 289.5px above the trigger against the 107.1px
+   the panel and its gap need.
+
+   The direction is decided from a MEASUREMENT in `SessionListOptions`, not from
+   a `@media (max-height:)` threshold — that number would be a brand plus six
+   nav rows plus this row, the same literal this card refused for `top:`.
+
+   Same specificity as the rule above and both classes ride the element at once,
+   so ORDER is the whole mechanism: this one has to come second. That is the
+   cascade trap `.disc-pop` documents, one step further along. */
+.wsg-pop.sess-opts-pop--up {
+  top: auto;
+  bottom: calc(100% + 6px);
 }
 
 /* One settings row: the label on the left, the current value on the right.
