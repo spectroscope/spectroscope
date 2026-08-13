@@ -67,3 +67,41 @@
   color: var(--accent);
   border-color: var(--accent);
 }
+
+/* ---------- the auto-approve allowlist (card 199) ----------
+   A list of permission grants, so the shape is a list and not a table: every
+   row is one line of a settings file, shown verbatim in mono next to what it
+   means. Colour comes from the shared tokens only — the "runs code" clause
+   borrows --accent through .settings-note--warn rather than inventing a red,
+   because a colour nobody defined falls back to nothing and takes the warning
+   with it (bus.css named 37 tokens that did not exist and the whole Spectrum
+   surface lost its borders for months). */
+.al-list {
+  list-style: none;
+  margin: var(--sp-2) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
+.al-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+}
+.al-raw {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.al-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+.al-remove {
+  margin-left: auto;
+}
