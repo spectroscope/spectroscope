@@ -194,8 +194,9 @@ export function Sidebar(props: {
 
   return (
     <aside className="sidebar">
-      {/* Everything down to the sessions/fleets switch is one sticky block.
-          The collapse control had just moved onto the brand so a narrow window
+      {/* Everything down to the sessions/fleets switch is one sticky block, and
+          since card 215 the session list's own head rides in it too. The
+          collapse control had just moved onto the brand so a narrow window
           could still reach it — and then scrolling took the brand away with it,
           which is the same joke one turn later. A control you can lose by
           scrolling is a control that is only sometimes there. */}
@@ -280,18 +281,32 @@ export function Sidebar(props: {
             />
           ))}
         </div>
+
+        {/* The head of the list, and the options belong to the list rather than
+            to the app: they change how THESE rows read, so they sit on them and
+            not in the settings overlay at the foot. At the right, where a
+            control that governs a column goes.
+
+            It is drawn HERE, as the last row of the sticky block, rather than as
+            a sibling above the list — card 215. Static, it left with the list:
+            at the bottom of a 112-session rail the trigger sat 4091px above the
+            rail's top edge while the settings row was still on screen, so one
+            end of the rail was pinned and the other ran away. A second sticky
+            child would need `top:` equal to this block's height, and that height
+            is a brand plus six nav rows — a number that goes stale on the next
+            row anyone adds. Joining the block needs no number.
+
+            The guard, on the segment: the block is drawn on all three segments,
+            and options for a list you are not looking at are noise. */}
+        {nav === "sessions" && (
+          <div className="session-list-head">
+            <SessionListOptions />
+          </div>
+        )}
       </div>
 
       {nav === "sessions" ? (
         <>
-          {/* The head of the list, and the options belong to the list rather
-              than to the app: they change how THESE rows read, so they sit on
-              them and not in the settings overlay at the foot. At the right,
-              where a control that governs a column goes. */}
-          <div className="session-list-head">
-            <SessionListOptions />
-          </div>
-
           <nav className="session-list" aria-label="Sessions">
             {/* The live row wears the same dot as every other row. It is THIS
                 page's socket — no longer the only row that may say "running",
