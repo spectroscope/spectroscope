@@ -1,0 +1,76 @@
+{
+  "_comment": [
+    "The tier map (card 199). What a tool can DO, decided by the product and shipped",
+    "with the build, because the protocol cannot say it: both MCP transports pin",
+    "revision 2024-11-05, and that revision carries no tool annotations at all —",
+    "readOnlyHint and its siblings arrived in 2025-03-26. A server therefore never",
+    "rates its own tools here; this file does.",
+    "",
+    "Anything this file does not name resolves to eval-execute and prompts. That",
+    "makes a partial section SAFE by construction: a section can only ever narrow",
+    "what an allowlist entry approves, never widen it. It also names the cost —",
+    "a server that grows a tool produces prompts on the day it updates, and the fix",
+    "is an entry in the next release, not a config edit on the user's machine.",
+    "",
+    "bump mapVersion on every content change; the resolved tier and this version",
+    "land on every gate audit line."
+  ],
+  "schemaVersion": 1,
+  "mapVersion": "2026-08-13",
+
+  "builtin": {
+    "_comment": [
+      "The built-in tool belt. read_file/list_dir/glob/grep/view_* look and never",
+      "touch. web_fetch looks too — what bounds its REACH is the net fence, not its",
+      "tier. browse_page is write: it launches a real browser and navigates, which",
+      "the tier table rates alongside browser_navigate. run_command and the spawn",
+      "tools run code — a child agent's own registry carries run_command, so a",
+      "spawn is an eval one indirection away."
+    ],
+    "read_file": "read",
+    "list_dir": "read",
+    "glob": "read",
+    "grep": "read",
+    "view_file": "read",
+    "view_image": "read",
+    "web_fetch": "read",
+    "web_search": "read",
+    "use_skill": "read",
+
+    "write_file": "write",
+    "edit_file": "write",
+    "browse_page": "write",
+    "generate_image": "write",
+    "update_plan": "write",
+    "report_status": "write",
+
+    "run_command": "eval-execute",
+    "spawn_agent": "eval-execute",
+    "spawn_agents": "eval-execute"
+  },
+
+  "servers": {
+    "_comment": [
+      "One section per blessed MCP server, keyed by the CONFIGURED server name —",
+      "the middle segment of mcp__<server>__<tool>. A server absent from here rates",
+      "none of its tools: every one of them is eval-execute and prompts."
+    ],
+
+    "spectro-notes": {
+      "_comment": "The in-house notes server (spectro-mcp-notes), measured from its own tools/list.",
+      "search_notes": "read",
+      "add_note": "write"
+    },
+
+    "playwright": {
+      "_comment": [
+        "Deliberately PARTIAL. Only what card 199 measured is named; every other",
+        "playwright tool falls to eval-execute and prompts until a release adds it.",
+        "browser_run_code_unsafe is the tool the stress test named: it runs in the",
+        "NODE context with the full filesystem, and a name-only wildcard used to",
+        "approve it beside the screenshots."
+      ],
+      "browser_run_code_unsafe": "eval-execute"
+    }
+  }
+}
