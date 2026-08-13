@@ -212,6 +212,14 @@ public class SessionsController {
         providerStatus.put("spectro-local",
                 SpectroConfig.localModelStatus(dev.spectroscope.core.local.LocalModel.anyPresent()));
         out.put("providerStatus", providerStatus);
+        // Card 193: the address each LOCAL-MODEL provider would dial — the same
+        // endpointFor the model-list probe itself uses, so the settings page's
+        // address field and the "backend not reachable" sentence can name the
+        // exact endpoint that was tried, never a guess.
+        Map<String, String> providerAddress = new LinkedHashMap<>();
+        providerAddress.put("ollama", c.endpointFor("ollama"));
+        providerAddress.put("lmstudio", c.endpointFor("lmstudio"));
+        out.put("providerAddress", providerAddress);
         // Whether this install HAS a terminal, and if not, which of the two
         // reasons it is. The pane used to offer the toggle unconditionally and
         // then print "the server refused the connection" when the socket closed
@@ -507,7 +515,9 @@ public class SessionsController {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
             String key = SpectroConfig.resolveApiKey(SpectroConfig.keyEnvFor(provider));
             boolean hasKey = key != null && !key.isBlank();
-            String base = SpectroConfig.effectiveOpenAiBaseUrl(provider, c.baseUrl());
+            // endpointFor resolves lmstudio's own per-provider address (card 193)
+            // and keeps the legacy shared rule for the cloud providers.
+            String base = c.endpointFor(provider);
 
             RestClient.RequestHeadersSpec<?> request = MODEL_PROBE.get()
                     .uri(base + dev.spectroscope.core.provider.OpenAiCompatProvider.compatPath(base, "/models"));
@@ -580,7 +590,11 @@ public class SessionsController {
     private List<String> ollamaModels() {
         try {
             SpectroConfig c = SpectroConfig.load(SpectroConfig.Overrides.none());
-            String base = (c.baseUrl() == null || c.baseUrl().isBlank()) ? "http://localhost:11434" : c.baseUrl();
+            // The per-provider address first, the legacy baseUrl underneath, the
+            // preset last — the same endpointFor chain the provider itself dials
+            // (card 193), so the probe can never test a different server than
+            // the one a run would talk to.
+            String base = c.endpointFor("ollama");
             JsonNode tags = MODEL_PROBE.get()
                     .uri(base + "/api/tags").retrieve().body(JsonNode.class);
             List<String> names = new ArrayList<>();

@@ -18,6 +18,7 @@ import dev.spectroscope.core.image.ImageStore;
 import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
+import dev.spectroscope.core.provider.OllamaOptions;
 import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
@@ -268,6 +269,64 @@ public final class SpectroCli implements Runnable {
     private static boolean providerKeyPresent(String provider) {
         String env = SpectroConfig.keyEnvFor(provider);
         return env == null || SpectroConfig.hasApiKey(env); // local needs none; else env or ~/.spectro/.env
+    }
+
+    /**
+     * The {@code /model} line: provider, model, and the address the ACTIVE
+     * provider really dials when it has one.
+     *
+     * <p>The address comes off the PROVIDER, never off {@code config.baseUrl()}:
+     * card 193 gave ollama and LM Studio addresses of their own, so the legacy
+     * shared field is no longer the string a run dials, and {@code /help}
+     * advertises this line as "the active base URL". Providers that have no
+     * address to name — anthropic's is fixed in the SDK, the built-in runtime is
+     * a subprocess — print none, where they used to be handed ollama's default
+     * port.</p>
+     *
+     * <p>Package-private and static so the wiring itself is testable — the
+     * defect this pins was never in the formatting, it was in WHERE the address
+     * came from.</p>
+     *
+     * @param config   the effective configuration (names provider and model)
+     * @param provider the live provider instance, wrappers and all
+     * @return the line {@code /model} prints
+     */
+    static String modelLine(SpectroConfig config, LlmProvider provider) {
+        String endpoint = provider == null ? null : provider.endpoint();
+        return config.provider() + " · " + config.model()
+                + (endpoint == null || endpoint.isBlank() ? "" : " · " + endpoint);
+    }
+
+    /**
+     * The banner's ollama segment: the live server version when it answers, and
+     * otherwise a red sentence naming the address that did not.
+     *
+     * <p>Two defects lived here. The address printed was {@code config.baseUrl()}
+     * while the provider beside it had been built from {@code endpointFor}, so a
+     * probe that went to another machine was reported against localhost. And the
+     * branch was reached by {@code provider instanceof OllamaProvider}, which is
+     * never true: {@code providerFromConfig} hands back a logging PROXY (and, with
+     * retries configured, a retry decorator around it), so the whole segment —
+     * version line and failure sentence alike — had silently stopped printing.
+     * Both are fixed by asking the live provider for its endpoint, which every
+     * decorator forwards.</p>
+     *
+     * @param config   the effective configuration (names provider and model)
+     * @param provider the live provider instance, wrappers and all
+     * @param ansi     the colour writer (the red is on the failure half only)
+     * @return the segment to append, or "" for every non-ollama provider
+     */
+    static String ollamaBannerSuffix(SpectroConfig config, LlmProvider provider, Ansi ansi) {
+        String endpoint = provider == null ? null : provider.endpoint();
+        if (!"ollama".equals(config.provider()) || endpoint == null || endpoint.isBlank()) {
+            return "";
+        }
+        // A throwaway probe object against the SAME address the run dials — the
+        // same shape the doctor's ollama check uses.
+        return new OllamaProvider(new OllamaOptions(endpoint, config.model()))
+                .serverVersion()
+                .map(version -> " · ollama " + version)
+                .orElse(ansi.red(" · unreachable at " + endpoint));
     }
 
     /** The first-run onboarding message for a keyless API provider — the CLI's
@@ -557,8 +616,7 @@ public final class SpectroCli implements Runnable {
                 System.out.println("  /exit      quit (empty line works too)");
             }
             case "/cost" -> System.out.println("Session usage: " + renderer.sessionUsage());
-            case "/model" -> System.out.println(config.provider() + " · " + config.model()
-                    + ("anthropic".equals(config.provider()) ? "" : " · " + config.baseUrl()));
+            case "/model" -> System.out.println(modelLine(config, provider));
             case "/sessions" -> printSessions();
             case "/mcp" -> printMcpStatus();
             case "/skills" -> {
@@ -651,12 +709,8 @@ public final class SpectroCli implements Runnable {
      */
     private void printBanner(SessionStore store, int resumedMessages) {
         System.out.println(ansi.coral("◆ ") + ansi.bold("spectroscope"));
-        String providerLine = config.provider() + " · " + config.model();
-        if (provider instanceof OllamaProvider ollama) {
-            providerLine += ollama.serverVersion()
-                    .map(version -> " · ollama " + version)
-                    .orElse(ansi.red(" · unreachable at " + config.baseUrl()));
-        }
+        String providerLine = config.provider() + " · " + config.model()
+                + ollamaBannerSuffix(config, provider, ansi);
         System.out.println(ansi.dim("  " + providerLine
                 + " · images: " + config.imageProvider()
                 + (skills.skills().isEmpty() ? "" : " · skills: " + skills.skills().size())

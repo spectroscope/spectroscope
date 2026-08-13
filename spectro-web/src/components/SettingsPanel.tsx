@@ -26,6 +26,7 @@ import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
 import { imageModelOptions } from "./imageModels";
 import { PROVIDERS } from "./providerPickerMode";
+import { addressSpecFor } from "./providerAddress";
 import { ModelField, useProviderModels } from "./providerModelField";
 import { settingsMayAutoPick } from "./settingsModelPolicy";
 import { ReasoningControl } from "./ReasoningControl";
@@ -182,7 +183,9 @@ export function SettingsPanel({
   onClose,
   section,
   providerStatus,
+  providerAddress,
   onKeySaved,
+  onAddressSaved,
   leveling,
   onShowLocalNotice,
 }: {
@@ -202,9 +205,15 @@ export function SettingsPanel({
   /** Per-provider onboarding status from /api/config: ready | needs-key | local.
    *  Drives the model chooser's honest needs-key affordance (same as the picker). */
   providerStatus?: Record<string, string>;
+  /** Card 193: the address each local-model provider would dial, from
+   *  /api/config — shown to the unreachable note so it names what was tried. */
+  providerAddress?: Record<string, string>;
   /** After a key is saved to ~/.spectro/.env, re-read /api/config so the provider
    *  flips needs-key → ready. */
   onKeySaved?: () => void;
+  /** Card 193: after an address commit, re-read /api/config so the named
+   *  address (providerAddress) is the fresh one, not the one just replaced. */
+  onAddressSaved?: () => void;
 }) {
   const { prefs } = useDesignPrefs();
   const lang = useLang();
@@ -224,6 +233,9 @@ export function SettingsPanel({
   // real gesture — opening the panel (click or deep link) rearms to "looking",
   // under which the chooser must write nothing.
   const [providerTouched, setProviderTouched] = useState(false);
+  // Card 193: bumped after every address commit so the model probe re-runs —
+  // its fetch is keyed on provider + status, and an address changes neither.
+  const [probeEpoch, setProbeEpoch] = useState(0);
 
   // Re-fetch the resolved view each time the page opens (other surfaces — the
   // header picker, the Files tab's own folder pick — may have changed the
@@ -310,6 +322,7 @@ export function SettingsPanel({
           .then(setView)
           .catch(() => {}),
       autoPick: settingsMayAutoPick(providerTouched ? "gesture" : "open"),
+      probeEpoch,
     },
   );
 
@@ -333,6 +346,27 @@ export function SettingsPanel({
       })
       .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
   };
+
+  /** Card 193: an address write is a saveUser plus two follow-ups — the model
+   *  probe re-runs against the new endpoint (probe epoch), and /api/config is
+   *  re-read so the unreachable note names the fresh address. Bumped only
+   *  after the PUT landed: the server-side probe reads the settings file, so
+   *  a probe fired before the write would test the address just replaced. */
+  const saveAddress = (patch: Record<string, unknown>): void => {
+    putSettings("user", patch)
+      .then((fresh) => {
+        setView(fresh);
+        setSaveError(null);
+        flash();
+        setProbeEpoch((n) => n + 1);
+        onAddressSaved?.();
+      })
+      .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
+  };
+
+  /** The address block of the SELECTED provider (card 193): ollama and
+   *  lmstudio each own a field; every other provider hides it. */
+  const addressSpec = view ? addressSpecFor(String(view.effective.provider ?? "")) : null;
 
   /** Adopts the browser's legacy localStorage state into the user settings —
    *  one patch with every remembered field at once. Only clears the legacy
@@ -558,6 +592,7 @@ export function SettingsPanel({
                     model={settingsModel}
                     onModelChange={(m) => saveUser({ model: m === "" ? null : m })}
                     providerStatus={providerStatus}
+                    providerAddress={providerAddress}
                     keyAffordance="inline"
                     onKeySaved={onKeySaved}
                     markAbsent
@@ -571,6 +606,37 @@ export function SettingsPanel({
                     />
                   )}
                 </label>
+                {/* Card 193: the address beside the provider that needs it —
+                    ollama and lmstudio each carry their OWN field with their
+                    OWN preset as placeholder; other providers hide it. The
+                    key includes the effective value so a reset or an external
+                    change refreshes the uncontrolled input's default. */}
+                {addressSpec && (
+                  <label className="settings-field">
+                    <span>{t(lang, "set.address")}</span>
+                    <input
+                      key={`${addressSpec.field}:${String(view.effective[addressSpec.field] ?? "")}`}
+                      type="text"
+                      placeholder={addressSpec.preset}
+                      defaultValue={String(view.effective[addressSpec.field] ?? "")}
+                      onBlur={(e) => {
+                        const patch = textFieldPatch(
+                          addressSpec.field,
+                          e.target.value,
+                          String(view.effective[addressSpec.field] ?? ""),
+                        );
+                        if (patch) saveAddress(patch);
+                      }}
+                    />
+                    <span className="provider-field-note">{t(lang, "set.addressHint")}</span>
+                    <OriginRow
+                      view={view}
+                      field={addressSpec.field}
+                      lang={lang}
+                      onReset={() => saveAddress({ [addressSpec.field]: null })}
+                    />
+                  </label>
+                )}
                 {/* Card 88: the same capability-driven seg as the header
                     picker — one shared component, one truth. Not a server
                     settings field (the choice is per model, browser-kept),

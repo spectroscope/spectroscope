@@ -183,6 +183,21 @@ public final class DoctorCommand implements Callable<Integer> {
             }
         });
 
+        // Card 193: endpointFor applies a FIXED field priority ON TOP of the
+        // folded layers, so a per-provider address beats a baseUrl that came
+        // from a HIGHER layer — measured, --base-url=http://flag-box:11434 on
+        // the command line loses to SPECTRO_OLLAMA_BASE_URL in the environment.
+        // The precedence is deliberate (see the method); the silence was not,
+        // and the env shadow report above cannot see it: it keys per FIELD, and
+        // here both fields won their own.
+        String addressField = addressFieldFor(config.provider());
+        if (addressField != null) {
+            emit(perProviderAddressLines(config.provider(),
+                    config.endpointFor(config.provider()),
+                    resolved.origins().get(addressField),
+                    resolved.origins().get("baseUrl")));
+        }
+
         // Provider reachability. The kind is a pure mapping so a test can hold
         // it to SpectroConfig's provider list — this switch knew three of the
         // seven for two releases and called the built-in one "unknown" on every
@@ -199,17 +214,21 @@ public final class DoctorCommand implements Callable<Integer> {
                                     ? " is set" : " is NOT set (export it, or save it in the app)"));
                 }
                 case OLLAMA -> {
-                    var version = new OllamaProvider(new OllamaOptions(config.baseUrl(), config.model()))
+                    // endpointFor resolves ollama's OWN address (card 193) over
+                    // the legacy shared baseUrl — probe and printed line carry
+                    // the same string a run would dial, never a stale field.
+                    String endpoint = config.endpointFor("ollama");
+                    var version = new OllamaProvider(new OllamaOptions(endpoint, config.model()))
                             .serverVersion();
-                    report(version.isPresent(), "ollama at " + config.baseUrl()
+                    report(version.isPresent(), "ollama at " + endpoint
                             + version.map(v -> " (version " + v + ")").orElse(" — unreachable"));
                 }
                 case OPENAI_COMPAT -> {
                     // The EFFECTIVE endpoint, not the raw baseUrl: unset, the raw
                     // value is still ollama's :11434, so doctor used to probe the
                     // wrong port and print it as if it were the openai server.
-                    String endpoint = SpectroConfig.effectiveOpenAiBaseUrl(
-                            config.provider(), config.baseUrl());
+                    // endpointFor also honours lmstudio's own address (card 193).
+                    String endpoint = config.endpointFor(config.provider());
                     emit(openAiCompatLines(config.provider(), endpoint,
                             probe(endpoint + "/v1/models"),
                             SpectroConfig.hasApiKey(SpectroConfig.keyEnvFor(config.provider()))));
@@ -478,6 +497,71 @@ public final class DoctorCommand implements Callable<Integer> {
                     + " (export it, or save it in the app)");
         });
         return lines;
+    }
+
+    /**
+     * The settings field carrying a provider's own address, or {@code null} for
+     * every provider that has none (card 193 gave one to the two local-model
+     * backends and to nobody else).
+     *
+     * @param provider the configured provider name
+     * @return "ollamaBaseUrl" | "lmstudioBaseUrl" | null
+     */
+    static String addressFieldFor(String provider) {
+        return switch (provider) {
+            case "ollama" -> "ollamaBaseUrl";
+            case "lmstudio" -> "lmstudioBaseUrl";
+            default -> null;
+        };
+    }
+
+    /**
+     * The note that makes card 193's fixed field priority visible.
+     *
+     * <p>The settings layers fold in ascending precedence (defaults &lt; env &lt;
+     * user &lt; launch-dir &lt; project &lt; local &lt; flags), but
+     * {@link SpectroConfig#endpointFor} then applies a FIXED priority over the
+     * folded result: a provider's own address wins over the shared
+     * {@code baseUrl} no matter which layer either value came from. Measured:
+     * {@code --base-url=http://flag-box:11434} together with
+     * {@code SPECTRO_OLLAMA_BASE_URL=http://env-box:11434} resolves to env-box,
+     * so the command-line flag loses; a launch-dir override loses the same way.
+     * </p>
+     *
+     * <p>That precedence is kept on purpose — a field named after ONE provider
+     * saying where THAT provider lives is more specific than a shared field
+     * every provider once read, and making it layer-aware would mean threading
+     * provenance through {@code endpointFor} and therefore through every caller
+     * (the provider construction, the server probes, the settings page's
+     * address map), turning the card's single resolution point back into
+     * several. What is fixed instead is the silence: doctor says the quiet part
+     * out loud, names both layers, and leaves the exit code alone — this is a
+     * legitimate configuration, not a fault.</p>
+     *
+     * @param provider          the configured provider
+     * @param endpoint          the address {@code endpointFor} resolved for it
+     * @param addressOrigin     provenance of the per-provider address field
+     * @param baseUrlOrigin     provenance of the legacy shared {@code baseUrl}
+     * @return one INFO line when a set per-provider address is overriding a set
+     *         {@code baseUrl}, empty otherwise
+     */
+    static List<Line> perProviderAddressLines(String provider, String endpoint,
+            SpectroConfig.Origin addressOrigin, SpectroConfig.Origin baseUrlOrigin) {
+        String field = addressFieldFor(provider);
+        if (field == null || addressOrigin == null || baseUrlOrigin == null) {
+            return List.of();
+        }
+        boolean addressSet = !"defaults".equals(addressOrigin.winner());
+        boolean baseUrlSet = !"defaults".equals(baseUrlOrigin.winner());
+        if (!addressSet || !baseUrlSet) {
+            return List.of();       // nothing is being overridden — a line would be noise
+        }
+        return List.of(new Line(Kind.INFO,
+                "address: " + field + " (from " + addressOrigin.winner() + ") is what "
+                        + provider + " dials — " + endpoint + "; baseUrl (from "
+                        + baseUrlOrigin.winner() + ") is set too and does NOT apply to "
+                        + provider + ": a provider's own address wins whatever layer"
+                        + " either value came from"));
     }
 
     /**

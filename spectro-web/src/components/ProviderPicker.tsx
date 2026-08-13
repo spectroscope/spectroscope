@@ -21,6 +21,7 @@ export function ProviderPicker({
   model: activeModel,
   status,
   providerStatus,
+  providerAddress,
   onApply,
   onOpenSettings,
 }: {
@@ -31,6 +32,9 @@ export function ProviderPicker({
   /** Per-provider onboarding status from /api/config: ready | needs-key | local.
    *  Drives the honest 'no key' affordance instead of a fake list. */
   providerStatus?: Record<string, string>;
+  /** Card 193: the address each local-model provider would dial, from
+   *  /api/config — the unreachable note names it instead of guessing. */
+  providerAddress?: Record<string, string>;
   onApply: (provider: string, model: string) => void;
   /** Open the Settings panel — the needs-key affordance points there, since the
    *  key write lives only in Settings. */
@@ -147,6 +151,7 @@ export function ProviderPicker({
                 model={model}
                 onModelChange={setModel}
                 providerStatus={providerStatus}
+                providerAddress={providerAddress}
                 keyAffordance="link"
                 onOpenSettings={() => {
                   setOpen(false);

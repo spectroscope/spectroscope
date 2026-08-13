@@ -606,6 +606,12 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)",
     en: "backend not reachable — start ollama / LM Studio (or type a model id)",
   },
+  // Card 193: when the server reports the tried address, name it — "start
+  // ollama" is the wrong advice when the backend runs fine one hostname away.
+  "pp.localDownAt": {
+    de: "backend nicht erreichbar unter {addr} — starte es dort, oder korrigiere die Adresse in den Einstellungen",
+    en: "backend not reachable at {addr} — start it there, or fix the address in settings",
+  },
   "pp.keySave": { de: "in .env speichern", en: "save to .env" },
   "pp.keySaving": { de: "speichere …", en: "saving …" },
   "pp.keySaved": {
@@ -1465,6 +1471,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "set.provider": { de: "Provider", en: "Provider" },
   "set.model": { de: "Modell", en: "Model" },
+  // Card 193: the address field beside the local-model provider that needs it.
+  "set.address": { de: "Adresse", en: "Address" },
+  "set.addressHint": {
+    de: "wo dieses Backend läuft — auch auf einer anderen Maschine",
+    en: "where this backend runs — another machine works too",
+  },
   "set.thinking": { de: "Thinking", en: "Thinking" },
   "set.imageBackend": { de: "Bild-Backend", en: "Image backend" },
   "set.on": { de: "An", en: "On" },
@@ -2315,8 +2327,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The model id at the chosen provider. Every provider names its own.",
   },
   "wsg.local.desc.baseUrl": {
-    de: "Die Adresse für ollama und openai-kompatible Provider. Anthropic ignoriert sie.",
-    en: "The address for ollama and OpenAI-compatible providers. Anthropic ignores it.",
+    de: "Die Ausweich-Adresse. ollama nimmt ollamaBaseUrl, LM Studio nimmt lmstudioBaseUrl — dieses Feld gilt für die beiden nur, solange ihr eigenes leer ist. Für openai, openrouter und gemini bleibt es die Adresse; anthropic ignoriert sie.",
+    en: "The fallback address. ollama reads ollamaBaseUrl and LM Studio reads lmstudioBaseUrl, so this field only applies to those two while their own is empty. For openai, openrouter and gemini it is still the address; anthropic ignores it.",
   },
   "wsg.local.desc.thinking": {
     de: "Den Denk-Kanal des Modells mitschreiben und anzeigen.",

@@ -499,9 +499,15 @@ class SpectroConfigTest {
     }
 
     private static SpectroConfig configFor(String provider, String baseUrl) {
+        return configFor(provider, baseUrl, null, null);
+    }
+
+    private static SpectroConfig configFor(String provider, String baseUrl,
+            String ollamaBaseUrl, String lmstudioBaseUrl) {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
-                null, null, "auto", "auto", null, null, null);
+                null, null, "auto", "auto", null, null, null,
+                ollamaBaseUrl, lmstudioBaseUrl);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -583,6 +589,144 @@ class SpectroConfigTest {
                 SpectroConfig.effectiveOpenAiBaseUrl("openai", "http://my-box:8000"));
         assertEquals("http://my-box:8000",
                 SpectroConfig.effectiveOpenAiBaseUrl("lmstudio", "http://my-box:8000"));
+    }
+
+    // ---- per-provider addresses (card 193) ------------------------------------------
+
+    @Test
+    void perProviderAddressesKeepOllamaAndLmstudioApart(@TempDir Path projectDir) throws IOException {
+        // Card 193: ONE baseUrl used to serve every provider, so pointing it at
+        // an LM Studio box made ollama dial the same host, wrong port and all.
+        // Each local-model provider now carries its own address.
+        writeProjectSettings(projectDir, """
+                { "ollamaBaseUrl": "http://gpu-box:11434", "lmstudioBaseUrl": "http://gpu-box:1234" }
+                """);
+        SpectroConfig config = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("http://gpu-box:11434", config.endpointFor("ollama"));
+        assertEquals("http://gpu-box:1234", config.endpointFor("lmstudio"));
+    }
+
+    @Test
+    void legacyBaseUrlConfigsKeepWorkingWhenNoPerProviderAddressIsSet(@TempDir Path projectDir)
+            throws IOException {
+        // Backward compatibility: a config that only knows the shared baseUrl
+        // behaves exactly as before this card — both local providers read it.
+        writeProjectSettings(projectDir, """
+                { "baseUrl": "http://legacy-box:9999" }
+                """);
+        SpectroConfig config = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("http://legacy-box:9999", config.endpointFor("ollama"));
+        assertEquals("http://legacy-box:9999", config.endpointFor("lmstudio"));
+    }
+
+    @Test
+    void withNothingConfiguredEachLocalProviderDialsItsOwnPreset(@TempDir Path projectDir) {
+        SpectroConfig config = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("http://localhost:11434", config.endpointFor("ollama"));
+        assertEquals("http://localhost:1234", config.endpointFor("lmstudio"));
+    }
+
+    @Test
+    void aProvidersOwnDefaultIsNeverAnUnsetSentinelForThePerProviderFields() {
+        // The second trap of card 193: on the legacy field, the literal
+        // http://localhost:11434 doubles as "unset". The NEW fields take every
+        // non-blank value verbatim — a deliberately typed default is a value,
+        // never a silent reroute to some preset.
+        assertEquals("http://localhost:11434",
+                SpectroConfig.effectiveLmstudioBaseUrl("http://localhost:11434", null));
+        assertEquals("http://localhost:1234",
+                SpectroConfig.effectiveOllamaBaseUrl("http://localhost:1234", "http://elsewhere:1"));
+        // Only null/blank means unset on the new fields — then the legacy chain runs.
+        assertEquals("http://legacy:2", SpectroConfig.effectiveOllamaBaseUrl(" ", "http://legacy:2"));
+        // The legacy sentinel itself survives on the legacy field: an untouched
+        // shared baseUrl still routes lmstudio to its own preset.
+        assertEquals("http://localhost:1234",
+                SpectroConfig.effectiveLmstudioBaseUrl(null, "http://localhost:11434"));
+    }
+
+    @Test
+    void perProviderAddressesRideTheEnvLayer(@TempDir Path projectDir) {
+        var env = java.util.Map.of(
+                "SPECTRO_OLLAMA_BASE_URL", "http://gpu-box:11434",
+                "SPECTRO_LMSTUDIO_BASE_URL", "http://gpu-box:1234");
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, env);
+        assertEquals("http://gpu-box:11434", config.ollamaBaseUrl());
+        assertEquals("http://gpu-box:1234", config.lmstudioBaseUrl());
+    }
+
+    @Test
+    void providerHostFollowsThePerProviderAddress() {
+        // The header chip / trace host column says where requests really go —
+        // including a per-provider address.
+        assertEquals("gpu-box:11434",
+                configFor("ollama", "http://localhost:11434", "http://gpu-box:11434", null)
+                        .providerHost());
+        assertEquals("gpu-box:1234",
+                configFor("lmstudio", "http://localhost:11434", null, "http://gpu-box:1234")
+                        .providerHost());
+    }
+
+    @Test
+    void switchingProviderSwitchesTheEndpointAndBackAgain(@TempDir Path projectDir)
+            throws IOException {
+        // Card 192's scenario, satisfied here: ollama configured at one host,
+        // LM Studio at another; a provider switch switches the endpoint with
+        // it, switching back restores the first, and neither host is ever
+        // handed to the other provider.
+        writeProjectSettings(projectDir, """
+                { "provider": "ollama",
+                  "ollamaBaseUrl": "http://ollama-box:11434",
+                  "lmstudioBaseUrl": "http://lmstudio-box:1234" }
+                """);
+        SpectroConfig onOllama = SpectroConfig.load(
+                SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
+        assertEquals("ollama-box:11434", onOllama.providerHost());
+
+        SpectroConfig onLmstudio = onOllama.withProvider("lmstudio", "some-model");
+        assertEquals("lmstudio-box:1234", onLmstudio.providerHost(),
+                "the switch carries LM Studio to ITS host, not ollama's");
+
+        SpectroConfig backOnOllama = onLmstudio.withProvider("ollama", "qwen3");
+        assertEquals("ollama-box:11434", backOnOllama.providerHost(),
+                "switching back restores the first host");
+    }
+
+    @Test
+    void aLanPerProviderAddressStaysKeylessAndClassifiedLocal() {
+        // Card 192's other measurement, kept intact: isLocalEndpoint accepts
+        // private-range hosts, so a workstation on the LAN needs no cloud key.
+        // The per-provider address must flow through the SAME classification.
+        //
+        // The fallback is a PUBLIC gateway on purpose. This test used to leave
+        // the legacy baseUrl at ollama's default, whose lmstudio fallback is
+        // http://localhost:1234 — also local, also keyless. Both assertions
+        // therefore passed just as well when the per-provider address was
+        // ignored ENTIRELY (measured: endpointFor patched to drop it, test
+        // still green), so it pinned isLocalEndpoint and not the flow-through
+        // its comment claimed. A test green in both directions pins nothing.
+        SpectroConfig config = configFor("lmstudio", "https://gateway.example.com",
+                null, "http://192.168.1.50:1234");
+        String endpoint = config.endpointFor("lmstudio");
+        assertEquals("http://192.168.1.50:1234", endpoint,
+                "the LAN address is what lmstudio dials — the shared fallback is a"
+                        + " public gateway and must not be reached at all");
+        assertTrue(SpectroConfig.isLocalEndpoint(endpoint),
+                "a LAN address counts as the operator's own network: " + endpoint);
+        assertEquals("local", SpectroConfig.onboardingStatusAt("lmstudio", endpoint, false),
+                "keyless and honest — never needs-key against the operator's own box");
+    }
+
+    @Test
+    void endpointForRefusesProvidersWithoutAConfigurableEndpoint() {
+        // anthropic's endpoint is fixed in the SDK; spectro-local is a
+        // subprocess, not an address. Answering something would be a lie.
+        assertThrows(IllegalArgumentException.class,
+                () -> configFor("anthropic", null).endpointFor("anthropic"));
+        assertThrows(IllegalArgumentException.class,
+                () -> configFor("ollama", null).endpointFor("spectro-local"));
     }
 
     @Test
@@ -754,7 +898,8 @@ class SpectroConfigTest {
     @Test
     void withProviderCopiesEveryOtherField(@TempDir Path projectDir) throws IOException {
         writeProjectSettings(projectDir, """
-                { "autoApprove": ["run_command:ls*"], "imageModel": "gpt-image-2", "thinking": false }
+                { "autoApprove": ["run_command:ls*"], "imageModel": "gpt-image-2", "thinking": false,
+                  "ollamaBaseUrl": "http://gpu-box:11434", "lmstudioBaseUrl": "http://gpu-box:1234" }
                 """);
         SpectroConfig base = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, java.util.Map.of());
 
@@ -765,6 +910,54 @@ class SpectroConfigTest {
         assertEquals("gpt-image-2", switched.imageModel());
         assertFalse(switched.thinking());
         assertEquals(base.baseUrl(), switched.baseUrl());
+        // Card 193: a mid-session switch must not drop the per-provider addresses.
+        assertEquals("http://gpu-box:11434", switched.ollamaBaseUrl());
+        assertEquals("http://gpu-box:1234", switched.lmstudioBaseUrl());
+    }
+
+    @Test
+    void withProviderCopiesEveryRecordComponentWithoutBeingToldTheirNames() throws Exception {
+        // The named-field test above asserts six of twenty-three components, so
+        // it is blind to exactly the failure a positional copy produces: growing
+        // the record forces a COMPILE error when a component is forgotten, but a
+        // component handed the wrong VALUE — ollamaBaseUrl copied into
+        // lmstudioBaseUrl, the two Strings that sit side by side — compiles,
+        // ships, and points a run at the other provider's machine.
+        //
+        // Every String below is distinct on purpose: two components that carry
+        // the same value cannot be told apart after a swap. The canonical
+        // constructor is used deliberately — a new component breaks THIS line,
+        // and whoever fixes it has to give it a value of its own before the loop
+        // can mean anything.
+        SpectroConfig base = new SpectroConfig(
+                "anthropic", "model-component", "baseUrl-component", 12345, "auto",
+                List.of("run_command:ls*"), "openai", false, List.of(), 7, false, List.of(),
+                "workspace-component", "debug", "imageModel-component", "sttModel-component",
+                "local", "de", "chromeBinary-component",
+                "otlpEndpoint-component", "otlpBasicAuth-component",
+                "ollamaBaseUrl-component", "lmstudioBaseUrl-component");
+
+        SpectroConfig switched = base.withProvider("ollama", "qwen3");
+
+        var components = SpectroConfig.class.getRecordComponents();
+        assertTrue(components.length >= 23,
+                "reflection found " + components.length + " components — if this list ever"
+                        + " shrinks to nothing the loop below silently asserts nothing");
+        int checked = 0;
+        for (var component : components) {
+            String name = component.getName();
+            if ("provider".equals(name) || "model".equals(name)) {
+                continue; // the two the switch is FOR
+            }
+            assertEquals(component.getAccessor().invoke(base),
+                    component.getAccessor().invoke(switched),
+                    "withProvider dropped or mis-copied \"" + name + "\" — it copies"
+                            + " positionally, so a component handed the neighbouring value"
+                            + " compiles and ships silently");
+            checked++;
+        }
+        assertEquals(components.length - 2, checked,
+                "every component except provider and model must be compared");
     }
 
     // ---- the precedence flip (settings productization Task 4) --------------------------
