@@ -49,8 +49,13 @@ public final class McpServerRegistry {
      * @param target    what spectroscope connects to — the command for stdio, the URL for HTTP/SSE
      * @param reachable whether spawn and handshake succeeded at load time
      * @param toolCount number of advertised tools, {@code 0} when unreachable
+     * @param failure   why it is unreachable, in the words a person can act on
+     *                  ({@code "no answer to 'initialize' within 20000 ms"}), or {@code null}
+     *                  when it is reachable. A face that prints only "UNREACHABLE" tells
+     *                  someone their setup is broken without telling them how
      */
-    public record McpServerHandle(String name, String target, boolean reachable, int toolCount) {}
+    public record McpServerHandle(String name, String target, boolean reachable, int toolCount,
+                                  String failure) {}
 
     /**
      * The convenience the faces call: connect with the real {@link McpTransports}
@@ -93,8 +98,15 @@ public final class McpServerRegistry {
                 try {
                     client.start();
                 } catch (RuntimeException failed) {
+                    // Skipping is not the same as never having started. start() establishes
+                    // the transport BEFORE the handshake, so a handshake that fails leaves a
+                    // live child process and a live executor behind — measured: a server that
+                    // answered one line of gibberish outlived the whole run. Close what was
+                    // opened, then skip.
+                    client.close();
                     LOG.warn("skipping MCP server '{}': {}", config.name(), message(failed));
-                    handles.add(new McpServerHandle(config.name(), target(config), false, 0));
+                    handles.add(new McpServerHandle(config.name(), target(config), false, 0,
+                            message(failed)));
                     continue;
                 }
                 clients.add(client);
@@ -102,7 +114,8 @@ public final class McpServerRegistry {
                 for (McpToolDescriptor descriptor : descriptors) {
                     tools.add(new McpTool(config.name(), client, descriptor));
                 }
-                handles.add(new McpServerHandle(config.name(), target(config), true, descriptors.size()));
+                handles.add(new McpServerHandle(config.name(), target(config), true,
+                        descriptors.size(), null));
             }
         }
         return new McpServerRegistry(clients, List.copyOf(tools), List.copyOf(handles));

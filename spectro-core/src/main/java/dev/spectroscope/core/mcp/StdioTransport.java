@@ -36,7 +36,15 @@ public final class StdioTransport implements McpTransport {
     private static final Logger LOG = LoggerFactory.getLogger(StdioTransport.class);
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(20);
+
+    /**
+     * The bound a single request waits for its reply — the number the user guide
+     * prints. Public because it is a documented promise, not an implementation
+     * detail: a test pins it so the sentence in the guide and the value here cannot
+     * drift apart the way a remembered number always does.
+     */
+    public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(20);
+
     private static final String PROTOCOL_VERSION = "2024-11-05";
 
     private final JsonRpcChannel channel;
@@ -79,7 +87,14 @@ public final class StdioTransport implements McpTransport {
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
         BufferedWriter out = new BufferedWriter(
                 new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-        this.channel = new JsonRpcChannel(in, out, readTimeout);
+        // The channel is handed the child's destroy as its unblock hook, and this is the
+        // load-bearing line of card 221. A server that spawns and then says nothing leaves
+        // the reader thread parked in readLine on a pipe that will never carry a byte;
+        // that read ignores interrupt, and the lock it holds is the one close() needs.
+        // Killing the child closes the pipe, which is the only thing that ends the read —
+        // the same reason a terminal Ctrl-C escaped in 1 s while a SIGINT to the JVM alone
+        // did not: Ctrl-C signals the process GROUP and takes the server with it.
+        this.channel = new JsonRpcChannel(in, out, readTimeout, () -> destroy(process));
         this.onClose = () -> destroy(process);
     }
 
@@ -131,6 +146,16 @@ public final class StdioTransport implements McpTransport {
     /** The platform's discard device: {@code NUL} on Windows, {@code /dev/null} elsewhere. */
     private static String nullDevice() {
         return File.separatorChar == '\\' ? "NUL" : "/dev/null";
+    }
+
+    /**
+     * The channel this transport speaks over. Package-visible so a test can watch the
+     * reader thread of the <b>production</b> wiring, not of one it built itself.
+     *
+     * @return the JSON-RPC framing wrapped around the child's stdio
+     */
+    JsonRpcChannel channel() {
+        return channel;
     }
 
     /**
