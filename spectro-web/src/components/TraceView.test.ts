@@ -116,6 +116,15 @@ describe("the client category", () => {
     expect(CATEGORIES).toContain("client");
   });
 
+  // Card 195. A pre_tool_use hook does not sit beside the gate, it REPLACES it:
+  // a block short-circuits before any permission_request is emitted, so the call
+  // is refused and the permission chip has nothing at all to show for it. A
+  // reader who presses `permission` to see what was refused would be shown every
+  // refusal except the ones nothing was even asked about.
+  it("files a hook decision with the gate rather than in other", () => {
+    expect(categoryOf("hook_decision")).toBe("permission");
+  });
+
   it("drops exactly those four rows when the chip is off", () => {
     const rows = [
       "run_start",
@@ -431,5 +440,61 @@ describe("an imported picture in the trace", () => {
 
   it("answers to the chip a reader presses to find pictures", () => {
     expect(categoryOf("attachment_image")).toBe("image");
+  });
+});
+
+// Card 195, review finding 5. The collapsed row is the line a reader SCANS, and
+// this frame had no case at all: it fell through to compactJson and read
+// `{"type":"hook_decisi…` — truncated before the verdict, which is the only
+// thing on the row anyone is standing there for. The reason was findable with
+// Cmd+F and the open row was fine; the scannable line was a wall of braces. The
+// CLI got a proper line the day the event was added (EventRenderer's ⛨ line);
+// the web trace, the surface this product is named after, did not.
+describe("a hook decision in the trace", () => {
+  /** @param over the payload fields this case is about
+   *  @return the row as the socket delivered it */
+  const row = (over: Record<string, unknown>): TraceEntry => ({
+    seq: 9,
+    dir: "in",
+    ts: 0,
+    type: "hook_decision",
+    payload: {
+      agentId: "main",
+      callId: "c1",
+      toolName: "run_command",
+      event: "pre_tool_use",
+      matcher: "run_command",
+      command: "/h/deny.sh",
+      timeoutSeconds: 10,
+      verdict: "blocked",
+      ...over,
+    },
+  });
+
+  it("leads with the verdict and the hook's own words", () => {
+    expect(summarize(row({ reason: "verifier says no shell" }), "en")).toBe(
+      "⛨ pre_tool_use blocked · /h/deny.sh · verifier says no shell",
+    );
+  });
+
+  it("says a timeout let the call through, in both languages", () => {
+    // The case that matters most and shows least: fail-open means the call ran
+    // with part of the fence down, and a row reading only "timed-out" leaves the
+    // reader to guess whether anything happened after it.
+    const slow = row({ verdict: "timed-out", command: "/h/slow.sh", timeoutSeconds: 1, reason: undefined });
+    expect(summarize(slow, "en")).toBe(
+      "⛨ pre_tool_use timed-out · /h/slow.sh · killed after 1s — the call ran anyway",
+    );
+    expect(summarize(slow, "de")).toContain("der Aufruf lief trotzdem");
+  });
+
+  it("says the verdict even when the hook stated no reason", () => {
+    expect(summarize(row({}), "en")).toBe("⛨ pre_tool_use blocked · /h/deny.sh");
+  });
+
+  it("never falls back to the raw frame for this type", () => {
+    // compactJson of this payload leads with the plumbing — agentId, callId,
+    // toolName — and ellipsizes long before the verdict.
+    expect(summarize(row({ reason: "x" }), "en")).not.toContain("callId");
   });
 });

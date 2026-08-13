@@ -110,6 +110,7 @@ const SETTINGS_ROWS: ReadonlyArray<readonly [string, string]> = [
   ["websearch", "Web search"],
   ["allowlist", "Auto-approvals"],
   ["netfence", "Net fence"],
+  ["hooks", "Hooks"],
   ["workspace", "Default workspace"],
   ["logging", "Operator logging"],
   ["machine", "Machine"],

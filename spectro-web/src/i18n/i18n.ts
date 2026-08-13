@@ -1021,6 +1021,97 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Nur für die lokale Prüfschleife — der eigene Server auf 8746, ollama auf 11434. Es öffnet weder das LAN noch das Tailnet noch file://, auch nicht über eine Weiterleitung. Die Einstellung gilt für den ganzen Prozess und kann nur hier gesetzt werden, nicht im Arbeitsordner des Agenten.",
     en: "For the local verify loop only — this product on 8746, ollama on 11434. It opens neither the LAN nor the tailnet nor file://, and not through a redirect either. The setting is process-wide and can only be set here, never in the agent's own workspace folder.",
   },
+  // ---- the shell hooks (card 195) -----------------------------------------
+  // Owner: "und wir brauchen noch hooks settings page". The engine ran hooks
+  // for months with no screen anywhere, so a reader could not tell "nothing is
+  // configured" from "this product has no such thing".
+  //
+  // Two sentences here are load-bearing and were measured before they were
+  // written: a hook takes effect for the NEXT session (the runner is resolved
+  // once per socket), and a timed-out hook lets the call through. Both would be
+  // easy to leave out and both would make the rest of the block a lie.
+  "set.secHooks": { de: "Hooks", en: "Hooks" },
+  "set.hkHint": {
+    de: "Eigene Shell-Befehle rund um jeden Werkzeug-Aufruf. Ein pre_tool_use-Hook kann den Aufruf ablehnen — mit Exit-Code ungleich 0 oder mit {\"decision\":\"block\",\"reason\":\"…\"} auf stdout. Ein post_tool_use-Hook läuft danach, sein Exit-Code wird ignoriert, und er kann das Ergebnis nicht verändern.",
+    en: "Your own shell commands around every tool call. A pre_tool_use hook can refuse the call — with a non-zero exit code, or with {\"decision\":\"block\",\"reason\":\"…\"} on stdout. A post_tool_use hook runs afterwards, its exit code is ignored, and it cannot change the result.",
+  },
+  "set.hkTierNote": {
+    de: "Ein Hook ist beliebige Shell, die dieses Programm ausführt — die breiteste Stufe, die es gibt. Und ein pre_tool_use-Hook läuft VOR dem Berechtigungs-Dialog: er wird also nie gefragt, sondern gestartet.",
+    en: "A hook is arbitrary shell this product executes — the widest tier there is. And a pre_tool_use hook runs BEFORE the permission gate, so it is never asked about, only started.",
+  },
+  // What a RUN would actually load, which is a different list from what any one
+  // settings file says. `hooks` is a whole-block field — the highest layer that
+  // sets it replaces every layer below — so these five sentences are the block's
+  // load-bearing ones, added after a review found the page listing a hook that
+  // never ran while a workspace hook was blocking every tool call.
+  "set.hkInForce": { de: "Was läuft", en: "What runs" },
+  "set.hkReachSession": {
+    de: "Für die gerade laufende Sitzung, aufgelöst in {ws}.",
+    en: "For the session running now, resolved in {ws}.",
+  },
+  "set.hkReachProcess": {
+    de: "Es läuft keine Sitzung, das hier ist also die Antwort für diese Maschine. Öffnet sich eine Sitzung in einem Arbeitsordner, ersetzen dessen eigene Einstellungen diese Liste als Ganzes.",
+    en: "No session is running, so this is this machine's answer. Once a session opens in a workspace, that workspace's own settings replace this list whole.",
+  },
+  "set.hkNoneInForce": {
+    de: "Um die Werkzeug-Aufrufe dieses Laufs läuft nichts Eigenes.",
+    en: "Nothing of yours runs around a tool call in this run.",
+  },
+  "set.hkFromLayer": { de: "Aus {scope}.", en: "From {scope}." },
+  "set.hkShadowed": {
+    de: "{scopes} setzt ebenfalls Hooks und wird komplett ersetzt: Eine Ebene, die Hooks setzt, kommt nicht zu den Ebenen darunter hinzu — sie tritt an ihre Stelle. Es läuft nur {scope}.",
+    en: "{scopes} also sets hooks and is replaced whole: a layer that sets hooks does not add to the layers below it, it takes their place. Only {scope} runs.",
+  },
+  "set.hkInForceTag": { de: "läuft", en: "in force" },
+  "set.hkSilencedTag": { de: "ersetzt durch {scope}", en: "replaced by {scope}" },
+  "set.hkScopeUser": { de: "Deine Einstellungen", en: "Your settings" },
+  "set.hkScopeOther": {
+    de: "Aus {scope} — hier nur zu lesen.",
+    en: "From {scope} — read-only here.",
+  },
+  "set.hkEmpty": {
+    de: "Kein Hook eingerichtet. Um jeden Werkzeug-Aufruf läuft nichts Eigenes.",
+    en: "No hooks configured. Nothing of yours runs around a tool call.",
+  },
+  "set.hkPre": {
+    de: "läuft vor dem Aufruf und kann ihn ablehnen",
+    en: "runs before the call and can refuse it",
+  },
+  "set.hkPost": {
+    de: "läuft nach dem Aufruf, rein beobachtend",
+    en: "runs after the call, watching only",
+  },
+  "set.hkBeforeGate": { de: "vor dem Dialog", en: "ahead of the gate" },
+  "set.hkTimeoutOwn": { de: "{sec}s (eigener Wert)", en: "{sec}s (its own)" },
+  "set.hkTimeoutInherited": { de: "{sec}s (Vorgabe)", en: "{sec}s (inherited)" },
+  // A forecast, not a censorship — the command itself stands above it, in full.
+  // This says what the NEXT surface will do with it: HookRunner runs the command
+  // past the same rules before it reaches the session file, so a trace row
+  // reading "[redacted: email]" has its explanation here rather than looking
+  // like a hook that broke.
+  "set.hkWillRedact": {
+    de: "im Lauf aufgezeichnet als [redacted: {rule}]",
+    en: "recorded in the run as [redacted: {rule}]",
+  },
+  "set.hkEvent": { de: "Wann", en: "When" },
+  "set.hkMatcher": { de: "Für welches Werkzeug (leer = alle)", en: "For which tool (blank = all)" },
+  "set.hkCommand": { de: "Befehl", en: "Command" },
+  "set.hkTimeout": { de: "Abbruch nach Sekunden (leer = {sec})", en: "Give up after seconds (blank = {sec})" },
+  "set.hkPreview": { de: "Wird so eingetragen:", en: "This is what gets written:" },
+  "set.hkAdd": { de: "Hook hinzufügen", en: "Add hook" },
+  "set.hkRemove": { de: "entfernen", en: "remove" },
+  "set.hkApplies": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält die Hooks, mit denen sie gestartet ist.",
+    en: "Applies from the next session. A session already open keeps the hooks it started with.",
+  },
+  "set.hkFailOpen": {
+    de: "Antwortet ein Hook nicht rechtzeitig, wird er abgebrochen und der Aufruf läuft trotzdem — ein kaputter Hook soll nicht jeden Werkzeug-Aufruf blockieren. Das steht dann als „timed-out\" in der Ablaufspur, nie als „durchgelassen\".",
+    en: "A hook that does not answer in time is killed and the call proceeds anyway — a broken hook must not wedge every tool call. That shows up in the trace as \"timed-out\", never as a pass.",
+  },
+  "set.hkLoadFailed": {
+    de: "Die Hook-Liste konnte nicht gelesen werden.",
+    en: "The hook list could not be read.",
+  },
   "set.secWebSearch": { de: "Websuche", en: "Web search" },
   "set.webSearchHint": {
     de: "Womit web_search sucht. Es antwortet genau eine Stufe — die konfigurierte. Fällt sie aus, bekommst du den Fehler, nicht heimlich das Ergebnis einer anderen.",
@@ -2716,6 +2807,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   // only in this tab; calling it "Archive" made it indistinguishable from a
   // session this machine produced and stored.
   "hdr.imported": { de: "Importiert", en: "Imported" },
+  // The one clause of a hook_decision summary that is prose rather than a wire
+  // word (card 195). A row reading only "timed-out" leaves the reader to guess
+  // what happened next, and what happened next is the point: the runner fails
+  // open, so the call went ahead with part of the fence down.
+  "trace.hookRanAnyway": {
+    de: "nach {sec}s abgebrochen — der Aufruf lief trotzdem",
+    en: "killed after {sec}s — the call ran anyway",
+  },
   "trace.resumeSummary": {
     de: "{e} Events geladen · ~{t} Tokens Verlauf gehen mit dem nächsten Request wieder hoch (plus System-Prompt & Tool-Schemas obendrauf)",
     en: "{e} events loaded · ~{t} tokens of history ride along with the next request (plus system prompt & tool schemas on top)",

@@ -54,14 +54,15 @@ import java.util.List;
     @JsonSubTypes.Type(value = RunEvent.AgentMessage.class,       name = "agent_message"), // A2A-lite, additive
     @JsonSubTypes.Type(value = RunEvent.Plan.class,               name = "plan"),          // additive
     @JsonSubTypes.Type(value = RunEvent.LlmExchange.class,        name = "llm_exchange"),  // additive (card 184 leg 3)
-    @JsonSubTypes.Type(value = RunEvent.BrowserAction.class,      name = "browser_action") // additive (card 204)
+    @JsonSubTypes.Type(value = RunEvent.BrowserAction.class,      name = "browser_action"), // additive (card 204)
+    @JsonSubTypes.Type(value = RunEvent.HookDecision.class,       name = "hook_decision") // additive (card 195)
 })
 public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart, RunEvent.TurnStart,
         RunEvent.TextDelta, RunEvent.ThinkingDelta, RunEvent.ToolCall, RunEvent.PermissionRequest,
         RunEvent.PermissionDecision, RunEvent.ToolResult, RunEvent.AgentSpawn,
         RunEvent.Compaction, RunEvent.VoiceInput, RunEvent.Usage, RunEvent.RunEnd,
         RunEvent.ErrorEvent, RunEvent.ImageGenerated, RunEvent.ContextInfo,
-        RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction {
+        RunEvent.AgentMessage, RunEvent.Plan, RunEvent.BrowserAction, RunEvent.HookDecision {
 
     /** Epoch millis of the moment the event was emitted. */
     long ts();
@@ -429,6 +430,46 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
     record BrowserAction(String agentId, String callId, String cid, int epoch, String tool,
                          String url, boolean ok, long resultBytes, long durationMs,
                          String sha256, long ts) implements RunEvent {}
+
+    /**
+     * Additive (card 195): a configured shell hook did something worth a line.
+     *
+     * <p>Two verdicts ride here and only two: {@code blocked} and
+     * {@code timed-out}. A hook that agreed emits nothing — one line per passing
+     * hook per tool call would bury the two that matter, and "nothing objected"
+     * is already what the tool result says.</p>
+     *
+     * <p><b>Why this event had to exist before the hooks page could.</b> A block
+     * used to surface as nothing but the {@code ERROR: blocked by pre_tool_use
+     * hook: …} string inside a {@link ToolResult}, which carries the reason and
+     * names no hook; a TIMEOUT surfaced as nothing at all, because
+     * {@code HookRunner} fails open and the walk simply continued. So a screen
+     * could truthfully say which hooks are configured and could not say which
+     * one fired — and the one case where the difference is largest, a guard that
+     * never answered, read exactly like a guard that agreed.</p>
+     *
+     * <p>{@code command} arrives REDACTED by {@code Redaction}'s rules: it is
+     * operator-written config that lands in the session file, and a session file
+     * is what people export and paste.</p>
+     *
+     * @param agentId        the agent whose tool call the hook ran around
+     * @param callId         the tool invocation it applies to — what joins this
+     *                       line to its {@link ToolCall} and {@link ToolResult}
+     * @param toolName       the tool the hook fired for
+     * @param event          the phase: {@code pre_tool_use} or {@code post_tool_use}
+     * @param matcher        the tool-name glob the hook matched with, defaulted
+     * @param command        the configured shell string, redacted whole when a
+     *                       credential shape fires in it
+     * @param timeoutSeconds the budget the hook actually ran under
+     * @param verdict        {@code blocked} or {@code timed-out}
+     * @param reason         the hook's own words on a block; null on a timeout,
+     *                       because a killed process stated nothing
+     * @param ts             epoch millis of emission
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    record HookDecision(String agentId, String callId, String toolName, String event,
+                        String matcher, String command, long timeoutSeconds,
+                        String verdict, String reason, long ts) implements RunEvent {}
 
     /**
      * Additive: what sits in the context window right now. Emitted

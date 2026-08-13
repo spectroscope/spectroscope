@@ -4,11 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.config.HookConfig;
+import dev.spectroscope.core.graph.Redaction;
 import dev.spectroscope.core.tools.ShellCommand;
 import dev.spectroscope.core.tools.ToolOutput;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,17 +31,96 @@ public final class HookRunner {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
-    private static final long DEFAULT_TIMEOUT_SECONDS = 10;
+
+    /** The per-hook timeout applied when an entry sets none. Public because the
+     *  settings surface prints it ("unset falls back to N seconds") and a second
+     *  spelling of N is a number that drifts. */
+    public static final long DEFAULT_TIMEOUT_SECONDS = 10;
+
+    /** How the reason of a redacted command reads, so the marker is one string.
+     *  Mirrors the sidecar's own {@code [redacted: rule]} shape. */
+    private static final String REDACTED = "[redacted: %s]";
+
+    /**
+     * What one hook DID on one tool call — the two outcomes worth a line.
+     *
+     * <p>A pass is deliberately absent. A verdict per passing hook per tool call
+     * would bury the two that matter, and "nothing objected" is what the tool
+     * result already says.</p>
+     */
+    public enum Verdict {
+
+        /** The hook vetoed the call: it never executed and never met the gate. */
+        BLOCKED("blocked"),
+
+        /** The deadline killed the hook. The call proceeds (fail-open), which is
+         *  precisely why this is recorded: a guard that never answered must not
+         *  read as a guard that agreed. */
+        TIMED_OUT("timed-out");
+
+        private final String wireName;
+
+        Verdict(String wireName) {
+            this.wireName = wireName;
+        }
+
+        /** The spelling used on the wire and on screen.
+         *  @return the verdict's wire name */
+        public String wireName() {
+            return wireName;
+        }
+    }
+
+    /**
+     * One hook's part in one tool call, as the run records it.
+     *
+     * <p>{@code command} is REDACTED by {@link Redaction}'s rules before it lands
+     * here. It is operator-written config, it travels into the session file, and
+     * a session file is the artefact people export and paste — a hook that curls
+     * a webhook with a bearer token would otherwise put that token into every
+     * session it ever fired in.</p>
+     *
+     * @param event          the phase this hook is configured for
+     * @param matcher        the tool-name glob it matched with, defaulted
+     * @param command        the shell string, redacted whole when a credential shape fires
+     * @param timeoutSeconds the budget this hook actually ran under, defaults resolved
+     * @param verdict        what it did
+     * @param reason         the hook's stated reason on a block; null on a timeout
+     */
+    public record HookRun(String event, String matcher, String command, long timeoutSeconds,
+                          Verdict verdict, String reason) {}
 
     /** The verdict of a {@code pre_tool_use} evaluation.
+     *
+     *  <p><b>A block must carry the run that blocked.</b> The whole point of
+     *  this record's {@code runs} list is that a refusal names its refuser: the
+     *  agent emits one {@code hook_decision} per entry here, so a blocking
+     *  outcome with no blocking run is a call refused by nobody, which is the
+     *  invisibility this card removed. It used to be reachable — a
+     *  {@code block(reason)} factory built exactly that shape and documented the
+     *  trap in its own {@code @return} line — so the compact constructor refuses
+     *  it instead of leaving it to discipline.</p>
+     *
      *  @param blocked true when a hook vetoed the call — it never executes
-     *  @param reason  the hook's stated reason; null on a pass */
-    public record HookOutcome(boolean blocked, String reason) {
-        /** The let-it-run verdict — no hook objected. */
-        public static HookOutcome pass() { return new HookOutcome(false, null); }
-        /** A veto.
-         *  @param reason why the hook blocked — surfaced to the model in the ERROR result */
-        public static HookOutcome block(String reason) { return new HookOutcome(true, reason); }
+     *  @param reason  the hook's stated reason; null on a pass
+     *  @param runs    every hook of this evaluation that blocked or timed out, in
+     *                 the order they ran; empty when every hook simply agreed */
+    public record HookOutcome(boolean blocked, String reason, List<HookRun> runs) {
+        /** Defensive copy — the list travels into an event stream — plus the one
+         *  invariant this record exists to hold.
+         *  @param blocked true when a hook vetoed the call
+         *  @param reason  the hook's stated reason; null on a pass
+         *  @param runs    the notable hook runs
+         *  @throws IllegalArgumentException when a block carries no blocking run */
+        public HookOutcome {
+            runs = List.copyOf(runs);
+            if (blocked && runs.stream().noneMatch(run -> run.verdict() == Verdict.BLOCKED)) {
+                throw new IllegalArgumentException(
+                        "a blocked call must carry the hook run that blocked it — otherwise the "
+                                + "refusal emits no hook_decision and nothing in the run says who "
+                                + "refused it or why.");
+            }
+        }
     }
 
     /**
@@ -91,49 +172,97 @@ public final class HookRunner {
     }
 
     /** Evaluates every matching pre_tool_use hook; the first block wins.
+     *
+     *  <p>A timed-out hook is still walked past (fail-open, unchanged), but it is
+     *  now RECORDED as it is walked past: a guard that never answered used to be
+     *  indistinguishable from a guard that agreed, in the tool result and
+     *  everywhere downstream of it.</p>
+     *
      *  @param toolName the tool about to run, matched against each hook's glob
      *  @param input    the model-supplied arguments, exported as SPECTRO_TOOL_INPUT
      *  @param cwd      working directory for the hook processes
      *  @param signal   cooperative cancel forwarded to each process
-     *  @return the first blocking verdict, or a pass when every hook agrees */
+     *  @return the first blocking verdict, or a pass when every hook agrees —
+     *          carrying every notable hook run either way */
     public HookOutcome preToolUse(String toolName, JsonNode input, Path cwd, CancelSignal signal) {
+        List<HookRun> runs = new ArrayList<>();
         for (HookConfig hook : hooks) {
             if (!appliesTo(hook, "pre_tool_use", toolName)) {
                 continue;
             }
+            long timeout = hook.timeoutOrDefault(defaultTimeoutSeconds);
             CommandRunner.Result result = runner.run(hook.command(),
-                    env(toolName, input, null), cwd,
-                    hook.timeoutOrDefault(defaultTimeoutSeconds), signal);
+                    env(toolName, input, null), cwd, timeout, signal);
             if (result.timedOut()) {
-                continue; // fail-open: a broken hook must not wedge every tool call
+                // fail-open: a broken hook must not wedge every tool call. The
+                // walk goes on; the fact that part of the fence was down does not
+                // get dropped on the way.
+                runs.add(record(hook, timeout, Verdict.TIMED_OUT, null));
+                continue;
             }
+            String reason = null;
             if (result.exitCode() != 0) {
-                return HookOutcome.block("exit " + result.exitCode()
-                        + (result.stdout().isBlank() ? "" : ": " + result.stdout().strip()));
+                reason = "exit " + result.exitCode()
+                        + (result.stdout().isBlank() ? "" : ": " + result.stdout().strip());
+            } else {
+                reason = blockReason(result.stdout());
             }
-            String reason = blockReason(result.stdout());
             if (reason != null) {
-                return HookOutcome.block(reason);
+                runs.add(record(hook, timeout, Verdict.BLOCKED, reason));
+                return new HookOutcome(true, reason, runs);
             }
         }
-        return HookOutcome.pass();
+        return new HookOutcome(false, null, runs);
     }
 
     /** Advisory: runs every matching post_tool_use hook and ignores the exit code.
+     *
+     *  <p>Which is why only a timeout comes back: a non-zero exit here is not a
+     *  finding by design, and reporting one would invent a veto this phase does
+     *  not have.</p>
+     *
      *  @param toolName   the tool that just ran, matched against each hook's glob
      *  @param input      the model-supplied arguments, exported as SPECTRO_TOOL_INPUT
      *  @param toolResult the tool's output, exported as SPECTRO_TOOL_RESULT
      *  @param cwd        working directory for the hook processes
-     *  @param signal     cooperative cancel forwarded to each process */
-    public void postToolUse(String toolName, JsonNode input, String toolResult,
-                            Path cwd, CancelSignal signal) {
+     *  @param signal     cooperative cancel forwarded to each process
+     *  @return the hooks whose deadline killed them, in the order they ran */
+    public List<HookRun> postToolUse(String toolName, JsonNode input, String toolResult,
+                                     Path cwd, CancelSignal signal) {
+        List<HookRun> runs = new ArrayList<>();
         for (HookConfig hook : hooks) {
             if (!appliesTo(hook, "post_tool_use", toolName)) {
                 continue;
             }
-            runner.run(hook.command(), env(toolName, input, toolResult), cwd,
-                    hook.timeoutOrDefault(defaultTimeoutSeconds), signal);
+            long timeout = hook.timeoutOrDefault(defaultTimeoutSeconds);
+            CommandRunner.Result result = runner.run(hook.command(),
+                    env(toolName, input, toolResult), cwd, timeout, signal);
+            if (result.timedOut()) {
+                runs.add(record(hook, timeout, Verdict.TIMED_OUT, null));
+            }
         }
+        return List.copyOf(runs);
+    }
+
+    /** One notable hook run, with the command run past {@link Redaction} first.
+     *  @param hook    the entry that fired
+     *  @param timeout the budget it actually ran under
+     *  @param verdict what it did
+     *  @param reason  its stated reason, or null
+     *  @return the record for the event stream */
+    private static HookRun record(HookConfig hook, long timeout, Verdict verdict, String reason) {
+        return new HookRun(hook.event(), hook.matcherOrDefault(), safe(hook.command()),
+                timeout, verdict, reason);
+    }
+
+    /** The command as it may be recorded: whole, or replaced whole when a
+     *  credential shape fires in it. Partial masking would leave the tail of a
+     *  key, which is still a key — {@link Redaction}'s own rule.
+     *  @param command the configured shell string
+     *  @return the command, or a marker naming the rule that fired */
+    private static String safe(String command) {
+        String rule = Redaction.firstRule(command);
+        return rule == null ? command : REDACTED.formatted(rule);
     }
 
     /** One predicate for both phases: right event, matching tool-name glob.

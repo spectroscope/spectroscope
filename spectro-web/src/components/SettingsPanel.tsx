@@ -34,6 +34,7 @@ import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { AllowlistSettings } from "./AllowlistSettings";
+import { HooksSettings } from "./HooksSettings";
 import type { Leveling } from "../state/useLeveling";
 import {
   fetchSettings,
@@ -184,6 +185,7 @@ export function SettingsPanel({
   open,
   onClose,
   section,
+  session,
   providerStatus,
   providerAddress,
   onKeySaved,
@@ -193,6 +195,11 @@ export function SettingsPanel({
 }: {
   open: boolean;
   onClose: () => void;
+  /** The session running right now, or null. Blocks that describe what a RUN
+   *  has in force (card 195's hooks) need it: without a session id the workspace
+   *  settings layers never join the chain, so the answer is machine-wide and
+   *  can differ from what the session in front of the reader actually loaded. */
+  session?: string | null;
   /** The section a #/settings/{section} deep link named, scrolled into view
    *  once its block exists. null opens the page at its top. */
   section?: SettingsSection | null;
@@ -878,6 +885,19 @@ export function SettingsPanel({
                 lang={lang}
                 onReset={() => saveUser({ allowLocalhost: null })}
               />
+
+              {/* ---- The shell hooks (card 195). The engine has run these for
+                  months with no screen anywhere, so the one feature that can
+                  stop an agent was configured in a file nobody was pointed at.
+                  The block reads GET /api/settings/hooks and renders it; the
+                  runner's own defaults decide, never this page.
+
+                  The session goes WITH it, and that is not a nicety: hooks is a
+                  whole-block field, so the running session's workspace layer can
+                  replace this machine's list entirely. Mounted without it, the
+                  block asked the session-less endpoint and stated the wrong
+                  guards with full confidence. ---- */}
+              <HooksSettings anchorId={sectionAnchorId("hooks")} session={session} onSave={saveUser} />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
               <div className="settings-label" id={sectionAnchorId("workspace")}>

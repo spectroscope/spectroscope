@@ -27,6 +27,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -407,6 +408,85 @@ class AgentTest {
         assertTrue(result.isError());
         assertTrue(result.output().startsWith("ERROR: blocked by pre_tool_use hook"),
                 result.output());
+
+        // Card 195: the block is a fact of the run, not only a sentence inside
+        // the model's error string. Nothing downstream could name WHICH hook
+        // refused, and a screen cannot invent that.
+        RunEvent.HookDecision decision = events.stream()
+                .filter(RunEvent.HookDecision.class::isInstance)
+                .map(RunEvent.HookDecision.class::cast)
+                .findFirst().orElseThrow(() -> new AssertionError("no hook_decision on the wire"));
+        assertEquals("c1", decision.callId(), "the decision joins the call it refused");
+        assertEquals("echo", decision.toolName());
+        assertEquals("pre_tool_use", decision.event());
+        assertEquals("guard", decision.command());
+        assertEquals("blocked", decision.verdict());
+        assertTrue(decision.reason().contains("not allowed here"), decision.reason());
+    }
+
+    @Test
+    void aTimedOutHookIsOnTheWireAsTimedOutThoughTheCallProceeds() {
+        // The fail-open is deliberate. A fail-open nobody can see is not.
+        JsonNode input = JSON.createObjectNode().put("value", "yes");
+        FakeProvider provider = FakeProvider.scripted(
+                List.of(new LlmProvider.PToolCall("c1", "echo", input),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)),
+                List.of(new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        EchoTool tool = new EchoTool(false);
+        HookRunner hooks = new HookRunner(
+                List.of(new HookConfig("*", "pre_tool_use", "slow-guard", 3)),
+                (cmd, env, cwd, timeout, signal) ->
+                        new HookRunner.CommandRunner.Result(-1, "", true),
+                10);
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(tool);
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("test")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .hooks(hooks)
+                .build());
+
+        List<RunEvent> events = collect(agent);
+
+        assertFalse(tool.inputs.isEmpty(), "fail-open stands: the call still ran");
+        RunEvent.HookDecision decision = events.stream()
+                .filter(RunEvent.HookDecision.class::isInstance)
+                .map(RunEvent.HookDecision.class::cast)
+                .findFirst().orElseThrow(() -> new AssertionError("no hook_decision on the wire"));
+        assertEquals("timed-out", decision.verdict());
+        assertEquals(3, decision.timeoutSeconds());
+        assertNull(decision.reason(), "a killed hook stated nothing; a reason here would be invented");
+    }
+
+    @Test
+    void aPassingHookPutsNothingOnTheWire() {
+        JsonNode input = JSON.createObjectNode().put("value", "yes");
+        FakeProvider provider = FakeProvider.scripted(
+                List.of(new LlmProvider.PToolCall("c1", "echo", input),
+                        new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)),
+                List.of(new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+        HookRunner hooks = new HookRunner(
+                List.of(new HookConfig("*", "pre_tool_use", "guard", null),
+                        new HookConfig("*", "post_tool_use", "notify", null)),
+                (cmd, env, cwd, timeout, signal) ->
+                        new HookRunner.CommandRunner.Result(0, "", false),
+                10);
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(new EchoTool(false));
+        Agent agent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("test")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .onPermission(request -> true)
+                .hooks(hooks)
+                .build());
+
+        assertTrue(collect(agent).stream().noneMatch(RunEvent.HookDecision.class::isInstance),
+                "a hook that agreed is not news; a line per tool call per hook would bury the two that are");
     }
 
     @Test

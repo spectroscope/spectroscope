@@ -105,3 +105,37 @@
 .al-remove {
   margin-left: auto;
 }
+
+/* ---------- the shell hooks (card 195) ----------
+   The list itself reuses .al-list/.al-row/.al-raw wholesale: a hook entry and
+   an allowlist entry are the same object on screen — one line of a settings
+   file, verbatim in mono, beside what it means — and a second set of rules
+   that only had to look identical is a second set of rules that will not stay
+   identical. Colour comes only from the shared tokens.
+
+   The command field is the field an operator reads back character by character
+   before trusting it, so it is set in mono like the rows it will join. It is
+   written as `.settings-field input.hk-command` and not as `.hk-command`,
+   because the plain class LOSES: settings-trace.css sets `font: inherit` on
+   `.settings-field input`, which is (0,2,0) against (0,1,0), and specificity
+   decides before order. The rule shipped, reached the browser and did nothing
+   for a day — see fieldFontWins.drift.test.ts, which now weighs the cascade
+   rather than only asking whether the sheet is loaded. */
+.settings-field input.hk-command {
+  font-family: var(--font-mono);
+}
+
+/* The in-force heading is a statement, not an aside: it reads in the body text
+   colour while the notes around it stay dim. No new colour, no weight games —
+   the existing text token is the whole difference. */
+.settings-note--strong {
+  color: var(--text);
+}
+
+/* A settings layer whose hooks a higher layer replaced whole. Said with the
+   line and the faint text token, never with a colour: the house rule is that
+   colour lives on lines, and "this one does not run" is not an alarm. */
+.origin-badge--muted {
+  color: var(--text-faint);
+  border-style: dashed;
+}
