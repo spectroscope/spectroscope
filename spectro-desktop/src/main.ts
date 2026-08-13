@@ -2,15 +2,18 @@
 // spectro-server JVM. The core never runs in Electron (there is no JVM here); the main
 // process spawns "java -jar spectro-server.jar" as a child, health-checks it, and points a
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
-import { app, BrowserWindow, Menu, Notification, Tray, dialog, nativeImage, session, shell } from "electron";
+import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, nativeImage, session, shell } from "electron";
 import { allowsNavigation } from "./navigationGuard";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
+import * as os from "node:os";
 import * as path from "node:path";
 import { LAST_RUN_VERSION_FILE, lastRunVersionPayload, readLastRunVersion, shouldClearCache } from "./cacheRecovery";
 import { SERVER_PORT_FILE, readRememberedPort, rememberedPortPayload, shouldPersistPort } from "./portMemory";
-import { appMenuTemplate, openAboutScript } from "./menu";
+import { appMenuTemplate, openAboutScript, toTemplate, type Handlers } from "./menu";
+import { trayMenuModel, traySummary, trayTooltip, type ShellAction, type TrayStatus } from "./menuModel";
+import { shellCommandScript, type ShellCommandId } from "./shellCommands";
 
 // Health budget: 30 s by default, overridable for slow environments (the CI
 // xvfb smoke and emulated containers boot the JVM far slower than any laptop).
@@ -44,6 +47,12 @@ let child: ChildProcess | null = null; // the managed JVM
 let serverPort = 0;                    // the port the server is on (remembered across launches, card 168)
 let jobsPoller: NodeJS.Timeout | null = null;
 let previousJobStates: Record<string, string> = {}; // last /api/jobs/state, for change detection
+// Whether the last pollJobs fetch RESOLVED — free, because the poller already
+// runs every 30 s and already catches connection failure. It is the only thing
+// this shell honestly knows about the server's liveness between health checks.
+let serverUp = true;
+let lastTraySummary = "";      // rebuild guard: mutating a MenuItem label shows nothing
+let restarting = false;        // single-flight, so a second click cannot double-spawn a JVM
 
 // (a) The server port, with memory (card 168): localStorage is origin-bound, so a fresh
 // OS-assigned port on every launch ran the web app on a new localhost origin with an
@@ -189,7 +198,7 @@ async function waitForHealth(port: number): Promise<void> {
   throw new Error(`spectro-server did not become healthy within ${HEALTH_BUDGET_MS / 1000} s.`);
 }
 
-function createWindow(port: number): BrowserWindow {
+function createWindow(port: number, hash?: string): BrowserWindow {
   const w = new BrowserWindow({
     width: 1200,
     height: 800,
@@ -228,17 +237,72 @@ function createWindow(port: number): BrowserWindow {
     if (!allowsNavigation(home, url)) event.preventDefault();
   });
 
-  void w.loadURL(home); // the stage-8 UI, WebSocket as always
+  // A hash the menu asked for goes on the URL the window is BORN with. The
+  // same `home` string the guard above was configured with, so this is the
+  // allow case navigationGuard.test.ts already pins, not a new origin.
+  void w.loadURL(home + (hash ?? "")); // the stage-8 UI, WebSocket as always
   w.on("closed", () => { win = null; });
   return w;
 }
 
 // The tray keeps the app alive when the window is closed — so cron jobs keep running.
-function focusOrCreateWindow(): void {
-  if (!win || win.isDestroyed()) win = createWindow(serverPort);
+function focusOrCreateWindow(hash?: string): void {
+  if (!win || win.isDestroyed()) win = createWindow(serverPort, hash);
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+}
+
+/**
+ * Run a script in the page, opening the window first if it is closed.
+ *
+ * The generalisation of what showAbout() has done since v0.4: the window may
+ * be gone (the tray keeps the app alive), so this creates one and waits for
+ * the load before dispatching. A menu item that silently did nothing on the
+ * first click would be the worst version of this feature.
+ */
+function runInPage(script: string): void {
+  focusOrCreateWindow();
+  const page = win?.webContents;
+  if (!page) return;
+  const dispatch = (): void => {
+    void page.executeJavaScript(script).catch(() => {
+      // The page is not the app (a load failure, an error page). There is
+      // nothing honest to do here.
+    });
+  };
+  if (page.isLoading()) page.once("did-finish-load", dispatch);
+  else dispatch();
+}
+
+/**
+ * Send a command from a menu item into the page.
+ *
+ * The page holds commands that arrive before React mounts (the module-scope
+ * buffer in spectro-web's shellCommands.ts), so a freshly created window gets
+ * the command it was created for rather than dropping it.
+ */
+function sendCommand(id: ShellCommandId, arg?: string): void {
+  runInPage(shellCommandScript(id, arg));
+}
+
+/**
+ * Move the window to an address.
+ *
+ * Branching matters: assigning `location.hash` on a page that has not yet
+ * attached its hashchange listener is a silent no-op, and did-finish-load
+ * fires before React mounts. So a window that does not exist is created with
+ * the hash already on its URL, and only a living one is assigned to.
+ */
+function gotoHash(hash: string): void {
+  if (!win || win.isDestroyed()) {
+    focusOrCreateWindow(hash);
+    return;
+  }
+  focusOrCreateWindow();
+  // A same-document hash change does not fire will-navigate at all, so the
+  // seatbelt is not involved and does not need to be.
+  runInPage(`location.hash = ${JSON.stringify(hash)}`);
 }
 
 // (d) Notification poller: every JOBS_POLL_MS, GET /api/jobs/state, diff against the previous
@@ -248,9 +312,13 @@ async function pollJobs(port: number): Promise<void> {
   let current: Record<string, { status?: string; sessionId?: string }>;
   try {
     const response = await fetch(`http://127.0.0.1:${port}/api/jobs/state`);
-    if (!response.ok) return;
+    // It answered at all, so the JVM is alive — even a 500 proves that much.
+    serverUp = true;
+    if (!response.ok) { refreshTray(); return; }
     current = await response.json();
   } catch {
+    serverUp = false; // connection refused: the tray says so in its labels
+    refreshTray();
     return; // server not reachable this tick — try again next interval
   }
   for (const [id, state] of Object.entries(current)) {
@@ -267,6 +335,7 @@ async function pollJobs(port: number): Promise<void> {
   previousJobStates = Object.fromEntries(
     Object.entries(current).map(([id, s]) => [id, s.status ?? "unknown"]),
   );
+  refreshTray();
 }
 
 function jobsStatusText(): string {
@@ -275,15 +344,48 @@ function jobsStatusText(): string {
   return entries.map(([id, status]) => `${id}: ${status}`).join("\n");
 }
 
+function trayStatus(): TrayStatus {
+  return { port: serverPort, serverUp, jobs: previousJobStates };
+}
+
+/**
+ * Rebuild the tray, but only when a reader would see the difference.
+ *
+ * Mutating a MenuItem's label after the fact shows nothing — the menu has to
+ * be rebuilt and setContextMenu called again. At the poller's 30 s cadence
+ * that is free, and traySummary keeps it to the ticks that changed something.
+ */
+function refreshTray(): void {
+  if (!tray || tray.isDestroyed()) return;
+  const status = trayStatus();
+  const summary = traySummary(status);
+  if (summary === lastTraySummary) return;
+  lastTraySummary = summary;
+  tray.setToolTip(trayTooltip(PRODUCT_NAME, status));
+  tray.setContextMenu(
+    Menu.buildFromTemplate(
+      toTemplate(trayMenuModel({ productName: PRODUCT_NAME, status }), SHELL_MENU_HANDLERS),
+    ),
+  );
+}
+
 function createTray(): Tray {
-  const t = new Tray(nativeImage.createFromDataURL(TRAY_ICON));
-  t.setToolTip("spectroscope");
-  t.setContextMenu(Menu.buildFromTemplate([
-    { label: "New chat", click: () => { focusOrCreateWindow(); win?.webContents.reload(); } },
-    { label: "Cron status", click: () => { void dialog.showMessageBox({ title: "Cron status", message: jobsStatusText() }); } },
-    { type: "separator" },
-    { label: "Quit", click: () => app.quit() },
-  ]));
+  const icon = nativeImage.createFromDataURL(TRAY_ICON);
+  // The bitmap is a 16x16 alpha mask already — exactly two colours, fully
+  // transparent and solid Ebony #12120F — so on a dark menu bar it was drawing
+  // near-black on near-black. As a template image macOS inverts it for the
+  // appearance and for the highlighted state, which is what the mask was
+  // always for. The *Template.png filename convention does not apply: there is
+  // no file, so the flag IS the whole mechanism.
+  icon.setTemplateImage(true);
+  const t = new Tray(icon);
+  t.setToolTip(trayTooltip(PRODUCT_NAME, trayStatus()));
+  t.setContextMenu(
+    Menu.buildFromTemplate(
+      toTemplate(trayMenuModel({ productName: PRODUCT_NAME, status: trayStatus() }), SHELL_MENU_HANDLERS),
+    ),
+  );
+  lastTraySummary = traySummary(trayStatus());
   return t;
 }
 
@@ -296,19 +398,113 @@ function createTray(): Tray {
 // and waits for the page before dispatching. A menu item that silently did
 // nothing on the first click would be the worst version of this feature.
 function showAbout(): void {
-  focusOrCreateWindow();
-  const page = win?.webContents;
-  if (!page) return;
-  const dispatch = (): void => {
-    void page.executeJavaScript(openAboutScript()).catch(() => {
-      // The page is not the app (a load failure, an error page). There is
-      // nothing honest to show here, and a native fallback would be a second
-      // copy of the licence.
-    });
-  };
-  if (page.isLoading()) page.once("did-finish-load", dispatch);
-  else dispatch();
+  runInPage(openAboutScript());
 }
+
+/**
+ * Restart the JVM under the running shell.
+ *
+ * Every piece of this exists already; only the composition is new — until now
+ * these four steps happened once, inside startup(). Three ways it can go
+ * wrong, all of them guarded here:
+ *
+ * - The port is REUSED, never re-resolved. A new port is a new origin and a
+ *   new origin has an empty localStorage: design, language, disclosure level,
+ *   every spectroscope:* preference silently reset. That is the exact
+ *   regression card 168 exists to prevent.
+ * - shutdown() also clears jobsPoller, so the poller has to be recreated.
+ * - A failed health wait does NOT quit the app the way startup() does. At
+ *   startup there is nothing to keep; here there is a window, a tray and a
+ *   user who asked for one thing.
+ */
+function awaitExit(jvm: ChildProcess, budgetMs: number): Promise<void> {
+  if (jvm.exitCode !== null || jvm.signalCode !== null) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = (): void => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(finish, budgetMs);
+    jvm.once("exit", finish);
+  });
+}
+
+async function restartServer(): Promise<void> {
+  if (restarting) return; // a second click must not spawn a second JVM
+  const answer = await dialog.showMessageBox({
+    type: "question",
+    title: "Restart spectro-server",
+    message: "Restart the server?",
+    detail: "Restarting stops any running agent and reconnects the window.",
+    buttons: ["Restart", "Cancel"],
+    defaultId: 1,
+    cancelId: 1,
+  });
+  if (answer.response !== 0) return;
+  restarting = true;
+  try {
+    // The old JVM must be GONE before the new one binds. shutdown() sends
+    // SIGTERM and returns immediately — it has to, because before-quit cannot
+    // await — so spawning straight after it hands the new server a port the
+    // old one still holds, Spring Boot fails to bind, and the health wait
+    // times out into an error dialog every single time. shutdown() has already
+    // scheduled the SIGKILL escalation, so this only has to outlast it.
+    const old = child;
+    shutdown();
+    if (old) await awaitExit(old, KILL_GRACE_MS + 1_000);
+    child = spawnServer(serverPort);
+    try {
+      await waitForHealth(serverPort);
+    } catch (err) {
+      serverUp = false;
+      refreshTray();
+      dialog.showErrorBox("spectro-server did not restart", (err as Error).message);
+      return;
+    }
+    serverUp = true;
+    win?.webContents.reload(); // the socket died with the old JVM
+    jobsPoller = setInterval(() => void pollJobs(serverPort), JOBS_POLL_MS);
+    refreshTray();
+  } finally {
+    restarting = false;
+  }
+}
+
+/**
+ * Everything a menu item can ask the main process to do.
+ *
+ * Declared as a total Record so the compiler is the gate: a ShellAction added
+ * to the model without a handler here fails `npm run build`, which the
+ * linux-kit workflow runs. That is the mechanical form of "an item with no
+ * real capability behind it does not ship".
+ */
+const SHELL_HANDLERS: Record<ShellAction, () => void> = {
+  about: showAbout,
+  cronStatus: () => {
+    void dialog.showMessageBox({ title: "Cron status", message: jobsStatusText() });
+  },
+  restartServer: () => void restartServer(),
+  // shell.openExternal, never win.loadURL — so will-navigate is never asked
+  // and the deny-by-default guard stays exactly as it is.
+  openInBrowser: () => void shell.openExternal(`http://127.0.0.1:${serverPort}`),
+  // The port is OS-assigned and this window draws no address bar, so without
+  // this a user cannot discover his own server address at all.
+  copyServerAddress: () => clipboard.writeText(`http://127.0.0.1:${serverPort}`),
+  // ~/.spectro is the data home the SERVER uses (SpectroConfig, CronScheduler,
+  // ImageStore), and the shell spawns the JVM with this same user.home, so the
+  // two cannot disagree.
+  revealDataFolder: () => void shell.openPath(path.join(os.homedir(), ".spectro")),
+  focusWindow: () => focusOrCreateWindow(),
+  quit: () => app.quit(), // -> before-quit -> shutdown()
+};
+
+/** The four mechanisms, shared by the application menu and the tray. */
+const SHELL_MENU_HANDLERS: Handlers = {
+  onCommand: (id, arg) => sendCommand(id, arg),
+  onHash: (hash) => gotoHash(hash),
+  onUrl: (url) => void shell.openExternal(url),
+  onShell: (action) => SHELL_HANDLERS[action](),
+};
 
 function createAppMenu(): void {
   Menu.setApplicationMenu(
@@ -316,11 +512,7 @@ function createAppMenu(): void {
       appMenuTemplate({
         productName: PRODUCT_NAME,
         isMac: process.platform === "darwin",
-        onAbout: showAbout,
-        onNewChat: () => {
-          focusOrCreateWindow();
-          win?.webContents.reload();
-        },
+        ...SHELL_MENU_HANDLERS,
       }),
     ),
   );
@@ -408,6 +600,9 @@ async function startup(): Promise<void> {
 
   win = createWindow(serverPort);
   jobsPoller = setInterval(() => void pollJobs(serverPort), JOBS_POLL_MS);
+  // The tray was built before the port was resolved, so its tooltip still
+  // carries a zero. First poll is 30 s out; the address is worth having now.
+  refreshTray();
 
   app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) focusOrCreateWindow(); });
 }
