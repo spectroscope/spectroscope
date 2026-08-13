@@ -52,6 +52,17 @@ public interface BrowserFaces {
      * runs on the thread tearing a socket down, and a shell that has already
      * gone must not hold it for a reply deadline.
      *
+     * <p><b>The cookies and the storage are the part that had to be earned.</b>
+     * This sentence shipped once while the shell only dropped the pane and closed
+     * the page: Electron keeps an in-memory Chromium session alive by partition
+     * name for the LIFE OF THE APP, so the jar stayed, and a session resumed
+     * under the same store id opened onto its own old login. The shell now
+     * empties that Chromium session on close and hands the next opening a
+     * partition of its own. Nothing on this side changed, which is exactly why
+     * it is written here: an interface can promise something the far end of a
+     * socket does not do, and only a live drive finds out
+     * ({@code BrowserLiveDriveTest}).
+     *
      * @param sessionId the session that closed
      */
     void closeSession(String sessionId);

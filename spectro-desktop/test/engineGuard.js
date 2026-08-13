@@ -17,6 +17,13 @@
 //   8    browser_resize really emulates a device: metrics, touch, user agent
 //   9    two sessions' browsers share NOTHING — the card-218 isolation, measured
 //        in the shipped Chromium rather than asserted about a string
+//   10   a CLOSED session's browser is really given back: the jar it left behind
+//        is empty and the same id reopened is logged out — measured through the
+//        product's own runVerb, because the review found this claim false while
+//        every string about it read true
+//   11   the shell's own security warnings never reach the page's console, tested
+//        against the message THIS Electron emits rather than the one the filter
+//        was written for
 //
 // It drives the SHIPPED modules (dist/browserFence.js, dist/adblock.js,
 // dist/deviceEmulation.js), not a copy of them, so a change to the fence or the
@@ -35,6 +42,26 @@
 //   GUARD_BREAK=emulate    the viewport is not emulated at all (all three resize checks)
 //   GUARD_BREAK=partition  both sessions get ONE partition (card 201's shape)
 //
+// Checks 10 and 11 have no switch of their own on purpose: the mechanism they
+// measure lives in browserPane.ts, not here, and a seam added only to break it
+// would be a seam in the product. They were proven to bite by hand on
+// 2026-08-13, and what each break really turned red is worth writing down,
+// because the first guess was wrong:
+//
+//   retire() stops emptying          → "a closed session leaves no cookie jar
+//                                       behind" FAILS, holding ["spectro_login"]
+//   partitionFor ignores the opening → "a reopened session's fence still names
+//                                       the host and the rule" FAILS with
+//                                       ERR_BLOCKED_BY_CLIENT (-20).  The three
+//                                       jar checks stay GREEN under this one —
+//                                       emptying alone does log the second life
+//                                       out — which is exactly why the fence
+//                                       check had to be added rather than
+//                                       assumed
+//   the %c goes out of isPageLine    → check 11 FAILS, 7 emitted / 7 leaked
+//
+// sessionPanes.test.ts pins all three switches as tests that need no window.
+//
 // Run: npm run guard   (in spectro-desktop)
 
 const { app, BaseWindow, WebContentsView, session } = require("electron");
@@ -43,10 +70,13 @@ const path = require("node:path");
 const { refuse, refuseResolved, cachedLookup } = require(path.join(__dirname, "..", "dist", "browserFence.js"));
 const { compileFilters, DEFAULT_FILTERS } = require(path.join(__dirname, "..", "dist", "adblock.js"));
 const { applyViewport } = require(path.join(__dirname, "..", "dist", "deviceEmulation.js"));
-// The SHIPPED partition function, so a change to how a session is keyed changes
-// what this proves. Requiring browserPane.js here is deliberate: the isolation
-// must be the one the product uses, not one this file invents.
-const { partitionFor } = require(path.join(__dirname, "..", "dist", "browserPane.js"));
+// The SHIPPED pane module, so a change to how a session is keyed, closed or
+// filtered changes what this proves. Requiring browserPane.js here is
+// deliberate: the isolation and the lifetime must be the ones the product uses,
+// not ones this file invents.
+const {
+  partitionFor, runVerb, attachPaneTo, isPageLine,
+} = require(path.join(__dirname, "..", "dist", "browserPane.js"));
 
 // The resolver seam, answered from a table exactly the way NetFence.Resolver is
 // in the Java suite. A guard that needed real DNS would be a guard that is red
@@ -157,6 +187,15 @@ async function main() {
   win.contentView.addChildView(view);
   view.setBounds({ x: 0, y: 0, width: 1000, height: 700 });
   const wc = view.webContents;
+
+  // Everything this page's console said, collected from the FIRST load on,
+  // because Electron writes its security warnings while a page loads and check
+  // 11 at the bottom asks whether the shipped filter really catches them.
+  const consoleSaid = [];
+  wc.on("console-message", (...args) => {
+    const event = args[0];
+    consoleSaid.push(String((event && event.message) ?? args[2] ?? ""));
+  });
 
   await wc.loadURL(base + "/");
   record("navigate: a real visible pane loads the page", wc.getURL() === base + "/", wc.getURL());
@@ -347,6 +386,73 @@ async function main() {
     jarA.length === 1 && jarB.length === 0,
     `A has ${jarA.length}, B has ${jarB.length}`,
   );
+
+  // 10. what CLOSING gives back (the review's Finding 1), driven through the
+  //     product's own runVerb rather than around it. Every string in the file
+  //     said the jar died with the pane; measured, Electron kept the in-memory
+  //     session alive by partition name for the life of the app, so a closed
+  //     session's login was still in the process and the same id reopened walked
+  //     straight back into it.
+  attachPaneTo(() => win, () => {});
+  const LIVED = "20260813-140000-cccccccc";
+  // This process is fresh, so the session's first browser is opening 0 — the
+  // partition the product is about to use, named here without asking it.
+  const firstLife = partitionFor(LIVED, 0);
+  const settings = { allowLocalhost: true, adblock: false };
+  await runVerb("navigate", { url: base + "/" }, settings, LIVED);
+  await runVerb("eval", {
+    text: "document.cookie = 'spectro_login=secret-of-C; path=/';"
+      + "localStorage.setItem('spectro_token', 'token-of-C'); 1",
+  }, settings, LIVED);
+  const jarOpen = await session.fromPartition(firstLife).cookies.get({ name: "spectro_login" });
+  record("lifetime: the login really is in that session's jar while it is open",
+    jarOpen.length === 1, `${firstLife} holds ${jarOpen.length}`);
+
+  await runVerb("close_session", {}, settings, LIVED);
+  await new Promise((r) => setTimeout(r, 800));   // the close is fire-and-forget, by design
+  const jarClosed = await session.fromPartition(firstLife).cookies.get({});
+  record("lifetime: a closed session leaves no cookie jar behind in the process",
+    jarClosed.length === 0,
+    `${firstLife} still holds ${JSON.stringify(jarClosed.map((c) => c.name))}`);
+
+  await runVerb("navigate", { url: base + "/" }, settings, LIVED);
+  const resumed = await runVerb("eval", {
+    text: "({ cookie: document.cookie, token: localStorage.getItem('spectro_token') })",
+  }, settings, LIVED);
+  const seen = (resumed.value && resumed.value.value) || {};
+  record("lifetime: the same id reopened gets a LOGGED-OUT browser",
+    !String(seen.cookie).includes("secret-of-C") && seen.token === null,
+    JSON.stringify(seen));
+
+  // …and the second life's fence still SAYS what it did. The request hook is
+  // installed once per Chromium session and closes over the pane it was handed,
+  // so a reopened id that got the old session back went on blocking and reported
+  // ERR_BLOCKED_BY_CLIENT — the one code card 201 built a sentence to avoid,
+  // because an ad blocker, a content extension and the net fence are
+  // indistinguishable behind it. This is the check that measures the partition
+  // half: emptying the jar alone leaves it red.
+  const secondLifeFence = await runVerb(
+    "navigate", { url: base + "/redirect-to-private" }, settings, LIVED,
+  );
+  const sentence = String(secondLifeFence.error || "");
+  record("lifetime: a reopened session's fence still names the host and the rule",
+    !secondLifeFence.ok && /net fence refused a hop/.test(sentence)
+      && sentence.includes("192.168.1.1") && sentence.includes("rfc1918"),
+    sentence);
+
+  // 11. the shell's own boilerplate, judged by the shipped filter against the
+  //     message THIS Electron emits. The filter was written for
+  //     "Electron Security Warning …" and Electron 43 writes
+  //     "%cElectron Security Warning …", so it matched nothing and every line
+  //     went to the model as if the page had said it.
+  const warnings = consoleSaid.filter((line) => /Electron Security Warning/i.test(line));
+  const leaked = warnings.filter((line) => isPageLine(line));
+  record("console: every security warning THIS Electron emitted is kept out of the page's console",
+    leaked.length === 0,
+    `${warnings.length} emitted, ${leaked.length} would have reached the model`
+      + (warnings.length
+        ? ` — first: ${JSON.stringify(warnings[0].slice(0, 90))}`
+        : " (this build emitted none)"));
 
   server.close();
   const failed = checks.filter((c) => !c.pass);

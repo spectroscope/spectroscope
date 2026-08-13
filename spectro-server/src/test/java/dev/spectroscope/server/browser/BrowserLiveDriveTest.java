@@ -97,6 +97,16 @@ class BrowserLiveDriveTest {
             exchange.getResponseBody().write(body);
             exchange.close();
         });
+        // A hop the JAVA entry check cannot see: the address it starts at is
+        // loopback and legal, and only the shell's own request hook judges where
+        // it lands. The address is a stand-in from the curated list
+        // NoOperatorAddressesInTheRepoTest keeps, because this repository is
+        // public.
+        fixture.createContext("/redirect-to-private", exchange -> {
+            exchange.getResponseHeaders().add("Location", "http://192.168.1.1/admin");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
         fixture.start();
         base = "http://127.0.0.1:" + fixture.getAddress().getPort() + "/";
 
@@ -231,6 +241,61 @@ class BrowserLiveDriveTest {
                 "closing one session took the other one's browser: " + otherStillThere);
 
         control.closeSession(OTHER_SESSION);
+    }
+
+    @Test
+    void aResumedSessionGetsAFreshBrowserAndAFenceThatStillNamesItself() throws Exception {
+        // The claim card 218 shipped four times — "closing a session takes its
+        // cookies and its storage with it" — measured through the whole chain
+        // instead of read off a comment. It was false: Electron holds an
+        // in-memory Chromium session by partition name for the life of the app,
+        // so the jar survived the close and the same id opened straight back
+        // into its old login. This is the test that would have said so.
+        String resumed = "20260813-live-drive-resumed";
+        String login = """
+                (() => {
+                  document.cookie = 'spectro_login=secret-of-R; path=/';
+                  localStorage.setItem('spectro_token', 'token-of-R');
+                  return { cookie: document.cookie,
+                           token: localStorage.getItem('spectro_token') };
+                })()""";
+        String readBack = """
+                ({ cookie: document.cookie,
+                   token: localStorage.getItem('spectro_token') })""";
+
+        assertFalse(tool("browser_navigate", resumed)
+                .execute(args("{\"url\":\"" + base + "\"}"), context()).startsWith("ERROR"));
+        String stored = tool("browser_eval", resumed).execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", login),
+                context());
+        assertTrue(stored.contains("secret-of-R"), "the session logged in: " + stored);
+
+        control.closeSession(resumed);
+        Thread.sleep(1000);   // the close is fire-and-forget, by design
+
+        // The same store id opens a browser again, exactly as a resume does.
+        assertFalse(tool("browser_navigate", resumed)
+                .execute(args("{\"url\":\"" + base + "\"}"), context()).startsWith("ERROR"));
+        String afterResume = tool("browser_eval", resumed).execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", readBack),
+                context());
+        assertFalse(afterResume.contains("secret-of-R"),
+                "a resumed session walked back into the closed session's login: " + afterResume);
+        assertTrue(afterResume.contains("\"token\":null"),
+                "a resumed session kept the closed session's storage: " + afterResume);
+
+        // And the second life's fence still SAYS what it did. The hook is
+        // installed once per Chromium session and closes over the pane it was
+        // handed, so a reopened id on the old session went on blocking and
+        // reported ERR_BLOCKED_BY_CLIENT — the one code the model cannot tell
+        // an ad blocker, a content extension and the net fence apart by.
+        String hopped = tool("browser_navigate", resumed)
+                .execute(args("{\"url\":\"" + base + "redirect-to-private\"}"), context());
+        assertTrue(hopped.startsWith("ERROR"), hopped);
+        assertTrue(hopped.contains("192.168.1.1") && hopped.contains("rfc1918"),
+                "the second life's refusal named neither the host nor the rule: " + hopped);
+
+        control.closeSession(resumed);
     }
 
     @Test

@@ -98,6 +98,21 @@ interface SessionPane {
 /** Every open session's browser, keyed by session id. */
 const panes = new Map<string, SessionPane>();
 
+/**
+ * How many browsers each session has already had in this app's life.
+ *
+ * Bumped when a browser is RETIRED and never when one opens, so a session's
+ * first browser is opening 0 — which keeps `partitionFor(id)` on its own
+ * meaningful to a guard or a probe asking about a session that only ever opened
+ * one.
+ *
+ * It deliberately survives forgetPane(): the window going away destroys the
+ * views, not the Chromium sessions behind them, so the next opening still needs
+ * a name nothing has hooked. The cost is one string and one integer per session
+ * that ever opened a browser, for as long as the app runs.
+ */
+const openings = new Map<string, number>();
+
 /** Where the page may go, read fresh per request so a saved opt-in lands at once. */
 let policy: FencePolicy = { allowLocalhost: false };
 let adblockOn = true;
@@ -160,25 +175,58 @@ function loadFilters(): string[] {
 }
 
 /**
- * The Chromium partition name for one session — the isolation, in one string.
+ * The Chromium partition name for one session's browser — the isolation, in one
+ * string, one OPENING at a time.
  *
  * Deliberately NOT a `persist:` partition. The owner's lifetime rule is "it
  * lives until the session is closed", and a persistent partition would outlive
  * the session on disk: a directory per session id that nothing ever deletes, and
- * a resumed id would find the cookies of a run that ended days ago. An in-memory
- * session dies with the object, so "the browser goes away" is not a promise
- * about a delete succeeding — there is nothing left to delete.
+ * a resumed id would find the cookies of a run that ended days ago.
+ *
+ * And deliberately a NEW name per opening, which is the correction card 218 was
+ * sent back for. It shipped one name per session id and said the jar died with
+ * the pane. Measured, it does not: Electron caches an in-memory Session by
+ * partition name for the LIFE OF THE APP, so a closed session's cookies, its
+ * localStorage and its HttpOnly login all stayed in the process, and a session
+ * resumed under the same id opened onto them — logged in as whoever ran before.
+ * Riding on the same cause, `paneSession()` installs the request hook once per
+ * Session and it closes over the pane it was handed, so a second life's refusals
+ * were pushed onto a dead record and the model got ERR_BLOCKED_BY_CLIENT instead
+ * of the sentence naming the host and the rule. A fresh name per opening ends
+ * both at once: a new Session, a fresh hook, an empty jar. `closeSession()`
+ * empties the retired one as well, because a name nobody will use again is still
+ * a credential sitting in memory.
  *
  * The id is sanitised because a partition name becomes a path component inside
- * Chromium. Session ids are already path-safe (the store refuses one that
- * resolves outside it), so this is a belt: it may only ever make two ids collide
- * on the sanitised form, which is why the length and the raw id both ride along.
+ * Chromium, and a FINGERPRINT of the raw id rides along because sanitising is
+ * lossy: `ab/c` and `ab:c` both flatten to `ab_c`, and the length that used to
+ * ride here separates only ids of different length. Two sessions on one
+ * partition is exactly the failure this card exists to prevent, so the belt its
+ * own comment claimed is now really here.
  *
  * @param sessionId the session's store id
+ * @param opening   which browser of that session's life — 0 is its first
  */
-export function partitionFor(sessionId: string): string {
+export function partitionFor(sessionId: string, opening = 0): string {
   const safe = sessionId.replace(/[^A-Za-z0-9._-]/g, "_");
-  return `${PARTITION_PREFIX}${safe}-${sessionId.length}`;
+  return `${PARTITION_PREFIX}${safe}-${fingerprint(sessionId)}-${opening}`;
+}
+
+/**
+ * A short, stable fingerprint of the RAW session id (FNV-1a, 32 bit, base 36).
+ *
+ * Not a security hash and not asked to be one: its whole job is that two ids
+ * which sanitise onto the same string still get two partitions.
+ *
+ * @param sessionId the session's store id, before sanitising
+ */
+function fingerprint(sessionId: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < sessionId.length; index += 1) {
+    hash ^= sessionId.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
 }
 
 /**
@@ -257,7 +305,7 @@ function paneFor(sessionId: string): SessionPane {
   if (existing) return existing;
   const created: SessionPane = {
     id: sessionId,
-    partition: partitionFor(sessionId),
+    partition: partitionFor(sessionId, openings.get(sessionId) ?? 0),
     view: null,
     inWindow: false,
     visible: false,
@@ -366,12 +414,46 @@ export function hidePane(): void {
 }
 
 /**
+ * Gives back one browser's Chromium session — its cookies, its storage, its
+ * cache — and retires the partition name with it.
+ *
+ * <p>Both halves are needed and neither is enough on its own. Emptying alone
+ * would leave the next opening on the same Session object, whose request hook
+ * still closes over the pane that just died: the fence would go on blocking and
+ * stop saying why. A new name alone would leave the old jar, holding whatever
+ * that page logged into, alive in the process until the app quits.
+ *
+ * <p>Fire and forget, and that is a requirement rather than a shortcut: this
+ * runs on the path tearing a session down, and there is nothing to do with the
+ * answer. What proves it really happened is a test that reads the jar back, not
+ * a promise this function returns.
+ *
+ * @param pane the browser being given up
+ */
+function retire(pane: SessionPane): void {
+  openings.set(pane.id, (openings.get(pane.id) ?? 0) + 1);
+  try {
+    const ses = session.fromPartition(pane.partition);
+    void Promise.resolve(ses.clearStorageData()).catch(() => {});
+    void Promise.resolve(ses.clearCache()).catch(() => {});
+  } catch {
+    // A Chromium session that is already gone needs no emptying.
+  }
+}
+
+/**
  * Forgets every session's browser, because the window that carried them is gone.
  *
  * <p>A WebContentsView dies with its window, so holding the reference after a
  * close means the next setVisible() reaches a destroyed object.
+ *
+ * <p>Their Chromium sessions do NOT die with the window — that is the measured
+ * fact this file used to get wrong — so each one is retired here exactly as a
+ * close retires it. A window closed and reopened is otherwise a second life with
+ * the first life's cookies and a hook pointing at a dead pane.
  */
 export function forgetPane(): void {
+  panes.forEach(retire);
   panes.clear();
   reported = null;
   forgetBaseUserAgent();
@@ -383,9 +465,14 @@ export function forgetPane(): void {
  * <p>What "closed" means here is the server's answer, not this file's — the
  * session's socket went away, which is the same event that cancels its run. The
  * stored transcript survives; the browser does not, because a browser is live
- * state and not a record. The Chromium session is in-memory (see
- * {@link partitionFor}), so the cookie jar goes with the object rather than
- * waiting for a delete to succeed.
+ * state and not a record.
+ *
+ * <p>The cookies and the storage go because retire() empties them and hands the
+ * next opening a partition of its own. They did not, in the version this card
+ * first shipped: "in memory" turned out to be a promise about the DISK, not
+ * about the process, and Electron kept the jar keyed by partition name until the
+ * app quit. A closed session's login was still there, and a resumed one walked
+ * back into it.
  *
  * @param sessionId the session that closed
  */
@@ -393,6 +480,7 @@ export function closeSession(sessionId: string): void {
   const pane = panes.get(sessionId);
   if (!pane) return;
   panes.delete(sessionId);
+  retire(pane);
   const view = pane.view;
   pane.view = null;
   if (!view) return;
@@ -744,10 +832,20 @@ function clickAt(
  * exists to be the first place a broken local build says what is wrong, and it
  * shipped with that buried under the shell's own boilerplate.
  *
+ * The `%c` is not decoration and not defensiveness: Electron 43 writes
+ * `console.warn("%cElectron Security Warning (…)%c\n…", "font-weight: bold;",
+ * "")`, so the message arrives with the format directive still on the front and
+ * the `^\s*` anchor never matched it. Measured against the shipped Electron
+ * 43.3.0 on 2026-08-13, not remembered:
+ * `"%cElectron Security Warning (Insecure Content-Security-Policy) font-weight:
+ * bold; This renderer process has either no Co…"`. The filter was therefore
+ * inert, `shellWarnings` was always 0, and the boilerplate went to the model
+ * while the sentence promising to name what was left out never appeared.
+ *
  * @param text the console message as the page reported it
  */
 export function isPageLine(text: string): boolean {
-  return !/^\s*Electron Security Warning/i.test(text);
+  return !/^\s*(?:%[a-z]\s*)*Electron Security Warning/i.test(text);
 }
 
 /**

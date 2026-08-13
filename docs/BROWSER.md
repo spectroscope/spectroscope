@@ -13,31 +13,65 @@ that session's agent calls a browser tool, and it holds that session's page, its
 cookies and its scroll position and nobody else's.
 
 **How the isolation is achieved.** Each session's view browses in its own
-Electron `Session`, `session.fromPartition("spectro-browser/<id>-<len>")`. That
-is Chromium's own boundary: the cookie jar, `localStorage`, IndexedDB, the HTTP
+Electron `Session`,
+`session.fromPartition("spectro-browser/<id>-<fingerprint>-<opening>")`. That is
+Chromium's own boundary: the cookie jar, `localStorage`, IndexedDB, the HTTP
 cache and the credential store all hang off that object, and two partitions
 share none of them. Nothing in `browserPane.ts` has to remember to keep two
-sessions apart, and nothing in it could merge them by accident.
+sessions apart, and nothing in it could merge them by accident. The fingerprint
+is of the raw id, because the sanitising that makes an id safe as a path
+component is lossy — `ab/c` and `ab:c` both flatten to `ab_c`, and two sessions
+on one partition is the failure this whole surface exists to prevent.
 
 It is **not** a `persist:` partition. The lifetime rule is "until the session is
 closed", and a persistent partition would leave a directory per session id that
 nothing ever deletes — plus a resumed id would open onto the cookies of a run
-that ended days ago. An in-memory session dies with the object.
+that ended days ago.
 
-**The proof, not the claim.** `npm run guard` drives the shipped Chromium: a page
-sets a cookie and a `localStorage` token under session A, A reloads and still has
-them, and session B loads the same origin and finds `{"cookie":"","token":null}`
-— and Electron's own cookie store agrees, one entry for A and none for B.
-`GUARD_BREAK=partition` gives both sessions one partition and the same check
-reads back `secret-of-A` in B, which is what card 201 shipped.
+**What "closed" means, and what it took to make that true.** The session's
+socket going away — the tab or window that held it. That is the same event that
+already cancels its run, releases its parked permission questions and lets its
+live-session id go (`SessionConnection.onClose`). The stored JSONL survives and
+so does the session id; the browser does not, because a browser is live state and
+not a record. A resumed session gets a fresh browser, logged out, and a session
+that never sent a prompt never minted an id and never had a browser to close.
 
-**What "closed" means.** The session's socket going away — the tab or window that
-held it. That is the same event that already cancels its run, releases its parked
-permission questions and lets its live-session id go
-(`SessionConnection.onClose`). The stored JSONL survives and so does the session
-id; the browser does not, because a browser is live state and not a record. A
-resumed session therefore gets a fresh browser, logged out. A session that never
-sent a prompt never minted an id and never had a browser to close.
+That last sentence was **false when this page first shipped**, and the correction
+is worth keeping written down because the reasoning that produced it sounds
+right. "An in-memory session dies with the object" is a promise about the *disk*,
+not about the *process*: Electron caches an in-memory `Session` by partition name
+for the life of the app. Closing a session dropped the pane and closed the page
+and left the cookie jar exactly where it was — measured, five closed sessions
+still held five jars, and a session resumed under the same id opened onto its own
+old login, HttpOnly cookie included. Two things fix it, and neither is enough
+alone:
+
+- **the Chromium session is emptied on close** — `clearStorageData()` and
+  `clearCache()`, so the credential leaves the process rather than waiting for
+  the app to quit;
+- **every OPENING gets its own partition name** — because the request hook is
+  installed once per Chromium session and closes over the pane it was handed. A
+  second life on the old session went on blocking and stopped *saying* so: the
+  model got `ERR_BLOCKED_BY_CLIENT`, the one code an ad blocker, a content
+  extension and the net fence are indistinguishable behind, and
+  `browser_read_console` reported no refusals at all.
+
+**The proof, not the claim.** `npm run guard` drives the shipped Chromium:
+
+- *isolation* — a page sets a cookie and a `localStorage` token under session A,
+  A reloads and still has them, and session B loads the same origin and finds
+  `{"cookie":"","token":null}`; Electron's own cookie store agrees, one entry for
+  A and none for B. `GUARD_BREAK=partition` gives both sessions one partition and
+  the same check reads back `secret-of-A` in B, which is what card 201 shipped.
+- *lifetime* — through the product's own `runVerb`: the login really is in that
+  session's jar while it is open, the jar is empty after the close, the same id
+  reopened is logged out, and its fence still answers "refused 192.168.1.1: it is
+  a private network address, RFC 1918 (rule: rfc1918)" rather than an error code.
+
+The whole chain says the same thing:
+`BrowserLiveDriveTest.aResumedSessionGetsAFreshBrowserAndAFenceThatStillNamesItself`
+logs in through the real seven tools, closes the session, resumes the same store
+id and reads back `{"cookie":"","token":null}`.
 
 ## Where the pane lives: two doors, one browser
 
@@ -315,6 +349,15 @@ not silently dropped:
 (2 Electron security warning(s) from the shell itself left out — they are not
 the page's)
 ```
+
+That sentence never appeared until 2026-08-13, and the filter under it had never
+matched a single line. Electron 43 writes `console.warn("%cElectron Security
+Warning (…)%c\n…", "font-weight: bold;", "")`, so the message arrives with the
+format directive still on the front and an anchored `^\s*Electron Security
+Warning` matches nothing. The filter now allows the directives, the counter can
+therefore be non-zero, and the guard asserts it against the string **this**
+Electron emits rather than the one the filter was written for — measured at 7
+emitted, 0 leaked.
 
 ## How it is wired
 

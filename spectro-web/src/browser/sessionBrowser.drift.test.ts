@@ -90,10 +90,23 @@ describe("the session travels the browser wire under one name", () => {
     // Not a convention in the shell's own code: two sessions get two Electron
     // sessions, and a cookie jar cannot be shared across them by accident. A
     // constant partition here would put every agent back in one login.
-    expect(shellPane).toMatch(/function partitionFor\(sessionId: string\): string \{/);
-    expect(shellPane).toContain("${PARTITION_PREFIX}${safe}-${sessionId.length}");
+    expect(shellPane).toMatch(/function partitionFor\(sessionId: string, opening = 0\): string \{/);
+    expect(shellPane).toContain("${PARTITION_PREFIX}${safe}-${fingerprint(sessionId)}-${opening}");
     // And it is in memory: `persist:` would leave a directory per session id
     // that nothing deletes, which is not what "until the session is closed" says.
     expect(shellPane).not.toContain('PARTITION_PREFIX = "persist:');
+  });
+
+  it("gives back what a closed session's browser held, which IS the lifetime", () => {
+    // The half the review sent this card back for. "In memory" was a promise
+    // about the DISK: Electron keeps an in-memory Chromium session alive by
+    // partition name for the life of the app, so five closed sessions held five
+    // cookie jars and a resumed id opened onto its old login. Both lines below
+    // are load-bearing and neither is enough alone — the emptying takes the
+    // credential out of the process, the per-opening name keeps the next life
+    // off the hook that closes over the record the close threw away.
+    expect(shellPane).toContain("clearStorageData()");
+    expect(shellPane).toContain("clearCache()");
+    expect(shellPane).toMatch(/openings\.set\(pane\.id/);
   });
 });

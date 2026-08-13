@@ -19,6 +19,11 @@
 //      shows THAT session's browser rather than whichever agent ran last
 //   5  closing a session takes its browser with it and leaves its neighbour alone
 //   6  a verb the shell cannot key to a session is refused, saying so
+//   7  "takes its browser with it" includes the COOKIES: the Chromium session is
+//      emptied and its partition retired, so a resumed id cannot walk back into
+//      the login of the run that closed (the review's Finding 1)
+//   8  and the second life gets its own request hook, so its fence still names
+//      the host and the rule instead of ERR_BLOCKED_BY_CLIENT (Finding 2)
 //
 // The module is loaded with a FAKE electron in the require cache, the way
 // browserPane.test.ts does it: the real file runs, the real state machine runs,
@@ -32,6 +37,8 @@ interface FakeSession {
   partition: string;
   hook: ((details: { url: string; resourceType: string; referrer?: string },
     callback: (response: { cancel?: boolean }) => void) => void) | null;
+  /** What was emptied out of it, in order — the close's own evidence. */
+  cleared: string[];
 }
 
 /** One fake page, so "did A reload" is a question the test can ask. */
@@ -111,15 +118,28 @@ const fakeElectron = {
     }
   },
   session: {
+    // Cached by partition name, exactly as Electron caches it — which is the
+    // fact card 218 first got wrong. A fake that handed out a fresh object per
+    // call would have made the lifetime defect invisible here.
     fromPartition: (partition: string): FakeSession => {
       const existing = sessions.get(partition);
       if (existing) return existing;
-      const created: FakeSession = { partition, hook: null };
+      const created: FakeSession = { partition, hook: null, cleared: [] };
       Object.defineProperty(created, "webRequest", {
         value: {
           onBeforeRequest: (fn: FakeSession["hook"]) => {
             created.hook = fn;
           },
+        },
+      });
+      Object.defineProperty(created, "clearStorageData", {
+        value: async () => {
+          created.cleared.push("storage");
+        },
+      });
+      Object.defineProperty(created, "clearCache", {
+        value: async () => {
+          created.cleared.push("cache");
         },
       });
       sessions.set(partition, created);
@@ -167,8 +187,19 @@ function pageOf(session: string): FakePage {
   return found;
 }
 
+/** Lets every queued microtask and immediate run, so an async hook has settled. */
+async function settle(): Promise<void> {
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
 describe("a browser per session", () => {
   beforeEach(() => {
+    // The tear-down goes FIRST, and that order is load-bearing now: forgetPane()
+    // retires the panes a previous test left, which reaches the fake Chromium
+    // sessions. Resetting afterwards keeps a previous test's clean-up out of this
+    // test's books.
+    pane.forgetPane();
     reset();
     pane.attachPaneTo(
       () => WINDOW as unknown as Electron.BaseWindow,
@@ -176,7 +207,6 @@ describe("a browser per session", () => {
         segmentCalls += 1;
       },
     );
-    pane.forgetPane();
   });
 
   it("gives every session its own view and its own Chromium partition", async () => {
@@ -284,5 +314,97 @@ describe("a browser per session", () => {
 
     assert.equal(pane.paneUrl(A), null);
     assert.equal(pane.paneUrl(B), null);
+  });
+});
+
+// What "closed" means, after the review measured that it did not mean it.
+//
+// The card said four times that closing a session takes its cookies and its
+// storage with it. It did not: `closeSession` dropped the record and closed the
+// page, and Electron went on holding the Chromium session by partition name for
+// the life of the app — so five closed sessions still held five cookie jars, and
+// a session resumed under the same id opened onto its old login, HttpOnly cookie
+// and all. The same reuse left the request hook closed over the record the close
+// had thrown away, so a reopened session's fence went on blocking and stopped
+// saying why.
+//
+// One change answers both, and each half is pinned here because neither half is
+// enough alone: EMPTY the Chromium session on close, and give every OPENING its
+// own partition.
+describe("a closed browser is really given back", () => {
+  beforeEach(() => {
+    pane.forgetPane();
+    reset();
+    pane.attachPaneTo(() => WINDOW as unknown as Electron.BaseWindow, () => {});
+  });
+
+  it("empties the Chromium session it is giving back: storage and cache", async () => {
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    const used = [...sessions.values()].at(-1);
+    assert.ok(used, "the navigate built a Chromium session");
+    assert.deepEqual(used.cleared, [], "nothing is emptied while the session is open");
+
+    await pane.runVerb("close_session", {}, OPEN, A);
+
+    assert.deepEqual(used.cleared, ["storage", "cache"],
+      "a closed session's cookies, storage and cache stay in the process: "
+      + JSON.stringify(used.cleared));
+  });
+
+  it("hands a reopened session a partition of its own, so it inherits no jar", async () => {
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    const firstLife = pages.at(-1)?.partition;
+    await pane.runVerb("close_session", {}, OPEN, A);
+
+    await pane.runVerb("navigate", { url: "http://localhost:5173/again" }, OPEN, A);
+    const secondLife = pages.at(-1)?.partition;
+
+    assert.notEqual(secondLife, firstLife,
+      `both lives of ${A} browsed in one Chromium session: ${String(firstLife)}`);
+    assert.ok(String(secondLife).startsWith("spectro-browser/"), String(secondLife));
+    assert.ok(!String(secondLife).startsWith("persist:"), String(secondLife));
+  });
+
+  it("installs a fresh hook for the second life, so its fence still names itself", async () => {
+    // The damage this stops is not a hole — the request is still cancelled. It
+    // is the model being handed ERR_BLOCKED_BY_CLIENT, the one code card 201
+    // built loadFailureSentence to avoid because an ad blocker, a content
+    // extension and the net fence are indistinguishable behind it.
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    await pane.runVerb("close_session", {}, OPEN, A);
+    await pane.runVerb("navigate", { url: "http://localhost:5173/again" }, OPEN, A);
+
+    const live = [...sessions.values()].at(-1);
+    const answers: { cancel?: boolean }[] = [];
+    live?.hook?.({ url: "http://192.168.1.1/admin", resourceType: "mainFrame" },
+      (answer) => answers.push(answer));
+    await settle();
+
+    assert.equal(answers[0]?.cancel, true, "the fence refuses on the second life too");
+    const said = await pane.runVerb("console", {}, OPEN, A);
+    assert.match(String((said.value as { lines: string }).lines),
+      /refused since this page loaded/,
+      "the refusal was pushed onto the record the close threw away, so the pane the "
+      + "model asks knows nothing about it");
+    assert.equal(sessions.size, 2,
+      "the second life reused the first life's Chromium session: "
+      + [...sessions.keys()].join(" "));
+  });
+
+  it("never maps two different session ids onto one partition", () => {
+    // The comment on partitionFor claimed "the length and the raw id both ride
+    // along" as the belt against exactly this; the length rode, the raw id did
+    // not, and a collision here is one cookie jar for two sessions — the whole
+    // failure mode of this card.
+    for (const [one, other] of [["ab/c", "ab:c"], ["a b", "a\tb"], ["../x", ".._x"]]) {
+      assert.notEqual(pane.partitionFor(one), pane.partitionFor(other),
+        `${JSON.stringify(one)} and ${JSON.stringify(other)} share `
+        + pane.partitionFor(one));
+    }
+  });
+
+  it("is stable: the same session and the same opening name the same partition", () => {
+    assert.equal(pane.partitionFor(A, 3), pane.partitionFor(A, 3));
+    assert.notEqual(pane.partitionFor(A, 3), pane.partitionFor(A, 4));
   });
 });

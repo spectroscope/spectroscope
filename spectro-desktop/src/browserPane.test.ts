@@ -134,6 +134,11 @@ const fakeElectron = {
           rec.hook = fn;
         },
       },
+      // What a closed session's browser gives back. sessionPanes.test.ts is
+      // where that is measured; here they only have to exist, because
+      // forgetPane() retires whatever a test left open.
+      clearStorageData: async () => {},
+      clearCache: async () => {},
     }),
   },
 };
@@ -285,6 +290,30 @@ describe("browserPane", () => {
     assert.match(lines, /TypeError: the app is broken/);
     assert.ok(!lines.includes("Insecure Content-Security-Policy"), lines);
     assert.match(lines, /1 .*(shell|Electron)/i, "the drop is counted, not silent: " + lines);
+  });
+
+  it("filters the warning the SHIPPED Electron really writes, %c and all", async () => {
+    // The line above is not the string Electron 43 emits. It writes
+    // console.warn("%cElectron Security Warning (…)%c\n…", "font-weight: bold;",
+    // ""), so the message reaches the handler with the format directive on the
+    // front and the ^\s* anchor never matched. The filter was inert: every one
+    // of those lines went to the model as if the page had said it, and the
+    // "(N … left out)" sentence never appeared because the counter stayed 0.
+    //
+    // This vector is the measurement, not a guess — captured from Electron
+    // 43.3.0 on 2026-08-13 by reading a real WebContentsView's console.
+    const MEASURED = "%cElectron Security Warning (Insecure Content-Security-Policy) "
+      + "font-weight: bold; This renderer process has either no Content-Security-Policy set…";
+    assert.equal(pane.isPageLine(MEASURED), false, MEASURED);
+
+    await navigate();
+    rec.consoleSink?.({ level: "warning", message: MEASURED });
+    rec.consoleSink?.({ level: "error", message: "TypeError: the app is broken" });
+
+    const reply = await pane.runVerb("console", {}, OPEN, SESSION);
+    const lines = String((reply.value as { lines: string }).lines);
+    assert.ok(!lines.includes("Content-Security-Policy"), lines);
+    assert.match(lines, /1 .*(shell|Electron)/i, "and the drop is named: " + lines);
   });
 
   it("really emulates a device and answers with what the page MEASURED", async () => {
