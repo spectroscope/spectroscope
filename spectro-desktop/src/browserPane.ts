@@ -75,7 +75,7 @@ let shellWarnings = 0;
 let refusals: PaneRefusal[] = [];
 
 /** One refused request, with the sentence the fence already produced for it. */
-interface PaneRefusal {
+export interface PaneRefusal {
   url: string;
   rule: string;
   kind: "fence" | "adblock";

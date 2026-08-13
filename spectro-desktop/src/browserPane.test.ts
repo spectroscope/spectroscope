@@ -238,6 +238,33 @@ describe("browserPane", () => {
     assert.match(String(reply.error), /rfc1918/, reply.error ?? "");
   });
 
+  it("puts a name-based hop through the hook's own resolver, not only literals", async () => {
+    // The wiring, which neither browserFence.test.ts nor the guard covers: the
+    // pane's request hook must actually be the async, resolving one. With the
+    // opt-in OFF a 302 to a public name resolving to loopback used to load and
+    // title itself PWNED.
+    pane.useHostLookup(async (host) =>
+      host === "localtest.example" ? ["127.0.0.1"] : ["93.184.216.34"]);
+    await navigate();
+    // The policy the hook judges by is the one the last command carried.
+    await pane.runVerb("status", {}, { allowLocalhost: false, adblock: false });
+    const seen: { cancel?: boolean }[] = [];
+    rec.hook?.(
+      { url: "http://localtest.example:8875/secret", resourceType: "mainFrame" },
+      (r) => seen.push(r),
+    );
+    await settle();
+    assert.equal(seen[0]?.cancel, true, "a name that resolves to loopback is refused");
+
+    const allowed: { cancel?: boolean }[] = [];
+    rec.hook?.(
+      { url: "http://cdn.example.com/lib.js", resourceType: "script" },
+      (r) => allowed.push(r),
+    );
+    await settle();
+    assert.equal(allowed[0]?.cancel, undefined, "and a public one is not");
+  });
+
   it("passes an ordinary load failure through unchanged", async () => {
     rec.loadFails = "ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:5173/'";
     const reply = await pane.runVerb("navigate", { url: "http://localhost:5173/" }, OPEN);
