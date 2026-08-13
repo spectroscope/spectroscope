@@ -179,7 +179,7 @@ class BrowsePageToolTest {
     private static dev.spectroscope.core.net.NetFence fence(boolean allowLocalhost) {
         return new dev.spectroscope.core.net.NetFence(allowLocalhost, host -> {
             if ("node.tailnet".equals(host)) {
-                return List.of(java.net.InetAddress.getByName("100.90.57.62"));
+                return List.of(java.net.InetAddress.getByName("100.64.0.1"));
             }
             throw new java.net.UnknownHostException(host);
         });

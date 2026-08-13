@@ -49,8 +49,8 @@ class FenceAcrossRedirectsTest {
 
     /** The addresses of the review's three networks, answered from a table. */
     private static final NetFence.Resolver DNS = host -> switch (host) {
-        case "lan.test" -> List.of(InetAddress.getByName("192.168.50.154"));
-        case "node.tailnet" -> List.of(InetAddress.getByName("100.97.87.86"));
+        case "lan.test" -> List.of(InetAddress.getByName("10.0.0.1"));
+        case "node.tailnet" -> List.of(InetAddress.getByName("100.64.0.2"));
         case "public.test" -> List.of(InetAddress.getByName("93.184.216.34"));
         default -> List.of(InetAddress.getByName(host));
     };

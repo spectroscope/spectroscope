@@ -41,7 +41,7 @@ class NetFenceTest {
                 "example.com", "93.184.216.34",
                 "localtest.me", "127.0.0.1",
                 "board.internal", "192.168.1.10",
-                "node.tailnet", "100.90.57.62")));
+                "node.tailnet", "100.64.0.1")));
     }
 
     @Test
@@ -77,7 +77,7 @@ class NetFenceTest {
 
     @Test
     void theTailnetRangeIsRefused() {
-        assertEquals("cgnat-tailnet", fenced().refuse("http://100.90.57.62:1234/v1/models").rule());
+        assertEquals("cgnat-tailnet", fenced().refuse("http://100.64.0.1:1234/v1/models").rule());
         assertEquals("cgnat-tailnet", fenced().refuse("http://node.tailnet:1234/").rule());
         assertNull(fenced().refuse("https://100.63.255.255/"), "100.63 is outside 100.64/10");
         assertNull(fenced().refuse("https://100.128.0.1/"), "and so is 100.128");
@@ -101,7 +101,7 @@ class NetFenceTest {
     void theVerifyLoopOptInReachesLoopbackAndNothingElse() {
         NetFence opted = new NetFence(true, table(Map.of(
                 "board.internal", "192.168.1.10",
-                "node.tailnet", "100.90.57.62")));
+                "node.tailnet", "100.64.0.1")));
         assertNull(opted.refuse("http://localhost:8746/"));
         assertNull(opted.refuse("http://127.0.0.1:11434/api/tags"));
         assertEquals("rfc1918", opted.refuse("http://board.internal:8746/").rule(),

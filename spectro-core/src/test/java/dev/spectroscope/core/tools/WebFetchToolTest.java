@@ -136,7 +136,7 @@ class WebFetchToolTest {
     /** A fence that answers from a table: two names, three networks. */
     private static NetFence fence(boolean allowLocalhost) {
         return new NetFence(allowLocalhost, host -> switch (host) {
-            case "lan.test" -> List.of(InetAddress.getByName("192.168.50.154"));
+            case "lan.test" -> List.of(InetAddress.getByName("10.0.0.1"));
             case "example.com", "elsewhere.example" ->
                     List.of(InetAddress.getByName("93.184.216.34"));
             default -> List.of(InetAddress.getByName(host));
