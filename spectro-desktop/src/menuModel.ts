@@ -40,13 +40,7 @@ import { SHELL_COMMAND_IDS, type ShellCommandId } from "./shellCommands";
 export type MenuNode =
   | { kind: "separator" }
   | { kind: "role"; role: string; label?: string }
-  | {
-      kind: "command";
-      label: string;
-      accelerator?: string;
-      command: ShellCommandId;
-      arg?: string;
-    }
+  | { kind: "command"; label: string; accelerator?: string; command: ShellCommandId; arg?: string }
   | { kind: "hash"; label: string; accelerator?: string; hash: string }
   | { kind: "shell"; label: string; accelerator?: string; action: ShellAction }
   | { kind: "url"; label: string; url: string }
@@ -154,18 +148,11 @@ function settingsSubmenu(): MenuNode {
     kind: "submenu",
     label: "Settings",
     items: [
-      {
-        kind: "hash",
-        label: "All settings…",
-        accelerator: "CmdOrCtrl+,",
-        hash: "#/settings",
-      },
+      { kind: "hash", label: "All settings…", accelerator: "CmdOrCtrl+,", hash: "#/settings" },
       SEP,
-      ...SETTINGS_ROWS.map(([section, label]): MenuNode => ({
-        kind: "hash",
-        label,
-        hash: `#/settings/${section}`,
-      })),
+      ...SETTINGS_ROWS.map(
+        ([section, label]): MenuNode => ({ kind: "hash", label, hash: `#/settings/${section}` }),
+      ),
     ],
   };
 }
@@ -179,12 +166,14 @@ function demoSubmenu(): MenuNode {
       // (route.ts, isReplayOnlyId), and the dialog is the picker that ships.
       { kind: "command", label: "Agent scenarios…", command: "scenarios.open" },
       SEP,
-      ...DEMO_ROWS.map(([source, label]): MenuNode => ({
-        kind: "command",
-        label,
-        command: "stategraph.demo",
-        arg: source,
-      })),
+      ...DEMO_ROWS.map(
+        ([source, label]): MenuNode => ({
+          kind: "command",
+          label,
+          command: "stategraph.demo",
+          arg: source,
+        }),
+      ),
     ],
   };
 }
@@ -199,15 +188,8 @@ function demoSubmenu(): MenuNode {
  * @param o the product name, and whether this is macOS
  * @return the menu as a tree, ready for toTemplate
  */
-export function appMenuModel(o: {
-  productName: string;
-  isMac: boolean;
-}): MenuNode[] {
-  const about: MenuNode = {
-    kind: "shell",
-    label: `About ${o.productName}`,
-    action: "about",
-  };
+export function appMenuModel(o: { productName: string; isMac: boolean }): MenuNode[] {
+  const about: MenuNode = { kind: "shell", label: `About ${o.productName}`, action: "about" };
 
   const file: MenuNode = {
     kind: "submenu",
@@ -215,12 +197,7 @@ export function appMenuModel(o: {
     items: [
       // Was a webContents.reload(): a page reload is not the app's own new
       // chat, which drops the socket, resets the Lab's dam and re-addresses.
-      {
-        kind: "command",
-        label: "New chat",
-        accelerator: "CmdOrCtrl+N",
-        command: "chat.new",
-      },
+      { kind: "command", label: "New chat", accelerator: "CmdOrCtrl+N", command: "chat.new" },
       SEP,
       {
         kind: "command",
@@ -228,32 +205,20 @@ export function appMenuModel(o: {
         accelerator: "CmdOrCtrl+O",
         command: "import.open",
       },
-      {
-        kind: "command",
-        label: "New project from starter…",
-        command: "starters.open",
-      },
+      { kind: "command", label: "New project from starter…", command: "starters.open" },
       SEP,
       demoSubmenu(),
       SEP,
       // ~/.spectro is the data home the server itself uses, and the shell
       // spawns the JVM with the same user.home, so the two cannot disagree.
-      {
-        kind: "shell",
-        label: "Show session folder",
-        action: "revealDataFolder",
-      },
+      { kind: "shell", label: "Show session folder", action: "revealDataFolder" },
       SEP,
       // Off macOS there is no application menu, so Settings and the quit both
       // have to live here instead.
       ...(o.isMac ? [] : [settingsSubmenu(), SEP]),
       o.isMac
         ? { kind: "role" as const, role: "close", label: "Close window" }
-        : {
-            kind: "role" as const,
-            role: "quit",
-            label: `Quit ${o.productName}`,
-          },
+        : { kind: "role" as const, role: "quit", label: `Quit ${o.productName}` },
     ],
   };
 
@@ -263,18 +228,8 @@ export function appMenuModel(o: {
     // Hand-listed rather than {role:"viewMenu"}: using the container AND
     // naming items produces duplicate accelerators, and Electron does not warn.
     items: [
-      {
-        kind: "command",
-        label: "Sessions",
-        accelerator: "CmdOrCtrl+1",
-        command: "nav.sessions",
-      },
-      {
-        kind: "command",
-        label: "Fleets",
-        accelerator: "CmdOrCtrl+2",
-        command: "nav.fleets",
-      },
+      { kind: "command", label: "Sessions", accelerator: "CmdOrCtrl+1", command: "nav.sessions" },
+      { kind: "command", label: "Fleets", accelerator: "CmdOrCtrl+2", command: "nav.fleets" },
       {
         kind: "command",
         label: "State graph",
@@ -286,12 +241,9 @@ export function appMenuModel(o: {
       // yank a reader out of a stored session. changeTab flips the tab and
       // re-addresses in place. A leveling-locked tab draws its own locked
       // panel, so none of these six is inert.
-      ...TAB_ROWS.map(([tab, label]): MenuNode => ({
-        kind: "command",
-        label,
-        command: "tab.set",
-        arg: tab,
-      })),
+      ...TAB_ROWS.map(
+        ([tab, label]): MenuNode => ({ kind: "command", label, command: "tab.set", arg: tab }),
+      ),
       SEP,
       { kind: "command", label: "Images", command: "images.toggle" },
       SEP,
@@ -313,12 +265,7 @@ export function appMenuModel(o: {
     items: [
       // Always enabled, like a browser's Stop: the shell cannot read renderer
       // state, and abort() is a no-op on a socket with nothing running.
-      {
-        kind: "command",
-        label: "Stop run",
-        accelerator: "CmdOrCtrl+.",
-        command: "run.abort",
-      },
+      { kind: "command", label: "Stop run", accelerator: "CmdOrCtrl+.", command: "run.abort" },
       SEP,
       { kind: "command", label: "Doctor", command: "doctor.open" },
       // Lifted from the tray, so nothing lives only in a menu bar extra.
@@ -327,11 +274,7 @@ export function appMenuModel(o: {
       { kind: "shell", label: "Open in browser", action: "openInBrowser" },
       // The port is OS-assigned and the window draws no address bar, so
       // without this a user cannot discover his own server address at all.
-      {
-        kind: "shell",
-        label: "Copy server address",
-        action: "copyServerAddress",
-      },
+      { kind: "shell", label: "Copy server address", action: "copyServerAddress" },
       SEP,
       { kind: "shell", label: "Restart server…", action: "restartServer" },
     ],
@@ -366,19 +309,11 @@ export function appMenuModel(o: {
               SEP,
               { kind: "role" as const, role: "services" },
               SEP,
-              {
-                kind: "role" as const,
-                role: "hide",
-                label: `Hide ${o.productName}`,
-              },
+              { kind: "role" as const, role: "hide", label: `Hide ${o.productName}` },
               { kind: "role" as const, role: "hideOthers" },
               { kind: "role" as const, role: "unhide" },
               SEP,
-              {
-                kind: "role" as const,
-                role: "quit",
-                label: `Quit ${o.productName}`,
-              },
+              { kind: "role" as const, role: "quit", label: `Quit ${o.productName}` },
             ],
           },
         ]
@@ -428,10 +363,7 @@ export function cronLabel(jobs: Record<string, string>): string {
  * @param o the product name, and what the shell honestly knows right now
  * @return the tray menu as a tree, ready for toTemplate
  */
-export function trayMenuModel(o: {
-  productName: string;
-  status: TrayStatus;
-}): MenuNode[] {
+export function trayMenuModel(o: { productName: string; status: TrayStatus }): MenuNode[] {
   return [
     { kind: "shell", label: `Open ${o.productName}`, action: "focusWindow" },
     { kind: "command", label: "New chat", command: "chat.new" },
@@ -441,9 +373,7 @@ export function trayMenuModel(o: {
     { kind: "separator" },
     {
       kind: "shell",
-      label: o.status.serverUp
-        ? "Restart server…"
-        : "Restart server… (not responding)",
+      label: o.status.serverUp ? "Restart server…" : "Restart server… (not responding)",
       action: "restartServer",
     },
     { kind: "separator" },
@@ -461,10 +391,7 @@ export function trayMenuModel(o: {
 export function trayTooltip(productName: string, s: TrayStatus): string {
   if (!s.serverUp) return `${productName} · server not responding`;
   const states = Object.values(s.jobs);
-  const jobs =
-    states.length === 0
-      ? "no cron jobs yet"
-      : `${states.length} cron ${states.length === 1 ? "job" : "jobs"}`;
+  const jobs = states.length === 0 ? "no cron jobs yet" : `${states.length} cron ${states.length === 1 ? "job" : "jobs"}`;
   return `${productName} · 127.0.0.1:${s.port} · ${jobs}`;
 }
 
