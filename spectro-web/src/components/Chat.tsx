@@ -1,9 +1,9 @@
 // The chat history plus composer. Assistant text is document flow (no bubble),
 // user turns are compact cards, tools render as ToolCard. While a run streams,
 // exactly one Coral caret pulses at the end of the text. The bonus-stage
-// input channels live in their own hooks: useAttachments (drag-and-
-// drop / file picker -> canvas downscale -> preview chips -> thumbnails on the
-// sent turn) and useVoiceInput (MediaRecorder -> POST /api/transcribe
+// input channels live in their own hooks: useAttachments (drag-and-drop / file
+// picker / ⌘V -> canvas downscale -> thumbnails inside the composer's border
+// -> thumbnails on the sent turn) and useVoiceInput (MediaRecorder -> POST /api/transcribe
 // -> the transcript lands IN THE INPUT, never straight at the agent).
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -14,7 +14,8 @@ import { groupTurns, groupTurnsV2 } from "../state/threads";
 import { agentAccent, cacheSplit, clockTime, formatDuration } from "../format";
 import { Markdown } from "./Markdown";
 import { ToolCard } from "./ToolCard";
-import { AttachmentPreview } from "./AttachmentPreview";
+import { AttachmentThumbs } from "./AttachmentThumbs";
+import { MAX_PENDING_ATTACHMENTS } from "./attachmentCap";
 import type { PendingAttachment } from "./AttachmentPreview";
 import { ThinkingDisclosure } from "./ThinkingDisclosure";
 import { useAttachments } from "./useAttachments";
@@ -711,7 +712,15 @@ export function Chat(props: {
                 ))}
               </div>
             )}
-            <AttachmentPreview attachments={attachments.pending} onRemove={attachments.removeAt} />
+            {/* What the intake had to say: an unreadable picture, or a paste
+                bigger than one message may carry. It sits with the other
+                composer notices rather than inside the box — the box holds the
+                draft and its pictures, not error text. */}
+            {attachments.notice !== null && (
+              <div className="recording-indicator" role="status">
+                <span>{t(lang, attachments.notice, { n: MAX_PENDING_ATTACHMENTS })}</span>
+              </div>
+            )}
             {voice.micPhase === "recording" && (
               /* The level meter (card 187 step 3): it moves with the voice, so
                  "it hears you" is answered by looking rather than by trying. */
@@ -757,7 +766,20 @@ export function Chat(props: {
                   streams and nothing new is drafted (composerButtons decides).
                   Everything else lives in the action row below. */}
               <div className="composer-box">
-                {/* The field is the textarea plus, while a live session runs, a
+                {/* The pictures ride INSIDE the border, above the caret (owner,
+                    2026-08-12). Outside .composer-field on purpose: in there
+                    they would push the dictation ghost down by their own
+                    height, and inside the textarea they would make its
+                    scrollHeight count pictures as lines. */}
+                <AttachmentThumbs
+                  attachments={attachments.pending}
+                  onRemove={attachments.removeAt}
+                  lang={lang}
+                />
+                {/* The draft and its one action seat, side by side — the row the
+                    box itself used to be before the pictures moved in. */}
+                <div className="composer-row">
+                  {/* The field is the textarea plus, while a live session runs, a
                     ghost layer under it (card 187 step 6). The owner asked for
                     the words to arrive IN the text, and the two layers are how
                     that stays honest: the ghost repeats the draft in
@@ -766,75 +788,81 @@ export function Chat(props: {
                     They are therefore unselectable, unsendable and not in
                     `draft` — a guess must never be one Enter away from being
                     sent as if somebody had typed it. */}
-                <div className="composer-field">
-                  {voice.provisional !== "" && (
-                    <div className="composer-ghost" aria-hidden="true" ref={ghostRef}>
-                      <span className="said">{draft}</span>
-                      <span className="heard">
-                        {draft === "" ? "" : " "}
-                        {voice.provisional}
-                      </span>
-                    </div>
-                  )}
-                  <textarea
-                    ref={textareaRef}
-                    rows={1}
-                    value={draft}
-                    placeholder={
-                      showsPlaceholder(draft, voice.provisional) ? t(lang, "chat.placeholder") : ""
-                    }
-                    aria-label={t(lang, "chat.placeholder")}
-                    onChange={(e) => {
-                      setDraft(e.target.value);
-                      autosize();
-                    }}
-                    onKeyDown={(e) => {
-                      if (slash.handleKey(e)) return;
-                      if (e.key === "Enter" && !e.shiftKey) {
-                        e.preventDefault();
-                        submit();
+                  <div className="composer-field">
+                    {voice.provisional !== "" && (
+                      <div className="composer-ghost" aria-hidden="true" ref={ghostRef}>
+                        <span className="said">{draft}</span>
+                        <span className="heard">
+                          {draft === "" ? "" : " "}
+                          {voice.provisional}
+                        </span>
+                      </div>
+                    )}
+                    <textarea
+                      ref={textareaRef}
+                      rows={1}
+                      value={draft}
+                      placeholder={
+                        showsPlaceholder(draft, voice.provisional) ? t(lang, "chat.placeholder") : ""
                       }
-                    }}
-                  />
-                </div>
-                {buttons.seat === "stop" ? (
-                  <button
-                    type="button"
-                    className="composer-seat composer-seat--stop"
-                    disabled={buttons.stopDisabled}
-                    aria-label={t(lang, "chat.stopAria")}
-                    title={buttons.stopLabel}
-                    onClick={props.onAbort}
-                  >
-                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
-                      <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
-                    </svg>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="composer-seat composer-seat--send"
-                    disabled={buttons.sendDisabled}
-                    aria-label={buttons.sendLabel}
-                    title={buttons.sendLabel}
-                    onClick={submit}
-                  >
-                    <svg
-                      viewBox="0 0 16 16"
-                      width="14"
-                      height="14"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.8"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
+                      aria-label={t(lang, "chat.placeholder")}
+                      onChange={(e) => {
+                        setDraft(e.target.value);
+                        autosize();
+                      }}
+                      onKeyDown={(e) => {
+                        if (slash.handleKey(e)) return;
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          submit();
+                        }
+                      }}
+                      /* On the DRAFT, not on the chat root: a paste into the
+                       search box or the workspace terminal is not an
+                       attachment. The handler cancels the event only when the
+                       clipboard actually held a picture, so ⌘V still types. */
+                      onPaste={attachments.onPaste}
+                    />
+                  </div>
+                  {buttons.seat === "stop" ? (
+                    <button
+                      type="button"
+                      className="composer-seat composer-seat--stop"
+                      disabled={buttons.stopDisabled}
+                      aria-label={t(lang, "chat.stopAria")}
+                      title={buttons.stopLabel}
+                      onClick={props.onAbort}
                     >
-                      <path d="M8 12.5v-9" />
-                      <path d="M4 7.5 8 3.5l4 4" />
-                    </svg>
-                  </button>
-                )}
+                      <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                        <rect x="3" y="3" width="10" height="10" rx="1.5" fill="currentColor" />
+                      </svg>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="composer-seat composer-seat--send"
+                      disabled={buttons.sendDisabled}
+                      aria-label={buttons.sendLabel}
+                      title={buttons.sendLabel}
+                      onClick={submit}
+                    >
+                      <svg
+                        viewBox="0 0 16 16"
+                        width="14"
+                        height="14"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        aria-hidden="true"
+                      >
+                        <path d="M8 12.5v-9" />
+                        <path d="M4 7.5 8 3.5l4 4" />
+                      </svg>
+                    </button>
+                  )}
+                </div>
               </div>
               {/* The action row (owner 2026-08-09): every control that is not
                   the draft or its seat, on the same column width. Disclosure

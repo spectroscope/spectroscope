@@ -27,7 +27,15 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.back": { de: "zurück (⌘←)", en: "back (⌘←)" },
   "nav.forward": { de: "vorwärts (⌘→)", en: "forward (⌘→)" },
   "nav.fleets": { de: "Flotten", en: "Fleets" },
+  "nav.sessions": { de: "Sessions", en: "Sessions" },
   "nav.navMode": { de: "Sessions, Flotten oder State-Graph", en: "Sessions, fleets or state graph" },
+  // What the circle in front of a row says, spelled out. Colour alone never
+  // carries meaning here, and "unfinished" is deliberately not a synonym for
+  // "running": a stored file with no run_end is not a process.
+  "nav.run.running": { de: "läuft", en: "running" },
+  "nav.run.live": { de: "verbunden", en: "connected" },
+  "nav.run.open": { de: "nicht abgeschlossen", en: "unfinished" },
+  "nav.run.idle": { de: "beendet", en: "finished" },
   "nav.stategraph": { de: "State-Graph", en: "State graph" },
   "nav.stategraphNote": {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",
@@ -80,11 +88,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "sess.out.open": { de: "kein run_end aufgezeichnet", en: "no run_end recorded" },
   "sess.gateAsked": { de: "Gate: {n}× gefragt, alle erlaubt", en: "gate: asked {n}×, all allowed" },
   "sess.gateDenied": { de: "Gate: {n}× gefragt, {d}× verweigert", en: "gate: asked {n}×, refused {d}×" },
-  "sess.pile": { de: "{n} gleiche Läufe", en: "{n} identical runs" },
-  "sess.pileTitle": {
-    de: "{n} Läufe mit demselben Prompt und derselben Form. Klicken zum Aufklappen — was sich unterscheidet, steht ohnehin als eigene Zeile da.",
-    en: "{n} runs with the same prompt and the same shape. Click to unfold — anything that differs already stands as its own row.",
-  },
+  // The pile is gone (the list is flat now), and so are the two strings that
+  // described it. `sess.pile` had already lost its last caller before that.
 
   // header
   "hdr.archive": { de: "Archiv", en: "Archive" },
@@ -1568,11 +1573,26 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "img.noKey": { de: "kein Key in .env", en: "no key in .env" },
   "chat.recording": { de: "Aufnahme {t}", en: "Recording {t}" },
+  // The tooltip is the only place ⌘V is discoverable — a paste affordance
+  // nobody is told about is a paste affordance nobody uses.
   "chat.attach": {
-    de: "Bild anhängen (oder eins in den Chat ziehen)",
-    en: "Attach image (or drag one into the chat)",
+    de: "Bild anhängen (hineinziehen oder mit ⌘V einfügen)",
+    en: "Attach an image (drag one in, or paste with ⌘V)",
   },
   "chat.attachAria": { de: "Bild anhängen", en: "Attach image" },
+  "chat.attachedAria": { de: "Angehängte Bilder", en: "Attached images" },
+  "chat.attachRemove": { de: "{name} entfernen", en: "Remove {name}" },
+  /* A clipboard blob can arrive without a name; the thumbnail says what it is
+     rather than leaving the remove label dangling. */
+  "chat.attachPasted": { de: "Eingefügtes Bild", en: "Pasted image" },
+  "chat.attachFailed": {
+    de: "Dieses Bild konnte nicht gelesen werden.",
+    en: "That image could not be read.",
+  },
+  "chat.attachTooMany": {
+    de: "Mehr als {n} Bilder pro Nachricht gehen nicht.",
+    en: "No more than {n} images per message.",
+  },
   // Card 183: the composer's slash completion. The invocation is a SENTENCE
   // the reader can see and edit, not a hidden instruction — a skill is
   // instructions in the system prompt, so asking for it by name is all there is

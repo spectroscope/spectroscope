@@ -115,32 +115,9 @@
   margin: 0 0 var(--sp-2) var(--sp-4);
 }
 
-/* Sidebar: sessions | fleets segmented control + fleet rows */
-.sidebar-seg {
-  display: inline-flex;
-  gap: 2px;
-  background: var(--surface-2);
-  border-radius: var(--radius-chip);
-  padding: 2px;
-}
-.sidebar-seg-btn {
-  font-size: 0.72rem;
-  letter-spacing: 0.04em;
-  text-transform: lowercase;
-  color: var(--text-dim);
-  background: none;
-  border: none;
-  border-radius: 5px;
-  padding: 2px 8px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-.sidebar-seg-btn.active {
-  background: var(--surface);
-  color: var(--text);
-}
+/* Sidebar: the fleet rows, and the count the fleets NAV ROW carries.
+   The segmented control itself is gone — the three segments are nav rows now
+   (sidebar.css), so its box, its buttons and its active state went with it. */
 .sidebar-seg-badge {
   font-size: 0.62rem;
   color: var(--text-faint);
