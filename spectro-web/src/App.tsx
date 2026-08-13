@@ -1628,26 +1628,42 @@ export function App() {
   // Exactly the chain's final else, hoisted so the trace can stay mounted while
   // another tab is showing. Kept next to the entries it renders, so the two
   // cannot drift apart.
-  const traceShowing =
+  // Where a trace could be shown at all — everything `traceShowing` needs
+  // except the tab itself. The warm gate below is armed from this SAME term
+  // rather than a looser one of its own: written twice they drift, and the
+  // drift was a trace warming inside a fleet, where `traceEntries` is
+  // `traceFromEvents(shownEvents)` on the render path and the fleet's own trace
+  // tab already mounts a second TraceView.
+  const traceReachable =
     // Both segment arms of the chain collapse into this one term under
     // `enteredFleet === null`: only the sessions segment reaches the tabs at
     // all, so the hidden trace must not survive a move to fleets or stategraph.
     nav === "sessions" &&
     enteredFleet === null &&
-    tab === "trace" &&
     // The chain's leveling gate reads `tab !== "chat" && …`; under `tab ===
-    // "trace"` that term is already true, and the compiler says so.
-    !(leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab));
+    // "trace"` that term is already true, and the compiler says so. A surface
+    // the reader's level keeps closed is not warmed either: it would build a
+    // view they cannot reach.
+    !(leveling.snapshot && !isSurfaceOpen(leveling.snapshot, "trace"));
+  const traceShowing = traceReachable && tab === "trace";
+
+  // What the warm-up is keyed on: the record LOADED, not the name it shares
+  // with the last open. `openSession` fetches the events again and folds them
+  // again, so re-opening the session already on screen has a whole trace to
+  // build — keyed on the id, that arrival is invisible and the build lands back
+  // in the chat's render pass, which is the one thing this card forbids.
+  const traceRecord = viewingLive ? (live.workspace?.sessionId ?? null) : replay;
 
   // Card 175, the half the August build left out. The trace being MOUNTED while
   // another tab shows is what makes the press cost nothing; building it in the
-  // same render pass as the chat is what makes the chat 220 ms slower. Both were
-  // one line, and only the first was measured. This is the second: the record
-  // arrives, the chat paints, the browser goes idle, and the trace builds then.
+  // same render pass as the chat is what puts the cost back on the view the
+  // reader is looking at. Both were one line, and only the first was measured.
+  // This is the second: the record arrives, the chat renders, the browser goes
+  // idle, and the trace builds then.
   //
   // The reader never waits on this. `traceShowing` is read FIRST below, so a
   // press mounts the view on the spot.
-  const traceWarm = useTraceWarm(shownSessionId);
+  const traceWarm = useTraceWarm(traceRecord, traceReachable);
 
   const traceEntries = useMemo(
     () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
@@ -2368,18 +2384,14 @@ export function App() {
             reader 955 ms of blocked main thread on every press when this card
             was opened, and about 50 ms once card 117 windowed the build.
 
-            But it is mounted AFTER the chat has painted, not beside it. The two
-            are not the same line and only the first was ever measured. Same
-            session, first blocked task of opening it, four runs each:
-
-              mounted beside the chat   563 · 601 · 621 · 637 ms
-              absent while chat shows   361 · 367 · 412 · 481 ms
-
-            About 220 ms on the critical path of the view the reader is actually
-            on — which is the one thing this card's own story forbids. Where the
-            220 ms goes was measured too: with the pre-built window cut from 72
-            rows to 17 the open costs 363/401 ms, i.e. the same as absent. It is
-            the ROWS, not the fold and not the indexes.
+            But it is mounted AFTER the view the reader asked for has rendered,
+            not beside it — which is what this card's own story forbids
+            ("mounting the trace together with the chat does not move the cost,
+            it moves the delay onto the chat"). The claim is structural and
+            reproduces: 0 trace rows in the DOM while the chat's own render pass
+            runs, the full window there once the browser has been idle. A
+            latency figure once stood here (611 → 362 ms) and is withdrawn — it
+            did not reproduce on a second machine. The card says why.
 
             `traceShowing` is read first, so a press never waits for idle.
 
@@ -2398,6 +2410,12 @@ export function App() {
           <div style={{ display: traceShowing ? "contents" : "none" }}>
             <TraceView
               entries={traceEntries}
+              /* Whether this is the surface the reader is looking at. Chat,
+               text and trace share ONE search store (state/search.ts), and a
+               view mounted behind another tab that reported its own hit count
+               would overwrite the count of the view actually being searched —
+               this one's effect runs after the chat's, so the chat lost. */
+              showing={traceShowing}
               /* The count belongs to the record on screen, not to this browser's
                socket: a stored session is folded whole and has dropped nothing,
                and reading `live` here made a complete archive announce the live
