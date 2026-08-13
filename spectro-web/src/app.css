@@ -26,6 +26,12 @@
 @import "./styles/about.css"; /* About: the licence notice panel + its footer entry */
 @import "./styles/audio-clip.css"; /* Trace: the audio face of an stt exchange (card 184/187) */
 @import "./styles/stategraph.css";
+/* The settings page's own list and switch rules. This line was missing: the
+   sheet existed, both blocks in it were written and reviewed, and neither had
+   ever reached a browser — card 199's whole allowlist list shipped unstyled and
+   its "runs code" warning shipped without a colour, because the rule that gives
+   it one is in here. sheetReach.drift.test.ts holds the line now. */
+@import "./styles/settings.css";
 
 /* Back and forward in the tab bar (card 179). The desktop shell draws no URL
    bar, so these are the only way back there. Same weight as a tab, set apart by
