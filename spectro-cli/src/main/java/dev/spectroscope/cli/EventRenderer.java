@@ -180,6 +180,19 @@ final class EventRenderer {
                 spinner.stop();
                 System.out.println("\n" + ansi.red("✗ error: " + error.message()));
             }
+            // Card 195. A block already reached this terminal inside the tool
+            // result's ERROR string, without naming which hook produced it. A
+            // TIMEOUT reached it as nothing at all, and that is the case worth a
+            // line: the call went ahead with a guard that never answered.
+            case RunEvent.HookDecision hook -> {
+                spinner.stop();
+                String head = "⛨ " + hook.event() + " " + hook.verdict()
+                        + " · " + compact(hook.command(), TOOL_INPUT_PREVIEW_CHARS);
+                System.out.println("  " + ("blocked".equals(hook.verdict())
+                        ? ansi.red(head + (hook.reason() == null ? ""
+                                : " · " + compact(hook.reason(), TOOL_OUTPUT_PREVIEW_CHARS)))
+                        : ansi.sand(head + " after " + hook.timeoutSeconds() + "s — the call ran anyway")));
+            }
             case RunEvent.Plan plan -> {
                 spinner.stop();
                 System.out.println("\n" + ansi.sand("◇ plan (" + plan.steps().size() + " steps)"));
@@ -265,6 +278,7 @@ final class EventRenderer {
             case RunEvent.Plan e -> e.agentId();
             case RunEvent.LlmExchange e -> e.agentId();
             case RunEvent.BrowserAction e -> e.agentId();
+            case RunEvent.HookDecision e -> e.agentId();
             case RunEvent.PermissionDecision e -> null;
             case RunEvent.RunEnd e -> null;
         };

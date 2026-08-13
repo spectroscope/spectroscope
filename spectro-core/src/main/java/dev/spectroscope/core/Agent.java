@@ -6,6 +6,8 @@ import dev.spectroscope.core.provider.LlmProvider.ToolSpec;
 import dev.spectroscope.core.events.RunEvent.ContextInfo;
 import dev.spectroscope.core.events.RunEvent.ContextPart;
 import dev.spectroscope.core.events.RunEvent.ErrorEvent;
+import dev.spectroscope.core.events.RunEvent.HookDecision;
+import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.events.RunEvent.PermissionDecision;
 import dev.spectroscope.core.events.RunEvent.PermissionRequest;
 import dev.spectroscope.core.events.RunEvent.RunEnd;
@@ -426,9 +428,13 @@ public final class Agent {
     private GuardedResult runGuarded(Tool tool, PToolCall call, String agentId, CancelSignal signal,
                                      Consumer<RunEvent> emit, Consumer<Tool.Attachment> attach) {
         // pre_tool_use runs BEFORE the permission gate. A block short-circuits: no
-        // permission events, no execute — it surfaces only as this tool_result ERROR.
+        // permission events, no execute — the model sees it as this tool_result
+        // ERROR, and the RUN sees it as the hook_decision events emitted first.
+        // Card 195 added those because the ERROR string names a reason and no
+        // hook, and a timed-out hook used to leave no trace at all.
         if (options.hooks() != null) {
             var pre = options.hooks().preToolUse(call.name(), call.input(), options.cwd(), signal);
+            emitHookRuns(pre.runs(), call, agentId, emit);
             if (pre.blocked()) {
                 return new GuardedResult("ERROR: blocked by pre_tool_use hook"
                         + (pre.reason() == null ? "" : ": " + pre.reason()), 0, null);
@@ -456,11 +462,33 @@ public final class Agent {
         String output = tool.execute(call.input(),
                 new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(), emit, attach));
         long durationMs = now() - startedAt;
-        // post_tool_use runs AFTER execute — advisory only, never rewrites the result.
+        // post_tool_use runs AFTER execute — advisory only, never rewrites the
+        // result. Only a hook the deadline killed comes back: a non-zero exit is
+        // not a finding in this phase, and reporting one would invent a veto
+        // post_tool_use does not have.
         if (options.hooks() != null) {
-            options.hooks().postToolUse(call.name(), call.input(), output, options.cwd(), signal);
+            emitHookRuns(options.hooks().postToolUse(call.name(), call.input(), output,
+                    options.cwd(), signal), call, agentId, emit);
         }
         return new GuardedResult(output, durationMs, gateWaitMs);
+    }
+
+    /**
+     * Turns what the hooks did into wire lines. Additive and quiet: an empty
+     * list — the normal case, every hook agreeing — emits nothing at all.
+     *
+     * @param runs    the notable hook runs, in the order the runner walked them
+     * @param call    the invocation they applied to, for the joining call id
+     * @param agentId the agent the call runs under
+     * @param emit    the loop's event sink
+     */
+    private void emitHookRuns(List<HookRunner.HookRun> runs, PToolCall call,
+                              String agentId, Consumer<RunEvent> emit) {
+        for (HookRunner.HookRun run : runs) {
+            emit.accept(new HookDecision(agentId, call.callId(), call.name(), run.event(),
+                    run.matcher(), run.command(), run.timeoutSeconds(),
+                    run.verdict().wireName(), run.reason(), now()));
+        }
     }
 
     /**
