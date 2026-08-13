@@ -22,10 +22,10 @@ Toolchain floor: JDK 21+, Node 20+.
 
 ## the gates
 
-Java — always with both flags and both javadoc legs. This is the gate, and CI
-runs it on every push and pull request:
+Java — always with both flags and all five javadoc legs. This is the gate, and
+CI runs it on every push and pull request:
 
-    ./gradlew test --rerun-tasks --no-build-cache :spectro-core:javadoc :spectro-orchestrator:javadoc
+    ./gradlew test --rerun-tasks --no-build-cache :spectro-core:javadoc :spectro-orchestrator:javadoc :spectro-server:javadoc :spectro-cli:javadoc :spectro-mcp-notes:javadoc
 
 A plain `./gradlew test` reports green on this tree in half a second while
 running zero tests: Gradle's up-to-date check skips the whole task, and even
@@ -36,7 +36,9 @@ is fine. The flags disable task and build caching, not resolution.)
 The javadoc legs ride along because javadoc runs nowhere else in the build. A
 refactor once orphaned three doc comments from their `stream()` methods and
 nothing caught it until release day; the gate now catches that class of break
-on every push.
+on every push. Every module carries a leg, not only the two that publish to
+Maven: while the list was short, an orphaned `@param` in spectro-server sat in
+the tree for a day with the gate green over it.
 
 Web, from `spectro-web/`:
 

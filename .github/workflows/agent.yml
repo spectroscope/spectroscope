@@ -69,12 +69,15 @@ jobs:
             without output is no claim.
 
             The gate commands, with their traps:
-            - Java: ./gradlew test --rerun-tasks --no-build-cache :spectro-core:javadoc :spectro-orchestrator:javadoc
+            - Java: ./gradlew test --rerun-tasks --no-build-cache :spectro-core:javadoc :spectro-orchestrator:javadoc :spectro-server:javadoc :spectro-cli:javadoc :spectro-mcp-notes:javadoc
               A plain "./gradlew test" reports green in under a second while
               running ZERO tests on a warm tree. Never trust it, and never
               trust a green tick anywhere without a test count next to it.
               If you run the Java suite, run scripts/build-spectro-pty.sh
               first, or the PTY tests skip silently and undercount.
+              All five javadoc legs, not just the two that publish to Maven:
+              that is the list CI runs, and while the list was short an
+              orphaned @param in spectro-server sat in the tree for a day.
             - Web: cd spectro-web && npm ci && npm run gate
               The final "vite build" leg rewrites the committed bundle under
               spectro-server/src/main/resources/static, so a dirty tree after

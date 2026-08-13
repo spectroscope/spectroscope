@@ -224,11 +224,16 @@ jobs:
       # `cleanTest test` comes back FROM-CACHE). These flags force every test
       # to execute on every run. The javadoc legs are here because a broken
       # doc comment aborts the Maven upload at step 6 — this gate is the only
-      # place to catch it first.
+      # place to catch it first. ALL FIVE modules, the same list gate.yml
+      # runs, not just the two that publish: this leg used to check core and
+      # orchestrator only, which left the release path with exactly the hole
+      # gate.yml had already closed after an orphaned @param in spectro-server
+      # slipped through for a day.
       - name: Java gate
         run: >
           ./gradlew test --rerun-tasks --no-build-cache
           :spectro-core:javadoc :spectro-orchestrator:javadoc
+          :spectro-server:javadoc :spectro-cli:javadoc :spectro-mcp-notes:javadoc
 
       # A green Gradle run is only trusted together with a non-zero test count.
       # Sum the tests/failures/errors/skipped attributes over every JUnit XML
