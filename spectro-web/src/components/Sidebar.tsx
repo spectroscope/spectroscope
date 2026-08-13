@@ -195,7 +195,7 @@ export function Sidebar(props: {
   return (
     <aside className="sidebar">
       {/* Everything down to the sessions/fleets switch is one sticky block, and
-          since card 215 the session list's own head rides in it too. The
+          since card 216 the session list's own head rides in it too. The
           collapse control had just moved onto the brand so a narrow window
           could still reach it — and then scrolling took the brand away with it,
           which is the same joke one turn later. A control you can lose by
@@ -288,7 +288,7 @@ export function Sidebar(props: {
             control that governs a column goes.
 
             It is drawn HERE, as the last row of the sticky block, rather than as
-            a sibling above the list — card 215. Static, it left with the list:
+            a sibling above the list — card 216. Static, it left with the list:
             at the bottom of a 112-session rail the trigger sat 4091px above the
             rail's top edge while the settings row was still on screen, so one
             end of the rail was pinned and the other ran away. A second sticky
