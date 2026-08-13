@@ -13,7 +13,7 @@
 #                     Adding `json` is the entire difference between an
 #                     instance you can browse and one a client can query.
 #
-# `./ci/spectro-ci up search` runs this before compose, the way it generates
+# `./spectro-env up search` runs this before compose, the way it generates
 # Concourse's keypairs. Running it by hand is fine and starts nothing.
 #
 # Re-running is safe and deliberately does NOT rotate the key: the key is this

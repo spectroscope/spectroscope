@@ -2,7 +2,7 @@
 """00 — The big picture: one headless core, five faces, one event wire.
 
 Source-verified against spectro-core/, spectro-cli/, spectro-server/, spectro-web/,
-spectro-desktop/ and the ./spectro launcher on 2026-07-16.
+spectro-desktop/ and the ./spectro-app launcher on 2026-07-16.
 """
 
 import svg_common as C
@@ -107,7 +107,7 @@ def build():
         ("spectro-server", "Spring Boot 3.5", "WebSocket /ws + 12 REST endpoints · serves the built UI"),
         ("spectro-web", "React 19 + Vite", "Chat · Spectrum · Graph · Trace · Lab (Flow) · 3 brand designs"),
         ("spectro-desktop", "Electron 37", "spawns the boot jar · health poll · tray · SIGTERM/SIGKILL"),
-        ("./spectro launcher", "one word to start", "resolves a JDK 21+ · loads .env · repl|web|desktop|doctor|tour"),
+        ("./spectro-app launcher", "one word to start", "resolves a JDK 21+ · loads .env · repl|web|desktop|doctor|tour"),
     ]
     yy = fy
     FH = 78

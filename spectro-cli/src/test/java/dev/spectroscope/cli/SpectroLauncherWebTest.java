@@ -13,7 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The ./spectro launcher's `web` group, exercised as the shell script it is.
+ * The ./spectro-app launcher's `web` group, exercised as the shell script it is.
  *
  * <p>The help path is the one path a user reaches by typing the group's name with
  * nothing after it, so it has to survive a sibling that is having a bad day. Both
@@ -78,8 +78,8 @@ class SpectroLauncherWebTest {
     // ── the sandbox ────────────────────────────────────────────────────────────
 
     private static void installLauncher(Path sandbox) throws Exception {
-        Path launcher = sandbox.resolve("spectro");
-        Files.copy(repoRoot().resolve("spectro"), launcher);
+        Path launcher = sandbox.resolve("spectro-app");
+        Files.copy(repoRoot().resolve("spectro-app"), launcher);
         makeExecutable(launcher);
     }
 
@@ -97,7 +97,7 @@ class SpectroLauncherWebTest {
     private static Path repoRoot() {
         Path dir = Path.of(System.getProperty("user.dir")).toAbsolutePath();
         while (dir != null) {
-            if (Files.isRegularFile(dir.resolve("spectro"))
+            if (Files.isRegularFile(dir.resolve("spectro-app"))
                     && Files.isRegularFile(dir.resolve("settings.gradle.kts"))) {
                 return dir;
             }
@@ -109,7 +109,7 @@ class SpectroLauncherWebTest {
     private record Result(int exit, String output) {}
 
     private static Result run(Path sandbox) throws Exception {
-        Process p = new ProcessBuilder("bash", sandbox.resolve("spectro").toString(), "web")
+        Process p = new ProcessBuilder("bash", sandbox.resolve("spectro-app").toString(), "web")
                 .directory(sandbox.toFile())
                 .redirectErrorStream(true)
                 .start();

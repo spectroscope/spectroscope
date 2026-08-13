@@ -4,12 +4,18 @@ Six stacks, each a Docker Compose project, each on its own port, started and
 stopped independently — so two can be compared side by side and the rest stay
 out of the way.
 
+The stacks live here. The switch that runs them is **`./spectro-env`** in the
+repository root, next to `./spectro-app` and `./spectro-serve`: what it starts
+outgrew the word "ci" — two CI servers, two analysers, a dependency updater and
+a search engine an agent queries at runtime — so the folder keeps the name and
+the command says what it does. Nothing in this directory moved with it.
+
 ```bash
-./ci/spectro-ci doctor          can this machine run them
-./ci/spectro-ci up jenkins      one
-./ci/spectro-ci up concourse    the other, at the same time
-./ci/spectro-ci status          what answers, and on which port
-./ci/spectro-ci down all
+./spectro-env doctor          can this machine run them
+./spectro-env up jenkins      one
+./spectro-env up concourse    the other, at the same time
+./spectro-env status          what answers, and on which port
+./spectro-env down all
 ```
 
 | stack | port | what it is |
@@ -88,7 +94,7 @@ Every one of these was found by starting the thing, not by reading about it.
   `html` and nothing else, and an unlisted format is refused. `up search`
   generates a settings file that lists `json`, which is the whole difference
   between a page and an API.
-- **`./ci/spectro-ci up` passes `--build`,** because `docker compose up -d`
+- **`./spectro-env up` passes `--build`,** because `docker compose up -d`
   alone silently reuses a stale image and you debug yesterday's container.
 
 And the finding that was worth the whole exercise: **build #4 came back 500 of

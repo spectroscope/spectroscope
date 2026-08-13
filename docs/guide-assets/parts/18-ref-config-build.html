@@ -191,7 +191,7 @@ one outright (any <code>*_API_KEY</code>/<code>*_TOKEN</code>-shaped key is reje
 </table>
 
 <p><strong>Three <code>.env</code> injection paths, one parse rule.</strong> Gradle's run
-tasks (CLI and server) and the <code>./spectro</code> launcher all read the project root's
+tasks (CLI and server) and the <code>./spectro-app</code> launcher all read the project root's
 gitignored <code>.env</code> identically: comments and blank lines skipped, first
 <code>=</code> splits, one quote layer stripped, <strong>empty values excluded</strong> —
 a <code>KEY=</code> line can never blank a variable you exported in your shell. The

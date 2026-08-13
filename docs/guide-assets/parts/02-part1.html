@@ -73,13 +73,21 @@ every chapter.</p>
 <!-- ============================== CH 2 ============================== -->
 <h1 data-ch="2" id="ch-quickstart"><span class="ch-num">Chapter 2</span>Quick start</h1>
 
-<p class="lead">One executable starts everything. The <code>./spectro</code> launcher
+<p class="lead">One executable starts everything. The <code>./spectro-app</code> launcher
 resolves a JDK, loads your <code>.env</code>, and dispatches to the face you ask for —
 you never have to touch the Gradle task zoo.</p>
 
+<p><strong><code>./spectro-app</code> is the developer wrapper in a clone of the
+repository; <code>spectro</code> is the shipped CLI.</strong> The command you install
+from a release is called <code>spectro</code> and this guide calls it that everywhere
+else. The wrapper in the repository root carries a different name so that it reads as
+one of a set with its two siblings — <code>./spectro-serve</code> for the server's
+lifecycle and <code>./spectro-env</code> for the local docker stacks. Same product,
+two entry points, and the names say which one you are holding.</p>
+
 <h2 id="ch-quickstart-launcher">The launcher</h2>
 
-<!--TERM:cli-usage|$ ./spectro-->
+<!--TERM:cli-usage|$ ./spectro-app-->
 
 <p>Before dispatching, the launcher fixes the two classic host problems for you:</p>
 <ul>
@@ -105,22 +113,22 @@ you never have to touch the Gradle task zoo.</p>
 #    cloud: ANTHROPIC_API_KEY=sk-ant-…      (model defaults to claude-opus-4-8)
 
 # 2 — check the environment
-./spectro doctor
+./spectro-app doctor
 
 # 3 — go
-./spectro web start  # browser UI on http://localhost:8080, in the background
-./spectro web        # what the group can do, and whether it is running
-./spectro repl       # terminal REPL
-./spectro run -p "Say OK."   # headless one-shot
-./spectro desktop    # the Electron app</pre>
+./spectro-app web start  # browser UI on http://localhost:8080, in the background
+./spectro-app web        # what the group can do, and whether it is running
+./spectro-app repl       # terminal REPL
+./spectro-app run -p "Say OK."   # headless one-shot
+./spectro-app desktop    # the Electron app</pre>
 
 <h2 id="ch-quickstart-doctor">What doctor tells you</h2>
-<p><code>./spectro doctor</code> is the honest pre-flight: it probes what your configuration
+<p><code>./spectro-app doctor</code> is the honest pre-flight: it probes what your configuration
 actually selects — it loads the config hierarchy with your flags, pings the provider you
 chose, connects to every configured MCP server, and write-tests the sessions directory.
 This is real output from the machine this guide was built on:</p>
 
-<!--TERM:cli-doctor|$ ./spectro doctor-->
+<!--TERM:cli-doctor|$ ./spectro-app doctor-->
 
 <p>Green checks fail the exit code when broken; the indented dim lines are information,
 not failures — a missing image-generation key, for example, is deliberately not unhealthy
@@ -128,11 +136,11 @@ not failures — a missing image-generation key, for example, is deliberately no
 
 <h2 id="ch-quickstart-web-group">The web face is a command group</h2>
 
-<p>Typing <code>./spectro web</code> does not start anything. It shows what the
+<p>Typing <code>./spectro-app web</code> does not start anything. It shows what the
 group can do and whether a server is already up, because a face that fires a
 process the moment you name it is a face you cannot ask a question of.</p>
 
-<!--TERM:cli-web|$ ./spectro web-->
+<!--TERM:cli-web|$ ./spectro-app web-->
 
 <p>Two of those verbs start a server and they are not the same thing.
 <code>start</code> runs the packaged jar in the background, waits for health and
@@ -146,13 +154,13 @@ the pid file, the port file and the log, and it stays the only implementation of
 the lifecycle so the two can never disagree about what is running.</p>
 
 <div class="callout"><div class="co-title">what changed, and what it costs you</div>
-<p>Before this, a bare <code>./spectro web</code> started the server in the
-foreground. That behaviour is now <code>./spectro web dev</code>. If you have
+<p>Before this, a bare <code>./spectro-app web</code> started the server in the
+foreground. That behaviour is now <code>./spectro-app web dev</code>. If you have
 the old form in a script, it fails with one line naming the fix rather than
 printing help and exiting cleanly, because a script that believes it started a
 server and did not is worse than a script that stops.</p></div>
 
-<p>Note that <code>./spectro doctor</code> and <code>./spectro web doctor</code>
+<p>Note that <code>./spectro-app doctor</code> and <code>./spectro-app web doctor</code>
 answer different questions. The first checks the agent: Java, the config layers,
 whether your provider replies, whether the sessions directory is writable. The
 second checks only what the server needs in order to boot at all.</p>

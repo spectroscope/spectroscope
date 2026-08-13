@@ -55,7 +55,7 @@ flowchart TB
     server -->|"serves built UI"| web
     desktop -->|"spawns boot jar,<br/>health-checks /api/health"| server
 
-    launcher["./spectro launcher<br/>(JDK resolve · .env · commands)"]
+    launcher["./spectro-app launcher<br/>(JDK resolve · .env · commands)"]
     launcher --> cli
     launcher --> server
     launcher --> desktop
@@ -172,14 +172,14 @@ one scope (a `null` value removes that key; secret-shaped keys —
 scope; a second gear in the composer row writes the session's workspace pair
 (permission mode, always-allow rules, local overrides, `mcpServers`/`hooks`).
 
-### The `./spectro` launcher
+### The `./spectro-app` launcher
 
 One executable per checkout dispatches the spectro tasks (not the raw Gradle task
 zoo) and, crucially, **fixes two host problems before any command runs**:
 
 ```mermaid
 flowchart TB
-    start["./spectro &lt;task&gt;"] --> jdk{"JAVA_HOME a JDK 21+?"}
+    start["./spectro-app &lt;task&gt;"] --> jdk{"JAVA_HOME a JDK 21+?"}
     jdk -->|no| probe["probe: java_home -v 21+,<br/>Homebrew openjdk@21 / current / Cellar globs,<br/>/usr/local (Intel brew)"]
     probe --> setjh["export JAVA_HOME = first 21+ found"]
     jdk -->|yes| dotenv
@@ -207,7 +207,7 @@ external boot jar — the work here is lifecycle and packaging.
 
 ```mermaid
 sequenceDiagram
-    participant L as ./spectro desktop
+    participant L as ./spectro-app desktop
     participant E as Electron main.ts
     participant JVM as spectro-server.jar
     participant Win as BrowserWindow
@@ -229,7 +229,7 @@ Two gotchas the launcher now handles for you:
 
 - **Single-instance lock.** Electron allows one instance; a relaunch after a
   rebuild would otherwise hand off to the *old* running build (blank / stale
-  window). `./spectro desktop` stops any running instance first, so a relaunch
+  window). `./spectro-app desktop` stops any running instance first, so a relaunch
   always brings up the current build.
 - **Fresh Electron binaries carry the macOS quarantine flag.** On first `npm
   install` the launcher clears `com.apple.quarantine` so Gatekeeper doesn't block

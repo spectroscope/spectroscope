@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""09 — Start it: the ./spectro launcher, the desktop supervisor, the doctor.
+"""09 — Start it: the ./spectro-app launcher, the desktop supervisor, the doctor.
 
 Source-verified against spectro/spectroscope (bash), spectro-desktop/src/main.ts,
 spectro-cli DoctorCommand and scripts/setup-*.sh on 2026-07-16.
@@ -22,7 +22,7 @@ COMMANDS = [
 ]
 
 DESKTOP = [
-    ("0", "./spectro desktop first stops any stale instance", "pgrep/pkill electron + old jar (single-instance lock handoff)"),
+    ("0", "./spectro-app desktop first stops any stale instance", "pgrep/pkill electron + old jar (single-instance lock handoff)"),
     ("1", "build the jar, prep Electron", "gradlew :spectro-server:bootJar · first run: npm install + clear com.apple.quarantine"),
     ("2", "Electron main.ts starts", "requestSingleInstanceLock() · app menu + tray (inline diamond icon)"),
     ("3", "findFreePort()", "bind 127.0.0.1:0, read the assigned port"),
@@ -62,7 +62,7 @@ def build():
     top = y0 + 10
     # ---- left: launcher ---------------------------------------------------
     lx, lw = PAD, 480
-    b.append(C.card(lx, top, lw, 88, "./spectro <task>", accent=C.ZONE_FACE))
+    b.append(C.card(lx, top, lw, 88, "./spectro-app <task>", accent=C.ZONE_FACE))
     b.append(C.text(lx + 16, top + 48, "137 lines of bash · dispatches the spectroscope tasks,", 11.8, C.GREY_MID, mono=True))
     b.append(C.text(lx + 16, top + 66, "not the raw Gradle task zoo", 11.8, C.GREY_MID, mono=True))
 

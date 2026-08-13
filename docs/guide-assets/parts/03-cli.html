@@ -36,7 +36,7 @@ same RunEvent stream that the web UI folds and the session store writes.</p>
   <tr><td><code>spectro sessions</code></td><td>list stored sessions (a positional, not a subcommand)</td></tr>
   <tr><td><code>spectroscope --resume &lt;id&gt;</code></td><td>continue a stored session in the REPL</td></tr>
   <tr><td><code>spectro doctor</code></td><td>the environment check</td></tr>
-  <tr><td><code>./spectro tour</code></td><td>the interactive menu tour of all faces</td></tr>
+  <tr><td><code>./spectro-app tour</code></td><td>the interactive menu tour of all faces</td></tr>
 </table>
 
 <p>Global flags on the root command apply to every entry point (subcommands reach them
@@ -107,13 +107,13 @@ renderers”.</p>
 <p>The automation face. One prompt, one process, honest exit codes:</p>
 
 <pre># plain: prints only the final answer text
-./spectro run -p "Count the Java files under spectro-core."
+./spectro-app run -p "Count the Java files under spectro-core."
 
 # NDJSON: every RunEvent on stdout, one per line — byte-identical to the JSONL format
-./spectro run -p "Say OK." --json | jq -c '{type}'
+./spectro-app run -p "Say OK." --json | jq -c '{type}'
 
 # guard rails
-./spectro run -p "…" --max-turns 5 --permissions readonly</pre>
+./spectro-app run -p "…" --max-turns 5 --permissions readonly</pre>
 
 <table class="tbl">
   <tr><th>flag</th><th>meaning</th></tr>
@@ -157,7 +157,7 @@ stderr, <code>spectro run --json | jq</code> keeps a clean stdout. In the REPL t
 instance is shared with subagents — you see the children's requests too.</p>
 
 <h2 id="ch-cli-tour">The tour</h2>
-<p><code>./spectro tour</code> is a menu-driven guide around all faces: launch the REPL,
+<p><code>./spectro-app tour</code> is a menu-driven guide around all faces: launch the REPL,
 list or resume sessions, do a headless run, drive cron, start the web jar, run doctor —
 plus a settings screen that captures a provider choice and API key for the session
 (hidden input, optional save to <code>./.env</code> with mode 600) and stage-appropriate

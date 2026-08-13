@@ -56,13 +56,13 @@ supervises — the server jar and a whole Java runtime — so a fresh machine ne
 Java. Double-click, the server starts with it, the cockpit opens. The lesson of this face
 is process management, not IPC.</p>
 
-<!--SVG:09-launcher-desktop|The launcher-and-desktop map. ./spectro desktop is one of the launcher's commands; the middle band traces the desktop supervisor step by step, from the stale-instance stop through the health poll to the live tray.-->
+<!--SVG:09-launcher-desktop|The launcher-and-desktop map. ./spectro-app desktop is one of the launcher's commands; the middle band traces the desktop supervisor step by step, from the stale-instance stop through the health poll to the live tray.-->
 
 <h2 id="ch-desktop-seq">The supervision sequence</h2>
 
-<!--MERMAID:04-desktop-seq|./spectro desktop: stop a stale instance, build the jar, find a free port, spawn the JVM, poll /api/health for up to 30 s, then load the UI.-->
+<!--MERMAID:04-desktop-seq|./spectro-app desktop: stop a stale instance, build the jar, find a free port, spawn the JVM, poll /api/health for up to 30 s, then load the UI.-->
 
-<p><code>./spectro desktop</code> prepares the ground (stops a stale instance — Electron's
+<p><code>./spectro-app desktop</code> prepares the ground (stops a stale instance — Electron's
 single-instance lock would otherwise hand a relaunch to the <em>old</em> build; builds the
 boot jar; clears the macOS quarantine flag from fresh Electron binaries on first run; puts
 the resolved JDK on the PATH). The Electron main process then finds a free port, spawns

@@ -10,7 +10,7 @@
 #
 # ⚠️ MEMORY. Sonar embeds Elasticsearch and wants roughly 4 GiB to itself. Docker
 # Desktop had 7.7 GiB here, so Sonar plus Dependency-Track will not both fit.
-# That is what ./ci/spectro-ci's per-stack switch is for.
+# That is what ./spectro-env's per-stack switch is for.
 #
 # The vm.max_map_count advice everywhere on the internet is for Linux hosts. On
 # Docker Desktop for Mac the Linux VM already sets it high enough and there is no

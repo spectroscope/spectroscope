@@ -1,4 +1,4 @@
-◆ spectro web
+◆ spectro-app web
 
   ○ stopped
   port  8199   health --
@@ -6,7 +6,7 @@
   start     background: the packaged jar, health-waited, browser opened
             --port N · --env-file F · --no-open
   dev       foreground: gradle bootRun from source, ctrl-c stops it
-            --port N · this is what a bare ./spectro web used to do
+            --port N · this is what a bare ./spectro-app web used to do
   stop      stop it, and free the port if something still holds it
   restart   stop, then start again on the same port
             --port N
@@ -15,7 +15,7 @@
             -f follows
   open      open the url in the browser
   doctor    what the SERVER needs to boot: java, the jar, a backend
-            ./spectro doctor checks the agent instead
+            ./spectro-app doctor checks the agent instead
 
-A bare './spectro web' no longer starts anything: 'start' backgrounds it, 'dev' holds the terminal.
+A bare './spectro-app web' no longer starts anything: 'start' backgrounds it, 'dev' holds the terminal.
 Every verb but 'dev' runs ./spectro-serve, which owns the pid file, the port file and the log.
