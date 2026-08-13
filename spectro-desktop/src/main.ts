@@ -4,6 +4,8 @@
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
 import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, nativeImage, session, shell } from "electron";
 import { allowsNavigation } from "./navigationGuard";
+import { attachPaneTo, hidePane, relayoutPane } from "./browserPane";
+import { connectBrowserControl, disconnectBrowserControl } from "./browserControl";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
 import * as net from "node:net";
@@ -26,6 +28,10 @@ const KILL_GRACE_MS = 5_000;     // SIGTERM -> wait -> SIGKILL
 // The name in the menu bar. Not app.name, which is the npm package name — see
 // the note on appMenuTemplate for why that one is left alone.
 const PRODUCT_NAME = "spectroscope";
+
+/** The marker this shell puts on its own window's user agent (card 201).
+ *  Mirrored in spectro-web/src/browser/viewport.ts. */
+const DESKTOP_MARKER = "spectroscope-desktop/";
 
 // Isolated-profile seam: dev `electron .` and the packaged app resolve the SAME
 // userData ("spectro-desktop" — electron-builder's productName lives in its
@@ -207,6 +213,15 @@ function createWindow(port: number, hash?: string): BrowserWindow {
     webPreferences: { contextIsolation: true, nodeIntegration: false },
   });
 
+  // Card 201: stamp this window so the page can tell it apart from any OTHER
+  // browser pointed at the same server. The browser segment is a hole with a
+  // native pane laid over it, and only THIS window has the pane — a second
+  // reader must neither be shown a green dot over an empty frame nor be allowed
+  // to drag the overlay to match their own window. Reading "Electron/" is not
+  // enough: the browser this was verified in is itself an Electron app.
+  // Mirrored in spectro-web/src/browser/viewport.ts; a drift test holds them equal.
+  w.webContents.setUserAgent(`${w.webContents.getUserAgent()} ${DESKTOP_MARKER}${app.getVersion()}`);
+
   // Links leave for the real browser. Electron's default would open them in a
   // second BrowserWindow with no address bar and no back button, which is a
   // worse browser than the one the user already has — and the About panel is
@@ -240,8 +255,14 @@ function createWindow(port: number, hash?: string): BrowserWindow {
   // A hash the menu asked for goes on the URL the window is BORN with. The
   // same `home` string the guard above was configured with, so this is the
   // allow case navigationGuard.test.ts already pins, not a new origin.
+  // The browser pane (card 201) is an overlay in this window's own content
+  // coordinates, so it has to follow the window rather than be told to.
+  w.on("resize", relayoutPane);
+  w.on("enter-full-screen", relayoutPane);
+  w.on("leave-full-screen", relayoutPane);
+
   void w.loadURL(home + (hash ?? "")); // the stage-8 UI, WebSocket as always
-  w.on("closed", () => { win = null; });
+  w.on("closed", () => { win = null; hidePane(); });
   return w;
 }
 
@@ -463,6 +484,7 @@ async function restartServer(): Promise<void> {
     }
     serverUp = true;
     win?.webContents.reload(); // the socket died with the old JVM
+    connectBrowserControl(serverPort); // and so did the browser control channel
     jobsPoller = setInterval(() => void pollJobs(serverPort), JOBS_POLL_MS);
     refreshTray();
   } finally {
@@ -599,6 +621,13 @@ async function startup(): Promise<void> {
   }
 
   win = createWindow(serverPort);
+  // Card 201: the visible browser. The pane lives in THIS window, and the main
+  // process opens a control channel back to the JVM so the browser tools can
+  // drive it — no preload script, which navigationGuard.ts treats as a security
+  // property worth keeping.
+  attachPaneTo(() => { focusOrCreateWindow(); return win; },
+    () => sendCommand("nav.browser"));
+  connectBrowserControl(serverPort);
   jobsPoller = setInterval(() => void pollJobs(serverPort), JOBS_POLL_MS);
   // The tray was built before the port was resolved, so its tooltip still
   // carries a zero. First poll is 30 s out; the address is worth having now.
@@ -608,6 +637,7 @@ async function startup(): Promise<void> {
 }
 
 function shutdown(): void {
+  disconnectBrowserControl();
   if (jobsPoller) { clearInterval(jobsPoller); jobsPoller = null; }
   const jvm = child;
   child = null;

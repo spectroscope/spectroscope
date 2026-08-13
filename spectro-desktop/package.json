@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.8.0",
   "homepage": "https://spectroscope.ai",
-  "description": "spectroscope Desktop \u2014 Electron shell: spawns and supervises the spectro-server JVM",
+  "description": "spectroscope Desktop — Electron shell: spawns and supervises the spectro-server JVM",
   "author": "Christopher Ezell",
   "license": "MIT",
   "main": "dist/main.js",
@@ -12,7 +12,10 @@
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "dist": "npm run build && electron-builder",
-    "postinstall": "install-electron"
+    "postinstall": "install-electron",
+    "test": "tsc && node --test dist/*.test.js",
+    "guard": "tsc && electron test/engineGuard.js",
+    "test:ci": "tsc && node --test --test-reporter=tap dist/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

@@ -163,3 +163,59 @@ jobs:
             echo "::error::The web gate reported zero vitest tests — the summary line was missing or counted 0. The tick alone proves nothing."
             exit 1
           fi
+
+  # ---------------------------------------------------------------------------
+  # The desktop shell had no test runner and no job here at all, which card 200
+  # section 7 named as the reason its engine assumptions could drift unseen.
+  # Card 201 stood the runner up (node:test, zero new dependencies) and this is
+  # the job that runs it.
+  #
+  # What runs here is the PURE half — the net fence the browser's own request
+  # hook enforces, the filter list, and the pane geometry — plus a typecheck.
+  # The Electron half (test/engineGuard.js) needs a display and a real GPU-less
+  # Chromium; it is run by hand with `npm run guard` and is the drift guard the
+  # engine document asks for. Wiring it into CI is its own piece of work, and
+  # claiming it runs here when it does not would be worse than saying so.
+  desktop-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: spectro-desktop/package-lock.json
+
+      # ELECTRON_SKIP_BINARY_DOWNLOAD: the tests in this job import no electron
+      # module — they are pure functions — so the 100+ MB binary is a download
+      # this job does not need.
+      - name: Install dependencies
+        working-directory: spectro-desktop
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+        run: npm ci
+
+      - name: Desktop gate
+        working-directory: spectro-desktop
+        run: |
+          set -o pipefail
+          npm run test:ci 2>&1 | tee "$RUNNER_TEMP/desktop-gate.log"
+
+      # Same rule as the other two gates: a tick without a count proves nothing.
+      # node:test prints "# pass 14" at the end of its TAP summary.
+      - name: Enforce a non-zero node:test count
+        if: always()
+        run: |
+          log="$RUNNER_TEMP/desktop-gate.log"
+          count="$(grep -oE '^# pass [0-9]+' "$log" 2>/dev/null | tail -n 1 | grep -oE '[0-9]+' || true)"
+          {
+            echo "### desktop gate"
+            echo ""
+            echo "node:test: ${count:-0} tests passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -z "${count:-}" ] || [ "$count" -eq 0 ]; then
+            echo "::error::The desktop gate reported zero tests — the summary line was missing or counted 0."
+            exit 1
+          fi
