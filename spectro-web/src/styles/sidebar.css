@@ -399,6 +399,123 @@
   overflow: hidden;
 }
 
+/* ---------- The head of the session list (card 214) ----------
+   One thin row above the list, holding the control that governs it. No label
+   on the left: the segment row two lines up already says "Sessions", and a
+   second copy of that word would be the rail explaining itself twice. */
+.session-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 0 var(--sp-1);
+}
+
+/* The trigger: the same ghost icon button the brand's collapse control is,
+   because they are the same kind of thing — a small switch riding on a row. */
+.sess-opts-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--t-fast);
+}
+.sess-opts-btn:hover { color: var(--accent); }
+.sess-opts-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* Opens DOWNWARD — .wsg-pop hangs off the composer at the bottom of the window
+   and opens up, this one sits at the top of the rail. BOTH edges are pinned on
+   purpose: at equal specificity .sess-opts-pop would lose the cascade to
+   .wsg-pop and inherit its bottom, the trap .disc-pop documents.
+
+   The width is capped against the RAIL, not the window: the reader drags this
+   width down to 180px, and a fixed 380px panel would hang out of a scroll
+   container whose overflow-x is auto by computation. */
+.wsg-pop.sess-opts-pop {
+  top: calc(100% + 6px);
+  bottom: auto;
+  right: 0;
+  left: auto;
+  width: min(216px, calc(100cqi - 12px));
+  padding: var(--sp-3);
+  gap: var(--sp-2);
+}
+
+/* One settings row: the label on the left, the current value on the right.
+
+   It WRAPS, and that is not decoration. The rail is user-draggable down to
+   180px (clampW in state/layout.ts), which caps this panel at ~144px and
+   leaves ~120px inside its padding — less than the label and the two values
+   need side by side. Held on one line, the values group ran 32px past the
+   panel's right edge in EN and 24px in DE, reachable only by scrolling
+   sideways inside the popover (review of card 214). Wrapped, the values drop
+   to their own line and stay whole; `margin-left: auto` keeps them right of
+   the label on one line and right-aligned on two, so the reference shape
+   survives every width it fits in. */
+.sess-opt-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-2);
+  min-width: 0;
+}
+.sess-opt-label {
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  /* Yields first: the label is the part a reader can lose and still know what
+     they are choosing, because the chosen value is written out underneath. */
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sess-opt-values {
+  display: inline-flex;
+  /* Never wider than the panel, whatever a translation does to it. */
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  margin-left: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  overflow: hidden;
+}
+.sess-opt-value {
+  background: none;
+  border: 0;
+  color: var(--text-dim);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-11);
+  padding: 3px var(--sp-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: background var(--t-fast), color var(--t-fast);
+}
+.sess-opt-value + .sess-opt-value { border-left: 1px solid var(--border); }
+.sess-opt-value:hover { background: var(--surface-2); color: var(--text); }
+/* The chosen value, with the house's own segmented-option pair: accent-soft
+   behind, plain text on top. It wore `color: var(--accent)`, and at --fs-11
+   that measured 2.61 on graphite and 3.25 on paper — the SELECTED value was
+   the least readable thing in the panel, and less readable than the one beside
+   it (7.62 on graphite). `.settings-seg-option--active` in settings-trace.css
+   had already solved this; this is the same pair, not a new one. */
+.sess-opt-value.is-on { background: var(--accent-soft); color: var(--text); }
+.sess-opt-value:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.sess-opt-hint {
+  margin: 0;
+  font-size: var(--fs-11);
+  color: var(--text-faint);
+}
+
 .session-list {
   display: flex;
   flex-direction: column;

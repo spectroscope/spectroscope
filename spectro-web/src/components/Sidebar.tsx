@@ -7,18 +7,26 @@
 // The list is flat. It used to fold look-alike rows into a pile with a count
 // and a chevron; the owner cut it, and the reason it existed — 229 files from
 // one smoke test that still fires — is an upstream mess, not a list problem.
+//
+// How much a row says is the reader's choice now (card 214): the options control
+// at the head of the list carries `density`, and at normal — the default — a row
+// is its name and its state dot. What density cuts is not rendered rather than
+// hidden, because a rule that hides markup outlives the markup, and this file
+// has already paid for that once.
 
 import { useEffect, useState } from "react";
 import type { SessionMeta } from "../events";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
 import { SessionSigil, countLabel, sessionModelLabel, sessionSignal, sessionTitleLines } from "./sessionRows";
 import { NavIcon, NavRow } from "./NavRow";
 import { navActionRows, navSegmentRows } from "./navRows";
 import { RunDot } from "./RunDot";
-import { runState, storedRunState } from "./runIndicator";
+import { runState, storedRunState, type RunState } from "./runIndicator";
 import { useLiveSessions } from "../state/liveSessions";
+import { SessionListOptions } from "./SessionListOptions";
+import { rowParts, useDensity, type RowParts } from "../state/density";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
@@ -94,6 +102,10 @@ export function Sidebar(props: {
   // in /api/sessions until its file exists), but a run merely starting inside
   // a session that is already listed changes no row's metadata.
   const liveIds = liveSessions.map((session) => session.id).join(",");
+  // How much a row says. Read once for the whole list: switching it re-renders
+  // what is already in hand and touches no endpoint — the fetch below hangs off
+  // props.refreshToken and nothing else.
+  const parts = rowParts(useDensity());
   // Attention-first: a fleet with a pending gate floats to the top, then by
   // most recent activity — a manager sees who is blocked on them.
   const orderedFleets = [...fleets].sort(
@@ -179,50 +191,6 @@ export function Sidebar(props: {
     if (kind === "count") return <span className="sidebar-seg-badge tabular">{fleets.length}</span>;
     return null;
   };
-
-  /** One stored session. Flat — there is no second level any more. */
-  const sessionRow = (s: SessionMeta) => (
-    <button
-      type="button"
-      key={s.id}
-      className={`session-row${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
-      title={sessionTitleLines(s, lang)}
-      onClick={() => props.onSelectSession(s.id)}
-    >
-      <span className="session-title session-title-line">
-        {/* A stored row is no longer limited to what its file says. The server
-            reports the live set (card 212), so a session another window is
-            driving wears the same dot that window shows — and one of them
-            finishing leaves the other's dot alone. The whole rule is
-            storedRunState, so it can be tested without a DOM. */}
-        <RunDot
-          state={storedRunState({
-            row: s,
-            live: liveSessions,
-            resumeId: props.resumeId,
-            liveRunning: props.liveRunning,
-          })}
-          lang={lang}
-        />
-        <SessionSigil signal={sessionSignal(s)} />
-        <span className="session-name">
-          {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
-        </span>
-      </span>
-      <span className="session-meta session-meta-line tabular">
-        <span className="session-facts">
-          {relativeTime(s.startedAt, Date.now(), lang)}
-          {(s.turnCount ?? 0) > 0 && (
-            <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
-          )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
-        </span>
-        {/* The model only earns a place once the rail is wide enough to spell
-            it out — see the container query. Truncated to "claude-s…" it answers
-            nothing, and it would be answering it with the token count's space. */}
-        {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
-      </span>
-    </button>
-  );
 
   return (
     <aside className="sidebar">
@@ -316,6 +284,14 @@ export function Sidebar(props: {
 
       {nav === "sessions" ? (
         <>
+          {/* The head of the list, and the options belong to the list rather
+              than to the app: they change how THESE rows read, so they sit on
+              them and not in the settings overlay at the foot. At the right,
+              where a control that governs a column goes. */}
+          <div className="session-list-head">
+            <SessionListOptions />
+          </div>
+
           <nav className="session-list" aria-label="Sessions">
             {/* The live row wears the same dot as every other row. It is THIS
                 page's socket — no longer the only row that may say "running",
@@ -329,10 +305,31 @@ export function Sidebar(props: {
                 <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
                 {t(lang, "nav.live")}
               </span>
-              <span className="session-meta">{t(lang, "nav.liveSub")}</span>
+              {/* The live row's subline goes quiet with the rest of the list: it
+                  is in the same list, under the same control, and "this browser
+                  tab" is the one thing the row's own name already says. */}
+              {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
             </button>
 
-            {(sessions ?? []).map((s) => sessionRow(s))}
+            {(sessions ?? []).map((s) => (
+              <SessionRow
+                key={s.id}
+                s={s}
+                parts={parts}
+                lang={lang}
+                active={props.activeId === s.id && props.activeFleet === null}
+                /* Card 212 owns the rule and card 214 owns the drawing: the whole
+                   live decision stays in storedRunState, where it is tested
+                   without a DOM, and the row receives a finished state. */
+                state={storedRunState({
+                  row: s,
+                  live: liveSessions,
+                  resumeId: props.resumeId,
+                  liveRunning: props.liveRunning,
+                })}
+                onSelect={() => props.onSelectSession(s.id)}
+              />
+            ))}
           </nav>
 
           {sessions !== null && sessions.length === 0 && !failed && (
@@ -481,5 +478,79 @@ export function Sidebar(props: {
         <NavRow icon={<NavIcon id="gear" />} label={t(lang, "hdr.settings")} onClick={props.onSettings} />
       </div>
     </aside>
+  );
+}
+
+/**
+ * One stored session. Flat — there is no second level any more.
+ *
+ * <p>A component with a name, and EXPORTED, for one reason: the density gate
+ * lives in this markup, and while the row was an arrow function inside the
+ * component above, the only thing a test could reach was `rowParts()` itself.
+ * The fold was pinned nine ways and the wiring was pinned by nothing — the
+ * card's whole point could be deleted from this row with the full gate at
+ * exit 0, which is what the review of card 214 measured. `sessionRowDensity
+ * .test.tsx` now renders this at each density and counts what comes out, so
+ * the gate is red when the gate here is gone.</p>
+ *
+ * <p>What a row draws arrives as `parts` rather than being read from the store
+ * here: the list reads the density ONCE for all of its rows, and a subscription
+ * per row would change a measured property of this card (switching at 113 rows,
+ * median 5.5 ms) for nothing.</p>
+ */
+export function SessionRow(props: {
+  s: SessionMeta;
+  /** What this density draws, from `rowParts()` — computed once for the list. */
+  parts: RowParts;
+  lang: Lang;
+  active: boolean;
+  /** The dot's state, already decided by storedRunState at the list level. */
+  state: RunState;
+  onSelect: () => void;
+}) {
+  const { s, parts, lang } = props;
+  return (
+    <button
+      type="button"
+      className={`session-row${props.active ? " active" : ""}`}
+      /* ONE hover string, at either density. In normal the hover is the only
+         place the cut facts live, and a density-aware second one would be a
+         second thing to keep in step with the DTO. */
+      title={sessionTitleLines(s, lang)}
+      onClick={props.onSelect}
+    >
+      <span className="session-title session-title-line">
+        {/* A stored row is no longer limited to what its file says: the server
+            reports the live set (card 212), so a session another window drives
+            wears the same dot that window shows. The rule is storedRunState,
+            applied by the list; this row only draws the answer.
+
+            The dot survives every density: with the metadata line gone it is the
+            only thing left in the row that can say a session is running, and it
+            carries its state as a word as well as a hue. */}
+        <RunDot state={props.state} lang={lang} />
+        {/* The comb is a SECOND glyph, not the dot, so it goes with the metadata
+            line: "the session name and the state dot, and nothing else" leaves no
+            room for it. It is not deleted — extended draws it exactly as before. */}
+        {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
+        <span className="session-name">
+          {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
+        </span>
+      </span>
+      {parts.meta && (
+        <span className="session-meta session-meta-line tabular">
+          <span className="session-facts">
+            {relativeTime(s.startedAt, Date.now(), lang)}
+            {(s.turnCount ?? 0) > 0 && (
+              <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
+            )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+          </span>
+          {/* The model only earns a place once the rail is wide enough to spell
+              it out — see the container query. Truncated to "claude-s…" it answers
+              nothing, and it would be answering it with the token count's space. */}
+          {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
+        </span>
+      )}
+    </button>
   );
 }

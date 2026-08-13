@@ -11,13 +11,43 @@
 // count with a chevron; it is gone by owner decision, and "gone" here means the
 // fold, its strings and its rules — not `display: none`.
 
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 /** @return a source file in this tree, as text */
 function read(rel: string): string {
   return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
+}
+
+/** Every stylesheet in the app, comments already blanked. A guard that reads
+ *  one file only forbids a rule in that file, and a stylesheet is one import
+ *  line away from anywhere. */
+function stylesheets(): { file: string; css: string }[] {
+  const root = fileURLToPath(new URL("../", import.meta.url));
+  const out: { file: string; css: string }[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const p = `${dir}/${e.name}`;
+      if (e.isDirectory()) walk(p);
+      else if (e.name.endsWith(".css"))
+        out.push({ file: p.slice(root.length), css: code(readFileSync(p, "utf8")) });
+    }
+  };
+  walk(root.replace(/\/$/, ""));
+  return out;
+}
+
+/** The innermost `selector { … }` blocks of a stylesheet. At-rule preludes
+ *  (`@media`, `@container`) only wrap these, so a rule nested inside one is
+ *  found here as well — which is the whole point: a density-scoped hiding rule
+ *  can be written anywhere, and "anywhere" is what this has to cover. */
+function rules(sheet: string): { selector: string; decls: string }[] {
+  const out: { selector: string; decls: string }[] = [];
+  const re = /([^{}]+)\{([^{}]*)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(sheet)) !== null) out.push({ selector: m[1].trim(), decls: m[2].replace(/\s+/g, "") });
+  return out;
 }
 
 /** Blank out block comments, keeping newlines so line numbers still line up. */
@@ -124,6 +154,117 @@ describe("settings is pinned to the foot of the rail", () => {
     expect(css).toMatch(/\.sidebar-foot\s*\{[^}]*position:\s*sticky/);
     expect(css).toMatch(/\.sidebar-foot\s*\{[^}]*bottom:\s*0/);
     expect(css).toMatch(/\.sidebar\s*\{[^}]*padding:\s*0 var\(--sp-3\);/);
+  });
+});
+
+describe("the session list has an options control at its head", () => {
+  const optsAt = sidebar.indexOf("<SessionListOptions");
+  const listAt = sidebar.indexOf('className="session-list"');
+
+  it("mounts the control once, above the list it governs", () => {
+    expect(mounts(sidebar, "SessionListOptions")).toBe(1);
+    expect(optsAt).toBeGreaterThan(-1);
+    expect(listAt).toBeGreaterThan(-1);
+    expect(optsAt).toBeLessThan(listAt);
+  });
+
+  it("keeps the list's own class a plain literal", () => {
+    // This file reads the rail as TEXT, and a density class written into
+    // className as a template literal would use backticks — the search above
+    // would stop matching and the head assertion would fail for a reason that
+    // has nothing to do with the head. Density is a rendering decision here,
+    // not a class on the container, and this says so out loud.
+    expect(sidebar).toContain('<nav className="session-list"');
+  });
+
+  it("reads the chosen value in the house's own pair, not accent on accent", () => {
+    // `.sess-opt-value.is-on` wore `color: var(--accent)` on `--accent-soft`,
+    // and at --fs-11 that measured 2.61 on graphite, 3.25 on paper — the
+    // SELECTED value less readable than the unselected one beside it (7.62).
+    // `.settings-seg-option--active` had already solved this; the two must
+    // stay the same pair, so a future edit cannot quietly undo it again.
+    expect(css).toMatch(/\.sess-opt-value\.is-on\s*\{[^}]*background:\s*var\(--accent-soft\)/);
+    expect(css).toMatch(/\.sess-opt-value\.is-on\s*\{[^}]*color:\s*var\(--text\)/);
+    expect(code(read("../styles/settings-trace.css"))).toMatch(
+      /\.settings-seg-option--active\s*\{[^}]*color:\s*var\(--text\)/,
+    );
+  });
+
+  it("lets the option row wrap, because the rail goes down to 180px", () => {
+    // state/layout.ts clamps the rail at 180px, which caps this panel at ~144px
+    // and leaves ~120px inside its padding — less than the label and the two
+    // values need side by side. Held on one line, the values ran 32px past the
+    // panel's right edge in EN (review of card 214). `margin-left: auto` is what
+    // keeps them right of the label on one line and right-aligned on two, so
+    // criterion 1's shape survives the wrap.
+    expect(css).toMatch(/\.sess-opt-row\s*\{[^}]*flex-wrap:\s*wrap/);
+    expect(css).toMatch(/\.sess-opt-values\s*\{[^}]*margin-left:\s*auto/);
+    expect(css).toMatch(/\.sess-opt-values\s*\{[^}]*max-width:\s*100%/);
+  });
+});
+
+describe("normal density REMOVES the metadata line rather than hiding it", () => {
+  it("hands the row what the STORE said, not a constant", () => {
+    // The two ends of this chain are pinned by RENDER, in
+    // sessionRowDensity.test.tsx: the store decides what <Sidebar> draws, and
+    // <SessionRow> draws what its `parts` say. This is the link in the middle,
+    // and it is the one no render can reach — the stored rows arrive from a
+    // fetch inside an effect, and no server render runs effects. So it is read
+    // off the source, deliberately and narrowly: the list computes `parts` from
+    // the live store, and hands THAT to the row.
+    expect(sidebar).toContain("rowParts(");
+    expect(sidebar).toContain("useDensity(");
+    expect(ts(sidebar)).toContain("const parts = rowParts(useDensity());");
+    expect(ts(sidebar)).toMatch(/<SessionRow\b[\s\S]{0,400}?parts=\{parts\}/);
+  });
+
+  // Which classes density governs. Hiding any of them from a stylesheet is the
+  // forbidden move; `.session-model` is NOT here, because its `display: none`
+  // is a real, older design — the model appears once the rail is dragged wide
+  // enough to spell one out.
+  const ROW_PARTS = [".session-sigil", ".session-meta", ".session-meta-line", ".session-facts"];
+
+  it("leaves no rule in ANY stylesheet that hides a row part", () => {
+    // The pile taught this: `display: none` is not "gone", and an orphan rule
+    // outlives the markup it was written for because nothing checks CSS against
+    // JSX. The line is either rendered or it is not.
+    //
+    // The first version of this guard read the FIRST block whose selector was
+    // exactly `<class> {`, and passed in silence when there was none. It went
+    // red for `display: none` written into that one block and stayed green for
+    //
+    //     .session-list.is-normal .session-meta-line,
+    //     .session-list.is-normal .session-sigil { display: none; }
+    //
+    // which is how anyone would actually write it (review of card 214). Every
+    // rule in every sheet is read now, grouped selectors and at-rules included.
+    const sheets = stylesheets();
+    for (const { file, css: sheet } of sheets) {
+      for (const rule of rules(sheet)) {
+        if (!ROW_PARTS.some((p) => rule.selector.includes(p))) continue;
+        for (const hide of ["display:none", "visibility:hidden", "content-visibility:hidden"]) {
+          expect(rule.decls, `${file}: ${rule.selector}`).not.toContain(hide);
+        }
+      }
+    }
+  });
+
+  it("is looking at rules that exist", () => {
+    // A guard that matches nothing passes forever. Each governed class must be
+    // styled somewhere, or this suite is guarding a name nobody uses.
+    const sheets = stylesheets();
+    for (const part of ROW_PARTS) {
+      const seen = sheets.some(({ css: sheet }) => rules(sheet).some((r) => r.selector.includes(part)));
+      expect(seen, part).toBe(true);
+    }
+  });
+
+  it("keeps ONE hover string for the row, at either density", () => {
+    // Non-functional criterion: the hover carries the cut facts in normal
+    // density, and a density-aware second string would be a second thing to
+    // keep in step with the DTO. What the two hover strings SAY is compared on
+    // the rendered row in sessionRowDensity.test.tsx; this counts the calls.
+    expect(ts(sidebar).split("sessionTitleLines(").length - 1).toBe(1);
   });
 });
 

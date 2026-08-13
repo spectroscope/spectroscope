@@ -2,6 +2,7 @@
 // placeholders, and unknown keys pass through loudly (they render as the key).
 import { describe, expect, it } from "vitest";
 import { dict, t } from "./i18n";
+import { DENSITIES } from "../state/density";
 import { LAB_FACES } from "../state/labFace";
 import { SOURCE_NOTE_KINDS } from "../import/sourceNotes";
 import { COPY_LABELS, READINGS, SOURCE_PANE_KINDS, sourceSentence } from "../components/traceDetail";
@@ -48,6 +49,17 @@ describe("i18n dict", () => {
     // the bare key in the one place a reader counts dead agents.
     for (const k of ["agents", "failed", "skipped", "empty", "tokens", "tools", "elapsed"]) {
       expect(dict[`tv.run.${k}`], `tv.run.${k}`).toBeDefined();
+    }
+    // The session list's density (card 214). Both the value's word and its hint
+    // are reached only as `dens.${Density}`, so a third value added to the store
+    // without its strings would print the bare key inside the one panel the rail
+    // has. The panel's own two labels are asserted alongside them.
+    for (const d of DENSITIES) {
+      expect(dict[`dens.${d}`], `dens.${d}`).toBeDefined();
+      expect(dict[`dens.${d}.hint`], `dens.${d}.hint`).toBeDefined();
+    }
+    for (const k of ["sess.opts", "dens.title"]) {
+      expect(dict[k], k).toBeDefined();
     }
     // The trace's faces are interpolated twice: as the master switch's buttons
     // and titles, and as the open frame's own row of modes. A face added to the
