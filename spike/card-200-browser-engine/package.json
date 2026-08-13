@@ -1,0 +1,7 @@
+{
+  "name": "card-200-browser-engine-spike",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Card 200 spike: navigate/eval/screenshot on Electron WebContentsView. Not part of any build.",
+  "main": "main.js"
+}
