@@ -229,4 +229,37 @@ class HookRunnerTest {
         // spelling of N is a number that drifts; this is the one.
         assertEquals(10, HookRunner.DEFAULT_TIMEOUT_SECONDS);
     }
+
+    @Test
+    void aBlockCannotBeBuiltWithoutTheRunThatBlockedIt() {
+        // The whole point of this card, held as a type invariant rather than as a
+        // discipline. A blocking outcome carrying no runs emits no hook_decision:
+        // the call is refused and the run says nothing about why or by whom,
+        // which is precisely the invisibility this card removed. The factory that
+        // built exactly that shape sat unused in this class, documenting the trap
+        // in its own @return line, waiting for the next caller to reach for the
+        // obvious name. Now the shape does not compile into existence at all.
+        IllegalArgumentException refused = assertThrows(IllegalArgumentException.class,
+                () -> new HookRunner.HookOutcome(true, "no shell", List.of()));
+        assertTrue(refused.getMessage().contains("hook_decision"), refused.getMessage());
+
+        // The same invariant, one step subtler: a block recorded only as someone
+        // else's timeout still names no blocker.
+        HookRunner.HookRun timeout = new HookRunner.HookRun("pre_tool_use", "*", "slow.sh", 1,
+                HookRunner.Verdict.TIMED_OUT, null);
+        assertThrows(IllegalArgumentException.class,
+                () -> new HookRunner.HookOutcome(true, "no shell", List.of(timeout)));
+    }
+
+    @Test
+    void aPassIsFreeToCarryNothingAtAllOrACarriedTimeout() {
+        // The other side of the invariant, so it cannot be satisfied by simply
+        // demanding runs everywhere: nothing objected is the ordinary case and it
+        // has nothing to say, and fail-open still passes while carrying the
+        // timeout it walked past.
+        assertFalse(new HookRunner.HookOutcome(false, null, List.of()).blocked());
+        HookRunner.HookRun timeout = new HookRunner.HookRun("pre_tool_use", "*", "slow.sh", 1,
+                HookRunner.Verdict.TIMED_OUT, null);
+        assertEquals(1, new HookRunner.HookOutcome(false, null, List.of(timeout)).runs().size());
+    }
 }

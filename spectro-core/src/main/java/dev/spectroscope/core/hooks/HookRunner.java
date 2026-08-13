@@ -91,25 +91,36 @@ public final class HookRunner {
                           Verdict verdict, String reason) {}
 
     /** The verdict of a {@code pre_tool_use} evaluation.
+     *
+     *  <p><b>A block must carry the run that blocked.</b> The whole point of
+     *  this record's {@code runs} list is that a refusal names its refuser: the
+     *  agent emits one {@code hook_decision} per entry here, so a blocking
+     *  outcome with no blocking run is a call refused by nobody, which is the
+     *  invisibility this card removed. It used to be reachable — a
+     *  {@code block(reason)} factory built exactly that shape and documented the
+     *  trap in its own {@code @return} line — so the compact constructor refuses
+     *  it instead of leaving it to discipline.</p>
+     *
      *  @param blocked true when a hook vetoed the call — it never executes
      *  @param reason  the hook's stated reason; null on a pass
      *  @param runs    every hook of this evaluation that blocked or timed out, in
      *                 the order they ran; empty when every hook simply agreed */
     public record HookOutcome(boolean blocked, String reason, List<HookRun> runs) {
-        /** Defensive copy — the list travels into an event stream.
+        /** Defensive copy — the list travels into an event stream — plus the one
+         *  invariant this record exists to hold.
          *  @param blocked true when a hook vetoed the call
          *  @param reason  the hook's stated reason; null on a pass
-         *  @param runs    the notable hook runs */
+         *  @param runs    the notable hook runs
+         *  @throws IllegalArgumentException when a block carries no blocking run */
         public HookOutcome {
             runs = List.copyOf(runs);
+            if (blocked && runs.stream().noneMatch(run -> run.verdict() == Verdict.BLOCKED)) {
+                throw new IllegalArgumentException(
+                        "a blocked call must carry the hook run that blocked it — otherwise the "
+                                + "refusal emits no hook_decision and nothing in the run says who "
+                                + "refused it or why.");
+            }
         }
-        /** The let-it-run verdict — no hook objected and none was even notable.
-         *  @return a pass carrying no hook runs */
-        public static HookOutcome pass() { return new HookOutcome(false, null, List.of()); }
-        /** A veto.
-         *  @param reason why the hook blocked — surfaced to the model in the ERROR result
-         *  @return a blocking verdict carrying no hook runs */
-        public static HookOutcome block(String reason) { return new HookOutcome(true, reason, List.of()); }
     }
 
     /**
