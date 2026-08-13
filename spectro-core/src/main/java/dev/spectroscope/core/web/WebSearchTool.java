@@ -45,7 +45,7 @@ public final class WebSearchTool implements Tool {
     /**
      * Builds the tool over the injected search seam.
      *
-     * @param searcher the tiered production backend from {@link #fromEnv}, or an in-memory fake in tests
+     * @param searcher the tiered production backend from {@link #fromConfig}, or an in-memory fake in tests
      */
     public WebSearchTool(WebSearcher searcher) {
         this.searcher = searcher;

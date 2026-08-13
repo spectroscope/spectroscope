@@ -17,6 +17,8 @@ import java.io.BufferedReader;
 import java.io.BufferedWriter;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.io.PipedReader;
 import java.io.PipedWriter;
 import java.nio.charset.StandardCharsets;
@@ -341,11 +343,15 @@ class McpResultToModelTest {
         Thread server = scriptedServer(wiring, content, failure);
         server.start();
 
+        // Generous on purpose: these seconds are not what this test measures, and a
+        // tight bound turns a busy CI runner into a red build. Three runs failed on
+        // three DIFFERENT methods of this class on 2026-08-13, which is the signature
+        // of a clock, not of a defect.
         JsonRpcChannel channel = new JsonRpcChannel(
-                wiring.channelIn(), wiring.channelOut(), Duration.ofSeconds(5));
+                wiring.channelIn(), wiring.channelOut(), Duration.ofSeconds(30));
         StdioTransport transport = new StdioTransport(channel, () -> { });
         McpServerConfig config = new McpServerConfig("shots", "irrelevant", null, null, null, null);
-        McpClient client = new McpClient(config, () -> transport, Duration.ofSeconds(5));
+        McpClient client = new McpClient(config, () -> transport, Duration.ofSeconds(30));
 
         List<Tool.Attachment> attachments = new ArrayList<>();
         List<RunEvent> events = new ArrayList<>();
@@ -359,7 +365,15 @@ class McpResultToModelTest {
                     Path.of("."), new CancelSignal(), "main", "call-1",
                     events::add, attachments::add);
             String output = tool.execute(JSON.createObjectNode(), context);
-            assertTrue(failure.get() == null, "scripted server failed: " + failure.get());
+            // Name what actually went wrong: the previous message stringified the
+            // throwable, and a CI log that truncates left three red builds saying
+            // only "AssertionFailedError at line 362".
+            Throwable serverFailure = failure.get();
+            if (serverFailure != null) {
+                StringWriter trace = new StringWriter();
+                serverFailure.printStackTrace(new PrintWriter(trace));
+                assertTrue(false, "the scripted server thread threw:\n" + trace);
+            }
             return new Called(output, attachments, events);
         } finally {
             client.close();
