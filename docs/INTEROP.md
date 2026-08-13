@@ -29,7 +29,7 @@ headless faces do not — `spectro run`, a cron fire and a triggered fleet
 node share one runner, and it builds the nine standard tools and nothing
 else. So a server `doctor` calls reachable is not a server every face has
 mounted. Whether that stays true is an open owner decision; the
-measurements, the three roads and the recommendation are in
+measurements, the roads and the recommendation are in
 [HEADLESS-MCP.md](HEADLESS-MCP.md).
 
 A tool result that carries an **image** block reaches the model as an

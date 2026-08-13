@@ -62,5 +62,5 @@ In the REPL:
   `reachable` therefore does not mean `spectro run` has that server's tools —
   measured on 2026-08-13, the REPL sent 23 tools to the provider and `spectro
   run` sent 9, from the same settings file. Whether headless should mount is an
-  open owner decision; the three roads are in
+  open owner decision; the roads and the measurements are in
   [`../docs/HEADLESS-MCP.md`](../docs/HEADLESS-MCP.md).
