@@ -4,15 +4,21 @@ import java.util.List;
 
 /**
  * The search seam for {@link WebSearchTool} — the port-style analog of
- * image/ImageProvider and tools/HttpFetcher. Production wiring supplies the
- * tiered backend ({@link TavilySearcher} when TAVILY_API_KEY is set, else the
- * keyless {@link DuckDuckGoSearcher}); tests inject an in-memory fake, so the
- * tool is key-free AND network-free.
+ * image/ImageProvider and tools/HttpFetcher. Production wiring supplies the ONE
+ * backend {@link WebSearchTiers} resolved ({@link SearxngSearcher},
+ * {@link TavilySearcher}, {@link BraveSearcher} or the best-effort
+ * {@link DuckDuckGoSearcher}); tests inject an in-memory fake, so the tool is
+ * key-free AND network-free.
+ *
+ * <p>All four backends reduce to the same three fields with one field rename
+ * each: SearXNG and Tavily call the snippet {@code content}, Brave calls it
+ * {@code description}.</p>
  */
 public interface WebSearcher {
 
-    /** The tier name the tool surfaces to the model, the UI and doctor.
-     *  @return {@code "tavily"} or {@code "duckduckgo"} */
+    /** The tier name the tool surfaces to the model, the UI and doctor —
+     *  {@link WebSearchTiers#label} turns it into what a reader sees.
+     *  @return {@code "searxng"}, {@code "tavily"}, {@code "brave"} or {@code "duckduckgo"} */
     String tier();
 
     /**

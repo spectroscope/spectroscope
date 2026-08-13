@@ -114,6 +114,13 @@ import java.util.function.Function;
  *                            over {@code baseUrl} (see
  *                            {@link #effectiveOpenAiBaseUrl}). Env
  *                            {@code SPECTRO_LMSTUDIO_BASE_URL}
+ * @param searxngUrl          the root URL of a SearXNG instance the USER runs
+ *                            (card 203); {@code null}/blank means no instance,
+ *                            and web_search then falls to a keyed provider or,
+ *                            with nothing configured at all, to the best-effort
+ *                            DuckDuckGo scrape. An address, not a credential,
+ *                            so it belongs in the settings document. Env
+ *                            {@code SPECTRO_SEARXNG_URL}
  */
 public record SpectroConfig(
         String provider,
@@ -138,7 +145,8 @@ public record SpectroConfig(
         String otlpEndpoint,
         String otlpBasicAuth,
         String ollamaBaseUrl,
-        String lmstudioBaseUrl) {
+        String lmstudioBaseUrl,
+        String searxngUrl) {
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -196,7 +204,8 @@ public record SpectroConfig(
             "auto", // sttLanguage: the model detects; a code pins dictation
             null, // chromeBinary: built-in discovery
             null, null, // otlpEndpoint/otlpBasicAuth: exporter off by default
-            null, null); // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
+            null, null, // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
+            null); // searxngUrl: no instance — web_search resolves its tier without one
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -514,7 +523,7 @@ public record SpectroConfig(
                         base.imageModel(), base.sttModel(), base.sttProvider(),
                         base.sttLanguage(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth(),
-                        base.ollamaBaseUrl(), base.lmstudioBaseUrl());
+                        base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl());
             }
         }
         return base;
@@ -561,7 +570,8 @@ public record SpectroConfig(
             new FieldProbe("otlpEndpoint", p -> p.otlpEndpoint),
             new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth),
             new FieldProbe("ollamaBaseUrl", p -> p.ollamaBaseUrl),
-            new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl));
+            new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl),
+            new FieldProbe("searxngUrl", p -> p.searxngUrl));
 
     /** Circularity + process-global rule: a workspace settings file must not
      *  re-point the workspace itself, nor reconfigure the one-per-process log
@@ -596,7 +606,7 @@ public record SpectroConfig(
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
-                ollamaBaseUrl, lmstudioBaseUrl);
+                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -863,6 +873,25 @@ public record SpectroConfig(
             case "openrouter" -> "OPENROUTER_API_KEY";
             case "gemini" -> "GEMINI_API_KEY"; // same key as the gemini image backend
             default -> null; // ollama, lmstudio: local, no key
+        };
+    }
+
+    /** The environment variable carrying a WEB SEARCH provider's API key, or
+     *  {@code null} for anything that is not one. Deliberately a second
+     *  vocabulary rather than an entry in {@link #keyEnvFor}: those names are
+     *  LLM backends, and a search provider that answered
+     *  {@link #onboardingStatus} or {@link #isKnownProvider} would be offered
+     *  in the model picker as a place to run a conversation.
+     *  <p>Shares one thing with its sibling on purpose — the 0600 write in
+     *  {@link #writeApiKey} — so a Tavily or Brave key saved from the settings
+     *  page lands exactly where every other key already does.</p>
+     *  @param provider the search provider name ("tavily" or "brave")
+     *  @return the key env var name, or null when it is not a keyed search provider */
+    public static String searchKeyEnvFor(String provider) {
+        return switch (provider == null ? "" : provider) {
+            case "tavily" -> "TAVILY_API_KEY";
+            case "brave" -> "BRAVE_API_KEY";
+            default -> null;
         };
     }
 
@@ -1283,6 +1312,7 @@ public record SpectroConfig(
         public String otlpBasicAuth;
         public String ollamaBaseUrl;
         public String lmstudioBaseUrl;
+        public String searxngUrl;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1319,6 +1349,7 @@ public record SpectroConfig(
             out.otlpBasicAuth = Optional.ofNullable(higher.otlpBasicAuth).orElse(otlpBasicAuth);
             out.ollamaBaseUrl = Optional.ofNullable(higher.ollamaBaseUrl).orElse(ollamaBaseUrl);
             out.lmstudioBaseUrl = Optional.ofNullable(higher.lmstudioBaseUrl).orElse(lmstudioBaseUrl);
+            out.searxngUrl = Optional.ofNullable(higher.searxngUrl).orElse(searxngUrl);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1352,7 +1383,8 @@ public record SpectroConfig(
                     Optional.ofNullable(otlpEndpoint).orElse(DEFAULTS.otlpEndpoint()),
                     Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()),
                     Optional.ofNullable(ollamaBaseUrl).orElse(DEFAULTS.ollamaBaseUrl()),
-                    Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()));
+                    Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()),
+                    Optional.ofNullable(searxngUrl).orElse(DEFAULTS.searxngUrl()));
         }
 
         /**
@@ -1377,6 +1409,11 @@ public record SpectroConfig(
             // from the shared legacy baseUrl above.
             out.ollamaBaseUrl = env.get("SPECTRO_OLLAMA_BASE_URL");
             out.lmstudioBaseUrl = env.get("SPECTRO_LMSTUDIO_BASE_URL");
+            // Card 203: the SearXNG instance web_search dials. This is the
+            // PROCESS variable only; the file half that lets
+            // samples/09-searxng/install.sh hand the address over through
+            // ~/.spectro/.env lives in envLayer below, beside the OTLP pair.
+            out.searxngUrl = env.get("SPECTRO_SEARXNG_URL");
             // SPECTRO_WORKSPACE names the agent's working directory; unset keeps the
             // per-session temp folder (resolved later, when the session id exists).
             out.workspace = env.get("SPECTRO_WORKSPACE");
@@ -1420,22 +1457,33 @@ public record SpectroConfig(
 
         /**
          * The environment layer as the loader actually builds it: {@link #fromEnv}
-         * with {@code ~/.spectro/.env} underneath it for the two OTLP fields.
+         * with {@code ~/.spectro/.env} underneath it for the fields an INSTALLER
+         * writes — the two OTLP fields (card 137) and the SearXNG address
+         * (card 203).
          *
-         * <p>Only those two, and for one reason: they are the pair an installer
-         * writes for a user who is not going through a launcher. The desktop shell
-         * spawns the jar with no {@code .env} loading at all, and a running JVM
-         * cannot change its own {@code System.getenv}, so without this a file the
-         * installer just wrote would be silently ignored until the next shell
+         * <p>Only those, and for one reason: they are what a sample installer
+         * hands over to a user who is not going through a launcher. The desktop
+         * shell spawns the jar with no {@code .env} loading at all, and a running
+         * JVM cannot change its own {@code System.getenv}, so without this a file
+         * the installer just wrote would be silently ignored until the next shell
          * export. This is the same two-step {@link SpectroConfig#resolveApiKey}
          * already performs for API keys, including treating a blank process var as
          * absent, and it changes no precedence BETWEEN layers: this is still the
          * env layer, still directly above the defaults, still outranked by every
          * settings file.
          *
+         * <p>The SearXNG entry is here because it was missing and the gap was
+         * invisible: {@code samples/09-searxng/install.sh} wrote
+         * {@code SPECTRO_SEARXNG_URL} into this file, said so, and told the user to
+         * restart — and the address then reached nothing, because an address is not
+         * an API key and only {@link SpectroConfig#resolveApiKey} read that file by
+         * name. The rule this leaves behind: a variable an installer writes into
+         * {@code ~/.spectro/.env} needs a line HERE, or the installer is lying.
+         * {@code WebSearchSettingsPlumbingTest} fails when this one is removed.</p>
+         *
          * @param env the process environment (injectable for tests)
-         * @return the env layer, with the OTLP pair filled from the credential file
-         *         when the process environment leaves it unset
+         * @return the env layer, with the installer-written fields filled from
+         *         {@code ~/.spectro/.env} when the process environment leaves them unset
          */
         static PartialConfig envLayer(Map<String, String> env) {
             PartialConfig out = fromEnv(env);
@@ -1449,6 +1497,12 @@ public record SpectroConfig(
                 String fromFile = dotEnvValue("SPECTRO_OTLP_BASIC_AUTH");
                 if (fromFile != null) {
                     out.otlpBasicAuth = fromFile;
+                }
+            }
+            if (out.searxngUrl == null || out.searxngUrl.isBlank()) {
+                String fromFile = dotEnvValue("SPECTRO_SEARXNG_URL");
+                if (fromFile != null) {
+                    out.searxngUrl = fromFile;
                 }
             }
             return out;

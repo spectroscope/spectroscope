@@ -107,6 +107,7 @@ const SETTINGS_ROWS: ReadonlyArray<readonly [string, string]> = [
   ["observability", "Observability"],
   ["fleet", "Fleet"],
   ["stt", "Speech to text"],
+  ["websearch", "Web search"],
   ["workspace", "Default workspace"],
   ["logging", "Operator logging"],
   ["machine", "Machine"],

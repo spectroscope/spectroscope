@@ -65,7 +65,7 @@ final class ContextDescriber {
                 .map(skill -> new ContextInfo.SkillInfo(skill.name(), skill.description()))
                 .toList();
 
-        return new ContextInfo(systemPrompt, mainAgentTools(standardTools, skills), skillCatalog,
+        return new ContextInfo(systemPrompt, mainAgentTools(config, standardTools, skills), skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(),
                 RoleCatalog.roleProfiles(childBaseToolNames(standardTools, skills)));
     }
@@ -79,17 +79,26 @@ final class ContextDescriber {
      * objects keeps this list from drifting (the old hand-written strings had
      * already diverged, and update_plan was missing entirely).
      *
+     * @param config the SAME resolved configuration the caller described — see
+     *               the web_search line below
      * @param standardTools the shared standard set, loaded once by the caller
      * @param skills the installed skill library — decides whether use_skill appears
      * @return name/description/needsPermission triples in exact registration order
      */
-    private static List<ContextInfo.ToolInfo> mainAgentTools(List<Tool> standardTools, SkillLibrary skills) {
+    private static List<ContextInfo.ToolInfo> mainAgentTools(SpectroConfig config,
+            List<Tool> standardTools, SkillLibrary skills) {
         Stream<Tool> extras = Stream.of(
                 new GenerateImageTool(() -> null, null),
                 new WebFetchTool(url -> null),
-                // fromEnv on purpose: the introspection must name the ACTIVE
-                // search tier (tavily vs. duckduckgo), exactly like the live registry.
-                WebSearchTool.fromEnv(System.getenv()),
+                // Built from the configuration THIS CALL was handed, not from a
+                // second load of the hierarchy: the introspection must name the
+                // ACTIVE search tier of the config it is describing, exactly like
+                // the live registry does, and both ask WebSearchTiers (card 203).
+                // This line used to call SpectroConfig.load() again and so
+                // described whatever the process-wide load resolved — harmless
+                // only while every caller happened to pass an identical config,
+                // and a second copy of one decision is what this card removed.
+                WebSearchTool.fromConfig(config),
                 new BrowsePageTool(),
                 new UpdatePlanTool());
         Stream<Tool> useSkill = skills.skills().isEmpty()

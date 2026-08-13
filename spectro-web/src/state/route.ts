@@ -28,6 +28,9 @@ export const SETTINGS_SECTIONS = [
   // Card 184 leg 2b: speech needs a model this app can fetch and one binary
   // it must only report, so it earns a section a link can land on.
   "stt",
+  // Card 203: choosing how the product searches the web is a settings visit
+  // with visible options, so it earns an address a link can land on.
+  "websearch",
   "workspace",
   "logging",
   "machine",

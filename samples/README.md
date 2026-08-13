@@ -29,6 +29,7 @@ Two ground rules:
 | [06-langfuse](06-langfuse/) | Endpoint variant: Langfuse, with the stack to point at (`install.sh` + pinned compose) | needs Docker; nothing is started for you |
 | [07-phoenix](07-phoenix/) | Endpoint variant: Phoenix via an OTel Collector (README only) | — |
 | [08-langchain4j-provider](08-langchain4j-provider/) | Any LangChain4j chat model as the agent's provider | build only (needs Ollama) |
+| [09-searxng](09-searxng/) | Search variant: a SearXNG instance `web_search` can actually query (`install.sh` + pinned compose) | needs Docker; nothing is started for you |
 
 `./verify.sh` builds every sample and runs the offline ones.
 

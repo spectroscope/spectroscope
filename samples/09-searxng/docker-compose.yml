@@ -1,0 +1,53 @@
+# The SearXNG instance spectroscope's web_search tier talks to, shipped so that
+# a first boot answers JSON without editing anything.
+#
+# Stock SearXNG does NOT answer an API client. Its shipped settings.yml lists
+# only `html` under `search.formats`, and a request for an unlisted format is
+# answered 403 — so a bare `docker run searxng/searxng` gives a perfectly good
+# search page and an API that hands the product nothing back. That is the whole
+# reason this directory exists instead of a one-line command in the settings
+# page: install.sh writes a settings.yml that turns `json` on (and generates
+# this machine's own secret key), and THIS file mounts it.
+#
+# Four deliberate choices, each one a thing that bites otherwise:
+#
+#   1. settings.yml is a bind mount of ./searxng, written by install.sh. The
+#      image generates its own settings.yml when that directory is empty — and
+#      the generated one has json off, which is the state we are here to leave.
+#   2. One published port, configurable. Nothing else is on the host.
+#   3. `cap_drop: ALL` plus the two capabilities the image's own entrypoint
+#      needs to drop privileges. A metasearch proxy is a thing that fetches
+#      attacker-influenced URLs for a living.
+#   4. The image is pinned by DIGEST. searxng/searxng:latest is a rolling tag
+#      that moves several times a week, and "the version that worked yesterday"
+#      is not a version.
+#
+#   pinned 2026-08-13, linux/arm64, SearXNG 2026.8.12-cdfdaa5a8
+#   searxng/searxng:latest -> c2dc2d9e
+#
+# Run ./install.sh; it writes the settings this file mounts.
+
+services:
+  searxng:
+    image: docker.io/searxng/searxng@sha256:c2dc2d9e6b910653e8628361c23443222490e4cabbb9e02667b7847143db843b
+    container_name: ${SEARXNG_CONTAINER:-spectro-searxng}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:?set SEARXNG_PORT, or run ./install.sh}:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      # The instance's own idea of where it lives. It goes into the HTML pages
+      # SearXNG renders; the JSON this product reads does not depend on it.
+      SEARXNG_BASE_URL: http://localhost:${SEARXNG_PORT}/
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"

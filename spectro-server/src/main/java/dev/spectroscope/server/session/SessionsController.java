@@ -6,6 +6,7 @@ import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.scheduler.JobState;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.web.WebSearchTiers;
 import dev.spectroscope.server.DotEnvSettings;
 import dev.spectroscope.server.leveling.ServerLeveling;
 import dev.spectroscope.server.shell.HelperPtyProvider;
@@ -220,6 +221,23 @@ public class SessionsController {
         providerAddress.put("ollama", c.endpointFor("ollama"));
         providerAddress.put("lmstudio", c.endpointFor("lmstudio"));
         out.put("providerAddress", providerAddress);
+        // Card 203: which web_search tier answers on this machine, straight
+        // from the ONE resolver. The settings page renders this; it does not
+        // re-derive it, because a rule written a second time in TypeScript is
+        // the same defect this card removed from the doctor. Keys travel as
+        // PRESENCE only — same rule as the provider block above.
+        WebSearchTiers.Choice searchTier = WebSearchTiers.forConfig(c);
+        Map<String, Object> webSearch = new LinkedHashMap<>();
+        webSearch.put("tier", searchTier.tier());
+        webSearch.put("label", WebSearchTiers.label(searchTier.tier()));
+        webSearch.put("detail", WebSearchTiers.describe(searchTier));
+        // An address, not a credential: the settings field prefills from it.
+        webSearch.put("searxngUrl", c.searxngUrl() == null ? "" : c.searxngUrl());
+        webSearch.put("tavilyKey",
+                String.valueOf(SpectroConfig.hasApiKey(WebSearchTiers.TAVILY_KEY_ENV)));
+        webSearch.put("braveKey",
+                String.valueOf(SpectroConfig.hasApiKey(WebSearchTiers.BRAVE_KEY_ENV)));
+        out.put("webSearch", webSearch);
         // Whether this install HAS a terminal, and if not, which of the two
         // reasons it is. The pane used to offer the toggle unconditionally and
         // then print "the server refused the connection" when the socket closed
@@ -262,7 +280,17 @@ public class SessionsController {
         if (!LocalOrigin.isLocalOrigin(request) || !LocalOrigin.originIsLoopbackOrAbsent(request)) {
             return ResponseEntity.notFound().build();
         }
-        String keyEnv = body == null ? null : SpectroConfig.keyEnvFor(body.provider());
+        // Two vocabularies, one write. LLM backends first, then the keyed WEB
+        // SEARCH providers (card 203) — Tavily and Brave need a UI field like
+        // every other key, and duplicating the 0600 write and its two fences in
+        // a second endpoint would be duplicating exactly the parts that are
+        // load-bearing. They stay OUT of keyEnvFor: an LLM vocabulary entry
+        // would offer "tavily" in the model picker.
+        String provider = body == null ? null : body.provider();
+        String keyEnv = SpectroConfig.keyEnvFor(provider);
+        if (keyEnv == null) {
+            keyEnv = SpectroConfig.searchKeyEnvFor(provider);
+        }
         if (keyEnv == null) {
             return ResponseEntity.badRequest().body(Map.of("error", "unknown provider, or it needs no key"));
         }

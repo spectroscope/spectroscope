@@ -3,21 +3,31 @@ package dev.spectroscope.core.web;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolOutput;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * The {@code web_search} tool: a query in, a numbered hit list (title, URL,
- * snippet) out. The backend is TIERED — {@link TavilySearcher} when
- * TAVILY_API_KEY is set, else the keyless {@link DuckDuckGoSearcher} — and the
- * active tier is named in the description (the UI's System-Kontext tab reads
- * it), in every result header and in {@code spectroscope doctor}. Network egress on
- * untrusted (model-supplied) input, so it is permission-gated exactly like
- * web_fetch. The search goes through the injected {@link WebSearcher} seam
- * (the tiered backend in production, a fake in tests).
+ * snippet) out. The backend is TIERED — {@link SearxngSearcher} for an instance
+ * the user runs, {@link TavilySearcher} or {@link BraveSearcher} for a keyed
+ * provider, and the keyless {@link DuckDuckGoSearcher} scrape as the labeled
+ * last resort — and WHICH tier is chosen is decided in exactly one place,
+ * {@link WebSearchTiers}. The active tier is named in the description (the UI's
+ * System-Kontext tab reads it), in every result header and in
+ * {@code spectroscope doctor}, all from that one resolver, so the four surfaces
+ * cannot describe different machines.
+ *
+ * <p>Exactly one tier ever answers. When the configured tier fails, the failure
+ * is what the user gets — no lower tier is tried behind their back (card 203,
+ * criterion 8).</p>
+ *
+ * <p>Network egress on untrusted (model-supplied) input, so it is
+ * permission-gated exactly like web_fetch. The search goes through the injected
+ * {@link WebSearcher} seam (the resolved backend in production, a fake in
+ * tests).</p>
  */
 public final class WebSearchTool implements Tool {
 
@@ -42,19 +52,17 @@ public final class WebSearchTool implements Tool {
     }
 
     /**
-     * The production tier decision, in one place: Tavily when TAVILY_API_KEY
-     * is set and non-blank, else the keyless DuckDuckGo HTML fallback. The
-     * env comes in as a map so tests can steer the tier without touching the
-     * real environment.
+     * The production wiring: {@link WebSearchTiers} decides, this builds. The
+     * config carries the saved SearXNG address; the keys come from the same
+     * places every other key does (the process environment, then
+     * {@code ~/.spectro/.env}).
      *
-     * @param env the process environment (System.getenv() in production)
-     * @return the tool over the tier the environment selects
+     * @param config the resolved settings hierarchy
+     * @return the tool over the ONE tier the configuration selects
      */
-    public static WebSearchTool fromEnv(Map<String, String> env) {
-        String key = env.get("TAVILY_API_KEY");
-        return new WebSearchTool(key != null && !key.isBlank()
-                ? new TavilySearcher(key)
-                : new DuckDuckGoSearcher());
+    public static WebSearchTool fromConfig(SpectroConfig config) {
+        return new WebSearchTool(WebSearchTiers.searcher(
+                WebSearchTiers.forConfig(config), SpectroConfig::resolveApiKey));
     }
 
     /** Wire name: {@code web_search}. */
@@ -63,14 +71,27 @@ public final class WebSearchTool implements Tool {
         return "web_search";
     }
 
-    /** The model-facing one-liner — names the ACTIVE tier; the fallback tier hints at the missing key. */
+    /** The model-facing one-liner — names the ACTIVE tier in the resolver's own
+     *  words, so the model, the settings page and the doctor read the same
+     *  sentence about the same machine. */
     @Override
     public String description() {
-        String backend = "tavily".equals(searcher.tier())
-                ? "the Tavily API"
-                : "the keyless DuckDuckGo HTML fallback (set TAVILY_API_KEY for the Tavily tier)";
-        return "Searches the web via " + backend + " and returns titles, URLs and "
-                + "snippets. Network egress — guarded by permission.";
+        return "Searches the web via " + WebSearchTiers.describe(new WebSearchTiers.Choice(
+                searcher.tier(), addressOf(searcher)))
+                + " and returns titles, URLs and snippets. "
+                + "Network egress — guarded by permission.";
+    }
+
+    /**
+     * The address a self-hosted tier dials, for the sentence above. Only the
+     * SearXNG tier has one; every other tier's sentence names a variable or
+     * nothing at all.
+     *
+     * @param searcher the active backend
+     * @return the instance address, or null
+     */
+    private static String addressOf(WebSearcher searcher) {
+        return searcher instanceof SearxngSearcher searxng ? searxng.address() : null;
     }
 
     /** Required string {@code query}; optional integer {@code max_results} (default 5, max 10). */
@@ -108,7 +129,8 @@ public final class WebSearchTool implements Tool {
         try {
             List<WebSearcher.Hit> hits = searcher.search(query, maxResults);
             if (hits == null || hits.isEmpty()) {
-                return "No results for \"" + query + "\" (" + searcher.tier() + ").";
+                return "No results for \"" + query + "\" ("
+                        + WebSearchTiers.label(searcher.tier()) + ").";
             }
             return ToolOutput.clip(format(query, hits), MAX_OUTPUT_CHARS);
         } catch (RuntimeException failure) {
@@ -125,7 +147,7 @@ public final class WebSearchTool implements Tool {
      */
     private String format(String query, List<WebSearcher.Hit> hits) {
         StringBuilder out = new StringBuilder(
-                "Results (" + searcher.tier() + ") for \"" + query + "\":\n");
+                "Results (" + WebSearchTiers.label(searcher.tier()) + ") for \"" + query + "\":\n");
         for (int i = 0; i < hits.size(); i++) {
             WebSearcher.Hit hit = hits.get(i);
             out.append('\n').append(i + 1).append(". ").append(hit.title()).append('\n')
