@@ -116,7 +116,7 @@ class StdioTransportProtocolTest {
             assertEquals("search_notes", tools.get(0).name());
             assertEquals("search the notes", tools.get(0).description());
 
-            String out = transport.callTool("search_notes", JSON.createObjectNode().put("query", "gradle"));
+            String out = transport.callTool("search_notes", JSON.createObjectNode().put("query", "gradle")).text();
             assertEquals("hit for search_notes: gradle", out);
         } finally {
             transport.close();

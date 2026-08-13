@@ -110,11 +110,11 @@ class McpClientTest {
         McpClient client = new McpClient(new McpServerConfig("notes", "java", null, null, null, null), supplier);
         client.start();
 
-        String first = client.call("search_notes", JSON.createObjectNode());
+        String first = client.call("search_notes", JSON.createObjectNode()).text();
         assertTrue(first.startsWith("ERROR:"), "the mid-life failure degrades, got: " + first);
         assertEquals(1, callToolInvocations.get(), "the failed call must NOT be re-issued in place");
 
-        String second = client.call("search_notes", JSON.createObjectNode());
+        String second = client.call("search_notes", JSON.createObjectNode()).text();
         assertEquals("recovered", second, "the next call re-establishes and succeeds");
         assertEquals(2, callToolInvocations.get()); // exactly one invocation per call()
     }
@@ -128,7 +128,7 @@ class McpClientTest {
         McpClient client = new McpClient(new McpServerConfig("notes", "java", null, null, null, null), supplier);
         // no start() — the transport is null at call time
 
-        String result = client.call("search_notes", JSON.createObjectNode());
+        String result = client.call("search_notes", JSON.createObjectNode()).text();
         assertEquals("alive", result);
     }
 
@@ -149,7 +149,7 @@ class McpClientTest {
                 });
         client.start();
 
-        String result = client.call("add_note", JSON.createObjectNode());
+        String result = client.call("add_note", JSON.createObjectNode()).text();
 
         assertTrue(result.startsWith("ERROR:"), "a mid-call failure degrades, got: " + result);
         assertEquals(1, fake.callToolCalls, "the failing call must be issued exactly once (no double side effect)");
@@ -162,7 +162,7 @@ class McpClientTest {
         McpClient client = new McpClient(new McpServerConfig("notes", "java", null, null, null, null), supplier);
         client.start();
 
-        String result = client.call("search_notes", JSON.createObjectNode());
+        String result = client.call("search_notes", JSON.createObjectNode()).text();
 
         assertTrue(result.startsWith("ERROR:"), "expected a readable ERROR string, got: " + result);
         assertTrue(result.contains("always down"));
@@ -176,7 +176,7 @@ class McpClientTest {
         McpClient client = new McpClient(new McpServerConfig("notes", "java", null, null, null, null), supplier);
         client.start();
 
-        String result = client.call("search_notes", JSON.createObjectNode());
+        String result = client.call("search_notes", JSON.createObjectNode()).text();
 
         assertTrue(result.startsWith("ERROR:"), "expected an ERROR string for an empty response, got: " + result);
     }
@@ -200,10 +200,10 @@ class McpClientTest {
         McpClient client = new McpClient(new McpServerConfig("notes", "java", null, null, null, null), supplier);
         client.start();
 
-        String first = client.call("search_notes", JSON.createObjectNode());
+        String first = client.call("search_notes", JSON.createObjectNode()).text();
         assertTrue(first.startsWith("ERROR:"), "the mid-life failure degrades, got: " + first);
 
-        String second = client.call("search_notes", JSON.createObjectNode());
+        String second = client.call("search_notes", JSON.createObjectNode()).text();
         assertTrue(second.startsWith("ERROR:"), "expected an ERROR string, got: " + second);
         assertTrue(second.contains("unreachable"));
         assertTrue(second.contains("reconnect refused"));
@@ -239,7 +239,7 @@ class McpClientTest {
                 supplier, Duration.ofMillis(150));
         client.start();
 
-        String timedOut = client.call("search_notes", JSON.createObjectNode());
+        String timedOut = client.call("search_notes", JSON.createObjectNode()).text();
         release.countDown(); // let the stuck task unwind
 
         assertTrue(timedOut.startsWith("ERROR:"), "a timeout must degrade, got: " + timedOut);
@@ -247,7 +247,7 @@ class McpClientTest {
                 "the error should mention the timeout, got: " + timedOut);
         assertEquals(1, firstConnectionCalls.get(), "the timed-out call must be issued exactly once");
 
-        String next = client.call("search_notes", JSON.createObjectNode());
+        String next = client.call("search_notes", JSON.createObjectNode()).text();
         assertEquals("fresh", next, "the next call must re-establish and succeed");
     }
 }

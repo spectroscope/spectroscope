@@ -362,6 +362,15 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * under {@code ~/.spectro/images/<sha256>.<ext>}; the event carries only the reference
      * ({@code blobPath} relative to {@code ~/.spectro}) — events stay small, files dedupe.
      *
+     * <p>Two tools emit this, and the wire is frozen, so the second one borrows the
+     * fields rather than growing new ones: {@code generate_image} fills them as
+     * written below, while an <b>MCP tool result carrying an image</b> (card 198)
+     * sends {@code provider} {@code "mcp"}, {@code model} the configured server name,
+     * and {@code prompt} the qualified tool name {@code mcp__<server>__<tool>}. One
+     * call may emit several — an MCP result can carry more than one image, so
+     * {@code callId} alone does not identify one picture; the pair with
+     * {@code sha256} does.
+     *
      * @param agentId   the agent whose tool call produced the image
      * @param callId    the generate_image invocation it belongs to
      * @param prompt    the image prompt as sent to the backend

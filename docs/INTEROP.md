@@ -22,6 +22,18 @@ spectroscope agents mount MCP servers as tools. A configured server
 each of its tools to the belt as `mcp__<server>__<tool>`, permission-gated
 like every other tool, every call and result in the event stream.
 
+A tool result that carries an **image** block reaches the model as an
+image, not as text. The bytes go into the content-addressed image store and
+travel to the provider on the same attachment path `view_image` uses, so
+the context window pays for one picture and not for a base64 dump; the
+event stream carries a reference (`image_generated`), never the payload,
+and the image is served back from `/api/images/{file}`. Mixed content keeps
+the order the server sent it, with a one-line note standing where each
+image was. One image may weigh at most **5 MiB** (`McpTool.MAX_IMAGE_BYTES`,
+the providers' own per-image wire limit); a bigger one is refused with a
+note naming its size and the cap, decided on the encoded payload before
+anything is decoded. A text-only result is exactly what it always was.
+
 Because MCP is the interop point, any MCP server a foreign agent framework
 uses can serve spectroscope too, and the other way around —
 `spectro-mcp-notes` (a release asset) is a small notes server any MCP
