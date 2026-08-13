@@ -23,8 +23,12 @@
 
 import { BaseWindow, BrowserWindow, WebContentsView, session, type Session } from "electron";
 import * as fs from "node:fs";
+import * as dns from "node:dns";
 import { compileFilters, DEFAULT_FILTERS, type Blocklist } from "./adblock";
-import { refuse, type FencePolicy } from "./browserFence";
+import {
+  cachedLookup, refuse, refuseResolved, type FenceRefusal, type FencePolicy, type HostLookup,
+} from "./browserFence";
+import { applyViewport, forgetBaseUserAgent } from "./deviceEmulation";
 import { isUsable, paneBounds, type Rect } from "./paneBounds";
 import { findScript, readPageScript, refRectScript } from "./pageScript";
 
@@ -60,10 +64,43 @@ let adblockOn = true;
 let filters: Blocklist = compileFilters(loadFilters());
 let view: WebContentsView | null = null;
 let reported: Rect | null = null;
+/** Whether the view is in the window's tree. Adding it twice is not the same as showing it. */
+let inWindow = false;
+/** Whether the pane is on screen RIGHT NOW — the flag hidePane() must clear. */
 let visible = false;
 const consoleLines: ConsoleLine[] = [];
+/** What the page's console said that the SHELL said, not the page. Counted, not dropped. */
+let shellWarnings = 0;
 /** What the hook refused since the last navigate — the pane's own honest record. */
-let refusals: { url: string; rule: string; kind: "fence" | "adblock" }[] = [];
+let refusals: PaneRefusal[] = [];
+
+/** One refused request, with the sentence the fence already produced for it. */
+interface PaneRefusal {
+  url: string;
+  rule: string;
+  kind: "fence" | "adblock";
+  sentence: string;
+}
+
+/**
+ * The resolver the hook judges names with, cached for a short window.
+ *
+ * The seam exists because a test must not depend on DNS, and the cache exists
+ * because the hook fires per subresource. Both are stated in browserFence.ts.
+ */
+let hostLookup: HostLookup = cachedLookup(async (host) => {
+  const answers = await dns.promises.lookup(host, { all: true, verbatim: true });
+  return answers.map((answer) => answer.address);
+});
+
+/**
+ * Replaces the resolver the request hook uses.
+ *
+ * @param lookup how a host name becomes addresses
+ */
+export function useHostLookup(lookup: HostLookup): void {
+  hostLookup = lookup;
+}
 
 /**
  * The operator's own filter file, when they have one, else the shipped list.
@@ -89,20 +126,38 @@ function paneSession(): Session {
   if ((ses as unknown as { __spectroHooked?: boolean }).__spectroHooked) return ses;
   (ses as unknown as { __spectroHooked?: boolean }).__spectroHooked = true;
 
+  // onBeforeRequest may answer asynchronously — that is how proxy and auth
+  // flows are written — and it must, because a name has to be resolved before
+  // the hop can be judged. A review measured what the synchronous version cost:
+  // a 302 to a public name that resolves to loopback loaded with the opt-in OFF
+  // and nothing was refused.
   ses.webRequest.onBeforeRequest((details, callback) => {
     const isTop = details.resourceType === "mainFrame";
-    const verdict = refuse(details.url, policy);
-    if (verdict) {
-      refusals.push({ url: verdict.address, rule: verdict.rule, kind: "fence" });
-      callback({ cancel: true });
-      return;
-    }
-    if (adblockOn && filters.blocks(details.url, details.referrer ?? "", isTop)) {
-      refusals.push({ url: details.url, rule: "adblock", kind: "adblock" });
-      callback({ cancel: true });
-      return;
-    }
-    callback({});
+    const atPolicy = policy;
+    void (async () => {
+      let verdict: FenceRefusal | null = null;
+      try {
+        verdict = await refuseResolved(details.url, atPolicy, hostLookup);
+      } catch {
+        verdict = refuse(details.url, atPolicy);   // never let the fence fail open silently
+      }
+      if (verdict) {
+        refusals.push({
+          url: verdict.address, rule: verdict.rule, kind: "fence", sentence: verdict.sentence,
+        });
+        callback({ cancel: true });
+        return;
+      }
+      if (adblockOn && filters.blocks(details.url, details.referrer ?? "", isTop)) {
+        refusals.push({
+          url: details.url, rule: "adblock", kind: "adblock",
+          sentence: `the filter list blocked ${details.url}`,
+        });
+        callback({ cancel: true });
+        return;
+      }
+      callback({});
+    })();
   });
   return ses;
 }
@@ -150,6 +205,10 @@ function ensureView(): WebContentsView {
     const event = args[0] as { level?: string | number; message?: string } | undefined;
     const level = String(event?.level ?? args[1] ?? "log");
     const text = String(event?.message ?? args[2] ?? "");
+    if (!isPageLine(text)) {
+      shellWarnings += 1;
+      return;
+    }
     consoleLines.push({ level, text, at: Date.now() });
     if (consoleLines.length > CONSOLE_CAP) consoleLines.splice(0, consoleLines.length - CONSOLE_CAP);
   });
@@ -166,13 +225,25 @@ function layout(): void {
   view.setBounds(paneBounds(isUsable(reported) ? reported : null, size));
 }
 
-/** Shows the pane, opening the window and switching the segment if it must. */
+/**
+ * Shows the pane, opening the window and switching the segment if it must.
+ *
+ * <p>Two flags, because they answer two different questions. "Is the view in
+ * the window's tree" is asked once per view; "is the pane on screen" is asked
+ * every time the operator navigates the app. Sharing one flag between them was
+ * the measured defect: hidePane() left it set, so nav.browser was sent once per
+ * process and the second tool call painted the pane over whatever the operator
+ * had switched to, with the rail still highlighting the segment he chose.
+ */
 function ensureVisible(): void {
   const win = windowSource();
   if (!win || win.isDestroyed()) return;
   const created = ensureView();
-  if (!visible) {
+  if (!inWindow) {
     win.contentView.addChildView(created);
+    inWindow = true;
+  }
+  if (!visible) {
     visible = true;
     showSegment();
   }
@@ -184,7 +255,27 @@ function ensureVisible(): void {
 export function hidePane(): void {
   if (view && visible) {
     view.setVisible(false);
+    visible = false;   // so the next tool call asks for the segment back
   }
+}
+
+/**
+ * Forgets the pane entirely, because the window that carried it is gone.
+ *
+ * <p>A WebContentsView dies with its window, so holding the reference after a
+ * close means the next setVisible() reaches a destroyed object. Clearing it
+ * here also puts the two visibility flags back where a fresh window expects
+ * them.
+ */
+export function forgetPane(): void {
+  view = null;
+  inWindow = false;
+  visible = false;
+  reported = null;
+  refusals = [];
+  shellWarnings = 0;
+  consoleLines.length = 0;
+  forgetBaseUserAgent();
 }
 
 /** The address the pane is showing, for a failure sentence to name. */
@@ -265,7 +356,11 @@ export async function runVerb(
         refusals = [];
         consoleLines.length = 0;
         const wc = ensureView().webContents;
-        await within(wc.loadURL(url), `loading ${url}`);
+        try {
+          await within(wc.loadURL(url), `loading ${url}`);
+        } catch (stopped) {
+          return failed(loadFailureSentence((stopped as Error).message, refusals));
+        }
         const blocked = refusals.length;
         return ok({
           title: wc.getTitle(),
@@ -351,30 +446,29 @@ export async function runVerb(
             + `${refusals.filter((r) => r.kind === "adblock").length} by the filter list, `
             + `${refusals.filter((r) => r.kind === "fence").length} by the net fence)`
           : "";
-        return ok({ lines: kept.join("\n") + blocked });
+        // The dropped lines are named rather than silently absent, because the
+        // tool whose job is "where a broken local build says what is wrong"
+        // must not also be the tool that hides something.
+        const shell = shellWarnings
+          ? `\n(${shellWarnings} Electron security warning(s) from the shell itself left out — `
+            + `they are not the page's)`
+          : "";
+        return ok({ lines: kept.join("\n") + blocked + shell });
       }
 
       case "resize": {
         if (!view) return failed("no page is open in the pane yet — navigate first");
         const width = Math.max(200, Number(args.width ?? 1280));
         const height = Math.max(200, Number(args.height ?? 800));
-        // The pane keeps the rectangle the layout gave it; what changes is what
-        // the PAGE believes its viewport is, which is what a responsive layout
-        // reads. Without this a "resize" would fight the web UI for the window.
-        await ensureView().webContents.executeJavaScript(
-          `(() => { window.__spectroViewport = { width: ${width}, height: ${height} }; return true; })()`,
-          true,
+        // The pane keeps the rectangle the LAYOUT gave it and the page gets a
+        // renderer-level override, so the two stop fighting: the previous
+        // version called setBounds, which layout() overwrote on the next
+        // ensureVisible(), and every other verb calls ensureVisible() first.
+        const applied = await within(
+          applyViewport(ensureView().webContents, width, height),
+          "the resize",
         );
-        ensureView().webContents.setZoomFactor(1);
-        ensureView().webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
-        const win = windowSource();
-        if (win && !win.isDestroyed() && view) {
-          const size = win.getContentBounds();
-          const bounds = paneBounds(isUsable(reported) ? reported : null, size);
-          view.setBounds({ ...bounds, width: Math.min(width, size.width - bounds.x),
-            height: Math.min(height, size.height - bounds.y) });
-        }
-        return ok({ width, height });
+        return ok(applied);
       }
 
       default:
@@ -466,6 +560,40 @@ function clickAt(
   wc.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
   wc.sendInputEvent({ type: "mouseDown", x: point.x, y: point.y, button, clickCount });
   wc.sendInputEvent({ type: "mouseUp", x: point.x, y: point.y, button, clickCount });
+}
+
+/**
+ * Whether a console line came from the PAGE.
+ *
+ * Electron writes its own security warning into every page's console in a
+ * development build — ten lines, twice after a redirect. browser_read_console
+ * exists to be the first place a broken local build says what is wrong, and it
+ * shipped with that buried under the shell's own boilerplate.
+ *
+ * @param text the console message as the page reported it
+ */
+export function isPageLine(text: string): boolean {
+  return !/^\s*Electron Security Warning/i.test(text);
+}
+
+/**
+ * The sentence a failed load deserves.
+ *
+ * <p>ERR_BLOCKED_BY_CLIENT is what an ad blocker, a content extension and the
+ * net fence all look like from the outside, and the model cannot tell them
+ * apart. The hook already recorded WHY it cancelled, so the refusal is used
+ * instead of the error code — and an ordinary failure passes through untouched,
+ * because inventing a fence reason for a connection refused would be the same
+ * dishonesty in the other direction.
+ *
+ * @param error   what loadURL threw
+ * @param blocked what the hook refused during this load
+ */
+export function loadFailureSentence(error: string, blocked: PaneRefusal[]): string {
+  const fenced = blocked.filter((r) => r.kind === "fence");
+  if (fenced.length === 0) return error;
+  const more = fenced.length > 1 ? ` (and ${fenced.length - 1} more)` : "";
+  return `the net fence refused a hop on the way there: ${fenced[0].sentence}${more}`;
 }
 
 /** Re-lays the pane after the window moved or resized. */

@@ -4,7 +4,7 @@
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
 import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, nativeImage, session, shell } from "electron";
 import { allowsNavigation } from "./navigationGuard";
-import { attachPaneTo, hidePane, relayoutPane } from "./browserPane";
+import { attachPaneTo, forgetPane, relayoutPane } from "./browserPane";
 import { connectBrowserControl, disconnectBrowserControl } from "./browserControl";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -262,7 +262,7 @@ function createWindow(port: number, hash?: string): BrowserWindow {
   w.on("leave-full-screen", relayoutPane);
 
   void w.loadURL(home + (hash ?? "")); // the stage-8 UI, WebSocket as always
-  w.on("closed", () => { win = null; hidePane(); });
+  w.on("closed", () => { win = null; forgetPane(); });
   return w;
 }
 
