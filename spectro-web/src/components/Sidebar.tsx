@@ -16,7 +16,7 @@
 
 import { useEffect, useState } from "react";
 import type { SessionMeta } from "../events";
-import { t } from "../i18n/i18n";
+import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatTokens, relativeTime } from "../format";
 import { SessionSigil, countLabel, sessionModelLabel, sessionSignal, sessionTitleLines } from "./sessionRows";
@@ -25,7 +25,7 @@ import { navActionRows, navSegmentRows } from "./navRows";
 import { RunDot } from "./RunDot";
 import { runState } from "./runIndicator";
 import { SessionListOptions } from "./SessionListOptions";
-import { rowParts, useDensity } from "../state/density";
+import { rowParts, useDensity, type RowParts } from "../state/density";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
@@ -182,59 +182,6 @@ export function Sidebar(props: {
     return null;
   };
 
-  /** One stored session. Flat — there is no second level any more. */
-  const sessionRow = (s: SessionMeta) => (
-    <button
-      type="button"
-      key={s.id}
-      className={`session-row${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
-      /* ONE hover string, at either density. In normal the hover is the only
-         place the cut facts live, and a density-aware second one would be a
-         second thing to keep in step with the DTO. */
-      title={sessionTitleLines(s, lang)}
-      onClick={() => props.onSelectSession(s.id)}
-    >
-      <span className="session-title session-title-line">
-        {/* Stored rows can only ever say "unfinished" or "finished" — the list
-            is stored JSONL and nothing reports who is live. The one exception
-            is the row this page's socket is resuming.
-
-            The dot survives every density: with the metadata line gone it is the
-            only thing left in the row that can say a session is running, and it
-            carries its state as a word as well as a hue. */}
-        <RunDot
-          state={runState({
-            live: props.resumeId === s.id,
-            running: props.liveRunning,
-            stopReason: s.stopReason,
-          })}
-          lang={lang}
-        />
-        {/* The comb is a SECOND glyph, not the dot, so it goes with the metadata
-            line: "the session name and the state dot, and nothing else" leaves no
-            room for it. It is not deleted — extended draws it exactly as before. */}
-        {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
-        <span className="session-name">
-          {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
-        </span>
-      </span>
-      {parts.meta && (
-        <span className="session-meta session-meta-line tabular">
-          <span className="session-facts">
-            {relativeTime(s.startedAt, Date.now(), lang)}
-            {(s.turnCount ?? 0) > 0 && (
-              <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
-            )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
-          </span>
-          {/* The model only earns a place once the rail is wide enough to spell
-              it out — see the container query. Truncated to "claude-s…" it answers
-              nothing, and it would be answering it with the token count's space. */}
-          {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
-        </span>
-      )}
-    </button>
-  );
-
   return (
     <aside className="sidebar">
       {/* Everything down to the sessions/fleets switch is one sticky block.
@@ -354,7 +301,18 @@ export function Sidebar(props: {
               {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
             </button>
 
-            {(sessions ?? []).map((s) => sessionRow(s))}
+            {(sessions ?? []).map((s) => (
+              <SessionRow
+                key={s.id}
+                s={s}
+                parts={parts}
+                lang={lang}
+                active={props.activeId === s.id && props.activeFleet === null}
+                live={props.resumeId === s.id}
+                running={props.liveRunning}
+                onSelect={() => props.onSelectSession(s.id)}
+              />
+            ))}
           </nav>
 
           {sessions !== null && sessions.length === 0 && !failed && (
@@ -503,5 +461,87 @@ export function Sidebar(props: {
         <NavRow icon={<NavIcon id="gear" />} label={t(lang, "hdr.settings")} onClick={props.onSettings} />
       </div>
     </aside>
+  );
+}
+
+/**
+ * One stored session. Flat — there is no second level any more.
+ *
+ * <p>A component with a name, and EXPORTED, for one reason: the density gate
+ * lives in this markup, and while the row was an arrow function inside the
+ * component above, the only thing a test could reach was `rowParts()` itself.
+ * The fold was pinned nine ways and the wiring was pinned by nothing — the
+ * card's whole point could be deleted from this row with the full gate at
+ * exit 0, which is what the review of card 214 measured. `sessionRowDensity
+ * .test.tsx` now renders this at each density and counts what comes out, so
+ * the gate is red when the gate here is gone.</p>
+ *
+ * <p>What a row draws arrives as `parts` rather than being read from the store
+ * here: the list reads the density ONCE for all of its rows, and a subscription
+ * per row would change a measured property of this card (switching at 113 rows,
+ * median 5.5 ms) for nothing.</p>
+ */
+export function SessionRow(props: {
+  s: SessionMeta;
+  /** What this density draws, from `rowParts()` — computed once for the list. */
+  parts: RowParts;
+  lang: Lang;
+  active: boolean;
+  /** True when THIS page's socket is resuming exactly this session. */
+  live: boolean;
+  /** True while this page's socket has a run in flight. */
+  running: boolean;
+  onSelect: () => void;
+}) {
+  const { s, parts, lang } = props;
+  return (
+    <button
+      type="button"
+      className={`session-row${props.active ? " active" : ""}`}
+      /* ONE hover string, at either density. In normal the hover is the only
+         place the cut facts live, and a density-aware second one would be a
+         second thing to keep in step with the DTO. */
+      title={sessionTitleLines(s, lang)}
+      onClick={props.onSelect}
+    >
+      <span className="session-title session-title-line">
+        {/* Stored rows can only ever say "unfinished" or "finished" — the list
+            is stored JSONL and nothing reports who is live. The one exception
+            is the row this page's socket is resuming.
+
+            The dot survives every density: with the metadata line gone it is the
+            only thing left in the row that can say a session is running, and it
+            carries its state as a word as well as a hue. */}
+        <RunDot
+          state={runState({
+            live: props.live,
+            running: props.running,
+            stopReason: s.stopReason,
+          })}
+          lang={lang}
+        />
+        {/* The comb is a SECOND glyph, not the dot, so it goes with the metadata
+            line: "the session name and the state dot, and nothing else" leaves no
+            room for it. It is not deleted — extended draws it exactly as before. */}
+        {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
+        <span className="session-name">
+          {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
+        </span>
+      </span>
+      {parts.meta && (
+        <span className="session-meta session-meta-line tabular">
+          <span className="session-facts">
+            {relativeTime(s.startedAt, Date.now(), lang)}
+            {(s.turnCount ?? 0) > 0 && (
+              <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
+            )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+          </span>
+          {/* The model only earns a place once the rail is wide enough to spell
+              it out — see the container query. Truncated to "claude-s…" it answers
+              nothing, and it would be answering it with the token count's space. */}
+          {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
+        </span>
+      )}
+    </button>
   );
 }
