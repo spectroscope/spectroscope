@@ -183,6 +183,23 @@ public final class SessionConnection {
     private final AtomicReference<SpectroConfig> activeConfig;
     private SwitchableProvider switchable;   // the agent's provider indirection
 
+    /** The process-wide live-session registry, or null — then this connection
+     *  claims nothing and announces nothing, frame for frame the pre-212 one. */
+    private final LiveSessions liveSessions;
+    /** This connection's tap on the registry; registered on start, removed on close. */
+    private LiveSessions.Listener liveListener;
+    /**
+     * Pending live-set snapshots, drained to the socket on this connection's OWN
+     * thread. The registry pushes while holding its monitor, from whichever
+     * connection's thread caused the change, so a blocking socket write there
+     * would stall every other viewer on the machine — the same reason the fleet
+     * frames ride a queue. Depth one and latest-wins: a snapshot is complete, so
+     * an older one is worth nothing once a newer one exists.
+     */
+    private final ArrayBlockingQueue<List<LiveSessions.LiveSession>> liveQueue =
+            new ArrayBlockingQueue<>(1);
+    private volatile Thread liveDrain;
+
     /** The server-hosted fleet hub, or null/disabled — then no fleet frames ever. */
     private FleetAggregator fleet;
     /** This connection's fleet tap; registered on start, removed on close. */
@@ -220,7 +237,17 @@ public final class SessionConnection {
      *  connection behaves exactly like the pre-fleet one, frame for frame. */
     public SessionConnection(WebSocketSession socket, ObjectMapper mapper,
                              SpectroConfig config, String resumeId, FleetAggregator fleet) {
+        this(socket, mapper, config, resumeId, fleet, null);
+    }
+
+    /** The full form (card 212): {@code liveSessions} may be null — then this
+     *  connection claims no session id and announces no live set, frame for
+     *  frame the pre-212 one. */
+    public SessionConnection(WebSocketSession socket, ObjectMapper mapper,
+                             SpectroConfig config, String resumeId, FleetAggregator fleet,
+                             LiveSessions liveSessions) {
         this.socket = socket;
+        this.liveSessions = liveSessions;
         this.mapper = mapper;
         this.config = config;
         this.resumeId = resumeId;
@@ -233,6 +260,17 @@ public final class SessionConnection {
 
     /** Announces the boot provider, then (for a resume) loads the history; a bad id closes the socket. */
     public void start() {
+        // Card 212, BEFORE anything is loaded or announced: one socket per
+        // session id. A second connection on a session another socket already
+        // drives would mean two stores appending to one JSONL file and two
+        // agents replaying one history, so it is REFUSED — told which session,
+        // and closed. The refusal costs the holder nothing: no frame, no state.
+        if (liveSessions != null && resumeId != null
+                && !liveSessions.claim(socket.getId(), resumeId)) {
+            sendSessionBusy(resumeId);
+            close();
+            return;
+        }
         // Every fresh socket learns the ACTIVE backend up front — the header
         // chip and the trace host column start from wire truth, not a guess.
         sendProviderInfo();
@@ -261,6 +299,15 @@ public final class SessionConnection {
             // between snapshotting and listening.
             fleet.addListener(fleetListener);
         }
+        // The live set, for THIS page's rail. Registration hands over the state
+        // of the world in the same breath (see LiveSessions#addListener), so a
+        // tab opened mid-run draws the other runs immediately instead of waiting
+        // for one of them to change.
+        if (liveSessions != null) {
+            liveDrain = Thread.ofVirtual().name("spectro-live-drain").start(this::drainLive);
+            liveListener = this::offerLive;
+            liveSessions.addListener(liveListener);
+        }
         if (resumeId == null) {
             sendProspectiveWorkspace();
             return;
@@ -284,6 +331,11 @@ public final class SessionConnection {
                     pinned != null ? pinned : config.workspace(), store.id());
             sendWorkspaceInfo();
         } catch (Exception missing) {
+            // The claim was taken before the load; a session that cannot be
+            // loaded must not stay held by a socket that is about to close.
+            if (liveSessions != null) {
+                liveSessions.release(socket.getId());
+            }
             sendError("Session " + resumeId + " not found.");
             close();
         }
@@ -631,6 +683,19 @@ public final class SessionConnection {
     public void onClose() {
         onAbort();
         releasePending();
+        // Card 212: stop listening BEFORE releasing, so this dying socket is not
+        // one of the viewers its own departure is announced to; then let the id
+        // go, which is what makes a reload or a dropped connection safe rather
+        // than a lockout.
+        if (liveSessions != null) {
+            if (liveListener != null) {
+                liveSessions.removeListener(liveListener);
+            }
+            liveSessions.release(socket.getId());
+            if (liveDrain != null) {
+                liveDrain.interrupt();
+            }
+        }
         if (fleet != null && fleetListener != null) {
             fleet.removeListener(fleetListener); // no fleet frames to a dead socket
             if (fleetDrain != null) {
@@ -661,6 +726,11 @@ public final class SessionConnection {
             // Registered, never required: the ladder watches the same stream the UI
             // renders, and a leveling defect must never cost a run its life.
             tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder()));
+            // A fresh session becomes live the moment it has an id — that is
+            // the first moment anything can be said about it.
+            if (liveSessions != null) {
+                liveSessions.claim(socket.getId(), store.id());
+            }
         }
     }
 
@@ -688,6 +758,7 @@ public final class SessionConnection {
         CancelSignal runSignal = new CancelSignal();
         this.signal = runSignal;
         ensureStore();
+        reportRunning(true);   // every rail on this machine, not just this page
 
         try {
             // Everything below is exactly what the CLI builds — nothing new in the core.
@@ -708,8 +779,23 @@ public final class SessionConnection {
             sendError("Run ended with an error: " + failure.getMessage());
         } finally {
             running = false;
+            reportRunning(false);      // a run that died still stopped running
             this.signal = null;
             releasePending();          // orphaned questions: deny them
+        }
+    }
+
+    /**
+     * Tells the registry whether THIS session has a run in flight, so every
+     * other viewer's rail can draw the pulse. Silent without a registry or
+     * before the store exists — there is no session to talk about yet.
+     *
+     * @param inFlight true when a run just started, false when it ended
+     */
+    private void reportRunning(boolean inFlight) {
+        SessionStore current = this.store;
+        if (liveSessions != null && current != null) {
+            liveSessions.running(socket.getId(), current.id(), inFlight);
         }
     }
 
@@ -1037,6 +1123,83 @@ public final class SessionConnection {
                     "mode", permissionMode == null ? "ask" : permissionMode))));
         } catch (Exception ignored) {
             // A dead socket just misses the hint — the next frame retries nothing.
+        }
+    }
+
+    /**
+     * Queues one live-set snapshot for this connection without ever blocking the
+     * registry. Latest-wins: a snapshot is the whole truth, so a stale one
+     * waiting in the queue is simply replaced. Producers are serialised by the
+     * registry's monitor, so the drop-then-offer runs at most once.
+     *
+     * @param live the snapshot the registry just published
+     */
+    private void offerLive(List<LiveSessions.LiveSession> live) {
+        while (!liveQueue.offer(live)) {
+            liveQueue.poll();
+        }
+    }
+
+    /** Drains the live-set queue on this connection's own thread until
+     *  interrupted (onClose) — the only place a live_sessions frame touches
+     *  the blocking socket. */
+    private void drainLive() {
+        try {
+            while (true) {
+                sendLiveSessions(liveQueue.take());
+            }
+        } catch (InterruptedException stopped) {
+            Thread.currentThread().interrupt(); // the connection is closing — done
+        }
+    }
+
+    /**
+     * Tells the client WHICH sessions are live on this server — the card-212
+     * frame, socket-only and additive, never appended to the JSONL. The
+     * RunEvent wire is byte-frozen, so nothing existing carries this: it is a
+     * new type next to {@code provider_info} and {@code workspace_info}, and a
+     * client that has never heard of it drops it through the reducer's default.
+     *
+     * <p>Sent on connect and again on every change. The REST twin,
+     * {@code GET /api/sessions/live}, serves the same list to a client that
+     * missed a push or holds no socket at all.</p>
+     *
+     * @param live every live session, as the registry ordered them
+     */
+    private synchronized void sendLiveSessions(List<LiveSessions.LiveSession> live) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
+                    "type", "live_sessions",
+                    "sessions", live,
+                    "ts", System.currentTimeMillis()))));
+        } catch (Exception ignored) {
+            // A dead socket just misses this snapshot; the next change resends
+            // the whole set, so nothing has to be replayed.
+        }
+    }
+
+    /**
+     * Tells a refused connection WHICH session it may not have — socket-only
+     * and additive, like the frame above. Deliberately not an
+     * {@code ErrorEvent}: the client words this one itself, in the reader's
+     * language, and it also has to act on it (drop the resume, so a retrying
+     * socket does not hammer a session it will keep being refused).
+     *
+     * @param sessionId the session another socket is driving
+     */
+    private synchronized void sendSessionBusy(String sessionId) {
+        if (!socket.isOpen()) {
+            return;
+        }
+        try {
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
+                    "type", "session_busy",
+                    "sessionId", sessionId))));
+        } catch (Exception ignored) {
+            // The socket is closing anyway — the refusal stands either way.
         }
     }
 
