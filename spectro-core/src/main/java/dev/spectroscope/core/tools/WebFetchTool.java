@@ -3,10 +3,10 @@ package dev.spectroscope.core.tools;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import dev.spectroscope.core.net.NetFence;
 import dev.spectroscope.core.tools.Tool.ToolContext;
 import dev.spectroscope.core.web.HtmlText;
 
-import java.util.Locale;
 
 /**
  * The {@code web_fetch} tool: a URL in, the page's readable text out. Network
@@ -15,6 +15,13 @@ import java.util.Locale;
  * injected {@link HttpFetcher} seam (a RestClient impl in production, a fake in
  * tests). HTML is reduced to text by the shared hand-rolled {@link HtmlText}
  * strip — no jsoup, so the core gains no new dependency.
+ *
+ * <p>Card 199 put a {@link NetFence} in front of the fetch. The URL is model
+ * output, and the model reads whatever page it was last shown, so file URLs,
+ * RFC-1918, the 100.64/10 tailnet and (without an explicit opt-in) loopback are
+ * refused before a request leaves. The refusal names the address and the rule
+ * and carries nothing else — not the path, not the query string, not the
+ * userinfo, any of which a model-assembled URL may carry a token in.
  */
 public final class WebFetchTool implements Tool {
 
@@ -22,14 +29,27 @@ public final class WebFetchTool implements Tool {
     private static final int MAX_OUTPUT_CHARS = ToolOutput.MAX_OUTPUT_CHARS;
 
     private final HttpFetcher fetcher;
+    private final NetFence fence;
 
     /**
-     * Builds the tool over the injected network seam.
+     * Builds the tool over the injected network seam, fenced at the default:
+     * loopback and the private ranges refused.
      *
      * @param fetcher {@link DefaultHttpFetcher} in production, an in-memory fake in tests
      */
     public WebFetchTool(HttpFetcher fetcher) {
+        this(fetcher, NetFence.withSystemDns(false));
+    }
+
+    /**
+     * The fully wired tool.
+     *
+     * @param fetcher {@link DefaultHttpFetcher} in production, an in-memory fake in tests
+     * @param fence   where this tool may go — built from {@code allowLocalhost} in the settings
+     */
+    public WebFetchTool(HttpFetcher fetcher, NetFence fence) {
         this.fetcher = fetcher;
+        this.fence = fence;
     }
 
     /** Wire name: {@code web_fetch}. */
@@ -70,9 +90,9 @@ public final class WebFetchTool implements Tool {
         if (url.isBlank()) {
             return "ERROR: web_fetch needs a non-empty url.";
         }
-        String lower = url.toLowerCase(Locale.ROOT);
-        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
-            return "ERROR: web_fetch only supports http and https URLs.";
+        NetFence.Refusal refusal = fence.refuse(url);
+        if (refusal != null) {
+            return "ERROR: web_fetch " + refusal.sentence();
         }
 
         // The whole downstream sits in one guard (the GenerateImageTool pattern):

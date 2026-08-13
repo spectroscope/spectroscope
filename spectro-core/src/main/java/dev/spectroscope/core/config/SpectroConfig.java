@@ -121,6 +121,13 @@ import java.util.function.Function;
  *                            DuckDuckGo scrape. An address, not a credential,
  *                            so it belongs in the settings document. Env
  *                            {@code SPECTRO_SEARXNG_URL}
+ * @param allowLocalhost      card 199's net-fence opt-in: browser-class tools
+ *                            ({@code web_fetch}, {@code browse_page}) refuse
+ *                            loopback by default, and this is the deliberate
+ *                            gesture that reaches it for the local verify loop.
+ *                            It never widens to RFC-1918, to the 100.64/10
+ *                            tailnet or to a {@code file://} URL. Env
+ *                            {@code SPECTRO_ALLOW_LOCALHOST}
  */
 public record SpectroConfig(
         String provider,
@@ -146,7 +153,8 @@ public record SpectroConfig(
         String otlpBasicAuth,
         String ollamaBaseUrl,
         String lmstudioBaseUrl,
-        String searxngUrl) {
+        String searxngUrl,
+        boolean allowLocalhost) {
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -205,7 +213,8 @@ public record SpectroConfig(
             null, // chromeBinary: built-in discovery
             null, null, // otlpEndpoint/otlpBasicAuth: exporter off by default
             null, null, // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
-            null); // searxngUrl: no instance — web_search resolves its tier without one
+            null, // searxngUrl: no instance — web_search resolves its tier without one
+            false); // allowLocalhost: the net fence refuses loopback until somebody says otherwise
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -523,7 +532,8 @@ public record SpectroConfig(
                         base.imageModel(), base.sttModel(), base.sttProvider(),
                         base.sttLanguage(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth(),
-                        base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl());
+                        base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl(),
+                        base.allowLocalhost());
             }
         }
         return base;
@@ -571,7 +581,8 @@ public record SpectroConfig(
             new FieldProbe("otlpBasicAuth", p -> p.otlpBasicAuth),
             new FieldProbe("ollamaBaseUrl", p -> p.ollamaBaseUrl),
             new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl),
-            new FieldProbe("searxngUrl", p -> p.searxngUrl));
+            new FieldProbe("searxngUrl", p -> p.searxngUrl),
+            new FieldProbe("allowLocalhost", p -> p.allowLocalhost));
 
     /** Circularity + process-global rule: a workspace settings file must not
      *  re-point the workspace itself, nor reconfigure the one-per-process log
@@ -606,7 +617,7 @@ public record SpectroConfig(
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
-                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl);
+                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1313,6 +1324,7 @@ public record SpectroConfig(
         public String ollamaBaseUrl;
         public String lmstudioBaseUrl;
         public String searxngUrl;
+        public Boolean allowLocalhost;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1350,6 +1362,7 @@ public record SpectroConfig(
             out.ollamaBaseUrl = Optional.ofNullable(higher.ollamaBaseUrl).orElse(ollamaBaseUrl);
             out.lmstudioBaseUrl = Optional.ofNullable(higher.lmstudioBaseUrl).orElse(lmstudioBaseUrl);
             out.searxngUrl = Optional.ofNullable(higher.searxngUrl).orElse(searxngUrl);
+            out.allowLocalhost = Optional.ofNullable(higher.allowLocalhost).orElse(allowLocalhost);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1384,7 +1397,8 @@ public record SpectroConfig(
                     Optional.ofNullable(otlpBasicAuth).orElse(DEFAULTS.otlpBasicAuth()),
                     Optional.ofNullable(ollamaBaseUrl).orElse(DEFAULTS.ollamaBaseUrl()),
                     Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()),
-                    Optional.ofNullable(searxngUrl).orElse(DEFAULTS.searxngUrl()));
+                    Optional.ofNullable(searxngUrl).orElse(DEFAULTS.searxngUrl()),
+                    Optional.ofNullable(allowLocalhost).orElse(DEFAULTS.allowLocalhost()));
         }
 
         /**
@@ -1414,6 +1428,12 @@ public record SpectroConfig(
             // samples/09-searxng/install.sh hand the address over through
             // ~/.spectro/.env lives in envLayer below, beside the OTLP pair.
             out.searxngUrl = env.get("SPECTRO_SEARXNG_URL");
+            // Card 199: the net fence's local-verify-loop opt-in. Same 1/0/true/false
+            // spelling as SPECTRO_THINKING; unset leaves loopback refused.
+            String allowLocalhost = env.get("SPECTRO_ALLOW_LOCALHOST");
+            if (allowLocalhost != null) {
+                out.allowLocalhost = parseBool(allowLocalhost);
+            }
             // SPECTRO_WORKSPACE names the agent's working directory; unset keeps the
             // per-session temp folder (resolved later, when the session id exists).
             out.workspace = env.get("SPECTRO_WORKSPACE");

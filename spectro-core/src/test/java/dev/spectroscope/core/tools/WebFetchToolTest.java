@@ -66,8 +66,14 @@ class WebFetchToolTest {
     @Test
     void rejectsNonHttpSchemes() {
         Tool tool = new WebFetchTool(new FakeHttpFetcher(200, "text/html", "ignored"));
-        assertEquals("ERROR: web_fetch only supports http and https URLs.",
+        // Card 199: the net fence answers now, and its refusal names what was
+        // refused, why, and which rule did it.
+        assertEquals("ERROR: web_fetch refused the scheme \"ftp\": only http and https are "
+                + "reachable (rule: non-http-scheme).",
                 tool.execute(urlInput("ftp://example.com/x"), context()));
+        assertEquals("ERROR: web_fetch refused a file:// URL: this tool reaches the network, "
+                + "not the local disk (rule: file-url).",
+                tool.execute(urlInput("file:///etc/passwd"), context()));
     }
 
     @Test

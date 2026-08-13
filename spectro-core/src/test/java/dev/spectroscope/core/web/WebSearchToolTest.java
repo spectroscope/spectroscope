@@ -223,6 +223,6 @@ class WebSearchToolTest {
         return new dev.spectroscope.core.config.SpectroConfig(
                 "anthropic", "m", null, 100_000, "ask", List.of(), "gemini", true, List.of(),
                 2, true, List.of(), null, "info", null, null, "auto", "auto", null,
-                null, null, null, null, url);
+                null, null, null, null, url, false);
     }
 }
