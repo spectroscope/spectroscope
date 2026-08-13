@@ -127,6 +127,52 @@ describe("settings is pinned to the foot of the rail", () => {
   });
 });
 
+describe("the session list has an options control at its head", () => {
+  const optsAt = sidebar.indexOf("<SessionListOptions");
+  const listAt = sidebar.indexOf('className="session-list"');
+
+  it("mounts the control once, above the list it governs", () => {
+    expect(mounts(sidebar, "SessionListOptions")).toBe(1);
+    expect(optsAt).toBeGreaterThan(-1);
+    expect(listAt).toBeGreaterThan(-1);
+    expect(optsAt).toBeLessThan(listAt);
+  });
+
+  it("keeps the list's own class a plain literal", () => {
+    // This file reads the rail as TEXT, and a density class written into
+    // className as a template literal would use backticks — the search above
+    // would stop matching and the head assertion would fail for a reason that
+    // has nothing to do with the head. Density is a rendering decision here,
+    // not a class on the container, and this says so out loud.
+    expect(sidebar).toContain('<nav className="session-list"');
+  });
+});
+
+describe("normal density REMOVES the metadata line rather than hiding it", () => {
+  it("asks the store what a row draws, per row", () => {
+    expect(sidebar).toContain("rowParts(");
+    expect(sidebar).toContain("useDensity(");
+  });
+
+  it("leaves no stylesheet rule that hides the line instead", () => {
+    // The pile taught this: `display: none` is not "gone", and an orphan rule
+    // outlives the markup it was written for because nothing checks CSS against
+    // JSX. The line is either rendered or it is not.
+    for (const hidden of [".session-meta-line", ".session-facts", ".session-sigil"]) {
+      const at = css.indexOf(`${hidden} {`);
+      if (at < 0) continue;
+      expect(css.slice(at, css.indexOf("}", at)), hidden).not.toContain("display: none");
+    }
+  });
+
+  it("keeps ONE hover string for the row, at either density", () => {
+    // Non-functional criterion: the hover carries the cut facts in normal
+    // density, and a density-aware second string would be a second thing to
+    // keep in step with the DTO.
+    expect(ts(sidebar).split("sessionTitleLines(").length - 1).toBe(1);
+  });
+});
+
 describe("every row says whether it is running", () => {
   it("puts the indicator on the live row and on the stored rows alike", () => {
     expect(mounts(sidebar, "RunDot")).toBeGreaterThanOrEqual(2);

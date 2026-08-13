@@ -91,6 +91,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   // The pile is gone (the list is flat now), and so are the two strings that
   // described it. `sess.pile` had already lost its last caller before that.
 
+  // The options control at the head of the session list, and its one option
+  // (card 214). The German keeps "normal" and translates only the loud value:
+  // "normal" is the same word in both languages and is already what the
+  // disclosure menu and the text width call their quiet setting.
+  "sess.opts": { de: "Listen-Optionen", en: "list options" },
+  "dens.title": { de: "Dichte", en: "density" },
+  "dens.normal": { de: "normal", en: "normal" },
+  "dens.normal.hint": { de: "nur Name und Status", en: "the name and its state" },
+  "dens.extended": { de: "erweitert", en: "extended" },
+  "dens.extended.hint": { de: "mit Zeit, Turns und Tokens", en: "with time, turns and tokens" },
+
   // header
   "hdr.archive": { de: "Archiv", en: "Archive" },
   "hdr.scenario": { de: "Szenario", en: "Scenario" },

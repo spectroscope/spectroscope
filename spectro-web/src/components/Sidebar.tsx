@@ -7,6 +7,12 @@
 // The list is flat. It used to fold look-alike rows into a pile with a count
 // and a chevron; the owner cut it, and the reason it existed — 229 files from
 // one smoke test that still fires — is an upstream mess, not a list problem.
+//
+// How much a row says is the reader's choice now (card 214): the options control
+// at the head of the list carries `density`, and at normal — the default — a row
+// is its name and its state dot. What density cuts is not rendered rather than
+// hidden, because a rule that hides markup outlives the markup, and this file
+// has already paid for that once.
 
 import { useEffect, useState } from "react";
 import type { SessionMeta } from "../events";
@@ -18,6 +24,8 @@ import { NavIcon, NavRow } from "./NavRow";
 import { navActionRows, navSegmentRows } from "./navRows";
 import { RunDot } from "./RunDot";
 import { runState } from "./runIndicator";
+import { SessionListOptions } from "./SessionListOptions";
+import { rowParts, useDensity } from "../state/density";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
@@ -84,6 +92,10 @@ export function Sidebar(props: {
   const nav = props.nav;
   const lang = useLang();
   const fleets = useFleets();
+  // How much a row says. Read once for the whole list: switching it re-renders
+  // what is already in hand and touches no endpoint — the fetch below hangs off
+  // props.refreshToken and nothing else.
+  const parts = rowParts(useDensity());
   // Attention-first: a fleet with a pending gate floats to the top, then by
   // most recent activity — a manager sees who is blocked on them.
   const orderedFleets = [...fleets].sort(
@@ -176,13 +188,20 @@ export function Sidebar(props: {
       type="button"
       key={s.id}
       className={`session-row${props.activeId === s.id && props.activeFleet === null ? " active" : ""}`}
+      /* ONE hover string, at either density. In normal the hover is the only
+         place the cut facts live, and a density-aware second one would be a
+         second thing to keep in step with the DTO. */
       title={sessionTitleLines(s, lang)}
       onClick={() => props.onSelectSession(s.id)}
     >
       <span className="session-title session-title-line">
         {/* Stored rows can only ever say "unfinished" or "finished" — the list
             is stored JSONL and nothing reports who is live. The one exception
-            is the row this page's socket is resuming. */}
+            is the row this page's socket is resuming.
+
+            The dot survives every density: with the metadata line gone it is the
+            only thing left in the row that can say a session is running, and it
+            carries its state as a word as well as a hue. */}
         <RunDot
           state={runState({
             live: props.resumeId === s.id,
@@ -191,23 +210,28 @@ export function Sidebar(props: {
           })}
           lang={lang}
         />
-        <SessionSigil signal={sessionSignal(s)} />
+        {/* The comb is a SECOND glyph, not the dot, so it goes with the metadata
+            line: "the session name and the state dot, and nothing else" leaves no
+            room for it. It is not deleted — extended draws it exactly as before. */}
+        {parts.sigil && <SessionSigil signal={sessionSignal(s)} />}
         <span className="session-name">
           {s.firstPrompt !== "" ? s.firstPrompt : t(lang, "nav.emptySession")}
         </span>
       </span>
-      <span className="session-meta session-meta-line tabular">
-        <span className="session-facts">
-          {relativeTime(s.startedAt, Date.now(), lang)}
-          {(s.turnCount ?? 0) > 0 && (
-            <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
-          )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+      {parts.meta && (
+        <span className="session-meta session-meta-line tabular">
+          <span className="session-facts">
+            {relativeTime(s.startedAt, Date.now(), lang)}
+            {(s.turnCount ?? 0) > 0 && (
+              <> &middot; {countLabel(lang, "turn", s.turnCount ?? 0)}</>
+            )} &middot; {countLabel(lang, "token", s.tokens, formatTokens(s.tokens))}
+          </span>
+          {/* The model only earns a place once the rail is wide enough to spell
+              it out — see the container query. Truncated to "claude-s…" it answers
+              nothing, and it would be answering it with the token count's space. */}
+          {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
         </span>
-        {/* The model only earns a place once the rail is wide enough to spell
-            it out — see the container query. Truncated to "claude-s…" it answers
-            nothing, and it would be answering it with the token count's space. */}
-        {sessionModelLabel(s) !== "" && <span className="session-model mono">{sessionModelLabel(s)}</span>}
-      </span>
+      )}
     </button>
   );
 
@@ -303,6 +327,14 @@ export function Sidebar(props: {
 
       {nav === "sessions" ? (
         <>
+          {/* The head of the list, and the options belong to the list rather
+              than to the app: they change how THESE rows read, so they sit on
+              them and not in the settings overlay at the foot. At the right,
+              where a control that governs a column goes. */}
+          <div className="session-list-head">
+            <SessionListOptions />
+          </div>
+
           <nav className="session-list" aria-label="Sessions">
             {/* The live row wears the same dot as every other row — the only
                 one in the rail that may ever say "running", because it is the
@@ -316,7 +348,10 @@ export function Sidebar(props: {
                 <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
                 {t(lang, "nav.live")}
               </span>
-              <span className="session-meta">{t(lang, "nav.liveSub")}</span>
+              {/* The live row's subline goes quiet with the rest of the list: it
+                  is in the same list, under the same control, and "this browser
+                  tab" is the one thing the row's own name already says. */}
+              {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
             </button>
 
             {(sessions ?? []).map((s) => sessionRow(s))}
