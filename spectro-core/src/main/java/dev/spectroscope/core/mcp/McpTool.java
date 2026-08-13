@@ -20,23 +20,53 @@ public final class McpTool implements Tool {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /**
+     * The most one image in an MCP tool result may weigh, in bytes — the providers'
+     * own per-image wire limit (see {@link dev.spectroscope.core.image.ImageDownscaler}),
+     * which is the point beyond which an attach would be rejected anyway.
+     *
+     * <p>Unlike {@code view_image}, an oversized MCP image is <b>refused, not
+     * downscaled</b>: the payload comes from a remote server over an untrusted
+     * connection, so the size is decided on the ENCODED length before anything is
+     * decoded — a hostile server must not be able to make the harness allocate a
+     * decoded copy of an arbitrarily large payload.
+     */
+    public static final long MAX_IMAGE_BYTES =
+            dev.spectroscope.core.image.ImageDownscaler.WIRE_IMAGE_LIMIT_BYTES;
+
     private final String serverName;
     private final McpClient client;
     private final McpToolDescriptor descriptor;
     private final String qualifiedName;
+    private final dev.spectroscope.core.image.ImageStore imageStore;
 
     /**
      * Wraps one advertised remote tool; the qualified name is fixed here and never recomputed.
+     * Images land in the store every face shares, {@code ~/.spectro/images}.
      *
      * @param serverName configured server name — the middle segment of the qualified name
      * @param client     connection every call goes through
      * @param descriptor the remote tool as advertised by {@code tools/list}
      */
     public McpTool(String serverName, McpClient client, McpToolDescriptor descriptor) {
+        this(serverName, client, descriptor, dev.spectroscope.core.image.ImageStore.inUserHome());
+    }
+
+    /**
+     * The variant that names the image store — tests point it at a temp directory.
+     *
+     * @param serverName configured server name — the middle segment of the qualified name
+     * @param client     connection every call goes through
+     * @param descriptor the remote tool as advertised by {@code tools/list}
+     * @param imageStore where image bytes from a tool result are persisted
+     */
+    public McpTool(String serverName, McpClient client, McpToolDescriptor descriptor,
+                   dev.spectroscope.core.image.ImageStore imageStore) {
         this.serverName = serverName;
         this.client = client;
         this.descriptor = descriptor;
         this.qualifiedName = "mcp__" + serverName + "__" + descriptor.name();
+        this.imageStore = imageStore;
     }
 
     /** The configured server this tool belongs to. */
@@ -86,16 +116,169 @@ public final class McpTool implements Tool {
     }
 
     /**
-     * Delegates straight to {@link McpClient#call} — the client already degrades every
-     * failure to a readable string, so there is nothing to catch here.
+     * Runs the remote tool and turns its reply into what the model gets.
+     *
+     * <p>A reply without images is the string it always was — {@link McpClient#call}
+     * already degrades every failure to an {@code ERROR: ...} text block, so there is
+     * nothing to catch. A reply <b>with</b> images walks the blocks in server order:
+     * text stays text, and every image is carried to the model over the same attach
+     * path {@code view_image} uses, leaving a numbered one-line note where it stood.
+     * The payload never enters the string — that is the whole point of card 198.
      *
      * @param input   JSON arguments from the model, passed through unmodified
-     * @param context unused — an MCP call emits no extra events
-     * @return the remote tool's text output, or an {@code ERROR: ...} string
+     * @param context the attach sink for the images, the emit sink for their references
+     * @return the remote tool's text, with a note per image, or an {@code ERROR: ...} string
      */
     @Override
     public String execute(JsonNode input, ToolContext context) {
-        // McpClient.call already returns text or an "ERROR: ..." string and never throws.
-        return client.call(descriptor.name(), input);
+        McpCallResult result = client.call(descriptor.name(), input);
+        if (!result.hasImages()) {
+            // Byte for byte what this tool returned before images were understood.
+            return result.text();
+        }
+        StringBuilder narrated = new StringBuilder();
+        int imageNumber = 0;
+        for (McpContent block : result.blocks()) {
+            String piece = switch (block) {
+                case McpContent.Text text -> text.text();
+                case McpContent.Image image -> carry(image, ++imageNumber, context);
+            };
+            if (narrated.length() > 0) {
+                narrated.append('\n');
+            }
+            narrated.append(piece);
+        }
+        return narrated.toString();
+    }
+
+    /**
+     * Carries one image block to the model. Two gates run before anything is kept,
+     * both because the block comes from a remote server nobody here vouches for:
+     *
+     * <ol>
+     *   <li><b>The type.</b> The server names the media type, and both ends of this
+     *       path are picky about it. The store writes an unknown type as {@code .bin},
+     *       which {@code GET /api/images/{file}} refuses — the image would be
+     *       announced to a session that cannot show it, against AC 5 of card 198.
+     *       The provider is worse: {@code Base64ImageSource.MediaType} carries an
+     *       {@code _UNKNOWN} case, so a bogus value travels all the way to the API
+     *       and fails the whole request. So the type is canonicalized against
+     *       {@link dev.spectroscope.core.image.ImageStore#servableMediaType}, and
+     *       anything else is refused with its type named — nothing stored, nothing
+     *       announced, nothing on the wire.</li>
+     *   <li><b>The size</b>, decided on the ENCODED payload, so an oversized image is
+     *       refused before a decoded copy of it exists.</li>
+     * </ol>
+     *
+     * <p>Within both gates the bytes are stored content-addressed, announced as an
+     * {@code image_generated} reference event, and attached for the model to see.
+     * The store, the event and the wire all get the canonical type, never the
+     * server's spelling of it.
+     *
+     * <p>The event reuses the store-and-reference shape {@code generate_image}
+     * established, with the fields that name a generation naming the MCP origin
+     * instead: {@code provider} is {@code "mcp"}, {@code model} the configured
+     * server, {@code prompt} the qualified tool name. Bytes never enter the event.
+     *
+     * @param image       the undecoded image block as the server sent it
+     * @param imageNumber 1-based position among the images of this one reply
+     * @param context     the run's attach and emit sinks
+     * @return the one-line note that stands where the image stood
+     */
+    private String carry(McpContent.Image image, int imageNumber, ToolContext context) {
+        String mediaType = dev.spectroscope.core.image.ImageStore
+                .servableMediaType(image.mediaType());
+        if (mediaType == null) {
+            return "[image " + imageNumber + " not attached: the server called it "
+                    + describeMediaType(image.mediaType())
+                    + ", and spectroscope carries only "
+                    + String.join(", ", dev.spectroscope.core.image.ImageStore.servableMediaTypes())
+                    + "]";
+        }
+        long bytes = decodedLength(image.dataBase64());
+        if (bytes > MAX_IMAGE_BYTES) {
+            return "[image " + imageNumber + " not attached: " + bytes
+                    + " bytes exceeds the " + MAX_IMAGE_BYTES + " byte cap for one MCP image]";
+        }
+        byte[] decoded;
+        try {
+            decoded = java.util.Base64.getDecoder().decode(image.dataBase64());
+        } catch (IllegalArgumentException notBase64) {
+            return "[image " + imageNumber + " not attached: the server's payload is not base64]";
+        }
+        try {
+            dev.spectroscope.core.image.ImageStore.Ref ref =
+                    imageStore.put(decoded, mediaType);
+            context.emit().accept(new dev.spectroscope.core.events.RunEvent.ImageGenerated(
+                    context.agentId(), context.callId(), qualifiedName, "mcp", serverName,
+                    mediaType, ref.blobPath(), ref.sha256(), System.currentTimeMillis()));
+        } catch (RuntimeException notStored) {
+            return "[image " + imageNumber + " not attached: it could not be stored: "
+                    + notStored.getMessage() + "]";
+        }
+        context.attach().accept(new Tool.AttachedImage(mediaType, image.dataBase64()));
+        return "[image " + imageNumber + " attached (" + mediaType + ", " + bytes
+                + " bytes) — it is included with this result for you to see]";
+    }
+
+    /**
+     * Names an untrusted media type inside a model-facing sentence. The notice reads
+     * as the harness speaking, so whatever the server wrote there is an injection
+     * surface: only the media-type-shaped head of the value is quoted — the run of
+     * characters a media type may consist of — and everything from the first
+     * character that cannot belong to one is dropped, newline and all.
+     *
+     * @param mediaType the media type exactly as the server sent it, possibly null
+     * @return a bounded, single-line rendering safe to put in a sentence
+     */
+    private static String describeMediaType(String mediaType) {
+        if (mediaType == null) {
+            return "an unnamed type";
+        }
+        String stripped = mediaType.strip();
+        int end = 0;
+        while (end < stripped.length() && end < 60 && isMediaTypeCharacter(stripped.charAt(end))) {
+            end++;
+        }
+        return end == 0 ? "an unnamed type" : stripped.substring(0, end);
+    }
+
+    /**
+     * True for the characters a media type is made of (RFC 6838's restricted set,
+     * ASCII only — a letter outside ASCII cannot be part of a media type and can be
+     * part of a sentence in another language).
+     */
+    private static boolean isMediaTypeCharacter(char character) {
+        return (character >= 'a' && character <= 'z')
+                || (character >= 'A' && character <= 'Z')
+                || (character >= '0' && character <= '9')
+                || "/+-._".indexOf(character) >= 0;
+    }
+
+    /**
+     * How many bytes a base64 payload decodes to, computed from the encoded length
+     * alone — no decode, no allocation. This is what makes the cap a real defence
+     * against a hostile server rather than a check that runs after the damage.
+     *
+     * @param base64 the encoded payload, padded or not
+     * @return the decoded size in bytes
+     */
+    static long decodedLength(String base64) {
+        int length = base64.length();
+        int padding = 0;
+        if (length > 0 && base64.charAt(length - 1) == '=') {
+            padding++;
+        }
+        if (length > 1 && base64.charAt(length - 2) == '=') {
+            padding++;
+        }
+        long whole = (long) (length / 4) * 3;
+        // An unpadded tail of 2 characters carries 1 byte, of 3 characters 2 bytes.
+        long tail = switch (length % 4) {
+            case 2 -> 1;
+            case 3 -> 2;
+            default -> 0;
+        };
+        return whole + tail - padding;
     }
 }

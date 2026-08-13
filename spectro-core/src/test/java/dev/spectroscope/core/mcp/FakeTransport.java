@@ -42,9 +42,12 @@ final class FakeTransport implements McpTransport {
     }
 
     @Override
-    public String callTool(String toolName, JsonNode arguments) {
+    public McpCallResult callTool(String toolName, JsonNode arguments) {
         callToolCalls++;
-        return callHandler.apply(toolName, arguments);
+        // The scripted handler speaks text; a transport now speaks content blocks.
+        // A null stays null: that scripts the malformed/empty reply the client degrades.
+        String text = callHandler.apply(toolName, arguments);
+        return text == null ? null : McpCallResult.ofText(text);
     }
 
     @Override

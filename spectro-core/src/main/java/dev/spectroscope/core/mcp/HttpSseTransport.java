@@ -115,20 +115,22 @@ public final class HttpSseTransport implements McpTransport {
     }
 
     /**
-     * Issues {@code tools/call} and reduces the reply's content blocks to plain text.
+     * Issues {@code tools/call} and hands the reply's content blocks back untouched.
      *
      * @param toolName  remote tool name as advertised by {@code tools/list}
      * @param arguments JSON arguments object; {@code null} becomes an empty object
-     * @return the joined text blocks, or the raw result JSON for unexpected shapes
+     * @return the reply's content blocks in server order
      */
     @Override
-    public String callTool(String toolName, JsonNode arguments) {
+    public McpCallResult callTool(String toolName, JsonNode arguments) {
         ObjectNode params = JSON.createObjectNode();
         params.put("name", toolName);
         params.set("arguments", arguments != null ? arguments : JSON.createObjectNode());
 
         JsonNode result = request("tools/call", params);
-        return extractText(result);
+        // The same mapping the stdio transport uses; the private copy that used to
+        // live here is what let an image reach the model as raw JSON (card 198).
+        return McpCallResult.fromToolsCall(result);
     }
 
     /** Idempotent, never throws — nothing to release for a stateless request/response client. */
@@ -238,30 +240,4 @@ public final class HttpSseTransport implements McpTransport {
         return data.toString();
     }
 
-    /**
-     * MCP {@code tools/call} returns {@code content: [{ type, text }, ...]}. Join the
-     * text of the text blocks; fall back to the raw result JSON if the shape is unexpected.
-     * (Mirrors {@link StdioTransport}'s extraction so both transports behave identically.)
-     *
-     * @param result the JSON-RPC {@code result} member of a {@code tools/call}
-     * @return joined text blocks, or the raw result JSON when no text block exists
-     */
-    private static String extractText(JsonNode result) {
-        JsonNode content = result.path("content");
-        if (content.isArray() && !content.isEmpty()) {
-            StringBuilder sb = new StringBuilder();
-            for (JsonNode block : content) {
-                if ("text".equals(block.path("type").asText())) {
-                    if (sb.length() > 0) {
-                        sb.append('\n');
-                    }
-                    sb.append(block.path("text").asText());
-                }
-            }
-            if (sb.length() > 0) {
-                return sb.toString();
-            }
-        }
-        return result.toString();
-    }
 }

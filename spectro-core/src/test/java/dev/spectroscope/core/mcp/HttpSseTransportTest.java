@@ -29,6 +29,10 @@ class HttpSseTransportTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /** Four bytes standing in for a screenshot — the transport never looks inside. */
+    private static final String PNG_BASE64 = java.util.Base64.getEncoder()
+            .encodeToString(new byte[] {(byte) 0x89, 'P', 'N', 'G'});
+
     private HttpServer server;
     private String url;
     private final List<String> methodsSeen = new CopyOnWriteArrayList<>();
@@ -75,6 +79,17 @@ class HttpSseTransportTest {
             }
             case "tools/call" -> {
                 String name = req.path("params").path("name").asText();
+                if ("screenshot".equals(name)) {
+                    // An image-returning remote tool: text, image, text.
+                    var content = JSON.createArrayNode();
+                    content.add(JSON.createObjectNode().put("type", "text").put("text", "here it is"));
+                    content.add(JSON.createObjectNode().put("type", "image")
+                            .put("data", PNG_BASE64).put("mimeType", "image/png"));
+                    content.add(JSON.createObjectNode().put("type", "text").put("text", "that was it"));
+                    var r = JSON.createObjectNode();
+                    r.set("content", content);
+                    yield r;
+                }
                 String q = req.path("params").path("arguments").path("query").asText();
                 var textBlock = JSON.createObjectNode();
                 textBlock.put("type", "text");
@@ -123,7 +138,7 @@ class HttpSseTransportTest {
             assertEquals("search_notes", tools.get(0).name());
             assertEquals("search the notes", tools.get(0).description());
 
-            String out = transport.callTool("search_notes", JSON.createObjectNode().put("query", "gradle"));
+            String out = transport.callTool("search_notes", JSON.createObjectNode().put("query", "gradle")).text();
             assertEquals("hit for search_notes: gradle", out);
         } finally {
             transport.close();
@@ -133,6 +148,27 @@ class HttpSseTransportTest {
         assertTrue(methodsSeen.contains("notifications/initialized"));
         assertTrue(methodsSeen.contains("tools/list"));
         assertTrue(methodsSeen.contains("tools/call"));
+    }
+
+    @Test
+    void anImageOverSseArrivesAsAnImageBlockJustLikeOverStdio() {
+        // Card 198: this transport used to keep its own copy of the flattening and
+        // would have handed the whole result back as raw JSON. Both transports now
+        // read the reply through McpCallResult, so an image survives on either.
+        McpServerConfig cfg = new McpServerConfig("remote", null, null, null, url, "sse");
+        HttpSseTransport transport = new HttpSseTransport(cfg, Duration.ofSeconds(5));
+        try {
+            McpCallResult result = transport.callTool("screenshot", JSON.createObjectNode());
+
+            assertEquals(3, result.blocks().size(), "text, image, text — in order");
+            assertEquals(new McpContent.Text("here it is"), result.blocks().get(0));
+            assertEquals(new McpContent.Image("image/png", PNG_BASE64), result.blocks().get(1));
+            assertEquals(new McpContent.Text("that was it"), result.blocks().get(2));
+            assertEquals("here it is\nthat was it", result.text(),
+                    "the text reads the same as it always did");
+        } finally {
+            transport.close();
+        }
     }
 
     @Test

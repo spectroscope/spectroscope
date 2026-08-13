@@ -892,9 +892,12 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
       });
 
     case "image_generated": {
-      // Idempotent per callId — a reconnect replays the session history and
-      // must not duplicate gallery entries. Replay uses this same path.
-      if (state.images.some((i) => i.callId === event.callId)) return state;
+      // Idempotent per call AND content — a reconnect replays the session
+      // history and must not duplicate gallery entries. The content hash is
+      // part of the key because one call can produce several images: an MCP
+      // tool result may carry more than one (card 198), and those share a
+      // callId while being different pictures. Replay uses this same path.
+      if (state.images.some((i) => i.callId === event.callId && i.sha256 === event.sha256)) return state;
       const image: GeneratedImage = {
         callId: event.callId,
         prompt: event.prompt,

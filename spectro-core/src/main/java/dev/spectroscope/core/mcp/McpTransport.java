@@ -20,13 +20,18 @@ public interface McpTransport {
     List<McpToolDescriptor> listTools();
 
     /**
-     * Call {@code tools/call} for {@code toolName} with {@code arguments}; return the text content.
+     * Call {@code tools/call} for {@code toolName} with {@code arguments}; return the
+     * reply's content blocks, in server order.
+     *
+     * <p>A transport does <b>not</b> flatten the reply — that was the bug card 198
+     * closed. Every implementation maps its raw {@code result} node through the one
+     * shared {@link McpCallResult#fromToolsCall}, so stdio and HTTP/SSE cannot drift.
      *
      * @param toolName  remote tool name as advertised by {@code tools/list}
      * @param arguments JSON arguments object; implementations treat {@code null} as empty
-     * @return the reply's text blocks joined, or the raw result JSON for unexpected shapes
+     * @return the reply's content blocks, never null
      */
-    String callTool(String toolName, JsonNode arguments);
+    McpCallResult callTool(String toolName, JsonNode arguments);
 
     /** Release the process / connection. Must be idempotent and never throw. */
     void close();

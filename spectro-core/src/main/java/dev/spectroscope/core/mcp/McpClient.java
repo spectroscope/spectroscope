@@ -112,13 +112,14 @@ public final class McpClient {
      *
      * @param remoteToolName the server-side tool name, unqualified as advertised
      * @param arguments      JSON arguments object from the model, passed through
-     * @return the tool's text output, or an {@code ERROR: ...} string on any failure
+     * @return the tool's content blocks, or a single {@code ERROR: ...} text block on any failure
      */
-    public synchronized String call(String remoteToolName, JsonNode arguments) {
+    public synchronized McpCallResult call(String remoteToolName, JsonNode arguments) {
         if (transport == null) {
             String establishFailure = establish();
             if (establishFailure != null) {
-                return "ERROR: MCP server '" + config.name() + "' unreachable: " + establishFailure;
+                return McpCallResult.ofText("ERROR: MCP server '" + config.name()
+                        + "' unreachable: " + establishFailure);
             }
         }
         try {
@@ -128,8 +129,8 @@ public final class McpClient {
             // but do NOT re-issue this call — that could double a side effect.
             closeQuietly(transport);
             transport = null;
-            return "ERROR: MCP tool '" + remoteToolName + "' on server '"
-                    + config.name() + "' failed: " + rootMessage(failed);
+            return McpCallResult.ofText("ERROR: MCP tool '" + remoteToolName + "' on server '"
+                    + config.name() + "' failed: " + rootMessage(failed));
         }
     }
 
@@ -149,18 +150,18 @@ public final class McpClient {
      *
      * @param remoteToolName the server-side tool name
      * @param arguments      JSON arguments object, passed through
-     * @return the tool's text output, never {@code null}
+     * @return the tool's content blocks, never {@code null}
      * @throws Exception the timeout, the unwrapped call failure, or a missing transport
      */
-    private String invokeWithTimeout(String remoteToolName, JsonNode arguments) throws Exception {
+    private McpCallResult invokeWithTimeout(String remoteToolName, JsonNode arguments) throws Exception {
         McpTransport current = transport;
         if (current == null) {
             throw new IllegalStateException("no transport");
         }
-        Callable<String> task = () -> current.callTool(remoteToolName, arguments);
-        Future<String> future = executor.submit(task);
+        Callable<McpCallResult> task = () -> current.callTool(remoteToolName, arguments);
+        Future<McpCallResult> future = executor.submit(task);
         try {
-            String result = future.get(callTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            McpCallResult result = future.get(callTimeout.toMillis(), TimeUnit.MILLISECONDS);
             if (result == null) {
                 throw new IllegalStateException("empty response");
             }
