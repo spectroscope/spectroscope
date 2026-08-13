@@ -91,6 +91,7 @@ import {
 import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
 import { TraceView } from "./components/TraceView";
+import { useTraceWarm } from "./components/traceWarmup";
 import { traceLinkFor } from "./observability/langfuseLink";
 import { UsageFooter } from "./components/UsageFooter";
 import { GraphView } from "./graph/GraphView"; // the fifth consumer
@@ -1627,7 +1628,7 @@ export function App() {
   // Exactly the chain's final else, hoisted so the trace can stay mounted while
   // another tab is showing. Kept next to the entries it renders, so the two
   // cannot drift apart.
-  const traceMounted =
+  const traceShowing =
     // Both segment arms of the chain collapse into this one term under
     // `enteredFleet === null`: only the sessions segment reaches the tabs at
     // all, so the hidden trace must not survive a move to fleets or stategraph.
@@ -1637,6 +1638,16 @@ export function App() {
     // The chain's leveling gate reads `tab !== "chat" && …`; under `tab ===
     // "trace"` that term is already true, and the compiler says so.
     !(leveling.snapshot && !isSurfaceOpen(leveling.snapshot, tab));
+
+  // Card 175, the half the August build left out. The trace being MOUNTED while
+  // another tab shows is what makes the press cost nothing; building it in the
+  // same render pass as the chat is what makes the chat 220 ms slower. Both were
+  // one line, and only the first was measured. This is the second: the record
+  // arrives, the chat paints, the browser goes idle, and the trace builds then.
+  //
+  // The reader never waits on this. `traceShowing` is read FIRST below, so a
+  // press mounts the view on the spot.
+  const traceWarm = useTraceWarm(shownSessionId);
 
   const traceEntries = useMemo(
     () => (enteredFleet !== null ? traceFromEvents(shownEvents) : view.trace),
@@ -2351,54 +2362,70 @@ export function App() {
             <BrowserReplay sessionId={shownSessionId} />
           )
         ) : null}
-        {/* The trace is MOUNTED ONCE and hidden, never unmounted (card 175).
-            Measured on a 9,319-row session: pressing the tab cost 955 ms of
-            blocked main thread, because every one of those rows had left the
-            DOM on the way out and had to be built again — 0 rows while the chat
-            was showing. Hiding costs the memory of a page that already existed;
-            unmounting costs a second of the reader's time, every press.
+        {/* The trace is MOUNTED and hidden rather than unmounted (card 175), so
+            a press finds a page that already exists instead of building 9,319
+            rows again. Hiding costs the memory of that page; unmounting cost the
+            reader 955 ms of blocked main thread on every press when this card
+            was opened, and about 50 ms once card 117 windowed the build.
+
+            But it is mounted AFTER the chat has painted, not beside it. The two
+            are not the same line and only the first was ever measured. Same
+            session, first blocked task of opening it, four runs each:
+
+              mounted beside the chat   563 · 601 · 621 · 637 ms
+              absent while chat shows   361 · 367 · 412 · 481 ms
+
+            About 220 ms on the critical path of the view the reader is actually
+            on — which is the one thing this card's own story forbids. Where the
+            220 ms goes was measured too: with the pre-built window cut from 72
+            rows to 17 the open costs 363/401 ms, i.e. the same as absent. It is
+            the ROWS, not the fold and not the indexes.
+
+            `traceShowing` is read first, so a press never waits for idle.
 
             `display: contents` rather than a wrapper with its own box, so the
             layout is byte-for-byte what it was when TraceView sat in the chain
-            directly. The condition below IS the chain's final else, written out:
-            not the fleet lobby, not inside a fleet, the leveling gate open, and
-            no other tab claiming the surface.
+            directly. The condition IS the chain's final else, written out: not
+            the fleet lobby, not inside a fleet, the leveling gate open, and no
+            other tab claiming the surface.
 
-            ⚠️ This only became safe once `withResponseRows` stopped rebuilding
-            every row object (card 184's identity fix). Before that, a hidden
-            mounted trace re-rendered all 9,320 rows on every frame batch of a
-            live run, which would have broken the owner's own condition that the
-            chat be provably no slower. */}
-        <div style={{ display: traceMounted ? "contents" : "none" }}>
-          <TraceView
-            entries={traceEntries}
-            /* The count belongs to the record on screen, not to this browser's
+            ⚠️ Mounting it hidden only became safe once `withResponseRows`
+            stopped rebuilding every row object (card 184's identity fix). Before
+            that, a hidden mounted trace re-rendered all 9,320 rows on every
+            frame batch of a live run, which would have broken the owner's own
+            condition that the chat be provably no slower. */}
+        {(traceShowing || traceWarm) && (
+          <div style={{ display: traceShowing ? "contents" : "none" }}>
+            <TraceView
+              entries={traceEntries}
+              /* The count belongs to the record on screen, not to this browser's
                socket: a stored session is folded whole and has dropped nothing,
                and reading `live` here made a complete archive announce the live
                window's losses as its own. Not `view` either — under a
                translation that is a fresh fold whose count is 0 while the rows
                beside it are still the windowed ones. */
-            droppedRows={recordedView.traceDropped}
-            agentFilter={traceAgent}
-            onAgentFilter={setTraceAgent}
-            focusEvent={focusEvent}
-            onFocusHandled={() => setFocusEvent(null)}
-            langfuseUrl={langfuseUrl}
-            otlpFailure={otlpFailure}
-            storePath={shownStorePath}
-            sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
-            /* An entered fleet's rows are not the replay's rows, so its file is
+              droppedRows={recordedView.traceDropped}
+              agentFilter={traceAgent}
+              onAgentFilter={setTraceAgent}
+              focusEvent={focusEvent}
+              onFocusHandled={() => setFocusEvent(null)}
+              langfuseUrl={langfuseUrl}
+              otlpFailure={otlpFailure}
+              storePath={shownStorePath}
+              sourceLines={enteredFleet === null ? (replay?.source?.lines ?? null) : null}
+              /* An entered fleet's rows are not the replay's rows, so its file is
                taken away above. The sentence the pane then says is not "there
                is no file" three times over: this is which of the three. */
-            provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
-            /* The same condition the payload swap above runs under. With a
+              provenance={traceProvenance(replay?.id ?? null, enteredFleet)}
+              /* The same condition the payload swap above runs under. With a
                translation applied the wire face renders the rebuilt record, so
                the source pane's "byte for byte" sentence would be describing a
                line nobody stored. */
-            translated={showingTranslation && enteredFleet === null}
-            llmWireSessionId={llmWireSessionId}
-          />
-        </div>
+              translated={showingTranslation && enteredFleet === null}
+              llmWireSessionId={llmWireSessionId}
+            />
+          </div>
+        )}
         {leveling.snapshot && !leveling.snapshot.introSeen && (
           /* Asked once per home, and only for a home that has never been used —
              an existing operator is grandfathered into checklist by the server
