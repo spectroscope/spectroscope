@@ -7,6 +7,7 @@ import dev.spectroscope.core.browser.BrowserFaces;
 import dev.spectroscope.server.session.FakeSocket;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.web.socket.CloseStatus;
 import org.springframework.web.socket.TextMessage;
 
 import java.time.Duration;
@@ -108,6 +109,33 @@ class BrowserControlSocketSessionTest {
 
         assertNull(control.forSession(A).pageUrl(),
                 "a session that is gone has no address for a failure sentence to name");
+    }
+
+    @Test
+    void anAddressFiledByAReplacedShellDoesNotSurviveTheReplacement() throws Exception {
+        // Measured in review: /ws/browser authenticates nothing and the newest
+        // connection wins, which is in policy — but a client that took the
+        // channel, answered one frame with a pageUrl of its choosing and left,
+        // leaked that address into the REAL shell. afterConnectionClosed only
+        // cleared the map when the closing socket was still the current one, and
+        // a replaced socket never is: the replacement had already taken the field
+        // before its close arrived. The operator's address line, and every
+        // browser tool's "names the page it happened on" sentence, then cited a
+        // page nothing was showing.
+        FakeSocket first = attachedShell();
+        BrowserControlSocket control = attach(first);
+        drive(control, first, A, "{}", "http://rogue.invalid/");
+        assertEquals("http://rogue.invalid/", control.forSession(A).pageUrl(),
+                "the first shell really filed an address");
+
+        FakeSocket replacement = new FakeSocket("shell-2", "ws://127.0.0.1:8746/ws/browser");
+        control.afterConnectionEstablished(replacement);
+        // The replaced socket's close arrives afterwards, which is the whole
+        // point: by then it is no longer the shell, so it clears nothing.
+        control.afterConnectionClosed(first, CloseStatus.NORMAL);
+
+        assertNull(control.forSession(A).pageUrl(),
+                "an address filed by a shell that is gone outlived it");
     }
 
     @Test

@@ -121,12 +121,25 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     /**
      * A desktop shell attached. The previous one, if any, is closed.
      *
+     * <p>The addresses go with the previous shell, here rather than only in
+     * {@link #afterConnectionClosed}. A review measured why: when a newer
+     * connection replaces an older one, the old socket's close arrives AFTER
+     * {@code shell} has been reassigned, so the id check there does not match and
+     * the map was never cleared. An unauthenticated loopback client could take
+     * the channel, answer one {@code viewport} frame with a {@code pageUrl} of
+     * its choosing and disconnect, and the forged address survived into the real
+     * shell — the operator's address line and every tool's "names the page it
+     * happened on" sentence then cited a page nothing was showing. A shell that
+     * has just attached is showing nothing yet, so clearing on the way in is also
+     * simply true.
+     *
      * @param session the shell's socket
      */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         WebSocketSession previous = shell;
         shell = session;
+        pageUrls.clear();
         if (previous != null && previous.isOpen() && !previous.getId().equals(session.getId())) {
             try {
                 previous.close(CloseStatus.NORMAL.withReason("replaced by a newer browser pane"));
