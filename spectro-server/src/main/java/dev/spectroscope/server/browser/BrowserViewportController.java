@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
@@ -37,6 +38,16 @@ import java.util.Map;
  *
  * <p>Both endpoints wear the loopback + Origin fence the rest of the API wears
  * and answer 404 to anyone else.
+ *
+ * <p><b>Both now name a session (card 218).</b> There is a browser per session,
+ * so "where does the pane go" and "what is it showing" are questions ABOUT one
+ * session. The id travels as an ordinary parameter and is not a capability: the
+ * same caller that could send it can already read that session's whole
+ * transcript through {@code /api/sessions/&#123;id&#125;} behind the same fence,
+ * so nothing here is reachable that was not reachable before. What the parameter
+ * cannot do is open a browser: {@code viewport} only positions a pane that some
+ * session's agent already opened, and it answers with a rectangle rather than
+ * with a page.
  */
 @RestController
 public class BrowserViewportController {
@@ -53,19 +64,27 @@ public class BrowserViewportController {
     }
 
     /**
-     * Whether a browser pane is attached, and what it is showing.
+     * Whether a browser pane is attached, and what THIS session's one is showing.
      *
-     * @param request the servlet request, for the local fence
+     * @param sessionId the session asking — absent before a session mints its id
+     * @param request   the servlet request, for the local fence
      * @return the status, or 404 to a non-local caller
      */
     @GetMapping("/api/browser/status")
-    public ResponseEntity<Map<String, Object>> status(HttpServletRequest request) {
+    public ResponseEntity<Map<String, Object>> status(
+            @RequestParam(name = "sessionId", required = false) String sessionId,
+            HttpServletRequest request) {
         if (!local(request)) {
             return ResponseEntity.notFound().build();
         }
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("attached", control.attached());
-        body.put("url", control.pageUrl());
+        // A page that has not started a session yet has no browser and no
+        // address. Saying null is the honest answer; borrowing another session's
+        // address would put a page in the segment's address line that this
+        // session's agent is not driving.
+        body.put("url", sessionId == null || sessionId.isBlank()
+                ? null : control.forSession(sessionId).pageUrl());
         return ResponseEntity.ok(body);
     }
 
@@ -90,20 +109,27 @@ public class BrowserViewportController {
         args.put("width", rect.width());
         args.put("height", rect.height());
         args.put("visible", rect.visible());
-        control.send("viewport", args);
+        // The session the app is SHOWING. This is what makes the rail segment a
+        // view onto the current session's browser rather than a second door onto
+        // whichever agent happened to run last.
+        String sessionId = rect.sessionId() == null || rect.sessionId().isBlank()
+                ? null : rect.sessionId();
+        control.viewport(sessionId, args);
         return ResponseEntity.noContent().build();
     }
 
     /**
-     * The browser segment's own rectangle.
+     * The browser segment's own rectangle, and whose browser belongs in it.
      *
-     * @param x       left edge in window CSS pixels
-     * @param y       top edge in window CSS pixels
-     * @param width   the reserved width
-     * @param height  the reserved height
-     * @param visible whether the segment is the one on screen
+     * @param x         left edge in window CSS pixels
+     * @param y         top edge in window CSS pixels
+     * @param width     the reserved width
+     * @param height    the reserved height
+     * @param visible   whether the segment is the one on screen
+     * @param sessionId the session the app is showing, or null before one exists
      */
-    public record Viewport(int x, int y, int width, int height, boolean visible) {}
+    public record Viewport(int x, int y, int width, int height, boolean visible,
+            String sessionId) {}
 
     /** The same loopback + Host + Origin fence the rest of the API wears. */
     private static boolean local(HttpServletRequest request) {

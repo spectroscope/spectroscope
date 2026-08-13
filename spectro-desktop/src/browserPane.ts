@@ -1,10 +1,19 @@
-// The visible browser (card 201), on the engine card 200 decided.
+// The visible browser (card 201), one per SESSION (card 218), on the engine card
+// 200 decided.
 //
 // A WebContentsView laid over the desktop window's own content: a REAL browser
 // pane inside the application, not a headless renderer with screenshots and not
 // a second browser beside the app. The owner asked for the thing Claude Code
 // has, and the brand rule ("the agent orchestrator you can watch") is satisfied
 // by watching, not by streaming a picture of watching.
+//
+// Card 218 turned the one pane into a map keyed by session id, because the owner
+// settled that the browser is a session feature: "weil jede session braucht ja
+// seinen eigenen browser". The isolation is not a convention in this file — it is
+// Chromium's own: each session's view browses in its OWN Electron session, so
+// the cookie jar, localStorage, IndexedDB, the HTTP cache and the credential
+// store all hang off a different object. Nothing in here has to remember to
+// separate them, and nothing in here could merge them by accident.
 //
 // The trade, ratified by the owner and stated out loud: this is the DESKTOP face
 // only. A reader running `spectro web` and pointing their own browser at the
@@ -19,7 +28,9 @@
 // (card 199) and the filter list are both there. NetFence's own javadoc says
 // what browse_page cannot do — "policing the browser's own traffic needs a
 // proxy Chrome runs through, and that is its own card" — and this engine needs
-// neither proxy nor card.
+// neither proxy nor card. With one Chromium session per spectroscope session the
+// hook is installed once per partition, and each copy closes over the session it
+// belongs to, so a refusal is recorded against the page that earned it.
 
 import { BaseWindow, BrowserWindow, WebContentsView, session, type Session } from "electron";
 import * as fs from "node:fs";
@@ -54,25 +65,53 @@ interface ConsoleLine {
   at: number;
 }
 
-const PARTITION = "persist:spectro-browser";
+const PARTITION_PREFIX = "spectro-browser/";
 const CONSOLE_CAP = 500;
 const DEFAULT_TIMEOUT_MS = 30_000;
+
+/**
+ * One session's browser: its view, its screen state and everything its page
+ * produced.
+ *
+ * Every field here was a module-level variable in card 201, which is the same
+ * statement as "there was one browser". Moving them into a record keyed by
+ * session id is the whole card: two sessions cannot share a console buffer, a
+ * refusal log or a page, because they do not share this object.
+ */
+interface SessionPane {
+  /** The session this browser belongs to — the store id, minted by the server. */
+  readonly id: string;
+  /** The Chromium partition name. The isolation boundary, in one string. */
+  readonly partition: string;
+  view: WebContentsView | null;
+  /** Whether the view is in the window's tree. Adding it twice is not showing it. */
+  inWindow: boolean;
+  /** Whether this pane is on screen RIGHT NOW — the flag hidePane() must clear. */
+  visible: boolean;
+  lines: ConsoleLine[];
+  /** What the page's console said that the SHELL said, not the page. Counted, not dropped. */
+  shellWarnings: number;
+  /** What the hook refused since the last navigate — the pane's own honest record. */
+  refusals: PaneRefusal[];
+}
+
+/** Every open session's browser, keyed by session id. */
+const panes = new Map<string, SessionPane>();
 
 /** Where the page may go, read fresh per request so a saved opt-in lands at once. */
 let policy: FencePolicy = { allowLocalhost: false };
 let adblockOn = true;
 let filters: Blocklist = compileFilters(loadFilters());
-let view: WebContentsView | null = null;
+
+/**
+ * The rectangle the app reserved, in window coordinates.
+ *
+ * Window-global on purpose: every session's pane occupies the SAME hole in the
+ * same window, because only one of them is on screen at a time. Keeping it per
+ * session would mean a pane could be laid out from a rectangle the app measured
+ * for a different surface.
+ */
 let reported: Rect | null = null;
-/** Whether the view is in the window's tree. Adding it twice is not the same as showing it. */
-let inWindow = false;
-/** Whether the pane is on screen RIGHT NOW — the flag hidePane() must clear. */
-let visible = false;
-const consoleLines: ConsoleLine[] = [];
-/** What the page's console said that the SHELL said, not the page. Counted, not dropped. */
-let shellWarnings = 0;
-/** What the hook refused since the last navigate — the pane's own honest record. */
-let refusals: PaneRefusal[] = [];
 
 /** One refused request, with the sentence the fence already produced for it. */
 export interface PaneRefusal {
@@ -120,9 +159,36 @@ function loadFilters(): string[] {
   }
 }
 
-/** The session the pane browses in — its own partition, never the app's. */
-function paneSession(): Session {
-  const ses = session.fromPartition(PARTITION);
+/**
+ * The Chromium partition name for one session — the isolation, in one string.
+ *
+ * Deliberately NOT a `persist:` partition. The owner's lifetime rule is "it
+ * lives until the session is closed", and a persistent partition would outlive
+ * the session on disk: a directory per session id that nothing ever deletes, and
+ * a resumed id would find the cookies of a run that ended days ago. An in-memory
+ * session dies with the object, so "the browser goes away" is not a promise
+ * about a delete succeeding — there is nothing left to delete.
+ *
+ * The id is sanitised because a partition name becomes a path component inside
+ * Chromium. Session ids are already path-safe (the store refuses one that
+ * resolves outside it), so this is a belt: it may only ever make two ids collide
+ * on the sanitised form, which is why the length and the raw id both ride along.
+ *
+ * @param sessionId the session's store id
+ */
+export function partitionFor(sessionId: string): string {
+  const safe = sessionId.replace(/[^A-Za-z0-9._-]/g, "_");
+  return `${PARTITION_PREFIX}${safe}-${sessionId.length}`;
+}
+
+/**
+ * One session's Chromium session, with the fence and the filter list on its own
+ * request hook.
+ *
+ * @param pane the session's browser
+ */
+function paneSession(pane: SessionPane): Session {
+  const ses = session.fromPartition(pane.partition);
   if ((ses as unknown as { __spectroHooked?: boolean }).__spectroHooked) return ses;
   (ses as unknown as { __spectroHooked?: boolean }).__spectroHooked = true;
 
@@ -142,14 +208,14 @@ function paneSession(): Session {
         verdict = refuse(details.url, atPolicy);   // never let the fence fail open silently
       }
       if (verdict) {
-        refusals.push({
+        pane.refusals.push({
           url: verdict.address, rule: verdict.rule, kind: "fence", sentence: verdict.sentence,
         });
         callback({ cancel: true });
         return;
       }
       if (adblockOn && filters.blocks(details.url, details.referrer ?? "", isTop)) {
-        refusals.push({
+        pane.refusals.push({
           url: details.url, rule: "adblock", kind: "adblock",
           sentence: `the filter list blocked ${details.url}`,
         });
@@ -181,12 +247,34 @@ export function attachPaneTo(source: WindowSource, segment: SegmentRequest): voi
   showSegment = segment;
 }
 
-/** The pane's own view, created on first use. */
-function ensureView(): WebContentsView {
-  if (view && !view.webContents.isDestroyed()) return view;
+/**
+ * One session's browser record, created on first use.
+ *
+ * @param sessionId the session's store id
+ */
+function paneFor(sessionId: string): SessionPane {
+  const existing = panes.get(sessionId);
+  if (existing) return existing;
+  const created: SessionPane = {
+    id: sessionId,
+    partition: partitionFor(sessionId),
+    view: null,
+    inWindow: false,
+    visible: false,
+    lines: [],
+    shellWarnings: 0,
+    refusals: [],
+  };
+  panes.set(sessionId, created);
+  return created;
+}
+
+/** The session's own view, created on first use. */
+function ensureView(pane: SessionPane): WebContentsView {
+  if (pane.view && !pane.view.webContents.isDestroyed()) return pane.view;
   const created = new WebContentsView({
     webPreferences: {
-      session: paneSession(),
+      session: paneSession(pane),
       // The page under test is untrusted input. It gets no Node, no preload and
       // its own sandboxed renderer — card 200 section 6, rule 4: javascript_exec
       // runs in the PAGE context, never a Node context, and there is no
@@ -206,82 +294,133 @@ function ensureView(): WebContentsView {
     const level = String(event?.level ?? args[1] ?? "log");
     const text = String(event?.message ?? args[2] ?? "");
     if (!isPageLine(text)) {
-      shellWarnings += 1;
+      pane.shellWarnings += 1;
       return;
     }
-    consoleLines.push({ level, text, at: Date.now() });
-    if (consoleLines.length > CONSOLE_CAP) consoleLines.splice(0, consoleLines.length - CONSOLE_CAP);
+    pane.lines.push({ level, text, at: Date.now() });
+    if (pane.lines.length > CONSOLE_CAP) pane.lines.splice(0, pane.lines.length - CONSOLE_CAP);
   });
   wc.setWindowOpenHandler(() => ({ action: "deny" })); // one pane, one page
-  view = created;
+  pane.view = created;
   return created;
 }
 
-/** Puts the pane on screen at the rectangle the web UI last measured. */
-function layout(): void {
+/** Puts a pane on screen at the rectangle the web UI last measured. */
+function layout(pane: SessionPane): void {
   const win = windowSource();
-  if (!win || win.isDestroyed() || !view) return;
+  if (!win || win.isDestroyed() || !pane.view) return;
   const size = win.getContentBounds();
-  view.setBounds(paneBounds(isUsable(reported) ? reported : null, size));
+  pane.view.setBounds(paneBounds(isUsable(reported) ? reported : null, size));
 }
 
 /**
- * Shows the pane, opening the window and switching the segment if it must.
+ * Shows one session's pane, opening the window and switching the segment if it
+ * must — and taking every OTHER session's pane off screen first.
  *
  * <p>Two flags, because they answer two different questions. "Is the view in
  * the window's tree" is asked once per view; "is the pane on screen" is asked
  * every time the operator navigates the app. Sharing one flag between them was
- * the measured defect: hidePane() left it set, so nav.browser was sent once per
- * process and the second tool call painted the pane over whatever the operator
+ * the measured defect of card 201: hidePane() left it set, so nav.browser was
+ * sent once per process and the native pane painted over whatever the operator
  * had switched to, with the rail still highlighting the segment he chose.
+ *
+ * <p>The single-pane rule is card 218's own: two native overlays over one
+ * rectangle is the failure a div could never make, and the operator would be
+ * watching the top one while the agent drove the other.
  */
-function ensureVisible(): void {
+function ensureVisible(pane: SessionPane): void {
   const win = windowSource();
   if (!win || win.isDestroyed()) return;
-  const created = ensureView();
-  if (!inWindow) {
+  const created = ensureView(pane);
+  hideOthers(pane.id);
+  if (!pane.inWindow) {
     win.contentView.addChildView(created);
-    inWindow = true;
+    pane.inWindow = true;
   }
-  if (!visible) {
-    visible = true;
+  if (!pane.visible) {
+    pane.visible = true;
     showSegment();
   }
   created.setVisible(true);
-  layout();
+  layout(pane);
 }
 
-/** Takes the pane off screen without destroying the page it is showing. */
+/** Takes every pane except one off screen. */
+function hideOthers(keep: string): void {
+  for (const other of panes.values()) {
+    if (other.id !== keep) hide(other);
+  }
+}
+
+/** Takes one pane off screen without destroying the page it is showing. */
+function hide(pane: SessionPane): void {
+  if (pane.view && pane.visible) {
+    pane.view.setVisible(false);
+    pane.visible = false;   // so the next tool call asks for the segment back
+  }
+}
+
+/** Takes whatever is on screen off it, without destroying any page. */
 export function hidePane(): void {
-  if (view && visible) {
-    view.setVisible(false);
-    visible = false;   // so the next tool call asks for the segment back
+  panes.forEach(hide);
+}
+
+/**
+ * Forgets every session's browser, because the window that carried them is gone.
+ *
+ * <p>A WebContentsView dies with its window, so holding the reference after a
+ * close means the next setVisible() reaches a destroyed object.
+ */
+export function forgetPane(): void {
+  panes.clear();
+  reported = null;
+  forgetBaseUserAgent();
+}
+
+/**
+ * Ends one session's browser: its page, its cookies and its storage.
+ *
+ * <p>What "closed" means here is the server's answer, not this file's — the
+ * session's socket went away, which is the same event that cancels its run. The
+ * stored transcript survives; the browser does not, because a browser is live
+ * state and not a record. The Chromium session is in-memory (see
+ * {@link partitionFor}), so the cookie jar goes with the object rather than
+ * waiting for a delete to succeed.
+ *
+ * @param sessionId the session that closed
+ */
+export function closeSession(sessionId: string): void {
+  const pane = panes.get(sessionId);
+  if (!pane) return;
+  panes.delete(sessionId);
+  const view = pane.view;
+  pane.view = null;
+  if (!view) return;
+  const win = windowSource();
+  if (pane.inWindow && win && !win.isDestroyed()) {
+    try {
+      win.contentView.removeChildView(view);
+    } catch {
+      // The window may be tearing down around us; the view dies with it either way.
+    }
+  }
+  try {
+    if (!view.webContents.isDestroyed()) view.webContents.close();
+  } catch {
+    // Same: a page that is already gone needs no second closing.
   }
 }
 
 /**
- * Forgets the pane entirely, because the window that carried it is gone.
+ * The address one session's pane is showing, for a failure sentence to name.
  *
- * <p>A WebContentsView dies with its window, so holding the reference after a
- * close means the next setVisible() reaches a destroyed object. Clearing it
- * here also puts the two visibility flags back where a fresh window expects
- * them.
+ * @param sessionId the session whose browser is asked about
  */
-export function forgetPane(): void {
-  view = null;
-  inWindow = false;
-  visible = false;
-  reported = null;
-  refusals = [];
-  shellWarnings = 0;
-  consoleLines.length = 0;
-  forgetBaseUserAgent();
-}
-
-/** The address the pane is showing, for a failure sentence to name. */
-export function paneUrl(): string | null {
-  if (!view || view.webContents.isDestroyed()) return null;
-  const url = view.webContents.getURL();
+export function paneUrl(sessionId: string | null): string | null {
+  if (sessionId === null) return null;
+  const pane = panes.get(sessionId);
+  if (!pane || !pane.view || pane.view.webContents.isDestroyed()) return null;
+  const url = pane.view.webContents.getURL();
   return url && url !== "about:blank" ? url : null;
 }
 
@@ -291,13 +430,23 @@ export function paneAttached(): boolean {
   return win !== null && !win.isDestroyed();
 }
 
-function ok(value: unknown): PaneReply {
-  return { ok: true, value, pageUrl: paneUrl() };
+function ok(value: unknown, pane: SessionPane | null): PaneReply {
+  return { ok: true, value, pageUrl: pane === null ? null : paneUrl(pane.id) };
 }
 
-function failed(error: string): PaneReply {
-  return { ok: false, error, pageUrl: paneUrl() };
+function failed(error: string, pane: SessionPane | null): PaneReply {
+  return { ok: false, error, pageUrl: pane === null ? null : paneUrl(pane.id) };
 }
+
+/**
+ * The sentence a caller gets when it named no session.
+ *
+ * A browser per session means the shell must know WHOSE browser it is driving.
+ * Serving "the" browser to a caller that named none is exactly the silent
+ * substitution card 201 refused for tab_id, in the other direction.
+ */
+const NO_SESSION = "this command named no session, and every browser here belongs to one — "
+  + "the shell cannot guess which page to drive";
 
 /** Fails a promise that never settles, so one wedged page cannot wedge the agent. */
 function within<T>(work: Promise<T>, what: string, ms = DEFAULT_TIMEOUT_MS): Promise<T> {
@@ -310,40 +459,58 @@ function within<T>(work: Promise<T>, what: string, ms = DEFAULT_TIMEOUT_MS): Pro
 }
 
 /**
- * Runs one verb against the pane.
+ * Runs one verb against one session's browser.
  *
- * @param verb     the verb name, matching BrowserFace's own list
- * @param args     the verb's arguments as the Java side sent them
- * @param settings the policy that applies to this call
+ * @param verb      the verb name, matching BrowserFace's own list
+ * @param args      the verb's arguments as the Java side sent them
+ * @param settings  the policy that applies to this call
+ * @param sessionId whose browser this is, or null when the caller named none
  */
 export async function runVerb(
   verb: string,
   args: Record<string, unknown>,
   settings: PaneSettings,
+  sessionId: string | null,
 ): Promise<PaneReply> {
   policy = { allowLocalhost: settings.allowLocalhost === true };
   adblockOn = settings.adblock !== false;
 
+  // The rectangle is the WINDOW's, not a session's, so it is recorded even for a
+  // page that has no session id yet: a fresh session mints its id on its first
+  // prompt, and the hole it reserved is the same hole either way.
+  if (verb === "viewport") {
+    const rect = args as unknown as Rect & { visible?: boolean };
+    reported = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    if (rect.visible === false || sessionId === null) {
+      hidePane();
+      return ok({ hidden: true, bounds: reported }, null);
+    }
+    // The app is showing THIS session's browser surface, so this is the pane
+    // that belongs on screen — not whichever agent happened to run last.
+    const pane = panes.get(sessionId);
+    if (pane && pane.view) {
+      ensureVisible(pane);
+    } else {
+      hideOthers(sessionId);
+    }
+    return ok({ bounds: reported }, pane ?? null);
+  }
+
+  if (sessionId === null) {
+    return failed(NO_SESSION, null);
+  }
+
+  if (verb === "close_session") {
+    closeSession(sessionId);
+    return { ok: true, value: { closed: sessionId }, pageUrl: null };
+  }
+
+  const pane = paneFor(sessionId);
+
   try {
     switch (verb) {
       case "status":
-        return ok({ attached: paneAttached(), url: paneUrl(), visible });
-
-      case "viewport": {
-        // The web UI measured its placeholder. Not a browser verb — the seam
-        // that lets a React layout position a native overlay without a preload
-        // script, which navigationGuard.ts treats as a security property.
-        const rect = args as unknown as Rect & { visible?: boolean };
-        reported = { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-        if (rect.visible === false) {
-          hidePane();
-          return ok({ hidden: true });
-        }
-        if (view) {
-          ensureVisible();
-        }
-        return ok({ bounds: reported });
-      }
+        return ok({ attached: paneAttached(), url: paneUrl(pane.id), visible: pane.visible }, pane);
 
       case "navigate": {
         const url = String(args.url ?? "");
@@ -351,113 +518,113 @@ export async function runVerb(
         // hook's own parser, and it reads old IPv4 spellings the way Chromium
         // will (fence-vectors.json carries the measured divergence).
         const verdict = refuse(url, policy);
-        if (verdict) return failed(verdict.sentence);
-        ensureVisible();
-        refusals = [];
-        consoleLines.length = 0;
-        const wc = ensureView().webContents;
+        if (verdict) return failed(verdict.sentence, pane);
+        ensureVisible(pane);
+        pane.refusals = [];
+        pane.lines.length = 0;
+        const wc = ensureView(pane).webContents;
         try {
           await within(wc.loadURL(url), `loading ${url}`);
         } catch (stopped) {
-          return failed(loadFailureSentence((stopped as Error).message, refusals));
+          return failed(loadFailureSentence((stopped as Error).message, pane.refusals), pane);
         }
-        const blocked = refusals.length;
         return ok({
           title: wc.getTitle(),
           url: wc.getURL(),
-          blockedRequests: blocked,
-          adblocked: refusals.filter((r) => r.kind === "adblock").length,
-        });
+          blockedRequests: pane.refusals.length,
+          adblocked: pane.refusals.filter((r) => r.kind === "adblock").length,
+        }, pane);
       }
 
       case "eval": {
-        if (!view) return failed("no page is open in the pane yet — navigate first");
-        ensureVisible();
+        if (!pane.view) return failed(noPage(pane), pane);
+        ensureVisible(pane);
         // The four pinned semantics are executeJavaScript's own, not ours:
         // page context, act and sense in one call, a returned Promise awaited,
         // and the resolved value handed back structured. On raw CDP two of the
         // four are flags a caller can forget; here they cannot be.
         const value = await within(
-          ensureView().webContents.executeJavaScript(String(args.text ?? ""), true),
+          ensureView(pane).webContents.executeJavaScript(String(args.text ?? ""), true),
           "the eval",
         );
-        return ok({ value: value === undefined ? null : value });
+        return ok({ value: value === undefined ? null : value }, pane);
       }
 
       case "screenshot": {
-        if (!view) return failed("no page is open in the pane yet — navigate first");
-        ensureVisible();
+        if (!pane.view) return failed(noPage(pane), pane);
+        ensureVisible(pane);
         // capturePage() THROWS when the pane has not painted (measured in the
         // card 200 spike: UnknownVizError, not an empty image), so the paint is
         // waited for rather than hoped for.
         await new Promise((resolve) => setTimeout(resolve, 120));
-        const image = await within(ensureView().webContents.capturePage(), "the screenshot");
+        const image = await within(ensureView(pane).webContents.capturePage(), "the screenshot");
         const size = image.getSize();
         if (size.width === 0 || size.height === 0) {
-          return failed("the pane has not painted yet — it may be hidden behind another segment");
+          return failed("the pane has not painted yet — it may be hidden behind another segment",
+            pane);
         }
         return ok({
           mediaType: "image/png",
           dataBase64: image.toPNG().toString("base64"),
           width: size.width,
           height: size.height,
-        });
+        }, pane);
       }
 
       case "input":
-        return await input(args);
+        return await input(args, pane);
 
       case "read_page": {
-        if (!view) return failed("no page is open in the pane yet — navigate first");
+        if (!pane.view) return failed(noPage(pane), pane);
         const tree = await within(
-          ensureView().webContents.executeJavaScript(
+          ensureView(pane).webContents.executeJavaScript(
             readPageScript(String(args.filter ?? "interactive"), Number(args.maxChars ?? 8000)),
             true,
           ),
           "reading the page",
         );
-        return ok({ tree: String(tree ?? "") });
+        return ok({ tree: String(tree ?? "") }, pane);
       }
 
       case "find": {
-        if (!view) return failed("no page is open in the pane yet — navigate first");
+        if (!pane.view) return failed(noPage(pane), pane);
         const matches = await within(
-          ensureView().webContents.executeJavaScript(findScript(String(args.query ?? "")), true),
+          ensureView(pane).webContents.executeJavaScript(findScript(String(args.query ?? "")), true),
           "the search",
         );
         if (matches === "NO_TREE") {
           return failed("nothing has been read yet — call browser_read_page first, "
-            + "because find searches the tree that read produced");
+            + "because find searches the tree that read produced", pane);
         }
-        return ok({ matches: String(matches ?? "") });
+        return ok({ matches: String(matches ?? "") }, pane);
       }
 
       case "console": {
         const onlyErrors = args.onlyErrors === true;
         const pattern = args.pattern === undefined ? null : String(args.pattern).toLowerCase();
         const limit = Math.max(1, Math.min(500, Number(args.limit ?? 50)));
-        const kept = consoleLines
+        const kept = pane.lines
           .filter((line) => !onlyErrors || /error|warn/i.test(line.level))
           .filter((line) => pattern === null || line.text.toLowerCase().includes(pattern))
           .slice(-limit)
           .map((line) => `[${line.level}] ${line.text}`);
-        const blocked = refusals.length
-          ? `\n(${refusals.length} request(s) refused since this page loaded: `
-            + `${refusals.filter((r) => r.kind === "adblock").length} by the filter list, `
-            + `${refusals.filter((r) => r.kind === "fence").length} by the net fence)`
+        const blocked = pane.refusals.length
+          ? `\n(${pane.refusals.length} request(s) refused since this page loaded: `
+            + `${pane.refusals.filter((r) => r.kind === "adblock").length} by the filter list, `
+            + `${pane.refusals.filter((r) => r.kind === "fence").length} by the net fence)`
           : "";
         // The dropped lines are named rather than silently absent, because the
         // tool whose job is "where a broken local build says what is wrong"
         // must not also be the tool that hides something.
-        const shell = shellWarnings
-          ? `\n(${shellWarnings} Electron security warning(s) from the shell itself left out — `
+        const shell = pane.shellWarnings
+          ? `\n(${pane.shellWarnings} Electron security warning(s) from the shell itself left out — `
             + `they are not the page's)`
           : "";
-        return ok({ lines: kept.join("\n") + blocked + shell });
+        return ok({ lines: kept.join("\n") + blocked + shell }, pane);
       }
 
       case "resize": {
-        if (!view) return failed("no page is open in the pane yet — navigate first");
+        if (!pane.view) return failed(noPage(pane), pane);
         const width = Math.max(200, Number(args.width ?? 1280));
         const height = Math.max(200, Number(args.height ?? 800));
         // The pane keeps the rectangle the LAYOUT gave it and the page gets a
@@ -465,31 +632,36 @@ export async function runVerb(
         // version called setBounds, which layout() overwrote on the next
         // ensureVisible(), and every other verb calls ensureVisible() first.
         const applied = await within(
-          applyViewport(ensureView().webContents, width, height),
+          applyViewport(ensureView(pane).webContents, width, height),
           "the resize",
         );
-        return ok(applied);
+        return ok(applied, pane);
       }
 
       default:
-        return failed(`the pane does not know the verb "${String(verb).slice(0, 40)}"`);
+        return failed(`the pane does not know the verb "${String(verb).slice(0, 40)}"`, pane);
     }
   } catch (error) {
-    return failed((error as Error).message ?? String(error));
+    return failed((error as Error).message ?? String(error), pane);
   }
 }
 
+/** What a verb says when this session's browser has not opened anything yet. */
+function noPage(pane: SessionPane): string {
+  return `no page is open in this session's browser yet — navigate first (session ${pane.id})`;
+}
+
 /** The input verbs: real mouse and keyboard events into the pane's own renderer. */
-async function input(args: Record<string, unknown>): Promise<PaneReply> {
-  if (!view) return failed("no page is open in the pane yet — navigate first");
-  ensureVisible();
-  const wc = ensureView().webContents;
+async function input(args: Record<string, unknown>, pane: SessionPane): Promise<PaneReply> {
+  if (!pane.view) return failed(noPage(pane), pane);
+  ensureVisible(pane);
+  const wc = ensureView(pane).webContents;
   const action = String(args.action ?? "");
 
   if (action === "wait") {
     const seconds = Math.max(0, Math.min(30, Number(args.duration ?? 1)));
     await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
-    return ok({ detail: `waited ${seconds} s` });
+    return ok({ detail: `waited ${seconds} s` }, pane);
   }
 
   let point: { x: number; y: number } | null = null;
@@ -499,7 +671,7 @@ async function input(args: Record<string, unknown>): Promise<PaneReply> {
       | null;
     if (!resolved) {
       return failed(`no element carries the handle ${String(args.ref).slice(0, 20)} — `
-        + "read the page again, it may have re-rendered");
+        + "read the page again, it may have re-rendered", pane);
     }
     point = resolved;
   } else if (Array.isArray(args.coordinate) && args.coordinate.length === 2) {
@@ -511,15 +683,15 @@ async function input(args: Record<string, unknown>): Promise<PaneReply> {
       const text = String(args.text ?? "");
       if (point) clickAt(wc, point, 1, "left");
       wc.insertText(text);
-      return ok({ detail: `typed ${text.length} character(s)` });
+      return ok({ detail: `typed ${text.length} character(s)` }, pane);
     }
     case "key": {
       const key = String(args.text ?? "");
-      if (!key) return failed("browser_computer action=key needs the key in `text`");
+      if (!key) return failed("browser_computer action=key needs the key in `text`", pane);
       wc.sendInputEvent({ type: "keyDown", keyCode: key });
       wc.sendInputEvent({ type: "char", keyCode: key });
       wc.sendInputEvent({ type: "keyUp", keyCode: key });
-      return ok({ detail: `pressed ${key}` });
+      return ok({ detail: `pressed ${key}` }, pane);
     }
     case "scroll": {
       const amount = Number(args.scroll_amount ?? 3) * 100;
@@ -530,23 +702,25 @@ async function input(args: Record<string, unknown>): Promise<PaneReply> {
       wc.sendInputEvent({
         type: "mouseWheel", x: at.x, y: at.y, deltaX: dx, deltaY: dy, canScroll: true,
       } as Parameters<typeof wc.sendInputEvent>[0]);
-      return ok({ detail: `scrolled ${direction}` });
+      return ok({ detail: `scrolled ${direction}` }, pane);
     }
     case "hover": {
-      if (!point) return failed("browser_computer action=hover needs a coordinate or a ref");
+      if (!point) return failed("browser_computer action=hover needs a coordinate or a ref", pane);
       wc.sendInputEvent({ type: "mouseMove", x: point.x, y: point.y });
-      return ok({ detail: `hovered ${point.x},${point.y}` });
+      return ok({ detail: `hovered ${point.x},${point.y}` }, pane);
     }
     case "left_click":
     case "right_click":
     case "double_click": {
-      if (!point) return failed(`browser_computer action=${action} needs a coordinate or a ref`);
+      if (!point) {
+        return failed(`browser_computer action=${action} needs a coordinate or a ref`, pane);
+      }
       clickAt(wc, point, action === "double_click" ? 2 : 1,
         action === "right_click" ? "right" : "left");
-      return ok({ detail: `${action} at ${point.x},${point.y}` });
+      return ok({ detail: `${action} at ${point.x},${point.y}` }, pane);
     }
     default:
-      return failed(`the pane does not know the input action "${action.slice(0, 40)}"`);
+      return failed(`the pane does not know the input action "${action.slice(0, 40)}"`, pane);
   }
 }
 
@@ -596,7 +770,9 @@ export function loadFailureSentence(error: string, blocked: PaneRefusal[]): stri
   return `the net fence refused a hop on the way there: ${fenced[0].sentence}${more}`;
 }
 
-/** Re-lays the pane after the window moved or resized. */
+/** Re-lays whatever pane is on screen after the window moved or resized. */
 export function relayoutPane(): void {
-  if (visible) layout();
+  panes.forEach((pane) => {
+    if (pane.visible) layout(pane);
+  });
 }

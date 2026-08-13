@@ -133,8 +133,11 @@ class BrowserLiveDriveTest {
         }
     }
 
+    /** The session this live drive plays, shaped like a store id. */
+    private static final String SESSION = "20260813-live-drive";
+
     private Tool tool(String name) {
-        return new BrowserTools(() -> control,
+        return new BrowserTools(() -> control.forSession(SESSION),
                 () -> NetFence.withSystemDns(true),  // the verify loop, opted in
                 new ImageStore(blobs))
                 .all().stream().filter(t -> name.equals(t.name())).findFirst().orElseThrow();
