@@ -157,22 +157,26 @@ public final class LaunchTools {
                 StringBuilder said = new StringBuilder(file.entries().size()
                         + " launch configuration" + (file.entries().size() == 1 ? "" : "s")
                         + " in " + LaunchFile.LOCATION
-                        + (file.version() == null ? "" : " (version " + file.version() + ")")
+                        + (file.version() == null ? "" : " (version " + clean(file.version()) + ")")
                         + ":\n");
                 for (LaunchEntry entry : file.entries()) {
-                    said.append("- ").append(entry.name()).append(" — ");
+                    said.append("- ").append(clean(entry.name())).append(" — ");
                     said.append(entry.attaches()
-                            ? "attaches to " + entry.address()
+                            ? "attaches to " + clean(entry.address())
                                     + " (no command: spectroscope starts nothing for it)"
                             : "runs `" + clean(entry.commandLine()) + "`, opens "
-                                    + entry.address());
-                    supervisor.running(entry.name()).ifPresent(running ->
-                            said.append(running.attached()
+                                    + clean(entry.address()));
+                    supervisor.running(entry.name()).ifPresentOrElse(
+                            running -> said.append(running.attached()
                                     ? " — ATTACHED now"
-                                    : " — UP now, pid " + running.pid()));
+                                    : " — UP now, pid " + running.pid()),
+                            () -> supervisor.exited(entry.name()).ifPresent(gone ->
+                                    said.append(" — EXITED with code ").append(gone.code())
+                                            .append("; launch_logs still reads what it printed")));
                     if (!entry.unknownKeys().isEmpty()) {
                         said.append(" [ignored keys: ")
-                                .append(String.join(", ", entry.unknownKeys())).append("]");
+                                .append(clean(String.join(", ", entry.unknownKeys())))
+                                .append("]");
                     }
                     said.append("\n");
                 }
@@ -195,12 +199,16 @@ public final class LaunchTools {
      */
     private Tool start() {
         return new LaunchTool("launch_start",
-                "Starts a launch configuration by name and points this session's browser at it. "
-                        + "Waits until the port actually answers before saying it is up, so a "
-                        + "success here means the app is reachable, not that a command was "
-                        + "issued. An entry carrying a url and no command is ATTACHED instead: "
-                        + "nothing is started, and it counts as up once that address answers. "
-                        + "Use launch_list first if you do not know the names.",
+                "Starts a launch configuration by name. Waits until the port actually answers "
+                        + "before saying it is up, so a success here means the app is reachable, "
+                        + "not that a command was issued. It also points this session's browser "
+                        + "at the address — EXCEPT on loopback, which is where a launch "
+                        + "configuration almost always points: the net fence refuses localhost "
+                        + "until allowLocalhost is opted into, and without that opt-in the app "
+                        + "starts and no page is opened. The answer says which of the two "
+                        + "happened, every time. An entry carrying a url and no command is "
+                        + "ATTACHED instead: nothing is started, and it counts as up once that "
+                        + "address answers. Use launch_list first if you do not know the names.",
                 schema(properties -> {
                     properties.set("name", string("The configuration name, exactly as "
                             + LaunchFile.LOCATION + " spells it."));
@@ -277,7 +285,8 @@ public final class LaunchTools {
                     + "\" in " + LaunchFile.LOCATION + ". It carries "
                     + (file.names().isEmpty()
                             ? "none at all."
-                            : String.join(", ", file.names()) + ".");
+                            : String.join(", ", file.names().stream()
+                                    .map(LaunchTools::clean).toList()) + ".");
         }
         LaunchEntry entry = found.get();
         Duration budget = budget(input);
@@ -312,10 +321,11 @@ public final class LaunchTools {
 
     /** The success sentence, including the case where the fence keeps the browser away. */
     private String openedOn(String tool, LaunchEntry entry, LaunchSupervisor.Running running) {
+        String address = clean(running.address());
         String head = running.attached()
-                ? "Attached to \"" + clean(entry.name()) + "\" on " + running.address()
+                ? "Attached to \"" + clean(entry.name()) + "\" on " + address
                         + " — it was already running, and spectroscope started nothing"
-                : "\"" + clean(entry.name()) + "\" is up on " + running.address()
+                : "\"" + clean(entry.name()) + "\" is up on " + address
                         + " (pid " + running.pid() + ")";
         NetFence.Refusal refusal = fence.get().refuse(running.address());
         if (refusal != null) {
@@ -335,10 +345,10 @@ public final class LaunchTools {
         ObjectNode args = JSON.createObjectNode().put("url", running.address());
         BrowserFace.Reply reply = browser.send("navigate", args);
         if (!reply.ok()) {
-            return head + ", and the browser could not open " + running.address()
-                    + " — " + reply.error();
+            return head + ", and the browser could not open " + address
+                    + " — " + clean(reply.error());
         }
-        String landed = reply.pageUrl() == null ? running.address() : reply.pageUrl();
+        String landed = reply.pageUrl() == null ? address : clean(reply.pageUrl());
         return head + ", and the browser is showing " + landed
                 + ". launch_logs " + clean(entry.name()) + " reads what it prints.";
     }
@@ -374,6 +384,12 @@ public final class LaunchTools {
                 if (!stopped.known()) {
                     return "ERROR: launch_stop has nothing running called \"" + clean(name)
                             + "\" in this session" + upNow() + ".";
+                }
+                if (stopped.exitCode() != null) {
+                    return "\"" + clean(name) + "\" had already exited with code "
+                            + stopped.exitCode() + " on its own, so there was nothing left to "
+                            + "stop. Its output is dropped now — read it with launch_logs BEFORE "
+                            + "stopping a configuration that died.";
                 }
                 return "Stopped \"" + clean(name) + "\" and everything it spawned.";
             }
@@ -441,6 +457,18 @@ public final class LaunchTools {
                             + "started no process and captured nothing. Its output is wherever "
                             + "that server was started. This is not an empty log — it is no log.";
                 }
+                if (view.exitCode() != null) {
+                    // The configuration is gone and its output outlived it. Say
+                    // the death first: a log that ends mid-build reads like a
+                    // running server until the reader is told otherwise.
+                    return "\"" + clean(name) + "\" is NOT running — it exited with code "
+                            + view.exitCode() + ". "
+                            + (view.text().isBlank()
+                                    ? "It printed nothing before it did."
+                                    : "This is what it printed before it did:\n"
+                                            + ToolOutput.clip(view.text(),
+                                                    ToolOutput.MAX_OUTPUT_CHARS));
+                }
                 return view.text().isBlank()
                         ? "\"" + clean(name) + "\" has printed nothing yet."
                         : ToolOutput.clip(view.text(), ToolOutput.MAX_OUTPUT_CHARS);
@@ -455,7 +483,8 @@ public final class LaunchTools {
             return ", and nothing is up in it";
         }
         return ", and what is up is "
-                + String.join(", ", running.stream().map(LaunchSupervisor.Running::name).toList());
+                + String.join(", ", running.stream()
+                        .map(LaunchSupervisor.Running::name).map(LaunchTools::clean).toList());
     }
 
     /** The wait budget a call asked for, bounded. */
@@ -542,7 +571,28 @@ public final class LaunchTools {
         abstract String run(JsonNode input, ToolContext context);
     }
 
-    /** Untrusted text inside our own sentence: one line, bounded, no controls. */
+    /**
+     * Untrusted text inside our own sentence: one line, bounded, no controls.
+     *
+     * <p><b>Every</b> string that came out of the launch file goes through here —
+     * names, addresses, the version, ignored key names, command lines — and so
+     * does every string that came back from the browser. That total is the
+     * correction a review drove in on 2026-08-13: this rule existed and was
+     * applied on every error path, and {@code launch_list} was echoing names and
+     * addresses raw. A crafted {@code .claude/launch.json} whose entry name
+     * carried newlines therefore printed a forged {@code === SYSTEM ===} block
+     * and three invented configurations into the transcript, indistinguishable
+     * from the real ones. That grants no execution by itself — {@code
+     * launch_start} still meets the eval-execute gate — but {@code launch_list}
+     * is tier read, never prompts, and its own description sends the agent here
+     * first, so a repository the agent has merely cloned got attacker-chosen
+     * structure into the transcript for free. One entry is now one line, always:
+     * flattening the controls is what takes the forgery away, because a payload
+     * that cannot start a new line cannot pretend to be a new entry.
+     *
+     * @param raw the text as the file or the browser wrote it
+     * @return the same text, flattened to one line and bounded
+     */
     private static String clean(String raw) {
         String flat = String.valueOf(raw).replaceAll("[\\p{Cntrl}]", " ").strip();
         return flat.length() <= 300 ? flat : flat.substring(0, 300) + "…";

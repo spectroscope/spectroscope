@@ -68,6 +68,44 @@ class LaunchFileTest {
                 "the keys are recorded so a listing can say what it ignored");
     }
 
+    /**
+     * The command line is printed for a human and a model, so one argument reads
+     * as one argument.
+     *
+     * <p>Space-joining printed a real entry as
+     * {@code /bin/sh -c python3 -m http.server 51824 & sleep 2}, which looks like
+     * eight arguments where there are two, and cannot be pasted anywhere. Nothing
+     * here is ever executed — the process is built from the argument list — so
+     * this is purely about a sentence that does not mislead.
+     */
+    @Test
+    void anArgumentThatCarriesSpacesIsQuotedSoItReadsAsOneArgument() {
+        LaunchFile file = LaunchFile.parse("""
+                {
+                  "version": "0.0.1",
+                  "configurations": [
+                    { "name": "web", "runtimeExecutable": "/bin/sh",
+                      "runtimeArgs": ["-c", "python3 -m http.server 51824 & sleep 2"],
+                      "port": 51824 }
+                  ]
+                }
+                """);
+        assertEquals("/bin/sh -c 'python3 -m http.server 51824 & sleep 2'",
+                file.find("web").orElseThrow().commandLine());
+    }
+
+    /** And an argument with nothing special in it is left exactly as written. */
+    @Test
+    void aPlainArgumentIsNotDressedUp() {
+        assertEquals("npm run dev",
+                new LaunchEntry("web", 5173, "npm", List.of("run", "dev"), null, List.of())
+                        .commandLine());
+        assertEquals("npm run dev -- --port '5173 5174'",
+                new LaunchEntry("web", 5173, "npm",
+                        List.of("run", "dev", "--", "--port", "5173 5174"), null, List.of())
+                        .commandLine());
+    }
+
     /** Criterion 2: a url and no command is an entry spectroscope cannot run. */
     @Test
     void aUrlWithNoCommandIsAnAttachEntry() {

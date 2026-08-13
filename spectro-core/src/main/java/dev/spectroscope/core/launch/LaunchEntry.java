@@ -72,14 +72,42 @@ public record LaunchEntry(String name, Integer port, String runtimeExecutable,
     /**
      * The command line, for a sentence that has to say what was run.
      *
-     * @return the executable and its arguments, space-joined, or "" for an attach entry
+     * <p>An argument carrying whitespace or a shell metacharacter is quoted, so
+     * the reader can tell one argument from two. Plain space-joining printed
+     * {@code /bin/sh -c python3 -m http.server 51824 & sleep 2}, which reads as
+     * eight arguments where there are two and is not copy-pasteable — a review
+     * caught it in a live drive on 2026-08-13. Nothing here is ever executed:
+     * the process is built from the argument LIST, so this quoting is for the
+     * human and the model, never for a shell.
+     *
+     * @return the executable and its arguments, each quoted where it needs to be,
+     *         or "" for an attach entry
      */
     public String commandLine() {
         if (attaches()) {
             return "";
         }
-        return runtimeArgs.isEmpty()
-                ? runtimeExecutable
-                : runtimeExecutable + " " + String.join(" ", runtimeArgs);
+        StringBuilder line = new StringBuilder(quoted(runtimeExecutable));
+        for (String argument : runtimeArgs) {
+            line.append(' ').append(quoted(argument));
+        }
+        return line.toString();
+    }
+
+    /** One argument as a reader can tell it apart from its neighbours. */
+    private static String quoted(String argument) {
+        if (argument == null || argument.isEmpty()) {
+            return "''";
+        }
+        if (argument.chars().noneMatch(LaunchEntry::needsQuoting)) {
+            return argument;
+        }
+        return "'" + argument.replace("'", "'\\''") + "'";
+    }
+
+    /** Whether one character makes an argument ambiguous inside a sentence. */
+    private static boolean needsQuoting(int character) {
+        return Character.isWhitespace(character)
+                || "'\"\\$`&;|<>()*?[]{}#!~".indexOf(character) >= 0;
     }
 }

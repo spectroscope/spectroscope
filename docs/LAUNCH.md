@@ -1,8 +1,12 @@
 # Launch configurations
 
 What card 202 built: the app under test starts by name, and the browser of
-cards 201 and 218 is already looking at it. The browser itself is in
-`docs/BROWSER.md`; this page is only about starting the thing it looks at.
+cards 201 and 218 looks at it as soon as loopback is opted into. **Out of the
+box it is not** — every address a launch configuration produces is localhost,
+and the net fence refuses localhost until `allowLocalhost` is set, so by default
+the app starts and no page opens. That is a decision, not an oversight, and it
+has its own section below. The browser itself is in `docs/BROWSER.md`; this page
+is only about starting the thing it looks at.
 
 The point, in one line: **"show me the change running" should be one thought.**
 Before this, an agent that was supposed to check a web app had to be told how to
@@ -89,8 +93,8 @@ in the same JSON Claude Code accepts.
 
 | tool | tier | what it does |
 |---|---|---|
-| `launch_list` | read | every configuration the repository carries, its command, its address, and whether it is up |
-| `launch_start` | eval-execute | starts it, waits for the address to answer, points this session's browser at it |
+| `launch_list` | read | every configuration the repository carries, its command, its address, and whether it is up, attached or exited |
+| `launch_start` | eval-execute | starts it, waits for the address to answer, and points this session's browser at it unless the fence refuses the address — which on localhost it does until `allowLocalhost` is set |
 | `launch_stop` | write | ends it and everything it spawned |
 | `launch_restart` | eval-execute | stop then start, by name |
 | `launch_logs` | read | what it printed, stdout and stderr merged |
@@ -154,11 +158,43 @@ or the project's own settings:
 or `SPECTRO_ALLOW_LOCALHOST=1`. It is read fresh per call, so a saved setting
 reaches the next call rather than the next launch.
 
+## A server that dies keeps its log
+
+The commonest way a dev server fails is not "it never came up". It comes up,
+answers the port, and dies twenty seconds later on the first request, and the
+reason is in the last four lines it printed.
+
+So **a read never destroys a record.** `launch_list` asks the supervisor about
+every configuration in the file, and asking used to evict a dead one along with
+its log ring — which made the agent's most natural loop the one that lost the
+evidence:
+
+```
+launch_start web     → up on http://localhost:51824/
+                       (it dies)
+launch_logs  web     → FATAL: Cannot find module ./server — the build died
+launch_list          → ...
+launch_logs  web     → nothing running called "web"      ← the error is gone
+```
+
+Now a configuration that exited keeps its output and its exit code until the
+session closes or the same name is started again, and both readers say so:
+
+| tool | what it says about a configuration that died |
+|---|---|
+| `launch_list` | `— EXITED with code 1; launch_logs still reads what it printed` |
+| `launch_logs` | `"web" is NOT running — it exited with code 1. This is what it printed before it did: …` |
+| `launch_stop` | that it had already exited with that code, and that stopping is what finally drops the output |
+
+`launch_stop` is the only verb that discards a dead configuration's log, because
+it is the only one where the reader asked for the entry to go away.
+
 ## An entry spectroscope cannot run: attach
 
 An entry with a `url` and no `runtimeExecutable` names a server that is already
 running. Nothing is spawned for it. It counts as up once that address answers,
-the browser opens on it, and:
+the browser opens on it under the same fence rule as any other entry — a
+`url` on localhost is refused the same way a `port` is — and:
 
 - **`launch_logs` has no output for it** and says exactly that. spectroscope
   started no process and captured nothing, and presenting an empty log as a
@@ -219,6 +255,14 @@ House rule from cards 193 and 203.
 | an attach address that answers nothing | the url, and why nothing was spawned for it |
 | stop or restart on an attached entry | the name, and that spectroscope never started it |
 | logs for an attached entry | that this is *no* log, not an empty one |
+| logs for a configuration that came up and then died | that it is NOT running, its exit code, and everything it printed before it went |
+
+**Everything the file wrote goes through one flattener before it reaches a
+sentence** — names, addresses, the `version`, the names of ignored keys, command
+lines — so one configuration is always one line. A `.claude/launch.json` is
+written by whoever wrote the repository, and an entry name carrying newlines was
+otherwise enough to print a forged block of invented configurations into the
+transcript through `launch_list`, which is tier read and never prompts.
 
 ## What is not here
 

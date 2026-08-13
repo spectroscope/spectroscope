@@ -47,6 +47,21 @@ import java.util.concurrent.TimeUnit;
  * it was: nothing is killed, no attachment semantics are baked in, and all three
  * answers stay available. Killing whatever holds a port is the answer nobody
  * asked for and this class cannot reach it.
+ *
+ * <p><b>A process that died is remembered, not forgotten</b> — the correction a
+ * review drove in on 2026-08-13. {@link #running(String)} used to EVICT a dead
+ * entry, log ring and all, as a side effect of being asked a question, and
+ * {@code launch_list} asks it once per configuration. Driven live: a dev server
+ * crashed, {@code launch_logs} showed the fatal line, one {@code launch_list}
+ * destroyed it, and the same {@code launch_logs} then answered that nothing was
+ * running — while the agent's natural loop is start, notice nothing works, list,
+ * then read the logs, which is exactly the order that lost the build error.
+ * Criterion 3 of the card is that a build error is readable where it happened,
+ * so: a read never destroys, a dead entry keeps its output and its exit code
+ * until the session closes or the same name is started again, and
+ * {@link #exited(String)} is how a caller tells "it is gone" from "it was never
+ * here". The cost is one bounded log ring per configuration name that ever ran,
+ * which {@link #close()} releases with everything else.
  */
 public final class LaunchSupervisor implements AutoCloseable {
 
@@ -106,23 +121,41 @@ public final class LaunchSupervisor implements AutoCloseable {
     public record Outcome(boolean ok, Running running, String problem, String tail) {}
 
     /**
+     * One configuration this session started that is no longer up, because its
+     * process ended on its own.
+     *
+     * @param name    the configuration name
+     * @param address the address it used to answer on
+     * @param code    the exit status the process left behind
+     */
+    public record Exited(String name, String address, int code) {}
+
+    /**
      * What one stop did.
      *
      * @param stopped     whether a process was signalled
-     * @param known       whether the name was running at all
+     * @param known       whether the name was held here at all
      * @param wasAttached whether the entry was attached rather than started — the
      *                    case card 202 leaves to the owner
+     * @param exitCode    the code an ALREADY-dead process left, or null when the
+     *                    stop signalled a live one — so the answer can say "it had
+     *                    already exited" instead of claiming a kill that never
+     *                    happened
      */
-    public record Stopped(boolean stopped, boolean known, boolean wasAttached) {}
+    public record Stopped(boolean stopped, boolean known, boolean wasAttached, Integer exitCode) {}
 
     /**
      * What one log request found.
      *
-     * @param known    whether the name is running here
+     * @param known    whether the name is held here — a dead configuration is still
+     *                 known, which is the whole point of keeping it
      * @param attached whether it was attached, in which case there is no output to have
      * @param text     the captured output, oldest first
+     * @param exitCode the code the process ended with, or null while it is still
+     *                 alive — a build error is worth a great deal more when the
+     *                 answer also says the server is gone
      */
-    public record LogView(boolean known, boolean attached, String text) {}
+    public record LogView(boolean known, boolean attached, String text, Integer exitCode) {}
 
     /** One launched or attached configuration and everything needed to end it. */
     private static final class Held {
@@ -153,6 +186,22 @@ public final class LaunchSupervisor implements AutoCloseable {
 
     private final Probe probe;
     private final Map<String, Held> held = new ConcurrentHashMap<>();
+
+    /**
+     * One monitor per configuration name, so the verbs serialise where they must
+     * and nowhere else.
+     *
+     * <p>{@link #start} waits for a port and may hold its monitor for the whole
+     * budget — up to 180 seconds, the cap {@code LaunchTools} advertises. While
+     * it did that on {@code this}, every other launch verb on every OTHER name
+     * queued behind it: a start that was never going to come up made
+     * {@code launch_stop} on an unrelated server wait out the budget. Locking per
+     * name keeps the one guarantee that matters — a start and a stop of the SAME
+     * configuration never interleave, so a stop cannot lose a race against the
+     * spawn it meant to end — and drops the rest.
+     */
+    private final Map<String, Object> locks = new ConcurrentHashMap<>();
+
     private volatile Thread reaper;
 
     /**
@@ -194,20 +243,27 @@ public final class LaunchSupervisor implements AutoCloseable {
      * @param budget how long to wait for the address to answer
      * @return what happened, as data — this never throws
      */
-    public synchronized Outcome start(LaunchEntry entry, Path cwd, Duration budget) {
+    public Outcome start(LaunchEntry entry, Path cwd, Duration budget) {
         String address = entry.address();
         if (address == null) {
             return new Outcome(false, null,
                     "it carries neither a port nor a url, so there is no address to open", "");
         }
-        Running already = running(entry.name()).orElse(null);
-        if (already != null) {
-            return new Outcome(true, already, null, "");
+        synchronized (lockFor(entry.name())) {
+            Running already = running(entry.name()).orElse(null);
+            if (already != null) {
+                return new Outcome(true, already, null, "");
+            }
+            if (entry.attaches()) {
+                return attach(entry, address, budget);
+            }
+            return spawn(entry, cwd, address, budget);
         }
-        if (entry.attaches()) {
-            return attach(entry, address, budget);
-        }
-        return spawn(entry, cwd, address, budget);
+    }
+
+    /** The monitor for one configuration name — see {@link #locks}. */
+    private Object lockFor(String name) {
+        return locks.computeIfAbsent(name, key -> new Object());
     }
 
     /** The attach path: nothing is started, the address is asked whether it is there. */
@@ -259,7 +315,12 @@ public final class LaunchSupervisor implements AutoCloseable {
             return new Outcome(true, running, null, "");
         }
         // It never came up. Leave nothing behind: a half-started tree holding a
-        // port is exactly the orphan this class exists to prevent.
+        // port is exactly the orphan this class exists to prevent. Unlike a
+        // configuration that came up and later died, this one is dropped rather
+        // than kept for its log — the Outcome below carries the same output in
+        // the very answer that reports the failure, so there is nothing a later
+        // launch_logs could add, and an exit code we produced by reaping would
+        // read as one the program chose.
         reap(entryHeld);
         held.remove(entry.name());
         String tail = entryHeld.text();
@@ -339,19 +400,36 @@ public final class LaunchSupervisor implements AutoCloseable {
     /**
      * What is up under this name.
      *
+     * <p>A dead process answers empty here and is <b>not</b> evicted: see the
+     * class documentation for the defect that cost. {@link #exited(String)} is
+     * the question for the other half.
+     *
      * @param name the configuration name
      * @return what is running, or empty
      */
     public Optional<Running> running(String name) {
         Held current = name == null ? null : held.get(name);
-        if (current == null) {
-            return Optional.empty();
-        }
-        if (current.process != null && !current.process.isAlive()) {
-            held.remove(name, current);
+        if (current == null || (current.process != null && !current.process.isAlive())) {
             return Optional.empty();
         }
         return Optional.of(current.running);
+    }
+
+    /**
+     * What this session started under this name and lost.
+     *
+     * @param name the configuration name
+     * @return the dead configuration with its exit code, or empty when the name
+     *         is unknown here, still up, or an attachment (which has no process
+     *         to have an exit code)
+     */
+    public Optional<Exited> exited(String name) {
+        Held current = name == null ? null : held.get(name);
+        if (current == null || current.process == null || current.process.isAlive()) {
+            return Optional.empty();
+        }
+        return Optional.of(new Exited(current.running.name(), current.running.address(),
+                current.process.exitValue()));
     }
 
     /**
@@ -371,19 +449,33 @@ public final class LaunchSupervisor implements AutoCloseable {
      * @param name the configuration name
      * @return what happened — see {@link Stopped} for the attached case
      */
-    public synchronized Stopped stop(String name) {
-        Held current = name == null ? null : held.get(name);
-        if (current == null) {
-            return new Stopped(false, false, false);
+    public Stopped stop(String name) {
+        if (name == null) {
+            return new Stopped(false, false, false, null);
         }
-        if (current.process == null) {
-            // The open owner call. Nothing is killed and the attachment is kept,
-            // so refusing here forecloses none of the three answers.
-            return new Stopped(false, true, true);
+        synchronized (lockFor(name)) {
+            Held current = held.get(name);
+            if (current == null) {
+                return new Stopped(false, false, false, null);
+            }
+            if (current.process == null) {
+                // The open owner call. Nothing is killed and the attachment is
+                // kept, so refusing here forecloses none of the three answers.
+                return new Stopped(false, true, true, null);
+            }
+            if (!current.process.isAlive()) {
+                // It died on its own and was kept for its log. Stopping is what
+                // finally drops it — an explicit act, unlike the read that used
+                // to do this silently — and the answer says it was already gone
+                // rather than claiming a kill.
+                int code = current.process.exitValue();
+                held.remove(name, current);
+                return new Stopped(false, true, false, code);
+            }
+            held.remove(name, current);
+            reap(current);
+            return new Stopped(true, true, false, null);
         }
-        held.remove(name, current);
-        reap(current);
-        return new Stopped(true, true, false);
     }
 
     /**
@@ -396,19 +488,20 @@ public final class LaunchSupervisor implements AutoCloseable {
     public LogView logs(String name, int lines) {
         Held current = name == null ? null : held.get(name);
         if (current == null) {
-            return new LogView(false, false, "");
+            return new LogView(false, false, "", null);
         }
         if (current.process == null) {
-            return new LogView(true, true, "");
+            return new LogView(true, true, "", null);
         }
+        Integer code = current.process.isAlive() ? null : current.process.exitValue();
         String all = current.text();
         if (lines <= 0) {
-            return new LogView(true, false, all);
+            return new LogView(true, false, all, code);
         }
         String[] split = all.split("\n", -1);
         int from = Math.max(0, split.length - lines);
         return new LogView(true, false,
-                String.join("\n", List.of(split).subList(from, split.length)));
+                String.join("\n", List.of(split).subList(from, split.length)), code);
     }
 
     /**
@@ -423,6 +516,7 @@ public final class LaunchSupervisor implements AutoCloseable {
         closed = true;
         held.values().forEach(LaunchSupervisor::reap);
         held.clear();
+        locks.clear();
         Thread hook = this.reaper;
         this.reaper = null;
         if (hook != null) {
