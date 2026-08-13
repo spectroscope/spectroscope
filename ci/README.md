@@ -35,8 +35,9 @@ SearXNG to run beside the other tools, on the laboratory's own port. Nothing is
 factored across the two, but the facts they share are pinned rather than
 remembered: `CiStackDriftTest` fails if they ever name different image digests.
 
-Both survive being up at once — different ports (8885 against the sample's
-8888), different container names, different compose projects.
+Both run at once — different ports, different container names, different compose
+projects. Measured 2026-08-13: with the stack on 8885 and the sample on 8888,
+`format=json` came back `200 application/json` from each of them.
 
 ## Two things to know before you start
 
