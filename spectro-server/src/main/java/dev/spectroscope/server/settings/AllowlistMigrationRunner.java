@@ -8,7 +8,6 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
-import java.util.List;
 
 /**
  * Card 199, criterion 8: migrate the process-wide settings files onto tiers once,
@@ -33,17 +32,28 @@ import java.util.List;
 public class AllowlistMigrationRunner implements ApplicationRunner {
 
     private final Path launchDir;
+    private final Path ledger;
 
     /** Production wiring: the directory the server was started in. */
     public AllowlistMigrationRunner() {
-        this(Path.of(System.getProperty("user.dir")));
+        this(Path.of(System.getProperty("user.dir")), AllowlistMigration.defaultLedger());
     }
 
     /**
      * @param launchDir the directory whose {@code .spectro/settings.json} joins the pass
      */
     public AllowlistMigrationRunner(Path launchDir) {
+        this(launchDir, AllowlistMigration.defaultLedger());
+    }
+
+    /**
+     * @param launchDir the directory whose {@code .spectro/settings.json} joins the pass
+     * @param ledger    where the migration is recorded — a temp file in tests, so a
+     *                  test run never writes into the developer's own home
+     */
+    public AllowlistMigrationRunner(Path launchDir, Path ledger) {
         this.launchDir = launchDir;
+        this.ledger = ledger;
     }
 
     @Override
@@ -59,11 +69,13 @@ public class AllowlistMigrationRunner implements ApplicationRunner {
      */
     public int migrate() {
         ToolTierMap tiers = ToolTierMap.shipped();
-        Path ledger = AllowlistMigration.defaultLedger();
         int rewritten = 0;
-        for (Path file : List.of(SpectroConfig.USER_SETTINGS_PATH, SpectroConfig.CONFIG_PATH,
-                launchDir.resolve(SpectroConfig.PROJECT_SETTINGS))) {
-            if (AllowlistMigration.migrateFileOnce(file, tiers, ledger)) {
+        // No workspace exists yet at boot, so the chain is the process-wide half;
+        // the workspace pair (project AND local) is migrated by whichever face
+        // resolves a workspace, through the same list.
+        for (Path file : AllowlistMigration.settingsChain(launchDir, null)) {
+            if (AllowlistMigration.migrateFileOnce(file, tiers, ledger)
+                    == AllowlistMigration.Outcome.MIGRATED) {
                 rewritten++;
             }
         }

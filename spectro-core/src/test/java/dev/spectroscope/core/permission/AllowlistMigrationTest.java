@@ -195,7 +195,8 @@ class AllowlistMigrationTest {
                 {"provider":"ollama","autoApprove":["write_file","run_command:git status*"]}""");
         Path ledger = home.resolve("allowlist-migration.jsonl");
 
-        assertTrue(AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger));
+        assertEquals(AllowlistMigration.Outcome.MIGRATED,
+                AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger));
         JSON.readTree(Files.readString(settings));
         assertEquals(List.of("write_file#write", "run_command#eval-execute:git status*"),
                 autoApprove(settings));
@@ -209,7 +210,8 @@ class AllowlistMigrationTest {
         // new entries are read-by-default on purpose).
         Files.writeString(settings, """
                 {"provider":"ollama","autoApprove":["write_file#write","edit_file"]}""");
-        assertFalse(AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger));
+        assertEquals(AllowlistMigration.Outcome.ALREADY_DONE,
+                AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger));
         assertEquals(List.of("write_file#write", "edit_file"), autoApprove(settings));
     }
 
@@ -219,9 +221,130 @@ class AllowlistMigrationTest {
         Files.writeString(settings, """
                 {"provider":"ollama"}""");
         String before = Files.readString(settings);
-        assertFalse(AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(),
-                home.resolve("ledger.jsonl")));
+        assertEquals(AllowlistMigration.Outcome.NOTHING_TO_DO,
+                AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(),
+                        home.resolve("ledger.jsonl")));
         assertEquals(before, Files.readString(settings));
+    }
+
+    // --- the layers the migration has to visit (review finding F2) -----------
+
+    @Test
+    void theChainIsEveryFileTheConfigFoldReadsIncludingTheLocalLayer() {
+        Path project = Path.of("/p");
+        Path workspace = Path.of("/w");
+
+        List<Path> chain = AllowlistMigration.settingsChain(project, workspace);
+
+        assertEquals(List.of(
+                        dev.spectroscope.core.config.SpectroConfig.USER_SETTINGS_PATH,
+                        dev.spectroscope.core.config.SpectroConfig.CONFIG_PATH,
+                        project.resolve(".spectro/settings.json"),
+                        workspace.resolve(".spectro/settings.json"),
+                        workspace.resolve(".spectro/settings.local.json")),
+                chain,
+                "settings.local.json is a FOLDED allowlist layer — autoApprove is whole-block "
+                        + "replacement, so that file alone can be the entire effective allowlist");
+        assertEquals(3, AllowlistMigration.settingsChain(project, null).size(),
+                "without a workspace there are no workspace scopes to migrate");
+    }
+
+    @Test
+    void aWorkspaceLocalSettingsFileIsMigratedLikeAnyOtherLayer(@TempDir Path workspace)
+            throws IOException {
+        Path local = workspace.resolve(".spectro").resolve("settings.local.json");
+        Files.createDirectories(local.getParent());
+        Files.writeString(local, """
+                {"autoApprove":["write_file","run_command:git status*"]}""");
+        Path ledger = workspace.resolve("ledger.jsonl");
+
+        for (Path file : AllowlistMigration.settingsChain(workspace, workspace)) {
+            AllowlistMigration.migrateFileOnce(file, ToolTierMap.shipped(), ledger);
+        }
+
+        assertEquals(List.of("write_file#write", "run_command#eval-execute:git status*"),
+                autoApprove(local));
+        Allowlist after = Allowlist.fromEntries(autoApprove(local));
+        assertTrue(after.allows(request("write_file", "path", "docs/a.md")),
+                "those entries approved this call yesterday and must approve it today");
+        assertTrue(after.allows(request("run_command", "command", "git status --short")));
+    }
+
+    @Test
+    void aFileThatCannotBeRewrittenIsReportedInsteadOfSwallowed(@TempDir Path home)
+            throws IOException {
+        Path dir = home.resolve("locked");
+        Files.createDirectories(dir);
+        Path settings = dir.resolve("settings.json");
+        Files.writeString(settings, """
+                {"autoApprove":["write_file"]}""");
+        Path ledger = home.resolve("ledger.jsonl");
+        Files.setPosixFilePermissions(dir, java.nio.file.attribute.PosixFilePermissions
+                .fromString("r-xr-xr-x"));
+        try {
+            assertEquals(AllowlistMigration.Outcome.FAILED,
+                    AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger),
+                    "a settings file that cannot be written is a reported failure, not a silence");
+            assertFalse(Files.exists(ledger),
+                    "and it is NOT recorded as migrated — the next boot has to try again");
+            assertEquals(List.of("write_file"), autoApprove(settings), "the file is untouched");
+        } finally {
+            Files.setPosixFilePermissions(dir, java.nio.file.attribute.PosixFilePermissions
+                    .fromString("rwxr-xr-x"));
+        }
+    }
+
+    // --- "once ever" has to survive a second spelling (review finding F3) ----
+
+    @Test
+    void theSameFileUnderASymlinkedHomeIsNotMigratedTwice(@TempDir Path home) throws IOException {
+        Path real = home.resolve("real");
+        Files.createDirectories(real.resolve(".spectro"));
+        Path link = home.resolve("link");
+        Files.createSymbolicLink(link, real);
+        Path viaReal = real.resolve(".spectro").resolve("settings.json");
+        Path viaLink = link.resolve(".spectro").resolve("settings.json");
+        Files.writeString(viaReal, """
+                {"autoApprove":["write_file"]}""");
+        Path ledger = home.resolve("ledger.jsonl");
+
+        assertEquals(AllowlistMigration.Outcome.MIGRATED,
+                AllowlistMigration.migrateFileOnce(viaReal, ToolTierMap.shipped(), ledger));
+        // The user now adds a bare entry. Under the read-by-default rule it
+        // approves nothing, and that is the whole point of it being bare.
+        Files.writeString(viaReal, """
+                {"autoApprove":["write_file#write","run_command"]}""");
+
+        AllowlistMigration.Outcome second =
+                AllowlistMigration.migrateFileOnce(viaLink, ToolTierMap.shipped(), ledger);
+
+        assertEquals(List.of("write_file#write", "run_command"), autoApprove(viaReal),
+                "a second pass may never stamp run_command into run_command#eval-execute — "
+                        + "that would silently approve every command there is");
+        assertEquals(AllowlistMigration.Outcome.ALREADY_DONE, second,
+                "the other spelling of the same file is the same file");
+    }
+
+    @Test
+    void aSecondPassCannotWidenEvenWhenTheLedgerIsGone(@TempDir Path home) throws IOException {
+        Path settings = home.resolve("settings.json");
+        Files.writeString(settings, """
+                {"autoApprove":["write_file"]}""");
+        Path ledger = home.resolve("ledger.jsonl");
+
+        assertEquals(AllowlistMigration.Outcome.MIGRATED,
+                AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger));
+        Files.writeString(settings, """
+                {"autoApprove":["write_file#write","run_command"]}""");
+        Files.delete(ledger);   // rotated, wiped, or a different home entirely
+
+        AllowlistMigration.Outcome second =
+                AllowlistMigration.migrateFileOnce(settings, ToolTierMap.shipped(), ledger);
+
+        assertEquals(List.of("write_file#write", "run_command"), autoApprove(settings),
+                "an entry added after the migration must not be widened by a second pass");
+        assertEquals(AllowlistMigration.Outcome.ALREADY_DONE, second,
+                "the file's own entries say it has been here — a tier mark is the second witness");
     }
 
     private static List<String> autoApprove(Path settings) throws IOException {

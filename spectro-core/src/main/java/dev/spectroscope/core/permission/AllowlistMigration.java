@@ -44,6 +44,9 @@ import java.util.List;
  */
 public final class AllowlistMigration {
 
+    private static final org.slf4j.Logger LOG =
+            org.slf4j.LoggerFactory.getLogger(AllowlistMigration.class);
+
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
@@ -110,63 +113,127 @@ public final class AllowlistMigration {
         return new Result(List.copyOf(migrated), List.copyOf(records));
     }
 
+    /** What one call to {@link #migrateFileOnce} did — named, because "false" used
+     *  to mean four different things and one of them was a failure nobody saw. */
+    public enum Outcome {
+        /** The file was rewritten by this call. */
+        MIGRATED,
+        /** There was nothing to do: no file, no {@code autoApprove}, or nothing in it to change. */
+        NOTHING_TO_DO,
+        /** This file has been migrated before — by the ledger, or by its own entries. */
+        ALREADY_DONE,
+        /** The file could not be read or written. Logged, NOT recorded as migrated. */
+        FAILED
+    }
+
+    /**
+     * Every settings file whose {@code autoApprove} block can reach the gate, in
+     * fold order — the ONE list, because three hand-written copies of it drifted
+     * and the workspace-local layer fell out of all three.
+     *
+     * <p>{@code settings.local.json} is not a lesser file: {@code autoApprove} is
+     * whole-block replacement, so a workspace's local layer can BE the entire
+     * effective allowlist. Leaving it unmigrated fails closed — its entries stop
+     * approving what they approved yesterday — which is not a hole but is exactly
+     * the prompt storm card 199 promised not to create.
+     *
+     * @param projectDir the launch directory, whose {@code .spectro/settings.json} is read
+     * @param workspace  the resolved workspace, or null before one exists (boot);
+     *                   only a workspace contributes the project+local pair
+     * @return the files to migrate, in the order the config fold reads them
+     */
+    public static List<Path> settingsChain(Path projectDir, Path workspace) {
+        List<Path> chain = new ArrayList<>(List.of(
+                dev.spectroscope.core.config.SpectroConfig.USER_SETTINGS_PATH,
+                dev.spectroscope.core.config.SpectroConfig.CONFIG_PATH,
+                projectDir.resolve(dev.spectroscope.core.config.SpectroConfig.PROJECT_SETTINGS)));
+        if (workspace != null) {
+            chain.add(workspace.resolve(
+                    dev.spectroscope.core.config.SpectroConfig.PROJECT_SETTINGS));
+            chain.add(workspace.resolve(
+                    dev.spectroscope.core.config.SpectroConfig.WS_LOCAL_SETTINGS));
+        }
+        return List.copyOf(chain);
+    }
+
     /**
      * Migrates one settings file in place, at most once ever.
      *
-     * <p>"Once" is decided by the ledger, not by a marker inside the settings
-     * file: the settings schema stays untouched, and the ledger is the auditable
-     * record criterion 8 asks for anyway. A file already named in the ledger is
-     * never rewritten again, so a bare entry a user adds later stays bare — that
-     * is a NEW entry, and new entries are read-by-default on purpose.
+     * <p><b>"Once" has two witnesses, because one was not enough.</b> The ledger
+     * names every file it has migrated — by its REAL path, so the same file
+     * reached through a symlinked home or through {@code /tmp} instead of
+     * {@code /private/tmp} is the same file and not a second one. And the file's
+     * own entries are read: a settings file that already carries a tier mark has
+     * been through a build that knows about tiers, so it is left alone even when
+     * the ledger has been rotated away. Either witness is enough to skip.
      *
-     * <p>Never throws. A settings file that cannot be read or written is left
-     * alone: a failed migration must not take down the face that called it, and
-     * an unmigrated file's entries still approve exactly what they approved (they
-     * simply approve read only until the file is migrated, which is the strict
-     * direction).
+     * <p><b>Why that matters more than tidiness.</b> A second pass over an
+     * already-migrated file would stamp the entries a user added AFTERWARDS — and
+     * a bare {@code run_command} written today deliberately approves nothing,
+     * while {@code run_command#eval-execute} approves every command there is.
+     * Re-running the migration must never widen anything, and with both witnesses
+     * the only way left to reach that is a file whose every legacy entry was a
+     * wildcard (so no tier mark was ever written) AND a lost ledger AND a bare
+     * entry added in between.
+     *
+     * <p>Never throws — a failed migration must not take down the face that
+     * called it. A file that cannot be read or written comes back as
+     * {@link Outcome#FAILED} with a warning in the operator log, and is NOT
+     * written to the ledger: it stays unmigrated, its entries approve read only
+     * until a later boot succeeds (the strict direction), and the next boot tries
+     * again instead of believing a migration that never happened.
      *
      * @param settingsFile the settings file to rewrite; a missing file is a no-op
      * @param tiers        the tier map whose verdict each entry is pinned at
      * @param ledger       the JSONL ledger recording every migration, appended to
-     * @return true when the file was rewritten by this call
+     * @return what this call did
      */
-    public static synchronized boolean migrateFileOnce(Path settingsFile, ToolTierMap tiers,
+    public static synchronized Outcome migrateFileOnce(Path settingsFile, ToolTierMap tiers,
                                                        Path ledger) {
+        if (settingsFile == null || !Files.isRegularFile(settingsFile)) {
+            return Outcome.NOTHING_TO_DO;
+        }
         try {
-            if (settingsFile == null || !Files.isRegularFile(settingsFile)) {
-                return false;
-            }
-            String absolute = settingsFile.toAbsolutePath().normalize().toString();
-            if (alreadyMigrated(ledger, absolute)) {
-                return false;
+            List<String> spellings = spellingsOf(settingsFile);
+            if (alreadyMigrated(ledger, spellings)) {
+                return Outcome.ALREADY_DONE;
             }
             JsonNode tree = JSON.readTree(Files.readString(settingsFile, StandardCharsets.UTF_8));
             if (!tree.isObject()) {
-                return false;
+                return Outcome.NOTHING_TO_DO;
             }
             ObjectNode root = (ObjectNode) tree;
             JsonNode existing = root.path("autoApprove");
             if (!existing.isArray() || existing.isEmpty()) {
-                return false;
+                return Outcome.NOTHING_TO_DO;
             }
             List<String> before = new ArrayList<>();
             existing.forEach(node -> before.add(node.asText()));
+            if (before.stream().anyMatch(AllowlistMigration::carriesATier)) {
+                // The second witness: these entries were written or rewritten by a
+                // build that knows tiers, so this file's migration is behind it.
+                return Outcome.ALREADY_DONE;
+            }
             Result result = migrate(before, tiers);
+            String identity = spellings.get(0);
             if (result.records().stream().noneMatch(EntryRecord::changed)) {
                 // Nothing to rewrite, but the file has now been considered: record
                 // that, so the pass is genuinely once-ever rather than once-per-boot.
-                appendLedger(ledger, absolute, tiers, result);
-                return false;
+                appendLedger(ledger, identity, tiers, result);
+                return Outcome.NOTHING_TO_DO;
             }
             ArrayNode array = JSON.createArrayNode();
             result.entries().forEach(array::add);
             root.set("autoApprove", array);
             writeAtomically(settingsFile,
                     JSON.writerWithDefaultPrettyPrinter().writeValueAsString(root));
-            appendLedger(ledger, absolute, tiers, result);
-            return true;
-        } catch (IOException | RuntimeException leaveItAlone) {
-            return false;
+            appendLedger(ledger, identity, tiers, result);
+            return Outcome.MIGRATED;
+        } catch (IOException | RuntimeException cannot) {
+            LOG.warn("the allowlist migration could not rewrite {} ({}) — its entries approve "
+                            + "read only until a later run succeeds", settingsFile,
+                    cannot.toString());
+            return Outcome.FAILED;
         }
     }
 
@@ -176,8 +243,43 @@ public final class AllowlistMigration {
                 "allowlist-migration.jsonl");
     }
 
-    /** Whether the ledger already carries a completed migration for this file. */
-    private static boolean alreadyMigrated(Path ledger, String absoluteFile) throws IOException {
+    /** Whether an entry already names a tier — the file's own witness that a
+     *  tier-aware build has written here. Read off the TOOL segment only: the
+     *  value prefix after the first colon is free text and may contain anything. */
+    private static boolean carriesATier(String entry) {
+        if (entry == null) {
+            return false;
+        }
+        int colon = entry.indexOf(':');
+        String head = colon < 0 ? entry : entry.substring(0, colon);
+        return head.indexOf(Allowlist.TIER_MARK) >= 0;
+    }
+
+    /**
+     * How this file may be spelled in a ledger, canonical first.
+     *
+     * <p>{@code toRealPath} is what makes "once ever" true: one server run already
+     * writes {@code /tmp/...} for a home-derived path and {@code /private/tmp/...}
+     * for a {@code user.dir}-derived one, and a symlinked home or project folder
+     * is the everyday version of the same thing. The absolute-normalized spelling
+     * stays in the list so a ledger written by an older build still counts.
+     *
+     * @param file an existing file
+     * @return the real path first, then the absolute normalized path
+     */
+    private static List<String> spellingsOf(Path file) {
+        String absolute = file.toAbsolutePath().normalize().toString();
+        try {
+            String real = file.toRealPath().toString();
+            return real.equals(absolute) ? List.of(real) : List.of(real, absolute);
+        } catch (IOException notResolvable) {
+            return List.of(absolute);
+        }
+    }
+
+    /** Whether the ledger already carries a completed migration for this file,
+     *  under any spelling of its path. */
+    private static boolean alreadyMigrated(Path ledger, List<String> spellings) throws IOException {
         if (ledger == null || !Files.isRegularFile(ledger)) {
             return false;
         }
@@ -186,7 +288,7 @@ public final class AllowlistMigration {
                 continue;
             }
             try {
-                if (absoluteFile.equals(JSON.readTree(line).path("file").asText(""))) {
+                if (spellings.contains(JSON.readTree(line).path("file").asText(""))) {
                     return true;
                 }
             } catch (IOException notALine) {

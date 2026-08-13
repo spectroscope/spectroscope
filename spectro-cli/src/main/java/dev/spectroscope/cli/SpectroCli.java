@@ -404,18 +404,15 @@ public final class SpectroCli implements Runnable {
      *  {@code ~/.spectro/gate-audit/allowlist-migration.jsonl}. The ledger, not
      *  a marker inside the settings file, is what makes it once-ever, so the
      *  settings schema is untouched and the migration is auditable by the same
-     *  act. A file already migrated, missing, or unwritable is a no-op. */
+     *  act. A file already migrated, missing, or unwritable is a no-op. The chain
+     *  comes from {@code AllowlistMigration.settingsChain} — one list, because
+     *  three copies of it drifted and the workspace-local layer, which can BE the
+     *  whole effective allowlist, was in none of them. */
     private void migrateAllowlistOnce() {
         var tiers = dev.spectroscope.core.permission.ToolTierMap.shipped();
         var ledger = dev.spectroscope.core.permission.AllowlistMigration.defaultLedger();
-        java.util.List<java.nio.file.Path> files = new java.util.ArrayList<>(java.util.List.of(
-                SpectroConfig.USER_SETTINGS_PATH,
-                SpectroConfig.CONFIG_PATH,
-                projectDir.resolve(SpectroConfig.PROJECT_SETTINGS)));
-        if (workspace != null) {
-            files.add(workspace.resolve(SpectroConfig.PROJECT_SETTINGS));
-        }
-        for (java.nio.file.Path file : files) {
+        for (java.nio.file.Path file : dev.spectroscope.core.permission.AllowlistMigration
+                .settingsChain(projectDir, workspace)) {
             dev.spectroscope.core.permission.AllowlistMigration.migrateFileOnce(file, tiers, ledger);
         }
     }

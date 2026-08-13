@@ -30,7 +30,8 @@ class AllowlistMigrationRunnerTest {
         Files.writeString(settings, """
                 {"autoApprove":["write_file","run_command:git status*"]}""");
 
-        AllowlistMigrationRunner runner = new AllowlistMigrationRunner(launchDir);
+        AllowlistMigrationRunner runner = new AllowlistMigrationRunner(launchDir,
+                launchDir.resolve("ledger.jsonl"));
         assertEquals(1, runner.migrate(), "one file carried entries to migrate");
         assertEquals(List.of("write_file#write", "run_command#eval-execute:git status*"),
                 entries(settings));

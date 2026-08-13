@@ -907,18 +907,15 @@ public final class SessionConnection {
      *  migrated onto tiers exactly once, recorded entry by entry in
      *  {@code ~/.spectro/gate-audit/allowlist-migration.jsonl}. The ledger, not
      *  a marker inside the settings file, decides "once" — the settings schema
-     *  stays untouched and the migration is auditable by the same act. */
+     *  stays untouched and the migration is auditable by the same act. The chain
+     *  itself comes from {@code AllowlistMigration.settingsChain} rather than
+     *  being listed here: three hand-written copies of that list drifted apart,
+     *  and the workspace-local layer fell out of all three. */
     private void migrateAllowlistOnce() {
         var tiers = dev.spectroscope.core.permission.ToolTierMap.shipped();
         var ledger = dev.spectroscope.core.permission.AllowlistMigration.defaultLedger();
-        java.util.List<java.nio.file.Path> files = new java.util.ArrayList<>(java.util.List.of(
-                SpectroConfig.USER_SETTINGS_PATH,
-                SpectroConfig.CONFIG_PATH,
-                projectDir.resolve(SpectroConfig.PROJECT_SETTINGS)));
-        if (workspace != null) {
-            files.add(workspace.resolve(SpectroConfig.PROJECT_SETTINGS));
-        }
-        for (java.nio.file.Path file : files) {
+        for (java.nio.file.Path file : dev.spectroscope.core.permission.AllowlistMigration
+                .settingsChain(projectDir, workspace)) {
             dev.spectroscope.core.permission.AllowlistMigration.migrateFileOnce(file, tiers, ledger);
         }
     }

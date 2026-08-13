@@ -51,7 +51,11 @@ import java.util.function.Function;
  * @param baseUrl             base URL for ollama/openai (ignored for anthropic)
  * @param compactionThreshold input-token threshold that triggers compaction
  * @param permissionMode      "ask", "auto" or "readonly"
- * @param autoApprove         permission allowlist, e.g. ["write_file", "run_command:git status*"]
+ * @param autoApprove         permission allowlist in card 199's grammar,
+ *                            {@code <tool>[#<tier>][:<valuePrefix>]} — e.g.
+ *                            ["write_file#write", "run_command#eval-execute:git status*"].
+ *                            An entry that names no tier approves READ and nothing above,
+ *                            and a wildcard that names no tier approves nothing at all
  * @param imageProvider       "gemini" or "openai" — the backend of the generate_image tool
  * @param thinking            surface the model's reasoning stream (default true)
  * @param mcpServers          external MCP servers to connect to; never null,
@@ -126,7 +130,15 @@ import java.util.function.Function;
  *                            loopback by default, and this is the deliberate
  *                            gesture that reaches it for the local verify loop.
  *                            It never widens to RFC-1918, to the 100.64/10
- *                            tailnet or to a {@code file://} URL. Env
+ *                            tailnet or to a {@code file://} URL — not on the
+ *                            address the model names and not on a redirect
+ *                            either, because {@code web_fetch} fences every hop
+ *                            of the chain it walks. What it does NOT reach is
+ *                            what Chrome does after {@code browse_page} hands it
+ *                            a page: redirects and script navigation from there
+ *                            on are the browser's, and unfenced. Process-global
+ *                            (a workspace scope may not set it — that folder is
+ *                            the agent's own). Env
  *                            {@code SPECTRO_ALLOW_LOCALHOST}
  */
 public record SpectroConfig(
@@ -177,8 +189,12 @@ public record SpectroConfig(
     /** Workspace-local settings file (machine-local, gitignored by convention) —
      *  sits directly above the workspace's own project settings in the chain,
      *  below only the CLI flags. Relative to the workspace directory, same
-     *  shape as {@link #PROJECT_SETTINGS}. */
-    static final String WS_LOCAL_SETTINGS = ".spectro/settings.local.json";
+     *  shape as {@link #PROJECT_SETTINGS}.
+     *
+     *  <p>Public (like {@link #PROJECT_SETTINGS}): card 199's allowlist migration
+     *  has to visit this layer too, and it lives in another package. It went
+     *  unmigrated for exactly as long as it was invisible from outside here. */
+    public static final String WS_LOCAL_SETTINGS = ".spectro/settings.local.json";
 
     // Package-private (not private): SettingsWriter's patch validation references
     // these as the single source instead of re-declaring the same literals.
@@ -601,6 +617,15 @@ public record SpectroConfig(
         if (scope.logLevel != null) {
             throw new IllegalArgumentException("\"logLevel\" is process-global and not allowed in a "
                     + "workspace scope (" + file + ") — set it in ~/.spectro/settings.json or SPECTRO_LOG_LEVEL.");
+        }
+        if (scope.allowLocalhost != null) {
+            // Card 199, review finding F4: the workspace is the agent's own cwd,
+            // and write_file writes into it. A fence whose switch lives inside
+            // the sandbox it guards can be flipped by the thing it guards.
+            throw new IllegalArgumentException("\"allowLocalhost\" is process-global and not "
+                    + "allowed in a workspace scope (" + file + ") — the net fence's opt-in "
+                    + "belongs in ~/.spectro/settings.json or SPECTRO_ALLOW_LOCALHOST, not in a "
+                    + "folder the agent writes into.");
         }
     }
 

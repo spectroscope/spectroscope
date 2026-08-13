@@ -65,12 +65,13 @@ public class SettingsController {
      *  and {@code WorkspaceController}). */
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
 
-    /** Workspace-local settings file, relative to the workspace root. Named
-     *  again here rather than reused from {@code SpectroConfig} — its own copy of
-     *  this literal is package-private to {@code dev.spectroscope.core.config}, and the
-     *  settings API's "files" view needs it purely for display, never to load
-     *  or write it directly. */
-    private static final String WS_LOCAL_SETTINGS = ".spectro/settings.local.json";
+    /** Workspace-local settings file, relative to the workspace root — now taken
+     *  from {@code SpectroConfig} rather than spelled again here. It used to be a
+     *  second copy of the literal because the original was package-private; card
+     *  199's review found the cost of copies of this particular path (a whole
+     *  folded allowlist layer that the migration never visited), so the copy is
+     *  gone and there is one spelling. */
+    private static final String WS_LOCAL_SETTINGS = SpectroConfig.WS_LOCAL_SETTINGS;
 
     private final Path launchDir;
 
