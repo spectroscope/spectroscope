@@ -10,6 +10,7 @@ import dev.spectroscope.core.RunOptions;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.ProviderFactory;
 import dev.spectroscope.core.events.RunEvent;
+import dev.spectroscope.core.hooks.HookRunner;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
@@ -288,6 +289,18 @@ public final class HeadlessRunner {
                 .agentId(agentId)                      // "main", or a fleet node's identity
                 .thinking(config.thinking())           // surface reasoning in the NDJSON stream too
                 .llmWire(llmWire)                      // the backend-to-LLM record (card 184)
+                // Card 195: the SAME config-only shell hooks the REPL and the
+                // server load. This line was missing, and its absence was
+                // silent in the worst possible direction — `spectro run`, every
+                // cron job and every fleet node built an agent with no runner
+                // at all, so a blocking guard the settings file declares,
+                // `spectro doctor` counts and the settings page now lists was
+                // inert on every surface except an interactive session. Unlike
+                // the allowlist two blocks up, there is nothing about headless
+                // that argues for skipping these: a hook comes from config and
+                // never from model output, so it is exactly as trustworthy here
+                // as there, and the operator asked for it either way.
+                .hooks(HookRunner.load(config.hooks()))
                 .build());
         // The tracing seam (KONZEPT §4.3): persistence as a required port —
         // headless failure behaviour stays exactly the inline sink's. An

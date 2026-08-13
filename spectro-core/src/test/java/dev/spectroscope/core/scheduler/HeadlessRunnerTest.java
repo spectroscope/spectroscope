@@ -55,6 +55,62 @@ class HeadlessRunnerTest {
         return new HeadlessRunner(JSON, CONFIG, provider);
     }
 
+    /** {@link #CONFIG} plus a blocking {@code pre_tool_use} hook — the only
+     *  difference, so a failure here can be nothing else. */
+    private static SpectroConfig withHook() {
+        return new SpectroConfig(
+                CONFIG.provider(), CONFIG.model(), CONFIG.baseUrl(), CONFIG.compactionThreshold(),
+                CONFIG.permissionMode(), CONFIG.autoApprove(), CONFIG.imageProvider(),
+                CONFIG.thinking(), CONFIG.mcpServers(), CONFIG.maxRetries(), CONFIG.promptCaching(),
+                java.util.List.of(new dev.spectroscope.core.config.HookConfig(
+                        "*", "pre_tool_use", "exit 3", 5)),
+                CONFIG.workspace(), CONFIG.logLevel(), CONFIG.imageModel(), CONFIG.sttModel(),
+                CONFIG.sttProvider(), CONFIG.sttLanguage(), CONFIG.chromeBinary(),
+                CONFIG.otlpEndpoint(), CONFIG.otlpBasicAuth(), CONFIG.ollamaBaseUrl(),
+                CONFIG.lmstudioBaseUrl(), CONFIG.searxngUrl(), CONFIG.allowLocalhost());
+    }
+
+    /**
+     * Card 195. A configured hook has to run on THIS surface too.
+     *
+     * <p>Found by running the real CLI against a real backend with a real
+     * blocking hook in the settings file: the call went through. Headless never
+     * wired hooks at all — {@code spectro run}, every cron job and every fleet
+     * node built an agent with no {@link dev.spectroscope.core.hooks.HookRunner},
+     * so a guard the settings file declares, {@code spectro doctor} counts and
+     * the settings page lists was silently inert everywhere except an
+     * interactive session. A listed guard that does not run is worse than no
+     * guard, because it is believed.
+     */
+    @Test
+    void aConfiguredHookBlocksHeadlessToo(@TempDir Path cwd) {
+        ScriptedProvider provider = new ScriptedProvider();
+        provider.turns.add(List.of(
+                new LlmProvider.PToolCall("c1", "write_file",
+                        JSON.createObjectNode().put("path", "probe.txt").put("content", "x")),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE)));
+        provider.turns.add(List.of(
+                new LlmProvider.PTextDelta("The hook refused."),
+                new LlmProvider.PStop(LlmProvider.PStop.StopReason.END_TURN)));
+
+        List<RunEvent> events = new ArrayList<>();
+        // autoApprove TRUE, so nothing but the hook can stop this write.
+        HeadlessRunner.Outcome outcome = new HeadlessRunner(JSON, withHook(), provider)
+                .runOnce("Write probe.txt", cwd, true, null, events::add, line -> { });
+
+        assertTrue(outcome.exitOk());
+        assertFalse(Files.exists(cwd.resolve("probe.txt")),
+                "a pre_tool_use hook that exits non-zero must stop a headless write too");
+        RunEvent.HookDecision decision = events.stream()
+                .filter(RunEvent.HookDecision.class::isInstance)
+                .map(RunEvent.HookDecision.class::cast)
+                .findFirst().orElseThrow(() -> new AssertionError("no hook_decision in a headless run"));
+        assertEquals("blocked", decision.verdict());
+        assertEquals(5, decision.timeoutSeconds(), "the hook's own budget, resolved here as anywhere");
+        assertTrue(events.stream().noneMatch(RunEvent.PermissionRequest.class::isInstance),
+                "the block short-circuits ahead of the gate on this surface too");
+    }
+
     @Test
     void aPlainAnswerYieldsExitOkAndTheFinalText(@TempDir Path cwd) {
         ScriptedProvider provider = new ScriptedProvider();
