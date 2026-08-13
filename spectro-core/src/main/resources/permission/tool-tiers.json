@@ -16,7 +16,7 @@
     "land on every gate audit line."
   ],
   "schemaVersion": 1,
-  "mapVersion": "2026-08-13",
+  "mapVersion": "2026-08-13.2",
 
   "builtin": {
     "_comment": [
@@ -25,7 +25,18 @@
       "tier. browse_page is write: it launches a real browser and navigates, which",
       "the tier table rates alongside browser_navigate. run_command and the spawn",
       "tools run code — a child agent's own registry carries run_command, so a",
-      "spawn is an eval one indirection away."
+      "spawn is an eval one indirection away.",
+      "",
+      "The browser_* family (card 201) is rated by what each tool DOES to the page.",
+      "browser_read_page, browser_find and browser_read_console look and never touch.",
+      "browser_navigate and browser_resize act on the pane; browser_computer bundles a",
+      "screenshot (read) with input injection (write), and a tool's tier is its widest",
+      "capability, so it is write. browser_eval is eval-execute and deliberately so:",
+      "it runs model-authored JavaScript in the PAGE context, holding that origin's",
+      "cookies, localStorage and fetch credentials, and it acts with the authority of",
+      "whoever is logged in there — against a page that is attacker-influenced input.",
+      "A :read ceiling must never approve it. There is no Node-context eval here and",
+      "none gets added (card 200, section 6, rule 4)."
     ],
     "read_file": "read",
     "list_dir": "read",
@@ -36,6 +47,9 @@
     "web_fetch": "read",
     "web_search": "read",
     "use_skill": "read",
+    "browser_read_page": "read",
+    "browser_find": "read",
+    "browser_read_console": "read",
 
     "write_file": "write",
     "edit_file": "write",
@@ -43,10 +57,14 @@
     "generate_image": "write",
     "update_plan": "write",
     "report_status": "write",
+    "browser_navigate": "write",
+    "browser_computer": "write",
+    "browser_resize": "write",
 
     "run_command": "eval-execute",
     "spawn_agent": "eval-execute",
-    "spawn_agents": "eval-execute"
+    "spawn_agents": "eval-execute",
+    "browser_eval": "eval-execute"
   },
 
   "servers": {

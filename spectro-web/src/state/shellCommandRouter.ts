@@ -19,7 +19,7 @@ export interface ShellDeps {
   openScenarios(): void;
   /** Load a bundled state-graph run by its artifact filename. */
   loadStateGraphDemo(source: string): void;
-  setNav(n: "sessions" | "fleets" | "stategraph"): void;
+  setNav(n: "sessions" | "fleets" | "stategraph" | "browser"): void;
   /** Whether the leveling ladder still has the fleets surface closed. */
   fleetsLocked: boolean;
   openLevelPanel(): void;
@@ -86,6 +86,12 @@ export function runShellCommand(c: ShellCommand, d: ShellDeps): void {
       return;
     case "nav.stategraph":
       d.setNav("stategraph");
+      return;
+    case "nav.browser":
+      // Sent by the shell when the AGENT reaches for the browser, not only when
+      // a human picks a menu item: a pane that painted behind another segment
+      // would be a browser nobody can watch, which is the whole card.
+      d.setNav("browser");
       return;
     case "tab.set":
       if (c.arg === undefined || !isViewTab(c.arg)) return;

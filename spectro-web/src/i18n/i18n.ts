@@ -49,6 +49,33 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",
     en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right.",
   },
+  "nav.browser": { de: "Browser", en: "Browser" },
+  "browser.title": { de: "Der sichtbare Browser", en: "The visible browser" },
+  "browser.noPage": { de: "noch keine Seite geöffnet", en: "no page open yet" },
+  "browser.attachedNote": {
+    de: "Der Agent fährt diese Seite, und du siehst dieselbe Seite.",
+    en: "The agent drives this page, and you are watching the same page.",
+  },
+  "browser.loadingNote": {
+    de: "Verbindung zum Browser-Fenster wird geprüft …",
+    en: "Checking for a browser pane …",
+  },
+  "browser.noShellNote": {
+    de: "Kein Browser-Fenster angehängt. Der sichtbare Browser ist eine Fläche IN der Desktop-App; ein Reader, der spectro web im eigenen Browser öffnet, bekommt hier keine Seite.",
+    en: "No browser pane attached. The visible browser is a surface INSIDE the desktop app; a reader who opens spectro web in their own browser gets no page here.",
+  },
+  "browser.noShellHint": {
+    de: "Öffne die Desktop-App, dann fährt der Agent die Seite dort — und für localhost muss allowLocalhost in den Einstellungen an sein.",
+    en: "Open the desktop app and the agent drives the page there — and reaching localhost needs allowLocalhost turned on in the settings.",
+  },
+  "browser.fenceNote": {
+    de: "Der Netz-Zaun ist an. Private Adressen, das Tailnet und file:// bleiben bei jedem Redirect-Hop abgelehnt, und ein Hostname wird aufgelöst, bevor die Seite ihn erreicht; für localhost braucht es allowLocalhost. Was kein Zaun fängt: eine DNS-Antwort, die sich zwischen Prüfung und Verbindung ändert.",
+    en: "The net fence is on. Private addresses, the tailnet and file:// stay refused on every redirect hop, and a host name is resolved before the page reaches it; localhost needs allowLocalhost. What no fence catches: a DNS answer that changes between the check and the connection.",
+  },
+  "browser.railNote": {
+    de: "Eine sichtbare Browser-Fläche, die der Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Primär für den lokalen Test-Loop.",
+    en: "One visible browser surface the agent drives: navigate, click, evaluate JavaScript in the page, screenshot. Primarily for the local verify loop.",
+  },
   "nav.noFleets": {
     de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.",
     en: "No running fleets. Start nodes against the hub and they appear here.",

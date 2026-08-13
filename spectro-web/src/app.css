@@ -61,3 +61,105 @@
   opacity: 0.3;
   cursor: default;
 }
+
+/* ---- the browser segment (card 201) --------------------------------------
+   The visible browser is a native WebContentsView the desktop shell lays OVER
+   this window, so what is styled here is a FRAME and a hole. Anything drawn
+   inside .browser-hole is what a reader sees when there is no pane behind it —
+   on the web face that is the whole segment.
+
+   Tokens only, so all four designs answer: the espresso ground, graphite,
+   still and paper each redefine --surface/--border/--text and this follows
+   without a second rule. Colour rides the hairline and the status dot, never a
+   fill; no shadow and no glow, per the brand's non-negotiables. */
+.browser-segment {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg);
+}
+
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+}
+
+/* The one piece of colour: attached rides the ok token, detached the faint one.
+   A dot, not a badge — the address beside it is the thing worth reading. */
+.browser-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  flex: 0 0 auto;
+}
+
+.browser-dot[data-attached="true"] {
+  background: var(--ok);
+}
+
+.browser-address {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono, monospace);
+}
+
+/* The hole. Its rectangle is measured and posted to the shell, which puts the
+   real page exactly here — so it must keep its size even while empty. */
+.browser-hole {
+  flex: 1 1 auto;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-top: 0;
+  background: var(--surface);
+}
+
+.browser-empty {
+  max-width: 46ch;
+  padding: 1.5rem;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.browser-empty h2 {
+  margin: 0 0 0.6rem;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
+  text-transform: lowercase;
+}
+
+.browser-empty p {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.browser-empty-hint {
+  color: var(--text-faint);
+}
+
+/* The fence note. Always on screen, attached or not: what the operator is
+   trusting is not a detail of the empty state. Hairline above, no fill. */
+.browser-fence {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-top: 0;
+  background: var(--surface);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-faint);
+}

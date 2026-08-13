@@ -47,6 +47,9 @@ const EXPECTED: Record<string, { arg?: string; touches: string[] }> = {
   "nav.sessions": { touches: ["setNav"] },
   "nav.fleets": { touches: ["setNav"] },
   "nav.stategraph": { touches: ["setNav"] },
+  // Sent by the shell when the AGENT reaches for the browser, so the pane never
+  // paints behind a segment the reader is not looking at.
+  "nav.browser": { touches: ["setNav"] },
   // A tab is only on screen in the sessions segment, so picking one from the
   // menu while the state graph is showing has to come back first.
   "tab.set": { arg: "trace", touches: ["changeTab", "setNav"] },

@@ -1,0 +1,156 @@
+{
+  "_comment": [
+    "The twin vector table for the net fence (card 201). Card 199's fence lives in",
+    "Java and judges the address a tool was HANDED. The browser's own request hook",
+    "lives in the Electron shell, in TypeScript, and judges every redirect hop and",
+    "every subresource — the hole browse_page documents in its own javadoc and",
+    "cannot close. Two languages, one policy, and nothing but a shared habit to",
+    "keep them equal.",
+    "",
+    "So they are not kept equal by habit. Both sides read THIS file:",
+    "  Java  spectro-core .../browser/FenceVectorTwinTest.java",
+    "  TS    spectro-desktop/src/browserFence.test.ts",
+    "A rule added on one side and forgotten on the other turns one of them red.",
+    "",
+    "The table has two halves because the fence has two questions. `vectors` are",
+    "address literals and loopback NAMES, which both sides decide without asking",
+    "a resolver. `names` are host names with the answer WRITTEN DOWN, so both",
+    "sides can be driven by the same DNS answer without a network: Java through",
+    "NetFence.Resolver, the hook through its HostLookup seam.",
+    "",
+    "The names half was added on 2026-08-13 after a review measured what its",
+    "absence cost. The hook used to skip DNS entirely, and the comment here said",
+    "so as if it were a documented split; it was a hole. With allowLocalhost OFF,",
+    "a 302 to a public name that resolves to 127.0.0.1 loaded, titled itself",
+    "PWNED, and produced zero refusals. Java refused the same address at the",
+    "entry, so the table recorded no disagreement — which is exactly the shape a",
+    "vector table has to catch and did not. Both halves now resolve.",
+    "",
+    "One row of that review stands: the register carried only divergences where",
+    "JAVA is looser and the hook catches it. That is the comfortable direction.",
+    "The two vectors below marked (was a hook hole) are the other direction,",
+    "measured and now closed, and they are ordinary vectors precisely because",
+    "the two sides agree again.",
+    "",
+    "What is deliberately NOT here: IPv4-compatible (`::192.168.1.1`) and NAT64",
+    "(`64:ff9b::192.168.1.1`) spellings. Both sides read them as ordinary IPv6",
+    "addresses and allow them, and they agree because they are right: neither",
+    "reaches the embedded v4 address without translation infrastructure in the",
+    "path. Measured on this JDK and this Chromium on 2026-08-13.",
+    "",
+    "The addresses are stand-ins from NoOperatorAddressesInTheRepoTest's curated",
+    "list. This repository is public; a real host never goes in a test."
+  ],
+  "vectors": [
+    { "url": "https://example.com/", "allowLocalhost": false, "rule": null },
+    { "url": "http://example.com:8080/a/b?c=d", "allowLocalhost": false, "rule": null },
+
+    { "url": "file:///etc/passwd", "allowLocalhost": false, "rule": "file-url" },
+    { "url": "file:///etc/passwd", "allowLocalhost": true, "rule": "file-url" },
+    { "url": "FILE:///etc/passwd", "allowLocalhost": false, "rule": "file-url" },
+
+    { "url": "ftp://example.com/x", "allowLocalhost": false, "rule": "non-http-scheme" },
+    { "url": "data:text/html,<b>hi", "allowLocalhost": false, "rule": "non-http-scheme" },
+    { "url": "javascript:alert(1)", "allowLocalhost": false, "rule": "non-http-scheme" },
+
+    { "url": "http://127.0.0.1:5173/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://127.0.0.1:5173/", "allowLocalhost": true, "rule": null },
+    { "url": "http://localhost:5173/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://localhost:5173/", "allowLocalhost": true, "rule": null },
+    { "url": "http://app.localhost/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://[::1]:8080/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://[::1]:8080/", "allowLocalhost": true, "rule": null },
+
+    { "url": "http://10.0.0.5/", "allowLocalhost": false, "rule": "rfc1918" },
+    { "url": "http://10.0.0.5/", "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://172.16.4.4/", "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://172.31.0.1/", "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://192.168.1.1/admin", "allowLocalhost": true, "rule": "rfc1918" },
+
+    { "url": "http://100.64.0.1/", "allowLocalhost": true, "rule": "cgnat-tailnet" },
+    { "url": "http://100.64.0.2:1234/v1/models", "allowLocalhost": true, "rule": "cgnat-tailnet" },
+
+    { "url": "http://169.254.169.254/latest/meta-data/", "allowLocalhost": true, "rule": "link-local" },
+    { "url": "http://[fe80::1]/", "allowLocalhost": true, "rule": "link-local" },
+    { "url": "http://[febf::1]/", "allowLocalhost": true, "rule": "link-local" },
+    { "url": "http://[fc00::1]/", "allowLocalhost": true, "rule": "unique-local" },
+    { "url": "http://[fd00::1]/", "allowLocalhost": true, "rule": "unique-local" },
+    { "url": "http://[ff02::1]/", "allowLocalhost": true, "rule": "multicast" },
+    { "url": "http://[0:0:0:0:0:0:0:1]/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://[2606:4700::1111]/", "allowLocalhost": false, "rule": null },
+
+    { "url": "http://[::ffff:192.168.1.1]/secret", "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://[::ffff:c0a8:101]/secret", "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://[0:0:0:0:0:ffff:c0a8:101]/", "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://[::ffff:127.0.0.1]/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://[::ffff:127.0.0.1]/", "allowLocalhost": true, "rule": null },
+    { "url": "http://[::FFFF:7F00:1]/", "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://[::ffff:169.254.169.254]/", "allowLocalhost": true, "rule": "link-local" },
+    { "url": "http://[::ffff:100.64.0.1]/", "allowLocalhost": true, "rule": "cgnat-tailnet" },
+
+    { "url": "http://0.0.0.0:8080/", "allowLocalhost": true, "rule": "unspecified" },
+    { "url": "http://224.0.0.1/", "allowLocalhost": true, "rule": "multicast" },
+    { "url": "http://255.255.255.255/", "allowLocalhost": true, "rule": "broadcast" },
+
+    { "url": "http://2130706433/", "allowLocalhost": false, "rule": "loopback" },
+
+    { "url": "", "allowLocalhost": true, "rule": "unparsable" },
+    { "url": "http://", "allowLocalhost": true, "rule": "unparsable" }
+  ],
+
+  "_names_comment": [
+    "Host NAMES, with the DNS answer stated so both halves can be driven by the",
+    "same answer offline. `localtest.example` stands in for the public name that",
+    "resolves to loopback — the reviewer used the real one live; a suite that",
+    "needs the network is a suite that is red on a train.",
+    "",
+    "The rule is the same on both sides and is the one thing worth stating: EVERY",
+    "answer is judged, and ONE private answer refuses the request. A name with a",
+    "public A record and a private AAAA record is refused."
+  ],
+  "names": [
+    { "url": "http://localtest.example:8875/secret", "resolvesTo": ["127.0.0.1"], "allowLocalhost": false, "rule": "loopback" },
+    { "url": "http://localtest.example:8875/secret", "resolvesTo": ["127.0.0.1"], "allowLocalhost": true, "rule": null },
+    { "url": "http://intranet.example.com/", "resolvesTo": ["192.168.1.1"], "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://node.example.com/", "resolvesTo": ["100.64.0.1"], "allowLocalhost": true, "rule": "cgnat-tailnet" },
+    { "url": "http://metadata.example.com/", "resolvesTo": ["169.254.169.254"], "allowLocalhost": true, "rule": "link-local" },
+    { "url": "http://cdn.example.com/lib.js", "resolvesTo": ["93.184.216.34"], "allowLocalhost": false, "rule": null },
+    { "url": "http://split.example.com/", "resolvesTo": ["93.184.216.34", "10.0.0.5"], "allowLocalhost": true, "rule": "rfc1918" },
+    { "url": "http://six.example.com/", "resolvesTo": ["fc00::1"], "allowLocalhost": true, "rule": "unique-local" }
+  ],
+
+  "_divergences_comment": [
+    "Where the two halves honestly answer differently, measured 2026-08-13 on this",
+    "JDK 21 and Node 25 / Chromium 150. Listed rather than dropped, and both sides",
+    "assert their own column, so a divergence cannot change in silence.",
+    "",
+    "The cause is one thing: WHO parses the host. Java hands the string to",
+    "InetAddress, which is exactly what the connector will dial, so the entry check",
+    "judges the address the JVM would reach. The hook is inside Chromium and the",
+    "WHATWG URL parser has already normalised the host, so it judges the address",
+    "the BROWSER will reach. The two parsers disagree about old IPv4 spellings.",
+    "",
+    "The second row is the interesting one and is the argument for having the hook",
+    "at all: Java reads 0177.0.0.1 as 177.0.0.1 — a public address — and the entry",
+    "check therefore allows it, while Chromium reads the same string as octal",
+    "loopback and dials 127.0.0.1. Only the in-hook fence sees what was actually",
+    "dialled, and it refuses. Neither half is wrong about its own process; the",
+    "browser's own hook is the one that decides where the browser goes."
+  ],
+  "divergences": [
+    {
+      "url": "http://0x7f000001/",
+      "allowLocalhost": false,
+      "java": "unparsable",
+      "hook": "loopback",
+      "why": "InetAddress refuses the hex spelling; the WHATWG parser reads it as 127.0.0.1. Both refuse."
+    },
+    {
+      "url": "http://0177.0.0.1/",
+      "allowLocalhost": false,
+      "java": null,
+      "hook": "loopback",
+      "why": "InetAddress reads this as 177.0.0.1 (public) and allows it; Chromium reads octal loopback and the hook refuses. The hook is the half that governs where the browser goes."
+    }
+  ]
+}
