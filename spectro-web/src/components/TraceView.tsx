@@ -15,6 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { traceRowOffset, traceWindow } from "./traceWindow";
+import { traceDisclosure } from "./traceDisclosure";
 import { loadTraceContext, type TraceContext } from "./traceContext";
 import type { CSSProperties, ReactNode } from "react";
 import type { RunEvent } from "../events";
@@ -1689,6 +1690,14 @@ export function TraceView(props: {
     return [sys, ...entries];
   }, [withPairs, ctx, lang]);
 
+  // What the pane says about its own live window (card 116). Deliberately fed
+  // `entries` and not `allEntries`: the three lists above differ, and only the
+  // first one is the record the window actually cut. null = say nothing.
+  const dropDisclosure = useMemo(
+    () => traceDisclosure(entries, props.droppedRows ?? 0),
+    [entries, props.droppedRows],
+  );
+
   // Agents seen in this stream, first-seen order — the chip row's catalog.
   const agents = useMemo(() => {
     const seen: string[] = [];
@@ -2349,14 +2358,29 @@ export function TraceView(props: {
         {/* Card 116: the live window is allowed to drop rows; it is not allowed
             to do it quietly. Rendered first in the toolbar so it is read before
             the rows it is about, and only when something really was dropped —
-            a permanent "0 dropped" would be noise. */}
-        {(props.droppedRows ?? 0) > 0 && (
-          <span className="trace-dropped" role="status">
-            {t(lang, "trace.dropped", {
-              shown: String(allEntries.length),
-              total: String(allEntries.length + (props.droppedRows ?? 0)),
-              n: String(props.droppedRows ?? 0),
+            a permanent "last 5000 of 5000" would teach the reader to skip the
+            line on the one run where it matters.
+
+            Built in the same shape as the search read-out below, which is the
+            house convention for this: a compact "{x} of {y}", the count of what
+            is NOT shown after a "·", and the full-sentence rule in the title.
+            The numbers come from `entries` — the record — and never from
+            `allEntries`, which carries response rows, voice rows and the
+            synthetic system_context row that the run never streamed. */}
+        {dropDisclosure !== null && (
+          <span
+            className="trace-dropped tabular"
+            role="status"
+            title={t(lang, "trace.droppedScope", {
+              shown: String(dropDisclosure.shown),
+              first: String(dropDisclosure.firstSeq),
             })}
+          >
+            {t(lang, "trace.dropped", {
+              shown: String(dropDisclosure.shown),
+              total: String(dropDisclosure.total),
+            })}
+            {` ${t(lang, "trace.droppedOut", { n: String(dropDisclosure.dropped) })}`}
           </span>
         )}
         <input

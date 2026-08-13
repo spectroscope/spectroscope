@@ -786,6 +786,13 @@
 .trace-row.trace-row--hit-cur { background: color-mix(in srgb, var(--accent) 22%, transparent); box-shadow: inset 2px 0 0 var(--accent); opacity: 1; }
 .trace-search-note { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--accent); white-space: nowrap; }
 
+/* Card 116: the live window's own read-out. Same shape as the search note above
+   — that is the house convention for "what you are looking at is not all of it".
+   It shipped naming a class no stylesheet defined, so it wrapped in the toolbar
+   and read as body text; the rule below is the fix, not decoration. Warn colour
+   rather than accent, because this one reports a loss rather than a position. */
+.trace-dropped { font-family: var(--font-mono); font-size: var(--fs-12); color: var(--warn); white-space: nowrap; }
+
 /* Said-vs-did pairing line under the row that wears a thinking block's reading:
    the row the block OPENS on, or — when the block and the turn came off one
    line of an imported file — that line's own opening row. */

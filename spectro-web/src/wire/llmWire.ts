@@ -340,8 +340,16 @@ export function traceWithVoice(rows: TraceEntry[], voice: readonly { wireSession
   // so a live trace re-rendered everything on every frame batch once card 184
   // leg 3 put an llm_exchange into every session. The rare path pays; the hot
   // one does not.
+  //
+  // Numbered from where the RECORD begins, not from one. On a live trace past
+  // its window (card 116) the first row is not frame one — `windowTrace` has
+  // dropped `n` rows and left `seq n+1` on top, and the pane says so out loud.
+  // Renumbering from one put a `seq 1` under a line reading "4000 older rows
+  // fell out", which is the contradiction that disclosure exists to prevent.
+  // Unwindowed the record still begins at 1, so the common case is unchanged.
+  const base = rows.length > 0 ? rows[0].seq : 1;
   const merged = withResponseRows([...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts));
-  return merged.map((r, i) => ({ ...r, seq: i + 1 }));
+  return merged.map((r, i) => ({ ...r, seq: base + i }));
 }
 
 export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {

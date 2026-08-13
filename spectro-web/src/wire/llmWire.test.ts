@@ -303,9 +303,10 @@ describe("the rows an exchange stands for, wherever it came from", () => {
     ]);
   });
 
-  it("keeps every row in time order and numbers them from one", () => {
+  it("keeps every row in time order and numbers them from where the record begins", () => {
     const rows = traceWithVoice([chatRow], [voiceExchange]);
 
+    // An unwindowed record begins at 1, so this is the familiar answer.
     expect(rows.map((r) => r.seq)).toEqual([1, 2, 3, 4, 5]);
     expect(rows.map((r) => r.ts)).toEqual([
       voiceExchange.ts - voiceExchange.durationMs,
@@ -318,6 +319,19 @@ describe("the rows an exchange stands for, wherever it came from", () => {
 
   it("leaves a trace with no voice in it exactly as it was", () => {
     expect(traceWithVoice([chatRow], []).map((r) => r.type)).toEqual(["llm_response", "llm_exchange"]);
+  });
+
+  it("does not renumber a windowed record back to one (card 116)", () => {
+    // A live trace past its window starts at seq dropped+1, and the pane states
+    // that number out loud. Numbering the merged list from one put a "seq 1"
+    // under a line reading "4000 fell out of the live window" — the reader's two
+    // signals contradicting each other, which is what the disclosure exists to
+    // prevent. The record's own offset has to survive the merge.
+    const windowed: TraceEntry = { ...chatRow, seq: 4001 };
+    const rows = traceWithVoice([windowed], [voiceExchange]);
+
+    expect(rows[0].seq).toBe(4001);
+    expect(rows.map((r) => r.seq)).toEqual([4001, 4002, 4003, 4004, 4005]);
   });
 });
 
