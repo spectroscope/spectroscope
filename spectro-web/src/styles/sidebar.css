@@ -4,10 +4,27 @@
   /* Named container so the rows can ask how wide the RAIL is. The user drags
      this width, so a viewport media query would answer the wrong question. */
   container: sidebar / inline-size;
+  /* The rail owns its row rhythm, in one place. `.nav-row` spends it as its own
+     vertical padding and the options control spends it as the offset that lands
+     it on the last row's line (card 217) — two readers, one number. Written
+     twice it would be a pair that drifts the first time the rows get roomier,
+     and the drift would be silent: a control 6px off its row still looks like a
+     control. It is declared HERE because both readers are inside the rail and a
+     custom property inherits; a `.nav-row` rendered anywhere else would resolve
+     it to nothing and lose its padding entirely, without a warning. */
+  --nav-row-pad-y: 6px;
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
   height: 100dvh;
+  /* Since card 217 this is the LAST RESORT rather than the rail's scrollbar:
+     `.sidebar-list` holds the rows and their overflow, and the two fixed blocks
+     take what they need, so this box only overflows when the window is shorter
+     than the chrome itself — measured at 399.8px (318.7 + 57.1 + two gaps): a
+     400px window does not scroll here, a 380px one scrolls by exactly 20. There
+     the head still sticks at top 0 and the Settings row is still reachable and
+     still hit-tests to itself; without this rule it would be pushed below the
+     window with no way to get to it. */
   overflow-y: auto;
   overscroll-behavior: contain;
   background-color: var(--surface);
@@ -21,17 +38,23 @@
   padding: 0 var(--sp-3);
 }
 
-/* The brand, the three actions, the sessions/fleets switch and — on the
-   sessions segment — the session list's own head, as one block that stays
-   (card 179, extended by card 216). The collapse control lives on the brand so
-   a narrow window can still reach it, and the list's options control rides the
-   same block for the same reason: a control you can lose by scrolling is a
-   control that is only sometimes there.
+/* The brand, the three actions and the segment switch — with the list's options
+   control on the switch's last line — as one block that stays (card 179,
+   extended by cards 216 and 217). The collapse control lives on the brand so a
+   narrow window can still reach it, and the options control rides the same
+   block for the same reason: a control you can lose by scrolling is a control
+   that is only sometimes there.
 
-   Opaque, because the list scrolls UNDER it, and everything in it depends on
-   that — a transparent sticky block is a control with session titles running
-   through it. The sidebar's glint gradient is a top gradient, so covering it
-   here costs nothing: this block is the top.
+   It carried the options control on a ROW of its own until card 217, and that
+   row cost 36.9px at every scroll position (measured: 352.7px here against
+   315.8px on fleets, where no such row is drawn). The control sits on the last
+   nav row's line now and the block is one line shorter for it.
+
+   Opaque, because the list scrolled UNDER it — the rows have their own scroll
+   box since card 217 and cannot reach this band any more, but the options panel
+   still opens downward out of this block, so a transparent head would be a
+   control with session titles running through it. The sidebar's glint gradient
+   is a top gradient, so covering it here costs nothing: this block is the top.
 
    `z-index: 2` is not decoration either. `.session-row:hover` carries a
    transform, and a transformed element paints in the positioned layer: without
@@ -75,6 +98,36 @@
   z-index: 3;
 }
 
+/* The rail's scrollbar, and the whole of the rail's scrollbar (card 217).
+   Everything the segment draws lives in here: the session rows, the fleet
+   roster, the scenario rails, the notes. The head and the foot do not, which is
+   the point — the bar used to belong to `.sidebar` and so measured the brand,
+   six nav rows and the settings row along with the sessions it moves. Measured
+   at 1440x900 with 120 sessions: a track from y=0 to y=900 for rows that start
+   at y=364.7.
+
+   `min-height: 0` is the line that does the work and the one nobody misses when
+   it goes. A column flex item's automatic minimum size is its own content, so
+   without it this block refuses to shrink below its own 5215px of rows, the
+   rail overflows instead, and the bar is back on the rail — every other
+   declaration here still reading exactly right.
+
+   `padding-right` is not spacing. `.session-row:hover` moves the row 2px to the
+   right and a transformed descendant counts toward its scroll container's
+   scrollable overflow; on the rail those 2px landed in 12px of padding and cost
+   nothing. This box has none of its own, so without the end room the pointer
+   grows a horizontal scrollbar under the row it is hovering. */
+.sidebar-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-right: var(--sp-1);
+}
+
 /* The wordmark: lowercase, sans, medium-heavy, the M1 line bundle in front.
    Brand rule: no glow on marks — the bars stay crisp. */
 .brand {
@@ -107,6 +160,37 @@
   padding-top: var(--sp-2);
 }
 
+/* The segment group and the list's options control, on one line (card 217).
+   The control had a line of its own under this group, which cost the block that
+   never moves a whole row for one 22px glyph.
+
+   It is placed rather than laid out, and both halves of that are deliberate.
+   ABSOLUTE, so it takes no width from the rows: as a flex item beside the group
+   it would narrow all four rows, and the active row's fill would visibly stop
+   short of the rail's edge on the sessions segment and nowhere else. And
+   against the group's BOTTOM edge, because that edge is the last row's bottom
+   edge — no row is named here, and none can be: Browser is the last segment
+   today (card 201), Stategraph was a card ago, and a `:nth-child()` written for
+   four rows is a literal that goes stale on the fifth.
+
+   The offset is the row's OWN vertical padding, read from the property the rail
+   declares. That lands the control's box on the row's text line to within a
+   pixel — measured against a 32.1px row whose content box is 20.1px: the
+   control's 22px sits 0.95px high of the row's optical centre, which is the
+   cost of not knowing a line box's height in CSS.
+
+   `right: var(--sp-1)` is the same inset `.brand-collapse` sits at, so the two
+   ghost icon buttons of this block share a right edge — one at its top, one at
+   its bottom. */
+.sidebar-nav-seg-line {
+  position: relative;
+}
+.sidebar-nav-seg-line > .sess-opts {
+  position: absolute;
+  right: var(--sp-1);
+  bottom: var(--nav-row-pad-y);
+}
+
 .nav-row {
   display: flex;
   align-items: center;
@@ -119,7 +203,9 @@
   color: var(--text-dim);
   font: inherit;
   font-size: var(--fs-13);
-  padding: 6px var(--sp-2) 6px 10px;
+  /* The vertical half is the rail's own `--nav-row-pad-y`: the options control
+     reads the same number to land on the last row's line (card 217). */
+  padding: var(--nav-row-pad-y) var(--sp-2) var(--nav-row-pad-y) 10px;
   text-align: left;
   cursor: pointer;
   transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
@@ -435,38 +521,19 @@
   overflow: hidden;
 }
 
-/* ---------- The head of the session list (card 214, pinned by card 216) ----
-   One thin row above the list, holding the control that governs it. No label
-   on the left: the segment row two lines up already says "Sessions", and a
+/* ---------- The list's options control (card 214, pinned by 216, moved by 217)
+   No label beside it: the segment row it rides already says "Sessions", and a
    second copy of that word would be the rail explaining itself twice.
 
-   NO `position` of its own, and that is the point. This row is the last child
-   of `.sidebar-head`, so it is sticky because that block is — one sticky top
-   and one sticky foot in the rail's single scroll container, which is the
-   arrangement that cannot fight. Sticking it a second time here would need a
-   `top:` equal to the head's height, and that height is a brand plus six nav
-   rows: a literal that goes stale the next time a row is added.
+   The row it used to have is gone. `.session-list-head` was one thin line of
+   the block that never moves, and it cost 36.9px at every scroll position for
+   one 22px glyph — 352.7px on the sessions segment against 315.8px on fleets,
+   where no such row is drawn. Where it is placed now is `.sidebar-nav-seg-line`
+   above; what did NOT change is which block it lives in, because that is
+   card 216's fix and it is what keeps the control reachable at every scroll
+   position.
 
-   It inherits the head's opaque `--surface` too, which is what a sticky row
-   needs — transparent, the sessions would scroll straight through the control
-   and it would be least readable exactly when it is reached for.
-
-   What it costs, at the size it was measured: the sticky block is 36.9px taller
-   on the sessions segment for carrying this row (319.5px against 282.6px on
-   fleets, where no list head is drawn), and unlike a row that scrolls, those
-   pixels are spent at EVERY scroll position. That is the price of the feature
-   rather than a defect — but it is the price, and it is 36.9px and not 8.
-
-   And NO `overflow` here either: the popover this row anchors opens downward
-   out of this box as well as out of the head's. See `.sidebar-head`. */
-.session-list-head {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 0 var(--sp-1);
-}
-
-/* The trigger: the same ghost icon button the brand's collapse control is,
+   The trigger: the same ghost icon button the brand's collapse control is,
    because they are the same kind of thing — a small switch riding on a row. */
 .sess-opts-btn {
   display: inline-flex;
@@ -504,16 +571,18 @@
 }
 
 /* …and upward when down does not fit on the screen. Since card 216 the trigger
-   is pinned, so its bottom is a constant 311.5px down the rail while the panel
-   needs a 418.7px window to land in one — a 107px band of window heights in
+   is pinned, so its bottom is a constant 304.7px down the rail while the panel
+   needs a 419.8px window to land in one — a 115px band of window heights in
    which a reader could open a panel they could not touch, and could not scroll
    to either, because it is anchored inside the block that does not scroll.
-   There is room the other way: 289.5px above the trigger against the 107.1px
-   the panel and its gap need.
+   There is room the other way: 282.7px above the trigger against the 107.1px
+   the panel and its gap need. (Card 217 moved the whole band 40px up the rail
+   with the control; measured on both edges, opened fresh at each height: a
+   420px window opens down, a 419px window opens up.)
 
    The direction is decided from a MEASUREMENT in `SessionListOptions`, not from
-   a `@media (max-height:)` threshold — that number would be a brand plus six
-   nav rows plus this row, the same literal this card refused for `top:`.
+   a `@media (max-height:)` threshold — that number would be a brand plus seven
+   nav rows, the same literal this card refused for `top:`.
 
    Same specificity as the rule above and both classes ride the element at once,
    so ORDER is the whole mechanism: this one has to come second. That is the

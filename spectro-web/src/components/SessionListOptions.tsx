@@ -44,11 +44,13 @@ const SESS_OPTS_EDGE = 8;
  *  composer — and down is also the fallback when neither side fits, because a
  *  flip that puts the panel off the top edge only moves the problem.
  *
- *  Measured rather than written into a media query: the panel's top is now a
- *  constant 317.5px down a pinned head, but that constant is a brand plus six
- *  nav rows plus this row, and a height threshold in the stylesheet would go
- *  stale on the next row anyone adds — the same literal this card refused for
- *  `top:`. */
+ *  Measured rather than written into a media query: the panel's top is a
+ *  constant 310.7px down a pinned head, but that constant is a brand plus seven
+ *  nav rows, and a height threshold in the stylesheet would go stale on the
+ *  next row anyone adds — the same literal card 216 refused for `top:`. It has
+ *  gone stale twice already without costing anything, which is the point: card
+ *  201 added a nav row and card 217 took the options row away, and the decision
+ *  below re-measured both times. */
 export function sessOptsPlacement(m: {
   triggerTop: number;
   triggerBottom: number;
@@ -75,9 +77,9 @@ export function SessionListOptions() {
 
   // Where it opens is decided per opening, and again on resize while it is
   // open. Pinning the trigger fixed WHERE it is and left what it opens alone:
-  // the panel hangs under a trigger whose bottom is now a constant 311.5px down
-  // the rail and needs a 418.7px window to land in one, while the trigger is
-  // reachable from 311.5px. In the 107px band between those two a reader could
+  // the panel hangs under a trigger whose bottom is a constant 304.7px down the
+  // rail and needs a 419.8px window to land in one, while the trigger is
+  // reachable from 304.7px. In the 115px band between those two a reader could
   // open a panel they could not touch — no scrolling brings it back, because it
   // is anchored inside the block that does not scroll. `useEffect` rather than
   // `useLayoutEffect`: this component is server-rendered by its own suite, and
