@@ -11,6 +11,7 @@ import {
   inCategories,
   lensRole,
   needsCallIndex,
+  ownsSearch,
   summarize,
   toolCategory,
   traceLinkState,
@@ -496,5 +497,25 @@ describe("a hook decision in the trace", () => {
     // compactJson of this payload leads with the plumbing — agentId, callId,
     // toolName — and ellipsizes long before the verdict.
     expect(summarize(row({ reason: "x" }), "en")).not.toContain("callId");
+  });
+});
+
+// Card 175 left the trace MOUNTED while another tab shows, and chat, text and
+// trace all report their hit count into one store (`state/search.ts`). Whoever
+// reports last wins, and the trace's effect runs after the chat's — so a reader
+// searching in the chat was reading, and stepping through, the hidden trace's
+// hits. The view nobody is looking at does not speak for the search.
+describe("ownsSearch", () => {
+  it("speaks for the search while the trace is the surface on screen", () => {
+    expect(ownsSearch(true, true, "deny")).toBe(true);
+  });
+
+  it("stays silent while it is mounted behind another tab", () => {
+    expect(ownsSearch(false, true, "deny")).toBe(false);
+  });
+
+  it("stays silent with the box closed, or with nothing typed in it", () => {
+    expect(ownsSearch(true, false, "deny")).toBe(false);
+    expect(ownsSearch(true, true, "   ")).toBe(false);
   });
 });

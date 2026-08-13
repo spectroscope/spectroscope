@@ -15,6 +15,7 @@ import {
   useSyncExternalStore,
 } from "react";
 import { traceRowOffset, traceWindow } from "./traceWindow";
+import { loadTraceContext, type TraceContext } from "./traceContext";
 import type { CSSProperties, ReactNode } from "react";
 import type { RunEvent } from "../events";
 import type { TraceEntry, UserAttachment } from "../state/reducer";
@@ -1460,8 +1461,32 @@ function TraceDetail({
   );
 }
 
+/**
+ * Whether this view speaks for the shared in-view search.
+ *
+ * Chat, text and trace all report their hit count into one store
+ * (`state/search.ts`), and since card 175 the trace stays MOUNTED while another
+ * tab shows. A hidden view that kept reporting overwrote the count of the view
+ * the reader was actually searching in — this one's effect runs after the
+ * chat's, so the chat's count lost every time.
+ *
+ * @param showing whether this is the surface on screen
+ * @param open whether the search box is open
+ * @param query what is typed in it
+ * @return whether this view should report its hits
+ */
+export function ownsSearch(showing: boolean, open: boolean, query: string): boolean {
+  return showing && open && query.trim() !== "";
+}
+
 export function TraceView(props: {
   entries: TraceEntry[];
+  /** Whether this is the surface the reader is looking at. Absent means yes:
+   *  the fleet's own trace tab mounts this view only when it is showing. The
+   *  sessions chain keeps it mounted behind other tabs (card 175) and passes
+   *  the answer, because a view nobody is looking at must not speak for the
+   *  shared search store. */
+  showing?: boolean;
   /** How many rows the LIVE window has thrown away (card 116). The pane says it
    *  out loud, because a cap nobody can see is indistinguishable from a
    *  coincidence — the reader could not tell whether 5000 was the maximum or
@@ -1584,7 +1609,9 @@ export function TraceView(props: {
   // rows are marked, the current one more strongly, and stepping walks them.
   const { open: searchOpen, query: searchQuery, regex: searchRegex, index: searchIndex } = useSearch();
   // A closed or empty search costs nothing — no text is built, no row walked.
-  const searching = searchOpen && searchQuery.trim() !== "";
+  // And neither does a search in a view that is mounted behind another tab.
+  const showing = props.showing ?? true;
+  const searching = ownsSearch(showing, searchOpen, searchQuery);
   // Replay scrubber: cap the visible stream at one frame (null = the live
   // end). Scrubbing back reads the run exactly as far as it had happened.
   const [capSeq, setCapSeq] = useState<number | null>(null);
@@ -1593,20 +1620,15 @@ export function TraceView(props: {
   // The system context is uploaded (as the "system" role) with every request but
   // is NOT a wire event, so it can't appear as a frame on its own. We fetch it
   // and prepend ONE synthetic ↑ row so the "what gets uploaded" side is visible.
-  const [ctx, setCtx] = useState<{
-    systemPrompt: string;
-    tools: { name: string }[];
-    skills: { name: string }[];
-    mcpServers: string[];
-  } | null>(null);
+  const [ctx, setCtx] = useState<TraceContext | null>(null);
   useEffect(() => {
     let alive = true;
-    fetch("/api/context")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c) => {
-        if (alive && c) setCtx(c);
-      })
-      .catch(() => {});
+    // Asked once per app rather than once per mount: this view now unmounts and
+    // remounts whenever a record arrives (card 175), and the operator's
+    // configuration is not a property of the record.
+    void loadTraceContext().then((c) => {
+      if (alive && c) setCtx(c);
+    });
     return () => {
       alive = false;
     };
@@ -2024,7 +2046,23 @@ export function TraceView(props: {
   // Leaving the trace takes its hits with it. Without this the next tab would
   // inherit a count nobody can step through — and React runs this cleanup
   // before the incoming view's effects, so it never eats a fresh report.
-  useEffect(() => () => reportCount(0), []);
+  //
+  // Only when this view was the one on screen, though. Since card 175 the trace
+  // also unmounts for a reason that has nothing to do with the reader leaving
+  // it: a record arriving while they are on the chat. Zeroing there would wipe
+  // the count of the chat's own search, which is the surface being read.
+  // The ref is written from an effect on purpose — on the unmounting render
+  // this component does not run, so the cleanup reads the last state it was in.
+  const wasShowing = useRef(showing);
+  useEffect(() => {
+    wasShowing.current = showing;
+  }, [showing]);
+  useEffect(
+    () => () => {
+      if (wasShowing.current) reportCount(0);
+    },
+    [],
+  );
 
   // Walk to the current hit. No focus() — the reader is typing in the search
   // box, and taking the caret away would end the search mid-word. The scroll
