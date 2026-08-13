@@ -133,9 +133,23 @@ describe("every row says whether it is running", () => {
     expect(sidebar).toContain("runState(");
   });
 
-  it("only claims live for a session this page holds a socket to", () => {
-    // The list is stored JSONL; nothing on the server reports who is live. A
-    // stored row may only be called live when it is the one being resumed.
-    expect(sidebar).toContain("props.resumeId");
+  it("reads the server's live set rather than only this page's socket", () => {
+    // This guard used to say the opposite, and it was right at the time: no
+    // endpoint reported who was live, so a stored row could only be called live
+    // when it was the one being resumed. Card 212 built the endpoint. What must
+    // not come back is a rail that resolves a stored row's dot from this page's
+    // own socket alone, which is how a second run went invisible.
+    expect(sidebar).toContain("useLiveSessions()");
+    expect(sidebar).toContain("storedRunState(");
+    expect(sidebar).toContain("props.resumeId"); // still the fallback for an older server
+  });
+
+  it("keeps the whole rule out of the markup", () => {
+    // A dot resolved inline is a dot no test can hold: there is no DOM in this
+    // suite. The decision lives in runIndicator.ts, and runIndicator.test.ts is
+    // its regression net.
+    const markup = ts(sidebar);
+    expect(markup).not.toMatch(/live:\s*props\.resumeId === s\.id/);
+    expect(markup).not.toMatch(/running:\s*props\.liveRunning,\s*\n\s*stopReason/);
   });
 });

@@ -36,6 +36,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "nav.run.live": { de: "verbunden", en: "connected" },
   "nav.run.open": { de: "nicht abgeschlossen", en: "unfinished" },
   "nav.run.idle": { de: "beendet", en: "finished" },
+  // Card 212: a session belongs to the socket that has it. The wording names
+  // the remedy rather than the rule — the reader wants their session back, and
+  // "close it there" is the whole of what they have to do.
+  "nav.sessionBusy": {
+    de: "Diese Session läuft schon in einem anderen Fenster. Schließe sie dort, um sie hier fortzusetzen.",
+    en: "That session is already open in another window. Close it there to continue it here.",
+  },
+  "nav.sessionBusyDismiss": { de: "verstanden", en: "got it" },
   "nav.stategraph": { de: "State-Graph", en: "State graph" },
   "nav.stategraphNote": {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",

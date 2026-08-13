@@ -17,7 +17,8 @@ import { SessionSigil, countLabel, sessionModelLabel, sessionSignal, sessionTitl
 import { NavIcon, NavRow } from "./NavRow";
 import { navActionRows, navSegmentRows } from "./navRows";
 import { RunDot } from "./RunDot";
-import { runState } from "./runIndicator";
+import { runState, storedRunState } from "./runIndicator";
+import { useLiveSessions } from "../state/liveSessions";
 import { useFleets } from "../state/fleetStore";
 import { FleetSigil } from "../spectrum/FleetSigil";
 import { SCENARIOS } from "../scenario/registry";
@@ -40,12 +41,13 @@ export function Sidebar(props: {
    *  doors on purpose: the header's is the first thing a narrow window takes
    *  away, and the rail is where a reader looks for the app's own switches. */
   onSettings: () => void;
-  /** True while THIS page's socket has a run in flight. The only source of a
-   *  "running" indicator anywhere in the rail: no endpoint reports which
-   *  sessions are live, so nothing else may claim it. */
+  /** True while THIS page's socket has a run in flight. It drives the rail's
+   *  own live row, and it is the FALLBACK for the resumed stored row when
+   *  nothing reports a live set (a server from before card 212). Every other
+   *  row now reads {@link useLiveSessions} instead. */
   liveRunning: boolean;
   /** The stored session this page's socket is continuing, when it is
-   *  continuing one. That row — and only that row — is live as well as stored. */
+   *  continuing one. */
   resumeId: string | null;
   /** Opens the session-import dialog (spectroscope JSONL or Claude Code transcript). */
   onImport: () => void;
@@ -84,6 +86,14 @@ export function Sidebar(props: {
   const nav = props.nav;
   const lang = useLang();
   const fleets = useFleets();
+  // Card 212: which sessions are live ON THIS SERVER, not merely on this page.
+  // Pushed over the socket and polled underneath — see state/liveSessions.ts.
+  const liveSessions = useLiveSessions();
+  // The identity of the live SET, not of its run flags: the stored list has to
+  // be refetched when a session appears or disappears (a fresh one has no row
+  // in /api/sessions until its file exists), but a run merely starting inside
+  // a session that is already listed changes no row's metadata.
+  const liveIds = liveSessions.map((session) => session.id).join(",");
   // Attention-first: a fleet with a pending gate floats to the top, then by
   // most recent activity — a manager sees who is blocked on them.
   const orderedFleets = [...fleets].sort(
@@ -110,7 +120,7 @@ export function Sidebar(props: {
     return () => {
       alive = false;
     };
-  }, [props.refreshToken]);
+  }, [props.refreshToken, liveIds]);
 
   const actionPress: Record<string, () => void> = {
     newChat: props.onNewChat,
@@ -180,14 +190,17 @@ export function Sidebar(props: {
       onClick={() => props.onSelectSession(s.id)}
     >
       <span className="session-title session-title-line">
-        {/* Stored rows can only ever say "unfinished" or "finished" — the list
-            is stored JSONL and nothing reports who is live. The one exception
-            is the row this page's socket is resuming. */}
+        {/* A stored row is no longer limited to what its file says. The server
+            reports the live set (card 212), so a session another window is
+            driving wears the same dot that window shows — and one of them
+            finishing leaves the other's dot alone. The whole rule is
+            storedRunState, so it can be tested without a DOM. */}
         <RunDot
-          state={runState({
-            live: props.resumeId === s.id,
-            running: props.liveRunning,
-            stopReason: s.stopReason,
+          state={storedRunState({
+            row: s,
+            live: liveSessions,
+            resumeId: props.resumeId,
+            liveRunning: props.liveRunning,
           })}
           lang={lang}
         />
@@ -304,9 +317,9 @@ export function Sidebar(props: {
       {nav === "sessions" ? (
         <>
           <nav className="session-list" aria-label="Sessions">
-            {/* The live row wears the same dot as every other row — the only
-                one in the rail that may ever say "running", because it is the
-                only session this page holds a socket to. */}
+            {/* The live row wears the same dot as every other row. It is THIS
+                page's socket — no longer the only row that may say "running",
+                only the one that says it about the session you are in. */}
             <button
               type="button"
               className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}

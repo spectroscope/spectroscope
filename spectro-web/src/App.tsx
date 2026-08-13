@@ -127,6 +127,7 @@ import {
   fleetPending,
   removeFleet,
 } from "./state/fleetStore";
+import { liveSessionsPushLive, readSessionBusy, startLiveSessionsPoll } from "./state/liveSessions";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
 import type { SubagentTranscript } from "./import/subagentFile";
@@ -264,6 +265,9 @@ export function App() {
   const awaitingRunStart = useRef(false);
   const [connNonce, setConnNonce] = useState(0); // bumped by "New chat" to force a fresh socket session
   const [resumeId, setResumeId] = useState<string | null>(null); // non-null: the socket continues this stored session
+  // The session another window is driving, when this page was refused one
+  // (card 212). Cleared by the notice's own dismiss and by starting anything.
+  const [sessionBusy, setSessionBusy] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
@@ -446,6 +450,18 @@ export function App() {
     setLiveEvents((prev) => [...prev, ...batch]);
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
+    liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
+    // A refused resume (another socket already drives that session). Drop the
+    // resume rather than let the transport retry it: the socket reconnects with
+    // the same URL, so a page that kept ?resume= would be refused every second
+    // for as long as the other window is open.
+    for (const event of batch as unknown[]) {
+      const refused = readSessionBusy(event);
+      if (refused !== null) {
+        setSessionBusy(refused);
+        setResumeId(null);
+      }
+    }
     // Card 89: a tool result or a run end may have changed the workspace on
     // disk — nudge the Files tab (it throttles + dedupes on its side).
     if (
@@ -487,6 +503,11 @@ export function App() {
       connection.close();
     };
   }, [connNonce, resumeId, onEvents]);
+
+  // The floor under the live-session push (card 212). The socket frame is the
+  // fast path; this is what bounds staleness for a page whose socket was down
+  // while something started or finished — LIVE_POLL_MS, stated in the module.
+  useEffect(() => startLiveSessionsPoll(), []);
 
   // When a run finishes, a new JSONL file exists — refresh the sidebar list.
   const running = live.running;
@@ -1838,6 +1859,20 @@ export function App() {
             retryAt={conn.retryAt}
             onRetry={() => connRef.current?.reconnectNow()}
           />
+        )}
+
+        {/* Card 212: the session belongs to the socket that has it. Said out
+            loud rather than bounced silently back to the live view — a window
+            that just moved on its own without explaining itself is the same
+            confusion the flicker was. */}
+        {sessionBusy !== null && (
+          <div className="conn-banner" role="status">
+            <span className="dot warn" aria-hidden="true" />
+            <span>{t(lang, "nav.sessionBusy")}</span>
+            <button type="button" className="link" onClick={() => setSessionBusy(null)}>
+              {t(lang, "nav.sessionBusyDismiss")}
+            </button>
+          </div>
         )}
 
         {/* Graph and trace are sibling renderers of the chat — the
