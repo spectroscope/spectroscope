@@ -39,6 +39,7 @@ import dev.spectroscope.core.trace.TracingPorts;
 import dev.spectroscope.core.web.BrowsePageTool;
 import dev.spectroscope.core.web.DefaultChromeRunner;
 import dev.spectroscope.core.web.WebSearchTool;
+import dev.spectroscope.core.wire.BrowserWireRecorder;
 import dev.spectroscope.core.wire.LlmWireRecorder;
 import dev.spectroscope.orchestrator.BusEnvelope;
 import dev.spectroscope.server.fleet.FleetAggregator;
@@ -141,6 +142,11 @@ public final class SessionConnection {
     // with the store, closed with the connection. Its metadata listener feeds
     // the llm_exchange socket frame; bodies stay in the sidecar file.
     private LlmWireRecorder llmWire;
+    /** The session's browser record (card 204), opened wherever the store is
+     *  minted — fresh and resume alike — because the sidecar is keyed by the
+     *  store's id and appends across a resume. Null until then: a socket that
+     *  never sent a prompt has no id to write under. */
+    private BrowserWireRecorder browserWire;
     private List<ProviderMessage> initial = List.of();
 
     private volatile CancelSignal signal;     // the running run's signal, or null
@@ -764,6 +770,10 @@ public final class SessionConnection {
         if (wire != null) {
             wire.close(); // flushed per line, so closing only releases the writer
         }
+        BrowserWireRecorder browserRecord = this.browserWire;
+        if (browserRecord != null) {
+            browserRecord.close(); // same: per-line appends, nothing buffered to lose
+        }
     }
 
     /**
@@ -798,6 +808,23 @@ public final class SessionConnection {
         llmWire = LlmWireRecorder.forSession(store.id());
         llmWire.onExchange(this::sendLlmExchange);
         llmWire.onRequest(this::sendLlmRequest);
+        // Card 204, opened in the same breath and for the same reason: the
+        // browser record is keyed by the store's id and appends across a resume.
+        // It has no listener — a browser call announces itself as an ordinary
+        // additive `browser_action` RunEvent from the tool that made it, so it
+        // takes the file-then-socket road every other event takes rather than a
+        // second path through this class.
+        browserWire = BrowserWireRecorder.forSession(store.id());
+    }
+
+    /**
+     * This session's browser record, for the tools to write through and for the
+     * lifetime test to measure.
+     *
+     * @return the recorder, or null while this connection has no session id
+     */
+    BrowserWireRecorder browserWire() {
+        return browserWire;
     }
 
     /**
@@ -962,11 +989,17 @@ public final class SessionConnection {
         // carried them "when attached" would hand the agent a browser that
         // exists and no way to say so. The fence and the image store are read
         // per call, like the neighbours above.
+        // Card 204: and they record what they did. The recorder is read per
+        // call, like the fence and the face above — this registry is built once
+        // and a resume opens a NEW recorder under the same session id, so a
+        // recorder captured here would be the one that has already been closed.
         new dev.spectroscope.core.browser.BrowserTools(
                 this::ownBrowser,
                 () -> dev.spectroscope.core.net.NetFence.withSystemDns(
                         activeConfig.get().allowLocalhost()),
-                ImageStore.inUserHome())
+                ImageStore.inUserHome(),
+                () -> browserWire == null
+                        ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire)
                 .all().forEach(registry::register);
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it

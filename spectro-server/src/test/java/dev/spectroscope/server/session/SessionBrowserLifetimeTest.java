@@ -6,6 +6,7 @@ import dev.spectroscope.core.browser.BrowserFaces;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.wire.BrowserWireRecorder;
 
 import org.junit.jupiter.api.Test;
 
@@ -76,6 +77,56 @@ class SessionBrowserLifetimeTest {
         connection.start();
 
         connection.onClose();   // the empty directory closes nothing and throws nothing
+    }
+
+    @Test
+    void aResumedSessionRecordsUnderTheSameIdAndTheNextBrowserEpoch() {
+        // Card 204's half of card 218's rule. The browser is retired when the
+        // session closes and a resume opens a new one — under the SAME session
+        // id, appending to the SAME sidecar. The recorder therefore has to claim
+        // the next epoch, or a replay would narrate two logins as one.
+        String id = storedSession();
+        Directory browsers = new Directory();
+
+        SessionConnection first = new SessionConnection(
+                new FakeSocket("ws-4", "ws://localhost/ws?resume=" + id),
+                JSON, config(), id, null, null);
+        first.useBrowser(browsers);
+        first.start();
+        BrowserWireRecorder firstRecorder = first.browserWire();
+        assertThat(firstRecorder).as("a resumed session opens its browser record too").isNotNull();
+        assertThat(firstRecorder.file()).isEqualTo(BrowserWireRecorder.fileFor(id));
+        firstRecorder.open("browser_navigate", "main", "t1",
+                JSON.createObjectNode().put("url", "https://one.example"), null)
+                .end(true, "Opened https://one.example.", "https://one.example");
+        assertThat(firstRecorder.epoch()).isEqualTo(1);
+        first.onClose();
+
+        SessionConnection second = new SessionConnection(
+                new FakeSocket("ws-5", "ws://localhost/ws?resume=" + id),
+                JSON, config(), id, null, null);
+        second.useBrowser(browsers);
+        second.start();
+        BrowserWireRecorder secondRecorder = second.browserWire();
+        assertThat(secondRecorder).isNotNull();
+        secondRecorder.open("browser_navigate", "main", "t2",
+                JSON.createObjectNode().put("url", "https://two.example"), null)
+                .end(true, "Opened https://two.example.", "https://two.example");
+        assertThat(secondRecorder.epoch())
+                .as("the second browser of one session's life is the second epoch")
+                .isEqualTo(2);
+        second.onClose();
+    }
+
+    @Test
+    void aSessionThatNeverStartedOpensNoBrowserRecord() {
+        SessionConnection connection = new SessionConnection(
+                new FakeSocket("ws-6", "ws://localhost/ws"), JSON, config(), null, null, null);
+        connection.start();
+        assertThat(connection.browserWire())
+                .as("no id yet means no file to write under")
+                .isNull();
+        connection.onClose();
     }
 
     /** A BrowserFaces that records instead of driving anything. */
