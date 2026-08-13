@@ -1,0 +1,4 @@
+# What generate-settings.sh writes on THIS machine. settings.yml carries a
+# secret key created here, so it is a credential file and never leaves the
+# machine — the same reason ci/concourse/keys is ignored next door.
+searxng/

@@ -1,6 +1,6 @@
 # The local build laboratory
 
-Five stacks, each a Docker Compose project, each on its own port, started and
+Six stacks, each a Docker Compose project, each on its own port, started and
 stopped independently — so two can be compared side by side and the rest stay
 out of the way.
 
@@ -18,10 +18,26 @@ out of the way.
 | **concourse** | 8880 | pipelines as YAML, every step its own container |
 | **sonar** | 8882 | static analysis over Java and TypeScript |
 | **deptrack** | 8883 (API 8884) | what our dependencies are made of, from an SBOM |
+| **search** | 8885 | a private SearXNG that answers JSON, not just a search page |
 | **renovate** | — | dependency updates, run on demand |
 
-All eight images were checked for a `linux/arm64` manifest with
-`docker manifest inspect` on 2026-08-05. None emulates.
+All nine images carry a `linux/arm64` manifest, read with
+`docker manifest inspect`: the first eight on 2026-08-05, searxng's pinned
+digest on 2026-08-13. None emulates.
+
+## search, and the sample that looks like it
+
+[`samples/09-searxng`](../samples/09-searxng) ships the same image for a
+different job: it is the onboarding path a user follows, and it writes the
+instance's address into `~/.spectro/.env` so the product's `web_search` tier
+finds it. **The stack here writes nothing outside `ci/search`** — it is a
+SearXNG to run beside the other tools, on the laboratory's own port. Nothing is
+factored across the two, but the facts they share are pinned rather than
+remembered: `CiStackDriftTest` fails if they ever name different image digests.
+
+Both run at once — different ports, different container names, different compose
+projects. Measured 2026-08-13: with the stack on 8885 and the sample on 8888,
+`format=json` came back `200 application/json` from each of them.
 
 ## Two things to know before you start
 
@@ -29,7 +45,10 @@ All eight images were checked for a `linux/arm64` manifest with
 machine's 48 GiB when this was written. SonarQube wants ~4 GiB for its embedded
 Elasticsearch and Dependency-Track's API server asks for 4 GiB, so `up all` does
 not fit. Raise it in Docker Desktop → Settings → Resources, or bring stacks up in
-pairs — which is what the per-stack switch is for.
+pairs — which is what the per-stack switch is for. **search is the exception**
+and changes none of that arithmetic: one container, 131 MiB idle
+(`docker stats --no-stream spectro-ci-searxng`, 2026-08-13), so it can sit
+beside whichever pair you are running.
 
 **No container here can sign the DMG.** Docker on macOS is a Linux VM;
 `codesign`, `notarytool`, `stapler` and `hdiutil` need the macOS host and its
@@ -62,6 +81,13 @@ Every one of these was found by starting the thing, not by reading about it.
   a *nested* container cannot reach, so every `npm ci` dies on name resolution.
   The `CONCOURSE_GARDEN_DNS_PROXY_ENABLE` written first was the wrong knob
   entirely — it belongs to the other runtime.
+- **A SearXNG that boots perfectly answers an API client 403.** Started with the
+  settings file the image writes for itself, `GET /` came back 200 and
+  `GET /search?q=…&format=json` came back **403** on the same instance, minutes
+  apart — measured here on 2026-08-13. The shipped `search.formats` list holds
+  `html` and nothing else, and an unlisted format is refused. `up search`
+  generates a settings file that lists `json`, which is the whole difference
+  between a page and an API.
 - **`./ci/spectro-ci up` passes `--build`,** because `docker compose up -d`
   alone silently reuses a stale image and you debug yesterday's container.
 

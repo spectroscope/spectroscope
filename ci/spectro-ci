@@ -4,9 +4,12 @@
 # The owner: "ich würde gerne concourse und jenkins nehmen. also beides parallel
 # und ich schalte einfach irgendwo um was ich nehmen will zum vergleich" — plus
 # SonarQube, Dependency-Track and a dependency updater, "zum testen ich will ja
-# alles wissen".
+# alles wissen". Later, and for the same reason: "im docker setup ein search
+# ordner machen und dann SearXNG also docker option mit rein nehmen zum starten"
+# — "neben build deploy und so", so a search engine you host yourself gets
+# started and stopped like every other tool here.
 #
-# So: one command, five stacks, each its own compose project on its own ports,
+# So: one command, six stacks, each its own compose project on its own ports,
 # started and stopped independently.
 #
 #   ./ci/spectro-ci up jenkins          one stack
@@ -45,6 +48,7 @@ STACKS=(
   "jenkins|jenkins|8881|/|a controller AND a separate agent node, so the split is visible"
   "sonar|sonarqube|8882|/|static analysis over Java and TypeScript"
   "deptrack|dependency-track|8883|/|what our dependencies are made of, from an SBOM"
+  "search|search|8885|/|a private SearXNG that answers JSON, not just a search page"
   "renovate|renovate|0|-|dependency updates, run on demand — no server, no port"
 )
 
@@ -125,6 +129,10 @@ cmd_up() {
       # Concourse cannot start without its three keypairs, and the error it
       # gives when they are missing does not say so.
       if [ "$name" = "concourse" ]; then "$CI_DIR/concourse/generate-keys.sh" || return 1; fi
+      # SearXNG starts either way — and answers 403 to every API call until its
+      # settings file lists `json`, which is the difference between a page you
+      # can browse and an instance a client can query. The script writes it.
+      if [ "$name" = "search" ]; then "$CI_DIR/search/generate-settings.sh" || return 1; fi
       # --build, always. Without it a changed Dockerfile or plugins.txt is
       # silently ignored and you debug the OLD image — which cost two rounds
       # here before it was noticed. Docker's layer cache makes the no-change
@@ -223,7 +231,7 @@ cmd_doctor() {
   else warn "docker memory is under 12 GiB — run stacks in pairs, or raise it"; fi
 
   local p
-  for p in 8880 8881 8882 8883 8884 50000; do
+  for p in 8880 8881 8882 8883 8884 8885 50000; do
     if lsof -nP -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
       warn "port $p is already taken"; bad=1
     fi
