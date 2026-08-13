@@ -121,7 +121,38 @@ export type RunEvent =
       label?: string;
       ts: number;
     } // A2A-lite, additive: task/status/result between agents
-  | { type: "plan"; agentId: string; steps: { text: string; status: string }[]; ts: number }; // additive: the main agent's TODO list, latest-wins
+  | { type: "plan"; agentId: string; steps: { text: string; status: string }[]; ts: number } // additive: the main agent's TODO list, latest-wins
+  // Card 204: one browser tool call happened. The browser twin of llm_exchange
+  // and for the same reason — the trace itself is a sidecar beside the session
+  // (~/.spectro/browser-wire/<id>.browser.jsonl), but a session file that said
+  // nothing at all could not even tell a reader that a browser had been driven.
+  // Metadata only. No bytes ride here, ever: a screenshot is a blob in the store
+  // and a hash on this line.
+  | {
+      type: "browser_action";
+      agentId: string;
+      /** The provider's tool_use id; absent where no turn produced one. */
+      callId?: string;
+      /** The sidecar's own id: what joins this line to the two lines over there. */
+      cid: string;
+      /** Which browser of this session's life it drove. 1-based; 0 when nothing
+       *  was recording. Card 218 retires a browser when its session closes, so a
+       *  resumed session's second browser is a second epoch and never a
+       *  continuation of the first. */
+      epoch: number;
+      /** The wire name: browser_navigate, browser_eval, browser_computer, … */
+      tool: string;
+      /** The address it happened on; absent when no page was open. A
+       *  credential-shaped address arrives as "[redacted: <rule>]". */
+      url?: string;
+      ok: boolean;
+      resultBytes: number;
+      durationMs: number;
+      /** The screenshot blob's hash — the same key the image_generated event
+       *  carries. Absent for a call that took no picture. */
+      sha256?: string;
+      ts: number;
+    }; // additive
 
 // Client -> server frames (socket protocol, design/BUILD-PLAN.md). The server
 // sends nothing but RunEvent JSON in the other direction. user_message

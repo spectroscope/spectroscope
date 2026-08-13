@@ -44,6 +44,7 @@ import {
   subscribeReportedViews,
 } from "./state/viewReport";
 import { BrowserSegment } from "./browser/BrowserSegment";
+import { BrowserReplay } from "./browser/BrowserReplay";
 import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
 import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
 import {
@@ -2332,11 +2333,23 @@ export function App() {
             />
           )
         ) : tab === "browser" ? (
-          /* The same surface the rail shows, mounted inside the session. It is
-             not a second browser: both arms hand BrowserSegment the same
+          /* Live: the same surface the rail shows, mounted inside the session.
+             It is not a second browser: both arms hand BrowserSegment the same
              session id, and only one of them is ever on screen, so the shell
-             lays one view over whichever hole is showing. */
-          <BrowserSegment active={true} sessionId={shownSessionId} />
+             lays one view over whichever hole is showing.
+
+             Stored: the REPLAY (card 204). A session the reader reopened has no
+             live browser — card 218 retires it when the session's socket goes —
+             so the live surface here would be a frame around an honest but
+             useless "no pane attached". What that session does have is its
+             record, beside the file, and this is where it gets watched back.
+             The rail's segment stays live in both cases: it is the view onto
+             the CURRENT session's browser, not onto whichever run is shown. */
+          viewingLive ? (
+            <BrowserSegment active={true} sessionId={shownSessionId} />
+          ) : (
+            <BrowserReplay sessionId={shownSessionId} />
+          )
         ) : null}
         {/* The trace is MOUNTED ONCE and hidden, never unmounted (card 175).
             Measured on a 9,319-row session: pressing the tab cost 955 ms of
