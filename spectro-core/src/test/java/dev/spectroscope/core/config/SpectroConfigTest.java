@@ -1065,6 +1065,35 @@ class SpectroConfigTest {
     }
 
     @Test
+    void aWorkspaceScopeMustNotOpenTheNetFence(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // Card 199, review finding F4: the workspace IS the agent's cwd, and
+        // write_file writes into it. A fence whose only switch sits inside the
+        // sandbox it guards is not a fence — one auto-approved write and the next
+        // session reaches loopback, which the redirect fix then extends no
+        // further, but loopback alone is the board, ollama and the whole local
+        // machine.
+        Files.createDirectories(ws.resolve(".spectro"));
+        Files.writeString(ws.resolve(".spectro/settings.json"), """
+                { "allowLocalhost": true }
+                """);
+        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                        java.util.Map.of()));
+        assertTrue(loud.getMessage().contains("allowLocalhost"), loud.getMessage());
+
+        Files.delete(ws.resolve(".spectro/settings.json"));
+        Files.writeString(ws.resolve(".spectro/settings.local.json"), """
+                { "allowLocalhost": true }
+                """);
+        IllegalArgumentException alsoLocal = assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                        java.util.Map.of()));
+        assertTrue(alsoLocal.getMessage().contains("settings.local.json"),
+                "the local half is written by the same hand: " + alsoLocal.getMessage());
+    }
+
+    @Test
     void aWorkspaceScopeMustNotPointAtAnotherWorkspace(@TempDir Path projectDir, @TempDir Path ws)
             throws IOException {
         Files.createDirectories(ws.resolve(".spectro"));
