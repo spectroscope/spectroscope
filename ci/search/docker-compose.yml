@@ -1,0 +1,65 @@
+# search — a private SearXNG, running beside the other stacks in the laboratory.
+#
+# WHY A FOLDER AND NOT A `docker run` LINE. Stock SearXNG lists only `html`
+# under `search.formats`, and a request for a format that is not on that list is
+# answered HTTP 403. So `docker run searxng/searxng` gives a perfectly good
+# search page in a browser and an API that hands a client nothing back — which
+# is the useless half for anything that wants to read results. Measured here on
+# 2026-08-13 against this exact digest: with the image's own generated settings
+# the page answered 200 and `?format=json` answered 403 on the same instance.
+#
+# generate-settings.sh next to this file writes the settings.yml that turns
+# `json` on and generates this machine's own secret key (SearXNG refuses to boot
+# on the placeholder it ships with). THIS file mounts it. `./ci/spectro-ci up
+# search` runs the script first, the same way it generates Concourse's keypairs.
+#
+# Four deliberate choices, each one a thing that bites otherwise:
+#
+#   1. /etc/searxng is a bind mount of ./searxng, written by the script. When
+#      that directory is empty the image generates its own settings.yml — and
+#      the generated one has json off, which is the state this stack exists to
+#      leave. The directory is gitignored: settings.yml carries a secret key.
+#   2. The published port binds LOOPBACK only. The other stacks publish on all
+#      interfaces; a metasearch proxy fetches attacker-influenced URLs for a
+#      living, so this one stays on 127.0.0.1. 8885 is the next free port after
+#      the four the laboratory already publishes.
+#   3. `cap_drop: ALL` plus the two capabilities the image's own entrypoint
+#      needs in order to drop privileges.
+#   4. The image is pinned by DIGEST. searxng/searxng:latest is a rolling tag
+#      that moves several times a week, and "the version that worked yesterday"
+#      is not a version.
+#
+#   pinned 2026-08-13, SearXNG 2026.8.12-cdfdaa5a8
+#   searxng/searxng:latest -> c2dc2d9e
+#   linux/arm64 present in the manifest for this digest, checked 2026-08-13.
+#
+# The SAME digest is pinned in samples/09-searxng/docker-compose.yml, and
+# CiStackDriftTest fails if the two ever name different ones. See ci/README.md
+# for which of the two you want.
+
+services:
+  searxng:
+    image: docker.io/searxng/searxng@sha256:c2dc2d9e6b910653e8628361c23443222490e4cabbb9e02667b7847143db843b
+    container_name: spectro-ci-searxng
+    # No restart policy, and none of the other stacks has one either: in this
+    # laboratory a stack runs because you asked for it, not because Docker came
+    # back up.
+    ports:
+      - "127.0.0.1:8885:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      # The instance's own idea of where it lives. It reaches the HTML pages
+      # SearXNG renders; the JSON an API client reads does not depend on it.
+      SEARXNG_BASE_URL: http://localhost:8885/
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: json-file
+      options:
+        max-size: "1m"
+        max-file: "1"
