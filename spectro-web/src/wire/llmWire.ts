@@ -314,6 +314,33 @@ export function voiceRows(list: readonly { wireSession: string }[]): TraceEntry[
 }
 
 /**
+ * The steps a gap between two record rows can be cut into and still read as
+ * numbers rather than as noise. The widest one that fits `k` manufactured rows
+ * under the half step wins, so the ordinary case — one voice call, three rows —
+ * comes out as `.1 .2 .3` rather than as a long tail of decimals.
+ */
+const ANCHOR_STEPS = [0.1, 0.05, 0.02, 0.01] as const;
+
+/**
+ * Where the manufactured rows sitting on top of record row `base + 1` are
+ * numbered: strictly inside `(base, base + 0.5)`, in order, never on a whole
+ * number.
+ *
+ * <p>`base + 0.5` is taken — that is the response row `withResponseRows` puts
+ * half a step in front of `base + 1` — so the gap really is half a unit wide.
+ * Fifty rows in one gap is twenty-five voice calls between two socket frames,
+ * which no session has; past that the step shrinks and the numbers grow a tail.
+ * Ugly beats wrong, and it stays ordered and unique either way.</p>
+ */
+function anchoredSeqs(base: number, k: number): number[] {
+  const step = ANCHOR_STEPS.find((s) => s * k < 0.5);
+  if (step === undefined) return Array.from({ length: k }, (_, j) => base + (0.5 * (j + 1)) / (k + 1));
+  // Two decimals is what the steps above can produce, and rounding to them keeps
+  // `0.1 + 0.2` out of the seq column.
+  return Array.from({ length: k }, (_, j) => Math.round((base + step * (j + 1)) * 100) / 100);
+}
+
+/**
  * The trace as a reader sees it: the reducer's rows, this browser's own voice
  * calls folded in at their real moments, and every exchange — from either
  * source — standing for its three rows.
@@ -322,26 +349,61 @@ export function voiceRows(list: readonly { wireSession: string }[]): TraceEntry[
  * BEFORE the voice rows were merged in, so a chat turn drew request, response
  * and summary while a recording drew only request and summary. Same kind of
  * event, two different shapes, and the one that lost a row was the one that had
- * no session socket to arrive on in the first place.</p>
+ * no session socket to arrive on in the first place. Both sides are expanded
+ * here, before the merge, which is what keeps them the same shape.</p>
+ *
+ * <p><b>The record's rows are never moved.</b> This branch manufactures rows,
+ * and it used to pay for them by renumbering the merged list — from 1, and then
+ * (card 116, first attempt) from the record's own first seq. Both walk the
+ * record's numbers forward by however many rows this browser invented: on a
+ * windowed live trace the row that IS record row 4001 drew as 4004, under a
+ * line stating out loud that the record begins at 4001. The second version was
+ * worse than the first, because its first number was right and the rest of the
+ * column then looked like record seqs. So the manufactured rows are numbered
+ * into the gaps instead, exactly the way `withResponseRows` has numbered its
+ * own row `seq - 0.5` since card 184: a whole number in that column means the
+ * socket sent it, a fraction means this app drew it.</p>
+ *
+ * <p>It also leaves every record row as the SAME object, which the hot path
+ * already depended on — `TraceRow` is memo() with no comparator.</p>
  *
  * @param rows the trace as the reducer built it
  * @param voice what this browser was told about its own transcribe calls
- * @return the merged, expanded, renumbered rows
+ * @return the merged, expanded rows, the record's own numbering untouched
  */
 export function traceWithVoice(rows: TraceEntry[], voice: readonly { wireSession: string }[]): TraceEntry[] {
   if (voice.length === 0) return withResponseRows(rows);
-  // The renumbering lives HERE and not in withResponseRows, because this is the
-  // branch that manufactures rows: `voiceRows` invents its rows and they arrive
-  // with no sequence of their own, so a merged list has to be counted before it
-  // means anything.
-  //
-  // withResponseRows used to do it for both branches, which cost every row a new
-  // object on the common path too — and `TraceRow` is memo() with no comparator,
-  // so a live trace re-rendered everything on every frame batch once card 184
-  // leg 3 put an llm_exchange into every session. The rare path pays; the hot
-  // one does not.
-  const merged = withResponseRows([...rows, ...voiceRows(voice)].sort((a, b) => a.ts - b.ts));
-  return merged.map((r, i) => ({ ...r, seq: i + 1 }));
+  // Expanded per source and merged afterwards, so that "which rows did this app
+  // invent" is a question of identity rather than of guessing from a seq. Sort
+  // is stable, and a response row carries its exchange's own ts, so it stays
+  // immediately in front of it through the merge.
+  const invented = withResponseRows(voiceRows(voice));
+  const manufactured = new Set(invented);
+  const merged = [...withResponseRows(rows), ...invented].sort((a, b) => a.ts - b.ts);
+
+  const out: TraceEntry[] = [];
+  let run: TraceEntry[] = [];
+  let base: number | null = null;
+  const flush = (fallback: number): void => {
+    if (run.length === 0) return;
+    const seqs = anchoredSeqs(base ?? fallback, run.length);
+    run.forEach((row, j) => out.push({ ...row, seq: seqs[j] }));
+    run = [];
+  };
+  for (const row of merged) {
+    if (manufactured.has(row)) {
+      run.push(row);
+      continue;
+    }
+    // A record row is whole; a response row is that row minus a half. Either
+    // way the gap this run belongs in opens under `ceil`.
+    const here = Math.ceil(row.seq);
+    flush(here - 1); // only reached by a run above the FIRST record row
+    base = here;
+    out.push(row);
+  }
+  flush(0); // and this one only by a trace that is voice and nothing else
+  return out;
 }
 
 export function withResponseRows(rows: TraceEntry[]): TraceEntry[] {

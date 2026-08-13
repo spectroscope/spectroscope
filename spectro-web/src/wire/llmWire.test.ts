@@ -303,10 +303,13 @@ describe("the rows an exchange stands for, wherever it came from", () => {
     ]);
   });
 
-  it("keeps every row in time order and numbers them from one", () => {
+  it("keeps every row in time order and leaves the record's own numbers alone", () => {
     const rows = traceWithVoice([chatRow], [voiceExchange]);
 
-    expect(rows.map((r) => r.seq)).toEqual([1, 2, 3, 4, 5]);
+    // The record row is seq 1 and stays seq 1. Its response row sits half a step
+    // in front of it, as it always has; the three manufactured voice rows fit
+    // into the gap below on the same trick, one decimal place smaller.
+    expect(rows.map((r) => r.seq)).toEqual([0.1, 0.2, 0.3, 0.5, 1]);
     expect(rows.map((r) => r.ts)).toEqual([
       voiceExchange.ts - voiceExchange.durationMs,
       voiceExchange.ts,
@@ -318,6 +321,44 @@ describe("the rows an exchange stands for, wherever it came from", () => {
 
   it("leaves a trace with no voice in it exactly as it was", () => {
     expect(traceWithVoice([chatRow], []).map((r) => r.type)).toEqual(["llm_response", "llm_exchange"]);
+  });
+
+  it("does not move a windowed record's rows at all (card 116)", () => {
+    // A live trace past its window starts at seq dropped+1, and the pane states
+    // that number out loud. Numbering the merged list from one put a "seq 1"
+    // under a line reading "4000 fell out of the live window" — the reader's two
+    // signals contradicting each other, which is what the disclosure exists to
+    // prevent.
+    //
+    // Numbering it from the record's first seq instead only moved the lie: the
+    // FIRST number was then right while every record row under it still carried
+    // a display index. This test used to assert `rows[0].seq === 4001` and call
+    // that "the record's own offset survives the merge" — but rows[0] is a
+    // manufactured voice row, and the record's own row had been pushed to 4004.
+    const windowed: TraceEntry = { ...chatRow, seq: 4001 };
+    const rows = traceWithVoice([windowed], [voiceExchange]);
+
+    const record = rows.find((r) => r.ts === chatRow.ts && r.type === "llm_exchange");
+    expect(record?.seq).toBe(4001);
+    expect(rows[0].type).toBe("llm_request"); // the row on top is NOT the record's
+    expect(rows.map((r) => r.seq)).toEqual([4000.1, 4000.2, 4000.3, 4000.5, 4001]);
+  });
+
+  it("keeps the numbering ordered when a gap holds more rows than it has decimals", () => {
+    // Twenty voice calls between two socket frames is not a session anybody
+    // has; it is the bound the numbering must survive rather than collide at.
+    // Every manufactured row stays strictly inside the gap it belongs to —
+    // above the record row below it and below that row's response slot.
+    const many = Array.from({ length: 20 }, (_, i) => ({ ...voiceExchange, xid: `v${i}`, ts: 4000 + i }));
+    const rows = traceWithVoice([{ ...chatRow, seq: 7 }], many);
+    const seqs = rows.map((r) => r.seq);
+
+    expect(seqs).toHaveLength(62); // 20 × (request, response, exchange) + the record's two
+    expect(new Set(seqs).size).toBe(seqs.length);
+    expect([...seqs].sort((a, b) => a - b)).toEqual(seqs);
+    expect(seqs.filter((s) => Number.isInteger(s))).toEqual([7]);
+    expect(Math.min(...seqs)).toBeGreaterThan(6);
+    expect(seqs.filter((s) => s < 6.5)).toHaveLength(60);
   });
 });
 

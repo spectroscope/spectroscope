@@ -1578,9 +1578,18 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The recording could not be turned into audio the model reads. Nothing was sent.",
   },
   "voice.err.unknown": { de: "Die Aufnahme ist fehlgeschlagen.", en: "The recording failed." },
-  "trace.dropped": {
-    de: "Zeigt die letzten {shown} von {total} — {n} ältere sind aus dem Live-Fenster gefallen.",
-    en: "Showing the last {shown} of {total} — {n} older rows fell out of the live window.",
+  // Card 116. Built like the search read-out (trace.searchAt + trace.searchHidden
+  // + trace.searchScope): the compact count, then what is NOT shown after a "·",
+  // then the rule in full in the tooltip. The scope line names the seq the record
+  // now starts at, so the reader can check the line against the first row.
+  "trace.dropped": { de: "letzte {shown} von {total}", en: "last {shown} of {total}" },
+  "trace.droppedOut": {
+    de: "· {n} aus dem Live-Fenster gefallen",
+    en: "· {n} fell out of the live window",
+  },
+  "trace.droppedScope": {
+    de: "Ein Live-Strom hat kein Ende, deshalb hält der Trace die letzten {shown} Frames; die Sitzungsdatei behält jeden. Der Mitschnitt beginnt hier bei seq {first} — was herausfiel, wird gezählt und genannt, verschluckt wird nichts. Ein Import wird nie gefenstert.",
+    en: "A live stream has no end, so the trace keeps the last {shown} frames; the session file keeps every one. The record here begins at seq {first} — whatever fell out is counted and named, nothing is swallowed. An import is never windowed.",
   },
   "voice.live.label": { de: "Live mitschreiben", en: "Write along live" },
   "voice.live.on": {
