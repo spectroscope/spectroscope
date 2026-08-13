@@ -291,6 +291,26 @@ describe("the browser segment states the fence, and its limit", () => {
   });
 });
 
+// Card 218: the browser belongs to a session, and the two states that are new
+// because of it have to say so in both languages — a reader who sees an empty
+// frame and no sentence reads a bug, and a reader told "no browser" without
+// being told whose browser learns nothing.
+describe("the browser segment says whose browser it is", () => {
+  it("explains the session that has no id yet, in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      const note = dict["browser.noSessionNote"][lang];
+      expect(note.length, `${lang} says something`).toBeGreaterThan(60);
+    }
+    expect(dict["browser.noSessionNote"].en).toMatch(/belongs to a session/);
+    expect(dict["browser.noSessionNote"].de).toMatch(/gehört zu einer Session/);
+  });
+
+  it("tells the rail reader that every session has its own, with its own cookies", () => {
+    expect(dict["browser.railNote"].en).toMatch(/own cookies/);
+    expect(dict["browser.railNote"].de).toMatch(/eigenen Cookies/);
+  });
+});
+
 describe("t", () => {
   it("resolves a key per language", () => {
     expect(t("de", "nav.newChat")).toBe("Neuer Chat");

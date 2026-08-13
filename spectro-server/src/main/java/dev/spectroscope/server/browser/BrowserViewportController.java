@@ -57,7 +57,10 @@ public class BrowserViewportController {
     private final BrowserControlSocket control;
 
     /**
-     * @param control the one control channel, which is also the {@link BrowserFace}
+     * Takes the one control channel, which is also the directory of every
+     * session's {@link BrowserFace}.
+     *
+     * @param control the control channel
      */
     public BrowserViewportController(BrowserControlSocket control) {
         this.control = control;

@@ -331,6 +331,16 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
                 pageUrls.put(sessionId, url);
             }
         }
+        // The shell's own verdict, and it must be read before the value: a
+        // refusal carries an `error` and no `value`, so treating it as a success
+        // hands the model an empty object that BrowserTools renders as
+        // "undefined". Card 218 dropped this line while moving the address into
+        // a per-session map, and the live drive is what found it — every
+        // refusal the pane produced came back as a quiet success.
+        if (!reply.path("ok").asBoolean(false)) {
+            return BrowserFace.Reply.failed(
+                    reply.path("error").asText("the browser pane refused"), url);
+        }
         JsonNode value = reply.path("value");
         return BrowserFace.Reply.ok(value.isMissingNode() ? JSON.createObjectNode() : value, url);
     }

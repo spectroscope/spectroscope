@@ -62,6 +62,27 @@ class BrowserControlSocketSessionTest {
     }
 
     @Test
+    void aRefusalFromTheShellComesBackAsARefusal() throws Exception {
+        // Found live, not by reading: while the address moved into a per-session
+        // map this class stopped reading the shell's `ok`, and every refusal the
+        // pane produced — "no page is open in this session's browser yet" among
+        // them — arrived as a success with an empty value, which BrowserTools
+        // renders to the model as the word "undefined". A tool that reports
+        // nothing wrong when the browser said what was wrong is worse than one
+        // that fails.
+        FakeSocket shell = attachedShell();
+        BrowserControlSocket control = attach(shell);
+
+        BrowserFace.Reply reply = answer(control, shell, A,
+                "{\"ok\":false,\"error\":\"no page is open in this session's browser yet\","
+                        + "\"pageUrl\":null}");
+
+        assertFalse(reply.ok(), "the shell refused and the face said it worked");
+        assertNotNull(reply.error());
+        assertTrue(reply.error().contains("no page is open"), reply.error());
+    }
+
+    @Test
     void closingASessionSaysSoAndDoesNotWaitForAnybody() {
         FakeSocket shell = attachedShell();
         BrowserControlSocket control = attach(shell);
@@ -132,10 +153,43 @@ class BrowserControlSocketSessionTest {
      */
     private Exchange drive(BrowserControlSocket control, FakeSocket shell,
             String sessionId, String value, String pageUrl) throws Exception {
+        return exchange(control, shell, sessionId, frameId ->
+                "{\"id\":\"" + frameId + "\",\"ok\":true,\"value\":" + value
+                        + ",\"pageUrl\":\"" + pageUrl + "\"}");
+    }
+
+    /**
+     * Sends one navigate and answers it with a whole frame of the test's choosing.
+     *
+     * @param control the channel
+     * @param shell   the socket playing the shell
+     * @param session whose browser
+     * @param body    the reply frame, without its id
+     * @return the reply the face produced
+     */
+    private BrowserFace.Reply answer(BrowserControlSocket control, FakeSocket shell,
+            String session, String body) throws Exception {
+        return exchange(control, shell, session, frameId ->
+                "{\"id\":\"" + frameId + "\"," + body.substring(1)).reply();
+    }
+
+    /**
+     * Sends one navigate, waits for it to reach the shell, and answers it.
+     *
+     * @param control   the channel
+     * @param shell     the socket playing the shell
+     * @param sessionId whose browser
+     * @param answer    builds the reply frame from the command's id
+     * @return the frame the shell saw and the reply the face produced
+     */
+    private Exchange exchange(BrowserControlSocket control, FakeSocket shell,
+            String sessionId, java.util.function.Function<String, String> answer)
+            throws Exception {
         int before = frames(shell).length;
         CompletableFuture<BrowserFace.Reply> sent = CompletableFuture.supplyAsync(() ->
                 control.forSession(sessionId)
-                        .send("navigate", JSON.createObjectNode().put("url", pageUrl)));
+                        .send("navigate", JSON.createObjectNode()
+                                .put("url", "http://localhost:5173/")));
         String raw = null;
         for (int wait = 0; wait < 200 && raw == null; wait++) {
             String[] seen = frames(shell);
@@ -147,9 +201,8 @@ class BrowserControlSocketSessionTest {
         }
         assertNotNull(raw, "the command never reached the shell");
         JsonNode frame = JSON.readTree(raw);
-        control.handleTextMessage(shell, new TextMessage(
-                "{\"id\":\"" + frame.path("id").asText() + "\",\"ok\":true,"
-                        + "\"value\":" + value + ",\"pageUrl\":\"" + pageUrl + "\"}"));
+        control.handleTextMessage(shell,
+                new TextMessage(answer.apply(frame.path("id").asText())));
         return new Exchange(frame, sent.get());
     }
 }

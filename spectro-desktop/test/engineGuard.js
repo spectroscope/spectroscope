@@ -15,6 +15,8 @@
 //   6    the same hook carries a filter list — the adblock (card 201 AC 5)
 //   7    capturePage() returns real PNG bytes
 //   8    browser_resize really emulates a device: metrics, touch, user agent
+//   9    two sessions' browsers share NOTHING — the card-218 isolation, measured
+//        in the shipped Chromium rather than asserted about a string
 //
 // It drives the SHIPPED modules (dist/browserFence.js, dist/adblock.js,
 // dist/deviceEmulation.js), not a copy of them, so a change to the fence or the
@@ -31,6 +33,7 @@
 //   GUARD_BREAK=pagectx    the eval is sent to an isolated world
 //   GUARD_BREAK=await      the eval stops awaiting the returned Promise
 //   GUARD_BREAK=emulate    the viewport is not emulated at all (all three resize checks)
+//   GUARD_BREAK=partition  both sessions get ONE partition (card 201's shape)
 //
 // Run: npm run guard   (in spectro-desktop)
 
@@ -40,6 +43,10 @@ const path = require("node:path");
 const { refuse, refuseResolved, cachedLookup } = require(path.join(__dirname, "..", "dist", "browserFence.js"));
 const { compileFilters, DEFAULT_FILTERS } = require(path.join(__dirname, "..", "dist", "adblock.js"));
 const { applyViewport } = require(path.join(__dirname, "..", "dist", "deviceEmulation.js"));
+// The SHIPPED partition function, so a change to how a session is keyed changes
+// what this proves. Requiring browserPane.js here is deliberate: the isolation
+// must be the one the product uses, not one this file invents.
+const { partitionFor } = require(path.join(__dirname, "..", "dist", "browserPane.js"));
 
 // The resolver seam, answered from a table exactly the way NetFence.Resolver is
 // in the Java suite. A guard that needed real DNS would be a guard that is red
@@ -282,6 +289,63 @@ async function main() {
     "resize: a mobile user agent is in place on the next load",
     / Mobile /.test(agent),
     String(agent).slice(0, 80),
+  );
+
+  // 9. two sessions, two browsers, nothing shared (card 218). The isolation is
+  //    Chromium's own — one Electron session per spectroscope session — and this
+  //    is where that claim stops being a sentence about a string. A page logs in
+  //    under session A; session B loads the SAME origin and finds nothing.
+  const sessionA = "20260813-120000-aaaaaaaa";
+  const sessionB = "20260813-130000-bbbbbbbb";
+  const partA = partitionFor(BREAK === "partition" ? "shared" : sessionA);
+  const partB = partitionFor(BREAK === "partition" ? "shared" : sessionB);
+  const viewA = new WebContentsView({
+    webPreferences: { session: session.fromPartition(partA), sandbox: true },
+  });
+  const viewB = new WebContentsView({
+    webPreferences: { session: session.fromPartition(partB), sandbox: true },
+  });
+  win.contentView.addChildView(viewA);
+  viewA.setBounds({ x: 0, y: 0, width: 500, height: 700 });
+  win.contentView.addChildView(viewB);
+  viewB.setBounds({ x: 500, y: 0, width: 500, height: 700 });
+
+  await viewA.webContents.loadURL(base + "/");
+  await viewA.webContents.executeJavaScript(`(() => {
+    document.cookie = "spectro_login=secret-of-A; path=/";
+    localStorage.setItem("spectro_token", "token-of-A");
+    return true;
+  })()`);
+  // A reload first, so what B is asked about is a login that really persisted
+  // rather than one line of script that happened to run a moment ago.
+  await viewA.webContents.loadURL(base + "/");
+  const inA = await viewA.webContents.executeJavaScript(
+    "({ cookie: document.cookie, token: localStorage.getItem('spectro_token') })",
+  );
+  record(
+    "isolation: a login persists inside the session that made it",
+    inA.cookie.includes("secret-of-A") && inA.token === "token-of-A",
+    JSON.stringify(inA),
+  );
+
+  await viewB.webContents.loadURL(base + "/");
+  const inB = await viewB.webContents.executeJavaScript(
+    "({ cookie: document.cookie, token: localStorage.getItem('spectro_token') })",
+  );
+  record(
+    "isolation: the other session's browser sees neither cookie nor localStorage",
+    !inB.cookie.includes("secret-of-A") && inB.token === null,
+    `partitions ${partA} | ${partB} → ` + JSON.stringify(inB),
+  );
+
+  // And the same question asked of the engine rather than of the page, because a
+  // cookie can be absent from document.cookie for reasons that are not isolation.
+  const jarA = await session.fromPartition(partA).cookies.get({ name: "spectro_login" });
+  const jarB = await session.fromPartition(partB).cookies.get({ name: "spectro_login" });
+  record(
+    "isolation: the cookie jar itself belongs to one session",
+    jarA.length === 1 && jarB.length === 0,
+    `A has ${jarA.length}, B has ${jarB.length}`,
   );
 
   server.close();

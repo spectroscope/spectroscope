@@ -2013,6 +2013,20 @@ export function App() {
             >
               lab
             </button>
+            {/* Card 218: the visible browser is a SESSION feature, so it sits in
+              the session's own tab row. The rail keeps its Browser segment as
+              the large view onto the same browser — two doors, one instance,
+              because both mount BrowserSegment with the same session id and the
+              shell keys its views by that id. */}
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === "browser"}
+              className={tab === "browser" ? "tab tab--active" : "tab"}
+              onClick={() => changeTab("browser")}
+            >
+              browser
+            </button>
             {/* The way back to the record, on EVERY lens, and the only always
               visible one: the copy that sat next to the translate trigger is
               gone (2026-08-03), the sheet's own copy needs the sheet open. A
@@ -2059,7 +2073,7 @@ export function App() {
             desktop shell lays a real WebContentsView over this rectangle
             (card 201), so what is drawn here is the frame and the sign. */}
         {nav === "browser" ? (
-          <BrowserSegment active={true} />
+          <BrowserSegment active={true} sessionId={shownSessionId} />
         ) : nav === "stategraph" ? (
           <StateGraphPane
             run={stateGraphRun}
@@ -2317,6 +2331,12 @@ export function App() {
               sendClient={sendClient}
             />
           )
+        ) : tab === "browser" ? (
+          /* The same surface the rail shows, mounted inside the session. It is
+             not a second browser: both arms hand BrowserSegment the same
+             session id, and only one of them is ever on screen, so the shell
+             lays one view over whichever hole is showing. */
+          <BrowserSegment active={true} sessionId={shownSessionId} />
         ) : null}
         {/* The trace is MOUNTED ONCE and hidden, never unmounted (card 175).
             Measured on a 9,319-row session: pressing the tab cost 955 ms of

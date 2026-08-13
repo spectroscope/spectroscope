@@ -60,6 +60,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Verbindung zum Browser-Fenster wird geprüft …",
     en: "Checking for a browser pane …",
   },
+  "browser.noSessionNote": {
+    de: "Dieser Browser gehört zu einer Session, und diese Session hat noch keine. Schick eine erste Nachricht — dann bekommt sie ihre eigene Seite, mit eigenen Cookies, die keine andere Session sieht.",
+    en: "This browser belongs to a session, and this one does not have an id yet. Send a first message and it gets its own page, with its own cookies, that no other session can see.",
+  },
   "browser.noShellNote": {
     de: "Kein Browser-Fenster angehängt. Der sichtbare Browser ist eine Fläche IN der Desktop-App; ein Reader, der spectro web im eigenen Browser öffnet, bekommt hier keine Seite.",
     en: "No browser pane attached. The visible browser is a surface INSIDE the desktop app; a reader who opens spectro web in their own browser gets no page here.",
@@ -73,8 +77,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The net fence is on. Private addresses, the tailnet and file:// stay refused on every redirect hop, and a host name is resolved before the page reaches it; localhost needs allowLocalhost. What no fence catches: a DNS answer that changes between the check and the connection.",
   },
   "browser.railNote": {
-    de: "Eine sichtbare Browser-Fläche, die der Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Primär für den lokalen Test-Loop.",
-    en: "One visible browser surface the agent drives: navigate, click, evaluate JavaScript in the page, screenshot. Primarily for the local verify loop.",
+    de: "Die sichtbare Browser-Fläche der aktuellen Session, die ihr Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Jede Session hat ihre eigene, mit eigenen Cookies; dieselbe Fläche steht auch als Tab in der Session. Primär für den lokalen Test-Loop.",
+    en: "The current session's own visible browser, driven by its agent: navigate, click, evaluate JavaScript in the page, screenshot. Every session has its own, with its own cookies; the same surface is also a tab inside the session. Primarily for the local verify loop.",
   },
   "nav.noFleets": {
     de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.",

@@ -13,8 +13,15 @@
 // an unknown section opens settings plain, and an address that names nothing
 // real falls to the live default — landing wrong is worse than landing home.
 
-/** The six view tabs a hash may name. The literals ARE the URL segments. */
-export const VIEW_TABS = ["chat", "spectrum", "graph", "trace", "text", "lab"] as const;
+/**
+ * The seven view tabs a hash may name. The literals ARE the URL segments.
+ *
+ * `browser` joined them on card 218: the owner settled that the visible browser
+ * is a session feature — "weil jede session braucht ja seinen eigenen browser" —
+ * so it belongs in the session's own tab row, which binds it to the session by
+ * construction and gives it an address a link can land on.
+ */
+export const VIEW_TABS = ["chat", "spectrum", "graph", "trace", "text", "lab", "browser"] as const;
 export type ViewTab = (typeof VIEW_TABS)[number];
 
 /** The settings sections a hash may name. */
