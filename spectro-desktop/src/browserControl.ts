@@ -22,10 +22,19 @@ let socket: WebSocket | null = null;
 let retry: NodeJS.Timeout | null = null;
 let wanted = false;
 
-/** One command as the server sends it. */
+/**
+ * One command as the server sends it.
+ *
+ * `sessionId` arrived with card 218: every browser here belongs to a session, so
+ * a command that names none cannot be served. It rides beside `args` rather than
+ * inside them because it is not one verb's argument — it is who is asking, and
+ * it is the SERVER's answer, never the model's (the tools have no way to name a
+ * session, which is why browser_* still refuses tab_id).
+ */
 interface Command {
   id: string;
   verb: string;
+  sessionId?: string | null;
   args?: Record<string, unknown>;
   settings?: PaneSettings;
 }
@@ -92,13 +101,16 @@ async function handle(raw: string): Promise<void> {
   }
   if (!command.id || !command.verb) return;
   const settings: PaneSettings = command.settings ?? { allowLocalhost: false, adblock: true };
+  const sessionId = typeof command.sessionId === "string" && command.sessionId
+    ? command.sessionId
+    : null;
   let reply;
   try {
-    reply = await runVerb(command.verb, command.args ?? {}, settings);
+    reply = await runVerb(command.verb, command.args ?? {}, settings, sessionId);
   } catch (error) {
     // runVerb already catches; this is the belt for anything that escapes it,
     // because a command with no reply is an agent that waits forever.
-    reply = { ok: false, error: (error as Error).message, pageUrl: paneUrl() };
+    reply = { ok: false, error: (error as Error).message, pageUrl: paneUrl(sessionId) };
   }
   socket?.send(JSON.stringify({ id: command.id, ...reply }));
 }

@@ -275,6 +275,32 @@ class BrowserToolsTest {
     }
 
     @Test
+    void theTabIdRefusalSaysItCanNeverNameAnotherSessionsBrowser(@TempDir Path dir) {
+        // Card 218 gave tab_id its recorded meaning — a browser per session — and
+        // then did NOT make it a session selector, which is the part a later
+        // reader is most likely to get wrong. An argument that could name a
+        // session would be a way for one agent to reach another session's page,
+        // cookies and logins: exactly what the card was written to prevent. So
+        // both the schema and the refusal have to say which of the two it is.
+        FakeFace face = new FakeFace(true, Map.of());
+        BrowserTools family = tools(face, true, dir);
+
+        String out = byName(family, "browser_eval").execute(
+                obj("{\"action\":\"javascript_exec\",\"text\":\"1\",\"tab_id\":\"other-session\"}"),
+                context(dir, new ArrayList<>(), new ArrayList<>()));
+
+        assertTrue(out.contains("another session"),
+                "the refusal must say a tab id cannot cross into another session: " + out);
+        for (Tool tool : family.all()) {
+            String described = tool.inputSchema().path("properties").path("tab_id")
+                    .path("description").asText("");
+            assertTrue(described.contains("your session") || described.contains("YOUR session"),
+                    tool.name() + " does not tell the model whose browser it drives: " + described);
+        }
+        assertTrue(face.sent.isEmpty(), "and nothing travelled under another session's name");
+    }
+
+    @Test
     void everyToolRefusesATabIdAndSaysSoOnItsSchema(@TempDir Path dir) {
         FakeFace face = new FakeFace(true, Map.of());
         for (Tool tool : tools(face, true, dir).all()) {

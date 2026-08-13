@@ -1,4 +1,4 @@
-// The browser segment — where the visible browser lives, and the honest sign
+// The browser surface — where the visible browser lives, and the honest sign
 // when it cannot.
 //
 // What this component draws is a HOLE. The page itself is a native
@@ -7,6 +7,15 @@
 // forwards it down the control channel the shell already holds. The frame, the
 // address line and the empty state are React's; the pixels inside the frame are
 // Chromium's.
+//
+// ONE component, TWO doors (card 218). The owner asked for both: a `browser` tab
+// inside the session, which binds the browser to the session by construction,
+// AND the rail's Browser segment as the large view onto the current session's
+// browser. Both mount this file with the same session id, and the shell keys its
+// views by that id — so the second door is a view, never a second instance.
+// Whichever is on screen posts the rectangle it reserved, and the pane moves to
+// it; only one of them can be on screen at a time, because they are two arms of
+// the same layout.
 //
 // On the web face there is no shell, so there is nothing behind the frame. That
 // is the trade card 200 made and the owner ratified — foreign sites refuse
@@ -31,7 +40,14 @@ import {
 /** How often the segment re-asks whether a shell is on the other end. */
 const STATUS_POLL_MS = 4000;
 
-export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
+/**
+ * The browser surface for one session.
+ *
+ * @param props.active    whether this surface is the one on screen
+ * @param props.sessionId whose browser belongs in the hole, or null when the
+ *                        shown session has not minted an id yet
+ */
+export function BrowserSegment(props: { active: boolean; sessionId: string | null }): React.JSX.Element {
   const lang = useLang();
   const hole = useRef<HTMLDivElement | null>(null);
   // Whether the pane can be over THIS window at all. Read once: a page does not
@@ -39,6 +55,7 @@ export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
   const inShell = isDesktopShell(navigator.userAgent);
   const lastSent = useRef<PaneRect | null>(null);
   const [status, setStatus] = useState<BrowserStatus | null>(null);
+  const sessionId = props.sessionId;
 
   // The rectangle. Measured from the hole itself rather than computed from the
   // layout, because the layout is the sidebar's width plus the header's height
@@ -52,7 +69,7 @@ export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
       if (!inShell) return;
       const box = hole.current?.getBoundingClientRect();
       if (!box) return;
-      const next = toPaneRect(box, props.active);
+      const next = toPaneRect(box, props.active, sessionId);
       if (!shouldReport(next, lastSent.current)) return;
       lastSent.current = next;
       void fetch("/api/browser/viewport", {
@@ -72,7 +89,7 @@ export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
       alive = false;
       observer.disconnect();
       window.removeEventListener("resize", report);
-      // Leaving the segment hides the pane. Without this the native overlay
+      // Leaving the surface hides the pane. Without this the native overlay
       // stays on top of whatever the reader switched TO, which is the one
       // failure a native overlay makes that a div never could.
       if (!alive && inShell) {
@@ -80,19 +97,28 @@ export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...(lastSent.current ?? toPaneRect({ left: 0, top: 0, width: 0, height: 0 }, false)),
+            ...(lastSent.current ?? toPaneRect({ left: 0, top: 0, width: 0, height: 0 }, false, sessionId)),
             visible: false,
           }),
         }).catch(() => {});
       }
     };
-  }, [props.active, inShell]);
+  }, [props.active, inShell, sessionId]);
 
+  // The address line asks about THIS session's browser. Asking without a
+  // session id would answer with the shell's own idea of "the" page, which is
+  // the mistake card 218 exists to remove.
   useEffect(() => {
     let alive = true;
+    if (sessionId === null) {
+      setStatus(null);
+      return () => {
+        alive = false;
+      };
+    }
     const ask = async (): Promise<void> => {
       try {
-        const res = await fetch("/api/browser/status");
+        const res = await fetch(`/api/browser/status?sessionId=${encodeURIComponent(sessionId)}`);
         if (!res.ok) throw new Error(String(res.status));
         const body = (await res.json()) as BrowserStatus;
         if (alive) setStatus(body);
@@ -106,9 +132,9 @@ export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
       alive = false;
       clearInterval(timer);
     };
-  }, []);
+  }, [sessionId]);
 
-  const state = panelState(status, inShell);
+  const state = panelState(status, inShell, sessionId);
 
   return (
     <section className="browser-segment" aria-label={t(lang, "browser.title")}>

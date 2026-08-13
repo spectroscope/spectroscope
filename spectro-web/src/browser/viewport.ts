@@ -17,6 +17,17 @@ export interface PaneRect {
   width: number;
   height: number;
   visible: boolean;
+  /**
+   * Whose browser belongs in that rectangle (card 218), or null before the
+   * shown session has an id.
+   *
+   * <p>This is what makes two doors one browser. The rail's Browser segment and
+   * the session's own `browser` tab render the same component and post the same
+   * session id, so the shell puts the SAME view behind both holes. Without it
+   * the shell could only show whichever agent ran last, which for the rail would
+   * mean showing a page the session on screen is not driving.
+   */
+  sessionId: string | null;
 }
 
 /** What the server says about the browser right now. */
@@ -40,6 +51,10 @@ const MOVED_PX = 1;
 export function shouldReport(next: PaneRect, last: PaneRect | null): boolean {
   if (last === null) return true;
   if (last.visible !== next.visible) return true;
+  // The operator switched sessions without the layout moving a pixel: same
+  // hole, different browser behind it. Comparing only the geometry would leave
+  // the previous session's page on screen under the new session's frame.
+  if (last.sessionId !== next.sessionId) return true;
   return (
     Math.abs(last.x - next.x) >= MOVED_PX ||
     Math.abs(last.y - next.y) >= MOVED_PX ||
@@ -52,6 +67,7 @@ export function shouldReport(next: PaneRect, last: PaneRect | null): boolean {
 export function toPaneRect(
   box: { left: number; top: number; width: number; height: number },
   visible: boolean,
+  sessionId: string | null,
 ): PaneRect {
   return {
     x: Math.round(box.left),
@@ -59,6 +75,7 @@ export function toPaneRect(
     width: Math.round(box.width),
     height: Math.round(box.height),
     visible,
+    sessionId,
   };
 }
 
@@ -70,7 +87,7 @@ export function toPaneRect(
  * pointing their own browser here gets no pane, and a rectangle that stayed
  * empty would read as a bug rather than as a decision.
  */
-export type PanelState = "loading" | "no-shell" | "attached";
+export type PanelState = "loading" | "no-session" | "no-shell" | "attached";
 
 /**
  * Whether THIS page is the desktop shell's own window.
@@ -106,12 +123,30 @@ export function isDesktopShell(userAgent: string): boolean {
 export const DESKTOP_MARKER = "spectroscope-desktop/";
 
 /**
- * Reads the panel state off the server's answer AND off where this page is.
+ * Reads the panel state off the server's answer, off where this page is, and
+ * off whether the shown session exists yet.
  *
- * @param status  what /api/browser/status returned, or null before it answers
- * @param inShell whether this page is the desktop shell's own window
+ * <p>The session check is card 218's: a browser belongs to a session, and a
+ * session mints its id on its first prompt. Before that there is nothing to
+ * show, and the two wrong answers are both worse than saying so — an empty
+ * frame reads as a bug, and borrowing the attached pane would put a page in
+ * this frame that this session's agent is not driving.
+ *
+ * @param status    what /api/browser/status returned, or null before it answers
+ * @param inShell   whether this page is the desktop shell's own window
+ * @param sessionId the session the app is showing, or null when it has none yet
  */
-export function panelState(status: BrowserStatus | null, inShell: boolean): PanelState {
+export function panelState(
+  status: BrowserStatus | null,
+  inShell: boolean,
+  sessionId: string | null,
+): PanelState {
+  // The session is asked about FIRST. With no session there is nothing to ask
+  // the server about, so `status` stays null forever and a "loading" arm here
+  // would spin under a frame that is never going to fill. Measured live on
+  // 2026-08-13: a fresh session showed "Checking for a browser pane …" with no
+  // browser coming and no sentence saying why.
+  if (sessionId === null) return "no-session";
   if (status === null) return "loading";
   return status.attached && inShell ? "attached" : "no-shell";
 }
@@ -121,6 +156,8 @@ export function panelNoteKey(state: PanelState): string {
   switch (state) {
     case "attached":
       return "browser.attachedNote";
+    case "no-session":
+      return "browser.noSessionNote";
     case "no-shell":
       return "browser.noShellNote";
     default:

@@ -34,7 +34,23 @@ describe("parsing the live default", () => {
 });
 
 describe("parsing a live tab", () => {
-  it("reads each of the six tab literals", () => {
+  it("knows the browser tab, which is a session feature with an address (card 218)", () => {
+    // The owner settled it while card 201 was building: the visible browser
+    // belongs to a session, so it sits in the session's own tab row — and a tab
+    // in that row is a place a link can land on.
+    expect(VIEW_TABS).toContain("browser");
+    expect(parseAppRoute("#/session/s-1/browser")).toEqual({
+      kind: "session",
+      sessionId: "s-1",
+      eventIndex: null,
+      tab: "browser",
+    });
+    expect(formatRoute({ kind: "session", sessionId: "s-1", eventIndex: null, tab: "browser" })).toBe(
+      "#/session/s-1/browser",
+    );
+  });
+
+  it("reads each of the seven tab literals", () => {
     for (const tab of VIEW_TABS) {
       expect(parseAppRoute(`#/${tab}`)).toEqual({ kind: "live", tab });
     }
@@ -57,7 +73,7 @@ describe("parsing a session address", () => {
     });
   });
 
-  it("reads a tab suffix only when it is one of the six literals", () => {
+  it("reads a tab suffix only when it is one of the seven literals", () => {
     expect(parseAppRoute("#/session/s-7/trace")).toEqual({
       kind: "session",
       sessionId: "s-7",

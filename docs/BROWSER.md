@@ -1,21 +1,105 @@
 # The visible browser
 
-What card 201 built, where it lives, and the two things it deliberately does not
-do. The engine decision underneath it is card 200's and is not re-argued here;
-`docs/BROWSER-ENGINE.md` is its home.
+What cards 201 and 218 built, where it lives, and the things it deliberately
+does not do. The engine decision underneath it is card 200's and is not
+re-argued here; `docs/BROWSER-ENGINE.md` is its home.
 
-## Where the pane lives
+## One browser per session
 
-**A surface inside the spectroscope desktop app.** Open the app, and the rail
-has a fourth segment under Sessions, Fleets and State graph: **Browser**. The
-segment draws a frame with an address line; the page inside it is a real
+**The browser belongs to a session, not to the program.** The owner settled that
+while card 201 was still building: *"weil jede session braucht ja seinen eigenen
+browser"*. So a browser instance is keyed by session id, built the first time
+that session's agent calls a browser tool, and it holds that session's page, its
+cookies and its scroll position and nobody else's.
+
+**How the isolation is achieved.** Each session's view browses in its own
+Electron `Session`,
+`session.fromPartition("spectro-browser/<id>-<fingerprint>-<opening>")`. That is
+Chromium's own boundary: the cookie jar, `localStorage`, IndexedDB, the HTTP
+cache and the credential store all hang off that object, and two partitions
+share none of them. Nothing in `browserPane.ts` has to remember to keep two
+sessions apart, and nothing in it could merge them by accident. The fingerprint
+is of the raw id, because the sanitising that makes an id safe as a path
+component is lossy — `ab/c` and `ab:c` both flatten to `ab_c`, and two sessions
+on one partition is the failure this whole surface exists to prevent.
+
+It is **not** a `persist:` partition. The lifetime rule is "until the session is
+closed", and a persistent partition would leave a directory per session id that
+nothing ever deletes — plus a resumed id would open onto the cookies of a run
+that ended days ago.
+
+**What "closed" means, and what it took to make that true.** The session's
+socket going away — the tab or window that held it. That is the same event that
+already cancels its run, releases its parked permission questions and lets its
+live-session id go (`SessionConnection.onClose`). The stored JSONL survives and
+so does the session id; the browser does not, because a browser is live state and
+not a record. A resumed session gets a fresh browser, logged out, and a session
+that never sent a prompt never minted an id and never had a browser to close.
+
+That last sentence was **false when this page first shipped**, and the correction
+is worth keeping written down because the reasoning that produced it sounds
+right. "An in-memory session dies with the object" is a promise about the *disk*,
+not about the *process*: Electron caches an in-memory `Session` by partition name
+for the life of the app. Closing a session dropped the pane and closed the page
+and left the cookie jar exactly where it was — measured, five closed sessions
+still held five jars, and a session resumed under the same id opened onto its own
+old login, HttpOnly cookie included. Two things fix it, and neither is enough
+alone:
+
+- **the Chromium session is emptied on close** — `clearStorageData()` and
+  `clearCache()`, so the credential leaves the process rather than waiting for
+  the app to quit;
+- **every OPENING gets its own partition name** — because the request hook is
+  installed once per Chromium session and closes over the pane it was handed. A
+  second life on the old session went on blocking and stopped *saying* so: the
+  model got `ERR_BLOCKED_BY_CLIENT`, the one code an ad blocker, a content
+  extension and the net fence are indistinguishable behind, and
+  `browser_read_console` reported no refusals at all.
+
+**The proof, not the claim.** `npm run guard` drives the shipped Chromium:
+
+- *isolation* — a page sets a cookie and a `localStorage` token under session A,
+  A reloads and still has them, and session B loads the same origin and finds
+  `{"cookie":"","token":null}`; Electron's own cookie store agrees, one entry for
+  A and none for B. `GUARD_BREAK=partition` gives both sessions one partition and
+  the same check reads back `secret-of-A` in B, which is what card 201 shipped.
+- *lifetime* — through the product's own `runVerb`: the login really is in that
+  session's jar while it is open, the jar is empty after the close, the same id
+  reopened is logged out, and its fence still answers "refused 192.168.1.1: it is
+  a private network address, RFC 1918 (rule: rfc1918)" rather than an error code.
+
+The whole chain says the same thing:
+`BrowserLiveDriveTest.aResumedSessionGetsAFreshBrowserAndAFenceThatStillNamesItself`
+logs in through the real seven tools, closes the session, resumes the same store
+id and reads back `{"cookie":"","token":null}`.
+
+## Where the pane lives: two doors, one browser
+
+**A surface inside the spectroscope desktop app**, reachable two ways, because
+the owner asked for both:
+
+- the **`browser` tab** in the session's own tab row, beside chat, spectrum,
+  trace, graph, text and lab — which binds it to the session by construction and
+  gives it an address, `#/session/{id}/browser`;
+- the rail's **Browser** segment, the large view onto the **current** session's
+  browser.
+
+Both mount the same component with the same session id, and the shell keys its
+views by that id, so the second door is a view and never a second instance. Only
+one of them can be on screen at a time — they are two arms of one layout — and
+whichever is showing posts the rectangle it reserved. `sessionBrowser.drift.test.ts`
+holds that: two mounts, one `sessionId` expression.
+
+The segment draws a frame with an address line; the page inside it is a real
 Chromium view the shell lays over that rectangle.
 
-The agent does not need the reader to open the segment first. When a browser
-tool runs, the shell shows the pane and asks the app's page to switch to the
-Browser segment, so the operator ends up looking at the page the agent is
-driving. That is the whole point of the card: not a headless renderer that
-posts screenshots, but a browser you watch.
+The agent does not need the reader to open the surface first. When a browser
+tool runs, the shell shows that session's pane and asks the app's page to switch
+to the Browser segment, so the operator ends up looking at the page the agent is
+driving. **Exactly one pane is ever on screen**: bringing one forward takes every
+other session's off. Two native overlays stacked over one rectangle is the
+failure a `div` could never make, and the operator would be watching the top one
+while the agent drove the other.
 
 **The trade, ratified by the owner: this is the desktop face only.** A reader
 who runs `spectro web` and points their own browser at the server gets a segment
@@ -266,23 +350,44 @@ not silently dropped:
 the page's)
 ```
 
+That sentence never appeared until 2026-08-13, and the filter under it had never
+matched a single line. Electron 43 writes `console.warn("%cElectron Security
+Warning (…)%c\n…", "font-weight: bold;", "")`, so the message arrives with the
+format directive still on the front and an anchored `^\s*Electron Security
+Warning` matches nothing. The filter now allows the directives, the counter can
+therefore be non-zero, and the guard asserts it against the string **this**
+Electron emits rather than the one the filter was written for — measured at 7
+emitted, 0 leaked.
+
 ## How it is wired
 
 ```
 model ──► BrowserTools (spectro-core)         seven tools, schemas, tiers,
               │                                entry fence, image path
               ▼
-         BrowserFace                          the seam card 200 section 5 asks for
-              │
+         BrowserFace                          ONE browser — the seam card 200
+              │                                section 5 asks for
+              ▲
+         BrowserFaces.forSession(id)          the keying, card 218. The server
+              │                                picks the id; nothing the model
+              │                                writes can.
               ▼
     BrowserControlSocket (spectro-server)     /ws/browser, one shell at a time,
-              │                                every send on a deadline
-              ▼  (the MAIN process dialled IN)
-      browserControl.ts ──► browserPane.ts    WebContentsView + the request hook
-                                   │
+              │                                every send on a deadline and
+              ▼  (the MAIN process dialled IN)  carrying its sessionId
+      browserControl.ts ──► browserPane.ts    a WebContentsView and an Electron
+                                   │           session PER spectroscope session
                                    ▼
-                              the pane the operator watches
+                          the pane the operator watches
 ```
+
+**Why the keying is not a method on `BrowserFace`.** A `BrowserFace` is one
+browser: attached or not, showing one address, one verb at a time. That is all
+`BrowserTools` should ever know. Keying belongs to the object that owns the
+channel, and splitting them means the tools cannot address a session even in
+principle — they are handed one already-resolved face, and no argument on any of
+the seven schemas could name another. The isolation is then a property of the
+wiring rather than a rule somebody has to keep.
 
 The control channel points **from the shell to the server**, not the other way.
 Card 200 section 9.3 left the shape open and recommended this one: the
@@ -314,10 +419,11 @@ itself an Electron app and claimed to be the shell).
 cd spectro-desktop && npm test
 
 # the engine drift guard: the four eval semantics, the redirect fence, the
-# adblock and capturePage, against the Electron this build ships
+# adblock, capturePage and the per-session isolation, against the Electron this
+# build ships
 cd spectro-desktop && npm run guard
 GUARD_BREAK=fence npm run guard     # and resolve | adblock | settle | pagectx |
-                                    #     await | emulate
+                                    #     await | emulate | partition
 
 # the whole chain live: a real pane, the real channel, the real tools
 cd spectro-desktop && npx tsc
@@ -335,11 +441,15 @@ which is the test runner card 200 section 7 said this card owed.
   the scrubber — is card 204. The brand rule still binds the line: the browser
   does not ship in a release without a replay path.
 - **Launch configurations** are card 202.
-- **Tabs.** `tab_id` is on every schema and there is exactly one pane behind it
-  today, so **a tab id is refused rather than silently ignored**. It was
-  advertised, transported and dropped without a word until a review measured it;
-  the parameter stays because its meaning is now the per-session browser the
-  owner asked for on 2026-08-13 — one browser per session, reachable as a session
-  tab and from the rail, alive until the session closes — and that work needs
-  exactly this argument. Dedicated tab verbs stay on card 201's "later" list
-  along with `form_input`, `get_text` and `read_network`.
+- **Tabs.** `tab_id` is on every schema and **still refused**, and card 218
+  changed the reason rather than the answer. Card 201 recorded its meaning as
+  "the per-session browser the owner asked for"; that work is done, and it did
+  **not** turn `tab_id` into a session selector. An argument that could name a
+  session would be a way for one agent to reach another session's page, cookies
+  and logins — the exact thing card 218 was written to prevent. So the parameter
+  means what it always looked like it meant, a second tab *inside* this session's
+  browser, there is one page per session today, and an id is refused naming the
+  id and the page. Dedicated tab verbs stay on card 201's "later" list along with
+  `form_input`, `get_text` and `read_network`.
+- **A browser for a replayed session.** A stored transcript has no live browser;
+  opening one shows the frame and the sign.

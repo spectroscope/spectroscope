@@ -14,6 +14,7 @@ const rect = (over: Partial<PaneRect> = {}): PaneRect => ({
   width: 860,
   height: 700,
   visible: true,
+  sessionId: "20260813-120000-aaaaaaaa",
   ...over,
 });
 
@@ -41,13 +42,34 @@ describe("shouldReport", () => {
 
 describe("toPaneRect", () => {
   it("rounds a measured box into the integer pixels the shell positions in", () => {
-    expect(toPaneRect({ left: 319.6, top: 55.2, width: 860.4, height: 699.5 }, true)).toEqual({
+    expect(toPaneRect({ left: 319.6, top: 55.2, width: 860.4, height: 699.5 }, true, "s-1")).toEqual({
       x: 320,
       y: 55,
       width: 860,
       height: 700,
       visible: true,
+      sessionId: "s-1",
     });
+  });
+
+  it("carries the session whose browser belongs in the hole (card 218)", () => {
+    // Two doors, one browser: the rail segment and the session's own browser tab
+    // post the SAME session id, so the shell shows one view for both. Without
+    // the id the shell would show whichever agent ran last, which is the rail
+    // showing somebody else's page.
+    expect(toPaneRect({ left: 0, top: 0, width: 10, height: 10 }, true, null).sessionId).toBeNull();
+  });
+});
+
+describe("shouldReport, once a rectangle names its session", () => {
+  it("reports when the same rectangle now belongs to another session", () => {
+    // The operator switched sessions without the layout moving a pixel. The
+    // hole is identical and the browser behind it must not be.
+    expect(shouldReport(rect({ sessionId: "b" }), rect({ sessionId: "a" }))).toBe(true);
+  });
+
+  it("still stays quiet when nothing at all changed", () => {
+    expect(shouldReport(rect({ sessionId: "a" }), rect({ sessionId: "a" }))).toBe(false);
   });
 });
 
@@ -74,12 +96,25 @@ describe("isDesktopShell", () => {
 
 describe("panelState", () => {
   it("says loading until the server answers", () => {
-    expect(panelState(null, true)).toBe("loading");
+    expect(panelState(null, true, "s-1")).toBe("loading");
   });
 
   it("says no-shell on the web face, which is the ratified trade said out loud", () => {
-    expect(panelState({ attached: false, url: null }, true)).toBe("no-shell");
+    expect(panelState({ attached: false, url: null }, true, "s-1")).toBe("no-shell");
     expect(panelNoteKey("no-shell")).toBe("browser.noShellNote");
+  });
+
+  it("says no-session before the session it belongs to has one", () => {
+    // A session mints its id on its first prompt. Until then it has no browser,
+    // and the honest panel says that rather than showing an empty frame or —
+    // worse — the address of a page a different session's agent is driving.
+    expect(panelState({ attached: true, url: null }, true, null)).toBe("no-session");
+    expect(panelNoteKey("no-session")).toBe("browser.noSessionNote");
+    // And BEFORE any answer, which is the state a fresh session is actually in:
+    // with no session id there is nothing to ask the server about, so `status`
+    // never stops being null. Measured live — the panel said "Checking for a
+    // browser pane …" under a frame that was never going to fill.
+    expect(panelState(null, true, null)).toBe("no-session");
   });
 
   it("says attached only in the window the pane is actually laid over", () => {
@@ -88,8 +123,8 @@ describe("panelState", () => {
     // then points their own browser at the server, would otherwise be shown a
     // green dot over an empty rectangle — the pane is a native overlay in the
     // desktop window and cannot be anywhere else. Measured live, 2026-08-13.
-    expect(panelState({ attached: true, url: "http://127.0.0.1:5173/" }, true)).toBe("attached");
-    expect(panelState({ attached: true, url: "http://127.0.0.1:5173/" }, false)).toBe("no-shell");
+    expect(panelState({ attached: true, url: "http://127.0.0.1:5173/" }, true, "s-1")).toBe("attached");
+    expect(panelState({ attached: true, url: "http://127.0.0.1:5173/" }, false, "s-1")).toBe("no-shell");
     expect(panelNoteKey("attached")).toBe("browser.attachedNote");
   });
 });

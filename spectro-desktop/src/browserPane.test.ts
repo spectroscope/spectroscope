@@ -134,6 +134,11 @@ const fakeElectron = {
           rec.hook = fn;
         },
       },
+      // What a closed session's browser gives back. sessionPanes.test.ts is
+      // where that is measured; here they only have to exist, because
+      // forgetPane() retires whatever a test left open.
+      clearStorageData: async () => {},
+      clearCache: async () => {},
     }),
   },
 };
@@ -169,9 +174,11 @@ async function settle(): Promise<void> {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+const SESSION = "20260813-090000-fixture0";
+
 /** Points the pane at a page, the way every other verb needs it to be. */
 async function navigate(url = "http://localhost:5173/"): Promise<void> {
-  await pane.runVerb("navigate", { url }, OPEN);
+  await pane.runVerb("navigate", { url }, OPEN, SESSION);
 }
 
 describe("browserPane", () => {
@@ -204,7 +211,7 @@ describe("browserPane", () => {
 
   it("hides on a viewport report with visible:false and comes back on the next call", async () => {
     await navigate();
-    await pane.runVerb("viewport", { x: 0, y: 0, width: 900, height: 700, visible: false }, OPEN);
+    await pane.runVerb("viewport", { x: 0, y: 0, width: 900, height: 700, visible: false }, OPEN, SESSION);
     assert.equal(rec.setVisible.at(-1), false, "leaving the segment takes the pane off screen");
 
     await navigate("http://localhost:5173/third");
@@ -232,7 +239,7 @@ describe("browserPane", () => {
     };
     rec.loadFails = "ERR_BLOCKED_BY_CLIENT (-20) loading 'http://localhost:5173/hop'";
 
-    const reply = await pane.runVerb("navigate", { url: "http://localhost:5173/hop" }, OPEN);
+    const reply = await pane.runVerb("navigate", { url: "http://localhost:5173/hop" }, OPEN, SESSION);
     assert.equal(reply.ok, false);
     assert.match(String(reply.error), /192\.168\.1\.1/, reply.error ?? "");
     assert.match(String(reply.error), /rfc1918/, reply.error ?? "");
@@ -247,7 +254,7 @@ describe("browserPane", () => {
       host === "localtest.example" ? ["127.0.0.1"] : ["93.184.216.34"]);
     await navigate();
     // The policy the hook judges by is the one the last command carried.
-    await pane.runVerb("status", {}, { allowLocalhost: false, adblock: false });
+    await pane.runVerb("status", {}, { allowLocalhost: false, adblock: false }, SESSION);
     const seen: { cancel?: boolean }[] = [];
     rec.hook?.(
       { url: "http://localtest.example:8875/secret", resourceType: "mainFrame" },
@@ -267,7 +274,7 @@ describe("browserPane", () => {
 
   it("passes an ordinary load failure through unchanged", async () => {
     rec.loadFails = "ERR_CONNECTION_REFUSED (-102) loading 'http://localhost:5173/'";
-    const reply = await pane.runVerb("navigate", { url: "http://localhost:5173/" }, OPEN);
+    const reply = await pane.runVerb("navigate", { url: "http://localhost:5173/" }, OPEN, SESSION);
     assert.equal(reply.ok, false);
     assert.match(String(reply.error), /ERR_CONNECTION_REFUSED/);
   });
@@ -278,11 +285,35 @@ describe("browserPane", () => {
       + "Content-Security-Policy) This renderer process has Node.js integration…" });
     rec.consoleSink?.({ level: "error", message: "TypeError: the app is broken" });
 
-    const reply = await pane.runVerb("console", {}, OPEN);
+    const reply = await pane.runVerb("console", {}, OPEN, SESSION);
     const lines = String((reply.value as { lines: string }).lines);
     assert.match(lines, /TypeError: the app is broken/);
     assert.ok(!lines.includes("Insecure Content-Security-Policy"), lines);
     assert.match(lines, /1 .*(shell|Electron)/i, "the drop is counted, not silent: " + lines);
+  });
+
+  it("filters the warning the SHIPPED Electron really writes, %c and all", async () => {
+    // The line above is not the string Electron 43 emits. It writes
+    // console.warn("%cElectron Security Warning (…)%c\n…", "font-weight: bold;",
+    // ""), so the message reaches the handler with the format directive on the
+    // front and the ^\s* anchor never matched. The filter was inert: every one
+    // of those lines went to the model as if the page had said it, and the
+    // "(N … left out)" sentence never appeared because the counter stayed 0.
+    //
+    // This vector is the measurement, not a guess — captured from Electron
+    // 43.3.0 on 2026-08-13 by reading a real WebContentsView's console.
+    const MEASURED = "%cElectron Security Warning (Insecure Content-Security-Policy) "
+      + "font-weight: bold; This renderer process has either no Content-Security-Policy set…";
+    assert.equal(pane.isPageLine(MEASURED), false, MEASURED);
+
+    await navigate();
+    rec.consoleSink?.({ level: "warning", message: MEASURED });
+    rec.consoleSink?.({ level: "error", message: "TypeError: the app is broken" });
+
+    const reply = await pane.runVerb("console", {}, OPEN, SESSION);
+    const lines = String((reply.value as { lines: string }).lines);
+    assert.ok(!lines.includes("Content-Security-Policy"), lines);
+    assert.match(lines, /1 .*(shell|Electron)/i, "and the drop is named: " + lines);
   });
 
   it("really emulates a device and answers with what the page MEASURED", async () => {
@@ -295,7 +326,7 @@ describe("browserPane", () => {
       innerWidth: 375, innerHeight: 812, screenWidth: 375, screenHeight: 812,
       maxTouchPoints: 5, viewportMeta: true,
     };
-    const reply = await pane.runVerb("resize", { width: 375, height: 812 }, OPEN);
+    const reply = await pane.runVerb("resize", { width: 375, height: 812 }, OPEN, SESSION);
 
     assert.equal(reply.ok, true, reply.error ?? "");
     const value = reply.value as Record<string, unknown>;
@@ -327,10 +358,10 @@ describe("browserPane", () => {
       innerWidth: 375, innerHeight: 812, screenWidth: 375, screenHeight: 812,
       maxTouchPoints: 5, viewportMeta: true,
     };
-    await pane.runVerb("resize", { width: 375, height: 812 }, OPEN);
+    await pane.runVerb("resize", { width: 375, height: 812 }, OPEN, SESSION);
     const overrides = rec.cdp.filter(([m]) => m === "Emulation.setDeviceMetricsOverride").length;
 
-    await pane.runVerb("eval", { text: "1" }, OPEN);   // calls ensureVisible() → layout()
+    await pane.runVerb("eval", { text: "1" }, OPEN, SESSION);   // calls ensureVisible() → layout()
     assert.equal(
       rec.cdp.filter(([m]) => m === "Emulation.setDeviceMetricsOverride").length,
       overrides,

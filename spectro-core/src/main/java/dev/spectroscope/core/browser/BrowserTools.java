@@ -27,6 +27,12 @@ import java.util.function.Supplier;
  * they own is everything the model can see: the schemas, the tiers, the fence at
  * the entry, the image path, and the sentence a failure comes back as.
  *
+ * <p>They also know nothing about SESSIONS, and that is card 218's isolation
+ * argument in one sentence. The face they are handed is already the calling
+ * session's own ({@link BrowserFaces} does the keying, in the object that owns
+ * the control channel), so there is no argument here that could address another
+ * one — which is why {@code tab_id} is refused rather than repurposed.
+ *
  * <h2>The three rules these tools may not relax</h2>
  *
  * <ol>
@@ -70,22 +76,33 @@ public final class BrowserTools {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
-     * What {@code tab_id} means TODAY, said on every schema.
+     * What {@code tab_id} means, said on every schema — and it is still a
+     * refusal, for a reason that changed on card 218.
      *
-     * <p>It was advertised on all seven tools, travelled the wire and was
-     * dropped by the shell without a word, so a model that addressed a second
-     * tab silently drove the first one. The parameter stays because its meaning
-     * is now the per-session browser the owner asked for on 2026-08-13 — one
-     * browser per session, reachable as a session tab and from the rail, alive
-     * until the session closes — and that work will need exactly this argument.
-     * Until it lands, a tab id the shell cannot serve is REFUSED. A schema that
-     * advertises what the implementation ignores is the same dishonesty cards
-     * 193, 199 and 203 were each written against.
+     * <p>Card 201 advertised it on all seven tools, let it travel the wire and
+     * had the shell drop it without a word, so a model that addressed a second
+     * tab silently drove the first one. It was then refused, and its meaning was
+     * recorded as "the per-session browser the owner asked for". That work is
+     * done: there IS a browser per session now.
+     *
+     * <p>It did not turn {@code tab_id} into a session selector, and it must not.
+     * A tool argument that could name a session would be a way for one session's
+     * agent to reach another session's page, cookies and logins — the exact thing
+     * card 218 was written to prevent. Which browser a call drives is decided by
+     * the SERVER, from the calling session's own store id, and there is no
+     * argument on any schema that can change it.
+     *
+     * <p>So the parameter now means what it always looked like it meant: a second
+     * tab INSIDE this session's browser. There is one page per session today, so
+     * an id is refused, naming the id and the page. A schema that advertises what
+     * the implementation ignores is the same dishonesty cards 193, 199 and 203
+     * were each written against.
      */
     static final String TAB_ID_DESCRIPTION =
-            "Optional tab id. There is exactly ONE pane behind this browser today, so any tab "
-                    + "id is refused rather than silently ignored — omit it. A browser per "
-                    + "session is the next step on card 201.";
+            "Optional tab id. This browser belongs to YOUR session — one browser per session, "
+                    + "with its own cookies and storage — and it holds exactly one page, so a "
+                    + "tab id is refused rather than silently ignored. Omit it. It can never "
+                    + "name another session's browser.";
 
     /**
      * The provider-side wire limit for one image, shared with the MCP path.
@@ -690,13 +707,15 @@ public final class BrowserTools {
             }
             String tab = text(input, "tab_id");
             if (!tab.isBlank()) {
-                // Silently serving the only pane to a model that asked for
+                // Silently serving the only page to a model that asked for
                 // another one is a lie the transcript never records. See
-                // TAB_ID_DESCRIPTION for why the parameter stays.
+                // TAB_ID_DESCRIPTION for why the parameter stays and why it is
+                // not a session selector.
                 return "ERROR: " + name + " was given the tab id \"" + clean(tab)
-                        + "\", and there is exactly one pane behind this browser today, on "
-                        + where(browser, null) + " — omit tab_id. A browser per session is "
-                        + "card 201's next step.";
+                        + "\", and this session's browser holds exactly one page, on "
+                        + where(browser, null) + " — omit tab_id. It cannot name another "
+                        + "session's browser: which browser you drive is your session's, "
+                        + "decided by the server.";
             }
             try {
                 return run(input, context, browser);

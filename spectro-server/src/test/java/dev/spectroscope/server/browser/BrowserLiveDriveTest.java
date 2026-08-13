@@ -97,6 +97,16 @@ class BrowserLiveDriveTest {
             exchange.getResponseBody().write(body);
             exchange.close();
         });
+        // A hop the JAVA entry check cannot see: the address it starts at is
+        // loopback and legal, and only the shell's own request hook judges where
+        // it lands. The address is a stand-in from the curated list
+        // NoOperatorAddressesInTheRepoTest keeps, because this repository is
+        // public.
+        fixture.createContext("/redirect-to-private", exchange -> {
+            exchange.getResponseHeaders().add("Location", "http://192.168.1.1/admin");
+            exchange.sendResponseHeaders(302, -1);
+            exchange.close();
+        });
         fixture.start();
         base = "http://127.0.0.1:" + fixture.getAddress().getPort() + "/";
 
@@ -133,8 +143,26 @@ class BrowserLiveDriveTest {
         }
     }
 
+    /** The session this live drive plays, shaped like a store id. */
+    private static final String SESSION = "20260813-live-drive";
+
+    /** A second one, for the card-218 isolation drive. */
+    private static final String OTHER_SESSION = "20260813-live-drive-two";
+
     private Tool tool(String name) {
-        return new BrowserTools(() -> control,
+        return tool(name, SESSION);
+    }
+
+    /**
+     * One tool, wired to one session's browser exactly the way
+     * {@code SessionConnection} wires it.
+     *
+     * @param name    the tool's wire name
+     * @param session whose browser it drives
+     * @return the tool
+     */
+    private Tool tool(String name, String session) {
+        return new BrowserTools(() -> control.forSession(session),
                 () -> NetFence.withSystemDns(true),  // the verify loop, opted in
                 new ImageStore(blobs))
                 .all().stream().filter(t -> name.equals(t.name())).findFirst().orElseThrow();
@@ -147,6 +175,127 @@ class BrowserLiveDriveTest {
 
     private static JsonNode args(String json) throws Exception {
         return JSON.readTree(json);
+    }
+
+    @Test
+    void twoSessionsGetTwoBrowsersThatCannotReachEachOther() throws Exception {
+        // Card 218, through the WHOLE chain rather than about a partition
+        // string: the real tools, the real socket, two real Chromium sessions.
+        // The claim under test is the one that would hurt most if it were only
+        // a comment — a page one agent logged into is not a page the other
+        // agent is logged into.
+        String login = """
+                (() => {
+                  document.cookie = 'spectro_login=secret-of-A; path=/';
+                  localStorage.setItem('spectro_token', 'token-of-A');
+                  return { cookie: document.cookie,
+                           token: localStorage.getItem('spectro_token') };
+                })()""";
+        String readBack = """
+                ({ cookie: document.cookie,
+                   token: localStorage.getItem('spectro_token') })""";
+
+        assertFalse(tool("browser_navigate")
+                .execute(args("{\"url\":\"" + base + "\"}"), context()).startsWith("ERROR"));
+        String stored = tool("browser_eval").execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", login),
+                context());
+        assertTrue(stored.contains("secret-of-A"), "the first session logged in: " + stored);
+
+        // The second session, on the SAME origin. It has to load the page for
+        // itself, which is already the point: it has its own view.
+        String openedByOther = tool("browser_navigate", OTHER_SESSION)
+                .execute(args("{\"url\":\"" + base + "\"}"), context());
+        assertFalse(openedByOther.startsWith("ERROR"), openedByOther);
+        String otherSees = tool("browser_eval", OTHER_SESSION).execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", readBack),
+                context());
+        assertFalse(otherSees.contains("secret-of-A"),
+                "the other session read the first one's cookie: " + otherSees);
+        assertTrue(otherSees.contains("\"token\":null"),
+                "the other session read the first one's storage: " + otherSees);
+
+        // And back: the first session's page survived the second one taking the
+        // screen. That is the owner's lifetime rule, measured rather than
+        // assumed — still there, still logged in.
+        String firstAgain = tool("browser_eval").execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", readBack),
+                context());
+        assertTrue(firstAgain.contains("secret-of-A"),
+                "the first session lost its login while the other one ran: " + firstAgain);
+
+        // Closing the session takes its browser with it, and leaves the other
+        // one exactly where it was.
+        control.closeSession(SESSION);
+        Thread.sleep(500);   // the close is fire-and-forget, by design
+        String afterClose = tool("browser_eval").execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", "1"),
+                context());
+        assertTrue(afterClose.startsWith("ERROR"),
+                "a closed session still had a browser: " + afterClose);
+        String otherStillThere = tool("browser_eval", OTHER_SESSION).execute(
+                JSON.createObjectNode().put("action", "javascript_exec")
+                        .put("text", "document.title"),
+                context());
+        assertTrue(otherStillThere.contains("fixture"),
+                "closing one session took the other one's browser: " + otherStillThere);
+
+        control.closeSession(OTHER_SESSION);
+    }
+
+    @Test
+    void aResumedSessionGetsAFreshBrowserAndAFenceThatStillNamesItself() throws Exception {
+        // The claim card 218 shipped four times — "closing a session takes its
+        // cookies and its storage with it" — measured through the whole chain
+        // instead of read off a comment. It was false: Electron holds an
+        // in-memory Chromium session by partition name for the life of the app,
+        // so the jar survived the close and the same id opened straight back
+        // into its old login. This is the test that would have said so.
+        String resumed = "20260813-live-drive-resumed";
+        String login = """
+                (() => {
+                  document.cookie = 'spectro_login=secret-of-R; path=/';
+                  localStorage.setItem('spectro_token', 'token-of-R');
+                  return { cookie: document.cookie,
+                           token: localStorage.getItem('spectro_token') };
+                })()""";
+        String readBack = """
+                ({ cookie: document.cookie,
+                   token: localStorage.getItem('spectro_token') })""";
+
+        assertFalse(tool("browser_navigate", resumed)
+                .execute(args("{\"url\":\"" + base + "\"}"), context()).startsWith("ERROR"));
+        String stored = tool("browser_eval", resumed).execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", login),
+                context());
+        assertTrue(stored.contains("secret-of-R"), "the session logged in: " + stored);
+
+        control.closeSession(resumed);
+        Thread.sleep(1000);   // the close is fire-and-forget, by design
+
+        // The same store id opens a browser again, exactly as a resume does.
+        assertFalse(tool("browser_navigate", resumed)
+                .execute(args("{\"url\":\"" + base + "\"}"), context()).startsWith("ERROR"));
+        String afterResume = tool("browser_eval", resumed).execute(
+                JSON.createObjectNode().put("action", "javascript_exec").put("text", readBack),
+                context());
+        assertFalse(afterResume.contains("secret-of-R"),
+                "a resumed session walked back into the closed session's login: " + afterResume);
+        assertTrue(afterResume.contains("\"token\":null"),
+                "a resumed session kept the closed session's storage: " + afterResume);
+
+        // And the second life's fence still SAYS what it did. The hook is
+        // installed once per Chromium session and closes over the pane it was
+        // handed, so a reopened id on the old session went on blocking and
+        // reported ERR_BLOCKED_BY_CLIENT — the one code the model cannot tell
+        // an ad blocker, a content extension and the net fence apart by.
+        String hopped = tool("browser_navigate", resumed)
+                .execute(args("{\"url\":\"" + base + "redirect-to-private\"}"), context());
+        assertTrue(hopped.startsWith("ERROR"), hopped);
+        assertTrue(hopped.contains("192.168.1.1") && hopped.contains("rfc1918"),
+                "the second life's refusal named neither the host nor the rule: " + hopped);
+
+        control.closeSession(resumed);
     }
 
     @Test

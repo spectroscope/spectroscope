@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.spectroscope.core.browser.BrowserFace;
+import dev.spectroscope.core.browser.BrowserFaces;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,12 +46,19 @@ import java.util.function.BooleanSupplier;
  * become an {@code ERROR:} sentence on the next turn instead of an agent that
  * stopped.
  *
- * <p>This class is also the {@link BrowserFace} the tools hold — one object, so
- * "is a browser attached" is answered by the socket that would carry the command
- * rather than by a flag somebody has to remember to clear.
+ * <p><b>One browser per SESSION, over this one channel (card 218).</b> The
+ * channel stayed single because there is one shell; what changed is that every
+ * command names the session it is for, and the shell keeps a browser per name.
+ * This class is therefore a {@link BrowserFaces} directory rather than a single
+ * {@link BrowserFace}: "is a shell attached" is answered by the socket that
+ * would carry the command, and "what is my page" is answered per session.
+ *
+ * <p>The key is always the server's own session id. Nothing a model writes and
+ * nothing a remote caller posts can choose it, which is what keeps two sessions
+ * from reaching each other through the tool surface.
  */
 @Component
-public class BrowserControlSocket extends TextWebSocketHandler implements BrowserFace {
+public class BrowserControlSocket extends TextWebSocketHandler implements BrowserFaces {
 
     private static final Logger LOG = LoggerFactory.getLogger(BrowserControlSocket.class);
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -63,7 +71,16 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     static final Duration DEADLINE = Duration.ofSeconds(45);
 
     private volatile WebSocketSession shell;
-    private volatile String pageUrl;
+    /**
+     * The last address each session's browser reported, so a failure sentence
+     * can name the page it happened on.
+     *
+     * <p>Per session, because card 201 kept one field and two sessions would
+     * therefore have overwritten each other's address — the tools would have
+     * named the wrong page in the one place the house rule says a failure must
+     * name the right one.
+     */
+    private final Map<String, String> pageUrls = new ConcurrentHashMap<>();
     private final Map<String, CompletableFuture<JsonNode>> pending = new ConcurrentHashMap<>();
 
     /**
@@ -104,12 +121,25 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     /**
      * A desktop shell attached. The previous one, if any, is closed.
      *
+     * <p>The addresses go with the previous shell, here rather than only in
+     * {@link #afterConnectionClosed}. A review measured why: when a newer
+     * connection replaces an older one, the old socket's close arrives AFTER
+     * {@code shell} has been reassigned, so the id check there does not match and
+     * the map was never cleared. An unauthenticated loopback client could take
+     * the channel, answer one {@code viewport} frame with a {@code pageUrl} of
+     * its choosing and disconnect, and the forged address survived into the real
+     * shell — the operator's address line and every tool's "names the page it
+     * happened on" sentence then cited a page nothing was showing. A shell that
+     * has just attached is showing nothing yet, so clearing on the way in is also
+     * simply true.
+     *
      * @param session the shell's socket
      */
     @Override
     public void afterConnectionEstablished(WebSocketSession session) {
         WebSocketSession previous = shell;
         shell = session;
+        pageUrls.clear();
         if (previous != null && previous.isOpen() && !previous.getId().equals(session.getId())) {
             try {
                 previous.close(CloseStatus.NORMAL.withReason("replaced by a newer browser pane"));
@@ -131,7 +161,9 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
         if (shell != null && shell.getId().equals(session.getId())) {
             shell = null;
-            pageUrl = null;
+            // Every page in that shell died with it. Keeping the addresses would
+            // let a tool name a page nothing is showing any more.
+            pageUrls.clear();
         }
         pending.values().forEach(future -> future.complete(null));
         pending.clear();
@@ -160,9 +192,10 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
         if (id == null) {
             return;
         }
-        if (frame.hasNonNull("pageUrl")) {
-            pageUrl = frame.path("pageUrl").asText();
-        }
+        // The address is filed by the SENDER, in send() below, because only the
+        // sender knows which session this reply belongs to: the frame carries the
+        // command id, and matching it back to a session here would mean keeping a
+        // second map for a fact send() already has in hand.
         CompletableFuture<JsonNode> waiting = pending.remove(id);
         if (waiting != null) {
             waiting.complete(frame);
@@ -176,29 +209,97 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
         return current != null && current.isOpen();
     }
 
-    /** @return the address the pane is showing, or null when nothing is open */
+    /**
+     * The browser belonging to one session.
+     *
+     * <p>A thin view onto this one channel, not a second object with state of
+     * its own: it holds the id and nothing else, so a face handed to a tool
+     * cannot go stale when the shell reconnects underneath it.
+     *
+     * @param sessionId the session's store id
+     * @return that session's face
+     */
     @Override
-    public String pageUrl() {
-        return pageUrl;
+    public BrowserFace forSession(String sessionId) {
+        return new SessionFace(sessionId);
     }
 
     /**
-     * Sends one verb and waits for its reply.
+     * Ends one session's browser in the shell.
      *
-     * @param verb the verb, from {@link BrowserFace}'s own list
-     * @param args the verb's arguments
-     * @return the reply, never null
+     * <p>Written straight to the socket without parking a future: this runs on
+     * the thread tearing the session's own socket down, and a shell that has
+     * already gone must not hold it for the 45 s deadline. Nothing here reads
+     * the answer, because there is nothing to do with it — the browser is gone
+     * either way, and the shell forgets an id it does not know.
+     *
+     * @param sessionId the session that closed
      */
     @Override
-    public Reply send(String verb, JsonNode args) {
+    public void closeSession(String sessionId) {
+        pageUrls.remove(sessionId);
         WebSocketSession current = shell;
         if (current == null || !current.isOpen()) {
-            return Reply.failed(BrowserFace.DETACHED, pageUrl);
+            return;
+        }
+        ObjectNode frame = JSON.createObjectNode();
+        frame.put("id", UUID.randomUUID().toString());
+        frame.put("verb", "close_session");
+        frame.put("sessionId", sessionId);
+        frame.set("args", JSON.createObjectNode());
+        try {
+            synchronized (this) {
+                current.sendMessage(new TextMessage(JSON.writeValueAsString(frame)));
+            }
+        } catch (IOException | RuntimeException gone) {
+            LOG.debug("the browser shell was gone before the session could be closed", gone);
+        }
+    }
+
+    /**
+     * Tells the shell where the browser segment is and whose browser the app is
+     * showing there.
+     *
+     * <p>The one command whose session may legitimately be null: a page that has
+     * not started a session yet still reserved a rectangle, and the rectangle
+     * belongs to the WINDOW rather than to any session. The shell records it and
+     * shows nobody.
+     *
+     * @param sessionId the session the app is showing, or null when it has none
+     * @param args      the rectangle and whether the segment is on screen
+     * @return the reply, never null
+     */
+    public BrowserFace.Reply viewport(String sessionId, JsonNode args) {
+        return send(sessionId, "viewport", args);
+    }
+
+    /**
+     * Sends one verb for one session and waits for its reply.
+     *
+     * @param sessionId whose browser this is, or null for the window-level
+     *                  {@code viewport} command
+     * @param verb      the verb, from {@link BrowserFace}'s own list
+     * @param args      the verb's arguments
+     * @return the reply, never null
+     */
+    BrowserFace.Reply send(String sessionId, String verb, JsonNode args) {
+        String pageUrl = sessionId == null ? null : pageUrls.get(sessionId);
+        WebSocketSession current = shell;
+        if (current == null || !current.isOpen()) {
+            return BrowserFace.Reply.failed(BrowserFace.DETACHED, pageUrl);
         }
         String id = UUID.randomUUID().toString();
         ObjectNode frame = JSON.createObjectNode();
         frame.put("id", id);
         frame.put("verb", verb);
+        // Beside the args, never inside them: this is not one verb's argument,
+        // it is who is asking, and the shell refuses a browser command that names
+        // nobody.
+        if (sessionId == null) {
+            frame.putNull("sessionId");
+        } else {
+            frame.put("sessionId", sessionId);
+        }
         frame.set("args", args == null ? JSON.createObjectNode() : args);
         ObjectNode settings = JSON.createObjectNode();
         settings.put("allowLocalhost", allowLocalhost.getAsBoolean());
@@ -215,7 +316,7 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
             }
         } catch (IOException | RuntimeException notSent) {
             pending.remove(id);
-            return Reply.failed("the control channel to the browser pane broke: "
+            return BrowserFace.Reply.failed("the control channel to the browser pane broke: "
                     + notSent.getMessage(), pageUrl);
         }
         JsonNode reply;
@@ -223,24 +324,80 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
             reply = waiting.get(DEADLINE.toMillis(), TimeUnit.MILLISECONDS);
         } catch (TimeoutException tooSlow) {
             pending.remove(id);
-            return Reply.failed("the browser pane did not answer within "
+            return BrowserFace.Reply.failed("the browser pane did not answer within "
                     + DEADLINE.toSeconds() + " s", pageUrl);
         } catch (InterruptedException interrupted) {
             Thread.currentThread().interrupt();
             pending.remove(id);
-            return Reply.failed("the wait for the browser pane was interrupted", pageUrl);
+            return BrowserFace.Reply.failed("the wait for the browser pane was interrupted", pageUrl);
         } catch (java.util.concurrent.ExecutionException impossible) {
             pending.remove(id);
-            return Reply.failed("the browser pane failed: " + impossible.getMessage(), pageUrl);
+            return BrowserFace.Reply.failed("the browser pane failed: " + impossible.getMessage(), pageUrl);
         }
         if (reply == null) {
-            return Reply.failed("the browser pane disconnected before it answered", pageUrl);
+            return BrowserFace.Reply.failed("the browser pane disconnected before it answered", pageUrl);
         }
-        String url = reply.hasNonNull("pageUrl") ? reply.path("pageUrl").asText() : pageUrl;
+        String url = pageUrl;
+        if (reply.hasNonNull("pageUrl")) {
+            url = reply.path("pageUrl").asText();
+            if (sessionId != null) {
+                pageUrls.put(sessionId, url);
+            }
+        }
+        // The shell's own verdict, and it must be read before the value: a
+        // refusal carries an `error` and no `value`, so treating it as a success
+        // hands the model an empty object that BrowserTools renders as
+        // "undefined". Card 218 dropped this line while moving the address into
+        // a per-session map, and the live drive is what found it — every
+        // refusal the pane produced came back as a quiet success.
         if (!reply.path("ok").asBoolean(false)) {
-            return Reply.failed(reply.path("error").asText("the browser pane refused"), url);
+            return BrowserFace.Reply.failed(
+                    reply.path("error").asText("the browser pane refused"), url);
         }
         JsonNode value = reply.path("value");
-        return Reply.ok(value.isMissingNode() ? JSON.createObjectNode() : value, url);
+        return BrowserFace.Reply.ok(value.isMissingNode() ? JSON.createObjectNode() : value, url);
+    }
+
+    /**
+     * One session's view onto the channel — the {@link BrowserFace} the seven
+     * tools hold.
+     *
+     * <p>It carries the id and nothing else. Every question it can be asked is
+     * forwarded with that id attached, so there is no path from a tool to any
+     * other session's browser: not a wrong argument, not a stale reference, not
+     * a missing null check. That is the whole isolation argument on the Java
+     * side, and it is one field long.
+     *
+     * @param sessionId the session this face belongs to
+     */
+    private final class SessionFace implements BrowserFace {
+
+        private final String sessionId;
+
+        private SessionFace(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        /** @return whether a desktop browser pane is attached right now */
+        @Override
+        public boolean attached() {
+            return BrowserControlSocket.this.attached();
+        }
+
+        /** @return the address THIS session's browser is showing, or null */
+        @Override
+        public String pageUrl() {
+            return pageUrls.get(sessionId);
+        }
+
+        /**
+         * @param verb the verb, from {@link BrowserFace}'s own list
+         * @param args the verb's arguments
+         * @return the reply, never null
+         */
+        @Override
+        public Reply send(String verb, JsonNode args) {
+            return BrowserControlSocket.this.send(sessionId, verb, args);
+        }
     }
 }

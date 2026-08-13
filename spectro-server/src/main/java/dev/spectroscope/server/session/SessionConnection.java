@@ -203,12 +203,14 @@ public final class SessionConnection {
     /** The server-hosted fleet hub, or null/disabled — then no fleet frames ever. */
     private FleetAggregator fleet;
 
-    /** The visible browser pane (card 201), or a face that is never attached.
-     *  Set additively rather than through a seventh constructor parameter: every
-     *  existing caller and test keeps compiling, and a run with no desktop shell
-     *  behaves exactly as it did before the browser existed. */
-    private dev.spectroscope.core.browser.BrowserFace browser =
-            dev.spectroscope.core.browser.BrowserFace.none();
+    /** The visible browsers (cards 201 and 218), or a directory in which no
+     *  session has one. Set additively rather than through a seventh constructor
+     *  parameter: every existing caller and test keeps compiling, and a run with
+     *  no desktop shell behaves exactly as it did before the browser existed.
+     *  Card 218 made it a directory: this connection asks it for ITS session's
+     *  browser and can name no other. */
+    private dev.spectroscope.core.browser.BrowserFaces browsers =
+            dev.spectroscope.core.browser.BrowserFaces.none();
     /** This connection's fleet tap; registered on start, removed on close. */
     private FleetAggregator.Listener fleetListener;
     /** Pending fleet frames, drained to the socket on this connection's OWN
@@ -273,10 +275,30 @@ public final class SessionConnection {
      * never attached and seven tools whose refusal sentences say so and name the
      * address they were asked for.
      *
-     * @param face the control channel, or {@code null} for no browser at all
+     * @param faces the control channel, or {@code null} for no browser at all
      */
-    public void useBrowser(dev.spectroscope.core.browser.BrowserFace face) {
-        this.browser = face == null ? dev.spectroscope.core.browser.BrowserFace.none() : face;
+    public void useBrowser(dev.spectroscope.core.browser.BrowserFaces faces) {
+        this.browsers = faces == null
+                ? dev.spectroscope.core.browser.BrowserFaces.none() : faces;
+    }
+
+    /**
+     * This session's own browser, resolved per call.
+     *
+     * <p>Per call rather than once, for two reasons that both cost a live run
+     * somewhere: the desktop shell can attach, detach and restart between two
+     * tool calls, and the session id does not exist until the store is minted.
+     * A session that never sent a prompt has no id and therefore no browser, and
+     * the honest answer for it is the detached face rather than somebody else's
+     * page.
+     *
+     * @return the face the seven browser tools drive
+     */
+    private dev.spectroscope.core.browser.BrowserFace ownBrowser() {
+        SessionStore current = this.store;
+        return current == null
+                ? dev.spectroscope.core.browser.BrowserFace.none()
+                : browsers.forSession(current.id());
     }
 
     /** Announces the boot provider, then (for a resume) loads the history; a bad id closes the socket. */
@@ -704,6 +726,17 @@ public final class SessionConnection {
     public void onClose() {
         onAbort();
         releasePending();
+        // Card 218: the session is closed, so its browser is closed. "Closed"
+        // here is exactly this event — the socket that held the session went
+        // away, which is the same thing that cancels its run and releases its
+        // permission questions. The JSONL survives and the id survives; the
+        // browser does not, because a browser is live state (a logged-in page, a
+        // cookie jar, a scroll position) and not a record. A session that never
+        // minted a store never had one to close.
+        SessionStore opened = this.store;
+        if (opened != null) {
+            browsers.closeSession(opened.id());
+        }
         // Card 212: stop listening BEFORE releasing, so this dying socket is not
         // one of the viewers its own departure is announced to; then let the id
         // go, which is what makes a reload or a dropped connection safe rather
@@ -930,7 +963,7 @@ public final class SessionConnection {
         // exists and no way to say so. The fence and the image store are read
         // per call, like the neighbours above.
         new dev.spectroscope.core.browser.BrowserTools(
-                () -> browser,
+                this::ownBrowser,
                 () -> dev.spectroscope.core.net.NetFence.withSystemDns(
                         activeConfig.get().allowLocalhost()),
                 ImageStore.inUserHome())
