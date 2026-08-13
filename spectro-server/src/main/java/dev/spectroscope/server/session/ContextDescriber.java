@@ -1,5 +1,7 @@
 package dev.spectroscope.server.session;
 
+import dev.spectroscope.core.browser.BrowserFace;
+import dev.spectroscope.core.browser.BrowserTools;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
 import dev.spectroscope.core.image.GenerateImageTool;
@@ -13,6 +15,7 @@ import dev.spectroscope.core.web.BrowsePageTool;
 import dev.spectroscope.core.web.WebSearchTool;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -72,12 +75,23 @@ final class ContextDescriber {
 
     /**
      * Every tool the MAIN agent sees, in registration order: the standard set,
-     * the extras (image / web_fetch / update_plan), use_skill when skills are
-     * installed, then the parent-only spawn + dev tools. The extras need
-     * runtime seams in the live path; for introspection a throwaway instance
-     * is enough — reading name/description/needsPermission from the REAL tool
-     * objects keeps this list from drifting (the old hand-written strings had
-     * already diverged, and update_plan was missing entirely).
+     * the extras, use_skill when skills are installed, then the parent-only
+     * spawn + dev tools. The extras need runtime seams in the live path; for
+     * introspection a throwaway instance is enough — reading
+     * name/description/needsPermission from the REAL tool objects keeps this
+     * list from drifting (the old hand-written strings had already diverged,
+     * and update_plan was missing entirely).
+     *
+     * <p><b>Reading the tools honestly is only half of it: the LIST itself
+     * drifts too.</b> Card 201's seven {@code browser_*} tools were registered
+     * in {@link SessionConnection}{@code .buildAgentOnce} and never added here,
+     * so this "every tool" promise was short by seven from the day that family
+     * landed — the same failure as the drifted literals, one level up. So the
+     * standing rule, and the reason the extras below are enumerated rather than
+     * summarized: <b>a family added to {@code buildAgentOnce} is added here in
+     * the same commit, with a {@code DescribeContextTest} case that reads its
+     * descriptions off the real tool objects.</b> Nothing catches a family that
+     * is simply absent except somebody noticing.
      *
      * @param config the SAME resolved configuration the caller described — see
      *               the web_search line below
@@ -87,7 +101,7 @@ final class ContextDescriber {
      */
     private static List<ContextInfo.ToolInfo> mainAgentTools(SpectroConfig config,
             List<Tool> standardTools, SkillLibrary skills) {
-        Stream<Tool> extras = Stream.of(
+        List<Tool> extras = new ArrayList<>(List.of(
                 new GenerateImageTool(() -> null, null),
                 new WebFetchTool(url -> null),
                 // Built from the configuration THIS CALL was handed, not from a
@@ -99,12 +113,21 @@ final class ContextDescriber {
                 // only while every caller happened to pass an identical config,
                 // and a second copy of one decision is what this card removed.
                 WebSearchTool.fromConfig(config),
-                new BrowsePageTool(),
-                new UpdatePlanTool());
+                new BrowsePageTool()));
+        // Card 201, and it belongs here for the same reason buildAgentOnce
+        // registers it unconditionally: the model is handed these seven in
+        // EVERY session, attached shell or none, so a reader of the tab who is
+        // told otherwise is told something false. What the throwaway seams say
+        // is exactly right for this endpoint — describing a browser is not
+        // driving one: BrowserFace.none() is the honest "nothing is attached"
+        // face, and the fence and the image store are only read on a call that
+        // never comes. Name, description and gate flag are the tools' own.
+        extras.addAll(new BrowserTools(BrowserFace::none, () -> null, null).all());
+        extras.add(new UpdatePlanTool());
         Stream<Tool> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
                 : Stream.of(skills.useSkillTool());
-        Stream<ContextInfo.ToolInfo> registered = Stream.of(standardTools.stream(), extras, useSkill)
+        Stream<ContextInfo.ToolInfo> registered = Stream.of(standardTools.stream(), extras.stream(), useSkill)
                 .flatMap(tools -> tools)
                 .map(ContextDescriber::asToolInfo);
         Stream<ContextInfo.ToolInfo> parentOnly = RoleCatalog.parentTools().stream()
