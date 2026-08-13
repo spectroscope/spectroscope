@@ -441,8 +441,11 @@ which is the test runner card 200 section 7 said this card owed.
   the scrubber — is card 204. The brand rule still binds the line: the browser
   does not ship in a release without a replay path.
 - **Launch configurations** are card 202, and they are built: the app under test
-  starts by name from the repository's own `.claude/launch.json` and the browser
-  opens on it. `docs/LAUNCH.md`.
+  starts by name from the repository's own `.claude/launch.json`. The browser
+  opens on it **once loopback is opted into** — a launch configuration almost
+  always names localhost, and the net fence above refuses localhost until
+  `allowLocalhost` is set, so out of the box the app starts and no page is
+  opened. The answer says which of the two happened. `docs/LAUNCH.md`.
 - **Tabs.** `tab_id` is on every schema and **still refused**, and card 218
   changed the reason rather than the answer. Card 201 recorded its meaning as
   "the per-session browser the owner asked for"; that work is done, and it did
