@@ -267,8 +267,12 @@
   font-size: var(--fs-12);
   line-height: 1.55;
   max-height: 260px;
+  /* No overscroll-behavior here, deliberately. A bounded well may consume the
+     wheel while it can scroll itself; at its edges — and when it has nothing
+     to scroll — the gesture must chain to the page scroller. `contain` cut
+     that chain and left the wheel dead over every code block (card 206). The
+     document cannot run away either way: base.css pins html/body. */
   overflow: auto;
-  overscroll-behavior: contain;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -296,7 +300,6 @@
   padding: 0;
   max-height: 260px;
   overflow: auto;
-  overscroll-behavior: contain;
   font-size: var(--fs-12);
 }
 .tv-entry {
@@ -478,7 +481,6 @@
   font-size: var(--fs-12);
   max-height: 260px;
   overflow: auto;
-  overscroll-behavior: contain;
 }
 .tv-md .md h1 { font-size: var(--fs-16); }
 .tv-md .md h2 { font-size: var(--fs-14); }
