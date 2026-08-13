@@ -1039,6 +1039,31 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ein Hook ist beliebige Shell, die dieses Programm ausführt — die breiteste Stufe, die es gibt. Und ein pre_tool_use-Hook läuft VOR dem Berechtigungs-Dialog: er wird also nie gefragt, sondern gestartet.",
     en: "A hook is arbitrary shell this product executes — the widest tier there is. And a pre_tool_use hook runs BEFORE the permission gate, so it is never asked about, only started.",
   },
+  // What a RUN would actually load, which is a different list from what any one
+  // settings file says. `hooks` is a whole-block field — the highest layer that
+  // sets it replaces every layer below — so these five sentences are the block's
+  // load-bearing ones, added after a review found the page listing a hook that
+  // never ran while a workspace hook was blocking every tool call.
+  "set.hkInForce": { de: "Was läuft", en: "What runs" },
+  "set.hkReachSession": {
+    de: "Für die gerade laufende Sitzung, aufgelöst in {ws}.",
+    en: "For the session running now, resolved in {ws}.",
+  },
+  "set.hkReachProcess": {
+    de: "Es läuft keine Sitzung, das hier ist also die Antwort für diese Maschine. Öffnet sich eine Sitzung in einem Arbeitsordner, ersetzen dessen eigene Einstellungen diese Liste als Ganzes.",
+    en: "No session is running, so this is this machine's answer. Once a session opens in a workspace, that workspace's own settings replace this list whole.",
+  },
+  "set.hkNoneInForce": {
+    de: "Um die Werkzeug-Aufrufe dieses Laufs läuft nichts Eigenes.",
+    en: "Nothing of yours runs around a tool call in this run.",
+  },
+  "set.hkFromLayer": { de: "Aus {scope}.", en: "From {scope}." },
+  "set.hkShadowed": {
+    de: "{scopes} setzt ebenfalls Hooks und wird komplett ersetzt: Eine Ebene, die Hooks setzt, kommt nicht zu den Ebenen darunter hinzu — sie tritt an ihre Stelle. Es läuft nur {scope}.",
+    en: "{scopes} also sets hooks and is replaced whole: a layer that sets hooks does not add to the layers below it, it takes their place. Only {scope} runs.",
+  },
+  "set.hkInForceTag": { de: "läuft", en: "in force" },
+  "set.hkSilencedTag": { de: "ersetzt durch {scope}", en: "replaced by {scope}" },
   "set.hkScopeUser": { de: "Deine Einstellungen", en: "Your settings" },
   "set.hkScopeOther": {
     de: "Aus {scope} — hier nur zu lesen.",
@@ -1059,13 +1084,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.hkBeforeGate": { de: "vor dem Dialog", en: "ahead of the gate" },
   "set.hkTimeoutOwn": { de: "{sec}s (eigener Wert)", en: "{sec}s (its own)" },
   "set.hkTimeoutInherited": { de: "{sec}s (Vorgabe)", en: "{sec}s (inherited)" },
-  "set.hkRedacted": {
-    de: "[unkenntlich gemacht: {rule}]",
-    en: "[redacted: {rule}]",
-  },
-  "set.hkReadOnlyRedacted": {
-    de: "Ein Befehl in dieser Ebene sieht aus wie ein Zugangsschlüssel und wird deshalb nicht angezeigt. Solange das so ist, wird hier nichts geschrieben — ein Zurückschreiben würde diesen Befehl durch nichts ersetzen. Ändere die Datei direkt.",
-    en: "A command in this layer looks like a credential and is therefore not shown. While that is the case nothing is written here — writing the list back would replace that command with nothing. Edit the file directly.",
+  // A forecast, not a censorship — the command itself stands above it, in full.
+  // This says what the NEXT surface will do with it: HookRunner runs the command
+  // past the same rules before it reaches the session file, so a trace row
+  // reading "[redacted: email]" has its explanation here rather than looking
+  // like a hook that broke.
+  "set.hkWillRedact": {
+    de: "im Lauf aufgezeichnet als [redacted: {rule}]",
+    en: "recorded in the run as [redacted: {rule}]",
   },
   "set.hkEvent": { de: "Wann", en: "When" },
   "set.hkMatcher": { de: "Für welches Werkzeug (leer = alle)", en: "For which tool (blank = all)" },
@@ -2781,6 +2807,14 @@ export const dict: Record<string, { de: string; en: string }> = {
   // only in this tab; calling it "Archive" made it indistinguishable from a
   // session this machine produced and stored.
   "hdr.imported": { de: "Importiert", en: "Imported" },
+  // The one clause of a hook_decision summary that is prose rather than a wire
+  // word (card 195). A row reading only "timed-out" leaves the reader to guess
+  // what happened next, and what happened next is the point: the runner fails
+  // open, so the call went ahead with part of the fence down.
+  "trace.hookRanAnyway": {
+    de: "nach {sec}s abgebrochen — der Aufruf lief trotzdem",
+    en: "killed after {sec}s — the call ran anyway",
+  },
   "trace.resumeSummary": {
     de: "{e} Events geladen · ~{t} Tokens Verlauf gehen mit dem nächsten Request wieder hoch (plus System-Prompt & Tool-Schemas obendrauf)",
     en: "{e} events loaded · ~{t} tokens of history ride along with the next request (plus system prompt & tool schemas on top)",

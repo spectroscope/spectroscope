@@ -2474,6 +2474,12 @@ export function App() {
         open={settingsOpen}
         onClose={closeSettings}
         section={settingsSection}
+        /* The LIVE session, not the one on screen: a replay's settings are
+           history, and the question a settings page answers is what the next
+           tool call will meet. Null when nothing is running, which the hooks
+           block says out loud rather than passing off a machine-wide answer as
+           a description of a run (card 195, review finding 1). */
+        session={live.workspace?.sessionId ?? null}
         providerStatus={providerStatus ?? undefined}
         providerAddress={providerAddress ?? undefined}
         onKeySaved={() => setConfigNonce((n) => n + 1)}

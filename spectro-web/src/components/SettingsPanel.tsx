@@ -185,6 +185,7 @@ export function SettingsPanel({
   open,
   onClose,
   section,
+  session,
   providerStatus,
   providerAddress,
   onKeySaved,
@@ -194,6 +195,11 @@ export function SettingsPanel({
 }: {
   open: boolean;
   onClose: () => void;
+  /** The session running right now, or null. Blocks that describe what a RUN
+   *  has in force (card 195's hooks) need it: without a session id the workspace
+   *  settings layers never join the chain, so the answer is machine-wide and
+   *  can differ from what the session in front of the reader actually loaded. */
+  session?: string | null;
   /** The section a #/settings/{section} deep link named, scrolled into view
    *  once its block exists. null opens the page at its top. */
   section?: SettingsSection | null;
@@ -884,8 +890,14 @@ export function SettingsPanel({
                   months with no screen anywhere, so the one feature that can
                   stop an agent was configured in a file nobody was pointed at.
                   The block reads GET /api/settings/hooks and renders it; the
-                  runner's own defaults decide, never this page. ---- */}
-              <HooksSettings anchorId={sectionAnchorId("hooks")} onSave={saveUser} />
+                  runner's own defaults decide, never this page.
+
+                  The session goes WITH it, and that is not a nicety: hooks is a
+                  whole-block field, so the running session's workspace layer can
+                  replace this machine's list entirely. Mounted without it, the
+                  block asked the session-less endpoint and stated the wrong
+                  guards with full confidence. ---- */}
+              <HooksSettings anchorId={sectionAnchorId("hooks")} session={session} onSave={saveUser} />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
               <div className="settings-label" id={sectionAnchorId("workspace")}>

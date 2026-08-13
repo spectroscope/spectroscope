@@ -516,6 +516,26 @@ export function summarize(entry: TraceEntry, lang: Lang): string {
       const x = readExchange(entry.payload);
       return x === null ? compactJson(entry.payload) : llmResponseSummary(x);
     }
+    // A configured guard did something (card 195). This frame had no case here
+    // and fell to compactJson, which leads with agentId/callId/toolName and
+    // ellipsizes before the verdict — so the one row a reader opens this tab to
+    // find read as a wall of braces. The CLI got its ⛨ line the day the event
+    // was added (EventRenderer); this is the same line, in the surface this
+    // product is named after. The verdict and the phase stay in their wire
+    // spelling, the rule every other summary here follows: `pre_tool_use` is
+    // the field's own word and cannot drift from the file.
+    case "hook_decision": {
+      const verdict = String(p["verdict"] ?? "");
+      const head = `⛨ ${String(p["event"] ?? "")} ${verdict} · ${String(p["command"] ?? "")}`;
+      // Fail-open is the case that matters most and shows least: the call ran
+      // with part of the fence down. "timed-out" alone leaves a reader guessing
+      // whether anything happened after it.
+      if (verdict === "timed-out") {
+        return `${head} · ${t(lang, "trace.hookRanAnyway", { sec: Number(p["timeoutSeconds"] ?? 0) })}`;
+      }
+      const reason = String(p["reason"] ?? "");
+      return reason === "" ? head : `${head} · ${reason}`;
+    }
     default:
       return compactJson(entry.payload);
   }

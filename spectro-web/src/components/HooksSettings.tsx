@@ -8,6 +8,23 @@
 // "hooks are not a thing in this product". The house rule that absence must be
 // readable applies to configuration too, and this is the surface for it.
 //
+// WHAT IT ANSWERS FIRST, and why that is the whole point (review finding 1).
+// The block opens with the hooks A RUN WOULD ACTUALLY LOAD, not with the hooks
+// this machine's own settings file happens to name. `hooks` is a WHOLE-BLOCK
+// field: the highest settings layer that sets it replaces every layer below, so
+// the scopes do not add up. The first version of this block listed the scopes
+// and never drew the folded list at all — and in a live session a workspace
+// hook blocked every tool call while this page confidently listed a user hook
+// that never ran once. In a product whose claim is that you can watch what is
+// actually happening, a settings page that describes the file instead of the run
+// is the wrong artefact.
+//
+// So the answer is fetched FOR a session (`?session=`, which joins that
+// session's workspace layers), the folded list is drawn under its own heading,
+// the layer it came from is named, the layers it replaced are named as replaced,
+// and when no session is running the block says so instead of implying that a
+// machine-wide answer describes the run in front of the reader.
+//
 // WHAT THIS BLOCK IS CAREFUL NOT TO CLAIM. Measured before it was written:
 //
 //   - A hook takes effect for the NEXT session. The server resolves the hook
@@ -18,15 +35,18 @@
 //   - A pre_tool_use hook runs BEFORE the permission gate. That is not a
 //     footnote: it is arbitrary shell that executes without ever being asked
 //     about, which is why the tier the server answers is spelled out here.
-//   - A command whose text carries a credential shape comes back redacted, and
-//     THEN this scope becomes read-only. Writing the array back would replace
-//     the real command with the empty string the server sent — a hook disarmed
-//     by the act of opening its own settings page.
+//   - A command whose text carries a credential shape is shown IN FULL and
+//     flagged: the run will record it as "[redacted: rule]", and saying so here
+//     is what stops that trace row from reading like a broken hook. It used to
+//     be hidden, which protected nothing (GET /api/settings ships the same bytes
+//     to the same browser) and disabled add and every remove for the whole scope
+//     — one ordinary email address in one notify hook was enough.
 //
 // It decides nothing. GET /api/settings/hooks resolves the defaults through the
-// core's own record and the runner's own constant; this file renders the answer.
-// Writes go through the ordinary PUT /api/settings/user, the same single
-// validated path every other field on this page uses.
+// core's own record and the runner's own constant, and folds the layers through
+// the core's own merge; this file renders the answer. Writes go through the
+// ordinary PUT /api/settings/user, the same single validated path every other
+// field on this page uses.
 
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
@@ -34,8 +54,12 @@ import { useLang } from "../state/lang";
 import {
   composeHook,
   hookReadingKey,
+  hooksOrigin,
+  inForce,
   rawHooks,
+  reachKey,
   runsBeforeTheGate,
+  scopeIsInForce,
   timeoutNoteKey,
   withHook,
   withoutHook,
@@ -43,14 +67,12 @@ import {
   type HooksView,
 } from "./hooksSetup";
 
-/** One listed hook. `onRemove` is absent for a scope this page may not write. */
+/** One listed hook. `onRemove` is absent for a scope this page does not write. */
 function HookRow({ entry, onRemove }: { entry: HookEntry; onRemove?: () => void }) {
   const lang = useLang();
   return (
     <li className="al-row" data-testid="hook-entry">
-      <code className="al-raw">
-        {entry.redactedBy === "" ? entry.command : t(lang, "set.hkRedacted", { rule: entry.redactedBy })}
-      </code>
+      <code className="al-raw">{entry.command}</code>
       <span className="al-tags">
         <span className="origin-badge">{entry.event}</span>
         <span className="origin-badge">{entry.matcher}</span>
@@ -64,12 +86,38 @@ function HookRow({ entry, onRemove }: { entry: HookEntry; onRemove?: () => void 
         ) : null}
       </span>
       <span className="settings-note settings-note--inline">{t(lang, hookReadingKey(entry))}</span>
+      {/* Not a censorship of this command — a forecast of the next surface. The
+          run records it as "[redacted: rule]", and a reader who meets that trace
+          row without having read this line takes it for a broken hook. */}
+      {entry.redactionRule !== "" ? (
+        <span className="settings-note settings-note--warn settings-note--inline">
+          {t(lang, "set.hkWillRedact", { rule: entry.redactionRule })}
+        </span>
+      ) : null}
       {onRemove ? (
         <button type="button" className="soft-primary al-remove" onClick={onRemove}>
           {t(lang, "set.hkRemove")}
         </button>
       ) : null}
     </li>
+  );
+}
+
+/** The heading of one settings layer's own list, with the one word that decides
+ *  whether a reader should act on it: does this layer's block RUN, or has a
+ *  higher layer replaced it whole. */
+function ScopeHeading({ view, scope, label }: { view: HooksView | null; scope: string; label: string }) {
+  const lang = useLang();
+  const running = scopeIsInForce(view, scope);
+  return (
+    <p className="settings-note">
+      {label}{" "}
+      <span className={`origin-badge${running ? "" : " origin-badge--muted"}`}>
+        {running
+          ? t(lang, "set.hkInForceTag")
+          : t(lang, "set.hkSilencedTag", { scope: hooksOrigin(view).winner })}
+      </span>
+    </p>
   );
 }
 
@@ -99,7 +147,13 @@ export function HooksSettings({
       const url = session
         ? `/api/settings/hooks?session=${encodeURIComponent(session)}`
         : "/api/settings/hooks";
-      const res = await fetch(url);
+      let res = await fetch(url);
+      // A session with neither a pinned nor a configured workspace answers 404
+      // (SettingsController.resolveWorkspace). That is not a failure to read the
+      // hooks — there are simply no workspace layers to join — so the block falls
+      // back to the machine-wide answer and says which one it is showing, rather
+      // than replacing a true answer with "could not be read".
+      if (res.status === 404 && session) res = await fetch("/api/settings/hooks");
       if (!res.ok) {
         setFailed(true);
         return;
@@ -127,6 +181,8 @@ export function HooksSettings({
   const writable = rawHooks(view, "user");
   const otherScopes = Object.entries(view?.scopes ?? {}).filter(([scope]) => scope !== "user");
   const pending = composeHook(event, matcher, command, timeout);
+  const running = inForce(view);
+  const origin = hooksOrigin(view);
 
   return (
     <>
@@ -141,8 +197,44 @@ export function HooksSettings({
         </p>
       )}
 
-      {/* ---- What this machine's own settings run, and may change ---- */}
-      <p className="settings-note">{t(lang, "set.hkScopeUser")}</p>
+      {/* ---- What a run actually loads. First, because it is the only list on
+          this page that answers the question a reader came with. ---- */}
+      {view && (
+        <div data-testid="hooks-in-force">
+          <p className="settings-note settings-note--strong">{t(lang, "set.hkInForce")}</p>
+          <p className="settings-note">
+            {t(lang, reachKey(view), { ws: view.workspace ?? "", id: view.session ?? "" })}
+          </p>
+          {running.length === 0 ? (
+            <p className="settings-note" data-testid="hooks-none-in-force">
+              {t(lang, "set.hkNoneInForce")}
+            </p>
+          ) : (
+            <>
+              <ul className="al-list">
+                {running.map((entry, index) => (
+                  <HookRow key={`eff:${entry.event}:${index}`} entry={entry} />
+                ))}
+              </ul>
+              <p className="settings-note">{t(lang, "set.hkFromLayer", { scope: origin.winner })}</p>
+            </>
+          )}
+          {/* The whole-block merge, said out loud. Without this line a reader
+              adds the lists below together and believes in guards that a higher
+              layer replaced. */}
+          {origin.shadowed.length > 0 && (
+            <p className="settings-note settings-note--warn" data-testid="hooks-shadowed">
+              {t(lang, "set.hkShadowed", {
+                scopes: origin.shadowed.join(", "),
+                scope: origin.winner,
+              })}
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* ---- What this machine's own settings hold, and may change ---- */}
+      <ScopeHeading view={view} scope="user" label={t(lang, "set.hkScopeUser")} />
       {userEntries.length === 0 ? (
         <p className="settings-note" data-testid="hooks-empty">
           {t(lang, "set.hkEmpty")}
@@ -153,22 +245,13 @@ export function HooksSettings({
             <HookRow
               key={`${entry.event}:${index}`}
               entry={entry}
-              onRemove={
-                writable === null
-                  ? undefined
-                  : () => {
-                      const next = withoutHook(writable, index);
-                      if (next !== null) void commit(next);
-                    }
-              }
+              onRemove={() => {
+                const next = withoutHook(writable, index);
+                if (next !== null) void commit(next);
+              }}
             />
           ))}
         </ul>
-      )}
-      {/* A scope this page cannot write back says so. Silently dropping the
-          remove button would look like a rendering bug. */}
-      {userEntries.length > 0 && writable === null && (
-        <p className="settings-note settings-note--warn">{t(lang, "set.hkReadOnlyRedacted")}</p>
       )}
 
       {/* ---- The other layers: shown because a hook a reader cannot see is a
@@ -176,7 +259,7 @@ export function HooksSettings({
           one scope. ---- */}
       {otherScopes.map(([scope, entries]) => (
         <div key={scope}>
-          <p className="settings-note">{t(lang, "set.hkScopeOther", { scope })}</p>
+          <ScopeHeading view={view} scope={scope} label={t(lang, "set.hkScopeOther", { scope })} />
           <ul className="al-list">
             {entries.map((entry, index) => (
               <HookRow key={`${scope}:${entry.event}:${index}`} entry={entry} />
@@ -242,9 +325,9 @@ export function HooksSettings({
       <button
         type="button"
         className="soft-primary"
-        disabled={pending === null || writable === null}
+        disabled={pending === null}
         onClick={() => {
-          const next = withHook(writable ?? [], pending);
+          const next = withHook(writable, pending);
           if (next === null) return;
           setMatcher("");
           setCommand("");

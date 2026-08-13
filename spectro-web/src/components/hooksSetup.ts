@@ -13,10 +13,16 @@
 //
 // THE ONE THING THIS FILE EXISTS TO GET RIGHT: what goes BACK. The read-out
 // answers a resolved view — matcher "*" for a hook whose file entry has none,
-// an effective timeout for one that set none, an empty command for one whose
-// command was redacted. Writing that view back would persist all three: a
-// removal of one hook would quietly pin another hook's defaults into the file,
-// and a hook whose command looked like a credential would come back disarmed.
+// an effective timeout for one that set none. Writing that view back would
+// persist both: a removal of one hook would quietly pin another hook's defaults
+// into the file, and the file would stop following the runner.
+//
+// AND THE ONE THE REVIEW ADDED: which of the listed hooks actually RUN. `hooks`
+// is a whole-block field — the highest layer that sets it replaces every layer
+// below, they do not add up — so a page that lists the scopes and leaves the
+// reader to add them up can state the wrong guards with full confidence. The
+// server folds the list and names the layer it came from; the functions below
+// read that answer out, and decide nothing about it.
 
 /** One hook as the SERVER read it — mirrors SettingsController#reading. */
 export interface HookEntry {
@@ -26,14 +32,24 @@ export interface HookEntry {
   matcher: string;
   /** What the file itself says, or null when it names no matcher. */
   rawMatcher: string | null;
-  /** The command, or "" when a credential shape made it unrecordable. */
+  /** The command, verbatim as the settings file holds it. */
   command: string;
-  /** Which redaction rule hid the command, or "" when nothing did. */
-  redactedBy: string;
+  /** The rule that will replace this command where the RUN records it, or "" for
+   *  none. A forecast, not a censorship: the command above is the real one. */
+  redactionRule: string;
   /** What the file says, or null when it sets no timeout. */
   timeoutSeconds: number | null;
   /** The budget the hook will actually run under. */
   effectiveTimeoutSeconds: number;
+}
+
+/** Which settings layer's hook block a run loads, and which it silences.
+ *  Read straight out of the core's provenance map — never derived here. */
+export interface HooksOrigin {
+  /** The layer whose hooks are in force, or "defaults" when none set any. */
+  winner: string;
+  /** The layers that set hooks and were replaced whole, highest first. */
+  shadowed: string[];
 }
 
 /** GET /api/settings/hooks, verbatim — see SettingsController#hooks. */
@@ -48,6 +64,13 @@ export interface HooksView {
   scopes: Record<string, HookEntry[]>;
   /** The folded list a run would actually load. */
   effective: HookEntry[];
+  /** Where that folded list came from, and what it replaced. */
+  origin: HooksOrigin;
+  /** The session this answer was resolved for, or null for the machine-wide
+   *  answer — the workspace layers only join the chain when a session names them. */
+  session: string | null;
+  /** The workspace whose scopes joined, or null. */
+  workspace: string | null;
   files: Record<string, string>;
 }
 
@@ -61,25 +84,88 @@ export interface HookWrite {
 }
 
 /**
+ * The hooks a run would actually load — the folded list, never the scopes
+ * added together.
+ *
+ * @param view the read-out, or null before it lands
+ * @returns the entries in force, in the order the runner walks them
+ */
+export function inForce(view: HooksView | null): HookEntry[] {
+  return view?.effective ?? [];
+}
+
+/**
+ * Which layer's block is in force, and which layers it replaced whole.
+ *
+ * @param view the read-out, or null before it lands
+ * @returns the provenance the server answered, or the nobody-set-any case
+ */
+export function hooksOrigin(view: HooksView | null): HooksOrigin {
+  const origin = view?.origin;
+  if (origin === undefined || origin === null) return { winner: "defaults", shadowed: [] };
+  return { winner: origin.winner, shadowed: origin.shadowed ?? [] };
+}
+
+/**
+ * Whether a listed scope's entries are the ones that run.
+ *
+ * The judgement a reader acts on. "Your settings" listing a guard that cannot
+ * fire is worse than not listing it, because the reader now believes they have
+ * a guard they do not have.
+ *
+ * @param view the read-out, or null before it lands
+ * @param scope the settings layer whose list is on screen
+ * @returns true when this layer won the whole-block merge
+ */
+export function scopeIsInForce(view: HooksView | null, scope: string): boolean {
+  return hooksOrigin(view).winner === scope;
+}
+
+/**
+ * Which sentence describes the REACH of the answer on screen.
+ *
+ * Without a session id the workspace layers never join the chain, so the answer
+ * is machine-wide — and a page saying "this is what runs" over a list that has
+ * not seen the running session's own settings is the exact wrong claim. Two
+ * sentences, one per case, chosen here rather than guessed at the call site.
+ *
+ * @param view the read-out, or null before it lands
+ * @returns the dict key of the clause that says what this answer covers
+ */
+export function reachKey(view: HooksView | null): string {
+  return view?.session ? "set.hkReachSession" : "set.hkReachProcess";
+}
+
+/**
  * The entries of one scope, as the settings file holds them.
+ *
+ * The command travels back VERBATIM. It used to come back "" for a command that
+ * tripped a redaction rule, and this function then refused to write the whole
+ * scope — which turned one ordinary email address in one notify hook into a
+ * permanently read-only page, while GET /api/settings shipped the same bytes to
+ * the same browser anyway. The rule now rides beside the command as a forecast
+ * of what the RUN will hide, and the write path is never disarmed by it.
  *
  * @param view the read-out, or null before it lands
  * @param scope the settings layer to write back
- * @returns the writable array, or null when this scope holds a hook whose
- *          command the server would not show — writing that array back would
- *          replace a real command with an empty string, which is a hook
- *          disarmed by the act of opening its own settings page
+ * @returns the writable array — empty for a scope that configured nothing
  */
-export function rawHooks(view: HooksView | null, scope: string): HookWrite[] | null {
+export function rawHooks(view: HooksView | null, scope: string): HookWrite[] {
   const entries = view?.scopes[scope] ?? [];
-  if (entries.some((entry) => entry.redactedBy !== "")) return null;
   return entries.map((entry) => {
     // Key ORDER is the write order, and this is a file a person opens: event,
-    // then what it matches, then what it runs, then how long it may take.
-    const out: HookWrite = { event: entry.event, command: entry.command };
-    if (entry.rawMatcher !== null && entry.rawMatcher !== "") out.matcher = entry.rawMatcher;
-    if (entry.timeoutSeconds !== null) out.timeoutSeconds = entry.timeoutSeconds;
-    return out;
+    // then what it matches, then what it runs, then how long it may take. The
+    // review measured this comment against code that wrote event, command,
+    // matcher — a comment describing an order its own file did not have. Written
+    // as one literal with conditional spreads, because insertion order is the
+    // thing being got right and a later assignment appends.
+    const matcher = entry.rawMatcher !== null && entry.rawMatcher !== "" ? entry.rawMatcher : null;
+    return {
+      event: entry.event,
+      ...(matcher === null ? {} : { matcher }),
+      command: entry.command,
+      ...(entry.timeoutSeconds === null ? {} : { timeoutSeconds: entry.timeoutSeconds }),
+    };
   });
 }
 
@@ -105,14 +191,17 @@ export function composeHook(
 ): HookWrite | null {
   const cmd = command.trim();
   if (event === "" || cmd === "") return null;
-  const out: HookWrite = { event, command: cmd };
   const glob = matcher.trim();
-  if (glob !== "") out.matcher = glob;
   // The core treats null and non-positive alike (timeoutOrDefault), so a 0 or a
   // -1 in the file would say something the runner does not mean.
   const seconds = Number(timeout.trim());
-  if (Number.isInteger(seconds) && seconds > 0) out.timeoutSeconds = seconds;
-  return out;
+  const own = Number.isInteger(seconds) && seconds > 0;
+  return {
+    event,
+    ...(glob === "" ? {} : { matcher: glob }),
+    command: cmd,
+    ...(own ? { timeoutSeconds: seconds } : {}),
+  };
 }
 
 /**

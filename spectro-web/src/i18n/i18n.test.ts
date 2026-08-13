@@ -220,7 +220,7 @@ describe("i18n dict", () => {
           matcher: "*",
           rawMatcher: null,
           command: "x.sh",
-          redactedBy: "",
+          redactionRule: "",
           timeoutSeconds,
           effectiveTimeoutSeconds: 10,
         };
@@ -236,8 +236,15 @@ describe("i18n dict", () => {
       "set.hkScopeOther",
       "set.hkEmpty",
       "set.hkBeforeGate",
-      "set.hkRedacted",
-      "set.hkReadOnlyRedacted",
+      "set.hkWillRedact",
+      "set.hkInForce",
+      "set.hkReachSession",
+      "set.hkReachProcess",
+      "set.hkNoneInForce",
+      "set.hkFromLayer",
+      "set.hkShadowed",
+      "set.hkInForceTag",
+      "set.hkSilencedTag",
       "set.hkEvent",
       "set.hkMatcher",
       "set.hkCommand",
@@ -277,6 +284,28 @@ describe("the hooks block does not promise more than the engine does", () => {
     expect(dict["set.hkFailOpen"].de).toMatch(/timed-out/);
   });
 
+  it("says a layer that sets hooks REPLACES the ones below, in both languages", () => {
+    // The sentence the review's blocking finding turned on. `hooks` is a
+    // whole-block field, and the block's old wording — "From {scope} —
+    // read-only here." — reads as additive, so a reader adds the lists up and
+    // believes in guards a higher layer already replaced.
+    expect(dict["set.hkShadowed"].en).toMatch(/replaced whole/);
+    expect(dict["set.hkShadowed"].en).toMatch(/does not add/);
+    expect(dict["set.hkShadowed"].de).toMatch(/komplett ersetzt/);
+    expect(dict["set.hkShadowed"].de).toMatch(/nicht .* hinzu/);
+  });
+
+  it("does not pass a machine-wide answer off as a description of a run", () => {
+    // Without a session id the workspace layers never join the chain. A page
+    // that says "what runs" over that list, with a session open beside it whose
+    // workspace replaced the whole block, is confidently wrong — which is what
+    // it was.
+    expect(dict["set.hkReachProcess"].en).toMatch(/No session is running/);
+    expect(dict["set.hkReachProcess"].en).toMatch(/replace this list whole/);
+    expect(dict["set.hkReachProcess"].de).toMatch(/keine Sitzung/);
+    expect(dict["set.hkReachProcess"].de).toMatch(/als Ganzes/);
+  });
+
   it("names the permission gate the pre phase runs ahead of, in both languages", () => {
     for (const lang of ["de", "en"] as const) {
       expect(dict["set.hkTierNote"][lang]).toMatch(/pre_tool_use/);
@@ -290,8 +319,13 @@ describe("the hooks block does not promise more than the engine does", () => {
       expect(dict["set.hkTimeoutOwn"][lang], `${lang} {sec}`).toContain("{sec}");
       expect(dict["set.hkTimeoutInherited"][lang], `${lang} {sec}`).toContain("{sec}");
       expect(dict["set.hkTimeout"][lang], `${lang} {sec}`).toContain("{sec}");
-      expect(dict["set.hkRedacted"][lang], `${lang} {rule}`).toContain("{rule}");
+      expect(dict["set.hkWillRedact"][lang], `${lang} {rule}`).toContain("{rule}");
       expect(dict["set.hkScopeOther"][lang], `${lang} {scope}`).toContain("{scope}");
+      expect(dict["set.hkFromLayer"][lang], `${lang} {scope}`).toContain("{scope}");
+      expect(dict["set.hkSilencedTag"][lang], `${lang} {scope}`).toContain("{scope}");
+      expect(dict["set.hkReachSession"][lang], `${lang} {ws}`).toContain("{ws}");
+      expect(dict["set.hkShadowed"][lang], `${lang} {scopes}`).toContain("{scopes}");
+      expect(dict["set.hkShadowed"][lang], `${lang} {scope}`).toContain("{scope}");
     }
   });
 });

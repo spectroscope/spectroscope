@@ -2,13 +2,34 @@ import { describe, expect, it } from "vitest";
 import {
   composeHook,
   hookReadingKey,
+  hooksOrigin,
+  inForce,
   rawHooks,
+  reachKey,
   runsBeforeTheGate,
+  scopeIsInForce,
   timeoutNoteKey,
   withHook,
   withoutHook,
+  type HookEntry,
   type HooksView,
 } from "./hooksSetup";
+
+/** One entry with the fields a test does not care about already filled in.
+ *  @param over the fields this test is about
+ *  @return the entry as the server would have answered it */
+function entry(over: Partial<HookEntry>): HookEntry {
+  return {
+    event: "pre_tool_use",
+    matcher: "*",
+    rawMatcher: null,
+    command: "guard.sh",
+    redactionRule: "",
+    timeoutSeconds: null,
+    effectiveTimeoutSeconds: 10,
+    ...over,
+  };
+}
 
 const view: HooksView = {
   tier: "eval-execute",
@@ -16,29 +37,79 @@ const view: HooksView = {
   events: ["pre_tool_use", "post_tool_use"],
   scopes: {
     user: [
-      {
-        event: "pre_tool_use",
-        matcher: "*",
-        rawMatcher: null,
-        command: "guard.sh",
-        redactedBy: "",
-        timeoutSeconds: null,
-        effectiveTimeoutSeconds: 10,
-      },
-      {
+      entry({}),
+      entry({
         event: "post_tool_use",
         matcher: "write_*",
         rawMatcher: "write_*",
         command: "notify.sh",
-        redactedBy: "",
         timeoutSeconds: 3,
         effectiveTimeoutSeconds: 3,
-      },
+      }),
     ],
   },
-  effective: [],
+  effective: [entry({}), entry({ event: "post_tool_use", command: "notify.sh" })],
+  origin: { winner: "user", shadowed: [] },
+  session: null,
+  workspace: null,
   files: { user: "/home/x/.spectro/settings.json" },
 };
+
+// ---- what actually runs (review finding 1) ---------------------------------
+//
+// The block this whole file exists under. `hooks` is a WHOLE-BLOCK field: the
+// highest layer that sets it replaces every layer below, they do not add up. A
+// page that lists the scopes and leaves the reader to add them up states the
+// wrong guards with full confidence — measured in a live session, where a
+// workspace hook blocked every tool call while the page listed a user hook that
+// never ran once.
+
+describe("which hooks a run would actually load", () => {
+  const layered: HooksView = {
+    ...view,
+    scopes: {
+      user: [entry({ command: "user-guard.sh" })],
+      project: [entry({ command: "workspace-guard.sh" })],
+    },
+    effective: [entry({ command: "workspace-guard.sh" })],
+    origin: { winner: "project", shadowed: ["user"] },
+    session: "abc-123",
+    workspace: "/w",
+  };
+
+  it("is the folded list, not the scopes added together", () => {
+    expect(inForce(layered).map((e) => e.command)).toEqual(["workspace-guard.sh"]);
+  });
+
+  it("names the layer in force and the layers it silenced", () => {
+    expect(hooksOrigin(layered)).toEqual({ winner: "project", shadowed: ["user"] });
+  });
+
+  it("marks a listed scope as running or as silenced", () => {
+    // The one a reader acts on: "Your settings" listing a guard that cannot fire
+    // is worse than not listing it, because the reader now believes they have it.
+    expect(scopeIsInForce(layered, "project")).toBe(true);
+    expect(scopeIsInForce(layered, "user")).toBe(false);
+  });
+
+  it("answers the no-hooks-anywhere case as defaults rather than as a missing field", () => {
+    const bare: HooksView = { ...view, scopes: {}, effective: [], origin: undefined as never };
+    expect(hooksOrigin(bare)).toEqual({ winner: "defaults", shadowed: [] });
+    expect(hooksOrigin(null)).toEqual({ winner: "defaults", shadowed: [] });
+    expect(inForce(null)).toEqual([]);
+    expect(scopeIsInForce(bare, "user")).toBe(false);
+  });
+
+  it("says whether the answer covers a running session or only this machine", () => {
+    // Without a session id the workspace layers never join the chain, so the
+    // answer is machine-wide — and the page saying "this is what runs" over a
+    // list that has not seen the running session's own settings is the exact
+    // wrong claim. Two sentences, one per case, chosen here and never guessed.
+    expect(reachKey(layered)).toBe("set.hkReachSession");
+    expect(reachKey(view)).toBe("set.hkReachProcess");
+    expect(reachKey(null)).toBe("set.hkReachProcess");
+  });
+});
 
 describe("what a scope writes back", () => {
   it("carries only what the FILE holds, never the server's resolved fields", () => {
@@ -53,32 +124,41 @@ describe("what a scope writes back", () => {
     ]);
   });
 
+  it("writes the keys in the order the comment above it claims", () => {
+    // toEqual does not read key order, and the file this produces is a file a
+    // person opens: event, then what it matches, then what it runs, then how
+    // long it may take. The review measured the code producing event, command,
+    // matcher — the comment described an order the code did not have.
+    expect(Object.keys(rawHooks(view, "user")[1])).toEqual(["event", "matcher", "command", "timeoutSeconds"]);
+  });
+
   it("answers an empty array for a scope nothing configured", () => {
     expect(rawHooks(view, "project")).toEqual([]);
     expect(rawHooks(null, "user")).toEqual([]);
   });
 
-  it("refuses to write back a hook whose command the server would not show", () => {
-    // A redacted command comes back as "". Writing that array would replace the
-    // operator's real command with an empty string — a hook silently disarmed by
-    // opening its own settings page.
-    const redacted: HooksView = {
+  it("writes a command back verbatim even when the run will redact it", () => {
+    // Replaces the test that asserted the opposite. A command carrying a
+    // credential shape used to come back "" and turn the whole scope read-only,
+    // so ONE ordinary email address in ONE notify hook disabled add and every
+    // remove on the page — while GET /api/settings shipped the same bytes to
+    // the same browser anyway. The rule now travels as a forecast beside the
+    // command instead of in place of it.
+    const notify: HooksView = {
       ...view,
       scopes: {
         user: [
-          {
-            event: "pre_tool_use",
-            matcher: "*",
-            rawMatcher: null,
-            command: "",
-            redactedBy: "bearer",
-            timeoutSeconds: null,
-            effectiveTimeoutSeconds: 10,
-          },
+          entry({
+            event: "post_tool_use",
+            command: "mail -s blocked chris@spectroscope.ai",
+            redactionRule: "email",
+          }),
         ],
       },
     };
-    expect(rawHooks(redacted, "user")).toBeNull();
+    expect(rawHooks(notify, "user")).toEqual([
+      { event: "post_tool_use", command: "mail -s blocked chris@spectroscope.ai" },
+    ]);
   });
 });
 
@@ -90,13 +170,15 @@ describe("composing one hook", () => {
     });
   });
 
-  it("carries a matcher and a timeout when they were given", () => {
-    expect(composeHook("post_tool_use", " write_* ", " notify.sh ", "5")).toEqual({
+  it("carries a matcher and a timeout when they were given, in the written order", () => {
+    const composed = composeHook("post_tool_use", " write_* ", " notify.sh ", "5");
+    expect(composed).toEqual({
       event: "post_tool_use",
       matcher: "write_*",
       command: "notify.sh",
       timeoutSeconds: 5,
     });
+    expect(Object.keys(composed!)).toEqual(["event", "matcher", "command", "timeoutSeconds"]);
   });
 
   it("is nothing at all without a command", () => {
