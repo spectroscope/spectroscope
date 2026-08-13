@@ -713,10 +713,14 @@ class SpectroServerIntegrationTest {
         }
 
         String written = Files.readString(ws.resolve(".spectro/settings.json"));
-        assertTrue(written.contains("run_command:"),
-                "the rule lives in the WORKSPACE project file, got: " + written);
+        // Card 199: a remembered rule now carries the TIER of the tool that was
+        // just approved. Remembering IS the deliberate act the read-by-default
+        // rule asks for, so the stamp is what keeps the click meaning what the
+        // user said yes to — without it the entry would approve read only.
+        assertTrue(written.contains("run_command#eval-execute:"),
+                "the rule lives in the WORKSPACE project file and names its tier, got: " + written);
         assertFalse(Files.exists(launchDirSettings)
-                        && Files.readString(launchDirSettings).contains("run_command:"),
+                        && Files.readString(launchDirSettings).contains("run_command"),
                 "the launch-dir file stays untouched when a real workspace exists");
     }
 

@@ -239,12 +239,6 @@ public final class HeadlessRunner {
         ToolRegistry registry = new ToolRegistry(); // standard tools only — never the spawn tools
         StandardTools.all().forEach(registry::register);
 
-        // Headless there is no y/N. The policy is the whole broker: readonly => always
-        // false, auto => always true — auditable as a permission_decision event. A
-        // fleet node in "ask" mode injects its own PARKING broker instead (block 4);
-        // when it does, it decides every call and autoApprove is not consulted.
-        PermissionBroker broker = externalBroker != null ? externalBroker : (request -> autoApprove);
-
         LlmProvider provider = providerOverride != null
                 ? providerOverride
                 : ProviderFactory.providerFromConfig(config); // the model lives in the provider
@@ -257,6 +251,32 @@ public final class HeadlessRunner {
                 ? providedStore
                 : new SessionStore(); // canonical sessionId + JSONL append
         LlmWireRecorder llmWire = LlmWireRecorder.forSession(store.id());
+
+        // Headless there is no y/N. The policy is the whole broker: readonly => always
+        // false, auto => always true — auditable as a permission_decision event. A
+        // fleet node in "ask" mode injects its own PARKING broker instead (block 4);
+        // when it does, it decides every call and autoApprove is not consulted.
+        //
+        // Card 199 changes nothing about that decision and everything about what
+        // is written down. Headless is the one surface that never consults the
+        // allowlist — so it has no wildcard to widen and no tier to enforce, and
+        // "--auto approves eval-execute" is the operator's own choice made once
+        // at launch rather than a rule hidden in a settings file. What it owed
+        // was the record: every call now lands in the gate audit sidecar with
+        // the tier it resolved to and the map version that said so, so a
+        // headless run is as readable after the fact as an interactive one.
+        dev.spectroscope.core.permission.GateAudit gateAudit =
+                dev.spectroscope.core.permission.GateAudit.forSession(store.id());
+        dev.spectroscope.core.permission.Allowlist noAllowlist =
+                dev.spectroscope.core.permission.Allowlist.fromEntries(java.util.List.of());
+        PermissionBroker policy = externalBroker != null ? externalBroker : (request -> autoApprove);
+        PermissionBroker broker = request -> {
+            boolean allowed = policy.decide(request);
+            gateAudit.record(request, externalBroker != null ? "node-broker"
+                    : (autoApprove ? "policy:auto" : "policy:readonly"),
+                    allowed, noAllowlist.decide(request));
+            return allowed;
+        };
 
         Agent agent = new Agent(AgentOptions.builder()
                 .provider(provider)

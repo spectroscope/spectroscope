@@ -141,6 +141,8 @@ public final class SpectroCli implements Runnable {
     private TracingPorts tracing;
     // The backend-to-LLM record (card 184) — opened with the store, same id.
     private LlmWireRecorder llmWire;
+    /** Card 199: one line per gate decision, beside the session (the wire is frozen). */
+    private dev.spectroscope.core.permission.GateAudit gateAudit;
     // Live-toggleable via /think on|off; seeded from config. Applied by rebuilding
     // the agent (the flag is a build-time AgentOptions input), preserving history.
     private boolean thinking;
@@ -205,6 +207,7 @@ public final class SpectroCli implements Runnable {
         // resume lands in the SAME folder it worked in before.
         store = new SessionStore(resume);
         llmWire = LlmWireRecorder.forSession(store.id()); // the second JSONL (card 184)
+        gateAudit = dev.spectroscope.core.permission.GateAudit.forSession(store.id()); // card 199
         tracing = new TracingPorts().require(new JsonlSink(store));
         // The OTel exporter rides as a REGISTERED port (isolated, warn-once):
         // off unless the config names an OTLP endpoint.
@@ -229,15 +232,23 @@ public final class SpectroCli implements Runnable {
         // unlisted requests fall through to the human. Either way the decision
         // lands in the stream as a permission_decision event (auditable).
         askOnTerminal = request -> {
-            if (allowlist.allows(request)) {
+            // Card 199: the verdict carries the tier, its source and the map version,
+            // and the audit line names the entry that approved the call — the
+            // visibility the exact-name hole is answered with.
+            var verdict = allowlist.decide(request);
+            if (verdict.approved()) {
+                gateAudit.record(request, "allowlist", true, verdict);
                 return true;
             }
+            boolean allowed;
             try {
                 String answer = console.readLine();
-                return answer != null && answer.trim().equalsIgnoreCase(APPROVAL_ANSWER);
+                allowed = answer != null && answer.trim().equalsIgnoreCase(APPROVAL_ANSWER);
             } catch (Exception readError) {
-                return false;
+                allowed = false;
             }
+            gateAudit.record(request, "user", allowed, verdict);
+            return allowed;
         };
 
         registerTools();
@@ -373,9 +384,40 @@ public final class SpectroCli implements Runnable {
         // prompt; bodies load on demand through the use_skill tool.
         skills = SkillLibrary.load(SkillLibrary.defaultRoots(projectDir));
         composeSystemPrompt();
+        // Card 199, criterion 8: the one-time, in-place migration of existing
+        // entries onto tiers, so no entry starts or stops approving anything.
+        // Idempotent and never throwing — a file the ledger already names is
+        // left alone, and a file that cannot be written simply is not.
+        migrateAllowlistOnce();
+        try {
+            config = SpectroConfig.loadForWorkspace(cliOverrides(), projectDir, workspace);
+        } catch (IllegalArgumentException ignoredTwice) {
+            // already reported above; the reload only picks up migrated entries
+        }
         allowlist = Allowlist.fromEntries(config.autoApprove());
         hooks = HookRunner.load(config.hooks());
         thinking = config.thinking();
+    }
+
+    /** Card 199, criterion 8: every settings file in this session's chain is
+     *  migrated onto tiers exactly once, recorded entry by entry in
+     *  {@code ~/.spectro/gate-audit/allowlist-migration.jsonl}. The ledger, not
+     *  a marker inside the settings file, is what makes it once-ever, so the
+     *  settings schema is untouched and the migration is auditable by the same
+     *  act. A file already migrated, missing, or unwritable is a no-op. */
+    private void migrateAllowlistOnce() {
+        var tiers = dev.spectroscope.core.permission.ToolTierMap.shipped();
+        var ledger = dev.spectroscope.core.permission.AllowlistMigration.defaultLedger();
+        java.util.List<java.nio.file.Path> files = new java.util.ArrayList<>(java.util.List.of(
+                SpectroConfig.USER_SETTINGS_PATH,
+                SpectroConfig.CONFIG_PATH,
+                projectDir.resolve(SpectroConfig.PROJECT_SETTINGS)));
+        if (workspace != null) {
+            files.add(workspace.resolve(SpectroConfig.PROJECT_SETTINGS));
+        }
+        for (java.nio.file.Path file : files) {
+            dev.spectroscope.core.permission.AllowlistMigration.migrateFileOnce(file, tiers, ledger);
+        }
     }
 
     /** The system prompt names the WORKSPACE as the working directory while
@@ -401,7 +443,11 @@ public final class SpectroCli implements Runnable {
         // Real tool: fetch a web page as readable text. Network egress is a side
         // effect on untrusted input, so it is permission-gated like run_command; the
         // RestClient seam (DefaultHttpFetcher) is injectable so tests stay network-free.
-        registry.register(new WebFetchTool(new DefaultHttpFetcher()));
+        // Card 199: both browser-class tools take the net fence built from
+        // allowLocalhost — file URLs, RFC-1918 and the 100.64/10 tailnet are
+        // refused, loopback only on the deliberate opt-in for the verify loop.
+        registry.register(new WebFetchTool(new DefaultHttpFetcher(),
+                dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost())));
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
@@ -409,7 +455,8 @@ public final class SpectroCli implements Runnable {
         // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
         // env, so SPECTRO_CHROME AND the configured setting both reach discovery.
         registry.register(new BrowsePageTool(
-                () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner()));
+                () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner(),
+                dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost())));
         // The main agent's plan. Permission-free, main-only (a worker's
         // plan would clobber the flat UI snapshot), so it is NOT added to childBase.
         registry.register(new UpdatePlanTool());
@@ -641,6 +688,7 @@ public final class SpectroCli implements Runnable {
                     llmWire.close(); // the old session's writer; lines are flushed
                 }
                 llmWire = LlmWireRecorder.forSession(store.id());
+                gateAudit = dev.spectroscope.core.permission.GateAudit.forSession(store.id());
                 tracing = new TracingPorts().require(new JsonlSink(store));
                 workspace = WorkspaceResolver.resolve(config.workspace(), store.id());
                 composeSystemPrompt();

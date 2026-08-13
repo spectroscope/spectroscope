@@ -733,6 +733,12 @@ public final class SessionConnection {
         workspace = resolveAndRecord(
                 pinned != null ? pinned : config.workspace(), store.id());
 
+        // Card 199, criterion 8: the one-time, in-place migration of allowlist
+        // entries onto tiers, run BEFORE the session-moment load so the config
+        // this session reads is the migrated one. Idempotent (the ledger decides
+        // "once") and never throwing.
+        migrateAllowlistOnce();
+
         // The session moment: the workspace's own .spectro pair joins the chain now.
         // A pre-build provider switch (activeConfig differs from the connect snapshot)
         // stays on top of the re-resolved config; a broken workspace file is loud but
@@ -789,7 +795,12 @@ public final class SessionConnection {
                 ImageStore.inUserHome(),
                 llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
         // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
-        registry.register(new WebFetchTool(new DefaultHttpFetcher()));
+        // Card 199: both browser-class tools take the net fence built from
+        // allowLocalhost. Read off activeConfig like the neighbours, so an
+        // opt-in saved mid-session reaches the next agent build.
+        registry.register(new WebFetchTool(new DefaultHttpFetcher(),
+                dev.spectroscope.core.net.NetFence.withSystemDns(
+                        activeConfig.get().allowLocalhost())));
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
@@ -801,7 +812,9 @@ public final class SessionConnection {
         // pre-run provider switch (which carries chromeBinary along) stays honoured.
         registry.register(new BrowsePageTool(
                 () -> BrowsePageTool.findChrome(activeConfig.get().chromeEnv()),
-                new DefaultChromeRunner()));
+                new DefaultChromeRunner(),
+                dev.spectroscope.core.net.NetFence.withSystemDns(
+                        activeConfig.get().allowLocalhost())));
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it
         // from its own instance; this registration only feeds the live agent.
@@ -869,18 +882,53 @@ public final class SessionConnection {
      */
     private PermissionBroker parkingBroker() {
         return request -> {
+            // Card 199: one verdict, read once, so the gate audit line names the
+            // same tier and the same entry the decision was actually made on.
+            Allowlist.Verdict verdict = allowlistNow().decide(request);
             Boolean byMode = PermissionModes.decide(permissionMode, request);
             if (byMode != null) {
+                gateAudit().record(request, "mode:" + permissionMode, byMode, verdict);
                 return byMode;
             }
-            if (allowlistNow().allows(request)) {
+            if (verdict.approved()) {
+                gateAudit().record(request, "allowlist", true, verdict);
                 return true;
             }
             pendingRequests.put(request.callId(), request);
             CompletableFuture<Boolean> future = new CompletableFuture<>();
             pending.put(request.callId(), future);
-            return future.join();   // parks the agent's virtual thread — cheap
+            boolean allowed = future.join();   // parks the agent's virtual thread — cheap
+            gateAudit().record(request, "user", allowed, verdict);
+            return allowed;
         };
+    }
+
+    /** Card 199, criterion 8: every settings file in this session's chain is
+     *  migrated onto tiers exactly once, recorded entry by entry in
+     *  {@code ~/.spectro/gate-audit/allowlist-migration.jsonl}. The ledger, not
+     *  a marker inside the settings file, decides "once" — the settings schema
+     *  stays untouched and the migration is auditable by the same act. */
+    private void migrateAllowlistOnce() {
+        var tiers = dev.spectroscope.core.permission.ToolTierMap.shipped();
+        var ledger = dev.spectroscope.core.permission.AllowlistMigration.defaultLedger();
+        java.util.List<java.nio.file.Path> files = new java.util.ArrayList<>(java.util.List.of(
+                SpectroConfig.USER_SETTINGS_PATH,
+                SpectroConfig.CONFIG_PATH,
+                projectDir.resolve(SpectroConfig.PROJECT_SETTINGS)));
+        if (workspace != null) {
+            files.add(workspace.resolve(SpectroConfig.PROJECT_SETTINGS));
+        }
+        for (java.nio.file.Path file : files) {
+            dev.spectroscope.core.permission.AllowlistMigration.migrateFileOnce(file, tiers, ledger);
+        }
+    }
+
+    /** Card 199: the gate audit sidecar of this session, or a throwaway one when
+     *  no store exists yet (a decision without a session still gets recorded, it
+     *  simply lands in the sessionless file rather than a named one). */
+    private dev.spectroscope.core.permission.GateAudit gateAudit() {
+        return dev.spectroscope.core.permission.GateAudit.forSession(
+                store != null ? store.id() : "sessionless");
     }
 
     /**
