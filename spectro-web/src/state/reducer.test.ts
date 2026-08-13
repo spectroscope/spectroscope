@@ -581,6 +581,23 @@ describe("reduce — image generation", () => {
     expect(state.images.map((i) => i.callId)).toEqual(["img-1", "img-2"]);
   });
 
+  it("keeps two different images that came out of ONE call (an MCP result may carry several)", () => {
+    // Card 198: one mcp__server__tool result can carry more than one image, so
+    // the callId alone no longer identifies a gallery entry. Same call, different
+    // bytes: both belong in the gallery.
+    const secondImageOfTheSameCall: RunEvent = {
+      ...generated,
+      prompt: "mcp__shots__screenshot",
+      provider: "mcp",
+      model: "shots",
+      blobPath: "images/ef34ab.png",
+      sha256: "ef34ab",
+      ts: 10,
+    };
+    const state = reduceAll(initialState, [generated, secondImageOfTheSameCall]);
+    expect(state.images.map((i) => i.sha256)).toEqual(["ab12cd", "ef34ab"]);
+  });
+
   it("fills the gallery on replay through the same reducer", () => {
     const stored: RunEvent[] = [...happyPath.slice(0, 3), generated, ...happyPath.slice(3)];
     const state = normalizeReplay(reduceAll(initialState, stored));
