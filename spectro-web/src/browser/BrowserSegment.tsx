@@ -127,6 +127,11 @@ export function BrowserSegment(props: { active: boolean }): React.JSX.Element {
           </div>
         )}
       </div>
+      {/* What the fence promises, where the OPERATOR can read it. A review on
+          2026-08-13 found the settings text promising a fence that a redirect
+          walked around; the hole is closed, and what is still outside anybody's
+          reach is said here rather than only in a source comment. */}
+      <p className="browser-fence">{t(lang, "browser.fenceNote")}</p>
     </section>
   );
 }

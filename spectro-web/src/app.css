@@ -150,3 +150,16 @@
 .browser-empty-hint {
   color: var(--text-faint);
 }
+
+/* The fence note. Always on screen, attached or not: what the operator is
+   trusting is not a detail of the empty state. Hairline above, no fill. */
+.browser-fence {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-top: 0;
+  background: var(--surface);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-faint);
+}

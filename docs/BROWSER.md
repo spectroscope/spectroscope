@@ -43,8 +43,8 @@ owner's own transcripts.
 | `browser_eval` | **eval-execute** | runs JavaScript **in the page** and returns the value |
 | `browser_read_page` | read | the accessibility tree with `ref_N` handles |
 | `browser_find` | read | finds elements by description, returns handles |
-| `browser_read_console` | read | what the page logged, plus what the fence refused |
-| `browser_resize` | write | the viewport the page believes it has |
+| `browser_read_console` | read | what the PAGE logged, plus what the fence refused |
+| `browser_resize` | write | emulates a device: metrics, touch and a user agent |
 
 The page persists between calls. Navigate once, then read, eval and click.
 
@@ -105,7 +105,7 @@ The fence runs **twice**, on purpose, and the two halves reach different things:
 | | where | what it judges |
 |---|---|---|
 | entry check | `NetFence`, in the JVM | the address the tool was handed, with DNS resolved and every answer checked |
-| in-hook fence | `browserFence.ts`, in `session.webRequest.onBeforeRequest` | the top-level navigation, **every redirect hop** and **every subresource** |
+| in-hook fence | `browserFence.ts`, in `session.webRequest.onBeforeRequest` | the top-level navigation, **every redirect hop** and **every subresource**, with DNS resolved and every answer checked |
 
 The second is the one `browse_page` never had. Its javadoc says so plainly:
 "policing the browser's own traffic needs a proxy Chrome runs through, and that
@@ -113,11 +113,45 @@ is its own card". This engine needs neither.
 
 Both halves read the same vector table,
 `spectro-core/src/main/resources/browser/fence-vectors.json`, and both are tested
-against it. Where they honestly differ the table carries a **divergence
-register** and both sides assert their own column. The interesting row, measured
-on 2026-08-13: Java's `InetAddress` reads `http://0177.0.0.1/` as the public
+against it: `vectors` for address literals, `names` for host names with the DNS
+answer written down so both sides can be driven by the same answer without a
+network. Where they honestly differ the table carries a **divergence register**
+and both sides assert their own column. The interesting row, measured on
+2026-08-13: Java's `InetAddress` reads `http://0177.0.0.1/` as the public
 `177.0.0.1` and the entry check allows it, while Chromium reads octal loopback
 and dials `127.0.0.1` — only the in-hook fence sees what was actually dialled.
+
+### Two holes a review measured, and what closed them
+
+Both were in the hook — the half that exists to police redirects, where the
+entry check never gets a vote. Both were found by driving the browser, not by
+reading the diff, on 2026-08-13.
+
+1. **An IPv4-mapped IPv6 literal walked through.** The rule table matched on the
+   spelling (`::1`, `fe8`, `fc`, `ff`) and had no `::ffff:` case, so
+   `http://[::ffff:192.168.1.1]/` fell through to allowed. A 302 to it returned
+   `ERR_CONNECTION_TIMED_OUT` with **zero** refusals — the packet had left for
+   the LAN — while the plain literal returned `ERR_BLOCKED_BY_CLIENT`. The hook
+   now parses an IPv6 literal into its sixteen bytes and judges the ADDRESS: a
+   mapped address is the IPv4 address underneath it, in every spelling.
+2. **The loopback opt-in was bypassable by name.** The hook skipped DNS on the
+   argument that a resolver call per subresource is a round trip on the critical
+   path, and this document called that a documented split. It was a hole: with
+   `allowLocalhost` off, a 302 to a public name resolving to `127.0.0.1` loaded,
+   titled itself PWNED, and refused nothing. `onBeforeRequest` may answer
+   asynchronously, so the hook now resolves too, with answers cached per host
+   for 30 seconds.
+
+**What still is not caught, by either half.** A DNS record whose answer changes
+between the fence's lookup and Chromium's own connection — classic rebinding —
+is outside what either can promise, because neither of them is the one that
+dials. That sentence is in the browser segment where the operator reads it, not
+only here.
+
+Deliberately not treated as private: IPv4-compatible (`::192.168.1.1`) and NAT64
+(`64:ff9b::192.168.1.1`) spellings. Both halves read them as ordinary IPv6
+addresses and both allow them, and they agree because neither reaches the
+embedded v4 address without translation infrastructure in the path.
 
 ### Turning localhost on, which is the primary use
 
@@ -151,6 +185,47 @@ which face carries a browser. A refusal carries the host and port and nothing
 else — no path, no query, no userinfo, because a refusal reaches the model and
 the transcript.
 
+## Resizing, which means emulating a device
+
+`browser_resize` overrides what the **page** believes, in the renderer, where a
+responsive layout reads it. It does not resize the pane: the pane's rectangle
+belongs to the app's layout, and the first version fought it and lost — it called
+`setBounds`, which `layout()` overwrote from `paneBounds()` on the next
+`ensureVisible()`, and navigate, eval, screenshot and input all call
+`ensureVisible()` first.
+
+Three overrides, all in one debugger session:
+
+| | how |
+|---|---|
+| device metrics | `Emulation.setDeviceMetricsOverride` |
+| touch | `Emulation.setTouchEmulationEnabled` + `setEmitTouchEventsForMouse`, five points under 768 wide |
+| user agent | `setUserAgent` plus `Emulation.setUserAgentOverride`, in place from the **next** load |
+
+The order is the mechanism, and it cost a measurement: **attaching the debugger
+clears what `webContents.enableDeviceEmulation` set.** Metrics first then attach
+left `screen.width` at 3440 — the real monitor. Attach first, then metrics
+through the same session, and the same page reported 375. So the debugger goes
+on first; `enableDeviceEmulation` is the fallback for a pane whose debugger will
+not attach, and then the answer says touch is off rather than claiming a phone.
+
+**The answer is the measurement, not the argument.** Every number in the sentence
+comes back from the page:
+
+```
+The viewport of http://localhost:5173/ is now 375x812, touch emulation is on
+with 5 points, and a mobile user agent applies from the next load. The page
+itself lays out at 981x2123: it declares no <meta name="viewport">, so it gets
+the legacy 980-pixel layout a real phone would give it too. Reload the page so
+load-time device checks run again.
+```
+
+That second sentence is the useful one and it is why the device size and the
+layout viewport are reported separately. A tool that answered with its own
+argument could never be wrong, which is exactly what the first version was: it
+reported "375x812 (mobile emulation on)" while the page measured 800x740, zero
+touch points and a Macintosh user agent.
+
 ## Adblock
 
 **Outcome: it works.** Filter-list blocking rides the same
@@ -178,6 +253,19 @@ Point `SPECTRO_BROWSER_FILTERS` at a file of ABP-syntax rules to use your own
 list. Set `SPECTRO_BROWSER_ADBLOCK=off` to turn it off — useful when the page
 under test is the ad.
 
+## What browser_read_console leaves out
+
+Electron writes its own security warning into the console of every page in a
+development build — ten lines, twice after a redirect. The tool whose job is "the
+first place a broken local build says what is wrong" was shipping that on top of
+the page's own output, so the shell's warning is filtered out. It is **counted**,
+not silently dropped:
+
+```
+(2 Electron security warning(s) from the shell itself left out — they are not
+the page's)
+```
+
 ## How it is wired
 
 ```
@@ -202,6 +290,15 @@ alternative is a preload script plus `ipcMain`, and `navigationGuard.ts` names
 "this shell has no preload script at all" as a security property rather than an
 omission. A main-process client keeps it.
 
+**What `/ws/browser` trusts, said out loud.** The channel authenticates nothing
+beyond being on loopback with an accepted `Origin`, and the newest connection
+wins: any process on this machine can become "the shell", take over the pane and
+answer the verbs — with fabricated screenshots and eval verdicts included. That
+is the same trust boundary `/ws` already has, and `/ws` carries `run_command`, so
+it is in policy rather than a defect. It was nowhere in writing until a review
+asked; it is here now, and it is the reason a per-session browser (card 201's
+next step) should not widen it.
+
 For the same reason the browser segment's rectangle travels
 `POST /api/browser/viewport` instead of `ipcRenderer`: the React layout measures
 its own placeholder and the server forwards the rectangle down the channel the
@@ -219,7 +316,8 @@ cd spectro-desktop && npm test
 # the engine drift guard: the four eval semantics, the redirect fence, the
 # adblock and capturePage, against the Electron this build ships
 cd spectro-desktop && npm run guard
-GUARD_BREAK=fence npm run guard     # and adblock | settle | pagectx | await
+GUARD_BREAK=fence npm run guard     # and resolve | adblock | settle | pagectx |
+                                    #     await | emulate
 
 # the whole chain live: a real pane, the real channel, the real tools
 cd spectro-desktop && npx tsc
@@ -237,6 +335,11 @@ which is the test runner card 200 section 7 said this card owed.
   the scrubber — is card 204. The brand rule still binds the line: the browser
   does not ship in a release without a replay path.
 - **Launch configurations** are card 202.
-- **Tabs.** `tab_id` is on every schema and reaches the shell; there is one pane
-  behind it today. Dedicated tab verbs are on card 201's own "later" list along
-  with `form_input`, `get_text` and `read_network`.
+- **Tabs.** `tab_id` is on every schema and there is exactly one pane behind it
+  today, so **a tab id is refused rather than silently ignored**. It was
+  advertised, transported and dropped without a word until a review measured it;
+  the parameter stays because its meaning is now the per-session browser the
+  owner asked for on 2026-08-13 — one browser per session, reachable as a session
+  tab and from the rail, alive until the session closes — and that work needs
+  exactly this argument. Dedicated tab verbs stay on card 201's "later" list
+  along with `form_input`, `get_text` and `read_network`.

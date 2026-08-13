@@ -68,6 +68,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Öffne die Desktop-App, dann fährt der Agent die Seite dort — und für localhost muss allowLocalhost in den Einstellungen an sein.",
     en: "Open the desktop app and the agent drives the page there — and reaching localhost needs allowLocalhost turned on in the settings.",
   },
+  "browser.fenceNote": {
+    de: "Der Netz-Zaun ist an. Private Adressen, das Tailnet und file:// bleiben bei jedem Redirect-Hop abgelehnt, und ein Hostname wird aufgelöst, bevor die Seite ihn erreicht; für localhost braucht es allowLocalhost. Was kein Zaun fängt: eine DNS-Antwort, die sich zwischen Prüfung und Verbindung ändert.",
+    en: "The net fence is on. Private addresses, the tailnet and file:// stay refused on every redirect hop, and a host name is resolved before the page reaches it; localhost needs allowLocalhost. What no fence catches: a DNS answer that changes between the check and the connection.",
+  },
   "browser.railNote": {
     de: "Eine sichtbare Browser-Fläche, die der Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Primär für den lokalen Test-Loop.",
     en: "One visible browser surface the agent drives: navigate, click, evaluate JavaScript in the page, screenshot. Primarily for the local verify loop.",
