@@ -101,7 +101,12 @@ async function panel(open) {
  *  parked on a decision is one of the better frames this product has. */
 async function say(text, { shotAtGate = null } = {}) {
   await page.locator(".composer-inner textarea").fill(text);
-  await page.locator("button.primary.send").click();
+  // The send button lost its text and its classes on 2026-08-09: it is an icon
+  // seat inside the rebuilt composer now. The aria-label is the stable handle.
+  // Wait for the seat to BE the send seat: while a run is in flight the same
+  // slot is the stop button, so a turn fired too early finds nothing at all.
+  await page.locator('button[aria-label="Send"]').waitFor({ state: "visible", timeout: 240_000 });
+  await page.locator('button[aria-label="Send"]').click();
   const deadline = Date.now() + 240_000;
   let sawGate = false;
   while (Date.now() < deadline) {
@@ -115,7 +120,11 @@ async function say(text, { shotAtGate = null } = {}) {
       await page.waitForTimeout(500);
     }
     const busy = await page.evaluate(() =>
-      !!document.querySelector(".composer-stop, .caret.pulse, .thinking--active"));
+      // `.composer-stop` stopped existing on 2026-08-09 — the stop control is
+      // the send seat wearing another modifier now. Without this the busy probe
+      // was false the instant it was asked, so every turn was fired into a run
+      // that had not finished.
+      !!document.querySelector(".composer-seat--stop, .composer-stop, .caret.pulse, .thinking--active"));
     if (!busy) break;
     await page.waitForTimeout(700);
   }

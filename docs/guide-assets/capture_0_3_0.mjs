@@ -63,7 +63,18 @@ async function drainLab(max = 500) {
   }
 }
 
-const BASE = process.env.BASE_URL || "http://localhost:8097";
+const BASE = process.env.BASE_URL || "http://localhost:8090";  // the curated-home server
+/** Collapse the left rail. It lists sessions, and a capture run leaves its own
+ * live ones behind, so an open rail turns a product plate into a picture of
+ * whatever was run last. Set the desired state; never toggle blindly. */
+async function hideSidebar() {
+  await page.evaluate(() => {
+    const b = document.querySelector('button[aria-label*="sidebar" i]');
+    if (b && /hide/i.test(b.getAttribute("aria-label") || "")) b.click();
+  });
+  await page.waitForTimeout(350);
+}
+
 const SCENARIO = "Bug hunt";   // "Bug hunt · 3 lenses as subagents" — rich enough that expanded spreads
 await page.goto(BASE, { waitUntil: "networkidle" });
 await page.waitForTimeout(900);
@@ -72,11 +83,21 @@ await page.waitForTimeout(900);
 try {
   await jsClick(".sidebar-scenarios");
   await page.waitForSelector(".scn-modal");
+  // The picker grew tabs and stopped landing on the Lab; "Bug hunt" is a
+  // chats/agents scenario, so name that tab and then walk to the lab yourself.
+  await page.evaluate(() => {
+    const t = [...document.querySelectorAll(".scn-tab")].find(x => /chats/i.test(x.textContent));
+    if (t) t.click();
+  });
+  await page.waitForTimeout(350);
   await jsClickByText(".scn-row", SCENARIO);
-  await page.waitForSelector(".lab-transport");
+  await page.waitForTimeout(1200);
+  await jsClickByText('.tab-nav [role="tab"]', "lab");
+  await page.waitForSelector(STEP);
   for (let i = 0; i < 24; i++) { await jsClick(STEP); await page.waitForTimeout(90); }
   // flip the view pill to expanded (button 1 of the compact|expanded segment)
   await jsClick(".lab-view-seg .lab-seg-btn", 1);
+  await hideSidebar();
   await page.waitForTimeout(700);
   await shoot("31-lab-expanded");
 } catch (e) { console.log("SKIP 31-lab-expanded —", e.message.split("\n")[0]); }
@@ -85,6 +106,7 @@ try {
 try {
   await drainLab();
   await jsClickByText('.tab-nav [role="tab"]', "text");
+  await hideSidebar();
   await page.waitForTimeout(400);
   // the explain button in the text-tab toolbar (a .trace-lens whose title asks
   // a model to read the run); click it and wait for the streamed reading.
@@ -127,6 +149,7 @@ try {
       .find(x => /observ/i.test(x.textContent || ""));
     if (label) label.scrollIntoView({ block: "center" });
   });
+  await hideSidebar();
   await page.waitForTimeout(500);
   await shoot("32-settings-observability");
 } catch (e) { console.log("SKIP 32-settings-observability —", e.message.split("\n")[0]); }

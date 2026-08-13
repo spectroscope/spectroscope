@@ -222,12 +222,27 @@ await step(async () => {
 
 // ---------- archive bar: resume + the two-step delete (ARM ONLY, never 2nd click) ----------
 await step(async () => {
-  await jsClickByText(".session-row", "build_plan");
-  await page.waitForTimeout(1800);
+  // "build_plan" is a SCENARIO, not a stored session, and a scenario has no
+  // archive bar — so this used to shoot a frame with no bar in it and file it
+  // under 15-archive-bar. Open a real session from the curated home instead,
+  // and refuse to shoot until the bar is actually on screen.
+  await page.evaluate(() => {
+    const seg = [...document.querySelectorAll("button")]
+      .find(x => /^sessions$/i.test(x.textContent.trim()));
+    if (seg) seg.click();
+  });
+  await page.waitForTimeout(500);
+  await jsClickByText(".session-row", "auth refactor");
+  await page.waitForSelector("button.archive-delete", { timeout: 10000 });
+  await page.waitForTimeout(1200);
   await shoot("15-archive-bar");
   await page.evaluate(() => {
-    const del = [...document.querySelectorAll("button")].find(b => /really delete|delete session/i.test(b.textContent) || /delete/i.test(b.title || ""));
-    if (!del) throw new Error("no delete button");
+    // The archive bar's button reads just "Delete" — the old finder wanted
+    // "really delete" or "delete session", which is the ARMED label, not the
+    // resting one. Match the class instead of a word that only exists after
+    // the click we are about to make.
+    const del = document.querySelector("button.archive-delete");
+    if (!del) throw new Error("no delete button (button.archive-delete)");
     del.click(); // ARMS only
   });
   await page.waitForTimeout(400);
@@ -238,8 +253,8 @@ await step(async () => {
 // ---------- resume: the session_resume trace marker ----------
 await step(async () => {
   await page.evaluate(() => {
-    const btn = [...document.querySelectorAll("button")].find(b => /resume session/i.test(b.textContent));
-    if (!btn) throw new Error("no resume button");
+    const btn = document.querySelector("button.resume-btn");
+    if (!btn) throw new Error("no resume button (button.resume-btn)");
     btn.click();
   });
   await page.waitForTimeout(2500);
@@ -261,8 +276,13 @@ await step(async () => {
   await jsClick(".sidebar-scenarios");
   await page.waitForSelector(".scn-modal");
   await pickScenario("fleet", "Review fan-out");
-  await page.waitForSelector(LAB_STEP);
-  await drainLab();
+  // A fleet scenario replaces the six app tabs with the fleet bar
+  // (bus · spectrum · trace · one tab per node), so there is no Lab here and
+  // nothing to drain: the replay is already complete on entry — measured at 46
+  // trace rows the moment the view settles. Waiting for the Lab transport is
+  // what made this block time out for three weeks and keep four July plates.
+  await page.waitForSelector(".trace-row, .fleet-bar, [class*='fleetbar']", { timeout: 15000 });
+  await page.waitForTimeout(900);
   // these two are the guide's big detail plates — collapse the sidebar
   await page.evaluate(() => document.querySelector('button[aria-label*="sidebar" i]')?.click());
   await page.waitForTimeout(300);
@@ -286,12 +306,11 @@ await step(async () => {
   });
   await page.waitForTimeout(600);
   await shoot("21-trace-lens-brand");
-  // restore the normal stage: sidebar back, chat tab, a fresh live session
-  await page.evaluate(() => document.querySelector('button[aria-label*="sidebar" i]')?.click());
-  await page.waitForTimeout(300);
-  await jsClickByText('.tab-nav [role="tab"]', "chat");
-  await jsClick(".new-chat");
-  await page.waitForTimeout(600);
+  // Restore the normal stage. A fleet has no chat tab — its bar reads
+  // bus · spectrum · trace · one per node — so the old cleanup threw here and
+  // left every later block standing in the fleet.
+  await page.goto(BASE, { waitUntil: "networkidle" });
+  await page.waitForTimeout(1100);
 }, "review fan-out plates");
 
 // ---------- provider picker ----------
