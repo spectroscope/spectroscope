@@ -13,6 +13,7 @@ import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 import { searxngOffer } from "../components/webSearchSetup";
+import { hookReadingKey, timeoutNoteKey } from "../components/hooksSetup";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -207,6 +208,90 @@ describe("i18n dict", () => {
       "set.searchNoFallThrough",
     ]) {
       expect(dict[k], k).toBeDefined();
+    }
+    // Hooks (card 195), on the same derived-key rule. Both clause families are
+    // reached only through hooksSetup, never spelled at a call site, so a phase
+    // or a timeout case whose sentence nobody wrote would print its own key name
+    // beside a command this product executes.
+    for (const event of ["pre_tool_use", "post_tool_use"]) {
+      for (const timeoutSeconds of [null, 3]) {
+        const entry = {
+          event,
+          matcher: "*",
+          rawMatcher: null,
+          command: "x.sh",
+          redactedBy: "",
+          timeoutSeconds,
+          effectiveTimeoutSeconds: 10,
+        };
+        expect(dict[hookReadingKey(entry)], hookReadingKey(entry)).toBeDefined();
+        expect(dict[timeoutNoteKey(entry)], timeoutNoteKey(entry)).toBeDefined();
+      }
+    }
+    for (const k of [
+      "set.secHooks",
+      "set.hkHint",
+      "set.hkTierNote",
+      "set.hkScopeUser",
+      "set.hkScopeOther",
+      "set.hkEmpty",
+      "set.hkBeforeGate",
+      "set.hkRedacted",
+      "set.hkReadOnlyRedacted",
+      "set.hkEvent",
+      "set.hkMatcher",
+      "set.hkCommand",
+      "set.hkTimeout",
+      "set.hkPreview",
+      "set.hkAdd",
+      "set.hkRemove",
+      "set.hkApplies",
+      "set.hkFailOpen",
+      "set.hkLoadFailed",
+    ]) {
+      expect(dict[k], k).toBeDefined();
+    }
+  });
+});
+
+// Card 195. The hooks block says two things a settings page would normally not
+// bother with, and both were measured out of the engine before they were
+// written. Leaving either out does not make the page vaguer, it makes it wrong:
+// the card's own AC 2 asked for "reaches the next run without a restart", and
+// the server resolves a session's hooks ONCE, in buildAgentOnce.
+describe("the hooks block does not promise more than the engine does", () => {
+  it("says a change lands on the next session, not on the running one", () => {
+    expect(dict["set.hkApplies"].en).toMatch(/next session/);
+    expect(dict["set.hkApplies"].en).toMatch(/already open/);
+    expect(dict["set.hkApplies"].de).toMatch(/nächsten Sitzung/);
+    expect(dict["set.hkApplies"].de).toMatch(/offene Sitzung/);
+  });
+
+  it("says a hook that timed out let the call through, in both languages", () => {
+    // The one an operator would otherwise learn the hard way. HookRunner fails
+    // open on purpose, so a page implying that a configured guard always answers
+    // would be describing a fence with a gap in it.
+    expect(dict["set.hkFailOpen"].en).toMatch(/proceeds anyway/);
+    expect(dict["set.hkFailOpen"].en).toMatch(/timed-out/);
+    expect(dict["set.hkFailOpen"].de).toMatch(/trotzdem/);
+    expect(dict["set.hkFailOpen"].de).toMatch(/timed-out/);
+  });
+
+  it("names the permission gate the pre phase runs ahead of, in both languages", () => {
+    for (const lang of ["de", "en"] as const) {
+      expect(dict["set.hkTierNote"][lang]).toMatch(/pre_tool_use/);
+    }
+    expect(dict["set.hkTierNote"].en).toMatch(/permission gate/);
+    expect(dict["set.hkTierNote"].de).toMatch(/Berechtigungs-Dialog/);
+  });
+
+  it("keeps the placeholders its two counted sentences interpolate", () => {
+    for (const lang of ["de", "en"] as const) {
+      expect(dict["set.hkTimeoutOwn"][lang], `${lang} {sec}`).toContain("{sec}");
+      expect(dict["set.hkTimeoutInherited"][lang], `${lang} {sec}`).toContain("{sec}");
+      expect(dict["set.hkTimeout"][lang], `${lang} {sec}`).toContain("{sec}");
+      expect(dict["set.hkRedacted"][lang], `${lang} {rule}`).toContain("{rule}");
+      expect(dict["set.hkScopeOther"][lang], `${lang} {scope}`).toContain("{scope}");
     }
   });
 });

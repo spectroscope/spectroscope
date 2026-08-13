@@ -42,6 +42,10 @@ export const SETTINGS_SECTIONS = [
   // surfaces a reader has to be able to LINK somebody at.
   "allowlist",
   "netfence",
+  // Card 195: the shell hooks. The only surface in this list that configures
+  // code THIS product executes, which is exactly why somebody has to be able to
+  // send somebody else straight at it.
+  "hooks",
   "workspace",
   "logging",
   "machine",

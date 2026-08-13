@@ -34,6 +34,7 @@ import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { AllowlistSettings } from "./AllowlistSettings";
+import { HooksSettings } from "./HooksSettings";
 import type { Leveling } from "../state/useLeveling";
 import {
   fetchSettings,
@@ -878,6 +879,13 @@ export function SettingsPanel({
                 lang={lang}
                 onReset={() => saveUser({ allowLocalhost: null })}
               />
+
+              {/* ---- The shell hooks (card 195). The engine has run these for
+                  months with no screen anywhere, so the one feature that can
+                  stop an agent was configured in a file nobody was pointed at.
+                  The block reads GET /api/settings/hooks and renders it; the
+                  runner's own defaults decide, never this page. ---- */}
+              <HooksSettings anchorId={sectionAnchorId("hooks")} onSave={saveUser} />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
               <div className="settings-label" id={sectionAnchorId("workspace")}>

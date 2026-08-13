@@ -152,6 +152,38 @@ export type RunEvent =
        *  carries. Absent for a call that took no picture. */
       sha256?: string;
       ts: number;
+    } // additive
+  // Card 195: a configured shell hook did something worth a line. Two verdicts
+  // ride here and only two — a hook that agreed emits nothing, because one line
+  // per passing hook per tool call would bury the two that matter.
+  //
+  // It exists because neither outcome was visible before it. A block reached the
+  // world only as the `ERROR: blocked by pre_tool_use hook: …` string inside a
+  // tool_result, which carries a reason and names no hook; a TIMEOUT reached it
+  // as nothing at all, because the runner fails open and the walk just carried
+  // on. So the case where the difference matters most — a guard that never
+  // answered — read exactly like a guard that agreed.
+  | {
+      type: "hook_decision";
+      agentId: string;
+      /** The tool invocation this applies to: what puts the row beside the
+       *  tool_call it stopped and the ERROR result the model got instead. */
+      callId: string;
+      toolName: string;
+      /** "pre_tool_use" or "post_tool_use". */
+      event: string;
+      /** The tool-name glob the hook matched with, defaulted to "*". */
+      matcher: string;
+      /** The configured shell string. Redacted WHOLE when a credential shape
+       *  fires in it — it is operator config that lands in the session file. */
+      command: string;
+      timeoutSeconds: number;
+      /** "blocked" or "timed-out". */
+      verdict: string;
+      /** The hook's own words on a block. Absent on a timeout: a killed process
+       *  stated nothing, and an empty string would read as one that answered. */
+      reason?: string;
+      ts: number;
     }; // additive
 
 // Client -> server frames (socket protocol, design/BUILD-PLAN.md). The server

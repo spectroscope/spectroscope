@@ -116,6 +116,15 @@ describe("the client category", () => {
     expect(CATEGORIES).toContain("client");
   });
 
+  // Card 195. A pre_tool_use hook does not sit beside the gate, it REPLACES it:
+  // a block short-circuits before any permission_request is emitted, so the call
+  // is refused and the permission chip has nothing at all to show for it. A
+  // reader who presses `permission` to see what was refused would be shown every
+  // refusal except the ones nothing was even asked about.
+  it("files a hook decision with the gate rather than in other", () => {
+    expect(categoryOf("hook_decision")).toBe("permission");
+  });
+
   it("drops exactly those four rows when the chip is off", () => {
     const rows = [
       "run_start",

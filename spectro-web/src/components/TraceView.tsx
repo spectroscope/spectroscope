@@ -168,9 +168,16 @@ export function categoryOf(type: string): Category {
     case "tool_call":
     case "tool_result":
       return "tool";
+    // hook_decision joins the gate's own frames (card 195), and not by analogy:
+    // a pre_tool_use block REPLACES the gate — the call short-circuits before
+    // any permission_request is emitted, so the refusal exists and the gate's
+    // two frames do not. A reader who presses `permission` to see what was
+    // refused would otherwise be shown every refusal except the ones nothing was
+    // even asked about.
     case "permission_request":
     case "permission_decision":
     case "permission_response":
+    case "hook_decision":
       return "permission";
     case "usage":
       return "usage";
@@ -801,6 +808,11 @@ function chainLabel(e: TraceEntry): string {
       return "gate asked";
     case "permission_decision":
       return p["allowed"] === true ? "gate allowed" : "gate denied";
+    // Named by the verdict, because that is the whole content of the row: a
+    // chain chip reading "hook_decision" would say a hook was consulted and
+    // leave out the only thing a reader is standing here for.
+    case "hook_decision":
+      return `hook ${String(p["verdict"] ?? "")}`;
     case "agent_spawn":
       return `spawn ${e.agentId ?? ""}`;
     default:

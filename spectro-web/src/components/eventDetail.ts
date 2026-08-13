@@ -318,6 +318,16 @@ export function describeEvent(
       prose("message", false);
       break;
 
+    // Card 195: the hook's own words, in the reader's own region rather than
+    // squeezed into the fall-through's JSON. A block's reason is the whole point
+    // of the row — it is what the operator's script said about why an agent was
+    // stopped, and it can be a paragraph. Every other field (which hook, which
+    // phase, which verdict) stays in the fall-through, where it is already
+    // labelled by its wire name.
+    case "hook_decision":
+      prose("reason", false);
+      break;
+
     case "system_context":
       prose("systemPrompt", true);
       break;

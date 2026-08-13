@@ -105,3 +105,16 @@
 .al-remove {
   margin-left: auto;
 }
+
+/* ---------- the shell hooks (card 195) ----------
+   The list itself reuses .al-list/.al-row/.al-raw wholesale: a hook entry and
+   an allowlist entry are the same object on screen — one line of a settings
+   file, verbatim in mono, beside what it means — and a second set of rules
+   that only had to look identical is a second set of rules that will not stay
+   identical. What the hooks block needs of its own is exactly one thing: the
+   command field is the field an operator reads back character by character
+   before trusting it, so it is set in mono like the rows it will join. Colour
+   comes only from the shared tokens. */
+.hk-command {
+  font-family: var(--font-mono);
+}
