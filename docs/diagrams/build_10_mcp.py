@@ -133,7 +133,7 @@ def build():
         "storage: ~/.spectro/notes,",
         "one file per note · 6 seed notes",
         "",
-        "build: ./spectro mcp-notes",
+        "build: ./spectro-app mcp-notes",
         "(-> build/install/.../bin/spectro-mcp-notes)",
     ]
     for i, ln in enumerate(ns):

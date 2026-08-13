@@ -216,7 +216,7 @@ download is:
 sha256sum -c SHA256SUMS.linux --ignore-missing
 ```
 
-**From source.** Clone this repository and use the `./spectro` launcher below.
+**From source.** Clone this repository and use the `./spectro-app` launcher below.
 
 **Everywhere else — arm64 Linux, Windows, anything with a JVM.** There is no
 desktop kit, and no macOS route will help. Take `spectro-0.8.0.zip` (the CLI) or
@@ -230,21 +230,36 @@ way. The bundled example MCP server ships separately as
 
 ## run it
 
-The desktop kits open the cockpit themselves. From a clone, the `./spectro`
+The desktop kits open the cockpit themselves. From a clone, the `./spectro-app`
 launcher resolves a JDK 21+ for you and loads the gitignored `./.env`:
 
 ```bash
-./spectro web start   # web UI → http://127.0.0.1:8080, in the background
-./spectro web         # what the web group can do, and whether it is running
-./spectro repl        # terminal REPL
-./spectro run -p "…"  # headless run
-./spectro desktop     # Electron desktop app
-./spectro doctor      # environment check
-./spectro tour        # guided feature tour
+./spectro-app web start   # web UI → http://127.0.0.1:8080, in the background
+./spectro-app web         # what the web group can do, and whether it is running
+./spectro-app repl        # terminal REPL
+./spectro-app run -p "…"  # headless run
+./spectro-app desktop     # Electron desktop app
+./spectro-app doctor      # environment check
+./spectro-app tour        # guided feature tour
 ```
 
 It also knows `node`, `cron`, `sessions`, `resume <id>`, `level` and
-`mcp-notes`. Raw Gradle works too (JDK 21+ as `JAVA_HOME`):
+`mcp-notes`.
+
+**`./spectro-app` is this repository's developer wrapper; `spectro` is the
+shipped CLI.** The two names differ on purpose. What you install from a release
+is called `spectro` and always will be — that is the product's command, in every
+doc page and every kit. In a clone the wrapper stands beside two siblings, and
+naming it after the job rather than after the product is what lets the three
+read as a set:
+
+| in the root | what it does |
+|---|---|
+| [`./spectro-app`](spectro-app) | the developer's way into the product: `repl`, `run`, `web`, `desktop`, `doctor`, `tour` |
+| [`./spectro-serve`](spectro-serve) | the server's lifecycle: `start`, `stop`, `restart`, `status`, `logs`, `doctor` |
+| [`./spectro-env`](spectro-env) | the docker stacks in [`ci/`](ci/): `up`, `down`, `status`, `logs`, `open`, `doctor` |
+
+Raw Gradle works too (JDK 21+ as `JAVA_HOME`):
 
 ```bash
 ./gradlew build                                  # everything + all tests

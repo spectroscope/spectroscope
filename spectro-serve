@@ -7,7 +7,7 @@
 # No argument -> overview (banner + live status + URL box).
 #
 # --env-file loads KEY=value lines into the environment before boot (the same
-# contract ./spectro uses); ./.env is auto-loaded when present. Every exported
+# contract ./spectro-app uses); ./.env is auto-loaded when present. Every exported
 # var (SPECTRO_PROVIDER, ANTHROPIC_API_KEY, SPECTRO_HUB_PORT, ...) passes straight
 # through to the JVM, so this is also how you hand the server its provider + keys.
 set -u
@@ -73,7 +73,7 @@ chk_java()    { java -version 2>&1 | grep -Eq 'version .(2[1-9]|[3-9][0-9])'; }
 chk_jar()     { [ -f "$(server_jar)" ] || command -v ./gradlew >/dev/null 2>&1; }
 chk_backend() { [ -n "${SPECTRO_PROVIDER:-}" ] || [ -f .env ] || [ -f "$HOME/.spectro/settings.json" ]; }
 
-# KEY=value loader — same contract as ./spectro, rule for rule: skip #/blank,
+# KEY=value loader — same contract as ./spectro-app, rule for rule: skip #/blank,
 # require =, strip one layer of surrounding quotes, and on an unquoted value drop
 # an inline comment. The two rules below are the ones that used to differ, and a
 # .env is read by both scripts, so a divergence here corrupts values depending on
@@ -233,7 +233,7 @@ cmd_help() {
 }
 
 overview() { cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs doctor open  |  '$0 help' for details${C_0}";
-  say "${C_DIM}  './spectro web' is the front door for these; this script stays the engine.${C_0}"; }
+  say "${C_DIM}  './spectro-app web' is the front door for these; this script stays the engine.${C_0}"; }
 
 ARGS=(); while [ $# -gt 0 ]; do case "$1" in
   --port) [ $# -ge 2 ] && [ -n "${2:-}" ] || die "usage: --port <n>"; FLAG_PORT="$2"; shift 2;;

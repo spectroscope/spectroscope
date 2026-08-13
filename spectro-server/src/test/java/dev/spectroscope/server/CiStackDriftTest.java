@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * The local build laboratory in {@code ci/} says the same things in four places:
- * the {@code STACKS} array in {@code ci/spectro-ci}, the compose file of each
+ * the {@code STACKS} array in {@code ./spectro-env}, the compose file of each
  * stack, the port list {@code doctor} pre-flights, and the table in
  * {@code ci/README.md}. A stack added to one of them and missed in another
  * fails in a way nobody sees until they try it — {@code doctor} reports every
@@ -42,7 +42,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CiStackDriftTest {
 
     static final Path CI = LangfuseComposeDriftTest.repoRoot().resolve("ci");
-    static final Path SWITCH = CI.resolve("spectro-ci");
+    /** The switch sits in the root and reads its stacks out of {@code ci/}; card 213 moved it there. */
+    static final Path SWITCH = LangfuseComposeDriftTest.repoRoot().resolve("spectro-env");
     static final Path README = CI.resolve("README.md");
 
     /** One row of the {@code STACKS} array: name, folder, host port, url path, description. */
@@ -271,9 +272,9 @@ class CiStackDriftTest {
 
     @Test
     void theScriptsParse() throws Exception {
-        for (String name : List.of("spectro-ci", "search/generate-settings.sh")) {
-            Result parsed = run(CI, List.of("bash", "-n", CI.resolve(name).toString()));
-            assertEquals(0, parsed.exit(), "bash -n rejected ci/" + name + ":\n" + parsed.output());
+        for (Path script : List.of(SWITCH, CI.resolve("search/generate-settings.sh"))) {
+            Result parsed = run(CI, List.of("bash", "-n", script.toString()));
+            assertEquals(0, parsed.exit(), "bash -n rejected " + script + ":\n" + parsed.output());
         }
     }
 

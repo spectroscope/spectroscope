@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
-# ./spectro — task launcher for this solution: the spectro tasks, not the gradle task zoo.
+# ./spectro-app — task launcher for this solution: the spectro tasks, not the gradle task zoo.
 # No arguments (or -h/--help) prints the table; any other word dispatches to ./gradlew.
+#
+# The name differs from the shipped CLI's on purpose. `spectro` is what a user
+# installs and runs; this is the wrapper a developer runs in a clone, and it
+# sits beside spectro-serve and spectro-env so the three read as a set. README.md
+# says so where a reader meets it.
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
@@ -23,25 +28,25 @@ row() {
 show_help() {
     printf '%s\n\n' "${CORAL}◆${RESET} ${BOLD}spectroscope${RESET}"
     row 'repl' 'interactive agent REPL — /voice push-to-talk, --speak reads aloud' './gradlew -q --console=plain :spectro-cli:run --args="..."'
-    row 'run' 'headless run: ./spectro run -p "task" [--json] [--image path] [--speak]' './gradlew -q --console=plain :spectro-cli:run --args="run -p ..."'
-    row 'node' 'fleet node: ./spectro node -p "task" --hub host:port --context <fleet>' './gradlew -q --console=plain :spectro-cli:run --args="node -p ..."'
+    row 'run' 'headless run: ./spectro-app run -p "task" [--json] [--image path] [--speak]' './gradlew -q --console=plain :spectro-cli:run --args="run -p ..."'
+    row 'node' 'fleet node: ./spectro-app node -p "task" --hub host:port --context <fleet>' './gradlew -q --console=plain :spectro-cli:run --args="node -p ..."'
     row 'cron' 'scheduler: list / status / run <id> (~/.spectro/jobs.json)' './gradlew -q --console=plain :spectro-cli:run --args="cron list"'
     row 'sessions' 'list the stored JSONL sessions (~/.spectro/sessions)' './gradlew -q --console=plain :spectro-cli:run --args="sessions"'
-    row 'resume' 'continue a session by id: ./spectro resume <id>' './gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"'
+    row 'resume' 'continue a session by id: ./spectro-app resume <id>' './gradlew -q --console=plain :spectro-cli:run --args="--resume <id>"'
     row 'doctor' 'check Java, config layers, provider reachability' './gradlew -q --console=plain :spectro-cli:run --args="doctor"'
     row 'level' 'the tutorial with its ticks and receipts (no server needed)' './gradlew -q --console=plain :spectro-cli:run --args="level"'
     row 'tour' 'guided feature tour — menu, tips, settings' './gradlew -q --console=plain tour'
-    row 'web' 'web face: a command group — start, dev, stop, status, logs (./spectro web)' './spectro web  ·  ./spectro web start --port 8090'
+    row 'web' 'web face: a command group — start, dev, stop, status, logs (./spectro-app web)' './spectro-app web  ·  ./spectro-app web start --port 8090'
     row 'desktop' 'desktop face — Electron shell + managed Spring Boot process' './gradlew :spectro-server:bootJar && (cd spectro-desktop && npm start)'
     row 'mcp-notes' 'build the example MCP server (stdio) into a runnable dist' './gradlew -q --console=plain :spectro-mcp-notes:installDist'
-    printf '\n%s\n' "${DIM}Extra arguments pass through: ./spectro repl --verbose · ./spectro run -p 'Say OK.' --json${RESET}"
+    printf '\n%s\n' "${DIM}Extra arguments pass through: ./spectro-app repl --verbose · ./spectro-app run -p 'Say OK.' --json${RESET}"
     printf '%s\n' "${DIM}Vision needs a vision model (attach via --image or the web composer); voice: bash scripts/setup-stt.sh (in) and scripts/setup-tts.sh (out).${RESET}"
-    printf '%s\n' "${DIM}MCP: configure external servers in .spectro/settings.json ('mcpServers'); ./spectro mcp-notes builds the example; in the REPL, /mcp lists them.${RESET}"
+    printf '%s\n' "${DIM}MCP: configure external servers in .spectro/settings.json ('mcpServers'); ./spectro-app mcp-notes builds the example; in the REPL, /mcp lists them.${RESET}"
 }
 
 
 # ── the web group ──────────────────────────────────────────────────────────
-# `./spectro web` used to start a server. It now shows what it can do, because
+# `./spectro-app web` used to start a server. It now shows what it can do, because
 # a bare face invocation that fires a process is a face you cannot ask
 # questions of. Every verb except `dev` execs ./spectro-serve, which owns the
 # pid file, the port file and the log; there is exactly one implementation of
@@ -70,18 +75,18 @@ web_state() {
 }
 
 show_web_help() {
-    printf '%s\n\n' "${CORAL}◆${RESET} ${BOLD}spectro web${RESET}"
+    printf '%s\n\n' "${CORAL}◆${RESET} ${BOLD}spectro-app web${RESET}"
     web_state
     printf '\n'
     web_row 'start'   'background: the packaged jar, health-waited, browser opened' '--port N · --env-file F · --no-open'
-    web_row 'dev'     'foreground: gradle bootRun from source, ctrl-c stops it' '--port N · this is what a bare ./spectro web used to do'
+    web_row 'dev'     'foreground: gradle bootRun from source, ctrl-c stops it' '--port N · this is what a bare ./spectro-app web used to do'
     web_row 'stop'    'stop it, and free the port if something still holds it' ''
     web_row 'restart' 'stop, then start again on the same port' '--port N'
     web_row 'status'  'the block above, on demand' ''
     web_row 'logs'    'the tail of logs/spectro-server.log' '-f follows'
     web_row 'open'    'open the url in the browser' ''
-    web_row 'doctor'  'what the SERVER needs to boot: java, the jar, a backend' './spectro doctor checks the agent instead'
-    printf '\n%s\n' "${DIM}A bare './spectro web' no longer starts anything: 'start' backgrounds it, 'dev' holds the terminal.${RESET}"
+    web_row 'doctor'  'what the SERVER needs to boot: java, the jar, a backend' './spectro-app doctor checks the agent instead'
+    printf '\n%s\n' "${DIM}A bare './spectro-app web' no longer starts anything: 'start' backgrounds it, 'dev' holds the terminal.${RESET}"
     printf '%s\n' "${DIM}Every verb but 'dev' runs ./spectro-serve, which owns the pid file, the port file and the log.${RESET}"
 }
 
@@ -167,7 +172,7 @@ case "$task" in
     cron)          gradle :spectro-cli:run --args="cron $args_str" ;;
     sessions)      gradle :spectro-cli:run --args="sessions" ;;
     resume)
-        if [ $# -eq 0 ]; then printf 'usage: ./spectro resume <id>\n' >&2; exit 1; fi
+        if [ $# -eq 0 ]; then printf 'usage: ./spectro-app resume <id>\n' >&2; exit 1; fi
         gradle :spectro-cli:run --args="--resume $args_str"
         ;;
     doctor)        gradle :spectro-cli:run --args="doctor" ;;
@@ -187,12 +192,12 @@ case "$task" in
                     case "$1" in
                         --port)
                             if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
-                                printf 'usage: ./spectro web dev --port <n>\n' >&2; exit 1
+                                printf 'usage: ./spectro-app web dev --port <n>\n' >&2; exit 1
                             fi
                             web_args+="--server.port=$2 "; shift 2 ;;
                         --port=*)
                             if [ -z "${1#--port=}" ]; then
-                                printf 'usage: ./spectro web dev --port=<n>\n' >&2; exit 1
+                                printf 'usage: ./spectro-app web dev --port=<n>\n' >&2; exit 1
                             fi
                             web_args+="--server.port=${1#--port=} "; shift ;;
                         *)  web_args+="\"${1//\"/\\\"}\" "; shift ;;
@@ -215,8 +220,8 @@ case "$task" in
                 # A flag where a verb belongs: almost certainly the old habit.
                 # Fail loudly with the fix rather than printing help and exiting
                 # 0, which would let a script believe a server came up.
-                printf 'A verb comes first now: ./spectro web start %s%s\n' "$verb" "${1:+ $1}" >&2
-                printf "Run './spectro web' for the list. 'start' backgrounds it, 'dev' holds the terminal.\n" >&2
+                printf 'A verb comes first now: ./spectro-app web start %s%s\n' "$verb" "${1:+ $1}" >&2
+                printf "Run './spectro-app web' for the list. 'start' backgrounds it, 'dev' holds the terminal.\n" >&2
                 exit 1
                 ;;
             *)

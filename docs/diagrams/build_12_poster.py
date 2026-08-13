@@ -79,7 +79,7 @@ def build():
                ["Electron supervisor: free port,", "spawn jar, poll /api/health,",
                 "tray + notifications, SIGTERM"],
                accent=C.ZONE_FACE)
-    small_card(mc, PAD + 1610, face_y, 310, 118, "./spectro launcher",
+    small_card(mc, PAD + 1610, face_y, 310, 118, "./spectro-app launcher",
                ["resolves a JDK 21+", "loads ./.env for every face",
                 "repl web desktop doctor tour"],
                accent=C.ZONE_FACE)

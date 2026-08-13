@@ -96,7 +96,7 @@ yesterday is inert today, and nothing in the run output says so unless you ask.
 `spectro doctor` names every `SPECTRO_*` variable that is set but shadowed
 (`spectro-cli/src/main/java/dev/spectroscope/cli/DoctorCommand.java:173-178`).
 Measured on this machine on 2026-07-27, with
-`SPECTRO_PROVIDER=ollama SPECTRO_MODEL=glm-5.2:cloud ./spectro doctor`:
+`SPECTRO_PROVIDER=ollama SPECTRO_MODEL=glm-5.2:cloud ./spectro-app doctor`:
 
 ```
 ✓ config: provider=ollama model=kimi-k2.7-code:cloud permissionMode=ask autoApprove=0 rule(s)
@@ -133,8 +133,8 @@ files: {"user": "/Users/christopher.ezell/.spectro/settings.json", ...}
 
 Two gotchas measured on 2026-07-27:
 
-**The `./spectro` launcher drops flags for some verbs.** Line 173 of `./spectro`
-hardcodes `--args="doctor"`, so `./spectro doctor --model glm-5.2:cloud`
+**The `./spectro-app` launcher drops flags for some verbs.** Line 173 of `./spectro-app`
+hardcodes `--args="doctor"`, so `./spectro-app doctor --model glm-5.2:cloud`
 silently ignores the flag: the run reported `model=kimi-k2.7-code:cloud`. The
 `run` and `node` verbs do forward their arguments (lines 165 and 166).
 

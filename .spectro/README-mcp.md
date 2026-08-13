@@ -15,7 +15,7 @@ The `mcpServers.notes.command` points at the `application`-plugin launch script,
 which is produced by `installDist`:
 
 ```bash
-./spectro mcp-notes                          # or: ./gradlew :spectro-mcp-notes:installDist
+./spectro-app mcp-notes                          # or: ./gradlew :spectro-mcp-notes:installDist
 ```
 
 That writes the launcher to:
@@ -31,14 +31,14 @@ directory, so `search_notes` returns something out of the box.
 ## Try it
 
 ```bash
-./spectro repl        # or ./gradlew tour → [1] agent REPL
+./spectro-app repl        # or ./gradlew tour → [1] agent REPL
 ```
 
 In the REPL:
 
 - `/mcp` lists the connected servers and their tools
   (`mcp__notes__search_notes`, `mcp__notes__add_note`).
-- `./spectro doctor` also reports each configured MCP server and its reachability.
+- `./spectro-app doctor` also reports each configured MCP server and its reachability.
 - Ask: *"Search my notes for the deploy runbook."* → the model calls the
   permission-gated `mcp__notes__search_notes` tool. MCP tool calls surface as
   ordinary `tool_call` / `tool_result` events — no new event type, no JSONL

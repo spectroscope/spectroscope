@@ -7,7 +7,7 @@ docs use Mermaid diagrams (render on GitHub and in most editors); the
 | doc | what it covers |
 |---|---|
 | [USER-GUIDE.html](USER-GUIDE.html) / [USER-GUIDE.pdf](USER-GUIDE.pdf) (dark) · [USER-GUIDE-LIGHT.html](USER-GUIDE-LIGHT.html) / [USER-GUIDE-LIGHT.pdf](USER-GUIDE-LIGHT.pdf) (light) | the **complete English user guide + technical reference** (120 pages, both brand themes): every feature of every face with real screenshots, the file-system map, and the full wire-level reference (events, WS/REST protocols, config keys). Generated — rebuild with `guide-assets/build_user_guide.py` (see Appendix B inside) |
-| [ARCHITECTURE.md](ARCHITECTURE.md) | one core and its faces, the provider port + runtime switch (`SwitchableProvider`), the config hierarchy, the `./spectro` launcher (JDK resolution + `.env`), and desktop process management |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | one core and its faces, the provider port + runtime switch (`SwitchableProvider`), the config hierarchy, the `./spectro-app` launcher (JDK resolution + `.env`), and desktop process management |
 | [WEB-UI.md](WEB-UI.md) | the browser front end: the state pipeline, the design system (skins = *genome*, effects = *shaders*), the provider picker, and the immersive **Lab** (step-through replay) |
 | [LESSONS-TRANSLATION.md](LESSONS-TRANSLATION.md) | what driving a model to translate a recorded session cost to get right: turning reasoning off and proving it reached the wire, why a drained stream is not a result, a measured model benchmark and why an echoed passage is the hardest failure to read, and the prompt's load-bearing sentences |
 | [LESSONS-VERIFYING-MODEL-FEATURES.md](LESSONS-VERIFYING-MODEL-FEATURES.md) | how to verify a feature whose output comes from a model: switching the provider for a verification run (and why `SPECTRO_*` loses to `~/.spectro/settings.json`), probing the model's competence before judging the feature, locating a defect by comparing our endpoint against the provider's, and why a component's success signal is not evidence |
@@ -36,5 +36,5 @@ flowchart LR
     stream --> web
     stream --> desktop
     prov["providers:<br/>anthropic · ollama · openai<br/>(swappable at runtime)"] --> stream
-    launcher["./spectro (JDK resolve · .env · commands)"] -.starts.-> faces
+    launcher["./spectro-app (JDK resolve · .env · commands)"] -.starts.-> faces
 ```

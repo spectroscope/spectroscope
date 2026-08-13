@@ -38,7 +38,7 @@ JUnit count, a vitest run for the web count. Gate at verification time:
 | 06 | `06-subagents-a2a.svg` | Delegation: SubagentManager limits, explore/worker roles, the dev-tool-to-skill table, and the A2A-lite lifecycle as a parent/child sequence. |
 | 07 | `07-spectro-server.svg` | The web backend: the /ws frame vocabulary in both directions, all 12 REST endpoints with their guards, and SessionConnection's responsibilities. |
 | 08 | `08-spectro-web.svg` | The browser face: the rAF-batched pure-reducer pipeline, the tabs as lenses, header/sidebar/stores, and the three-design token system. |
-| 09 | `09-launcher-desktop.svg` | Runtime: the ./spectro command table and pre-flight (JDK resolve, .env), the nine-step Electron supervision sequence, the 12 doctor checks, the voice setup scripts. |
+| 09 | `09-launcher-desktop.svg` | Runtime: the ./spectro-app command table and pre-flight (JDK resolve, .env), the nine-step Electron supervision sequence, the 12 doctor checks, the voice setup scripts. |
 | 10 | `10-mcp-integration.svg` | MCP: config block, registry, at-most-once client, stdio and HTTP-SSE transports, the McpTool adapter, and the spectro-mcp-notes example server. |
 | 11 | `11-code-inventory-treemap.svg` | Code inventory: area proportional to lines of source per module and package, tests as dashed tiles, measured counts in the footer. |
 | 12 | `12-the-wall.svg` | The wall poster: people, faces, core, OS, disk and everything beyond the network boundary in one picture, with the stats panel. |

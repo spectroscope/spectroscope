@@ -8,7 +8,7 @@ hand count:
   newline count per file (wc -l), <module>/src/ only, main + tests.
   Extensions per module: .java for the Java modules, .ts/.tsx/.css for
   spectro-web and spectro-desktop, .c for the native PTY helper (an
-  extension added when native/ appeared), .sh + the ./spectro launcher
+  extension added when native/ appeared), .sh + the ./spectro-app launcher
   for the scripts group.
 
 Stated exclusions: everything outside <module>/src/ (build/, gradle/,
@@ -123,7 +123,7 @@ def count_tree():
            for p in sorted((REPO / "native").glob("*.c"))]
     data.append(("native", C.ZONE_DISK, nat))
 
-    launcher = [("./spectro", _loc(REPO / "spectro"), False)]
+    launcher = [("./spectro-app", _loc(REPO / "spectro-app"), False)]
     launcher += [(p.name, _loc(p), False)
                  for p in sorted((REPO / "scripts").glob("*.sh"))]
     data.append(("launcher + scripts", C.ZONE_DISK, launcher))

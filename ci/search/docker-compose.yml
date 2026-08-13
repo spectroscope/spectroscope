@@ -10,7 +10,7 @@
 #
 # generate-settings.sh next to this file writes the settings.yml that turns
 # `json` on and generates this machine's own secret key (SearXNG refuses to boot
-# on the placeholder it ships with). THIS file mounts it. `./ci/spectro-ci up
+# on the placeholder it ships with). THIS file mounts it. `./spectro-env up
 # search` runs the script first, the same way it generates Concourse's keypairs.
 #
 # Four deliberate choices, each one a thing that bites otherwise:

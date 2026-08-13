@@ -344,11 +344,11 @@ sign with `-` only — **never** a corporate/Valtech identity that
   while the release is fresh and unconsumed.
 - **`jre/` and `build/`** are gitignored build artifacts — never commit them.
 - **Fresh-clone smoke BEFORE the tag (0.2.0 lesson):** both 0.2.0 launcher
-  bugs (`./spectro desktop` dead on a version-pinned jar path, `./spectro
+  bugs (`./spectro-app desktop` dead on a version-pinned jar path, `./spectro-app
   web --port N` silently ignored) only surfaced on a fresh clone
   (`spectroscope-cloned/` in the product home is the standing test copy).
-  Minimum smoke there: `./spectro doctor`, `./spectro web --port 8097`
-  (server must come up on 8097), `./spectro desktop`. Dev-tree behaviour
+  Minimum smoke there: `./spectro-app doctor`, `./spectro-app web --port 8097`
+  (server must come up on 8097), `./spectro-app desktop`. Dev-tree behaviour
   proves nothing about a clone.
 - **`CSC_NAME` wants the identity WITHOUT the "Developer ID Application: "
   prefix** (0.2.0 signing lesson) — details in

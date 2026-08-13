@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# spectro-ci — the local CI laboratory, in the house launcher style.
+# spectro-env — the local environment switch, in the house launcher style.
+#
+# It reads its stacks out of ci/ and it lives in the root, because what it runs
+# outgrew the folder's name: two CI servers, two analysers, a dependency updater
+# and a search engine an agent queries at runtime. The owner, looking at that
+# list: "es macht ja mehr als ci oder?" The folder keeps the name it earned; the
+# switch got the one that describes the job.
 #
 # The owner: "ich würde gerne concourse und jenkins nehmen. also beides parallel
 # und ich schalte einfach irgendwo um was ich nehmen will zum vergleich" — plus
@@ -12,14 +18,14 @@
 # So: one command, six stacks, each its own compose project on its own ports,
 # started and stopped independently.
 #
-#   ./ci/spectro-ci up jenkins          one stack
-#   ./ci/spectro-ci up concourse sonar  two
-#   ./ci/spectro-ci up all              everything (see MEMORY below)
-#   ./ci/spectro-ci status              what is running, and on which port
-#   ./ci/spectro-ci logs jenkins -f
-#   ./ci/spectro-ci down all
-#   ./ci/spectro-ci open sonar
-#   ./ci/spectro-ci doctor              is this machine able to run them
+#   ./spectro-env up jenkins          one stack
+#   ./spectro-env up concourse sonar  two
+#   ./spectro-env up all              everything (see MEMORY below)
+#   ./spectro-env status              what is running, and on which port
+#   ./spectro-env logs jenkins -f
+#   ./spectro-env down all
+#   ./spectro-env open sonar
+#   ./spectro-env doctor              is this machine able to run them
 #
 # ⚠️ MEMORY IS THE BINDING CONSTRAINT, not CPU. Measured on this machine on
 # 2026-08-05: Docker Desktop had 7.7 GiB of the host's 48 GiB. SonarQube alone
@@ -35,9 +41,12 @@
 # one leg needs an agent on the host, and konzept/BUILD-SERVER.md says what that
 # costs.
 set -u
+# The switch sits in the root and the stacks stay in ci/. Nothing under ci/ moved
+# when this script did, so every compose file, every relative volume path and
+# every generator still resolves from the folder it always resolved from.
 cd "$(dirname "$0")" || exit 1
-CI_DIR="$PWD"
-REPO="$(cd .. && pwd)"
+REPO="$PWD"
+CI_DIR="$REPO/ci"
 
 # ------------------------------- THE STACKS -----------------------------------
 # name|directory|host port|url path|what it is
@@ -77,7 +86,7 @@ err() { printf '%s✗%s %s\n' "$C_ER" "$C_0" "$*" >&2; }
 
 banner() {
   printf '%s\n' "${C_CY}  ┌─────────────────────────────────────────────┐${C_0}"
-  printf '%s\n' "${C_CY}  │${C_0}  ${C_B}spectro-ci${C_0} ${C_DIM}· the local build laboratory${C_0}   ${C_CY}│${C_0}"
+  printf '%s\n' "${C_CY}  │${C_0}  ${C_B}spectro-env${C_0} ${C_DIM}· the local build laboratory${C_0}  ${C_CY}│${C_0}"
   printf '%s\n' "${C_CY}  └─────────────────────────────────────────────┘${C_0}"
 }
 
@@ -145,7 +154,7 @@ cmd_up() {
   done
   say ""
   say "${C_DIM}first boot takes a while — sonar and deptrack build a database.${C_0}"
-  say "${C_DIM}./ci/spectro-ci status  says when each is answering.${C_0}"
+  say "${C_DIM}./spectro-env status  says when each is answering.${C_0}"
 }
 
 cmd_down() {
@@ -279,6 +288,6 @@ case "${1:-}" in
   open)   shift; cmd_open "$@" ;;
   doctor) cmd_doctor ;;
   help|-h|--help) cmd_help ;;
-  "")     cmd_status; say ""; say "${C_DIM}./ci/spectro-ci help  for the rest${C_0}" ;;
+  "")     cmd_status; say ""; say "${C_DIM}./spectro-env help  for the rest${C_0}" ;;
   *)      err "unknown command: $1"; cmd_help; exit 1 ;;
 esac
