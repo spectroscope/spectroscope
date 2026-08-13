@@ -11,6 +11,7 @@ import java.util.Deque;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.regex.Pattern;
 
 /**
@@ -50,6 +51,16 @@ public final class SpeechRenderer implements AutoCloseable {
     private boolean inCodeBlock = false;
     private final Deque<String> sentences = new ArrayDeque<>();         // waiting for synthesis
     private final Deque<SpeechEngine.Clip> clipQueue = new ArrayDeque<>(); // synthesized, waiting for playback
+    // INVARIANT: while one of these is true, a pump really is looping, and while it is
+    // false, nothing is queued for that pump. Both are therefore set and cleared under
+    // `lock` in the SAME hold as the decision they describe — never in a finally, which
+    // would take the lock a second time and leave a gap. In that gap a departing pump
+    // still looks like it is running: a producer (enqueue for a sentence, pumpSynthesis
+    // for a clip) reads the stale flag, starts no pump of its own, and the pump then
+    // clears the flag and dies — work queued, nobody draining it, and idle() waiting
+    // forever on a thread that no longer exists. Measured on 2026-08-13: a
+    // :spectro-cli:test worker sat 13+ minutes in idle() with zero live threads in
+    // `workers`. Pinned by aSentenceEnqueuedWhileAPumpIsLeavingIsStillSpoken.
     private boolean synthRunning = false;
     private boolean playRunning = false;
     private SpeechEngine.Playback playback = null; // handle of the running playback (for stop())
@@ -171,6 +182,15 @@ public final class SpeechRenderer implements AutoCloseable {
                 }
             }
             sleep(20);
+            if (Thread.currentThread().isInterrupted()) {
+                // Interrupted means the caller is tearing down — close() follows at the one
+                // call site. Looping on would spin at 100% CPU, because with the flag set
+                // every further sleep() throws at once instead of waiting. The flag stays
+                // set for the caller. Measured 2026-08-13: without this, a JUnit @Timeout
+                // interrupts the test and the thread then burns a core for the life of the
+                // JVM instead of the gate simply going red.
+                return;
+            }
         }
     }
 
@@ -275,8 +295,10 @@ public final class SpeechRenderer implements AutoCloseable {
         }
         sentences.addLast(sentence);
         if (!synthRunning) {
-            synthRunning = true;
-            workers.submit(this::pumpSynthesis);
+            synthRunning = start(this::pumpSynthesis);
+            if (!synthRunning) {
+                sentences.clear(); // no pump can start any more: see start()
+            }
         }
     }
 
@@ -287,6 +309,7 @@ public final class SpeechRenderer implements AutoCloseable {
                 String sentence;
                 synchronized (lock) {
                     if (stopped || sentences.isEmpty()) {
+                        synthRunning = false; // cleared under this same hold — see the flag invariant above
                         return;
                     }
                     if (clipQueue.size() >= MAX_PREPARED) {
@@ -308,19 +331,24 @@ public final class SpeechRenderer implements AutoCloseable {
                 synchronized (lock) {
                     if (stopped) {
                         clip.discard();
+                        synthRunning = false;
                         return;
                     }
                     clipQueue.addLast(clip);
                     if (!playRunning) {
-                        playRunning = true;
-                        workers.submit(this::pumpPlayback);
+                        playRunning = start(this::pumpPlayback);
+                        if (!playRunning) {
+                            clipQueue.forEach(SpeechEngine.Clip::discard);
+                            clipQueue.clear(); // no pump can start any more: see start()
+                        }
                     }
                 }
             }
-        } finally {
+        } catch (Throwable abnormal) {
             synchronized (lock) {
-                synthRunning = false;
+                synthRunning = false; // never leave the flag set on a thread that is dying
             }
+            throw abnormal;
         }
     }
 
@@ -331,6 +359,7 @@ public final class SpeechRenderer implements AutoCloseable {
                 SpeechEngine.Clip clip;
                 synchronized (lock) {
                     if (stopped || clipQueue.isEmpty()) {
+                        playRunning = false; // cleared under this same hold — see the flag invariant above
                         return;
                     }
                     clip = clipQueue.pollFirst();
@@ -338,10 +367,32 @@ public final class SpeechRenderer implements AutoCloseable {
                 play(clip); // blocking playback, OUTSIDE the lock
                 clip.discard();
             }
-        } finally {
+        } catch (Throwable abnormal) {
             synchronized (lock) {
-                playRunning = false;
+                playRunning = false; // never leave the flag set on a thread that is dying
             }
+            throw abnormal;
+        }
+    }
+
+    /**
+     * Starts a pump on a virtual thread and reports whether it is actually running.
+     *
+     * <p>Only ever false once {@link #close()} has torn the executor down, so anything
+     * still queued for that pump is dropped by the caller: nothing can drain it any more,
+     * and a queue left standing would make {@link #idle()} wait for good.</p>
+     *
+     * @param pump the loop to run
+     * @return whether it was accepted — the caller stores this in the pump's flag, because
+     *         a flag set for a worker that never started would make {@link #idle()} wait
+     *         for a thread that does not exist
+     */
+    private boolean start(Runnable pump) {
+        try {
+            workers.submit(pump);
+            return true;
+        } catch (RejectedExecutionException tornDown) {
+            return false; // close() already shut the executor down; nothing is pending anyway
         }
     }
 
