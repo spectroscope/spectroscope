@@ -26,10 +26,18 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * against it. This test is one half; {@code spectro-desktop/src/browserFence.test.ts}
  * is the other, and it reads the same file off disk.
  *
- * <p>Only address literals and loopback NAMES are in the table, because that is
- * exactly the set both sides can decide identically: the hook is synchronous and
- * cannot resolve DNS, while Java resolves and judges every answer. That split is
- * the honest limit and it is documented rather than papered over.
+ * <p>The table has two halves because the fence has two questions. The
+ * {@code vectors} half is address literals and loopback names, which both sides
+ * decide without a resolver. The {@code names} half writes the DNS answer DOWN,
+ * so both sides can be driven by the same answer without a network: this side
+ * through {@link NetFence.Resolver}, the hook through its own lookup seam.
+ *
+ * <p>The names half was added on 2026-08-13, after a review measured what its
+ * absence cost. The hook skipped DNS entirely and the table's comment described
+ * that as a documented split; it was a hole. With the loopback opt-in OFF, a 302
+ * to a public name resolving to 127.0.0.1 loaded and refused nothing, while this
+ * side refused the same address at the entry — so the table recorded no
+ * disagreement, which is exactly the shape a twin table exists to catch.
  */
 class FenceVectorTwinTest {
 
@@ -109,6 +117,67 @@ class FenceVectorTwinTest {
             assertTrue(!row.path("hook").isNull(),
                     "a divergence row must say what the hook does with " + url);
         }
+    }
+
+    /** A resolver that answers from the table, so no vector needs the network. */
+    private static NetFence.Resolver answering(List<String> addresses) {
+        return host -> {
+            List<InetAddress> resolved = new ArrayList<>();
+            for (String address : addresses) {
+                resolved.add(InetAddress.getByName(address));
+            }
+            return resolved;
+        };
+    }
+
+    @Test
+    void theJavaFenceAgreesWithEveryNameVectorInTheSharedTable() throws Exception {
+        JsonNode names = table().path("names");
+        assertTrue(names.size() >= 6, "the names half proves nothing this small: " + names.size());
+        List<String> wrong = new ArrayList<>();
+        for (JsonNode vector : names) {
+            String url = vector.path("url").asText();
+            List<String> answers = new ArrayList<>();
+            vector.path("resolvesTo").forEach(node -> answers.add(node.asText()));
+            boolean allowLocalhost = vector.path("allowLocalhost").asBoolean();
+            String expected = vector.path("rule").isNull() ? null : vector.path("rule").asText();
+            NetFence.Refusal refusal =
+                    new NetFence(allowLocalhost, answering(answers)).refuse(url);
+            String actual = refusal == null ? null : refusal.rule();
+            if (!java.util.Objects.equals(expected, actual)) {
+                wrong.add("\"" + url + "\" -> " + answers + " allowLocalhost=" + allowLocalhost
+                        + " expected " + expected + " but got " + actual);
+            }
+        }
+        assertTrue(wrong.isEmpty(), "the shared fence policy disagrees with this side on names:\n  "
+                + String.join("\n  ", wrong));
+    }
+
+    @Test
+    void oneAnswerAmongPublicOnesIsEnoughToRefuseTheName() {
+        NetFence.Refusal refusal = new NetFence(true,
+                answering(List.of("93.184.216.34", "10.0.0.5"))).refuse("http://split.example.com/");
+        assertEquals("rfc1918", refusal.rule(),
+                "a name with one private answer is refused, on both sides");
+    }
+
+    @Test
+    void theTableCoversTheIpv4MappedSpellingThatWasAHookHole() throws Exception {
+        // The measured bypass, now an ordinary vector because the two sides agree
+        // again: [::ffff:192.168.1.1] reached the LAN through the hook with zero
+        // refusals, while this side always read it as 192.168.1.1.
+        List<String> mapped = new ArrayList<>();
+        for (JsonNode vector : vectors()) {
+            if (vector.path("url").asText().contains("::ffff:")
+                    || vector.path("url").asText().contains("::FFFF:")) {
+                mapped.add(vector.path("url").asText());
+            }
+        }
+        assertTrue(mapped.size() >= 5, "the mapped spelling is barely covered: " + mapped);
+        assertEquals("rfc1918",
+                new NetFence(true, DNS).refuse("http://[::ffff:192.168.1.1]/secret").rule());
+        assertEquals("rfc1918",
+                new NetFence(true, DNS).refuse("http://[::ffff:c0a8:101]/secret").rule());
     }
 
     @Test

@@ -17,10 +17,20 @@
 // InetAddress read them differently — the table carries a divergence register
 // and both sides assert their own column.
 //
-// One thing this half deliberately does NOT do: resolve DNS. The hook is
-// synchronous per request and a resolver call per subresource would be a round
-// trip on the page's critical path. Names are Java's to judge at the entry, and
-// that split is written down in docs/BROWSER.md rather than papered over.
+// This half used to stop at address LITERALS, on the argument that the hook is
+// synchronous and a resolver call per subresource is a round trip on the page's
+// critical path. A review measured what that cost on 2026-08-13: with
+// allowLocalhost off, a 302 to a public NAME that resolves to loopback loaded
+// fine and nothing was refused. Java catches that at the entry; nothing caught
+// it on a hop, which is the one thing this half exists for.
+//
+// So the hook resolves too. onBeforeRequest may answer asynchronously — that is
+// how proxy and auth flows are written — and the answers are cached for a short
+// window, so a page with fifty subresources on four hosts pays four lookups.
+// What remains, stated rather than discovered: a record whose answer CHANGES
+// between the fence's lookup and Chromium's own (DNS rebinding) is not caught by
+// either half, because neither is the one that dials. That is written down in
+// docs/BROWSER.md and said in the UI, not only here.
 
 /** Whether the local verify loop is opted in. The one thing an operator decides. */
 export interface FencePolicy {
@@ -64,12 +74,19 @@ const WHY: Record<string, string> = {
   unparsable: "it is not a readable http address",
 };
 
-/** The one shape a refusal takes: what, why, and the rule's own name. */
-function refusal(address: string, rule: string): FenceRefusal {
+/**
+ * The one shape a refusal takes: what, why, and the rule's own name.
+ *
+ * @param address the host and port, never a path, a query or userinfo
+ * @param rule    the rule's stable name
+ * @param also    one extra clause, for a spelling a reader would not recognise
+ */
+function refusal(address: string, rule: string, also = ""): FenceRefusal {
   return {
     address,
     rule,
-    sentence: `refused ${address}: ${WHY[rule] ?? "the net fence refuses it"} (rule: ${rule}).`,
+    sentence: `refused ${address}: ${also}${WHY[rule] ?? "the net fence refuses it"} `
+      + `(rule: ${rule}).`,
   };
 }
 
@@ -79,15 +96,89 @@ function isLoopbackName(host: string): boolean {
   return lower === "localhost" || lower.endsWith(".localhost");
 }
 
+/**
+ * An IPv6 literal as its sixteen bytes, or null when it is not one.
+ *
+ * Written out rather than matched with a prefix regex because a regex on the
+ * TEXT reads a spelling, and the fence has to judge an ADDRESS. That was the
+ * measured defect: `ruleForV6` tested `::1`, `fe8`, `fc`, `ff` and had no
+ * `::ffff:` case, so `[::ffff:192.168.1.1]` — which every stack treats as
+ * 192.168.1.1 — fell through to allowed, and a 302 to it reached the LAN with
+ * zero refusals while the plain literal was blocked.
+ */
+function bytesForV6(literal: string): number[] | null {
+  let text = literal.toLowerCase();
+  if (text.includes("%")) {
+    text = text.slice(0, text.indexOf("%"));   // a zone id addresses no differently
+  }
+  // A trailing dotted quad ("::ffff:192.168.1.1") is two more groups.
+  const dotted = /^(.*:)((\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3}))$/.exec(text);
+  let tail: number[] = [];
+  if (dotted) {
+    const quad = [dotted[3], dotted[4], dotted[5], dotted[6]].map(Number);
+    if (quad.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+    tail = quad;
+    text = dotted[1].slice(0, -1);   // drop the colon that joined them
+    if (text === "") text = "::";     // "::1.2.3.4" leaves an empty head
+  }
+  const halves = text.split("::");
+  if (halves.length > 2) return null;
+  const head = halves[0] === "" ? [] : halves[0].split(":");
+  const rest = halves.length === 2 ? (halves[1] === "" ? [] : halves[1].split(":")) : [];
+  const groups = (list: string[]): number[] | null => {
+    const out: number[] = [];
+    for (const group of list) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      const value = parseInt(group, 16);
+      out.push((value >> 8) & 0xff, value & 0xff);
+    }
+    return out;
+  };
+  const left = groups(head);
+  const right = groups(rest);
+  if (left === null || right === null) return null;
+  const known = left.length + right.length + tail.length;
+  if (known > 16) return null;
+  if (halves.length === 1) {
+    return known === 16 ? [...left, ...tail] : null;
+  }
+  return [...left, ...new Array(16 - known).fill(0), ...right, ...tail];
+}
+
+/** What an IPv6 literal is: the rule it breaks, and the IPv4 address it hides. */
+interface V6Verdict {
+  rule: string | null;
+  /** The dotted IPv4 address underneath, when this is an IPv4-mapped spelling. */
+  mapped: string | null;
+}
+
+/** The rule an IPv6 literal breaks, and whether it is an IPv4 address in disguise. */
+function classifyV6(host: string): V6Verdict {
+  const bare = host.replace(/^\[|\]$/g, "").toLowerCase();
+  const bytes = bytesForV6(bare);
+  if (bytes === null) return { rule: null, mapped: null };
+  const zeros = bytes.slice(0, 10).every((b) => b === 0);
+  if (zeros && bytes.slice(10, 15).every((b) => b === 0) && bytes[15] === 1) {
+    return { rule: "loopback", mapped: null };
+  }
+  if (bytes.every((b) => b === 0)) return { rule: "unspecified", mapped: null };
+  // ::ffff:0:0/96 — an IPv4 address wearing an IPv6 spelling. Every stack dials
+  // the v4 address underneath, so it is judged as that v4 address.
+  if (zeros && bytes[10] === 0xff && bytes[11] === 0xff) {
+    const dotted = bytes.slice(12).join(".");
+    return { rule: ruleForV4(dotted), mapped: dotted };
+  }
+  if (bytes[0] === 0xfe && (bytes[1] & 0xc0) === 0x80) {
+    return { rule: "link-local", mapped: null };
+  }
+  if ((bytes[0] & 0xfe) === 0xfc) return { rule: "unique-local", mapped: null };
+  if (bytes[0] === 0xff) return { rule: "multicast", mapped: null };
+  return { rule: null, mapped: null };
+}
+
 /** The rule an IPv6 literal breaks, or null. */
 function ruleForV6(host: string): string | null {
-  const bare = host.replace(/^\[|\]$/g, "").toLowerCase();
-  if (bare === "::1") return "loopback";
-  if (bare === "::") return "unspecified";
-  if (/^fe[89ab]/.test(bare)) return "link-local";
-  if (/^f[cd]/.test(bare)) return "unique-local";
-  if (/^ff/.test(bare)) return "multicast";
-  return null;
+  return classifyV6(host).rule;
 }
 
 /** The rule a dotted-quad IPv4 breaks, or null. */
@@ -151,9 +242,115 @@ export function refuse(rawUrl: string, policy: FencePolicy): FenceRefusal | null
   if (isLoopbackName(host)) {
     return policy.allowLocalhost ? null : refusal(where, "loopback");
   }
-  const rule = host.startsWith("[") ? ruleForV6(host) : ruleForV4(host);
-  if (rule === "loopback") {
-    return policy.allowLocalhost ? null : refusal(where, "loopback");
+  const verdict = host.startsWith("[")
+    ? classifyV6(host)
+    : { rule: ruleForV4(host), mapped: null };
+  // Chromium normalises [::ffff:192.168.1.1] to [::ffff:c0a8:101], and nobody
+  // recognises their own router in that. The address stays what the browser
+  // would dial; the sentence adds the spelling a human reads.
+  const also = verdict.mapped ? `it is ${verdict.mapped} in an IPv6 spelling, and ` : "";
+  if (verdict.rule === "loopback") {
+    return policy.allowLocalhost ? null : refusal(where, "loopback", also);
   }
-  return rule === null ? null : refusal(where, rule);
+  return verdict.rule === null ? null : refusal(where, verdict.rule, also);
+}
+
+/** How a host name becomes addresses. A seam, so the suite answers from a table. */
+export type HostLookup = (host: string) => Promise<string[]>;
+
+/** Whether this host is already an answer rather than a question for DNS. */
+function isAddressLiteral(host: string): boolean {
+  // The WHATWG parser has already normalised every IPv4 spelling it accepts —
+  // 2130706433 and 0x7f000001 both arrive as 127.0.0.1 — so what is left is a
+  // dotted quad, a bracketed IPv6 literal, or a name.
+  return host.startsWith("[") || /^\d{1,3}(\.\d{1,3}){3}$/.test(host);
+}
+
+/**
+ * Whether this URL is refused once its host NAME has been resolved.
+ *
+ * <p>The literal check runs first and unchanged, so an address is decided
+ * without a resolver. Only a name reaches DNS, and then EVERY answer is judged
+ * — one private answer refuses the request, which is the same rule the Java
+ * entry check applies.
+ *
+ * <p>A name that does not resolve is left alone: the fence invents no answer,
+ * and a request that cannot resolve cannot connect either.
+ *
+ * @param rawUrl the address the browser is about to dial
+ * @param policy the loopback opt-in
+ * @param lookup how a name becomes addresses
+ */
+export async function refuseResolved(
+  rawUrl: string,
+  policy: FencePolicy,
+  lookup: HostLookup,
+): Promise<FenceRefusal | null> {
+  const literal = refuse(rawUrl, policy);
+  if (literal) return literal;
+  let host: string;
+  let where: string;
+  try {
+    const parsed = new URL(rawUrl.trim());
+    host = parsed.hostname;
+    where = parsed.port ? `${host}:${parsed.port}` : host;
+  } catch {
+    return null;   // refuse() already had its say about anything unparsable
+  }
+  if (!host || isAddressLiteral(host) || isLoopbackName(host)) {
+    return null;
+  }
+  let answers: string[];
+  try {
+    answers = await lookup(host);
+  } catch {
+    return null;
+  }
+  for (const answer of answers) {
+    const rule = answer.includes(":") ? ruleForV6(answer) : ruleForV4(answer);
+    if (rule === null || (rule === "loopback" && policy.allowLocalhost)) {
+      continue;
+    }
+    return {
+      address: where,
+      rule,
+      sentence: `refused ${where}: it resolves to ${answer}, and `
+        + `${WHY[rule] ?? "the net fence refuses it"} (rule: ${rule}).`,
+    };
+  }
+  return null;
+}
+
+/** How long one resolved answer is reused. Short enough to notice a real change. */
+export const LOOKUP_TTL_MS = 30_000;
+
+/**
+ * The same lookup, answered from memory for a short window.
+ *
+ * <p>The hook fires for every subresource, so a page with fifty of them across
+ * four hosts must not pay fifty lookups. What the cache costs is stated rather
+ * than hidden: for up to {@link LOOKUP_TTL_MS} the fence judges the answer it
+ * saw, not the answer Chromium will get. Neither half of the fence is the one
+ * that dials, so a record that changes underneath both is outside what either
+ * can promise — docs/BROWSER.md says so and so does the segment.
+ *
+ * @param lookup the resolver to wrap
+ * @param now    the clock, injectable so the expiry is testable
+ * @param ttlMs  how long an answer is reused
+ */
+export function cachedLookup(
+  lookup: HostLookup,
+  now: () => number = Date.now,
+  ttlMs: number = LOOKUP_TTL_MS,
+): HostLookup {
+  const seen = new Map<string, { at: number; answers: Promise<string[]> }>();
+  return (host) => {
+    const hit = seen.get(host);
+    if (hit && now() - hit.at < ttlMs) return hit.answers;
+    const answers = lookup(host);
+    seen.set(host, { at: now(), answers });
+    // A failed lookup must not be remembered as a failure for the whole window.
+    void answers.catch(() => seen.delete(host));
+    return answers;
+  };
 }
