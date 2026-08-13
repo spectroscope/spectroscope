@@ -840,6 +840,50 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Das startet sechs Container und lädt einige Gigabyte an Images. spectroscope führt den Befehl nicht aus, du führst ihn aus. Das Skript legt Endpoint und Key-Paar selbst in ~/.spectro/.env ab; danach diesen Server einmal neu starten.",
     en: "That starts six containers and downloads a few gigabytes of images. spectroscope does not run the command, you do. The script writes the endpoint and the key pair into ~/.spectro/.env itself; restart this server once afterwards.",
   },
+  // Web search (card 203). Three real options and one that is not a choice.
+  // The active tier itself is NOT translated: it arrives from the server's one
+  // resolver, and re-wording it here would be the second copy of a decision
+  // this card exists to collapse.
+  "set.secWebSearch": { de: "Websuche", en: "Web search" },
+  "set.webSearchHint": {
+    de: "Womit web_search sucht. Es antwortet genau eine Stufe — die konfigurierte. Fällt sie aus, bekommst du den Fehler, nicht heimlich das Ergebnis einer anderen.",
+    en: "What web_search searches with. Exactly one tier answers — the configured one. When it fails you get the failure, not another tier's answer behind your back.",
+  },
+  "set.searxngUrl": { de: "SearXNG-Instanz (URL)", en: "SearXNG instance (URL)" },
+  "set.searxngOwnInstance": {
+    de: "Gemeint ist eine Instanz, die DU betreibst. Öffentliche Instanzen liefern fast nie JSON: von 75 erreichbaren am 2026-08-12 hat genau eine application/json geantwortet.",
+    en: "This means an instance YOU run. Public instances almost never serve JSON: of 75 reachable ones on 2026-08-12, exactly one answered application/json.",
+  },
+  "set.searxngDockerAbsent": {
+    de: "Docker ist auf diesem Rechner nicht installiert. SearXNG läuft als Container, also brauchst du Docker zuerst.",
+    en: "Docker is not installed on this machine. SearXNG runs as a container, so Docker comes first.",
+  },
+  "set.searxngDockerReady": {
+    de: "Docker läuft. Dieser Befehl startet eine lokale SearXNG-Instanz, die JSON beantwortet:",
+    en: "Docker is running. This command starts a local SearXNG instance that answers JSON:",
+  },
+  "set.searxngCost": {
+    de: "Das startet einen Container. Ein bloßes „docker run searxng/searxng\" reicht nicht: ab Werk steht nur html unter search.formats, und auf format=json antwortet SearXNG dann mit 403. Das Skript schreibt genau diese Einstellung, wartet auf eine echte JSON-Antwort und legt die Adresse in ~/.spectro/.env ab. spectroscope führt den Befehl nicht aus, du führst ihn aus.",
+    en: "That starts one container. A bare \"docker run searxng/searxng\" is not enough: out of the box only html is listed under search.formats, and SearXNG answers format=json with 403. The script writes exactly that setting, waits for a real JSON answer, and puts the address into ~/.spectro/.env. spectroscope does not run the command, you do.",
+  },
+  "set.searchKeyedHint": {
+    de: "Oder ein Anbieter mit Schlüssel. Beide werden nur benutzt, wenn oben keine Instanz steht — der Schlüssel landet in ~/.spectro/.env (0600) und wird nie zurückgelesen.",
+    en: "Or a keyed provider. Either is used only when there is no instance above — the key lands in ~/.spectro/.env (0600) and is never read back.",
+  },
+  "set.tavilyKey": { de: "Tavily-API-Key", en: "Tavily API key" },
+  "set.braveKey": { de: "Brave-Search-API-Key", en: "Brave Search API key" },
+  "set.searchKeyPlaceholder": { de: "API-Key hier einfügen", en: "paste your api key" },
+  "set.searchKeyReplace": { de: "Key ersetzen", en: "replace the key" },
+  "set.searchKeyPresent": { de: "gesetzt", en: "set" },
+  "set.searchKeyAbsent": { de: "nicht gesetzt", en: "not set" },
+  "set.searchScrapeNote": {
+    de: "Ist nichts davon konfiguriert, antwortet ein keyless HTML-Scrape von DuckDuckGo. Der ist Notbehelf, nicht Wahl: DuckDuckGos eigene Bedingungen verbieten ihn, und die Muster brechen still, sobald die Seite umgebaut wird.",
+    en: "With none of this configured, a keyless DuckDuckGo HTML scrape answers. That is a last resort, not a choice: DuckDuckGo's own terms prohibit it, and the patterns break silently the day the page is redesigned.",
+  },
+  "set.searchNoFallThrough": {
+    de: "Keine Stufe reicht die Frage weiter. Eine konfigurierte SearXNG-Instanz, die nicht erreichbar ist, lässt die Suche fehlschlagen — mit einem Satz, der die versuchte Adresse nennt.",
+    en: "No tier hands the question down. A configured SearXNG instance that cannot be reached fails the search — with a sentence that names the address it tried.",
+  },
   "doc.otlp": { de: "OTLP-Export", en: "OTLP export" },
   "doc.otlpOff": { de: "aus — kein Endpoint gesetzt (Settings)", en: "off — no endpoint set (Settings)" },
   "doc.otlpOk": { de: "erreichbar + authentifiziert", en: "reachable + authenticated" },

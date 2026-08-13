@@ -48,9 +48,10 @@ class DescribeContextTest {
                 .collect(Collectors.toMap(ContextInfo.ToolInfo::name, Function.identity()));
 
         assertTrue(byName.containsKey("web_search"), "web_search must appear in the list");
-        assertEquals(dev.spectroscope.core.web.WebSearchTool.fromEnv(System.getenv()).description(),
+        assertEquals(dev.spectroscope.core.web.WebSearchTool.fromConfig(
+                        SpectroConfig.load(SpectroConfig.Overrides.none())).description(),
                 byName.get("web_search").description(),
-                "the introspection names the ACTIVE search tier, whatever the env selects");
+                "the introspection names the ACTIVE search tier, whatever the configuration selects");
         assertTrue(byName.get("web_search").needsPermission());
 
         assertTrue(byName.containsKey("browse_page"), "browse_page must appear in the list");

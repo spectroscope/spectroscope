@@ -790,10 +790,12 @@ public final class SessionConnection {
                 llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
         // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
         registry.register(new WebFetchTool(new DefaultHttpFetcher()));
-        // web_search branch: tiered search (Tavily when TAVILY_API_KEY is set, else
-        // the keyless DuckDuckGo fallback) + browse_page through the system Chrome
+        // web_search branch: the ONE tier WebSearchTiers resolves from the
+        // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
-        registry.register(WebSearchTool.fromEnv(System.getenv()));
+        // Read off activeConfig, like imageModel and chromeBinary above, so a
+        // SearXNG address saved mid-session reaches the next agent build.
+        registry.register(WebSearchTool.fromConfig(activeConfig.get()));
         // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
         // env; read fresh from activeConfig per call, like imageModel above, so a
         // pre-run provider switch (which carries chromeBinary along) stays honoured.

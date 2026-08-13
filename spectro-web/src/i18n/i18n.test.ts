@@ -11,6 +11,7 @@ import { CATEGORIES } from "../components/TraceView";
 import { TODO_STATUSES } from "../components/todoList";
 import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
+import { searxngOffer } from "../components/webSearchSetup";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -167,6 +168,32 @@ describe("i18n dict", () => {
       expect(dict[key], key).toBeDefined();
     }
     for (const k of ["set.dockerInstall", "set.langfuseCommand", "set.langfuseCost"]) {
+      expect(dict[k], k).toBeDefined();
+    }
+    // Web search (card 203) rides the SAME derived-key rule, over the same
+    // states: the block overrides two of Docker's sentences and inherits the
+    // rest, so a state whose SearXNG copy was never written goes red here
+    // rather than printing "set.searxngDockerReady" at an operator.
+    for (const state of dockerStates) {
+      const key = searxngOffer(state).messageKey;
+      expect(dict[key], key).toBeDefined();
+    }
+    for (const k of [
+      "set.secWebSearch",
+      "set.webSearchHint",
+      "set.searxngUrl",
+      "set.searxngOwnInstance",
+      "set.searxngCost",
+      "set.searchKeyedHint",
+      "set.tavilyKey",
+      "set.braveKey",
+      "set.searchKeyPlaceholder",
+      "set.searchKeyReplace",
+      "set.searchKeyPresent",
+      "set.searchKeyAbsent",
+      "set.searchScrapeNote",
+      "set.searchNoFallThrough",
+    ]) {
       expect(dict[k], k).toBeDefined();
     }
   });

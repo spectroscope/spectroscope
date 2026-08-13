@@ -87,9 +87,10 @@ final class ContextDescriber {
         Stream<Tool> extras = Stream.of(
                 new GenerateImageTool(() -> null, null),
                 new WebFetchTool(url -> null),
-                // fromEnv on purpose: the introspection must name the ACTIVE
-                // search tier (tavily vs. duckduckgo), exactly like the live registry.
-                WebSearchTool.fromEnv(System.getenv()),
+                // Built from the configuration on purpose: the introspection
+                // must name the ACTIVE search tier, exactly like the live
+                // registry does, and both ask WebSearchTiers (card 203).
+                WebSearchTool.fromConfig(SpectroConfig.load(SpectroConfig.Overrides.none())),
                 new BrowsePageTool(),
                 new UpdatePlanTool());
         Stream<Tool> useSkill = skills.skills().isEmpty()

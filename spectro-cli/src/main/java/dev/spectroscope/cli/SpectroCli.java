@@ -402,10 +402,10 @@ public final class SpectroCli implements Runnable {
         // effect on untrusted input, so it is permission-gated like run_command; the
         // RestClient seam (DefaultHttpFetcher) is injectable so tests stay network-free.
         registry.register(new WebFetchTool(new DefaultHttpFetcher()));
-        // web_search branch: tiered search (Tavily when TAVILY_API_KEY is set, else
-        // the keyless DuckDuckGo fallback) + browse_page through the system Chrome
+        // web_search branch: the ONE tier WebSearchTiers resolves from the
+        // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
-        registry.register(WebSearchTool.fromEnv(System.getenv()));
+        registry.register(WebSearchTool.fromConfig(config));
         // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
         // env, so SPECTRO_CHROME AND the configured setting both reach discovery.
         registry.register(new BrowsePageTool(

@@ -18,9 +18,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * web_search against an in-memory WebSearcher — no HTTP at all. Proves the
  * numbered hit formatting with the tier named in the header, the blank-query /
  * thrown-exception ERROR paths (never throws), the max_results clamp, the
- * output cap, the tier-specific description (the DuckDuckGo fallback names the
- * missing TAVILY_API_KEY) and the permission flag. Key-free and network-free
- * by construction — the WebFetchTool test pattern.
+ * output cap, the tier-specific description and the permission flag. Key-free
+ * and network-free by construction — the WebFetchTool test pattern.
+ *
+ * <p>Since card 203 the tier is not chosen here at all: {@link WebSearchTiers}
+ * decides and this tool reports. What THIS file still owns is that the tool
+ * reports the resolver's words rather than words of its own — including the
+ * scrape's label, which has to survive into the result header a user reads.</p>
  */
 class WebSearchToolTest {
 
@@ -84,9 +88,18 @@ class WebSearchToolTest {
 
     @Test
     void emptyHitsBecomeAReadableNoResultsAnswer() {
+        // Replaced rather than loosened when card 203 labeled the scrape: the
+        // old claim was that this line names the bare tier, and criterion 4
+        // makes that claim wrong on purpose — "no results" from the last-resort
+        // scrape is exactly the moment a reader needs to know which tier said
+        // it. The threshold (an exact, whole sentence) is unchanged.
         Tool tool = new WebSearchTool(new FakeSearcher("duckduckgo", List.of()));
-        assertEquals("No results for \"xyzzy\" (duckduckgo).",
+        assertEquals("No results for \"xyzzy\" (duckduckgo — best effort, last resort).",
                 tool.execute(queryInput("xyzzy"), context()));
+
+        Tool configured = new WebSearchTool(new FakeSearcher("searxng", List.of()));
+        assertEquals("No results for \"xyzzy\" (searxng).",
+                configured.execute(queryInput("xyzzy"), context()));
     }
 
     @Test
@@ -140,12 +153,44 @@ class WebSearchToolTest {
     }
 
     @Test
-    void theFallbackTierDescriptionNamesTheMissingKey() {
+    void theBraveTierDescriptionNamesBrave() {
+        Tool tool = new WebSearchTool(new FakeSearcher("brave", List.of()));
+        assertTrue(tool.description().contains("Brave"), "got: " + tool.description());
+    }
+
+    @Test
+    void theLastResortDescriptionAdmitsWhatItIsAndNamesTheWayOut() {
         Tool tool = new WebSearchTool(new FakeSearcher("duckduckgo", List.of()));
         assertTrue(tool.description().contains("DuckDuckGo"),
-                "names the fallback, got: " + tool.description());
-        assertTrue(tool.description().contains("TAVILY_API_KEY"),
-                "hints at the better tier, got: " + tool.description());
+                "names the tier, got: " + tool.description());
+        assertTrue(tool.description().contains("best effort"),
+                "admits what it is, got: " + tool.description());
+        assertTrue(tool.description().contains("SearXNG"),
+                "names the way out, got: " + tool.description());
+    }
+
+    @Test
+    void theResultHeaderCarriesTheScrapesLabelNotJustItsName() {
+        // Criterion 4 of card 203: the label goes everywhere the tier already
+        // surfaces, and the result header is the surface a user actually reads
+        // on every single search. A bare "(duckduckgo)" here would read like a
+        // provider somebody picked.
+        Tool tool = new WebSearchTool(new FakeSearcher("duckduckgo",
+                List.of(new WebSearcher.Hit("T", "https://u", "s"))));
+
+        String result = tool.execute(queryInput("q"), context());
+
+        assertTrue(result.startsWith("Results (duckduckgo — best effort, last resort)"),
+                "got: " + result);
+    }
+
+    @Test
+    void aConfiguredTiersHeaderIsJustItsName() {
+        Tool tool = new WebSearchTool(new FakeSearcher("searxng",
+                List.of(new WebSearcher.Hit("T", "https://u", "s"))));
+
+        assertTrue(tool.execute(queryInput("q"), context()).startsWith("Results (searxng) for"),
+                "a chosen tier gets no apology");
     }
 
     @Test
@@ -162,18 +207,22 @@ class WebSearchToolTest {
     }
 
     @Test
-    void fromEnvPicksTavilyWhenTheKeyIsSet() {
-        Tool tool = WebSearchTool.fromEnv(java.util.Map.of("TAVILY_API_KEY", "tvly-x"));
-        assertTrue(tool.description().contains("Tavily API"), "got: " + tool.description());
+    void fromConfigBuildsTheTierTheResolverNamedAndSaysItsAddress() {
+        // The one production wiring, exercised end to end without a network: a
+        // saved instance URL outranks every key, so this assertion holds on any
+        // machine, with or without a TAVILY_API_KEY lying around.
+        Tool tool = WebSearchTool.fromConfig(configWithSearxng("http://box.local:8888"));
+
+        assertTrue(tool.description().contains("searxng"), "got: " + tool.description());
+        assertTrue(tool.description().contains("http://box.local:8888"),
+                "the description names the address it will dial, got: " + tool.description());
     }
 
-    @Test
-    void fromEnvFallsBackToDuckduckgoWithoutAKey() {
-        Tool noKey = WebSearchTool.fromEnv(java.util.Map.of());
-        assertTrue(noKey.description().contains("DuckDuckGo"), "got: " + noKey.description());
-
-        Tool blankKey = WebSearchTool.fromEnv(java.util.Map.of("TAVILY_API_KEY", "  "));
-        assertTrue(blankKey.description().contains("DuckDuckGo"),
-                "a blank key is no key, got: " + blankKey.description());
+    /** A config that differs from the defaults in exactly one field. */
+    private static dev.spectroscope.core.config.SpectroConfig configWithSearxng(String url) {
+        return new dev.spectroscope.core.config.SpectroConfig(
+                "anthropic", "m", null, 100_000, "ask", List.of(), "gemini", true, List.of(),
+                2, true, List.of(), null, "info", null, null, "auto", "auto", null,
+                null, null, null, null, url);
     }
 }

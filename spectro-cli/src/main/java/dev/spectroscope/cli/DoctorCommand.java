@@ -264,15 +264,14 @@ public final class DoctorCommand implements Callable<Integer> {
                     + " not set; generate_image will return a readable error");
         }
 
-        // Web tools (branch web_search) — the search tier is decided by
-        // TAVILY_API_KEY, browse_page by an installed Chrome. Neither is
-        // unhealthy when absent: both tools explain themselves readably.
-        if (System.getenv("TAVILY_API_KEY") != null && !System.getenv("TAVILY_API_KEY").isBlank()) {
-            report(true, "web search: tavily tier (TAVILY_API_KEY is set)");
-        } else {
-            info("web search: duckduckgo fallback (keyless) — set TAVILY_API_KEY"
-                    + " for the Tavily tier");
-        }
+        // Web tools (branch web_search) — the tier comes from WebSearchTiers,
+        // the SAME resolver the running tool builds from (card 203). This line
+        // used to re-derive the rule from TAVILY_API_KEY on its own, so the
+        // doctor and the tool described different machines the moment an
+        // address was saved in settings rather than exported. browse_page is
+        // decided by an installed Chrome. Neither is unhealthy when absent:
+        // both tools explain themselves readably.
+        emit(webSearchLine(dev.spectroscope.core.web.WebSearchTiers.forConfig(config)));
         dev.spectroscope.core.web.BrowsePageTool.findChrome(config.chromeEnv()).ifPresentOrElse(
                 chrome -> report(true, "browse_page: chrome at " + chrome),
                 () -> info("browse_page: no Chrome/Chromium found — the tool answers a"
@@ -497,6 +496,28 @@ public final class DoctorCommand implements Callable<Integer> {
                     + " (export it, or save it in the app)");
         });
         return lines;
+    }
+
+    /**
+     * The web_search line, built from the tier the tool itself will use.
+     *
+     * <p>This method holds no rule of its own — that is the point. The old line
+     * read {@code TAVILY_API_KEY} and decided for itself, which was a second
+     * copy of a decision that lived in {@code WebSearchTool}; the two agreed
+     * only for as long as the environment was the only input. The resolver is
+     * now the one input, and this method only chooses a face for it.</p>
+     *
+     * <p>A configured tier is a PASS. The scrape is an INFO rather than a FAIL:
+     * it is not a fault, it is a state the operator should know they are in,
+     * and its own label says as much.</p>
+     *
+     * @param choice the resolved tier
+     * @return the one line to print
+     */
+    static List<Line> webSearchLine(dev.spectroscope.core.web.WebSearchTiers.Choice choice) {
+        boolean configured = !dev.spectroscope.core.web.WebSearchTiers.DUCKDUCKGO.equals(choice.tier());
+        String message = "web search: " + dev.spectroscope.core.web.WebSearchTiers.describe(choice);
+        return List.of(new Line(configured ? Kind.PASS : Kind.INFO, message));
     }
 
     /**

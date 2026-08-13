@@ -13,8 +13,12 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * The keyless DuckDuckGo tier of web_search — the fallback when no
- * TAVILY_API_KEY is set. One GET against the {@code html.duckduckgo.com}
+ * The keyless DuckDuckGo tier of web_search — best effort, LAST resort, and
+ * the only tier here that DuckDuckGo's own terms prohibit. It answers when
+ * nothing above it in {@link WebSearchTiers}' table is configured: no SearXNG
+ * instance, no Tavily key, no Brave key. Everything that names a tier labels
+ * this one as what it is, because a silent default that scrapes is the
+ * dishonesty card 203 removed. One GET against the {@code html.duckduckgo.com}
  * results page, parsed by hand (regex + {@link HtmlText}; no jsoup, no new
  * dependency): titles come from the {@code result__a} anchors, URLs decode
  * the {@code uddg=} redirect parameter, snippets from the following
@@ -120,8 +124,9 @@ public final class DuckDuckGoSearcher implements WebSearcher {
 
         if (hits.isEmpty() && isBotCheck(page)) {
             throw new IllegalStateException("duckduckgo answered with a bot check page "
-                    + "instead of results — retry later, or set TAVILY_API_KEY for the "
-                    + "Tavily tier.");
+                    + "instead of results — this is the best-effort scrape tier, and it is "
+                    + "the one nobody should be relying on. Configure a SearXNG instance, or "
+                    + "a Tavily or Brave key, under Settings.");
         }
         return hits;
     }

@@ -33,7 +33,8 @@ final class NodeProofChild {
         SpectroConfig config = new SpectroConfig(
                 "anthropic", "claude-opus-4-8", "http://localhost:11434", 100_000, "ask",
                 List.of(), "gemini", true, List.of(), 2, true,
-                List.of(), null, "info", null, null, "auto", "auto", null, null, null, null, null);
+                List.of(), null, "info", null, null, "auto", "auto", null, null, null, null, null,
+                null);
 
         Path cwd = Files.createTempDirectory("spectro-node-proof");
         int exit = NodeCommand.execute(new ObjectMapper(), config, scripted,

@@ -507,7 +507,7 @@ class SpectroConfigTest {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
                 null, null, "auto", "auto", null, null, null,
-                ollamaBaseUrl, lmstudioBaseUrl);
+                ollamaBaseUrl, lmstudioBaseUrl, null);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -935,12 +935,13 @@ class SpectroConfigTest {
                 "workspace-component", "debug", "imageModel-component", "sttModel-component",
                 "local", "de", "chromeBinary-component",
                 "otlpEndpoint-component", "otlpBasicAuth-component",
-                "ollamaBaseUrl-component", "lmstudioBaseUrl-component");
+                "ollamaBaseUrl-component", "lmstudioBaseUrl-component",
+                "searxngUrl-component");
 
         SpectroConfig switched = base.withProvider("ollama", "qwen3");
 
         var components = SpectroConfig.class.getRecordComponents();
-        assertTrue(components.length >= 23,
+        assertTrue(components.length >= 24,
                 "reflection found " + components.length + " components — if this list ever"
                         + " shrinks to nothing the loop below silently asserts nothing");
         int checked = 0;

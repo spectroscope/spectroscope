@@ -32,6 +32,7 @@ import { settingsMayAutoPick } from "./settingsModelPolicy";
 import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
+import { WebSearchSettings } from "./WebSearchSettings";
 import type { Leveling } from "../state/useLeveling";
 import {
   fetchSettings,
@@ -825,6 +826,23 @@ export function SettingsPanel({
                   route stays silent forever. spectroscope starts nothing here
                   — it prints a command and the operator runs it. */}
               <DockerOfferBlock status={docker} lang={lang} />
+
+              {/* ---- Web search: the three real tiers, and the one nobody
+                  chose (card 203). The block renders what the server's ONE
+                  resolver decided; it does not re-derive the tier here. ---- */}
+              <WebSearchSettings
+                anchorId={sectionAnchorId("websearch")}
+                searxngUrl={String(view.effective.searxngUrl ?? "")}
+                onSave={saveUser}
+                originRow={
+                  <OriginRow
+                    view={view}
+                    field="searxngUrl"
+                    lang={lang}
+                    onReset={() => saveUser({ searxngUrl: null })}
+                  />
+                }
+              />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}
               <div className="settings-label" id={sectionAnchorId("workspace")}>
