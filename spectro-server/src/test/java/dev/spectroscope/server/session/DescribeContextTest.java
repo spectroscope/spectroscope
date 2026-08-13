@@ -48,8 +48,7 @@ class DescribeContextTest {
                 .collect(Collectors.toMap(ContextInfo.ToolInfo::name, Function.identity()));
 
         assertTrue(byName.containsKey("web_search"), "web_search must appear in the list");
-        assertEquals(dev.spectroscope.core.web.WebSearchTool.fromConfig(
-                        SpectroConfig.load(SpectroConfig.Overrides.none())).description(),
+        assertEquals(dev.spectroscope.core.web.WebSearchTool.fromConfig(config).description(),
                 byName.get("web_search").description(),
                 "the introspection names the ACTIVE search tier, whatever the configuration selects");
         assertTrue(byName.get("web_search").needsPermission());
@@ -58,5 +57,30 @@ class DescribeContextTest {
         assertEquals(new dev.spectroscope.core.web.BrowsePageTool().description(),
                 byName.get("browse_page").description());
         assertTrue(byName.get("browse_page").needsPermission());
+    }
+
+    @Test
+    void introspectionDescribesTheConfigItWasHandedAndNotASecondLoad(@TempDir Path cwd)
+            throws java.io.IOException {
+        // Review finding F5 of card 203: mainAgentTools called SpectroConfig.load()
+        // a second time and threw away the config the caller had already resolved.
+        // That is invisible while every caller builds an identical config — and the
+        // day one passes a session scope, an override or another cwd, the
+        // introspection tab names a different search tier than the session runs.
+        // The address below reaches the config through the launch-dir layer of THIS
+        // cwd, which a process-wide load never sees.
+        Path settings = cwd.resolve(SpectroConfig.PROJECT_SETTINGS);
+        java.nio.file.Files.createDirectories(settings.getParent());
+        java.nio.file.Files.writeString(settings, "{\"searxngUrl\": \"http://handed-in.example:8888\"}");
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+        assertEquals("http://handed-in.example:8888", config.searxngUrl(), "test premise");
+
+        ContextInfo context = ContextDescriber.describe(config, cwd);
+
+        String webSearch = context.tools().stream()
+                .filter(tool -> tool.name().equals("web_search"))
+                .findFirst().orElseThrow().description();
+        assertTrue(webSearch.contains("http://handed-in.example:8888"),
+                "the tab must describe the tier of the config it was given, got: " + webSearch);
     }
 }

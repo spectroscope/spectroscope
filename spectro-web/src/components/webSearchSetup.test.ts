@@ -16,6 +16,7 @@ import {
   SEARXNG_INSTALL_COMMAND,
   SEARXNG_SAMPLE_PATH,
   WEB_SEARCH_TIERS,
+  commitSearxngUrl,
   searxngOffer,
   tierReading,
 } from "./webSearchSetup";
@@ -134,5 +135,70 @@ describe("tierReading", () => {
     expect(reading.detailKey).toBe("");
     expect(reading.labelKey).toBe("");
     expect(reading.addr).toBe("");
+  });
+});
+
+describe("commitSearxngUrl", () => {
+  // Review finding F3. The tier line above the field is the card's criterion 5
+  // in the settings surface, and the server computes that tier by READING the
+  // settings file the save is still writing. So the re-read has to come after
+  // the save has landed, not after a zero-millisecond timer.
+  const deferred = (): { promise: Promise<void>; settle: () => void } => {
+    let settle = (): void => {};
+    const promise = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    return { promise, settle };
+  };
+
+  it("re-reads the tier only after the save has landed", async () => {
+    const put = deferred();
+    const order: string[] = [];
+    const save = (): Promise<void> => {
+      order.push("save-sent");
+      return put.promise.then(() => void order.push("save-landed"));
+    };
+    const reread = (): void => void order.push("reread");
+
+    const done = commitSearxngUrl("http://box.local:8888", "", save, reread);
+
+    // The save is in flight and the server has not answered. Waiting a REAL
+    // interval here is the whole assertion: the version this replaced re-read
+    // from a setTimeout(…, 0), and a zero-millisecond macrotask fires long
+    // before an HTTP round trip lands. Anything that re-read /api/config now
+    // would read the tier from before the write and print the old one.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(order).toEqual(["save-sent"]);
+
+    put.settle();
+    await done;
+    expect(order).toEqual(["save-sent", "save-landed", "reread"]);
+  });
+
+  it("sends null to remove the key and trims what it sends", async () => {
+    const patches: Record<string, unknown>[] = [];
+    const save = (patch: Record<string, unknown>): void => void patches.push(patch);
+
+    expect(await commitSearxngUrl("  http://box.local:8888  ", "", save, () => {})).toBe(true);
+    expect(await commitSearxngUrl("   ", "http://box.local:8888", save, () => {})).toBe(true);
+    expect(patches).toEqual([{ searxngUrl: "http://box.local:8888" }, { searxngUrl: null }]);
+  });
+
+  it("writes nothing when the field was only visited", async () => {
+    // Not just noise: the field is prefilled from the resolved config, which
+    // since the F1 fix includes the address the sample installer wrote into
+    // ~/.spectro/.env. A write on every blur would copy that into the settings
+    // document, where it outranks the file the installer maintains.
+    let writes = 0;
+    let rereads = 0;
+    const wrote = await commitSearxngUrl(
+      "  http://box.local:8888 ",
+      "http://box.local:8888",
+      () => void writes++,
+      () => void rereads++,
+    );
+    expect(wrote).toBe(false);
+    expect(writes).toBe(0);
+    expect(rereads).toBe(0);
   });
 });

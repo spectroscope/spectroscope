@@ -1,7 +1,11 @@
-// Web search, as a settings block a user can act on (card 203; owner: "gerne
-// als inline in den optionen wie bei langfuse also docker line zum kopieren und
-// eben konfig einer existierenden instanz und tavily und brave integration mit
-// einbauen als fallback").
+// Web search, as a settings block a user can act on (card 203). The owner's
+// instruction, in his words: "gerne als inline in den optionen wie bei langfuse
+// also docker line zum kopieren und eben konfig einer existierenden instanz und
+// tavily und brave integration mit einbauen als fallback" — inline in the
+// options like Langfuse: a docker line to copy, a field for an instance you
+// already run, and Tavily and Brave wired in as the fallback. The German stands
+// because a quote that is translated is no longer a quote; the English stands
+// because this file ships in a public repository.
 //
 // Before this block, choosing how the product searched the web meant learning
 // about an environment variable by reading the source — and the default, with
@@ -19,7 +23,7 @@ import { useCallback, useEffect, useState } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { CopyButton } from "./CopyButton";
-import { searxngOffer, tierReading } from "./webSearchSetup";
+import { commitSearxngUrl, searxngOffer, tierReading } from "./webSearchSetup";
 import type { DockerStatus } from "./dockerOffer";
 
 /** The `webSearch` block of /api/config — mirrors SessionsController#config. */
@@ -157,8 +161,10 @@ export function WebSearchSettings({
   /** The page's provenance badge + reset for `searxngUrl`, passed in so this
    *  block does not grow its own copy of the settings-layer vocabulary. */
   originRow?: React.ReactNode;
-  /** Writes one settings key, exactly like every other field in this panel. */
-  onSave: (patch: Record<string, unknown>) => void;
+  /** Writes one settings key, exactly like every other field in this panel.
+   *  Returns the write's promise so the tier line below can wait for it —
+   *  the server resolves the tier from the file this patch is still writing. */
+  onSave: (patch: Record<string, unknown>) => void | Promise<unknown>;
 }) {
   const lang = useLang();
   const [status, setStatus] = useState<WebSearchStatus | null>(null);
@@ -203,14 +209,11 @@ export function WebSearchSettings({
 
   const reading = tierReading(status?.tier ?? "", status?.searxngUrl ?? "");
 
-  const commit = (raw: string): void => {
-    const next = raw.trim();
-    if (next === searxngUrl.trim()) return; // blur is not an edit
-    onSave({ searxngUrl: next === "" ? null : next });
-    // The tier moves the moment the address is saved, so the line above the
-    // field has to be re-read rather than left describing the previous machine.
-    window.setTimeout(() => void load(), 0);
-  };
+  // The tier moves the moment the address is saved, so the line above the field
+  // is re-read — AFTER the write has landed, because the server resolves the
+  // tier by reading the settings file that write is producing. The order lives
+  // in commitSearxngUrl, where a test can hold it.
+  const commit = (raw: string): void => void commitSearxngUrl(raw, searxngUrl, onSave, load);
 
   return (
     <>

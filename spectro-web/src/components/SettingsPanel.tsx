@@ -337,8 +337,14 @@ export function SettingsPanel({
   /** Every write on this page goes through the user scope — a flat patch,
    *  `null` removing a key. Refreshes the view and flashes "saved" on
    *  success; a rejected patch (a 400 with the server's validation message)
-   *  shows that message instead of touching the last-known-good view. */
-  const saveUser = (patch: Record<string, unknown>): void => {
+   *  shows that message instead of touching the last-known-good view.
+   *
+   *  Returns the settled promise so a caller that has follow-up work can wait
+   *  for the write instead of guessing at a delay — the Web search block reads
+   *  the tier back, and the server resolves that tier from the settings file
+   *  this patch is writing. Every other call site ignores the value, exactly as
+   *  before. */
+  const saveUser = (patch: Record<string, unknown>): Promise<void> =>
     putSettings("user", patch)
       .then((fresh) => {
         setView(fresh);
@@ -346,7 +352,6 @@ export function SettingsPanel({
         flash();
       })
       .catch((e: unknown) => setSaveError(e instanceof Error ? e.message : String(e)));
-  };
 
   /** Card 193: an address write is a saveUser plus two follow-ups — the model
    *  probe re-runs against the new endpoint (probe epoch), and /api/config is

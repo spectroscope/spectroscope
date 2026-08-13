@@ -104,3 +104,41 @@ export function tierReading(tier: string, searxngUrl: string): TierReading {
     addr: tier === "searxng" ? searxngUrl : "",
   };
 }
+
+/**
+ * Save the instance address on blur, then re-read the tier — in that order,
+ * and only if the address actually changed.
+ *
+ * Why this is a function and not four lines in the component: the ORDER is the
+ * whole content, and an order is testable while a rendered blur is not. The
+ * first version fired the re-read from a `setTimeout(…, 0)` right after a save
+ * whose promise nobody held, and a zero-millisecond macrotask cannot outrace an
+ * HTTP round trip — so the line above the field kept describing the tier that
+ * was active BEFORE the save, until something else reloaded the page. Awaiting
+ * the save is not a nicety here: the server resolves the tier by reading the
+ * settings file the save is still writing.
+ *
+ * A blur without an edit writes nothing at all. That matters beyond noise: the
+ * field is prefilled from `effective`, which resolves the env layer, and since
+ * the card-203 review that layer includes `~/.spectro/.env` — the file the
+ * sample installer writes. An unconditional write on blur would copy the
+ * installer's address into the settings document and quietly outrank it.
+ *
+ * @param raw    the field's current text
+ * @param saved  the server-resolved address the field was prefilled with
+ * @param save   writes the patch; may return a promise, which is awaited
+ * @param reread re-reads /api/config so the tier line above the field is current
+ * @returns whether a write was sent
+ */
+export async function commitSearxngUrl(
+  raw: string,
+  saved: string,
+  save: (patch: Record<string, unknown>) => void | Promise<unknown>,
+  reread: () => void | Promise<unknown>,
+): Promise<boolean> {
+  const next = raw.trim();
+  if (next === saved.trim()) return false; // blur is not an edit
+  await save({ searxngUrl: next === "" ? null : next });
+  await reread();
+  return true;
+}
