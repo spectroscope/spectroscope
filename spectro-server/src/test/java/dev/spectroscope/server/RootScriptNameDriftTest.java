@@ -97,6 +97,20 @@ class RootScriptNameDriftTest {
     // ── every reference to one of them ─────────────────────────────────────────
 
     /**
+     * This file names the OLD paths on purpose, in its own documentation, so that
+     * a reader of the guard can see what it hunts. Walking itself therefore
+     * reports its own examples as dangling.
+     *
+     * <p>Found the moment this class was first committed, and only then: the walk
+     * reads TRACKED files, so while the guard was still a new untracked file it
+     * passed, and it went red on the merge that tracked it. A guard that is green
+     * until it is committed is worth the one line that says so.</p>
+     */
+    private static boolean isThisGuard(Path file) {
+        return file.getFileName().toString().equals("RootScriptNameDriftTest.java");
+    }
+
+    /**
      * The guard the rename exists for. Every path in every tracked text file that
      * ends in a root-script name must resolve.
      *
@@ -110,6 +124,9 @@ class RootScriptNameDriftTest {
     void everyPathNamingARootScriptResolves() throws Exception {
         List<String> dangling = new ArrayList<>();
         for (Path file : trackedTextFiles()) {
+            if (isThisGuard(file)) {
+                continue;
+            }
             for (String path : scriptPaths(read(file), false)) {
                 if (!resolves(file, path)) {
                     dangling.add(ROOT.relativize(file) + " → " + path);
