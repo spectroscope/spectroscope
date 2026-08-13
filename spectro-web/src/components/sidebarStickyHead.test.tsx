@@ -22,6 +22,14 @@
 // is `renderToStaticMarkup`, the idiom sessionRowDensity.test.tsx established —
 // no DOM, so this suite still runs in plain Node.
 //
+// Card 217 then took the ROW away and kept the block: the control rides the
+// last nav row's line now, which gave the head 34.0px back, and the rows scroll
+// in `.sidebar-list` instead of in the rail. Neither touches what this file
+// asserts — every claim here was about which block the control lives in, never
+// about which line of it — and that is why the assertions below survived the
+// move with two words changed. The new shape is pinned next door, in
+// sidebarScrollSeam.test.tsx.
+//
 // What no source guard can reach is whether a browser actually pins it. That is
 // measured live and reported on the card; this file's job is to stop it coming
 // back.
@@ -33,8 +41,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 import { SESS_OPTS_GAP, sessOptsPlacement } from "./SessionListOptions";
 
-/** The three segments the rail switches between, as <Sidebar> declares them. */
-type NavMode = "sessions" | "fleets" | "stategraph";
+/** The four segments the rail switches between, as <Sidebar> declares them
+ *  (browser is the fourth since card 201). */
+type NavMode = "sessions" | "fleets" | "stategraph" | "browser";
 
 /** Blank out block comments, keeping newlines so line numbers still line up.
  *  Prose about a sticky head is not a sticky head. */
@@ -127,10 +136,14 @@ const sessions = rail("sessions");
 describe("the options control rides the rail's sticky head", () => {
   it("renders the trigger inside the sticky block, not above the scrolling list", () => {
     // The whole card in one line. `divBlock` walks the real nesting, so this
-    // goes red the moment the row is rendered as a sibling of the head again —
-    // which is exactly the shape that scrolled away.
+    // goes red the moment the control is rendered as a sibling of the head
+    // again — which is exactly the shape that scrolled away.
+    //
+    // WHERE inside the block changed with card 217 (it rides the last nav row's
+    // line now instead of a row of its own) and this assertion did not have to:
+    // it was never about the row, it is about the block.
     const head = divBlock(sessions, "sidebar-head");
-    expect(head).toContain('class="session-list-head"');
+    expect(head).toContain('class="wsg-anchor sess-opts"');
     expect(head).toContain('class="sess-opts-btn"');
   });
 
@@ -146,14 +159,14 @@ describe("the options control rides the rail's sticky head", () => {
   });
 
   it("keeps the control on the sessions segment only", () => {
-    // The risk this move introduces, named: the head is drawn on all three
-    // segments, so a row dropped into it without its guard would offer the
-    // session-list options while looking at fleets or a state graph — options
-    // for a list that is not on screen.
+    // The risk this move introduces, named: the head is drawn on all four
+    // segments, so a control dropped into it without its guard would offer the
+    // session-list options while looking at fleets, a state graph or a browser
+    // pane — options for a list that is not on screen.
     expect(sessions).toContain('class="sess-opts-btn"');
-    for (const other of ["fleets", "stategraph"] as const) {
+    for (const other of ["fleets", "stategraph", "browser"] as const) {
       expect(rail(other), other).not.toContain('class="sess-opts-btn"');
-      expect(rail(other), other).not.toContain('class="session-list-head"');
+      expect(rail(other), other).not.toContain("sess-opts");
     }
   });
 });
@@ -187,11 +200,12 @@ describe("the sticky block the control now sits in", () => {
     expect(sticky.filter((s) => s.decls.includes("bottom:0"))).toHaveLength(1);
   });
 
-  it("does not pin the list head a second time on its own", () => {
-    // The shape this card rejected. `.session-list-head` is a row inside the
-    // sticky block now; giving it its own `position: sticky` would put two
-    // sticky tops in one container and re-open the offset problem.
-    expect(css).not.toMatch(/\.session-list-head\s*\{[^}]*position:\s*sticky/);
+  it("does not pin the control's own line a second time", () => {
+    // The shape this card rejected, still rejected one card later. The line the
+    // control rides is inside the sticky block; giving that line its own
+    // `position: sticky` would put two sticky tops in one container and re-open
+    // the offset problem — a `top:` equal to a height nobody can compute in CSS.
+    expect(css).not.toMatch(/\.sidebar-nav-seg-line\s*\{[^}]*position:\s*sticky/);
   });
 });
 
@@ -237,16 +251,19 @@ describe("the stacking context the sticky block became", () => {
     expect(zIndexOf(".sidebar-head")).toBeLessThanOrEqual(zIndexOf(".sidebar-foot"));
   });
 
-  it("never clips, on either row, because the panel hangs out of both boxes", () => {
+  it("never clips, on either box, because the panel hangs out of both", () => {
     // A constraint that is new BECAUSE of this move: before it, the head held
     // no popover, so `overflow` here was harmless. The panel opens downward out
     // of the boxes it lives in — measured, 99.1px of its 101.1px falls outside
-    // the head — so an `overflow: hidden` on either the head or the row it sits
-    // in clips the control away entirely and the suite stayed green for it. At
-    // the panel's midpoint the topmost element became a session row: the panel
-    // gone, and not reachable by scrolling to it either.
+    // the head — so an `overflow: hidden` on either the head or the line the
+    // control rides clips it away entirely and the suite stayed green for it.
+    // At the panel's midpoint the topmost element became a session row: the
+    // panel gone, and not reachable by scrolling to it either.
+    //
+    // The inner box is `.sidebar-nav-seg-line` since card 217, and the rule
+    // followed the control: the line is the popover's positioned ancestor now.
     expect(declsOf(".sidebar-head")).not.toMatch(/overflow/);
-    expect(declsOf(".session-list-head")).not.toMatch(/overflow/);
+    expect(declsOf(".sidebar-nav-seg-line")).not.toMatch(/overflow/);
   });
 
   it("sticks in the scroll container `.sidebar` owns", () => {
@@ -255,6 +272,11 @@ describe("the stacking context the sticky block became", () => {
     // Changing it to `visible` unpins the head AND the foot in one line while
     // leaving the whole suite green — the neighbouring drift test pins this
     // rule's padding but never its overflow.
+    //
+    // Since card 217 the rows scroll in `.sidebar-list` and this box overflows
+    // only in a window shorter than the rail's own chrome. That makes the rule
+    // rarer, not optional: it is what keeps the Settings row reachable there,
+    // and it is still the scrollport both sticky blocks are measured against.
     expect(declsOf(".sidebar")).toMatch(/overflow-y:\s*auto/);
   });
 });
@@ -263,13 +285,17 @@ describe("the stacking context the sticky block became", () => {
 // The second short window, and it is not the foot's doing.
 //
 // Pinning the trigger to the head fixed WHERE it is and left WHAT IT OPENS
-// alone: the panel hangs 6px under a trigger whose bottom is now a constant
-// 311.5px down the rail, and it is 101.1px tall. Measured on a live jar: it
-// needs a window of 418.7px to land inside one, while the trigger itself is
-// reachable from 311.5px. That is a 107px band of window heights in which a
-// reader can open a panel they cannot touch — `elementFromPoint` at both radios
-// returns null, and no amount of scrolling brings them back, because the panel
-// is anchored inside a block that does not scroll.
+// alone: the panel hangs 6px under a trigger whose bottom is a constant 304.7px
+// down the rail, and it is 101.1px tall. Measured on a live jar: it needs a
+// window of 419.8px to land inside one, while the trigger itself is reachable
+// from 304.7px. That is a 115px band of window heights in which a reader can
+// open a panel they cannot touch — `elementFromPoint` at both radios returns
+// null, and no amount of scrolling brings them back, because the panel is
+// anchored inside a block that does not scroll.
+//
+// The two constants moved 40px up the rail with card 217 and the band kept its
+// width, which is the argument for measuring rather than thresholding: nothing
+// here had to be re-derived, only re-measured.
 //
 // This one predates the move — the panel opened downward from a static head
 // too — but the move is what made the trigger reachable at every scroll
@@ -283,11 +309,12 @@ describe("the stacking context the sticky block became", () => {
 describe("the panel opens where there is room for it", () => {
   it("opens downward whenever the window has the room", () => {
     // The documented direction, and the one card 214 chose: this trigger sits
-    // at the TOP of the rail, so down is where a reader looks for it.
+    // at the TOP of the rail, so down is where a reader looks for it. The
+    // geometry is the one card 217 left behind, measured on a live jar.
     expect(
       sessOptsPlacement({
-        triggerTop: 289.5,
-        triggerBottom: 311.5,
+        triggerTop: 282.7,
+        triggerBottom: 304.7,
         panelHeight: 101.1,
         viewportHeight: 900,
       }),
@@ -295,30 +322,32 @@ describe("the panel opens where there is room for it", () => {
   });
 
   it("flips upward in the window where downward runs off the screen", () => {
-    // The measured band: trigger reachable at 311.5, panel needs 418.7.
+    // The measured band: trigger reachable at 304.7, panel needs 419.8.
     expect(
       sessOptsPlacement({
-        triggerTop: 289.5,
-        triggerBottom: 311.5,
+        triggerTop: 282.7,
+        triggerBottom: 304.7,
         panelHeight: 101.1,
         viewportHeight: 340,
       }),
     ).toBe("up");
-    // Both edges of the band, so the boundary is pinned rather than implied.
+    // Both edges of the band, so the boundary is pinned rather than implied —
+    // and both were opened for real at those two window heights, not only
+    // computed here: 420 opens down, 419 opens up.
     expect(
       sessOptsPlacement({
-        triggerTop: 289.5,
-        triggerBottom: 311.5,
+        triggerTop: 282.7,
+        triggerBottom: 304.7,
         panelHeight: 101.1,
-        viewportHeight: 427,
+        viewportHeight: 420,
       }),
     ).toBe("down");
     expect(
       sessOptsPlacement({
-        triggerTop: 289.5,
-        triggerBottom: 311.5,
+        triggerTop: 282.7,
+        triggerBottom: 304.7,
         panelHeight: 101.1,
-        viewportHeight: 426,
+        viewportHeight: 419,
       }),
     ).toBe("up");
   });

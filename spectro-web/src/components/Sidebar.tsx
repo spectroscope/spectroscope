@@ -262,239 +262,257 @@ export function Sidebar(props: {
         {/* The same recipe again for the segments. One hairline separates the
           two groups: without it the rail is one undifferentiated column of
           rows, and "start something" and "look at something" are not the same
-          kind of press. */}
-        <div className="sidebar-nav sidebar-nav-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
-          {navSegmentRows({
-            active: nav,
-            fleetsLocked: props.fleetsLocked === true,
-            fleetCount: orderedFleets.length,
-          }).map((row) => (
-            <NavRow
-              key={row.id}
-              role="tab"
-              ariaSelected={row.active}
-              active={row.active}
-              disabled={row.disabled}
-              icon={<NavIcon id={row.icon} />}
-              label={t(lang, row.labelKey)}
-              trailing={trailingFor(row.trailing)}
-              onClick={segmentPress[row.id]}
-            />
-          ))}
-        </div>
+          kind of press.
 
-        {/* The head of the list, and the options belong to the list rather than
-            to the app: they change how THESE rows read, so they sit on them and
-            not in the settings overlay at the foot. At the right, where a
-            control that governs a column goes.
-
-            It is drawn HERE, as the last row of the sticky block, rather than as
-            a sibling above the list — card 216. Static, it left with the list:
-            at the bottom of a 112-session rail the trigger sat 4091px above the
-            rail's top edge while the settings row was still on screen, so one
-            end of the rail was pinned and the other ran away. A second sticky
-            child would need `top:` equal to this block's height, and that height
-            is a brand plus six nav rows — a number that goes stale on the next
-            row anyone adds. Joining the block needs no number.
-
-            The guard, on the segment: the block is drawn on all three segments,
-            and options for a list you are not looking at are noise. */}
-        {nav === "sessions" && (
-          <div className="session-list-head">
-            <SessionListOptions />
-          </div>
-        )}
-      </div>
-
-      {nav === "sessions" ? (
-        <>
-          <nav className="session-list" aria-label="Sessions">
-            {/* The live row wears the same dot as every other row. It is THIS
-                page's socket — no longer the only row that may say "running",
-                only the one that says it about the session you are in. */}
-            <button
-              type="button"
-              className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
-              onClick={props.onSelectLive}
-            >
-              <span className="session-title">
-                <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
-                {t(lang, "nav.live")}
-              </span>
-              {/* The live row's subline goes quiet with the rest of the list: it
-                  is in the same list, under the same control, and "this browser
-                  tab" is the one thing the row's own name already says. */}
-              {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
-            </button>
-
-            {(sessions ?? []).map((s) => (
-              <SessionRow
-                key={s.id}
-                s={s}
-                parts={parts}
-                lang={lang}
-                active={props.activeId === s.id && props.activeFleet === null}
-                /* Card 212 owns the rule and card 214 owns the drawing: the whole
-                   live decision stays in storedRunState, where it is tested
-                   without a DOM, and the row receives a finished state. */
-                state={storedRunState({
-                  row: s,
-                  live: liveSessions,
-                  resumeId: props.resumeId,
-                  liveRunning: props.liveRunning,
-                })}
-                onSelect={() => props.onSelectSession(s.id)}
+          The group is wrapped, and the wrapper is what the options control
+          hangs off (card 217). The control had a row of its own under this
+          group and cost the block that never moves a whole line for one 22px
+          glyph; it now rides the LAST row's line, at that row's right. The
+          wrapper goes AROUND the tablist rather than inside it on purpose: a
+          button among the tabs would be an owned element the role forbids. */}
+        <div className="sidebar-nav-seg-line">
+          <div className="sidebar-nav sidebar-nav-seg" role="tablist" aria-label={t(lang, "nav.navMode")}>
+            {navSegmentRows({
+              active: nav,
+              fleetsLocked: props.fleetsLocked === true,
+              fleetCount: orderedFleets.length,
+            }).map((row) => (
+              <NavRow
+                key={row.id}
+                role="tab"
+                ariaSelected={row.active}
+                active={row.active}
+                disabled={row.disabled}
+                icon={<NavIcon id={row.icon} />}
+                label={t(lang, row.labelKey)}
+                trailing={trailingFor(row.trailing)}
+                onClick={segmentPress[row.id]}
               />
             ))}
-          </nav>
+          </div>
 
-          {sessions !== null && sessions.length === 0 && !failed && (
-            <p className="sidebar-note">{t(lang, "nav.none")}</p>
-          )}
-          {failed && <p className="sidebar-note">{t(lang, "nav.unreachable")}</p>}
+          {/* The options belong to the list rather than to the app: they change
+              how THESE rows read, so they sit with them and not in the settings
+              overlay at the foot. At the right, where a control that governs a
+              column goes.
 
-          {/* CHAT scenarios only — the fleet ones live under the fleets segment,
-              where playing one lands you anyway (owner: the flat mixed list read
-              as mush). History first, demos below, each list sorted by kind. */}
-          <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
-          <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
-            {SCENARIOS.filter((s) => s.fleet !== true).map((s) => (
+              It is drawn HERE, inside the block that does not scroll, rather
+              than above the list — card 216. Static, it left with the list: at
+              the bottom of a 120-session rail the trigger sat 4091px above the
+              rail's top edge while the settings row was still on screen, so one
+              end of the rail was pinned and the other ran away. What card 217
+              changed is only WHICH line it rides, not which block: no row of its
+              own, and no name of a row either — the stylesheet places it against
+              this group's bottom edge, which is the last row's bottom edge
+              whichever row that is. Browser is the last one today (card 201),
+              and it was Stategraph a card ago.
+
+              The guard, on the segment: the line is drawn on all four segments,
+              and options for a list you are not looking at are noise. */}
+          {nav === "sessions" && <SessionListOptions />}
+        </div>
+      </div>
+
+      {/* THE scroll container of the rail (card 217). The bar belonged to
+          `.sidebar`, so it spanned the brand, six nav rows and the settings foot
+          as well as the sessions it moves — 364.7px of chrome measured on a
+          1440x900 window. It spans the rows now, and the fixed blocks stand
+          outside it at both ends. */}
+      <div className="sidebar-list">
+        {nav === "sessions" ? (
+          <>
+            <nav className="session-list" aria-label="Sessions">
+              {/* The live row wears the same dot as every other row. It is THIS
+                page's socket — no longer the only row that may say "running",
+                only the one that says it about the session you are in. */}
               <button
                 type="button"
-                key={`scenario:${s.id}`}
-                className={`session-row scenario-row${props.activeId === `scenario:${s.id}` && props.activeFleet === null ? " active" : ""}`}
-                title={loc(s.prompt, lang)}
-                onClick={() => props.onSelectScenario(s)}
+                className={`session-row live-row${props.activeId === null && props.activeFleet === null ? " active" : ""}`}
+                onClick={props.onSelectLive}
               >
                 <span className="session-title">
-                  <svg
-                    className="scenario-glyph"
-                    viewBox="0 0 16 16"
-                    width="10"
-                    height="10"
-                    aria-hidden="true"
-                  >
-                    <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
-                  </svg>
-                  {loc(s.name, lang)}
+                  <RunDot state={runState({ live: true, running: props.liveRunning })} lang={lang} />{" "}
+                  {t(lang, "nav.live")}
                 </span>
-                <span className="session-meta">{lang === "de" ? "szenario · demo" : "scenario · demo"}</span>
+                {/* The live row's subline goes quiet with the rest of the list: it
+                  is in the same list, under the same control, and "this browser
+                  tab" is the one thing the row's own name already says. */}
+                {parts.meta && <span className="session-meta">{t(lang, "nav.liveSub")}</span>}
               </button>
-            ))}
-          </nav>
-        </>
-      ) : nav === "browser" ? (
-        /* The rail has nothing to list here: there is one pane and the agent
+
+              {(sessions ?? []).map((s) => (
+                <SessionRow
+                  key={s.id}
+                  s={s}
+                  parts={parts}
+                  lang={lang}
+                  active={props.activeId === s.id && props.activeFleet === null}
+                  /* Card 212 owns the rule and card 214 owns the drawing: the whole
+                   live decision stays in storedRunState, where it is tested
+                   without a DOM, and the row receives a finished state. */
+                  state={storedRunState({
+                    row: s,
+                    live: liveSessions,
+                    resumeId: props.resumeId,
+                    liveRunning: props.liveRunning,
+                  })}
+                  onSelect={() => props.onSelectSession(s.id)}
+                />
+              ))}
+            </nav>
+
+            {sessions !== null && sessions.length === 0 && !failed && (
+              <p className="sidebar-note">{t(lang, "nav.none")}</p>
+            )}
+            {failed && <p className="sidebar-note">{t(lang, "nav.unreachable")}</p>}
+
+            {/* CHAT scenarios only — the fleet ones live under the fleets segment,
+              where playing one lands you anyway (owner: the flat mixed list read
+              as mush). History first, demos below, each list sorted by kind. */}
+            <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
+            <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
+              {SCENARIOS.filter((s) => s.fleet !== true).map((s) => (
+                <button
+                  type="button"
+                  key={`scenario:${s.id}`}
+                  className={`session-row scenario-row${props.activeId === `scenario:${s.id}` && props.activeFleet === null ? " active" : ""}`}
+                  title={loc(s.prompt, lang)}
+                  onClick={() => props.onSelectScenario(s)}
+                >
+                  <span className="session-title">
+                    <svg
+                      className="scenario-glyph"
+                      viewBox="0 0 16 16"
+                      width="10"
+                      height="10"
+                      aria-hidden="true"
+                    >
+                      <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
+                    </svg>
+                    {loc(s.name, lang)}
+                  </span>
+                  <span className="session-meta">
+                    {lang === "de" ? "szenario · demo" : "scenario · demo"}
+                  </span>
+                </button>
+              ))}
+            </nav>
+          </>
+        ) : nav === "browser" ? (
+          /* The rail has nothing to list here: there is one pane and the agent
            drives it. What it can do is say what the segment is for, which is
            the same sentence the panel's empty state carries. */
-        <p className="sidebar-note">{t(lang, "browser.railNote")}</p>
-      ) : nav === "stategraph" ? (
-        /* The scenario rail, the fleet list's idiom — offered PERMANENTLY,
+          <p className="sidebar-note">{t(lang, "browser.railNote")}</p>
+        ) : nav === "stategraph" ? (
+          /* The scenario rail, the fleet list's idiom — offered PERMANENTLY,
            because the empty-state shelf disappears the moment a run loads
            (owner's call, 2026-08-11). The note stays: files through the
            picker remain the other way in. */
-        <>
-          <p className="sidebar-note">{t(lang, "nav.stategraphNote")}</p>
-          <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
-          <ScenarioRail active={props.stateGraphSource} onSelect={props.onStateGraphScenario} />
-        </>
-      ) : (
-        <>
-          <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>
-            {orderedFleets.length === 0 ? (
-              <div className="fleet-empty">
-                <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
-                <button type="button" className="fleet-empty-spawn" onClick={props.onSpawnNode}>
-                  + {lang === "de" ? "node starten" : "spawn a node"}
-                </button>
-              </div>
-            ) : (
-              orderedFleets.map((f) => (
-                <button
-                  type="button"
-                  key={f.contextId}
-                  className={`session-row fleet-row${props.activeFleet === f.contextId ? " active" : ""}`}
-                  onClick={() => props.onSelectFleet(f.contextId)}
-                  title={f.contextId}
-                >
-                  <span className="session-title fleet-row-title">
-                    <FleetSigil roster={f.roster} />
-                    <span className="fleet-row-name mono">{f.contextId}</span>
-                    {f.pendingGate && (
-                      <span className="fleet-gate-chip mono pulse">{t(lang, "sp.gateOpen")}</span>
-                    )}
-                    {/* Remove from the list — DONE fleets only (a live one would
+          <>
+            <p className="sidebar-note">{t(lang, "nav.stategraphNote")}</p>
+            <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
+            <ScenarioRail active={props.stateGraphSource} onSelect={props.onStateGraphScenario} />
+          </>
+        ) : (
+          <>
+            <nav className="session-list fleet-list" aria-label={t(lang, "fleet.rosterAria")}>
+              {orderedFleets.length === 0 ? (
+                <div className="fleet-empty">
+                  <p className="sidebar-note">{t(lang, "nav.noFleets")}</p>
+                  <button type="button" className="fleet-empty-spawn" onClick={props.onSpawnNode}>
+                    + {lang === "de" ? "node starten" : "spawn a node"}
+                  </button>
+                </div>
+              ) : (
+                orderedFleets.map((f) => (
+                  <button
+                    type="button"
+                    key={f.contextId}
+                    className={`session-row fleet-row${props.activeFleet === f.contextId ? " active" : ""}`}
+                    onClick={() => props.onSelectFleet(f.contextId)}
+                    title={f.contextId}
+                  >
+                    <span className="session-title fleet-row-title">
+                      <FleetSigil roster={f.roster} />
+                      <span className="fleet-row-name mono">{f.contextId}</span>
+                      {f.pendingGate && (
+                        <span className="fleet-gate-chip mono pulse">{t(lang, "sp.gateOpen")}</span>
+                      )}
+                      {/* Remove from the list — DONE fleets only (a live one would
                         just reappear with its next frame, so it is not offered). */}
-                    {f.onlineCount === 0 && props.onRemoveFleet && (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        className="fleet-row-remove mono"
-                        title={
-                          lang === "de" ? "Flotte aus der Liste entfernen" : "remove this fleet from the list"
-                        }
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          props.onRemoveFleet!(f.contextId);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            e.preventDefault();
+                      {f.onlineCount === 0 && props.onRemoveFleet && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="fleet-row-remove mono"
+                          title={
+                            lang === "de"
+                              ? "Flotte aus der Liste entfernen"
+                              : "remove this fleet from the list"
+                          }
+                          onClick={(e) => {
                             e.stopPropagation();
                             props.onRemoveFleet!(f.contextId);
-                          }
-                        }}
-                      >
-                        ×
-                      </span>
-                    )}
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              props.onRemoveFleet!(f.contextId);
+                            }
+                          }}
+                        >
+                          ×
+                        </span>
+                      )}
+                    </span>
+                    <span className="session-meta tabular">
+                      {t(lang, "fleet.count", { n: f.agentCount, online: f.onlineCount })}
+                      {f.lastActivity > 0 && ` · ${relativeTime(f.lastActivity, Date.now(), lang)}`}
+                    </span>
+                  </button>
+                ))
+              )}
+            </nav>
+
+            {/* FLEET scenarios — playing one enters a replay fleet, so they live
+              here, under the fleets they become (owner: no more mixed list). */}
+            <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
+            <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
+              {SCENARIOS.filter((s) => s.fleet === true).map((s) => (
+                <button
+                  type="button"
+                  key={`scenario:${s.id}`}
+                  className={`session-row scenario-row${props.activeFleet === `scenario:${s.id}` ? " active" : ""}`}
+                  title={loc(s.prompt, lang)}
+                  onClick={() => props.onSelectScenario(s)}
+                >
+                  <span className="session-title">
+                    <svg
+                      className="scenario-glyph"
+                      viewBox="0 0 16 16"
+                      width="10"
+                      height="10"
+                      aria-hidden="true"
+                    >
+                      <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
+                    </svg>
+                    {loc(s.name, lang)}
                   </span>
-                  <span className="session-meta tabular">
-                    {t(lang, "fleet.count", { n: f.agentCount, online: f.onlineCount })}
-                    {f.lastActivity > 0 && ` · ${relativeTime(f.lastActivity, Date.now(), lang)}`}
+                  <span className="session-meta">
+                    {lang === "de" ? "flotten-szenario · demo" : "fleet scenario · demo"}
                   </span>
                 </button>
-              ))
-            )}
-          </nav>
-
-          {/* FLEET scenarios — playing one enters a replay fleet, so they live
-              here, under the fleets they become (owner: no more mixed list). */}
-          <p className="sidebar-eyebrow scenario-eyebrow">{t(lang, "nav.scenarios")}</p>
-          <nav className="session-list scenario-list" aria-label={t(lang, "nav.scenarios")}>
-            {SCENARIOS.filter((s) => s.fleet === true).map((s) => (
-              <button
-                type="button"
-                key={`scenario:${s.id}`}
-                className={`session-row scenario-row${props.activeFleet === `scenario:${s.id}` ? " active" : ""}`}
-                title={loc(s.prompt, lang)}
-                onClick={() => props.onSelectScenario(s)}
-              >
-                <span className="session-title">
-                  <svg
-                    className="scenario-glyph"
-                    viewBox="0 0 16 16"
-                    width="10"
-                    height="10"
-                    aria-hidden="true"
-                  >
-                    <path d="M4.5 2.8v10.4L13 8z" fill="currentColor" />
-                  </svg>
-                  {loc(s.name, lang)}
-                </span>
-                <span className="session-meta">
-                  {lang === "de" ? "flotten-szenario · demo" : "fleet scenario · demo"}
-                </span>
-              </button>
-            ))}
-          </nav>
-        </>
-      )}
+              ))}
+            </nav>
+          </>
+        )}
+      </div>
 
       {/* Outside the segment branch on purpose: settings is not a fact about
-          sessions, and a control that exists on one of three segments is a
+          sessions, and a control that exists on one of four segments is a
           control a reader learns not to look for. The head solved the same
-          problem at the other end of this scroll container. */}
+          problem at the other end of the rail. */}
       <div className="sidebar-foot">
         <NavRow icon={<NavIcon id="gear" />} label={t(lang, "hdr.settings")} onClick={props.onSettings} />
       </div>
