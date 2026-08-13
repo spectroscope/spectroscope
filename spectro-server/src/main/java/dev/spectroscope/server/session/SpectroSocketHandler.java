@@ -29,11 +29,20 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
     /** The server-hosted fleet hub (opt-in) — every connection may tap it. */
     private final FleetAggregator fleet;
 
+    /**
+     * Who is live on this server (card 212). This map used to be the only place
+     * that knew, and it is private with no accessor — which is exactly why a
+     * browser could never draw a second run as live. The registry is the public
+     * half of the same fact, and it also enforces one socket per session id.
+     */
+    private final LiveSessions liveSessions;
+
     /** Per-connection state, keyed by the Spring session id. */
     private final Map<String, SessionConnection> connections = new ConcurrentHashMap<>();
 
-    SpectroSocketHandler(FleetAggregator fleet) {
+    SpectroSocketHandler(FleetAggregator fleet, LiveSessions liveSessions) {
         this.fleet = fleet;
+        this.liveSessions = liveSessions;
     }
 
     /**
@@ -48,9 +57,11 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
         String resumeId = queryParam(socket, "resume");
         // Config + provider + system prompt exactly as the CLI builds them.
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
-        SessionConnection connection = new SessionConnection(socket, mapper, config, resumeId, fleet);
+        SessionConnection connection =
+                new SessionConnection(socket, mapper, config, resumeId, fleet, liveSessions);
         connections.put(socket.getId(), connection);
-        // A resume that cannot load its session closes the socket itself.
+        // A resume that cannot load its session closes the socket itself — and
+        // so does a resume of a session another socket already holds.
         connection.start();
     }
 

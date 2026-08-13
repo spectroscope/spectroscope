@@ -68,13 +68,18 @@ describe("what a written jsonl may contain", () => {
       "agent_detail",
       "ground_info",
       "attachment_image",
+      // Card 212's two socket-only frames: the live set, and the refusal that
+      // says a session id belongs to another socket. Both describe the server
+      // now, not this session's history.
+      "live_sessions",
+      "session_busy",
     ]) {
       expect(NON_WIRE_TYPES.has(type), type).toBe(true);
     }
-    // Eighteen, down from nineteen: `llm_exchange` graduated to the wire in
-    // card 184 leg 3. The number is asserted so the set cannot grow or shrink
-    // by accident — only on purpose, with the reason written above.
-    expect(NON_WIRE_TYPES.size).toBe(18);
+    // Twenty: eighteen, plus card 212's two. The number is asserted so the set
+    // cannot grow or shrink by accident — only on purpose, with the reason
+    // written above.
+    expect(NON_WIRE_TYPES.size).toBe(20);
   });
 
   it("keeps a user turn read out of a transcript out of the download", () => {

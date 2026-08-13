@@ -8,7 +8,7 @@
 // exactly the class of defect this house has paid for before.
 import { describe, expect, it } from "vitest";
 import { dict } from "../i18n/i18n";
-import { RUN_STATES, runDotClass, runLabelKey, runState } from "./runIndicator";
+import { RUN_STATES, runDotClass, runLabelKey, runState, storedRunState } from "./runIndicator";
 
 describe("runState", () => {
   it("pulses only while a run is actually streaming", () => {
@@ -50,5 +50,72 @@ describe("runState", () => {
       expect(dict[key].de, `${key}.de`).toBeTruthy();
       expect(dict[key].en, `${key}.en`).toBeTruthy();
     }
+  });
+});
+
+// Card 212: a stored row is no longer limited to what its file says. The server
+// reports which sessions are live, so a row that another window is driving
+// wears the same dot the driving window shows — and a session that ends while
+// another keeps running loses its dot alone.
+describe("storedRunState", () => {
+  const closed = { id: "s-1", stopReason: "end_turn" };
+  const openFile = { id: "s-1", stopReason: null };
+
+  it("draws a session another window is running as running", () => {
+    expect(
+      storedRunState({
+        row: closed,
+        live: [{ id: "s-1", running: true, since: 1 }],
+        resumeId: null,
+        liveRunning: false,
+      }),
+    ).toBe("running");
+  });
+
+  it("draws a session another window merely holds as live", () => {
+    expect(
+      storedRunState({
+        row: closed,
+        live: [{ id: "s-1", running: false, since: 1 }],
+        resumeId: null,
+        liveRunning: false,
+      }),
+    ).toBe("live");
+  });
+
+  it("leaves the OTHER live session alone when one of them ends", () => {
+    const live = [{ id: "s-2", running: true, since: 1 }];
+    expect(storedRunState({ row: closed, live, resumeId: null, liveRunning: false })).toBe("idle");
+    expect(
+      storedRunState({ row: { id: "s-2", stopReason: null }, live, resumeId: null, liveRunning: false }),
+    ).toBe("running");
+  });
+
+  it("never calls a stored file live just because THIS page is busy", () => {
+    // The old lie in reverse: liveRunning belongs to this page's socket, and a
+    // row nothing reports as live must not borrow it.
+    expect(storedRunState({ row: openFile, live: [], resumeId: null, liveRunning: true })).toBe("open");
+    expect(storedRunState({ row: closed, live: [], resumeId: null, liveRunning: true })).toBe("idle");
+  });
+
+  it("still trusts this page's own resume when nothing reports a live set", () => {
+    // A server from before this card sends no live_sessions frame at all. The
+    // row this page is resuming stays live, exactly as it did before — the
+    // feature is additive all the way down.
+    expect(storedRunState({ row: openFile, live: [], resumeId: "s-1", liveRunning: true })).toBe("running");
+    expect(storedRunState({ row: openFile, live: [], resumeId: "s-1", liveRunning: false })).toBe("live");
+  });
+
+  it("prefers the server's word over this page's guess for the resumed row", () => {
+    // Same session, two facts. The server sees every run on the machine; the
+    // page sees only its own socket, and the socket may be reconnecting.
+    expect(
+      storedRunState({
+        row: openFile,
+        live: [{ id: "s-1", running: true, since: 1 }],
+        resumeId: "s-1",
+        liveRunning: false,
+      }),
+    ).toBe("running");
   });
 });

@@ -241,7 +241,8 @@ class SpectroServerIntegrationTest {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
 
-        List<String> types = events.stream().map(e -> e.path("type").asText()).toList();
+        List<JsonNode> announced = announcements(events);
+        List<String> types = announced.stream().map(e -> e.path("type").asText()).toList();
         // The socket-only frames precede the first run (none of them is ever
         // stored in the JSONL): provider_info + permission_mode_info + the
         // PROSPECTIVE workspace_info on connect, the SAME provider pair again
@@ -250,7 +251,7 @@ class SpectroServerIntegrationTest {
         // first run.
         assertEquals("provider_info", types.getFirst(),
                 "the active backend is announced on connect, got " + types);
-        JsonNode providerInfo = events.getFirst();
+        JsonNode providerInfo = announced.getFirst();
         assertEquals("ollama", providerInfo.path("provider").asText());
         assertEquals("qwen3", providerInfo.path("model").asText());
         assertEquals("127.0.0.1:" + ollamaMock.getAddress().getPort(),
@@ -260,7 +261,7 @@ class SpectroServerIntegrationTest {
                 "the permission mode is announced on connect too, got " + types);
         assertEquals("workspace_info", types.get(2),
                 "connect names the PROSPECTIVE workspace, got " + types);
-        JsonNode prospective = events.get(2);
+        JsonNode prospective = announced.get(2);
         assertFalse(prospective.path("resolved").asBoolean(true),
                 "the connect frame says it is not resolved yet");
         assertTrue(prospective.path("sessionId").asText("").isBlank(),
@@ -271,7 +272,7 @@ class SpectroServerIntegrationTest {
                 "...and permission_mode_info right after it, got " + types);
         assertEquals("workspace_info", types.get(5),
                 "the workspace announcement precedes the run, got " + types);
-        JsonNode workspaceInfo = events.get(5);
+        JsonNode workspaceInfo = announced.get(5);
         assertTrue(workspaceInfo.path("resolved").asBoolean(false),
                 "the run's announcement is the resolved one");
         assertFalse(workspaceInfo.path("sessionId").asText().isBlank());
@@ -347,6 +348,30 @@ class SpectroServerIntegrationTest {
                 return null;
             }
         };
+    }
+
+    /**
+     * The stream without the live-session pushes (card 212).
+     *
+     * <p>Every positional assertion below is about the order this connection
+     * announces ITS OWN state in — provider, permission mode, workspace, then
+     * the run. {@code live_sessions} belongs to none of that: it is a fact about
+     * the whole server, delivered on the connection's drain thread the moment
+     * the registry changes, so where it lands in this list depends on thread
+     * scheduling and on what any OTHER socket is doing. Asserting a position for
+     * it would be asserting a race.</p>
+     *
+     * <p>Same reasoning, and the same remedy, as the {@code llm_} filter these
+     * tests already apply: the frame's own ordering is pinned where it belongs,
+     * in {@code LiveSessionsSocketTest}.</p>
+     *
+     * @param events every frame the socket delivered
+     * @return the frames this connection announced about itself, in order
+     */
+    private static List<JsonNode> announcements(List<JsonNode> events) {
+        return events.stream()
+                .filter(e -> !"live_sessions".equals(e.path("type").asText()))
+                .toList();
     }
 
     /** The last frame of a given type, asserting at least one arrived. */
@@ -455,7 +480,7 @@ class SpectroServerIntegrationTest {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
 
-        List<String> types = events.stream().map(e -> e.path("type").asText()).toList();
+        List<String> types = announcements(events).stream().map(e -> e.path("type").asText()).toList();
         assertEquals("provider_info", types.getFirst(), "connect announces the backend first");
         assertEquals("permission_mode_info", types.get(1), "connect also announces the permission mode");
         assertEquals("workspace_info", types.get(2),
@@ -739,19 +764,20 @@ class SpectroServerIntegrationTest {
             socket.sendClose(WebSocket.NORMAL_CLOSURE, "done").join();
         }
 
-        assertTrue(events.size() >= 4,
+        List<JsonNode> announced = announcements(events);
+        assertTrue(announced.size() >= 4,
                 "connect (provider + permission mode + workspace) + switch must all announce, got "
-                        + events);
-        JsonNode boot = events.get(0);
+                        + announced);
+        JsonNode boot = announced.get(0);
         assertEquals("provider_info", boot.path("type").asText());
         assertEquals("ollama", boot.path("provider").asText());
 
-        assertEquals("permission_mode_info", events.get(1).path("type").asText(),
+        assertEquals("permission_mode_info", announced.get(1).path("type").asText(),
                 "the boot permission mode is announced right after the boot provider");
-        assertEquals("workspace_info", events.get(2).path("type").asText(),
+        assertEquals("workspace_info", announced.get(2).path("type").asText(),
                 "connect also names the prospective workspace");
 
-        JsonNode switched = events.get(3);
+        JsonNode switched = announced.get(3);
         assertEquals("provider_info", switched.path("type").asText());
         assertEquals("openai", switched.path("provider").asText());
         assertEquals("my-local", switched.path("model").asText());

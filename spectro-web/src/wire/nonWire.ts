@@ -72,6 +72,15 @@ export const SOCKET_ONLY_TYPES: ReadonlySet<string> = new Set([
   // record.
   "llm_request",
   "llm_response",
+  // Card 212. Both are facts about the SERVER at this instant, not about this
+  // session's history: which sessions are live right now, and that a resume was
+  // refused because another socket holds the id. Neither belongs in a file that
+  // somebody reopens tomorrow — a stored "these two were live" would be a claim
+  // about a machine that has since restarted. Additive on the socket, and
+  // fenced out of every writer here, which is how the RunEvent wire stays
+  // byte-frozen while the UI learns something new.
+  "live_sessions",
+  "session_busy",
 ]);
 
 /** What an import read out of somebody else's transcript: the todo list, the
