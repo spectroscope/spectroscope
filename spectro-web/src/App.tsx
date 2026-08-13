@@ -2147,10 +2147,18 @@ export function App() {
               fleet={enteredFleetModel}
             />
           ) : fleetTab === "trace" ? (
-            /* And the trace stays mandatory, agent-filterable via its own bar. */
+            /* And the trace stays mandatory, agent-filterable via its own bar.
+
+               No `droppedRows`: these rows are `traceFromEvents(shownEvents)`,
+               a flat map over the fleet's own frames with seq from 1, no window
+               and nothing to count. It used to be handed `live.traceDropped` —
+               THIS browser's session socket — so entering a fleet after a
+               windowed live run drew 45 complete rows under "last 45 of 4049 ·
+               4004 fell out of the live window", with a tooltip that said in the
+               same breath that the record begins at seq 1. Both numbers were
+               real; neither belonged to the pane they were printed on. */
             <TraceView
               entries={traceEntries}
-              droppedRows={live.traceDropped}
               agentFilter={traceAgent}
               onAgentFilter={setTraceAgent}
               focusEvent={focusEvent}

@@ -24,6 +24,29 @@ const deltas = (n: number, from = 0): RunEvent[] =>
     (_, i) => ({ type: "text_delta", agentId: "main", text: "x", ts: from + i + 1 }) as RunEvent,
   );
 
+/** One voice call this browser made — the thing that sends `traceWithVoice`
+ *  down its manufacturing branch. It carries no seq of its own, so the merged
+ *  list has to number it from somewhere. */
+const voice = (ts: number, durationMs = 10) => ({
+  wireSession: "stt-2026-08-13",
+  xid: `v${ts}`,
+  agentId: "composer",
+  turn: 0,
+  kind: "stt",
+  provider: "whisper-cpp",
+  model: "ggml-small.bin",
+  transport: "process",
+  url: "process://whisper-cli",
+  status: 200,
+  requestBytes: 99884,
+  responseBytes: 46,
+  responseLines: 1,
+  aborted: false,
+  fidelity: "encoded",
+  durationMs,
+  ts,
+});
+
 /** One llm_exchange frame — the socket puts one in every live session since
  *  card 184 leg 3, and each one becomes TWO rows on screen. */
 const exchange = (ts: number): RunEvent =>
@@ -79,13 +102,35 @@ describe("the disclosure counts the record, not the drawing (card 116)", () => {
     expect(display.length + state.traceDropped).toBe(9004);
   });
 
-  it("survives a record whose numbering the drawing renumbered", () => {
-    // `traceWithVoice` renumbers the merged list from 1 when a voice exchange is
-    // present, so the drawing's first seq is 1 while 4000 record rows are gone.
-    // The disclosure reads the record, so it cannot be dragged along.
+  it("names a seq the drawing really puts on a row", () => {
+    // The version of this test that shipped in review never called
+    // `traceWithVoice` at all — its body was the firstSeq assertion from two
+    // tests above it, wearing a comment about a merge it did not perform.
+    // Reverting the fix under it left this file fully green.
+    //
+    // What it has to do is run the branch it names. `traceWithVoice` used to
+    // renumber the WHOLE merged list, so the row that IS record row 4001 slid
+    // to 4004 while a manufactured voice row took the 4001 the disclosure had
+    // just announced. The disclosure was right and the column under it was not.
     const state = windowTrace(reduceAll(initialState, deltas(9000)));
     const d = traceDisclosure(state.trace, state.traceDropped);
     expect(d?.firstSeq).toBe(4001);
+
+    // A voice call that landed one millisecond before the oldest surviving row,
+    // which is exactly where it hurts.
+    const drawn = traceWithVoice(state.trace, [voice(4000)]);
+
+    const record = drawn.filter((r) => r.type === "text_delta");
+    expect(record).toHaveLength(5000);
+    expect(record[0].seq).toBe(d?.firstSeq);
+    expect(record[record.length - 1].seq).toBe(9000);
+
+    // And nothing manufactured wears a whole number. A fraction is this pane's
+    // existing mark for "this row was never on the wire" — `withResponseRows`
+    // has numbered its response rows `seq - 0.5` since card 184 — so the first
+    // whole number in the column is the seq the disclosure names.
+    expect(drawn.filter((r) => Number.isInteger(r.seq))).toHaveLength(5000);
+    expect(drawn.find((r) => Number.isInteger(r.seq))?.seq).toBe(d?.firstSeq);
   });
 
   it("is empty-safe", () => {
