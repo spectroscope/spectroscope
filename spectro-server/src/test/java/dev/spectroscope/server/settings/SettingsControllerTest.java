@@ -3,6 +3,7 @@ package dev.spectroscope.server.settings;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SettingsWriter;
+import dev.spectroscope.core.permission.ToolTierMap;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -197,5 +198,46 @@ class SettingsControllerTest {
         ResponseStatusException e = assertThrows(ResponseStatusException.class,
                 () -> controller.settings(null, rebound));
         assertEquals(404, e.getStatusCode().value());
+    }
+
+    // ---- the allowlist read-out (card 199, criterion 4) -----------------------------
+
+    @Test
+    void theAllowlistReadOutNamesEveryEntrysTierAndTheMapVersion(@TempDir Path launchDir)
+            throws Exception {
+        Files.createDirectories(launchDir.resolve(".spectro"));
+        Files.writeString(launchDir.resolve(".spectro/settings.json"), """
+                { "autoApprove": ["read_file#read", "write_file#write",
+                                  "mcp__playwright__*#read", "mcp__playwright__*"] }
+                """);
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+
+        JsonNode view = JSON.valueToTree(controller.allowlist(null, local()));
+        assertEquals(1, view.path("schemaVersion").asInt());
+        assertEquals(ToolTierMap.shipped().mapVersion(), view.path("mapVersion").asText());
+        assertEquals(3, view.path("tiers").size(), "the page renders the tiers the gate knows");
+
+        JsonNode entries = view.path("scopes").path("launch-dir");
+        assertEquals(4, entries.size());
+        assertEquals("read", entries.get(0).path("tier").asText());
+        assertEquals("read", entries.get(0).path("toolTier").asText());
+        assertEquals("write", entries.get(1).path("toolTier").asText(),
+                "an exact entry shows the tier the NAMED tool actually holds");
+        assertTrue(entries.get(2).path("wildcard").asBoolean());
+        assertEquals("read", entries.get(2).path("tier").asText());
+        assertTrue(entries.get(3).path("inertBecause").asText().contains("wildcard"),
+                "a wildcard without a tier is shown as approving nothing, and why");
+
+        assertEquals(4, view.path("effective").size(),
+                "the folded list is answered too, parsed by the SAME matcher the gate uses");
+    }
+
+    @Test
+    void theAllowlistReadOutIsFencedLikeEveryOtherReadingOfTheSettings(@TempDir Path launchDir) {
+        SettingsController controller = new SettingsController(launchDir, session -> null);
+        MockHttpServletRequest rebound = new MockHttpServletRequest();
+        rebound.addHeader("Host", "evil.example.com");
+        assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> controller.allowlist(null, rebound));
     }
 }

@@ -10,10 +10,25 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-/** The allowlist matcher: exact tool rules, prefix rules per guarded field, and the remember-rule scoper. */
+/**
+ * The allowlist matcher: exact tool rules, prefix rules per guarded field, and the remember-rule scoper.
+ *
+ * <p>Card 199 changed what an UNQUALIFIED entry means — it now approves read and
+ * nothing above — so the hand-written entries in this file go through {@link
+ * #migrated}, which is the one-time migration criterion 8 orders and criterion 6
+ * points at by name. They are not exempted from the new rule; they are carried
+ * across it, and every verdict below is the verdict this suite asserted before.
+ */
 class AllowlistTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** An allowlist built from entries as they stand in a settings file today —
+     *  through the migration, exactly as a real settings file reaches it. */
+    private static Allowlist migrated(String... entries) {
+        return Allowlist.fromEntries(
+                AllowlistMigration.migrate(List.of(entries), ToolTierMap.shipped()).entries());
+    }
 
     private static PermissionRequest command(String command) {
         return new PermissionRequest("main", "c1", "run_command",
@@ -27,15 +42,14 @@ class AllowlistTest {
 
     @Test
     void exactToolRulesApproveEveryCallOfThatTool() {
-        Allowlist allowlist = Allowlist.fromEntries(List.of("write_file"));
+        Allowlist allowlist = migrated("write_file");
         assertTrue(allowlist.allows(write("notes/a.txt")));
         assertFalse(allowlist.allows(command("rm -rf /")), "other tools stay guarded");
     }
 
     @Test
     void prefixRulesGuardTheRightField() {
-        Allowlist allowlist = Allowlist.fromEntries(
-                List.of("run_command:git status*", "write_file:docs/*"));
+        Allowlist allowlist = migrated("run_command:git status*", "write_file:docs/*");
         assertTrue(allowlist.allows(command("git status --short")));
         assertFalse(allowlist.allows(command("git push --force")));
         assertTrue(allowlist.allows(write("docs/readme.md")));
@@ -51,13 +65,13 @@ class AllowlistTest {
 
     @Test
     void rememberRuleScopesRiskyToolsAndKeepsOthersBare() {
-        assertEquals("run_command:git*",
+        assertEquals("run_command#eval-execute:git*",
                 Allowlist.rememberRule("run_command",
                         JSON.createObjectNode().put("command", "git status --short")));
-        assertEquals("write_file:docs/a.md*",
+        assertEquals("write_file#write:docs/a.md*",
                 Allowlist.rememberRule("write_file",
                         JSON.createObjectNode().put("path", "docs/a.md")));
-        assertEquals("read_file",
+        assertEquals("read_file#read",
                 Allowlist.rememberRule("read_file", JSON.createObjectNode()),
                 "a non-risky tool remembers its bare name");
 
@@ -82,10 +96,10 @@ class AllowlistTest {
     @Test
     void editFileAndWebFetchAreScopedNeverBlanketApproved() {
         // One remembered click covers THIS path/url, not every future call.
-        assertEquals("edit_file:docs/a.md*",
+        assertEquals("edit_file#write:docs/a.md*",
                 Allowlist.rememberRule("edit_file",
                         JSON.createObjectNode().put("path", "docs/a.md")));
-        assertEquals("web_fetch:https://example.com*",
+        assertEquals("web_fetch#read:https://example.com*",
                 Allowlist.rememberRule("web_fetch",
                         JSON.createObjectNode().put("url", "https://example.com")));
 
@@ -104,8 +118,7 @@ class AllowlistTest {
 
     @Test
     void handWrittenPrefixRulesMatchEditFileAndWebFetch() {
-        Allowlist allowlist = Allowlist.fromEntries(
-                List.of("edit_file:src/*", "web_fetch:https://docs.example.com*"));
+        Allowlist allowlist = migrated("edit_file:src/*", "web_fetch:https://docs.example.com*");
         assertTrue(allowlist.allows(edit("src/Main.java")));
         assertFalse(allowlist.allows(edit("build.gradle.kts")));
         assertTrue(allowlist.allows(fetch("https://docs.example.com/guide")));
@@ -121,7 +134,7 @@ class AllowlistTest {
     void browsePageIsUrlScopedExactlyLikeWebFetch() {
         // browse_page reaches the network through a real browser — one
         // remembered click covers THIS url prefix, never every page.
-        assertEquals("browse_page:https://docs.example.com*",
+        assertEquals("browse_page#write:https://docs.example.com*",
                 Allowlist.rememberRule("browse_page",
                         JSON.createObjectNode().put("url", "https://docs.example.com")));
 
@@ -137,7 +150,7 @@ class AllowlistTest {
     void webSearchRemembersItsBareName() {
         // Queries vary every call — a prefix scope would make remembering
         // useless, so web_search remembers like the other bare-name tools.
-        assertEquals("web_search",
+        assertEquals("web_search#read",
                 Allowlist.rememberRule("web_search",
                         JSON.createObjectNode().put("query", "gradle dsl")));
     }

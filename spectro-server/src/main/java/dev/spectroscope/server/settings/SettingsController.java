@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import dev.spectroscope.core.config.SettingsWriter;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
+import dev.spectroscope.core.permission.Allowlist;
+import dev.spectroscope.core.permission.ToolTier;
+import dev.spectroscope.core.permission.ToolTierMap;
 import dev.spectroscope.server.session.SessionWorkspaces;
 import dev.spectroscope.server.web.LocalOrigin;
 import jakarta.servlet.http.HttpServletRequest;
@@ -62,12 +65,13 @@ public class SettingsController {
      *  and {@code WorkspaceController}). */
     private static final Pattern SESSION_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9-]*");
 
-    /** Workspace-local settings file, relative to the workspace root. Named
-     *  again here rather than reused from {@code SpectroConfig} — its own copy of
-     *  this literal is package-private to {@code dev.spectroscope.core.config}, and the
-     *  settings API's "files" view needs it purely for display, never to load
-     *  or write it directly. */
-    private static final String WS_LOCAL_SETTINGS = ".spectro/settings.local.json";
+    /** Workspace-local settings file, relative to the workspace root — now taken
+     *  from {@code SpectroConfig} rather than spelled again here. It used to be a
+     *  second copy of the literal because the original was package-private; card
+     *  199's review found the cost of copies of this particular path (a whole
+     *  folded allowlist layer that the migration never visited), so the copy is
+     *  gone and there is one spelling. */
+    private static final String WS_LOCAL_SETTINGS = SpectroConfig.WS_LOCAL_SETTINGS;
 
     private final Path launchDir;
 
@@ -149,6 +153,64 @@ public class SettingsController {
         out.put("files", files(workspace));
         out.put("workspace", workspace == null ? null : workspace.toString());
         return out;
+    }
+
+    /**
+     * {@code GET /api/settings/allowlist}: the auto-approve allowlist READ OUT —
+     * every entry with the tier it now carries, per scope and folded (card 199,
+     * criterion 4).
+     *
+     * <p>This endpoint exists because the page must not re-decide anything. The
+     * tier map ships in the jar, {@link Allowlist} parses the entry grammar, and
+     * both live on this side of the wire; a settings page that re-implemented
+     * either in TypeScript would drift from the gate the moment one of them
+     * changed, and a permission page that disagrees with the gate is worse than
+     * no page. So the server answers what it decided and the page renders it —
+     * the same rule card 203's web-search block obeys.
+     *
+     * <p>Writes go through the existing {@code PUT /api/settings/{scope}} with an
+     * {@code autoApprove} array. There is deliberately no write endpoint here:
+     * one validated write path, not two.
+     *
+     * @param session optional session id — with it, the workspace scopes join
+     * @param request the servlet request, for the local-origin fence
+     * @return the map's schema and version, the readable tier names, the entries
+     *         per scope and the folded effective list
+     */
+    @GetMapping("/api/settings/allowlist")
+    public Map<String, Object> allowlist(
+            @RequestParam(value = "session", required = false) String session,
+            HttpServletRequest request) {
+        requireLocal(request, false);
+        Path workspace = resolveWorkspace(session);
+        SpectroConfig.Resolved resolved = SpectroConfig.loadResolved(
+                SpectroConfig.Overrides.none(), launchDir, workspace);
+        ToolTierMap tiers = ToolTierMap.shipped();
+
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("schemaVersion", tiers.schemaVersion());
+        out.put("mapVersion", tiers.mapVersion());
+        out.put("tiers", java.util.Arrays.stream(ToolTier.values()).map(ToolTier::wireName).toList());
+
+        Map<String, Object> scopes = new LinkedHashMap<>();
+        resolved.layers().forEach((layer, raw) -> {
+            JsonNode entries = raw.path("autoApprove");
+            if (entries.isArray()) {
+                scopes.put(layer, readings(entries));
+            }
+        });
+        out.put("scopes", scopes);
+        out.put("effective",
+                Allowlist.fromEntries(resolved.config().autoApprove(), tiers).readings());
+        out.put("files", files(workspace));
+        return out;
+    }
+
+    /** One layer's raw autoApprove array, read out through the gate's own parser. */
+    private static java.util.List<Allowlist.EntryReading> readings(JsonNode array) {
+        java.util.List<String> raw = new java.util.ArrayList<>();
+        array.forEach(node -> raw.add(node.asText()));
+        return Allowlist.fromEntries(raw, ToolTierMap.shipped()).readings();
     }
 
     /**

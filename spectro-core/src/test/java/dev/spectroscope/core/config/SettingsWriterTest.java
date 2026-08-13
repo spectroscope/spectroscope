@@ -174,6 +174,16 @@ class SettingsWriterTest {
                 SettingsWriter.Scope.LOCAL, JSON.readTree("""
                         { "logLevel": "debug" }
                         """)));
+        // Card 199, review finding F4: the net fence's opt-in is a machine-wide
+        // decision, and a workspace scope is a folder the agent writes into.
+        assertThrows(IllegalArgumentException.class, () -> SettingsWriter.patch(file,
+                SettingsWriter.Scope.PROJECT, JSON.readTree("""
+                        { "allowLocalhost": true }
+                        """)));
+        assertThrows(IllegalArgumentException.class, () -> SettingsWriter.patch(file,
+                SettingsWriter.Scope.LOCAL, JSON.readTree("""
+                        { "allowLocalhost": true }
+                        """)));
     }
 
     @Test

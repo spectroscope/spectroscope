@@ -19,6 +19,8 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -89,7 +91,10 @@ class BrowsePageToolTest {
 
         String result = tool.execute(urlInput("file:///etc/passwd"), context());
 
-        assertEquals("ERROR: browse_page only supports http and https URLs.", result);
+        // Card 199: the net fence answers now, and its refusal names what was
+        // refused, why, and which rule did it.
+        assertEquals("ERROR: browse_page refused a file:// URL: this tool reaches the network, "
+                + "not the local disk (rule: file-url).", result);
         assertNull(argv.get(), "chrome must never be invoked for a non-http scheme");
     }
 
@@ -168,5 +173,46 @@ class BrowsePageToolTest {
 
         assertTrue(found.isEmpty() || !found.get().equals(notExecutable),
                 "a non-executable override must be ignored, got: " + found);
+    }
+
+    /** A fence with a table resolver — no DNS in the suite (card 199). */
+    private static dev.spectroscope.core.net.NetFence fence(boolean allowLocalhost) {
+        return new dev.spectroscope.core.net.NetFence(allowLocalhost, host -> {
+            if ("node.tailnet".equals(host)) {
+                return List.of(java.net.InetAddress.getByName("100.90.57.62"));
+            }
+            throw new java.net.UnknownHostException(host);
+        });
+    }
+
+    @Test
+    void theTailnetIsRefusedAndChromeIsNeverStarted() {
+        AtomicReference<List<String>> argv = new AtomicReference<>();
+        Tool tool = new BrowsePageTool(() -> Optional.of(Path.of("/fake/chrome")),
+                scripted(ok("unused"), argv), fence(false));
+
+        String result = tool.execute(urlInput("http://node.tailnet:1234/v1/models"), context());
+
+        assertEquals("ERROR: browse_page refused node.tailnet:1234: it is in 100.64/10, "
+                + "the range a tailnet uses (rule: cgnat-tailnet).", result);
+        assertNull(argv.get(), "a real browser must never be pointed at the tailnet");
+    }
+
+    @Test
+    void theBoardOnLoopbackIsRefusedUntilTheVerifyLoopIsOptedIn() {
+        AtomicReference<List<String>> argv = new AtomicReference<>();
+        Tool fenced = new BrowsePageTool(() -> Optional.of(Path.of("/fake/chrome")),
+                scripted(ok("unused"), argv), fence(false));
+        String refused = fenced.execute(urlInput("http://localhost:8746/"), context());
+        assertTrue(refused.contains("localhost:8746"), refused);
+        assertTrue(refused.contains("rule: loopback"), refused);
+        assertNull(argv.get());
+
+        AtomicReference<List<String>> optedArgv = new AtomicReference<>();
+        Tool opted = new BrowsePageTool(() -> Optional.of(Path.of("/fake/chrome")),
+                scripted(ok("<html>board</html>"), optedArgv), fence(true));
+        String allowed = opted.execute(urlInput("http://localhost:8746/"), context());
+        assertFalse(allowed.startsWith("ERROR: "), allowed);
+        assertNotNull(optedArgv.get(), "the opt-in is what the local verify loop needs");
     }
 }

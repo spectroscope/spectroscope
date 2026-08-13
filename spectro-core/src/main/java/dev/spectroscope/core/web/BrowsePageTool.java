@@ -11,7 +11,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
@@ -25,6 +24,23 @@ import java.util.function.Supplier;
  * discovery). The URL is model output, so Chrome is exec'd with an ARGV —
  * never through a shell line — and only http/https schemes pass (a file://
  * URL would dump local files). Permission-gated like web_fetch.
+ *
+ * <p><b>The fence here is an ENTRY check, and that is the whole truth of it.</b>
+ * The address the model names is judged before Chrome starts. After that Chrome
+ * is on its own: it follows redirects, and page JavaScript can navigate
+ * anywhere, and none of those requests come back through this process. So a
+ * page reached with this tool can still walk to a private address, and a reader
+ * of the docs is told exactly that rather than a sentence that is nicer and
+ * false. {@code web_fetch}, which does its own fetching, judges every hop.
+ *
+ * <p>The two ways to close it are both real and both cost something. Pinning
+ * Chrome's resolver to the one host (a {@code --host-resolver-rules} exclusion)
+ * would break every page whose script or styling comes from another origin,
+ * which is exactly the class of page this tool exists for. Running Chrome
+ * through a local proxy that applies {@link dev.spectroscope.core.net.NetFence}
+ * per request would close it completely, subresources included — a new
+ * listening socket and a component with its own security surface. That is a
+ * card, not a footnote, and it is not this one.
  */
 public final class BrowsePageTool implements Tool {
 
@@ -80,6 +96,7 @@ public final class BrowsePageTool implements Tool {
 
     private final Supplier<Optional<Path>> chromeLocator;
     private final ChromeRunner runner;
+    private final dev.spectroscope.core.net.NetFence fence;
 
     /** The production tool: discover the system Chrome per call, run it for real. */
     public BrowsePageTool() {
@@ -94,8 +111,24 @@ public final class BrowsePageTool implements Tool {
      * @param runner        the process seam that actually executes Chrome
      */
     public BrowsePageTool(Supplier<Optional<Path>> chromeLocator, ChromeRunner runner) {
+        this(chromeLocator, runner,
+                dev.spectroscope.core.net.NetFence.withSystemDns(false));
+    }
+
+    /**
+     * The fully wired tool (card 199).
+     *
+     * @param chromeLocator yields the browser binary, or empty when none is installed
+     * @param runner        the process seam that actually executes Chrome
+     * @param fence         where this tool may go — built from {@code allowLocalhost}
+     *                      in the settings. A real browser on a private address is
+     *                      exactly the reach a prompt-injected page would ask for.
+     */
+    public BrowsePageTool(Supplier<Optional<Path>> chromeLocator, ChromeRunner runner,
+                          dev.spectroscope.core.net.NetFence fence) {
         this.chromeLocator = chromeLocator;
         this.runner = runner;
+        this.fence = fence;
     }
 
     /**
@@ -177,9 +210,9 @@ public final class BrowsePageTool implements Tool {
         if (url.isBlank()) {
             return "ERROR: browse_page needs a non-empty url.";
         }
-        String lower = url.toLowerCase(Locale.ROOT);
-        if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
-            return "ERROR: browse_page only supports http and https URLs.";
+        dev.spectroscope.core.net.NetFence.Refusal refusal = fence.refuse(url);
+        if (refusal != null) {
+            return "ERROR: browse_page " + refusal.sentence();
         }
         Optional<Path> chrome = chromeLocator.get();
         if (chrome.isEmpty()) {

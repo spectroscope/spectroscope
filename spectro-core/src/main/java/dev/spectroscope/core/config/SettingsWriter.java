@@ -46,7 +46,8 @@ public final class SettingsWriter {
      * folds ({@code USER} = {@code ~/.spectro/settings.json}, {@code PROJECT}/
      * {@code LOCAL} = a workspace's own {@code .spectro/settings(.local).json}).
      * {@link #patch} refuses process-global fields ({@code workspace}, {@code
-     * logLevel}) in {@code PROJECT}/{@code LOCAL} — those stay {@code USER}-only.
+     * logLevel}, {@code allowLocalhost}) in {@code PROJECT}/{@code LOCAL} —
+     * those stay {@code USER}-only.
      */
     public enum Scope { USER, PROJECT, LOCAL }
 
@@ -58,13 +59,19 @@ public final class SettingsWriter {
             "promptCaching", "hooks", "workspace", "logLevel",
             "imageModel", "sttModel", "sttProvider", "sttLanguage", "chromeBinary",
             "otlpEndpoint", "otlpBasicAuth", "ollamaBaseUrl", "lmstudioBaseUrl",
-            "searxngUrl");
+            "searxngUrl", "allowLocalhost");
 
     /** Fields that apply to the whole process, not one workspace — a
-     *  {@code PROJECT}/{@code LOCAL} patch setting either is refused. This is the
-     *  write-side twin of {@code SpectroConfig}'s own {@code rejectProcessGlobals},
-     *  which rejects the same two fields when reading a workspace scope. */
-    private static final Set<String> PROCESS_GLOBALS = Set.of("workspace", "logLevel");
+     *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
+     *  the write-side twin of {@code SpectroConfig}'s own
+     *  {@code rejectProcessGlobals}, which rejects the same fields when reading a
+     *  workspace scope.
+     *
+     *  <p>{@code allowLocalhost} joined them for card 199: a workspace scope is a
+     *  folder the AGENT writes into, so leaving the net fence's only switch there
+     *  put the guard inside the sandbox it guards. */
+    private static final Set<String> PROCESS_GLOBALS =
+            Set.of("workspace", "logLevel", "allowLocalhost");
 
     /** Static utility — never instantiated. */
     private SettingsWriter() {
@@ -76,7 +83,9 @@ public final class SettingsWriter {
      * the file plus its {@code .spectro/} directory are created when absent.
      *
      * @param cwd  the project root whose {@code .spectro/settings.json} is written
-     * @param rule the allowlist entry to persist, e.g. {@code "run_command:git status*"}
+     * @param rule the allowlist entry to persist in card 199's grammar, e.g.
+     *             {@code "run_command#eval-execute:git status*"} — the tier is not
+     *             decoration, an entry without one approves READ and nothing above
      * @throws IOException when the settings file cannot be read or written
      */
     public static synchronized void appendAutoApprove(Path cwd, String rule) throws IOException {
@@ -118,7 +127,8 @@ public final class SettingsWriter {
      * already in the file, known or not (e.g. the CLI-side {@code tts} block),
      * survives untouched. The patch is validated BEFORE any file is touched: unknown
      * keys, secret-shaped keys ({@code *_API_KEY}/{@code *_TOKEN}), process-globals
-     * ({@code workspace}/{@code logLevel}) in a {@code PROJECT}/{@code LOCAL} scope,
+     * ({@code workspace}/{@code logLevel}/{@code allowLocalhost}) in a
+     * {@code PROJECT}/{@code LOCAL} scope,
      * and values of the wrong shape all throw {@link IllegalArgumentException}
      * without writing anything. The file must still bind as a whole after the merge
      * — this is what stops a patch from bricking a settings file that {@link

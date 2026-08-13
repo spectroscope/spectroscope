@@ -24,13 +24,60 @@ events — the JSONL always shows who allowed what.</p>
 
 <h2 id="ch-control-allowlist">The allowlist</h2>
 <p>Rules live under <code>autoApprove</code> in any settings layer and are consulted
-before any human is asked:</p>
+before any human is asked. Since 0.9 every entry also names a <strong>tier</strong> —
+what the tool it approves is allowed to DO:</p>
 
 <pre>{ "autoApprove": [
-    "grep",                      // a bare name approves every call of that tool
-    "run_command:git status*",   // a prefix rule approves matching inputs only
-    "write_file:docs/notes.md*"
+    "grep#read",                             // approves every grep call
+    "run_command#eval-execute:git status*",  // a prefix rule scopes the input as before
+    "write_file#write:docs/notes.md*",
+    "mcp__playwright__*#read"                // a whole server's READERS, nothing above
 ] }</pre>
+
+<table class="tbl">
+  <tr><th>tier</th><th>what it covers</th></tr>
+  <tr><td><code>read</code></td><td>looks, never touches — a file read, a page read, a screenshot</td></tr>
+  <tr><td><code>write</code></td><td>acts on the page, the app or the disk — input, navigation, a file write</td></tr>
+  <tr><td><code>eval-execute</code></td><td>runs code — in the page, in a Node context, or on this machine</td></tr>
+</table>
+
+<p>Two rules carry the whole idea. An entry that names <em>no</em> tier approves
+<code>read</code> and nothing above it. And a <strong>family wildcard has to name its
+tier</strong>: <code>mcp__playwright__*</code> on its own approves nothing at all, because
+a wildcard is exactly what somebody writes to stop a prompt storm — and before this,
+one such line would have approved a Node-context eval beside the screenshots.</p>
+
+<p><strong>Where the tier comes from.</strong> Not from the server. Both MCP transports
+pin protocol revision <code>2024-11-05</code>, which carries no tool annotations at all
+(<code>readOnlyHint</code> and its siblings arrived in <code>2025-03-26</code>), so no
+server here can rate its own tools even if it wanted to. The tier is a shipped, versioned
+data file inside the jar — <code>resources/permission/tool-tiers.json</code>, one section
+per blessed MCP server plus one for the built-in belt. <strong>Anything it does not name
+is <code>eval-execute</code> and prompts</strong>, including every tool of a server the
+map has never heard of. The honest cost: a server that grows a tool produces prompts on
+the day it updates, and the fix is an entry in the next release rather than a config edit
+on your machine.</p>
+
+<p><strong>What happened to the entries you already had.</strong> They were migrated once,
+in place, each rewritten to carry the tier its tool held on the day of the migration — so
+no entry started or stopped approving anything. The record of that pass, entry by entry,
+is in <code>~/.spectro/gate-audit/allowlist-migration.jsonl</code>. Only entries written
+after the migration fall under the read-by-default rule. A pre-existing wildcard is left
+untouched: it matched nothing under the old name-only gate, and stamping it with a tier
+would have turned dead config into a live family grant.</p>
+
+<p><strong>The list has a screen.</strong> Settings → Auto-approvals lists every entry with
+the tier it carries, per settings layer, says out loud which ones approve running code, and
+adds or removes entries in your own settings. It renders what the gate decided and never
+re-decides it: <code>GET /api/settings/allowlist</code> reads the entries out through the
+gate's own parser and the shipped map.</p>
+
+<p><strong>Every gate decision is written down.</strong> One line per decision in
+<code>~/.spectro/gate-audit/&lt;session-id&gt;.gate.jsonl</code> — the tool, the tier it
+resolved to, which section of the map decided that, the map version, allow or deny, who
+decided, and the raw entry that approved it. A sidecar, not a new event: the RunEvent wire
+is byte-frozen. The call's <em>input</em> never enters the file — a command argument or a
+URL routinely carries a credential.</p>
 
 <p>Matching reads each tool's <strong>guarded field</strong> — the one input that
 defines its blast radius. The same table drives what an “always allow” click remembers,
@@ -38,10 +85,10 @@ so a remembered rule can never silently go dark on the matching side:</p>
 
 <table class="tbl">
   <tr><th>tool</th><th>guarded field</th><th>an “always allow” click stores</th></tr>
-  <tr><td><code>run_command</code></td><td><code>command</code></td><td>the first token: <code>run_command:git*</code></td></tr>
-  <tr><td><code>write_file</code> / <code>edit_file</code></td><td><code>path</code></td><td>the full path: <code>edit_file:src/Main.java*</code></td></tr>
-  <tr><td><code>web_fetch</code></td><td><code>url</code></td><td>the full URL: <code>web_fetch:https://example.com*</code></td></tr>
-  <tr><td>everything else</td><td>—</td><td>the bare tool name</td></tr>
+  <tr><td><code>run_command</code></td><td><code>command</code></td><td>the first token: <code>run_command#eval-execute:git*</code></td></tr>
+  <tr><td><code>write_file</code> / <code>edit_file</code></td><td><code>path</code></td><td>the full path: <code>edit_file#write:src/Main.java*</code></td></tr>
+  <tr><td><code>web_fetch</code></td><td><code>url</code></td><td>the full URL: <code>web_fetch#read:https://example.com*</code></td></tr>
+  <tr><td>everything else</td><td>—</td><td>the bare tool name plus its tier</td></tr>
 </table>
 
 <p>Session-remembered rules live per connection (two tabs never share them). Ticking
@@ -51,6 +98,59 @@ serialized writer that preserves every other key and dedupes — falling back to
 deprecated launch-dir <code>.spectro/settings.json</code> only for a session with no real
 workspace yet. Because the CLI resolves the same workspace, it honours your web decision
 there on its next run.</p>
+
+<h2 id="ch-control-netfence">The net fence</h2>
+<p><code>web_fetch</code> and <code>browse_page</code> take their address from model output,
+and the model reads whatever page it was last shown. So the private world is refused before
+a request leaves:</p>
+
+<table class="tbl">
+  <tr><th>refused</th><th>why</th></tr>
+  <tr><td><code>file://</code>, and every scheme but http/https</td><td>these tools reach the network, not the local disk</td></tr>
+  <tr><td>10/8, 172.16/12, 192.168/16</td><td>the private networks (RFC 1918)</td></tr>
+  <tr><td>100.64/10</td><td>the range a tailnet hands out</td></tr>
+  <tr><td>169.254/16, fe80::/10, fc00::/7</td><td>link-local (where a cloud metadata service lives) and unique-local</td></tr>
+  <tr><td>multicast, 255.255.255.255</td><td>"every host on this segment" is not somewhere a page may send an agent</td></tr>
+  <tr><td>loopback</td><td>unless <code>allowLocalhost</code> is set — see below</td></tr>
+</table>
+
+<p>A host name is judged by where it <em>points</em>, not by how it looks:
+<code>localtest.me</code> looks public and resolves to 127.0.0.1, so every name is resolved
+and every answer is checked. A name that does not resolve at all is left to fail on its own
+— the fence does not invent an answer.</p>
+
+<h3>How far the fence reaches, per tool</h3>
+
+<p><strong><code>web_fetch</code> is fenced at every hop.</strong> It follows redirects
+itself — up to five — and each address in the chain goes to the fence before a request is
+made. It has to work that way: the Java HTTP client follows same-protocol redirects on its
+own, and a first build that asked the fence once let a public page answer <code>302</code>
+and hand back a LAN page and a tailnet page with the fence never consulted for either.</p>
+
+<p><strong><code>browse_page</code> is fenced at the address you give it, and no
+further.</strong> Once Chrome is running it follows its own redirects and runs the page's
+JavaScript, which can navigate anywhere, and none of that comes back past the fence. Two
+things would close it and both cost something real: pinning Chrome to a single host breaks
+every page whose script lives on a CDN — which is the reason this tool exists — and running
+Chrome through a fencing proxy closes it completely but is a component of its own. Until
+one of them ships, treat <code>browse_page</code> as an entry check and prefer
+<code>web_fetch</code> when the page does not need JavaScript.</p>
+
+<p><code>allowLocalhost: true</code> (Settings → Net fence) is the deliberate opt-in for the
+local verify loop: this product on 8746, ollama on 11434. It opens loopback and nothing else
+— not the LAN, not the tailnet, never a file URL, and not through a redirect either. It is
+<em>process-global</em>: a workspace scope may not set it, because the workspace is the
+folder the agent itself writes into, and a switch inside the sandbox is not a switch.</p>
+
+<p>A refusal names the address and the rule and carries nothing else:
+<code>ERROR: browse_page refused 192.168.1.10:8746: it is a private network address,
+RFC 1918 (rule: rfc1918).</code> No path, no query string, no userinfo — a URL the model
+assembled may carry a token in any of the three, and a refusal goes back to the model and
+into the transcript.</p>
+
+<p><code>web_search</code> is deliberately <em>not</em> fenced: it dials the instance
+<em>you</em> configured, not an address the model chose, and a SearXNG on localhost is the
+normal case.</p>
 
 <h2 id="ch-control-hooks">Hooks</h2>
 <p>Hooks are config-driven shell commands around every tool call — your policy, in your

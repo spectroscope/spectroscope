@@ -863,6 +863,81 @@ export const dict: Record<string, { de: string; en: string }> = {
   // The active tier itself is NOT translated: it arrives from the server's one
   // resolver, and re-wording it here would be the second copy of a decision
   // this card exists to collapse.
+  // ---- the auto-approve allowlist (card 199) ------------------------------
+  // Before this block the allowlist lived in a settings file and had no screen
+  // at all. It has one now for a specific reason: the migration deliberately
+  // leaves every existing exact-name entry approving what it approved, so the
+  // answer to an entry nobody remembers writing is that a reader can find it.
+  "set.secAllowlist": { de: "Auto-Freigaben", en: "Auto-approvals" },
+  "set.alHint": {
+    de: "Welche Werkzeug-Aufrufe ohne Rückfrage laufen. Jeder Eintrag nennt eine Stufe: read schaut nur, write greift ein, eval-execute führt Code aus. Ein Eintrag ohne Stufe gibt nur read frei, und eine Familie mit * muss ihre Stufe nennen.",
+    en: "Which tool calls run without asking. Every entry names a tier: read looks, write acts, eval-execute runs code. An entry without a tier approves read only, and a * family has to name its tier.",
+  },
+  "set.alMapVersion": {
+    de: "Stufen-Karte {ver} — sie gehört zum Build, nicht zum Server, den du ansprichst.",
+    en: "Tier map {ver} — it ships with the build, not with the server you talk to.",
+  },
+  "set.alExact": {
+    de: "gibt genau dieses Werkzeug frei",
+    en: "approves exactly this tool",
+  },
+  "set.alFamily": {
+    de: "gibt eine ganze Familie bis zu dieser Stufe frei",
+    en: "approves a whole family up to this tier",
+  },
+  "set.alScoped": {
+    de: "gibt dieses Werkzeug nur mit diesem Anfang frei",
+    en: "approves this tool only for calls starting this way",
+  },
+  "set.alInert": {
+    de: "gibt nichts frei",
+    en: "approves nothing",
+  },
+  "set.alExecWarn": {
+    de: "führt Code aus",
+    en: "runs code",
+  },
+  "set.alToolTier": { de: "Werkzeug-Stufe", en: "tool tier" },
+  "set.alScopeUser": { de: "Deine Einstellungen", en: "Your settings" },
+  "set.alScopeOther": {
+    de: "Aus {scope} — hier nur zu lesen.",
+    en: "From {scope} — read-only here.",
+  },
+  "set.alEmpty": {
+    de: "Keine Auto-Freigabe. Jeder Aufruf fragt.",
+    en: "No auto-approvals. Every call asks.",
+  },
+  "set.alTool": { de: "Werkzeug oder Familie (mcp__server__*)", en: "Tool or family (mcp__server__*)" },
+  "set.alTier": { de: "Stufe", en: "Tier" },
+  "set.alPrefix": { de: "nur wenn der Wert so anfängt (optional)", en: "only when the value starts with (optional)" },
+  "set.alAdd": { de: "Freigabe hinzufügen", en: "Add approval" },
+  "set.alRemove": { de: "entfernen", en: "remove" },
+  "set.alAddExecNote": {
+    de: "Diese Freigabe erlaubt das Ausführen von Code ohne Rückfrage. Das ist genau der Eintrag, den dir eine manipulierte Seite einzutragen empfiehlt.",
+    en: "This approval lets code run without asking. It is exactly the entry an injected page would tell you to add.",
+  },
+  "set.alLoadFailed": {
+    de: "Die Freigabe-Liste konnte nicht gelesen werden.",
+    en: "The approval list could not be read.",
+  },
+  // ---- the net fence (card 199) -------------------------------------------
+  "set.secNetFence": { de: "Netz-Zaun", en: "Net fence" },
+  "set.netFenceHint": {
+    de: "web_fetch und browse_page bekommen ihre Adresse vom Modell, und das Modell liest, was auf der Seite steht. Deshalb sind file://, die privaten Netze (RFC 1918) und der Tailnet-Bereich 100.64/10 gesperrt. web_fetch prüft dabei jede Weiterleitung, nicht nur die erste Adresse.",
+    en: "web_fetch and browse_page take their address from the model, and the model reads whatever the page says. So file://, the private networks (RFC 1918) and the 100.64/10 tailnet range are refused. web_fetch checks every redirect on the way, not just the address it started with.",
+  },
+  // The browse_page limit belongs on the screen, not only in the guide: the
+  // fence is an entry check there, and a sentence that implies more would be
+  // false. Chrome follows its own redirects and runs the page's JavaScript.
+  "set.netFenceBrowserNote": {
+    de: "Ausnahme browse_page: geprüft wird die Adresse, die du übergibst. Was Chrome danach selbst tut — eigene Weiterleitungen, Navigation per JavaScript — läuft am Zaun vorbei. Für Seiten ohne JavaScript ist web_fetch der sichere Weg.",
+    en: "browse_page is the exception: what gets checked is the address you hand it. What Chrome then does on its own — its own redirects, navigation from JavaScript — goes past the fence. For pages that do not need JavaScript, web_fetch is the guarded route.",
+  },
+  "set.allowLocalhost": { de: "localhost erreichbar machen", en: "Make localhost reachable" },
+  "set.allowLocalhostNote": {
+    de: "Nur für die lokale Prüfschleife — der eigene Server auf 8746, ollama auf 11434. Es öffnet weder das LAN noch das Tailnet noch file://, auch nicht über eine Weiterleitung. Die Einstellung gilt für den ganzen Prozess und kann nur hier gesetzt werden, nicht im Arbeitsordner des Agenten.",
+    en: "For the local verify loop only — this product on 8746, ollama on 11434. It opens neither the LAN nor the tailnet nor file://, and not through a redirect either. The setting is process-wide and can only be set here, never in the agent's own workspace folder.",
+  },
   "set.secWebSearch": { de: "Websuche", en: "Web search" },
   "set.webSearchHint": {
     de: "Womit web_search sucht. Es antwortet genau eine Stufe — die konfigurierte. Fällt sie aus, bekommst du den Fehler, nicht heimlich das Ergebnis einer anderen.",

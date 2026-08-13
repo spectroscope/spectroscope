@@ -31,6 +31,10 @@ export const SETTINGS_SECTIONS = [
   // Card 203: choosing how the product searches the web is a settings visit
   // with visible options, so it earns an address a link can land on.
   "websearch",
+  // Card 199: the auto-approve allowlist and the net fence. Both are permission
+  // surfaces a reader has to be able to LINK somebody at.
+  "allowlist",
+  "netfence",
   "workspace",
   "logging",
   "machine",

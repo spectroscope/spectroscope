@@ -33,6 +33,7 @@ import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
 import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
+import { AllowlistSettings } from "./AllowlistSettings";
 import type { Leveling } from "../state/useLeveling";
 import {
   fetchSettings,
@@ -847,6 +848,35 @@ export function SettingsPanel({
                     onReset={() => saveUser({ searxngUrl: null })}
                   />
                 }
+              />
+
+              {/* ---- The auto-approve allowlist (card 199). What runs without
+                  asking, every entry with the tier it carries. The block reads
+                  GET /api/settings/allowlist and renders it; the gate's own
+                  parser and the shipped tier map decide, never this page. ---- */}
+              <AllowlistSettings anchorId={sectionAnchorId("allowlist")} onSave={saveUser} />
+
+              {/* ---- The net fence (card 199). Browser-class tools take their
+                  address from model output; the private world is refused, and
+                  loopback costs this one deliberate gesture. ---- */}
+              <div className="settings-label" id={sectionAnchorId("netfence")}>
+                {t(lang, "set.secNetFence")}
+              </div>
+              <p className="settings-note">{t(lang, "set.netFenceHint")}</p>
+              <p className="settings-note">{t(lang, "set.netFenceBrowserNote")}</p>
+              <div className="settings-toggles">
+                <Switch
+                  label={t(lang, "set.allowLocalhost")}
+                  checked={view.effective.allowLocalhost === true}
+                  onChange={(v) => void saveUser({ allowLocalhost: v })}
+                />
+              </div>
+              <p className="settings-note">{t(lang, "set.allowLocalhostNote")}</p>
+              <OriginRow
+                view={view}
+                field="allowLocalhost"
+                lang={lang}
+                onReset={() => saveUser({ allowLocalhost: null })}
               />
 
               {/* ---- Workspace default — server-backed (Task 13) ---- */}

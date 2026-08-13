@@ -507,7 +507,7 @@ class SpectroConfigTest {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
                 null, null, "auto", "auto", null, null, null,
-                ollamaBaseUrl, lmstudioBaseUrl, null);
+                ollamaBaseUrl, lmstudioBaseUrl, null, false);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -936,7 +936,8 @@ class SpectroConfigTest {
                 "local", "de", "chromeBinary-component",
                 "otlpEndpoint-component", "otlpBasicAuth-component",
                 "ollamaBaseUrl-component", "lmstudioBaseUrl-component",
-                "searxngUrl-component");
+                "searxngUrl-component",
+                true);   // allowLocalhost: distinct from the false default, card 199
 
         SpectroConfig switched = base.withProvider("ollama", "qwen3");
 
@@ -1061,6 +1062,35 @@ class SpectroConfigTest {
                 """);
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, null, java.util.Map.of());
         assertEquals("launch-dir-model", config.model());
+    }
+
+    @Test
+    void aWorkspaceScopeMustNotOpenTheNetFence(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // Card 199, review finding F4: the workspace IS the agent's cwd, and
+        // write_file writes into it. A fence whose only switch sits inside the
+        // sandbox it guards is not a fence — one auto-approved write and the next
+        // session reaches loopback, which the redirect fix then extends no
+        // further, but loopback alone is the board, ollama and the whole local
+        // machine.
+        Files.createDirectories(ws.resolve(".spectro"));
+        Files.writeString(ws.resolve(".spectro/settings.json"), """
+                { "allowLocalhost": true }
+                """);
+        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                        java.util.Map.of()));
+        assertTrue(loud.getMessage().contains("allowLocalhost"), loud.getMessage());
+
+        Files.delete(ws.resolve(".spectro/settings.json"));
+        Files.writeString(ws.resolve(".spectro/settings.local.json"), """
+                { "allowLocalhost": true }
+                """);
+        IllegalArgumentException alsoLocal = assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws,
+                        java.util.Map.of()));
+        assertTrue(alsoLocal.getMessage().contains("settings.local.json"),
+                "the local half is written by the same hand: " + alsoLocal.getMessage());
     }
 
     @Test
