@@ -257,7 +257,7 @@ public final class OrchestratorPanel implements FleetPanel {
                     lane.id, PANEL_AGENT_ID, "status", "working", "lane started",
                     null, System.currentTimeMillis()));
             try {
-                dev.spectroscope.core.Agent agent = buildAgent(lane);
+                dev.spectroscope.core.Agent agent = buildAgent(lane, contextId);
                 try (EventStream stream = agent.run(lane.task, new RunOptions(signal, null))) {
                     for (RunEvent event : stream) {
                         if (event instanceof RunEvent.ErrorEvent) {
@@ -338,8 +338,13 @@ public final class OrchestratorPanel implements FleetPanel {
     }
 
     /** Builds the lane's core agent — the same construction path as the
-     *  single-agent facade, with the lane's fleet identity stamped on. */
-    private dev.spectroscope.core.Agent buildAgent(Lane lane) {
+     *  single-agent facade, with the lane's fleet identity stamped on.
+     *
+     *  @param lane      the lane to build
+     *  @param contextId the fleet run's id — the gate audit of this fleet is
+     *                   filed under it, so every lane's decisions land in one
+     *                   file next to the run they belong to */
+    private dev.spectroscope.core.Agent buildAgent(Lane lane, String contextId) {
         Path workspace = lane.workspace != null ? lane.workspace : workspaceRoot.resolve(lane.id);
         try {
             Files.createDirectories(workspace);
@@ -363,11 +368,38 @@ public final class OrchestratorPanel implements FleetPanel {
                 // permission_decision for each call, so every auto-approval
                 // is on the record in the merged stream. Scope a lane's blast
                 // radius via lane.tools (the registry is the real control).
-                .onPermission(request -> true)
+                //
+                // Card 199: an approval is a gate DECISION, and the card's
+                // security criterion says every one of them is written down.
+                // This lane consults no allowlist, so no entry approved the
+                // call and none is named; what the line does carry is the tool,
+                // the tier the shipped map gives it, and that the stance
+                // decided rather than a human. TIERING a lane is a different
+                // question and its own card; recording it is this one's.
+                .onPermission(request -> {
+                    gateAudit(contextId).record(request, "fleet-lane", true,
+                            NO_ALLOWLIST.decide(request));
+                    return true;
+                })
                 .agentId(lane.id)
                 .parentId(PANEL_AGENT_ID)
                 .providerName(providerLabel(provider))
                 .build());
+    }
+
+    /** The tier resolver for the audit line: an EMPTY allowlist, so its verdict
+     *  is "nobody approved this" plus the tool's own tier from the shipped map —
+     *  which is exactly what a lane's unattended approval should say about
+     *  itself. */
+    private static final dev.spectroscope.core.permission.Allowlist NO_ALLOWLIST =
+            dev.spectroscope.core.permission.Allowlist.fromEntries(List.of());
+
+    /** This fleet run's gate-audit sidecar.
+     *
+     *  @param contextId the fleet run id the file is named after
+     *  @return the recorder appending to {@code ~/.spectro/gate-audit/&lt;id&gt;.gate.jsonl} */
+    private static dev.spectroscope.core.permission.GateAudit gateAudit(String contextId) {
+        return dev.spectroscope.core.permission.GateAudit.forSession(contextId);
     }
 
     /** run_start's provider field must carry a name, not null (facade rule). */
