@@ -102,6 +102,30 @@ class SettingsWriterTest {
     }
 
     @Test
+    void theSearxngAddressIsAWritableKeyAndRemovableAgain(@TempDir Path dir) throws IOException {
+        // Card 203, review finding F2: the Settings page saves the instance address
+        // through PUT /api/settings, which lands in patch() and dies on the
+        // KNOWN_KEYS check. Nothing held that string, so dropping "searxngUrl" from
+        // the allowlist would have made the one working configuration path answer
+        // "unknown key" — with the whole suite green.
+        Path file = dir.resolve(".spectro/settings.json");
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("""
+                        { "searxngUrl": "http://box.local:8888" }
+                        """));
+        assertEquals("http://box.local:8888",
+                JSON.readTree(Files.readString(file)).path("searxngUrl").asText());
+
+        // And the page's reset arrow, which sends null.
+        SettingsWriter.patch(file, SettingsWriter.Scope.USER,
+                JSON.readTree("""
+                        { "searxngUrl": null }
+                        """));
+        assertFalse(JSON.readTree(Files.readString(file)).has("searxngUrl"),
+                "null removes the key, so the tier falls back to whatever is configured below");
+    }
+
+    @Test
     void sttLanguageWritesLikeSttProviderAndRefusesUnknownCodes(@TempDir Path dir)
             throws IOException {
         Path file = dir.resolve(".spectro/settings.json");

@@ -30,7 +30,7 @@ import java.util.zip.InflaterInputStream;
  *       {@code settings.yml} lists only {@code html} under {@code search.formats},
  *       and a request for an unlisted format is answered <b>403</b>. A plain
  *       {@code docker run} therefore yields a perfectly good search page and an
- *       API that hands this class nothing. {@code samples/07-searxng} is the
+ *       API that hands this class nothing. {@code samples/09-searxng} is the
  *       setup that turns the format on; the settings page prints it.</li>
  *   <li><b>A naive client is refused by its bot detection.</b> Spring's
  *       RestClient sends {@code User-Agent: Java/<version>}, and the shipped

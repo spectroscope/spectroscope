@@ -1409,9 +1409,10 @@ public record SpectroConfig(
             // from the shared legacy baseUrl above.
             out.ollamaBaseUrl = env.get("SPECTRO_OLLAMA_BASE_URL");
             out.lmstudioBaseUrl = env.get("SPECTRO_LMSTUDIO_BASE_URL");
-            // Card 203: the SearXNG instance web_search dials. Read here so
-            // samples/07-searxng/install.sh can hand it over through
-            // ~/.spectro/.env exactly the way the Langfuse installer does.
+            // Card 203: the SearXNG instance web_search dials. This is the
+            // PROCESS variable only; the file half that lets
+            // samples/09-searxng/install.sh hand the address over through
+            // ~/.spectro/.env lives in envLayer below, beside the OTLP pair.
             out.searxngUrl = env.get("SPECTRO_SEARXNG_URL");
             // SPECTRO_WORKSPACE names the agent's working directory; unset keeps the
             // per-session temp folder (resolved later, when the session id exists).
@@ -1456,22 +1457,33 @@ public record SpectroConfig(
 
         /**
          * The environment layer as the loader actually builds it: {@link #fromEnv}
-         * with {@code ~/.spectro/.env} underneath it for the two OTLP fields.
+         * with {@code ~/.spectro/.env} underneath it for the fields an INSTALLER
+         * writes — the two OTLP fields (card 137) and the SearXNG address
+         * (card 203).
          *
-         * <p>Only those two, and for one reason: they are the pair an installer
-         * writes for a user who is not going through a launcher. The desktop shell
-         * spawns the jar with no {@code .env} loading at all, and a running JVM
-         * cannot change its own {@code System.getenv}, so without this a file the
-         * installer just wrote would be silently ignored until the next shell
+         * <p>Only those, and for one reason: they are what a sample installer
+         * hands over to a user who is not going through a launcher. The desktop
+         * shell spawns the jar with no {@code .env} loading at all, and a running
+         * JVM cannot change its own {@code System.getenv}, so without this a file
+         * the installer just wrote would be silently ignored until the next shell
          * export. This is the same two-step {@link SpectroConfig#resolveApiKey}
          * already performs for API keys, including treating a blank process var as
          * absent, and it changes no precedence BETWEEN layers: this is still the
          * env layer, still directly above the defaults, still outranked by every
          * settings file.
          *
+         * <p>The SearXNG entry is here because it was missing and the gap was
+         * invisible: {@code samples/09-searxng/install.sh} wrote
+         * {@code SPECTRO_SEARXNG_URL} into this file, said so, and told the user to
+         * restart — and the address then reached nothing, because an address is not
+         * an API key and only {@link SpectroConfig#resolveApiKey} read that file by
+         * name. The rule this leaves behind: a variable an installer writes into
+         * {@code ~/.spectro/.env} needs a line HERE, or the installer is lying.
+         * {@code WebSearchSettingsPlumbingTest} fails when this one is removed.</p>
+         *
          * @param env the process environment (injectable for tests)
-         * @return the env layer, with the OTLP pair filled from the credential file
-         *         when the process environment leaves it unset
+         * @return the env layer, with the installer-written fields filled from
+         *         {@code ~/.spectro/.env} when the process environment leaves them unset
          */
         static PartialConfig envLayer(Map<String, String> env) {
             PartialConfig out = fromEnv(env);
@@ -1485,6 +1497,12 @@ public record SpectroConfig(
                 String fromFile = dotEnvValue("SPECTRO_OTLP_BASIC_AUTH");
                 if (fromFile != null) {
                     out.otlpBasicAuth = fromFile;
+                }
+            }
+            if (out.searxngUrl == null || out.searxngUrl.isBlank()) {
+                String fromFile = dotEnvValue("SPECTRO_SEARXNG_URL");
+                if (fromFile != null) {
+                    out.searxngUrl = fromFile;
                 }
             }
             return out;

@@ -42,8 +42,12 @@ Once the query answers, it writes
 SPECTRO_SEARXNG_URL=http://localhost:8888
 ```
 
-into `~/.spectro/.env` (also 0600). Restarting the server picks it up; so does
-typing the same address into **Settings › Web search**, which needs no restart.
+into `~/.spectro/.env` (also 0600). That file is part of the environment layer
+of the settings hierarchy, read on every resolve — so `spectro doctor`, the next
+session and the tier line in **Settings › Web search** name this instance
+without a restart and without an export. Typing the same address into the
+Settings field also works and outranks the file, because a settings document
+outranks the environment layer under it.
 
 `SEARXNG_PORT=9999 ./install.sh` moves the port. `./install.sh --configure-only`
 writes the settings file and starts nothing.

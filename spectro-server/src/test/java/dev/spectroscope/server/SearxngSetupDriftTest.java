@@ -181,6 +181,67 @@ class SearxngSetupDriftTest {
     }
 
     @Test
+    void theVariableTheInstallerWritesIsTheOneTheProductReadsBack() throws IOException {
+        // Review finding F1, and the reason this file needed one more test: every
+        // assertion above holds the WRITING end. The installer wrote
+        // SPECTRO_SEARXNG_URL into ~/.spectro/.env, printed that it had, and told
+        // the user to restart — and the address then reached nothing, because that
+        // file was read back by name for API KEYS only and an address is not an API
+        // key. So the name is taken out of the script and handed to the real
+        // loader: rename it on either end and this goes red.
+        String written = read(SCRIPT).lines()
+                .map(line -> line.replaceAll("^echo \"([A-Z0-9_]+)=\\$url\".*$", "$1"))
+                .filter(name -> name.startsWith("SPECTRO_") && !name.contains(" "))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("the installer no longer writes a SPECTRO_* "
+                        + "line into ~/.spectro/.env; this test's premise is gone"));
+
+        // The env layer reads the process environment first, so an exported address
+        // on the machine running the suite would answer instead of the file.
+        org.junit.jupiter.api.Assumptions.assumeTrue(System.getenv(written) == null,
+                written + " is exported in this JVM; the file half cannot be observed");
+
+        Path dotEnv = dev.spectroscope.core.config.SpectroConfig.dotEnvPath();
+        try {
+            Files.createDirectories(dotEnv.getParent());
+            Files.writeString(dotEnv, written + "=http://written-by-the-installer.example:8888\n");
+
+            assertEquals("http://written-by-the-installer.example:8888",
+                    dev.spectroscope.core.config.SpectroConfig
+                            .load(dev.spectroscope.core.config.SpectroConfig.Overrides.none())
+                            .searxngUrl(),
+                    "the installer's channel must be a channel the product reads");
+        } finally {
+            Files.deleteIfExists(dotEnv);
+        }
+    }
+
+    @Test
+    void noJavaSourceNamesASamplePathThatDoesNotExist() throws IOException {
+        // Card 193 shipped this same defect and card 203 repeated it: the sample was
+        // renumbered 07 -> 09 (07 was already Phoenix), the TypeScript constant and
+        // samples/README.md were updated, and two Javadoc pointers kept sending the
+        // reader to a directory that no longer exists. Nothing was watching a path
+        // inside a comment, so this watches all of them.
+        Path root = LangfuseComposeDriftTest.repoRoot();
+        java.util.regex.Pattern reference = java.util.regex.Pattern.compile("samples/[0-9]{2}-[a-z0-9-]+");
+        java.util.List<String> stale = new java.util.ArrayList<>();
+        for (String module : List.of("spectro-core", "spectro-server", "spectro-cli")) {
+            try (java.util.stream.Stream<Path> files = Files.walk(root.resolve(module).resolve("src"))) {
+                for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                    java.util.regex.Matcher hit = reference.matcher(Files.readString(file));
+                    while (hit.find()) {
+                        if (!Files.exists(root.resolve(hit.group()))) {
+                            stale.add(root.relativize(file) + " -> " + hit.group());
+                        }
+                    }
+                }
+            }
+        }
+        assertTrue(stale.isEmpty(), "a comment pointing at a sample that is not there: " + stale);
+    }
+
+    @Test
     void itUsesTheComposePlugin() throws IOException {
         String script = read(SCRIPT);
         assertTrue(script.contains("docker compose"), "compose is a docker CLI plugin");
