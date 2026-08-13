@@ -517,7 +517,16 @@ file.
 
 ## What is not here
 
-- **Launch configurations** are card 202.
+- **The replay sidecar** is card 204, and it is built: a `.browser.jsonl`
+  beside the session, screenshot-referencing events, and a scrubber over a
+  finished run. The rule the line was written under is therefore satisfied,
+  that a surface you can watch must not be one you can only witness once.
+- **Launch configurations** are card 202, and they are built: the app under test
+  starts by name from the repository's own `.claude/launch.json`. The browser
+  opens on it **once loopback is opted into** — a launch configuration almost
+  always names localhost, and the net fence above refuses localhost until
+  `allowLocalhost` is set, so out of the box the app starts and no page is
+  opened. The answer says which of the two happened. `docs/LAUNCH.md`.
 - **Tabs.** `tab_id` is on every schema and **still refused**, and card 218
   changed the reason rather than the answer. Card 201 recorded its meaning as
   "the per-session browser the owner asked for"; that work is done, and it did

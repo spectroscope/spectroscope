@@ -16,7 +16,7 @@
     "land on every gate audit line."
   ],
   "schemaVersion": 1,
-  "mapVersion": "2026-08-13.2",
+  "mapVersion": "2026-08-13.3",
 
   "builtin": {
     "_comment": [
@@ -36,7 +36,17 @@
       "cookies, localStorage and fetch credentials, and it acts with the authority of",
       "whoever is logged in there — against a page that is attacker-influenced input.",
       "A :read ceiling must never approve it. There is no Node-context eval here and",
-      "none gets added (card 200, section 6, rule 4)."
+      "none gets added (card 200, section 6, rule 4).",
+      "",
+      "The launch_* family (card 202) starts the app under test from the repository's own",
+      "Claude-style .claude/launch.json. launch_start and launch_restart are eval-execute,",
+      "the SAME tier as run_command, and for the same reason: runtimeExecutable is a free",
+      "string in a file the repository authored, so a launch file is a remote-code-execution",
+      "primitive wearing a config file's clothes. Rating it lower would let one wildcard",
+      "approve by the back door what run_command prompts for. launch_stop runs no code and",
+      "reaches only a process THIS session started — an attached entry is refused, never",
+      "signalled — so it is write, like browser_navigate acting on the pane. launch_list",
+      "reads a file in the project and launch_logs reads output already captured."
     ],
     "read_file": "read",
     "list_dir": "read",
@@ -50,6 +60,8 @@
     "browser_read_page": "read",
     "browser_find": "read",
     "browser_read_console": "read",
+    "launch_list": "read",
+    "launch_logs": "read",
 
     "write_file": "write",
     "edit_file": "write",
@@ -60,11 +72,14 @@
     "browser_navigate": "write",
     "browser_computer": "write",
     "browser_resize": "write",
+    "launch_stop": "write",
 
     "run_command": "eval-execute",
     "spawn_agent": "eval-execute",
     "spawn_agents": "eval-execute",
-    "browser_eval": "eval-execute"
+    "browser_eval": "eval-execute",
+    "launch_start": "eval-execute",
+    "launch_restart": "eval-execute"
   },
 
   "servers": {

@@ -71,13 +71,24 @@ final class ContextDescriber {
     }
 
     /**
-     * Every tool the MAIN agent sees, in registration order: the standard set,
-     * the extras (image / web_fetch / update_plan), use_skill when skills are
-     * installed, then the parent-only spawn + dev tools. The extras need
-     * runtime seams in the live path; for introspection a throwaway instance
-     * is enough — reading name/description/needsPermission from the REAL tool
-     * objects keeps this list from drifting (the old hand-written strings had
-     * already diverged, and update_plan was missing entirely).
+     * Every SESSION-INDEPENDENT tool the main agent sees, in registration order:
+     * the standard set, the extras (image / web_fetch / update_plan), use_skill
+     * when skills are installed, then the parent-only spawn + dev tools. The
+     * extras need runtime seams in the live path; for introspection a throwaway
+     * instance is enough — reading name/description/needsPermission from the REAL
+     * tool objects keeps this list from drifting (the old hand-written strings
+     * had already diverged, and update_plan was missing entirely).
+     *
+     * <p><b>It is deliberately not the whole registry, and the qualifier above is
+     * the correction.</b> This method can be called without a session, so it can
+     * only describe what a session does not own. The session-scoped families are
+     * registered in {@code SessionConnection} against that connection's own
+     * browser and launch supervisor — seven {@code browser_*} tools from card 201
+     * and five {@code launch_*} tools from card 202, twelve as of 2026-08-13 —
+     * and none of them can be built here. Making this list complete means handing
+     * the describer a live session, which is a change to its contract and its
+     * callers, so it is filed rather than smuggled in: what got fixed here is the
+     * sentence that claimed completeness it never had.
      *
      * @param config the SAME resolved configuration the caller described — see
      *               the web_search line below
