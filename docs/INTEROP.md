@@ -17,10 +17,20 @@ schema dialects.
 
 ## MCP: shared tool servers
 
-spectroscope agents mount MCP servers as tools. A configured server
+The interactive faces mount MCP servers as tools. A configured server
 (`mcpServers` in the settings, stdio or HTTP/SSE transport) contributes
 each of its tools to the belt as `mcp__<server>__<tool>`, permission-gated
 like every other tool, every call and result in the event stream.
+
+Which faces, precisely, because the line above used to imply all of them:
+the REPL and a web session mount every configured server, and `spectro
+doctor` connects to each one to report its reachability and tool count. The
+headless faces do not — `spectro run`, a cron fire and a triggered fleet
+node share one runner, and it builds the nine standard tools and nothing
+else. So a server `doctor` calls reachable is not a server every face has
+mounted. Whether that stays true is an open owner decision; the
+measurements, the three roads and the recommendation are in
+[HEADLESS-MCP.md](HEADLESS-MCP.md).
 
 A tool result that carries an **image** block reaches the model as an
 image, not as text. The bytes go into the content-addressed image store and
