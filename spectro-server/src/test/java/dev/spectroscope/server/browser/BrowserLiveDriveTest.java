@@ -210,11 +210,25 @@ class BrowserLiveDriveTest {
         String console = tool("browser_read_console").execute(args("{}"), context());
         assertFalse(console.startsWith("ERROR"), console);
 
-        // 7. resize — the viewport verb answers.
+        // 7. resize — and the page is asked afterwards whether it agrees. The
+        //    first version reported "375x812 (mobile emulation on)" and changed
+        //    nothing a page could read; the sentence is now the measurement, so
+        //    this asserts the measurement and then measures it again separately.
         String resized = tool("browser_resize")
                 .execute(args("{\"preset\":\"mobile\"}"), context());
         assertFalse(resized.startsWith("ERROR"), resized);
         assertTrue(resized.contains("375x812"), resized);
+        assertTrue(resized.contains("touch emulation is on"), resized);
+        String measured = tool("browser_eval").execute(args("{\"action\":\"javascript_exec\","
+                + "\"text\":\"({w:screen.width,h:screen.height,t:navigator.maxTouchPoints})\"}"),
+                context());
+        assertTrue(measured.contains("\"w\":375"), "the page itself says so: " + measured);
+        assertTrue(measured.contains("\"t\":5"), measured);
+
+        // 7b. a tab id nobody can serve is refused rather than silently ignored.
+        String tabbed = tool("browser_read_page")
+                .execute(args("{\"tab_id\":\"tab-2\"}"), context());
+        assertTrue(tabbed.startsWith("ERROR") && tabbed.contains("tab-2"), tabbed);
 
         // 8. the fence — a private address is refused and the sentence names it,
         //    before the browser is asked at all.

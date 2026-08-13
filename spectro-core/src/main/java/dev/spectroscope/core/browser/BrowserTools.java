@@ -70,6 +70,24 @@ public final class BrowserTools {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
+     * What {@code tab_id} means TODAY, said on every schema.
+     *
+     * <p>It was advertised on all seven tools, travelled the wire and was
+     * dropped by the shell without a word, so a model that addressed a second
+     * tab silently drove the first one. The parameter stays because its meaning
+     * is now the per-session browser the owner asked for on 2026-08-13 — one
+     * browser per session, reachable as a session tab and from the rail, alive
+     * until the session closes — and that work will need exactly this argument.
+     * Until it lands, a tab id the shell cannot serve is REFUSED. A schema that
+     * advertises what the implementation ignores is the same dishonesty cards
+     * 193, 199 and 203 were each written against.
+     */
+    static final String TAB_ID_DESCRIPTION =
+            "Optional tab id. There is exactly ONE pane behind this browser today, so any tab "
+                    + "id is refused rather than silently ignored — omit it. A browser per "
+                    + "session is the next step on card 201.";
+
+    /**
      * The provider-side wire limit for one image, shared with the MCP path.
      * A pane screenshot measured 10.8 KB at 1100x760 in the card 200 spike, so
      * this is a guard rather than a routine cost.
@@ -81,6 +99,8 @@ public final class BrowserTools {
     private final ImageStore images;
 
     /**
+     * Builds the family against a browser, a fence and an image store.
+     *
      * @param face   where the browser is, read per call — the desktop shell can
      *               attach, detach and restart between two tool calls
      * @param fence  the net fence, read per call so an {@code allowLocalhost}
@@ -119,7 +139,7 @@ public final class BrowserTools {
                         + "refused; localhost needs the operator's allowLocalhost opt-in.",
                 schema(properties -> {
                     properties.set("url", string("The absolute http(s) URL to open."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }, "url"),
                 true) {
 
@@ -135,7 +155,6 @@ public final class BrowserTools {
                             + " The address it was given: " + safeUrl(url) + ".";
                 }
                 ObjectNode args = JSON.createObjectNode().put("url", url);
-                copyTab(input, args);
                 BrowserFace.Reply reply = browser.send("navigate", args);
                 if (!reply.ok()) {
                     return "ERROR: browser_navigate could not open " + safeUrl(url)
@@ -191,7 +210,7 @@ public final class BrowserTools {
                             string("up, down, left or right, for action=scroll."));
                     properties.set("scroll_amount", integer("Wheel clicks, for action=scroll."));
                     properties.set("duration", integer("Seconds, for action=wait."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }, "action"),
                 true) {
 
@@ -235,7 +254,6 @@ public final class BrowserTools {
      */
     private String screenshot(JsonNode input, Tool.ToolContext context, BrowserFace browser) {
         ObjectNode args = JSON.createObjectNode();
-        copyTab(input, args);
         BrowserFace.Reply reply = browser.send("screenshot", args);
         if (!reply.ok()) {
             return "ERROR: browser_computer could not screenshot " + where(browser, reply)
@@ -250,17 +268,22 @@ public final class BrowserTools {
                     + String.join(", ", ImageStore.servableMediaTypes()) + ".";
         }
         String base64 = reply.value().path("dataBase64").asText("");
+        // The size is decided on the ENCODED payload, which is what the javadoc
+        // above promises: decoding first would give an oversized image a
+        // decoded copy in this heap before anything refused it. A review found
+        // the two in the wrong order on 2026-08-13.
+        long encodedBytes = decodedLength(base64);
+        if (encodedBytes > MAX_SCREENSHOT_BYTES) {
+            return "ERROR: browser_computer got a " + encodedBytes
+                    + " byte screenshot of " + page + ", over the " + MAX_SCREENSHOT_BYTES
+                    + " byte limit for one image — resize the pane and try again.";
+        }
         byte[] bytes;
         try {
             bytes = Base64.getDecoder().decode(base64);
         } catch (IllegalArgumentException notBase64) {
             return "ERROR: browser_computer got a screenshot of " + page
                     + " whose payload is not base64.";
-        }
-        if (bytes.length > MAX_SCREENSHOT_BYTES) {
-            return "ERROR: browser_computer got a " + bytes.length
-                    + " byte screenshot of " + page + ", over the " + MAX_SCREENSHOT_BYTES
-                    + " byte limit for one image — resize the pane and try again.";
         }
         ImageStore.Ref ref;
         try {
@@ -311,7 +334,7 @@ public final class BrowserTools {
                     action.put("description", "The single action: javascript_exec.");
                     properties.set("action", action);
                     properties.set("text", string("The JavaScript expression to evaluate."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }, "action", "text"),
                 true) {
 
@@ -328,7 +351,6 @@ public final class BrowserTools {
                             + where(browser, null) + ".";
                 }
                 ObjectNode args = JSON.createObjectNode().put("text", script);
-                copyTab(input, args);
                 BrowserFace.Reply reply = browser.send("eval", args);
                 if (!reply.ok()) {
                     return "ERROR: browser_eval failed on " + where(browser, reply)
@@ -362,7 +384,7 @@ public final class BrowserTools {
                     properties.set("filter",
                             string("\"interactive\" (default) or \"all\"."));
                     properties.set("max_chars", integer("Cap on the tree, default 8000."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }),
                 false) {
 
@@ -372,7 +394,6 @@ public final class BrowserTools {
                 args.put("filter", text(input, "filter").isBlank()
                         ? "interactive" : text(input, "filter"));
                 args.put("maxChars", input.path("max_chars").asInt(8000));
-                copyTab(input, args);
                 BrowserFace.Reply reply = browser.send("read_page", args);
                 if (!reply.ok()) {
                     return "ERROR: browser_read_page could not read " + where(browser, reply)
@@ -400,7 +421,7 @@ public final class BrowserTools {
                         + "page first — this searches the tree that read produced.",
                 schema(properties -> {
                     properties.set("query", string("What to look for."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }, "query"),
                 false) {
 
@@ -411,7 +432,6 @@ public final class BrowserTools {
                     return "ERROR: browser_find needs a query for " + where(browser, null) + ".";
                 }
                 ObjectNode args = JSON.createObjectNode().put("query", query);
-                copyTab(input, args);
                 BrowserFace.Reply reply = browser.send("find", args);
                 if (!reply.ok()) {
                     return "ERROR: browser_find could not search " + where(browser, reply)
@@ -443,7 +463,7 @@ public final class BrowserTools {
                     properties.set("limit", integer("How many lines, newest first, default 50."));
                     properties.set("only_errors", bool("Errors and warnings only."));
                     properties.set("pattern", string("Keep only lines containing this text."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }),
                 false) {
 
@@ -455,7 +475,6 @@ public final class BrowserTools {
                 if (!text(input, "pattern").isBlank()) {
                     args.put("pattern", text(input, "pattern"));
                 }
-                copyTab(input, args);
                 BrowserFace.Reply reply = browser.send("console", args);
                 if (!reply.ok()) {
                     return "ERROR: browser_read_console could not read " + where(browser, reply)
@@ -483,13 +502,16 @@ public final class BrowserTools {
     private Tool resize() {
         return new BrowserTool("browser_resize",
                 "Resizes the page viewport. Presets: mobile (375x812), tablet (768x1024), "
-                        + "desktop (1280x800). Reload the page afterwards so load-time device "
-                        + "checks run again.",
+                        + "desktop (1280x800). A viewport under 768 wide is emulated as a "
+                        + "phone: device metrics, touch points and a mobile user agent. The "
+                        + "answer reports what the PAGE measured afterwards, which is not "
+                        + "always what was asked for. Reload the page so load-time device "
+                        + "checks and navigator.userAgent see the change.",
                 schema(properties -> {
                     properties.set("preset", string("mobile, tablet or desktop."));
                     properties.set("width", integer("Viewport width in CSS pixels."));
                     properties.set("height", integer("Viewport height in CSS pixels."));
-                    properties.set("tab_id", string("Optional tab id; the default tab if absent."));
+                    properties.set("tab_id", string(TAB_ID_DESCRIPTION));
                 }),
                 true) {
 
@@ -513,16 +535,97 @@ public final class BrowserTools {
                             + where(browser, null) + ".";
                 }
                 ObjectNode args = JSON.createObjectNode().put("width", width).put("height", height);
-                copyTab(input, args);
                 BrowserFace.Reply reply = browser.send("resize", args);
                 if (!reply.ok()) {
                     return "ERROR: browser_resize could not resize " + where(browser, reply)
                             + " — " + reply.error();
                 }
-                return "The viewport of " + where(browser, reply) + " is now " + width + "x"
-                        + height + (width < 768 ? " (mobile emulation on)." : ".");
+                return resized(where(browser, reply), width, height, reply.value());
             }
         };
+    }
+
+    /**
+     * What {@code browser_resize} says it did, built out of what the pane
+     * MEASURED in the page.
+     *
+     * <p>The first version returned its own arguments: {@code "The viewport of …
+     * is now 375x812 (mobile emulation on)."} A review measured the page
+     * afterwards — {@code innerWidth} 800, {@code maxTouchPoints} 0, a Macintosh
+     * user agent — so the sentence was false in three ways and could not have
+     * been anything else, because a tool that answers with its own argument can
+     * never be wrong and is therefore worthless as evidence.
+     *
+     * <p>So every number below comes off the reply, and where the pane did not
+     * deliver what was asked, the sentence says both.
+     *
+     * @param page   the address the pane is showing
+     * @param width  the width that was asked for
+     * @param height the height that was asked for
+     * @param value  what the pane reported back
+     * @return the model-facing sentence
+     */
+    private static String resized(String page, int width, int height, JsonNode value) {
+        int deviceWidth = value.path("screenWidth").asInt(0);
+        int deviceHeight = value.path("screenHeight").asInt(0);
+        if (deviceWidth <= 0 || deviceHeight <= 0) {
+            return "browser_resize set the viewport of " + page + " to " + width + "x" + height
+                    + ", and the page did not report its own size back — check it with "
+                    + "browser_eval before trusting the layout you see.";
+        }
+        StringBuilder said = new StringBuilder("The viewport of ").append(page)
+                .append(" is now ").append(deviceWidth).append("x").append(deviceHeight);
+        if (deviceWidth != width || deviceHeight != height) {
+            said.append(" (browser_resize asked for ").append(width).append("x")
+                    .append(height).append(")");
+        }
+        int touch = value.path("maxTouchPoints").asInt(0);
+        said.append(touch > 0
+                ? ", touch emulation is on with " + touch + " points"
+                : ", touch emulation is off");
+        if (value.path("mobile").asBoolean(false)
+                && value.path("userAgentApplied").asBoolean(false)) {
+            said.append(", and a mobile user agent applies from the next load");
+        }
+        said.append(".");
+
+        // The device and the layout viewport are two numbers, and on a phone
+        // they routinely differ: a page with no viewport meta tag lays out at
+        // the legacy 980 CSS pixels however small the screen is. Measured on
+        // this Chromium — a 375-wide device gave innerWidth 981. Saying so is
+        // the most useful thing a responsive check can report, and hiding it
+        // would be the same kind of smoothing this sentence was rewritten for.
+        int layoutWidth = value.path("innerWidth").asInt(0);
+        int layoutHeight = value.path("innerHeight").asInt(0);
+        if (layoutWidth > 0 && layoutWidth != deviceWidth) {
+            said.append(" The page itself lays out at ").append(layoutWidth).append("x")
+                    .append(layoutHeight)
+                    .append(value.path("viewportMeta").asBoolean(false)
+                            ? ", which is its own viewport meta tag's doing."
+                            : ": it declares no <meta name=\"viewport\">, so it gets the legacy "
+                                    + "980-pixel layout a real phone would give it too.");
+        }
+        return said.append(" Reload the page so load-time device checks run again.").toString();
+    }
+
+    /**
+     * How many bytes a base64 payload decodes to, without decoding it.
+     *
+     * <p>Four encoded characters carry three bytes; padding carries none. The
+     * count skips whitespace so a wrapped payload is measured as what it is.
+     *
+     * @param base64 the encoded payload
+     * @return the decoded size in bytes
+     */
+    static long decodedLength(String base64) {
+        long units = 0;
+        for (int i = 0; i < base64.length(); i++) {
+            char c = base64.charAt(i);
+            if (c != '=' && !Character.isWhitespace(c)) {
+                units++;
+            }
+        }
+        return units * 3 / 4;
     }
 
     // ---- the shared shape ----------------------------------------------------
@@ -584,6 +687,16 @@ public final class BrowserTools {
             if (browser == null || !browser.attached()) {
                 return "ERROR: " + name + " could not reach " + detachedNoun(input)
                         + " — " + BrowserFace.DETACHED + ".";
+            }
+            String tab = text(input, "tab_id");
+            if (!tab.isBlank()) {
+                // Silently serving the only pane to a model that asked for
+                // another one is a lie the transcript never records. See
+                // TAB_ID_DESCRIPTION for why the parameter stays.
+                return "ERROR: " + name + " was given the tab id \"" + clean(tab)
+                        + "\", and there is exactly one pane behind this browser today, on "
+                        + where(browser, null) + " — omit tab_id. A browser per session is "
+                        + "card 201's next step.";
             }
             try {
                 return run(input, context, browser);
@@ -650,14 +763,6 @@ public final class BrowserTools {
     private static String text(JsonNode input, String field) {
         JsonNode node = input.path(field);
         return node.isTextual() ? node.asText() : "";
-    }
-
-    /** Carries an optional tab id from the model's spelling to the wire's. */
-    private static void copyTab(JsonNode input, ObjectNode args) {
-        String tab = text(input, "tab_id");
-        if (!tab.isBlank()) {
-            args.put("tabId", tab);
-        }
     }
 
     /** A schema with a properties block and an optional required list. */

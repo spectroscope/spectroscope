@@ -257,6 +257,141 @@ class BrowserToolsTest {
         assertTrue(byName(family, "browser_computer").needsPermission());
     }
 
+    @Test
+    void aTabIdTheShellCannotServeIsRefusedRatherThanSilentlyIgnored(@TempDir Path dir) {
+        // Measured in review: tab_id was advertised on all seven schemas, travelled
+        // the wire, and the shell never read it — so a model that addressed a second
+        // tab drove the first one and nothing said so. The parameter stays, because
+        // its meaning is now the per-session browser the owner asked for; what may
+        // not stay is answering a request nobody served.
+        FakeFace face = new FakeFace(true, Map.of("navigate",
+                BrowserFace.Reply.ok(obj("{\"title\":\"dev\"}"), "http://localhost:5173/")));
+        String out = byName(tools(face, true, dir), "browser_navigate")
+                .execute(obj("{\"url\":\"http://localhost:5173/\",\"tab_id\":\"tab-2\"}"),
+                        context(dir, new ArrayList<>(), new ArrayList<>()));
+        assertTrue(out.startsWith("ERROR: "), out);
+        assertTrue(out.contains("tab-2"), "the refusal names the tab it was given: " + out);
+        assertTrue(face.sent.isEmpty(), "and nothing reached the pane under another tab's name");
+    }
+
+    @Test
+    void everyToolRefusesATabIdAndSaysSoOnItsSchema(@TempDir Path dir) {
+        FakeFace face = new FakeFace(true, Map.of());
+        for (Tool tool : tools(face, true, dir).all()) {
+            JsonNode described = tool.inputSchema().path("properties").path("tab_id")
+                    .path("description");
+            assertTrue(described.asText("").contains("refused"),
+                    tool.name() + " advertises tab_id without saying it is refused: " + described);
+            String out = tool.execute(obj("{\"action\":\"screenshot\",\"query\":\"x\","
+                    + "\"url\":\"https://example.com/\",\"text\":\"1\",\"tab_id\":\"t9\"}"),
+                    context(dir, new ArrayList<>(), new ArrayList<>()));
+            assertTrue(out.startsWith("ERROR: ") && out.contains("t9"),
+                    tool.name() + " swallowed a tab id it cannot serve: " + out);
+        }
+        assertTrue(face.sent.isEmpty(), "not one verb travelled with an unserviceable tab id");
+    }
+
+    @Test
+    void resizeReportsWhatThePageMeasuredAndNotWhatItWasAsked(@TempDir Path dir) {
+        // The measured dishonesty: "The viewport of … is now 375x812 (mobile
+        // emulation on)" while the page reported innerWidth 800, maxTouchPoints 0
+        // and a Macintosh user agent. A sentence assembled from the tool's own
+        // arguments can never be wrong, and is therefore worth nothing.
+        FakeFace stubborn = new FakeFace(true, Map.of("resize", BrowserFace.Reply.ok(
+                obj("{\"width\":375,\"height\":812,\"mobile\":true,\"screenWidth\":800,"
+                        + "\"screenHeight\":740,\"innerWidth\":800,\"innerHeight\":740,"
+                        + "\"maxTouchPoints\":0,\"touchApplied\":false,"
+                        + "\"userAgentApplied\":false}"),
+                "http://localhost:5173/")));
+        String out = byName(tools(stubborn, true, dir), "browser_resize")
+                .execute(obj("{\"preset\":\"mobile\"}"),
+                        context(dir, new ArrayList<>(), new ArrayList<>()));
+        assertTrue(out.contains("800x740"), "the sentence carries the measurement: " + out);
+        assertTrue(out.contains("asked for 375x812"), "and admits the gap: " + out);
+        assertTrue(out.contains("touch emulation is off"), out);
+        assertFalse(out.contains("mobile user agent"),
+                "a user agent that was not applied is not announced: " + out);
+    }
+
+    @Test
+    void resizeSaysWhatItReallyDidWhenThePaneReallyDidIt(@TempDir Path dir) {
+        FakeFace real = new FakeFace(true, Map.of("resize", BrowserFace.Reply.ok(
+                obj("{\"width\":375,\"height\":812,\"mobile\":true,\"screenWidth\":375,"
+                        + "\"screenHeight\":812,\"innerWidth\":375,\"innerHeight\":812,"
+                        + "\"viewportMeta\":true,\"maxTouchPoints\":5,\"touchApplied\":true,"
+                        + "\"userAgentApplied\":true}"),
+                "http://localhost:5173/")));
+        String out = byName(tools(real, true, dir), "browser_resize")
+                .execute(obj("{\"preset\":\"mobile\"}"),
+                        context(dir, new ArrayList<>(), new ArrayList<>()));
+        assertTrue(out.contains("375x812"), out);
+        assertFalse(out.contains("asked for"), "nothing to admit when it worked: " + out);
+        assertTrue(out.contains("touch emulation is on with 5 points"), out);
+        assertTrue(out.contains("mobile user agent"), out);
+    }
+
+    @Test
+    void resizeSaysWhenTheDeviceAndTheLayoutViewportDisagree(@TempDir Path dir) {
+        // Measured on this Chromium: a 375x812 device whose page declares no
+        // viewport meta tag lays out at 981 CSS pixels — which is what a real
+        // phone does too, and the single most useful thing a responsive check
+        // can report. A sentence that quoted only 375 would be true and useless.
+        FakeFace legacy = new FakeFace(true, Map.of("resize", BrowserFace.Reply.ok(
+                obj("{\"width\":375,\"height\":812,\"mobile\":true,\"screenWidth\":375,"
+                        + "\"screenHeight\":812,\"innerWidth\":981,\"innerHeight\":2123,"
+                        + "\"viewportMeta\":false,\"maxTouchPoints\":5,\"touchApplied\":true,"
+                        + "\"userAgentApplied\":true}"),
+                "http://localhost:5173/")));
+        String out = byName(tools(legacy, true, dir), "browser_resize")
+                .execute(obj("{\"preset\":\"mobile\"}"),
+                        context(dir, new ArrayList<>(), new ArrayList<>()));
+        assertTrue(out.contains("is now 375x812"), out);
+        assertFalse(out.contains("asked for"), "the device IS what was asked for: " + out);
+        assertTrue(out.contains("lays out at 981x2123"), out);
+        assertTrue(out.contains("no <meta name=\"viewport\">"), out);
+    }
+
+    @Test
+    void resizeAdmitsAPaneThatMeasuredNothingInsteadOfClaimingASize(@TempDir Path dir) {
+        FakeFace silent = new FakeFace(true, Map.of("resize",
+                BrowserFace.Reply.ok(obj("{\"width\":375,\"height\":812}"),
+                        "http://localhost:5173/")));
+        String out = byName(tools(silent, true, dir), "browser_resize")
+                .execute(obj("{\"preset\":\"mobile\"}"),
+                        context(dir, new ArrayList<>(), new ArrayList<>()));
+        assertTrue(out.contains("did not report its own size back"), out);
+    }
+
+    @Test
+    void anOversizedScreenshotIsRefusedBeforeItIsEverDecoded(@TempDir Path dir) {
+        // The javadoc promised the size was "decided on the encoded payload so an
+        // oversized image never gets a decoded copy", and the code decoded first.
+        // The two now agree, and this pins which way.
+        long tooBig = BrowserTools.MAX_SCREENSHOT_BYTES + 1024;
+        int encoded = (int) (tooBig * 4 / 3);
+        assertTrue(BrowserTools.decodedLength("A".repeat(encoded)) > BrowserTools.MAX_SCREENSHOT_BYTES);
+        assertEquals(3, BrowserTools.decodedLength("AAAA"));
+        assertEquals(2, BrowserTools.decodedLength("AAA="));
+        assertEquals(1, BrowserTools.decodedLength("AA=="));
+        assertEquals(3, BrowserTools.decodedLength("AA\nAA"), "wrapping is not payload");
+
+        // A payload this size is not valid base64 at all: if the guard decoded
+        // first, the decoder would throw and the sentence would blame the
+        // payload instead of naming the size.
+        FakeFace face = new FakeFace(true, Map.of("screenshot", BrowserFace.Reply.ok(
+                obj("{\"mediaType\":\"image/png\",\"dataBase64\":\"" + "!".repeat(encoded)
+                        + "\",\"width\":800,\"height\":600}"),
+                "http://localhost:5173/")));
+        List<RunEvent> events = new ArrayList<>();
+        List<Tool.Attachment> attachments = new ArrayList<>();
+        String out = byName(tools(face, true, dir), "browser_computer")
+                .execute(obj("{\"action\":\"screenshot\"}"), context(dir, events, attachments));
+        assertTrue(out.startsWith("ERROR: "), out);
+        assertTrue(out.contains("over the " + BrowserTools.MAX_SCREENSHOT_BYTES + " byte limit"),
+                "the size is what was refused, so the size is what the sentence names: " + out);
+        assertTrue(attachments.isEmpty() && events.isEmpty(), "nothing stored, nothing announced");
+    }
+
     private static Tool byName(BrowserTools family, String name) {
         return family.all().stream().filter(t -> name.equals(t.name())).findFirst().orElseThrow();
     }
