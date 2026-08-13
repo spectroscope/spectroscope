@@ -3,6 +3,7 @@ package dev.spectroscope.server.session;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
+import dev.spectroscope.server.browser.BrowserControlSocket;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -37,12 +38,18 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
      */
     private final LiveSessions liveSessions;
 
+    /** The desktop shell's browser control channel (card 201) — one per server,
+     *  shared by every session, because there is one visible pane. */
+    private final BrowserControlSocket browser;
+
     /** Per-connection state, keyed by the Spring session id. */
     private final Map<String, SessionConnection> connections = new ConcurrentHashMap<>();
 
-    SpectroSocketHandler(FleetAggregator fleet, LiveSessions liveSessions) {
+    SpectroSocketHandler(FleetAggregator fleet, LiveSessions liveSessions,
+                         BrowserControlSocket browser) {
         this.fleet = fleet;
         this.liveSessions = liveSessions;
+        this.browser = browser;
     }
 
     /**
@@ -59,6 +66,10 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
         SessionConnection connection =
                 new SessionConnection(socket, mapper, config, resumeId, fleet, liveSessions);
+        // The visible browser pane (card 201). The channel reads card 199's
+        // opt-in itself, so the fence is the same on both halves whether or not
+        // a session socket ever opened.
+        connection.useBrowser(browser);
         connections.put(socket.getId(), connection);
         // A resume that cannot load its session closes the socket itself — and
         // so does a resume of a session another socket already holds.

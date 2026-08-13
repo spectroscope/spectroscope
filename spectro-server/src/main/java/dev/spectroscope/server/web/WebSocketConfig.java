@@ -6,6 +6,7 @@ import dev.spectroscope.server.llm.LiveSttProtocol;
 import dev.spectroscope.server.llm.LiveSttSocketHandler;
 import dev.spectroscope.server.llm.OpenAiLiveStt;
 import dev.spectroscope.server.llm.SttRoute;
+import dev.spectroscope.server.browser.BrowserControlSocket;
 import dev.spectroscope.server.session.SpectroSocketHandler;
 import dev.spectroscope.server.shell.HelperPtyProvider;
 import dev.spectroscope.server.shell.PtyProvider;
@@ -31,6 +32,12 @@ import org.springframework.web.socket.server.standard.ServletServerContainerFact
  * (card 92): the same loopback + Host + Origin fence the REST endpoints wear,
  * port-agnostic, closing cross-site WebSocket hijacking.</p>
  *
+ * <p>{@code /ws/browser} — the desktop shell's browser control channel
+ * (card 201) — wears the same {@link LocalOriginHandshakeInterceptor}. It points
+ * the other way from every other socket here: the Electron MAIN process dials
+ * in, which is how the browser pane is driven without giving the renderer a
+ * preload script.</p>
+ *
  * <p>{@code /ws/shell} — the terminal socket (card 93) — wears
  * {@link ShellHandshakeInterceptor}, which is the same fence plus a required
  * Origin, refusing with 404 so the endpoint reads as absent, and absent for real
@@ -42,6 +49,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
 
     private final SpectroSocketHandler handler;
 
+    /** The desktop shell's control channel to the visible browser pane (card 201). */
+    private final BrowserControlSocket browser;
+
     /** The PTY seam and the shells it has open — one set per server process. */
     private final PtyProvider ptyProvider = new HelperPtyProvider();
     private final ShellRegistry shells = new ShellRegistry();
@@ -51,8 +61,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
      *
      * @param handler the socket handler that owns a SessionConnection per open socket
      */
-    public WebSocketConfig(SpectroSocketHandler handler) {
+    public WebSocketConfig(SpectroSocketHandler handler, BrowserControlSocket browser) {
         this.handler = handler;
+        this.browser = browser;
     }
 
     /**
@@ -72,6 +83,13 @@ public class WebSocketConfig implements WebSocketConfigurer {
         registry.addHandler(
                         new LiveSttSocketHandler(WebSocketConfig::liveSttSetup, new OpenAiLiveStt()),
                         "/ws/stt")
+                .addInterceptors(new LocalOriginHandshakeInterceptor())
+                .setAllowedOrigins("*");
+        // /ws/browser — the desktop shell's control channel (cards 200, 201). It
+        // is the shell that dials in, from a main process with no browser Origin
+        // header at all, so the same loopback fence applies and the absent Origin
+        // passes it exactly as an origin-less local tool does on /ws.
+        registry.addHandler(browser, "/ws/browser")
                 .addInterceptors(new LocalOriginHandshakeInterceptor())
                 .setAllowedOrigins("*");
     }

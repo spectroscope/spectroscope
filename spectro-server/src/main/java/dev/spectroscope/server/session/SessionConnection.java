@@ -202,6 +202,13 @@ public final class SessionConnection {
 
     /** The server-hosted fleet hub, or null/disabled — then no fleet frames ever. */
     private FleetAggregator fleet;
+
+    /** The visible browser pane (card 201), or a face that is never attached.
+     *  Set additively rather than through a seventh constructor parameter: every
+     *  existing caller and test keeps compiling, and a run with no desktop shell
+     *  behaves exactly as it did before the browser existed. */
+    private dev.spectroscope.core.browser.BrowserFace browser =
+            dev.spectroscope.core.browser.BrowserFace.none();
     /** This connection's fleet tap; registered on start, removed on close. */
     private FleetAggregator.Listener fleetListener;
     /** Pending fleet frames, drained to the socket on this connection's OWN
@@ -256,6 +263,20 @@ public final class SessionConnection {
         this.imageProviderName.set(config.imageProvider());
         this.thinking.set(config.thinking());
         this.permissionMode = config.permissionMode();
+    }
+
+    /**
+     * Points this connection at the desktop browser pane.
+     *
+     * <p>Additive on purpose. The browser is the DESKTOP face's, and the owner
+     * ratified that trade: a reader on {@code spectro web} gets a face that is
+     * never attached and seven tools whose refusal sentences say so and name the
+     * address they were asked for.
+     *
+     * @param face the control channel, or {@code null} for no browser at all
+     */
+    public void useBrowser(dev.spectroscope.core.browser.BrowserFace face) {
+        this.browser = face == null ? dev.spectroscope.core.browser.BrowserFace.none() : face;
     }
 
     /** Announces the boot provider, then (for a resume) loads the history; a bad id closes the socket. */
@@ -901,6 +922,19 @@ public final class SessionConnection {
                 new DefaultChromeRunner(),
                 dev.spectroscope.core.net.NetFence.withSystemDns(
                         activeConfig.get().allowLocalhost())));
+        // Card 201: the seven measured browser tools, driving the VISIBLE pane in
+        // the desktop window over the control channel. Registered on the server
+        // face unconditionally: the shell can attach after the registry is built
+        // (it reconnects across a server restart), so a registry that only
+        // carried them "when attached" would hand the agent a browser that
+        // exists and no way to say so. The fence and the image store are read
+        // per call, like the neighbours above.
+        new dev.spectroscope.core.browser.BrowserTools(
+                () -> browser,
+                () -> dev.spectroscope.core.net.NetFence.withSystemDns(
+                        activeConfig.get().allowLocalhost()),
+                ImageStore.inUserHome())
+                .all().forEach(registry::register);
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it
         // from its own instance; this registration only feeds the live agent.
