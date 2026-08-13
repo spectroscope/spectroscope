@@ -19,16 +19,21 @@ import { useCallback, useEffect, useState } from "react";
 import { t, type Lang } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { CopyButton } from "./CopyButton";
-import { searxngOffer } from "./webSearchSetup";
+import { searxngOffer, tierReading } from "./webSearchSetup";
 import type { DockerStatus } from "./dockerOffer";
 
 /** The `webSearch` block of /api/config — mirrors SessionsController#config. */
 export interface WebSearchStatus {
-  /** The resolver's tier name: searxng | tavily | brave | duckduckgo. */
+  /** The resolver's tier name: searxng | tavily | brave | duckduckgo. This is
+   *  the field this page reads — the DECISION, which it never second-guesses. */
   tier: string;
-  /** The same tier as a reader should see it — the scrape carries its apology here. */
+  /** The resolver's own label and sentence, in English. Carried here because
+   *  the server's other two faces (the tool description a model reads, the
+   *  `spectro doctor` line) print exactly these, and having them on the wire
+   *  makes that comparable. This page deliberately does NOT render them: it is
+   *  bilingual and they are not, so it phrases the tier it was handed instead.
+   *  Phrasing is not deciding. */
   label: string;
-  /** The resolver's one sentence about this machine. */
   detail: string;
   /** The saved instance address, or "" — an address, never a credential. */
   searxngUrl: string;
@@ -196,6 +201,8 @@ export function WebSearchSettings({
   // elsewhere in the page refreshed the view).
   useEffect(() => setDraft(searxngUrl), [searxngUrl]);
 
+  const reading = tierReading(status?.tier ?? "", status?.searxngUrl ?? "");
+
   const commit = (raw: string): void => {
     const next = raw.trim();
     if (next === searxngUrl.trim()) return; // blur is not an edit
@@ -212,11 +219,18 @@ export function WebSearchSettings({
       </div>
       <p className="settings-note">{t(lang, "set.webSearchHint")}</p>
 
-      {/* ---- What answers RIGHT NOW. Straight from the server's resolver:
-          the same words the tool description and `spectro doctor` use. ---- */}
+      {/* ---- What answers RIGHT NOW. The TIER comes from the server's one
+          resolver; only the wording is chosen here, so a German reader does
+          not meet an English sentence in the middle of their settings. An
+          unknown tier (newer server, older bundle) shows its bare name rather
+          than a sentence about the wrong backend. ---- */}
       {status && (
         <p className="settings-note" data-testid="web-search-tier">
-          <span className="origin-badge">{status.label}</span> {status.detail}
+          <span className="origin-badge">
+            {status.tier}
+            {reading.labelKey ? ` · ${t(lang, reading.labelKey)}` : ""}
+          </span>{" "}
+          {reading.detailKey ? t(lang, reading.detailKey, { addr: reading.addr }) : ""}
         </p>
       )}
 

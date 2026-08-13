@@ -12,7 +12,14 @@ import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import type { DockerStatus } from "./dockerOffer";
-import { SEARXNG_INSTALL_COMMAND, SEARXNG_SAMPLE_PATH, searxngOffer } from "./webSearchSetup";
+import {
+  SEARXNG_INSTALL_COMMAND,
+  SEARXNG_SAMPLE_PATH,
+  WEB_SEARCH_TIERS,
+  searxngOffer,
+  tierReading,
+} from "./webSearchSetup";
+import { dict, t } from "../i18n/i18n";
 
 const status = (over: Partial<DockerStatus>): DockerStatus => ({
   docker: "ready",
@@ -79,5 +86,53 @@ describe("searxngOffer", () => {
     expect(installer).toContain("format=json");
     // And it hands the address over the way the Langfuse installer does.
     expect(installer).toContain("SPECTRO_SEARXNG_URL");
+  });
+});
+
+describe("tierReading", () => {
+  it("has a sentence in both languages for every tier the resolver can name", () => {
+    // The tier names are the server's, so this loop is what keeps a tier added
+    // there from arriving here as a blank line. A missing dict entry renders as
+    // the bare key, which is exactly the failure this catches.
+    for (const tier of WEB_SEARCH_TIERS) {
+      const reading = tierReading(tier, "http://box.local:8888");
+      expect(dict[reading.detailKey], `${tier}.detailKey`).toBeDefined();
+      expect(dict[reading.detailKey].de, `${tier}.de`).toBeTruthy();
+      expect(dict[reading.detailKey].en, `${tier}.en`).toBeTruthy();
+      if (reading.labelKey !== "") {
+        expect(dict[reading.labelKey], `${tier}.labelKey`).toBeDefined();
+      }
+    }
+  });
+
+  it("only the searxng line carries an address, and it really lands in the text", () => {
+    const searxng = tierReading("searxng", "http://box.local:8888");
+    expect(searxng.addr).toBe("http://box.local:8888");
+    for (const lang of ["de", "en"] as const) {
+      // A sentence that kept the literal {addr} would be the card-193 failure
+      // wearing a placeholder: an address line that names no address.
+      expect(t(lang, searxng.detailKey, { addr: searxng.addr })).toContain("http://box.local:8888");
+      expect(t(lang, searxng.detailKey, { addr: searxng.addr })).not.toContain("{addr}");
+    }
+    for (const tier of ["tavily", "brave", "duckduckgo"]) {
+      expect(tierReading(tier, "http://box.local:8888").addr).toBe("");
+    }
+  });
+
+  it("only the scrape gets a label, because only the scrape is nobody's choice", () => {
+    expect(tierReading("duckduckgo", "").labelKey).toBe("set.tierLabelScrape");
+    for (const tier of ["searxng", "tavily", "brave"]) {
+      expect(tierReading(tier, "").labelKey).toBe("");
+    }
+  });
+
+  it("an unknown tier says nothing rather than something wrong", () => {
+    // A newer server naming a tier this bundle has never heard of. Printing a
+    // sentence about a different backend would be worse than printing none:
+    // the badge still shows the server's word, which is true.
+    const reading = tierReading("some-future-tier", "http://box.local:8888");
+    expect(reading.detailKey).toBe("");
+    expect(reading.labelKey).toBe("");
+    expect(reading.addr).toBe("");
   });
 });

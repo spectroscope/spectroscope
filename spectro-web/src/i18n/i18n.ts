@@ -849,6 +849,28 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Womit web_search sucht. Es antwortet genau eine Stufe — die konfigurierte. Fällt sie aus, bekommst du den Fehler, nicht heimlich das Ergebnis einer anderen.",
     en: "What web_search searches with. Exactly one tier answers — the configured one. When it fails you get the failure, not another tier's answer behind your back.",
   },
+  // The ACTIVE tier, in the reader's language. The server decides WHICH tier
+  // (one resolver, card 203) and this page only phrases it — an English
+  // sentence from /api/config rendered verbatim left a German reader with one
+  // English line in the middle of their settings. Phrasing is not deciding:
+  // there is no tier here that the server did not name.
+  "set.tierLabelScrape": { de: "Notbehelf", en: "last resort" },
+  "set.tier.searxng": {
+    de: "searxng — eine Metasuche, die du selbst betreibst, unter {addr}",
+    en: "searxng — a metasearch instance you run, at {addr}",
+  },
+  "set.tier.tavily": {
+    de: "die Tavily-API (TAVILY_API_KEY)",
+    en: "the Tavily API (TAVILY_API_KEY)",
+  },
+  "set.tier.brave": {
+    de: "die Brave-Search-API (BRAVE_API_KEY)",
+    en: "the Brave Search API (BRAVE_API_KEY)",
+  },
+  "set.tier.duckduckgo": {
+    de: "der keyless HTML-Scrape von DuckDuckGo — Notbehelf, letzte Stufe, und gegen DuckDuckGos eigene Bedingungen.",
+    en: "the keyless DuckDuckGo HTML scrape — best effort, last resort, and against DuckDuckGo's own terms.",
+  },
   "set.searxngUrl": { de: "SearXNG-Instanz (URL)", en: "SearXNG instance (URL)" },
   "set.searxngOwnInstance": {
     de: "Gemeint ist eine Instanz, die DU betreibst. Öffentliche Instanzen liefern fast nie JSON: von 75 erreichbaren am 2026-08-12 hat genau eine application/json geantwortet.",

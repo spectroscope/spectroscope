@@ -58,3 +58,49 @@ export function searxngOffer(status: DockerStatus | null | undefined): DockerOff
   }
   return shared;
 }
+
+/** The tiers the server's resolver can name. The literals ARE
+ *  WebSearchTiers' own tier strings — the settings page never invents one. */
+export const WEB_SEARCH_TIERS = ["searxng", "tavily", "brave", "duckduckgo"] as const;
+export type WebSearchTier = (typeof WEB_SEARCH_TIERS)[number];
+
+/** How the settings page says what the server decided. */
+export interface TierReading {
+  /** Dict key for the short badge. */
+  labelKey: string;
+  /** Dict key for the sentence; interpolates {addr} for searxng. */
+  detailKey: string;
+  /** The address to interpolate, or "" for a tier that has none. */
+  addr: string;
+}
+
+/**
+ * Turn the server's answer into two dict keys and a fact.
+ *
+ * The split matters and is the whole reason this is not just printing
+ * `webSearch.detail`. The server DECIDES the tier — one resolver, four
+ * surfaces, no drift, which is the point of card 203. But the server's
+ * sentence is English, and this page is bilingual, so rendering it verbatim
+ * left a German reader with one English line in the middle of their settings.
+ * Phrasing is not deciding: this function chooses words for a tier it was
+ * handed, and cannot reach a different tier than the one it was given.
+ *
+ * An unknown tier (a newer server, an older bundle) falls back to the tier
+ * name itself rather than to a guess — the badge then shows the bare word,
+ * which is true, instead of a sentence about the wrong backend.
+ *
+ * @param tier       the tier name from /api/config
+ * @param searxngUrl the saved instance address, used only by the searxng line
+ * @returns the two keys and the address to interpolate
+ */
+export function tierReading(tier: string, searxngUrl: string): TierReading {
+  const known = (WEB_SEARCH_TIERS as readonly string[]).includes(tier);
+  if (!known) {
+    return { labelKey: "", detailKey: "", addr: "" };
+  }
+  return {
+    labelKey: tier === "duckduckgo" ? "set.tierLabelScrape" : "",
+    detailKey: `set.tier.${tier}`,
+    addr: tier === "searxng" ? searxngUrl : "",
+  };
+}
