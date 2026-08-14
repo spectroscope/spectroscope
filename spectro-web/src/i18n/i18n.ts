@@ -757,9 +757,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "no switch here — this model has no thinking to show",
   },
   "rc.settingsLabel": { de: "Reasoning (pro Modell)", en: "Reasoning (per model)" },
+  // The last sentence is card 222's: this control is neither saved with the
+  // session defaults above it nor bound like them — set_reasoning is replayed
+  // onto the agent that is already running — so it says its own reach instead
+  // of standing under someone else's.
   "rc.settingsNote": {
-    de: "Gilt pro Modell, gemerkt in diesem Browser. Angeboten wird nur, was das Modell laut Capability-Record kann.",
-    en: "Per model, remembered in this browser. Only what the model's capability record supports is offered.",
+    de: "Gilt pro Modell, gemerkt in diesem Browser. Angeboten wird nur, was das Modell laut Capability-Record kann. Eine offene Sitzung übernimmt die Wahl sofort.",
+    en: "Per model, remembered in this browser. Only what the model's capability record supports is offered. A session already open takes the choice right away.",
   },
 
   // right panel
@@ -956,6 +960,18 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Welche Werkzeug-Aufrufe ohne Rückfrage laufen. Jeder Eintrag nennt eine Stufe: read schaut nur, write greift ein, eval-execute führt Code aus. Ein Eintrag ohne Stufe gibt nur read frei, und eine Familie mit * muss ihre Stufe nennen.",
     en: "Which tool calls run without asking. Every entry names a tier: read looks, write acts, eval-execute runs code. An entry without a tier approves read only, and a * family has to name its tier.",
   },
+  // Card 222 asked every saveable setting to say when it takes effect. The
+  // allowlist answers "next session" and it is the only place in the product
+  // where that is a decision rather than a limitation: the belt was made live
+  // so the operator's choices reach the agent, and this list is what protects
+  // the operator FROM the agent. The agent can write files in the workspace,
+  // so a live allowlist would let a run widen its own permissions between two
+  // tool calls with nobody watching. The sentence says the reason, because an
+  // operator who reads only "next session" would reasonably file it as a bug.
+  "set.alApplies": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält ihre Liste — sonst könnte ein Lauf, der Dateien schreiben darf, sich zwischen zwei Aufrufen selbst mehr erlauben.",
+    en: "Applies from the next session. A session already open keeps its list — otherwise a run that may write files could widen its own permissions between two tool calls.",
+  },
   "set.alMapVersion": {
     de: "Stufen-Karte {ver} — sie gehört zum Build, nicht zum Server, den du ansprichst.",
     en: "Tier map {ver} — it ships with the build, not with the server you talk to.",
@@ -1103,6 +1119,51 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.hkApplies": {
     de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält die Hooks, mit denen sie gestartet ist.",
     en: "Applies from the next session. A session already open keeps the hooks it started with.",
+  },
+  // Card 222. The owner saved a SearXNG address, this page reported the tier as
+  // searxng, and the next search in the same window went to DuckDuckGo. The
+  // page was right about the configuration and wrong about the run, and nothing
+  // on it said which of the two it was describing. Two sentences close that,
+  // and every field that can be saved carries one of them: this one where the
+  // change reaches the open session, `set.hkApplies` where it does not.
+  //
+  // The wording says "from its next tool call" rather than "immediately"
+  // because that is what the belt does — the tool asks the settings again when
+  // it is called, so a call already in flight finishes on what it started with.
+  "set.reachLive": {
+    de: "Gilt sofort, auch für eine schon offene Sitzung — ab deren nächstem Tool-Aufruf.",
+    en: "Applies immediately, including to a session already open — from its next tool call.",
+  },
+  // The other half, and the reason card 222 needed a review to finish: a live
+  // sentence had been written under a grid of seven fields of which one was
+  // live. This is the generic form, and it names NOTHING — read live on
+  // 127.0.0.1:8391, the first draft of it said "keeps the provider, model and
+  // address it started with" and was rendering under the OTLP endpoint pair,
+  // which is the same defect one size smaller. A sentence used by more than
+  // one block may only say what all of them share.
+  "set.reachNextSession": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
+    en: "Applies from the next session. A session already open keeps what it started with.",
+  },
+  // The third answer, and the only field that needs it (card 222, F5). The
+  // image backend has a SECOND live control — the dropdown in the composer —
+  // and a pick there outranks a file saved under it for the rest of that
+  // session. The sentence names the control, because a reader who knows which
+  // one is speaking can go and change it; "sometimes" would leave them where
+  // the owner was on the day this card was written.
+  "set.reachLiveUnlessPicked": {
+    de: "Gilt sofort, auch für eine schon offene Sitzung — außer du hast in dieser Sitzung im Eingabefeld ein Bild-Backend gewählt. Diese Wahl bleibt bis zum Sitzungsende oben.",
+    en: "Applies immediately, including to a session already open — unless you picked an image backend in the composer this session. That choice stays on top until the session ends.",
+  },
+  // The session-defaults block's own wording. Provider, model, address and
+  // thinking are bound when the agent is built — measured on one socket: the
+  // settings were written to model=qwen3:latest, /api/config agreed, and the
+  // next run in the same session still started on the model from before. The
+  // picker in the header IS live for those, and naming it is the difference
+  // between a limitation and a dead end.
+  "set.provApplies": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält Provider, Modell und Adresse, mit denen sie gestartet ist — der Umschalter oben im Fenster wechselt eine laufende Sitzung sofort.",
+    en: "Applies from the next session. A session already open keeps the provider, model and address it started with — the picker in the header switches a running session right away.",
   },
   "set.hkFailOpen": {
     de: "Antwortet ein Hook nicht rechtzeitig, wird er abgebrochen und der Aufruf läuft trotzdem — ein kaputter Hook soll nicht jeden Werkzeug-Aufruf blockieren. Das steht dann als „timed-out\" in der Ablaufspur, nie als „durchgelassen\".",
@@ -2576,9 +2637,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
 
   "mcpset.title": { de: "MCP-Server", en: "MCP servers" },
+  // When they land is no longer said here: the block's own ReachBlock derives
+  // that sentence from SETTING_REACH (card 222, F10). A hand-written "apply to
+  // the next chat" beside a derived one is two claims about the same thing.
   "mcpset.note": {
-    de: "Externe MCP-Server (User-Ebene). Greifen beim nächsten Chat; der rohe JSON-Editor im Composer-Zahnrad bleibt für die Projekt-Ebene.",
-    en: "External MCP servers (user scope). Apply to the next chat; the raw JSON editor in the composer gear stays for the project scope.",
+    de: "Externe MCP-Server (User-Ebene). Der rohe JSON-Editor im Composer-Zahnrad bleibt für die Projekt-Ebene.",
+    en: "External MCP servers (user scope). The raw JSON editor in the composer gear stays for the project scope.",
   },
   "mcpset.empty": { de: "Keine MCP-Server konfiguriert.", en: "No MCP servers configured." },
   "mcpset.namePh": { de: "name", en: "name" },

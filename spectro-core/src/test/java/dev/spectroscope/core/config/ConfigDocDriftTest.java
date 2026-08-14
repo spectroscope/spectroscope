@@ -104,6 +104,128 @@ class ConfigDocDriftTest {
                         + " \"Every key\" table now lists");
     }
 
+    @Test
+    void theChapterSaysWhichSettingsReachAnOpenSessionAndWhichDoNot() throws IOException {
+        // Card 222. The owner saved a SearXNG address, /api/config reported the
+        // new tier, and the next search in the same window used the old one. The
+        // page and the reference between them said nothing about WHEN a saved
+        // setting lands, and the silence is what made a right answer unusable.
+        // Whatever the answer, the reference has to carry it: this is the
+        // chapter a reader consults before they go and change something.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String reference = Files.readString(source);
+
+        for (String live : List.of("searxngUrl", "imageModel", "chromeBinary", "allowLocalhost")) {
+            assertTrue(reference.contains(live),
+                    "the config reference does not name \"" + live + "\" among the settings"
+                            + " a running session picks up on its next tool call");
+        }
+        assertTrue(reference.contains("already have open") || reference.contains("already open"),
+                "the reference never says that a saved setting reaches the session already"
+                        + " open — which is the promise card 222 exists to make good");
+        for (String fixed : List.of("MCP servers", "shell hooks", "system prompt", "allowlist")) {
+            assertTrue(reference.contains(fixed),
+                    "the reference does not name \"" + fixed + "\" among the things that stay"
+                            + " settled for the session — a list that names only the live half"
+                            + " leaves the reader guessing about the other one");
+        }
+        // The review's criterion-2 correction. The first version of this
+        // chapter called provider and model "the header picker's", which is
+        // true of the picker and NOT of this page: a model saved here was
+        // measured not to reach the open session, while the page's own note
+        // said it applied immediately. The reference has to carry both halves,
+        // or the next reader re-derives the wrong one.
+        assertTrue(reference.contains("applies from the next session"),
+                "the reference never says that the provider pair saved on the settings page"
+                        + " waits for the next session — the half the review measured");
+        assertTrue(reference.contains("picker"),
+                "and it must name the picker as the live path, or the limitation reads as a"
+                        + " dead end");
+        for (String pageBound : List.of("Provider, model", "thinking")) {
+            assertTrue(reference.contains(pageBound),
+                    "the reference does not name \"" + pageBound + "\" among the settings that"
+                            + " land with the next session");
+        }
+    }
+
+    @Test
+    void theChapterCarriesTheOneConditionOnTheLivePromise() throws IOException {
+        // Card 222, review finding F5. The live promise has exactly one
+        // exception, and this is the second round in which it went unwritten.
+        // The image BACKEND has a live control of its own — the composer's
+        // dropdown — and a pick there outranks a file saved under it for the
+        // rest of the session. Worse, until this round the APP sent that pick
+        // itself, on a plain reconnect, so the exception applied with nobody
+        // having chosen anything. The exception is gone from the app and stated
+        // here, because a promise with a silent condition is the exact shape of
+        // the defect this card was opened for.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String reference = Files.readString(source);
+
+        // Scoped to the paragraph that makes the promise, not to the whole
+        // chapter: "sttProvider" appears in the 25-row key table further down,
+        // and an assertion the table already satisfies would have measured
+        // nothing. The first draft of this test did exactly that and passed
+        // against the unedited file.
+        String promise = paragraphContaining(reference, "When a saved setting lands");
+        for (String live : List.of("sttProvider", "sttLanguage")) {
+            assertTrue(promise.contains(live),
+                    "the live-promise paragraph does not name \"" + live + "\" — the settings"
+                            + " page saves it and the transcription route reads it per request."
+                            + " Paragraph: " + promise);
+        }
+
+        String exception = paragraphContaining(reference, "outranks a saved");
+        assertTrue(exception.contains("composer") && exception.contains("imageProvider"),
+                "the chapter never says that the COMPOSER's image-backend dropdown outranks a"
+                        + " saved imageProvider for the rest of the session — the one condition"
+                        + " on the promise above it, and the one the app used to trigger by"
+                        + " itself. Paragraph: " + exception);
+    }
+
+    /** The one {@code <p>} carrying {@code marker}, so an assertion about a
+     *  sentence cannot be satisfied by a table elsewhere in the chapter.
+     *  @param html   the reference chapter
+     *  @param marker text that appears in the wanted paragraph and nowhere else
+     *  @return the paragraph's markup, or "" when the marker is absent */
+    private static String paragraphContaining(String html, String marker) {
+        int at = html.indexOf(marker);
+        if (at < 0) {
+            return "";
+        }
+        int open = html.lastIndexOf("<p>", at);
+        int close = html.indexOf("</p>", at);
+        return open < 0 || close < 0 ? "" : html.substring(open, close);
+    }
+
+    @Test
+    void everyKeyAWorkspaceScopeMayNotHoldSaysSoInItsOwnRow() throws IOException {
+        // Card 222, review finding F2. The refusal is loud at load time — the
+        // whole scope is dropped and the message names the file — so the one
+        // thing an operator needs is somewhere to look it up. Two of the five
+        // keys were added by this card, and one of them (searxngUrl) had no row
+        // in this table at all: it was refusable and unpublished in the same
+        // edit, which is how a fence becomes a mystery.
+        //
+        // Driven off the list itself, so a SIXTH key cannot be added in silence.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String reference = Files.readString(source);
+
+        List<String> forbidden = SpectroConfig.workspaceScopeForbiddenKeys();
+        assertTrue(forbidden.size() >= 5,
+                "the workspace-scope refusal list shrank to " + forbidden
+                        + " — a key leaving it is a security decision, not a cleanup");
+        for (String key : forbidden) {
+            String row = rowStartingWith(reference, "<code>" + key + "</code>");
+            assertTrue(row.contains("workspace scope"),
+                    "a workspace scope is refused when it sets \"" + key + "\" and the config"
+                            + " reference's row for it never says so. Row: " + row);
+        }
+    }
+
     /** The row holding {@code marker} inside the "Every key" table — the
      *  deprecation table above it names the same keys in its own cells. */
     private static String rowStartingWith(String html, String marker) {

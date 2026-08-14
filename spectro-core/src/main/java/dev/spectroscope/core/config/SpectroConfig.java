@@ -206,7 +206,10 @@ public record SpectroConfig(
      *  switch instead of being rebuilt (in a different order) in each place. */
     public static final String KNOWN_PROVIDERS_DISPLAY =
             "anthropic, ollama, openai, lmstudio, openrouter, gemini, spectro-local";
-    static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
+    /** {@code imageProvider}'s known values — the factory's own list rather than
+     *  a second spelling of it, so a backend added there is accepted here. */
+    static final Set<String> KNOWN_IMAGE_PROVIDERS =
+            Set.copyOf(dev.spectroscope.core.image.ImageProviders.BACKENDS);
     /** {@code sttProvider}'s known values — "auto" decides by what the machine has. */
     public static final Set<String> KNOWN_STT_PROVIDERS = Set.of("auto", "local", "openai");
     /** {@code sttLanguage}'s known values — "auto" lets the model detect; a code
@@ -600,32 +603,92 @@ public record SpectroConfig(
             new FieldProbe("searxngUrl", p -> p.searxngUrl),
             new FieldProbe("allowLocalhost", p -> p.allowLocalhost));
 
-    /** Circularity + process-global rule: a workspace settings file must not
-     *  re-point the workspace itself, nor reconfigure the one-per-process log
-     *  level. Fails loudly, naming the offending file — a workspace scope is
+    /**
+     * A key a workspace scope must not set: its name in the file, the probe
+     * that finds it in a parsed scope, the rule it breaks and where it belongs
+     * instead.
+     *
+     * @param key   the settings key as an operator writes it
+     * @param get   reads it off one parsed scope; {@code null} means unset
+     * @param rule  the clause after the key name, naming the rule it breaks
+     * @param hint  where the key belongs instead, and why it may not live here
+     */
+    private record ProcessGlobal(String key, Function<PartialConfig, Object> get,
+            String rule, String hint) {
+    }
+
+    /**
+     * The keys a workspace scope may not hold. ONE list, because the reason is
+     * one reason: the workspace is the folder the agent itself writes into, so
+     * a key that steers the agent's own machinery cannot be honoured from
+     * inside it. Card 199 wrote it for the net fence — "a fence whose switch
+     * lives inside the sandbox it guards can be flipped by the thing it
+     * guards" — and card 222's review found two more keys of the same kind
+     * that were never added.
+     *
+     * <p>A list rather than a run of hand-written {@code if}s so the published
+     * config reference can be checked against it (ConfigDocDriftTest): a key
+     * added here without a word in the guide is a refusal an operator meets
+     * with no way to look it up.</p>
+     */
+    private static final List<ProcessGlobal> WORKSPACE_SCOPE_FORBIDDEN = List.of(
+            new ProcessGlobal("workspace", p -> p.workspace,
+                    "is not allowed in a workspace scope",
+                    "a folder must not point the agent at a different folder."),
+            new ProcessGlobal("logLevel", p -> p.logLevel,
+                    "is process-global and not allowed in a workspace scope",
+                    "set it in ~/.spectro/settings.json or SPECTRO_LOG_LEVEL."),
+            // Card 199, review finding F4: the workspace is the agent's own cwd,
+            // and write_file writes into it.
+            new ProcessGlobal("allowLocalhost", p -> p.allowLocalhost,
+                    "is process-global and not allowed in a workspace scope",
+                    "the net fence's opt-in belongs in ~/.spectro/settings.json or "
+                            + "SPECTRO_ALLOW_LOCALHOST, not in a folder the agent writes into."),
+            // Card 222, review finding F2. This one did not LOOK like a switch:
+            // it names an executable that browse_page launches. An operator
+            // approving "browse_page https://…" approves a look at a page, not
+            // the launch of a binary the agent chose — and card 222 shortened
+            // the reach of a planted file from the next session to the next
+            // tool call.
+            new ProcessGlobal("chromeBinary", p -> p.chromeBinary,
+                    "is process-global and not allowed in a workspace scope",
+                    "the browser binary browse_page launches belongs in "
+                            + "~/.spectro/settings.json or SPECTRO_CHROME, not in a folder the "
+                            + "agent writes into."),
+            // The quieter twin of the line above, and measured: SearxngSearcher
+            // takes no NetFence at all, so this key decides an address
+            // web_search GETs with the loopback opt-in still off. The settings
+            // page writes it to the USER scope, so refusing it here costs an
+            // operator nothing.
+            new ProcessGlobal("searxngUrl", p -> p.searxngUrl,
+                    "is process-global and not allowed in a workspace scope",
+                    "the instance web_search dials belongs in ~/.spectro/settings.json or "
+                            + "SPECTRO_SEARXNG_URL, not in a folder the agent writes into."));
+
+    /** The keys a workspace scope may not hold, by name. Exists for the doc
+     *  guard: a key added to the list above without a word in the published
+     *  config reference is a refusal an operator meets with nowhere to look it
+     *  up.
+     *  @return the forbidden keys, in the order they are checked */
+    static List<String> workspaceScopeForbiddenKeys() {
+        return WORKSPACE_SCOPE_FORBIDDEN.stream().map(ProcessGlobal::key).toList();
+    }
+
+    /** Applies {@link #WORKSPACE_SCOPE_FORBIDDEN} to one parsed workspace
+     *  scope. Fails loudly, naming the offending file — a workspace scope is
      *  meant to be portable (the project half even checked in), so a folder
-     *  silently redirecting the agent elsewhere or hijacking process-wide
-     *  logging would be a surprise nobody could debug from the settings alone.
+     *  silently redirecting the agent, hijacking process-wide logging or
+     *  choosing what a tool dials would be a surprise nobody could debug from
+     *  the settings alone.
      *  @param scope the parsed workspace-scope layer (project or local)
      *  @param file  the file it was read from, named in the thrown message
      *  @throws IllegalArgumentException when the scope sets a forbidden field */
     private static void rejectProcessGlobals(PartialConfig scope, Path file) {
-        if (scope.workspace != null) {
-            throw new IllegalArgumentException("\"workspace\" is not allowed in a workspace scope ("
-                    + file + ") — a folder must not point the agent at a different folder.");
-        }
-        if (scope.logLevel != null) {
-            throw new IllegalArgumentException("\"logLevel\" is process-global and not allowed in a "
-                    + "workspace scope (" + file + ") — set it in ~/.spectro/settings.json or SPECTRO_LOG_LEVEL.");
-        }
-        if (scope.allowLocalhost != null) {
-            // Card 199, review finding F4: the workspace is the agent's own cwd,
-            // and write_file writes into it. A fence whose switch lives inside
-            // the sandbox it guards can be flipped by the thing it guards.
-            throw new IllegalArgumentException("\"allowLocalhost\" is process-global and not "
-                    + "allowed in a workspace scope (" + file + ") — the net fence's opt-in "
-                    + "belongs in ~/.spectro/settings.json or SPECTRO_ALLOW_LOCALHOST, not in a "
-                    + "folder the agent writes into.");
+        for (ProcessGlobal forbidden : WORKSPACE_SCOPE_FORBIDDEN) {
+            if (forbidden.get().apply(scope) != null) {
+                throw new IllegalArgumentException("\"" + forbidden.key() + "\" "
+                        + forbidden.rule() + " (" + file + ") — " + forbidden.hint());
+            }
         }
     }
 

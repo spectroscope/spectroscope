@@ -389,6 +389,50 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
   });
 });
 
+// Card 222. The defect was a settings page that reported a state the run did
+// not have, and said nothing about which of the two it was describing. The fix
+// is that every saveable setting carries a sentence about WHEN it lands, so
+// these two sentences are load-bearing UI, not decoration — a build that keeps
+// the keys but empties the promise out of them is the silence coming back.
+describe("the settings page says when a change reaches the run", () => {
+  it("promises the open session, not just the next one", () => {
+    expect(dict["set.reachLive"].en).toMatch(/already open/);
+    expect(dict["set.reachLive"].en).toMatch(/next tool call/);
+    expect(dict["set.reachLive"].de).toMatch(/offene Sitzung/);
+    expect(dict["set.reachLive"].de).toMatch(/Tool-Aufruf/);
+  });
+
+  it("has the other half of the answer, and names the door that IS live", () => {
+    // The review's F1. This sentence exists because the live one was written
+    // under the provider grid, where it was measured to be false: settings
+    // written to model=qwen3:latest, /api/config agreeing, and the next run in
+    // the same session still on the old model. Saying only "next session"
+    // would leave a reader who wants to switch NOW with nowhere to go, so the
+    // picker is named in the same breath.
+    expect(dict["set.provApplies"].en).toMatch(/next session/);
+    expect(dict["set.provApplies"].en).toMatch(/picker/);
+    expect(dict["set.provApplies"].de).toMatch(/nächsten Sitzung/);
+    expect(dict["set.provApplies"].de).toMatch(/Umschalter/);
+    // The GENERIC one names no field at all. Read live at 127.0.0.1:8391, the
+    // first draft named the provider and was rendering under the OTLP pair —
+    // a sentence shared by several blocks may only say what they share.
+    expect(dict["set.reachNextSession"].en).toMatch(/next session/);
+    expect(dict["set.reachNextSession"].en).not.toMatch(/provider|model|address|picker/);
+    expect(dict["set.reachNextSession"].de).not.toMatch(/Provider|Modell|Adresse|Umschalter/);
+  });
+
+  it("says the allowlist is the exception, and why", () => {
+    // "Next session" alone reads as an oversight next to four blocks that say
+    // "immediately". The reason is what turns it into a decision a reader can
+    // agree with: a run that can write files must not be able to widen its own
+    // permissions between two tool calls.
+    expect(dict["set.alApplies"].en).toMatch(/next session/);
+    expect(dict["set.alApplies"].en).toMatch(/write files/);
+    expect(dict["set.alApplies"].de).toMatch(/nächsten Sitzung/);
+    expect(dict["set.alApplies"].de).toMatch(/Dateien schreiben/);
+  });
+});
+
 // The browser segment's fence note (card 201, review finding 4). The settings
 // text used to promise a fence that a redirect walked around: with the loopback
 // opt-in OFF, a 302 to a public name resolving to 127.0.0.1 loaded and titled

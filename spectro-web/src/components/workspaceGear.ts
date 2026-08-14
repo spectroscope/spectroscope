@@ -130,13 +130,18 @@ function spec(
 }
 
 /** The session-scoped scalar fields a machine-local override (Task 17) may
- *  set, in the order the field dropdown lists them. Deliberately NOT here:
- *  `workspace`/`logLevel` (process-globals, USER-scope only —
- *  SettingsWriter's own rule), `permissionMode`/`autoApprove` (this
- *  popover's own mode listbox and rules list, both PROJECT-scoped) and
- *  `mcpServers`/`hooks` (their own JSON editors below, also PROJECT-scoped).
- *  `chromeBinary` stays a USER-only setting on the Settings page — a
- *  machine-wide tool path, not something worth overriding per session.
+ *  set, in the order the field dropdown lists them.
+ *
+ *  Deliberately NOT here, for two different reasons. `permissionMode` and
+ *  `autoApprove` have this popover's own mode listbox and rules list, and
+ *  `mcpServers`/`hooks` their own JSON editors below — all four PROJECT-scoped.
+ *  And then there are the keys the SERVER refuses in a workspace scope at all,
+ *  because the workspace is the folder the agent itself writes into: that list
+ *  lives in `SpectroConfig.WORKSPACE_SCOPE_FORBIDDEN` and it is NOT repeated
+ *  here. It used to be — as three key names in this very comment, three keys
+ *  behind the rule by the time card 222's review read it, while the popover
+ *  writes into exactly that scope. `workspaceScope.drift.test.ts` reads the
+ *  server's list off its own source and fails if anything below intersects it.
  *
  *  Both closed sets are IMPORTED, never re-typed: `PROVIDERS` is the same
  *  list the picker and the Settings page offer (and matches the server's

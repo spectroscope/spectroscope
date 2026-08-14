@@ -130,8 +130,23 @@ public final class SessionConnection {
 
     /** True once {@link #onSetImageProvider} has been called — same contract as
      *  {@link #modeTouched}: a live pre-build dropdown choice survives the
-     *  session-moment reseed of {@link #imageProviderName}. */
+     *  session-moment reseed of {@link #imageProviderName}, and outranks the
+     *  live per-call reading the belt makes (see {@link #liveImageProvider()}). */
     private volatile boolean imageProviderTouched;
+
+    /** The belt {@link #buildAgentOnce} hung on the agent, or null before the
+     *  first prompt. Card 222, review finding F4: the registry was a local
+     *  variable, so deleting {@code registerSettingsTools(registry)} from the
+     *  build removed web_search, web_fetch, browse_page, generate_image and the
+     *  twelve browser/launch tools from every real session with the whole gate
+     *  staying green. Holding it is what makes that call site assertable. */
+    private volatile ToolRegistry belt;
+
+    /** The last refusal {@link #liveConfig()} reported, so a settings file the
+     *  session may not read is announced when it breaks and not once per tool
+     *  call. Holds the MESSAGE rather than a flag: a second, different breakage
+     *  is news and gets said. */
+    private volatile String reportedUnreadable;
 
     private SessionStore store;               // created on the first prompt (or on resume)
     // The tracing seam (KONZEPT §4.3): persistence rides a required port, so
@@ -505,7 +520,16 @@ public final class SessionConnection {
 
     /** The effective allowlist right now: the session-scoped autoApprove rules
      *  (the workspace's own config once buildAgentOnce has resolved it, else the
-     *  connect-time snapshot) plus the remembered ones. */
+     *  connect-time snapshot) plus the remembered ones.
+     *
+     *  <p>Deliberately NOT on {@link #liveConfig()}, and this is the one place in
+     *  the file where card 222's answer is "no". The belt was made live so the
+     *  operator's choices reach the agent; the gate exists to protect the
+     *  operator FROM the agent, and the agent can write files in the workspace —
+     *  including {@code .spectro/settings.local.json}. A live allowlist would let
+     *  a run widen its own permissions between two tool calls, with no human
+     *  ever seeing the settings page. A saved {@code autoApprove} rule therefore
+     *  takes effect in the next session, which is what the settings page says.</p> */
     private Allowlist allowlistNow() {
         List<String> rules = new ArrayList<>(activeConfig.get().autoApprove());
         rules.addAll(rememberedRules);
@@ -903,8 +927,13 @@ public final class SessionConnection {
      * prompt in the same tab continues the conversation, like the CLI REPL),
      * and the spawn tools inside the registry reference exactly this manager
      * instance — a rebuilt manager would leave them pointing at a dead one.
+     *
+     * <p>Package-private, like {@link #adoptSessionConfig} and
+     * {@link #registerSettingsTools} beside it: card 222's review found that
+     * nothing pinned this method's own call sites. Deleting one line of it took
+     * six tool families out of every session and left the gate green.</p>
      */
-    private void buildAgentOnce() {
+    void buildAgentOnce() {
         if (agent != null) {
             return;
         }
@@ -923,39 +952,7 @@ public final class SessionConnection {
         // "once") and never throwing.
         migrateAllowlistOnce();
 
-        // The session moment: the workspace's own .spectro pair joins the chain now.
-        // A pre-build provider switch (activeConfig differs from the connect snapshot)
-        // stays on top of the re-resolved config; a broken workspace file is loud but
-        // never fatal — the session falls back to the connect-time view.
-        SpectroConfig sessionConfig;
-        try {
-            sessionConfig = SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, workspace);
-            SpectroConfig switched = activeConfig.get();
-            if (!switched.provider().equals(config.provider()) || !switched.model().equals(config.model())) {
-                sessionConfig = sessionConfig.withProvider(switched.provider(), switched.model());
-            }
-        } catch (IllegalArgumentException invalidWorkspaceScope) {
-            sendError("workspace settings ignored: " + invalidWorkspaceScope.getMessage());
-            sessionConfig = activeConfig.get();
-        }
-        activeConfig.set(sessionConfig);
-        if (!modeTouched) {
-            permissionMode = sessionConfig.permissionMode();
-        }
-        if (!thinkingTouched) {
-            thinking.set(sessionConfig.thinking());
-        }
-        if (!imageProviderTouched) {
-            imageProviderName.set(sessionConfig.imageProvider());
-        }
-        // The reseed above can silently change the ACTIVE provider/model and
-        // permission mode (a workspace's own .spectro pair outranking the
-        // connect-time snapshot) — re-announce both frames right here so the
-        // header chip, the map locality and the composer gear reflect the
-        // override the moment it takes effect, exactly like a live mid-session
-        // switch does. Idempotent and harmless when nothing actually changed.
-        sendProviderInfo();
-        sendPermissionModeInfo();
+        SpectroConfig sessionConfig = adoptSessionConfig();
 
         PermissionBroker broker = parkingBroker();
 
@@ -971,65 +968,7 @@ public final class SessionConnection {
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
-        // created lazily per call through the AtomicReference — the dropdown
-        // switch applies to the next generation, and a missing key errors readably.
-        registry.register(new GenerateImageTool(
-                () -> ImageProviders.create(imageProviderName.get(),
-                        activeConfig.get().imageModel(), SpectroConfig.imageEnv()),
-                ImageStore.inUserHome(),
-                llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
-        // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
-        // Card 199: both browser-class tools take the net fence built from
-        // allowLocalhost. Read off activeConfig like the neighbours, so an
-        // opt-in saved mid-session reaches the next agent build.
-        registry.register(new WebFetchTool(new DefaultHttpFetcher(),
-                dev.spectroscope.core.net.NetFence.withSystemDns(
-                        activeConfig.get().allowLocalhost())));
-        // web_search branch: the ONE tier WebSearchTiers resolves from the
-        // configuration (card 203) + browse_page through the system Chrome
-        // headless (renders JS). Both network egress -> permission-gated.
-        // Read off activeConfig, like imageModel and chromeBinary above, so a
-        // SearXNG address saved mid-session reaches the next agent build.
-        registry.register(WebSearchTool.fromConfig(activeConfig.get()));
-        // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
-        // env; read fresh from activeConfig per call, like imageModel above, so a
-        // pre-run provider switch (which carries chromeBinary along) stays honoured.
-        registry.register(new BrowsePageTool(
-                () -> BrowsePageTool.findChrome(activeConfig.get().chromeEnv()),
-                new DefaultChromeRunner(),
-                dev.spectroscope.core.net.NetFence.withSystemDns(
-                        activeConfig.get().allowLocalhost())));
-        // Card 201: the seven measured browser tools, driving the VISIBLE pane in
-        // the desktop window over the control channel. Registered on the server
-        // face unconditionally: the shell can attach after the registry is built
-        // (it reconnects across a server restart), so a registry that only
-        // carried them "when attached" would hand the agent a browser that
-        // exists and no way to say so. The fence and the image store are read
-        // per call, like the neighbours above.
-        // Card 204: and they record what they did. The recorder is read per
-        // call, like the fence and the face above — this registry is built once
-        // and a resume opens a NEW recorder under the same session id, so a
-        // recorder captured here would be the one that has already been closed.
-        new dev.spectroscope.core.browser.BrowserTools(
-                this::ownBrowser,
-                () -> dev.spectroscope.core.net.NetFence.withSystemDns(
-                        activeConfig.get().allowLocalhost()),
-                ImageStore.inUserHome(),
-                () -> browserWire == null
-                        ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire)
-                .all().forEach(registry::register);
-        // Card 202: the five launch tools, which start the app the browser above
-        // is meant to look at. Registered beside the browser family and on the
-        // same two suppliers: this session's own browser, and a fence read per
-        // call so an allowLocalhost opt-in saved mid-session reaches the next
-        // call. The supervisor is the connection's own field, so what a session
-        // starts dies when that session's socket does.
-        new dev.spectroscope.core.launch.LaunchTools(
-                launches,
-                this::ownBrowser,
-                () -> dev.spectroscope.core.net.NetFence.withSystemDns(
-                        activeConfig.get().allowLocalhost()))
-                .all().forEach(registry::register);
+        registerSettingsTools(registry);
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it
         // from its own instance; this registration only feeds the live agent.
@@ -1061,6 +1000,7 @@ public final class SessionConnection {
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
         subagents.devTools().forEach(registry::register);
+        this.belt = registry;   // card 222 F4: what this session actually carries
 
         agent = new Agent(AgentOptions.builder()
                 .provider(provider)
@@ -1081,6 +1021,305 @@ public final class SessionConnection {
         // the build — the boolean seed above cannot carry mode "off" or an
         // effort level.
         applyReasoning(agent);
+    }
+
+    /** The tool belt this session's agent carries, for the test that pins the
+     *  registrations to the build rather than to a registry a test made itself.
+     *  @return the registry {@link #buildAgentOnce} built, or null before the
+     *          first prompt */
+    ToolRegistry belt() {
+        return belt;
+    }
+
+    /**
+     * The session moment: the workspace's own {@code .spectro} pair joins the
+     * chain now, and what it resolves to becomes this session's active config.
+     *
+     * <p>A pre-build provider switch (activeConfig differs from the connect
+     * snapshot) stays on top of the re-resolved config; a broken workspace file
+     * is loud but never fatal — the session falls back to the connect-time view.
+     * The three live seeds (permission mode, thinking, image provider) are only
+     * overwritten where the operator has not already touched them.</p>
+     *
+     * <p>Package-private beside {@link #registerSettingsTools}: the two together
+     * are what {@link #buildAgentOnce} does to the settings, and a test that
+     * only called the second one would be testing a belt no session ever has.
+     * That is not hypothetical — it is how the card-222 test first failed its
+     * own premise.</p>
+     *
+     * @return the session-scoped config, for the collaborators that must be
+     *         built from the session moment and not from a later reading
+     */
+    SpectroConfig adoptSessionConfig() {
+        SpectroConfig sessionConfig;
+        try {
+            sessionConfig = SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, workspace);
+            SpectroConfig switched = activeConfig.get();
+            if (!switched.provider().equals(config.provider()) || !switched.model().equals(config.model())) {
+                sessionConfig = sessionConfig.withProvider(switched.provider(), switched.model());
+            }
+        } catch (IllegalArgumentException invalidWorkspaceScope) {
+            // Through the same door as the belt's per-call reading, so the
+            // session moment and the first tool call cannot say it twice.
+            reportUnreadable(invalidWorkspaceScope);
+            sessionConfig = activeConfig.get();
+        }
+        activeConfig.set(sessionConfig);
+        if (!modeTouched) {
+            permissionMode = sessionConfig.permissionMode();
+        }
+        if (!thinkingTouched) {
+            thinking.set(sessionConfig.thinking());
+        }
+        if (!imageProviderTouched) {
+            imageProviderName.set(sessionConfig.imageProvider());
+        }
+        // The reseed above can silently change the ACTIVE provider/model and
+        // permission mode (a workspace's own .spectro pair outranking the
+        // connect-time snapshot) — re-announce both frames right here so the
+        // header chip, the map locality and the composer gear reflect the
+        // override the moment it takes effect, exactly like a live mid-session
+        // switch does. Idempotent and harmless when nothing actually changed.
+        sendProviderInfo();
+        sendPermissionModeInfo();
+        return sessionConfig;
+    }
+
+    /**
+     * The settings as they stand RIGHT NOW — the reading every tool on the belt
+     * makes, on every call.
+     *
+     * <p>Card 222, and the part of it that is not obvious. {@link #activeConfig}
+     * is a SNAPSHOT: it is written at connect, again at the session moment
+     * ({@link #adoptSessionConfig()}), and by a provider switch — and by nothing
+     * else, ever. No settings write touches it, because a settings write happens
+     * in a REST controller that has never heard of this connection. So the
+     * per-call suppliers the belt already had (the image model, the Chrome
+     * binary, the net fence) were per-call over a frozen value: they re-read a
+     * reference nobody was updating. That is why the comments above them claimed
+     * a liveness the code did not have — the shape was right and the source was
+     * dead.</p>
+     *
+     * <p>This method reads the settings files again, so the reading is live for
+     * real. Two deliberate choices:</p>
+     * <ul>
+     *   <li><b>No caching.</b> A stat-and-compare would have to decide when a
+     *       hand-edited file counts, and the cost being avoided is four small
+     *       JSON reads next to a network call or an LLM round trip.</li>
+     *   <li><b>The provider and model do not come from here.</b> They belong to
+     *       the header picker and the {@link SwitchableProvider} it swaps, which
+     *       is a live path of its own; a file-scope provider change would have to
+     *       swap that delegate, and doing it from a tool call is a different
+     *       card. So the currently active pair is carried over the fresh read.</li>
+     * </ul>
+     *
+     * <p>A settings file this session may not use — unparsable, or a workspace
+     * scope holding a key that scope is refused (see
+     * {@code SpectroConfig.rejectProcessGlobals}) — is neither fatal nor silent:
+     * the session's own config answers, and {@link #reportUnreadable} says so
+     * over the same error frame the session moment uses. Note WHICH config that
+     * is: the one adopted at the session moment, not the last live reading that
+     * happened to succeed. A file the agent broke must not leave the session
+     * standing on a value from the same hand.</p>
+     *
+     * @return the freshly resolved settings for this session's workspace, or the
+     *         session's own config when the files cannot be read
+     */
+    SpectroConfig liveConfig() {
+        SpectroConfig last = activeConfig.get();
+        if (workspace == null) {
+            return last;   // before the session moment there is nothing newer to read
+        }
+        try {
+            SpectroConfig fresh =
+                    SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, workspace);
+            reportedUnreadable = null;   // a good read makes the next breakage news again
+            return fresh.withProvider(last.provider(), last.model());
+        } catch (RuntimeException unreadable) {
+            reportUnreadable(unreadable);
+            return last;
+        }
+    }
+
+    /**
+     * Says ONCE that a settings file in this session's chain is being ignored.
+     *
+     * <p>Card 222, review finding F3. The javadoc above claimed the reader was
+     * told; the body was {@code catch (RuntimeException unreadable) { return
+     * last; }} — no frame, nothing. That is criterion 4's own defect, a comment
+     * stating an intent the code cancels, reintroduced by the change ordered to
+     * remove two of them. The silence costs more than it reads: a refused
+     * workspace scope drops EVERY key in that file, so the operator's project
+     * model or image backend quietly stops applying with nothing on screen.</p>
+     *
+     * <p>Once, not once per call: the belt makes this reading on every tool
+     * call, so an unconditional frame would be a storm. The memory holds the
+     * message rather than a flag — a second, different breakage is news — and a
+     * successful read clears it, so the same file breaking again is said
+     * again.</p>
+     *
+     * @param unreadable what the settings loader refused with
+     */
+    private void reportUnreadable(RuntimeException unreadable) {
+        String message = "workspace settings ignored: " + unreadable.getMessage();
+        if (!message.equals(reportedUnreadable)) {
+            reportedUnreadable = message;
+            sendError(message);
+        }
+    }
+
+    /**
+     * Every tool on the belt whose behaviour depends on the SETTINGS, wired in
+     * one place and over one reading: {@link #liveConfig()}.
+     *
+     * <p>They are gathered here rather than left inline in {@link #buildAgentOnce}
+     * because the registry is built exactly once per session and these are the
+     * registrations for which that matters. Card 222 is the bill for the version
+     * that was spread out: {@code web_search} resolved its tier eagerly among
+     * neighbours that looked as though they resolved theirs per call, and nobody
+     * could see the difference by reading down the method.</p>
+     *
+     * <p><b>The answer is the same for all of them.</b> Not "web_search is fixed
+     * now" — every setting a tool here reads is read again on the call. What
+     * this method does NOT cover is listed on the card and said on the settings
+     * page: the workspace, the MCP servers, the shell hooks, the system prompt
+     * and its skills, and the compaction threshold are settled when the agent is
+     * built and stay settled, because changing them mid-session would mean
+     * killing processes or rewriting a conversation that already happened.</p>
+     *
+     * <p>Package-private so a test can hold this belt without a provider and a
+     * whole run: the tier a tool USED is only assertable on the tool object the
+     * session actually carries.</p>
+     *
+     * @param registry the session's registry, already carrying the standard tools
+     */
+    void registerSettingsTools(ToolRegistry registry) {
+        // Built lazily per call, through ONE method, so a test can hold the
+        // answer without a picture being generated: card 222's review finding
+        // F6 measured that reverting the model half of this to the connect-time
+        // snapshot left the full gate green — the page said "live" and nothing
+        // said it here.
+        registry.register(new GenerateImageTool(
+                this::liveImageBackend,
+                ImageStore.inUserHome(),
+                llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
+        // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
+        // Card 199: both browser-class tools take the net fence built from
+        // allowLocalhost, and card 222 made that fence per call, so an opt-in
+        // saved mid-session reaches the very next fetch.
+        registry.register(new WebFetchTool(new DefaultHttpFetcher(), this::liveFence));
+        // web_search branch: the ONE tier WebSearchTiers resolves from the
+        // configuration (card 203) + browse_page through the system Chrome
+        // headless (renders JS). Both network egress -> permission-gated.
+        // The tier is resolved PER CALL (card 222): a SearXNG address saved
+        // while this session is open decides the next search, and the result
+        // header and the model-facing description name that same machine.
+        registry.register(WebSearchTool.fromConfig(this::liveConfig));
+        // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
+        // env; read fresh per call, like the image model above, so a binary saved
+        // mid-session — and a pre-run provider switch that carries one along —
+        // both reach the next render.
+        registry.register(new BrowsePageTool(
+                () -> BrowsePageTool.findChrome(liveConfig().chromeEnv()),
+                new DefaultChromeRunner(),
+                this::liveFence));
+        // Card 201: the seven measured browser tools, driving the VISIBLE pane in
+        // the desktop window over the control channel. Registered on the server
+        // face unconditionally: the shell can attach after the registry is built
+        // (it reconnects across a server restart), so a registry that only
+        // carried them "when attached" would hand the agent a browser that
+        // exists and no way to say so. The fence and the image store are read
+        // per call, like the neighbours above.
+        // Card 204: and they record what they did. The recorder is read per
+        // call, like the fence and the face above — this registry is built once
+        // and a resume opens a NEW recorder under the same session id, so a
+        // recorder captured here would be the one that has already been closed.
+        new dev.spectroscope.core.browser.BrowserTools(
+                this::ownBrowser,
+                this::liveFence,
+                ImageStore.inUserHome(),
+                () -> browserWire == null
+                        ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire)
+                .all().forEach(registry::register);
+        // Card 202: the five launch tools, which start the app the browser above
+        // is meant to look at. Registered beside the browser family and on the
+        // same two suppliers: this session's own browser, and a fence read per
+        // call so an allowLocalhost opt-in saved mid-session reaches the next
+        // call. The supervisor is the connection's own field, so what a session
+        // starts dies when that session's socket does.
+        new dev.spectroscope.core.launch.LaunchTools(
+                launches,
+                this::ownBrowser,
+                this::liveFence)
+                .all().forEach(registry::register);
+    }
+
+    /**
+     * The image backend {@code generate_image} runs on, resolved and built for
+     * the call being made — the whole of it, in one method, so a test can hold
+     * the answer without a picture being generated.
+     *
+     * @return the provider for this call
+     * @throws IllegalStateException when the resolved backend has no key — the
+     *         tool turns that into an error naming the variable
+     */
+    dev.spectroscope.core.image.ImageProvider liveImageBackend() {
+        return ImageProviders.create(
+                liveImageProvider(), liveConfig().imageModel(), SpectroConfig.imageEnv());
+    }
+
+    /**
+     * The image backend for the call being made.
+     *
+     * <p>Three sources, and the order between them is the point.</p>
+     * <ol>
+     *   <li>The composer's dropdown, when a human used it: it writes
+     *       {@link #imageProviderName} over the websocket and sets
+     *       {@link #imageProviderTouched}. A live choice the operator made in
+     *       this session outranks a file saved under it — the same rule the
+     *       session moment already applies to this seed, to the permission mode
+     *       and to thinking. This is the ONE condition the settings page's image
+     *       block still has to state, and it does.</li>
+     *   <li>Otherwise the settings, read again on the call, like the image model
+     *       beside it — so a backend saved while this session is open decides
+     *       the next generation.</li>
+     *   <li>…unless that backend has no key and another one does, in which case
+     *       the generation runs where it can actually run
+     *       ({@link ImageProviders#withAKey}). That is the owner's smart default
+     *       from 2026-07-20, and it is a FUNCTION of the settings and the keys —
+     *       re-derived here on every call, so giving the configured backend a
+     *       key makes it evaporate.</li>
+     * </ol>
+     *
+     * <p>Card 222, review finding F1: this method used to be
+     * {@code imageProviderName.get()} alone, an in-memory reference written at
+     * connect, at the session moment and by that websocket message — and by no
+     * settings write, ever. The page said "applies immediately, including to a
+     * session already open" directly under the dropdown that saves it.</p>
+     *
+     * <p>Review finding F5, one round later: the smart default was the web app's,
+     * and the app announced it with {@code set_image_provider} — the same message
+     * a human dropdown pick sends. So the app set {@link #imageProviderTouched}
+     * on its own, on a plain reconnect, and case 1 above swallowed the settings
+     * page for the rest of the session with nobody having touched anything. The
+     * rule is not a choice and is no longer remembered as one: it moved here, to
+     * the call, and the app now only pre-selects what this will resolve to.</p>
+     *
+     * @return the backend name {@code generate_image} should resolve now
+     */
+    private String liveImageProvider() {
+        if (imageProviderTouched) {
+            return imageProviderName.get();
+        }
+        return ImageProviders.withAKey(liveConfig().imageProvider(), SpectroConfig.imageEnv());
+    }
+
+    /** The net fence as the settings define it right now — one spelling for the
+     *  five tools that take one, so an {@code allowLocalhost} opt-in cannot
+     *  reach four of them and miss the fifth.
+     *  @return the fence to apply to the call being made */
+    private dev.spectroscope.core.net.NetFence liveFence() {
+        return dev.spectroscope.core.net.NetFence.withSystemDns(liveConfig().allowLocalhost());
     }
 
     /**

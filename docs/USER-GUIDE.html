@@ -5037,7 +5037,7 @@ and speaks the protocol end to end.</p>
 <!-- ============================== CH 30 ============================== -->
 <h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
 
-<p class="lead">Seven layers, 25 keys (three of them whole-block), plus a small
+<p class="lead">Seven layers, 26 keys (three of them whole-block), plus a small
 handful of true environment-only secrets. Missing files are fine at every layer;
 malformed JSON fails loudly — a broken config is a programming error, not a fallback
 case.</p>
@@ -5110,6 +5110,45 @@ local overrides, and raw-JSON editors for <code>mcpServers</code>/<code>hooks</c
 unpinned session — still in its throwaway temp folder — shows the composer gear's project
 sections disabled: there is no durable folder to write to yet.</p>
 
+<p><strong>When a saved setting lands.</strong> Every tool that reads a setting reads it
+again on the call, so saving one changes what the session you already have open does next:
+the <code>web_search</code> tier (<code>searxngUrl</code> and the two search keys), the
+image backend and <code>imageModel</code>, <code>chromeBinary</code>, the
+<code>allowLocalhost</code> net fence that <code>web_fetch</code>, <code>browse_page</code>
+and the browser and launch families share, and the dictation settings
+(<code>sttProvider</code>, <code>sttLanguage</code>, <code>sttModel</code>), which the
+transcription route reads per request. A call already in flight finishes on what it
+started with; the next one asks again.</p>
+
+<p><strong>The one exception, and it is a control rather than a rule.</strong> The image
+backend also has a dropdown in the <em>composer</em> row. Picking a backend there speaks to
+the running session directly, and that choice outranks a saved
+<code>imageProvider</code> until the session ends — so if you used it, the settings page
+will not move this session's image backend, and the sentence under that dropdown on the
+settings page says so. Nothing else on the page has a second live control like this.
+(Where the configured backend has no API key and another one does, the backend with a key
+is used. That is not a remembered choice: it is re-derived from the settings and the keys
+on every call, so giving the configured backend a key ends it.)</p>
+
+<p>Four things are settled when the agent is built and stay settled for that session,
+because changing them mid-session would mean killing processes or rewriting a conversation
+that already happened: the <strong>workspace</strong>, the <strong>MCP servers</strong>,
+the <strong>shell hooks</strong>, and the <strong>system prompt</strong> with its skills
+and <code>SPECTRO.md</code>/<code>AGENTS.md</code>. The <strong>allowlist</strong>
+(<code>autoApprove</code>) is session-scoped too, and that one is a decision rather than a
+cost: the belt reads settings live so the operator reaches the agent, and the allowlist is
+what protects the operator from the agent — a run that may write files must not be able to
+widen its own permissions between two tool calls. The <strong>OTLP exporter</strong> is
+settled the same way: it is built where the session's store is minted.</p>
+
+<p><strong>Provider, model, the provider address and <code>thinking</code> are the third
+case</strong>, and the one that reads as a contradiction until it is spelt out. Saving them
+on this page applies from the next session — the agent is built with the provider it was
+built with, and a run does not change backends underneath itself. The <em>picker in the
+header</em> is the live path: it swaps the running provider through the same session, which
+is a different door from the settings file. So "live via the picker" is true of the picker
+and not of the page, and the page now says the page's half rather than the picker's.</p>
+
 <p><strong>Doctor never lets a shadowed variable go unnoticed.</strong> Every run,
 <code>spectro doctor</code> walks the same provenance and prints one line for every
 <code>SPECTRO_*</code> variable that IS set but is no longer the effective source, naming
@@ -5165,6 +5204,7 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>workspace</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_WORKSPACE</code> / <code>--workspace</code></td><td>the agent's working directory (file tools, glob/grep, run_command); unset = a per-session folder <code>&lt;tmpdir&gt;/spectroscope-ws/&lt;session-id&gt;</code> — a resume finds its files again, and the project you started spectroscope in stays clean; process-global — a workspace scope may not set this (a folder must not repoint the agent)</td></tr>
   <tr><td><code>autoApprove</code></td><td>string[] · <code>[]</code></td><td>—</td><td>allowlist rules: <code>tool#tier</code>, <code>tool#tier:prefix*</code> or <code>family*#tier</code> (chapter 13) — whole-block; lives in the workspace project file once one is pinned</td></tr>
   <tr><td><code>allowLocalhost</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_ALLOW_LOCALHOST</code></td><td>the net fence's local-verify-loop opt-in: <code>web_fetch</code>/<code>browse_page</code> may reach loopback. Never widens to RFC 1918, the 100.64/10 tailnet or <code>file://</code> — <code>web_fetch</code> fences every redirect hop, while <code>browse_page</code> is fenced only on the address you hand it (Chrome's own redirects and script navigation are outside it — chapter 13). Process-global: refused in a workspace scope, user scope only</td></tr>
+  <tr><td><code>searxngUrl</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_SEARXNG_URL</code></td><td>the SearXNG instance <code>web_search</code> prefers over every other tier (chapter 13). Process-global: refused in a workspace scope, user scope only — the searcher carries no net fence, so this field alone decides an address the tool dials</td></tr>
   <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
   <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle)</td></tr>
   <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18)</td></tr>
@@ -5175,7 +5215,7 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>sttModel</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_STT_MODEL</code></td><td>absolute path to the whisper.cpp model (default <code>~/.spectro/models/ggml-small.bin</code>); machine-tool path</td></tr>
   <tr><td><code>sttProvider</code></td><td><code>auto</code> | <code>local</code> | <code>openai</code> · <code>auto</code></td><td><code>SPECTRO_STT_PROVIDER</code></td><td>which way speech to text goes (chapter 17): <code>auto</code> is hosted when a key is there and local otherwise; an explicit choice is never rerouted, even when it cannot run</td></tr>
   <tr><td><code>sttLanguage</code></td><td><code>auto</code> | <code>de</code> | <code>en</code> · <code>auto</code></td><td><code>SPECTRO_STT_LANGUAGE</code></td><td>the language dictation is transcribed in, on both routes; <code>auto</code> lets the model detect it</td></tr>
-  <tr><td><code>chromeBinary</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_CHROME</code></td><td>override for the system-Chrome binary <code>browse_page</code> discovers automatically; machine-tool path</td></tr>
+  <tr><td><code>chromeBinary</code></td><td>path · <em>unset</em></td><td><code>SPECTRO_CHROME</code></td><td>override for the system-Chrome binary <code>browse_page</code> discovers automatically; machine-tool path. Process-global: refused in a workspace scope, user scope only — it names an executable <code>browse_page</code> launches, and the workspace is the folder the agent itself writes into</td></tr>
   <tr><td><code>hooks</code></td><td>array · <code>[]</code></td><td>—</td><td>pre/post tool hooks — whole-block (chapter 13)</td></tr>
   <tr><td><code>otlpEndpoint</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_OTLP_ENDPOINT</code></td><td>the OTLP/HTTP traces endpoint; unset = the exporter is off (see Observability below)</td></tr>
   <tr><td><code>otlpBasicAuth</code></td><td><code>pk:sk</code> · <em>unset</em></td><td><code>SPECTRO_OTLP_BASIC_AUTH</code></td><td>optional Basic-auth pair for the OTLP endpoint (Langfuse's public:secret); never echoed by any read</td></tr>

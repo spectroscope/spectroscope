@@ -45,8 +45,9 @@ public final class SettingsWriter {
      * A settings scope, mirroring the file-hierarchy layers {@link SpectroConfig}
      * folds ({@code USER} = {@code ~/.spectro/settings.json}, {@code PROJECT}/
      * {@code LOCAL} = a workspace's own {@code .spectro/settings(.local).json}).
-     * {@link #patch} refuses process-global fields ({@code workspace}, {@code
-     * logLevel}, {@code allowLocalhost}) in {@code PROJECT}/{@code LOCAL} —
+     * {@link #patch} refuses process-global fields (the list
+     * {@code SpectroConfig.workspaceScopeForbiddenKeys()} answers, never a copy
+     * of it) in {@code PROJECT}/{@code LOCAL} —
      * those stay {@code USER}-only.
      */
     public enum Scope { USER, PROJECT, LOCAL }
@@ -63,15 +64,20 @@ public final class SettingsWriter {
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is
-     *  the write-side twin of {@code SpectroConfig}'s own
-     *  {@code rejectProcessGlobals}, which rejects the same fields when reading a
-     *  workspace scope.
+     *  the write side of the rule {@code SpectroConfig.rejectProcessGlobals}
+     *  enforces when READING a workspace scope, and it is deliberately the same
+     *  list object rather than a copy of it.
      *
-     *  <p>{@code allowLocalhost} joined them for card 199: a workspace scope is a
-     *  folder the AGENT writes into, so leaving the net fence's only switch there
-     *  put the guard inside the sandbox it guards. */
+     *  <p>{@code allowLocalhost} joined the rule for card 199: a workspace scope
+     *  is a folder the AGENT writes into, so leaving the net fence's only switch
+     *  there put the guard inside the sandbox it guards. Card 222 added
+     *  {@code chromeBinary} and {@code searxngUrl} — and found that the two
+     *  lists had been hand-written twice. A key in the reader's list and not in
+     *  this one is worse than either: the write SUCCEEDS and the next load
+     *  throws the whole file away, so the operator's other keys in that file
+     *  stop applying with nothing naming the one they typed. */
     private static final Set<String> PROCESS_GLOBALS =
-            Set.of("workspace", "logLevel", "allowLocalhost");
+            Set.copyOf(SpectroConfig.workspaceScopeForbiddenKeys());
 
     /** Static utility — never instantiated. */
     private SettingsWriter() {
@@ -127,7 +133,7 @@ public final class SettingsWriter {
      * already in the file, known or not (e.g. the CLI-side {@code tts} block),
      * survives untouched. The patch is validated BEFORE any file is touched: unknown
      * keys, secret-shaped keys ({@code *_API_KEY}/{@code *_TOKEN}), process-globals
-     * ({@code workspace}/{@code logLevel}/{@code allowLocalhost}) in a
+     * (whatever {@code SpectroConfig.workspaceScopeForbiddenKeys()} names) in a
      * {@code PROJECT}/{@code LOCAL} scope,
      * and values of the wrong shape all throw {@link IllegalArgumentException}
      * without writing anything. The file must still bind as a whole after the merge

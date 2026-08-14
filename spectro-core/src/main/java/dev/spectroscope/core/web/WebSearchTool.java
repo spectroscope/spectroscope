@@ -8,6 +8,7 @@ import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolOutput;
 
 import java.util.List;
+import java.util.function.Supplier;
 
 /**
  * The {@code web_search} tool: a query in, a numbered hit list (title, URL,
@@ -40,14 +41,32 @@ public final class WebSearchTool implements Tool {
     /** Hard ceiling on hits per search — more is noise in the context window. */
     static final int MAX_MAX_RESULTS = 10;
 
-    private final WebSearcher searcher;
+    private final Supplier<WebSearcher> searcher;
 
     /**
-     * Builds the tool over the injected search seam.
+     * Builds the tool over a fixed search seam — the shape every test wants, and
+     * the honest shape for a one-shot caller like {@code spectro doctor}.
      *
      * @param searcher the tiered production backend from {@link #fromConfig}, or an in-memory fake in tests
      */
     public WebSearchTool(WebSearcher searcher) {
+        this(() -> searcher);
+    }
+
+    /**
+     * Builds the tool over a search seam resolved PER CALL.
+     *
+     * <p>Card 222. The tier is a decision about the current configuration, and a
+     * session's registry is built exactly once — so a tier resolved at
+     * construction is a decision about the configuration as it stood at the
+     * first prompt, which is not what the settings page shows and not what the
+     * operator just saved. Both {@link #execute} and {@link #description()} ask
+     * again, so the result header and the sentence the model reads name the
+     * machine that is going to answer.</p>
+     *
+     * @param searcher yields the backend for THIS call
+     */
+    public WebSearchTool(Supplier<WebSearcher> searcher) {
         this.searcher = searcher;
     }
 
@@ -57,12 +76,28 @@ public final class WebSearchTool implements Tool {
      * places every other key does (the process environment, then
      * {@code ~/.spectro/.env}).
      *
+     * <p>This overload freezes the decision on the config it is handed — right
+     * for a caller that resolves the config and then answers once ({@code spectro
+     * doctor}, {@code /api/context}), wrong for a session. Sessions take
+     * {@link #fromConfig(Supplier)}.</p>
+     *
      * @param config the resolved settings hierarchy
      * @return the tool over the ONE tier the configuration selects
      */
     public static WebSearchTool fromConfig(SpectroConfig config) {
-        return new WebSearchTool(WebSearchTiers.searcher(
-                WebSearchTiers.forConfig(config), SpectroConfig::resolveApiKey));
+        return fromConfig(() -> config);
+    }
+
+    /**
+     * The session wiring: the settings are read again on every call, so an
+     * address saved while the session is open decides the next search.
+     *
+     * @param config yields the settings hierarchy as it stands right now
+     * @return the tool over whichever tier that configuration selects, per call
+     */
+    public static WebSearchTool fromConfig(Supplier<SpectroConfig> config) {
+        return new WebSearchTool(() -> WebSearchTiers.searcher(
+                WebSearchTiers.forConfig(config.get()), SpectroConfig::resolveApiKey));
     }
 
     /** Wire name: {@code web_search}. */
@@ -76,8 +111,9 @@ public final class WebSearchTool implements Tool {
      *  sentence about the same machine. */
     @Override
     public String description() {
+        WebSearcher active = searcher.get();
         return "Searches the web via " + WebSearchTiers.describe(new WebSearchTiers.Choice(
-                searcher.tier(), addressOf(searcher)))
+                active.tier(), addressOf(active)))
                 + " and returns titles, URLs and snippets. "
                 + "Network egress — guarded by permission.";
     }
@@ -124,15 +160,20 @@ public final class WebSearchTool implements Tool {
         }
         int maxResults = clampMaxResults(input.path("max_results").asInt(DEFAULT_MAX_RESULTS));
 
+        // ONE resolution for this call, so the tier that searched and the tier
+        // the header names are the same object and cannot drift inside a call
+        // even if the settings are saved while the search is in flight.
+        WebSearcher active = searcher.get();
+
         // The whole downstream sits in one guard (the WebFetchTool pattern):
         // a throwing seam surfaces as an ERROR string, never as an exception.
         try {
-            List<WebSearcher.Hit> hits = searcher.search(query, maxResults);
+            List<WebSearcher.Hit> hits = active.search(query, maxResults);
             if (hits == null || hits.isEmpty()) {
                 return "No results for \"" + query + "\" ("
-                        + WebSearchTiers.label(searcher.tier()) + ").";
+                        + WebSearchTiers.label(active.tier()) + ").";
             }
-            return ToolOutput.clip(format(query, hits), MAX_OUTPUT_CHARS);
+            return ToolOutput.clip(format(query, hits, active), MAX_OUTPUT_CHARS);
         } catch (RuntimeException failure) {
             return "ERROR: web_search failed: " + failure.getMessage();
         }
@@ -141,13 +182,16 @@ public final class WebSearchTool implements Tool {
     /**
      * The numbered hit list under a header that names the tier and the query.
      *
-     * @param query the vetted search query, echoed in the header
-     * @param hits  the backend's hits in ranking order
+     * @param query  the vetted search query, echoed in the header
+     * @param hits   the backend's hits in ranking order
+     * @param active the backend that produced them — passed in rather than
+     *               re-resolved, so the header can only ever name the machine
+     *               that actually answered
      * @return the readable result block
      */
-    private String format(String query, List<WebSearcher.Hit> hits) {
+    private String format(String query, List<WebSearcher.Hit> hits, WebSearcher active) {
         StringBuilder out = new StringBuilder(
-                "Results (" + WebSearchTiers.label(searcher.tier()) + ") for \"" + query + "\":\n");
+                "Results (" + WebSearchTiers.label(active.tier()) + ") for \"" + query + "\":\n");
         for (int i = 0; i < hits.size(); i++) {
             WebSearcher.Hit hit = hits.get(i);
             out.append('\n').append(i + 1).append(". ").append(hit.title()).append('\n')

@@ -18,6 +18,7 @@ import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 import { formatBytes } from "../workspace/preview";
 import { liveReading, type LiveRoute } from "./liveTranscription";
+import { ReachBlock } from "./settingsReach";
 import { setLiveWanted, useLiveWanted } from "../state/liveWanted";
 
 interface BinaryState {
@@ -112,53 +113,58 @@ export function SttSettings({
         {t(lang, "set.secStt")}
       </div>
       <p className="settings-note">{t(lang, "set.sttHint")}</p>
-      {/* Which way speech goes. The hosted one needs a key and nothing else,
-          which is what makes voice work in a DMG; the local one sends nothing
-          out, which is the reason it stays. */}
-      {status.route !== undefined && (
-        <label className="settings-field">
-          <span>{t(lang, "set.sttProvider")}</span>
-          <select
-            value={String(status.provider ?? "auto")}
-            onChange={(e) => {
-              onSave?.({ sttProvider: e.target.value });
-              // The pane describes the server's answer, so re-ask rather than
-              // guess what the write did.
-              window.setTimeout(() => void load(), 150);
-            }}
-            disabled={onSave === undefined}
-          >
-            {STT_PROVIDERS.map((p) => (
-              <option key={p} value={p}>
-                {t(lang, `set.sttProvider.${p}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
-      {/* The dictation language, passed through BOTH routes: whisper's -l flag
-          locally, the API's language field hosted. "auto" adds nothing to
-          either request and the model detects on its own. */}
-      {status.language !== undefined && (
-        <label className="settings-field">
-          <span>{t(lang, "set.sttLanguage")}</span>
-          <select
-            value={String(status.language ?? "auto")}
-            onChange={(e) => {
-              onSave?.({ sttLanguage: e.target.value });
-              // Same as the provider above: re-ask instead of guessing.
-              window.setTimeout(() => void load(), 150);
-            }}
-            disabled={onSave === undefined}
-          >
-            {STT_LANGUAGES.map((code) => (
-              <option key={code} value={code}>
-                {t(lang, `set.sttLanguage.${code}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      {/* Which way speech goes, and in which language. Both are read on the
+          call — SttController holds two suppliers over
+          SpectroConfig.load(Overrides.none()) and TranscribeController loads
+          per request — so a change here reaches the next dictation without a
+          new session. Card 222, review finding F10: these two saved with no
+          sentence at all, in a file the page's own guard did not walk. */}
+      <ReachBlock lang={lang} fields={["sttProvider", "sttLanguage"]}>
+        {status.route !== undefined && (
+          <label className="settings-field">
+            <span>{t(lang, "set.sttProvider")}</span>
+            <select
+              value={String(status.provider ?? "auto")}
+              onChange={(e) => {
+                onSave?.({ sttProvider: e.target.value });
+                // The pane describes the server's answer, so re-ask rather than
+                // guess what the write did.
+                window.setTimeout(() => void load(), 150);
+              }}
+              disabled={onSave === undefined}
+            >
+              {STT_PROVIDERS.map((p) => (
+                <option key={p} value={p}>
+                  {t(lang, `set.sttProvider.${p}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {/* The dictation language, passed through BOTH routes: whisper's -l
+            flag locally, the API's language field hosted. "auto" adds nothing
+            to either request and the model detects on its own. */}
+        {status.language !== undefined && (
+          <label className="settings-field">
+            <span>{t(lang, "set.sttLanguage")}</span>
+            <select
+              value={String(status.language ?? "auto")}
+              onChange={(e) => {
+                onSave?.({ sttLanguage: e.target.value });
+                // Same as the provider above: re-ask instead of guessing.
+                window.setTimeout(() => void load(), 150);
+              }}
+              disabled={onSave === undefined}
+            >
+              {STT_LANGUAGES.map((code) => (
+                <option key={code} value={code}>
+                  {t(lang, `set.sttLanguage.${code}`)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+      </ReachBlock>
       {/* Live text (card 187 step 6). The owner's rule for this control, and it
           has two halves: greyed out whenever the route being taken cannot
           stream, active when it can, NEVER hidden — and never silently

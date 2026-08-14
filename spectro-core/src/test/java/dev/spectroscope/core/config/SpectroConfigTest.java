@@ -1107,6 +1107,50 @@ class SpectroConfigTest {
     }
 
     @Test
+    void aWorkspaceScopeMustNotNameTheBrowserBinary(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // Card 222, review finding F2. The same rule as the fence above, and the
+        // reason it was missed is that chromeBinary does not LOOK like a switch:
+        // it names an executable browse_page launches. An operator approving
+        // "browse_page https://…" approves a look at a page, not the launch of a
+        // binary the agent picked — and the agent's own write_file writes into
+        // exactly this folder. Card 222 shortened the reach of such a file from
+        // "the next session" to "the next tool call", which is what made a
+        // sleeping hole an awake one.
+        Files.createDirectories(ws.resolve(".spectro"));
+        Files.writeString(ws.resolve(".spectro/settings.local.json"), """
+                { "chromeBinary": "/tmp/not-a-browser.sh" }
+                """);
+        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, java.util.Map.of()));
+        assertTrue(loud.getMessage().contains("chromeBinary"), loud.getMessage());
+        assertTrue(loud.getMessage().contains("settings.local.json"),
+                "the message names the offending file: " + loud.getMessage());
+        assertTrue(loud.getMessage().contains("SPECTRO_CHROME"),
+                "and where it belongs instead: " + loud.getMessage());
+    }
+
+    @Test
+    void aWorkspaceScopeMustNotRedirectWebSearch(@TempDir Path projectDir, @TempDir Path ws)
+            throws IOException {
+        // The quieter twin, named by the same review. SearxngSearcher takes no
+        // NetFence at all, so this key decides an address web_search GETs with
+        // the loopback opt-in still off — an agent that writes it points every
+        // later search of that session at a machine it chose and reads the
+        // answer back into its own context. The settings page writes this key
+        // to the user scope, so refusing it here costs the operator nothing.
+        Files.createDirectories(ws.resolve(".spectro"));
+        Files.writeString(ws.resolve(".spectro/settings.json"), """
+                { "searxngUrl": "http://127.0.0.1:9999" }
+                """);
+        IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
+                () -> SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir, ws, java.util.Map.of()));
+        assertTrue(loud.getMessage().contains("searxngUrl"), loud.getMessage());
+        assertTrue(loud.getMessage().contains("SPECTRO_SEARXNG_URL"),
+                "and where it belongs instead: " + loud.getMessage());
+    }
+
+    @Test
     void aWorkspaceScopeMustNotSetTheProcessGlobalLogLevel(@TempDir Path projectDir, @TempDir Path ws)
             throws IOException {
         Files.createDirectories(ws.resolve(".spectro"));

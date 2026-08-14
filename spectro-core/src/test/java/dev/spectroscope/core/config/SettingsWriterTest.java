@@ -8,7 +8,9 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -183,6 +185,38 @@ class SettingsWriterTest {
         assertThrows(IllegalArgumentException.class, () -> SettingsWriter.patch(file,
                 SettingsWriter.Scope.LOCAL, JSON.readTree("""
                         { "allowLocalhost": true }
+                        """)));
+    }
+
+    @Test
+    void theWriterRefusesEXACTLYWhatTheReaderRefuses(@TempDir Path dir) {
+        // Card 222, review finding F2, one level up from the fix it asked for.
+        // There are TWO copies of this rule: the reader drops a workspace scope
+        // that holds a process-global, and the writer refuses to put one there.
+        // Adding a key to the reader alone leaves a write that SUCCEEDS and a
+        // file that is then thrown away whole on the next load — the operator's
+        // project model and image backend stop applying and nothing points at
+        // the key they actually typed.
+        //
+        // So the two lists are one list now, and this test is what keeps them
+        // one: it walks the reader's own and asks the writer about each key.
+        Path file = dir.resolve(".spectro/settings.json");
+        for (String key : SpectroConfig.workspaceScopeForbiddenKeys()) {
+            for (SettingsWriter.Scope scope :
+                    List.of(SettingsWriter.Scope.PROJECT, SettingsWriter.Scope.LOCAL)) {
+                IllegalArgumentException loud = assertThrows(IllegalArgumentException.class,
+                        () -> SettingsWriter.patch(file, scope,
+                                JSON.readTree("{\"" + key + "\": \"x\"}")),
+                        "a " + scope + " write of \"" + key + "\" is accepted, and the next load"
+                                + " throws the whole file away — the reader refuses it");
+                assertTrue(loud.getMessage().contains(key), loud.getMessage());
+            }
+        }
+        // And the user scope still takes them, or the settings page could not
+        // save the very keys this card made live.
+        assertDoesNotThrow(() -> SettingsWriter.patch(dir.resolve("user.json"),
+                SettingsWriter.Scope.USER, JSON.readTree("""
+                        { "chromeBinary": "/usr/bin/chrome", "searxngUrl": "http://localhost:8888" }
                         """)));
     }
 

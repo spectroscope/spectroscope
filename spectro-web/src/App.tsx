@@ -27,6 +27,7 @@ import type { ChatViewMode } from "./state/chatView";
 import { foldWork } from "./state/work";
 import { ConnectionBanner } from "./components/ConnectionBanner";
 import { ImagePanel } from "./components/ImagePanel";
+import { backendWithAKey } from "./components/imageBackend";
 import { ImportDialog } from "./components/ImportDialog";
 import { GateBar } from "./components/GateBar";
 import { LevelPill } from "./components/LevelPill";
@@ -787,21 +788,31 @@ export function App() {
       .catch(() => {});
   }, [conn.status]);
 
-  // Smart image-backend default (owner 2026-07-20): when the user has not
-  // touched the picker and the configured backend has NO key while the other
-  // one has, pre-select the one that can actually generate — session-only
-  // (no settings write, controlsTouched stays false so hydration still wins
-  // if the server later reports a real choice). Both keyless: leave as is,
-  // the dropdown labels carry the hint.
+  // Smart image-backend default (owner 2026-07-20): when the configured backend
+  // has NO key while another one has, show the one that can actually generate.
+  // Both keyless: leave as is, the dropdown labels carry the hint.
+  //
+  // DISPLAY ONLY — and card 222's review finding F5 is the bill for the version
+  // that was not. This used to send `set_image_provider` as well, which is the
+  // message a human dropdown pick sends: the session read it as "the operator
+  // chose this in this window" and let it outrank every later settings write,
+  // for the whole session, with nobody having touched anything. The settings
+  // page's own image dropdown then did nothing while the sentence under it
+  // promised it applied immediately.
+  //
+  // The rule is not a choice, so it is not announced as one. The server resolves
+  // the backend with the same rule on every generate_image call
+  // (ImageProviders.withAKey), which is what keeps what this SHOWS and what the
+  // belt USES the same answer — the twin tables are imageBackend.test.ts and
+  // ImageProvidersTest.java.
   useEffect(() => {
-    if (imageKeys === null || controlsTouched.current) return;
-    const other = imageProvider === "gemini" ? "openai" : "gemini";
-    const has = (p: string): boolean => (p === "gemini" ? imageKeys.gemini : imageKeys.openai);
-    if (!has(imageProvider) && has(other)) {
-      setImageProvider(other);
-      sendClient({ type: "set_image_provider", provider: other });
+    if (controlsTouched.current) return;
+    const shown = backendWithAKey(imageProvider, imageKeys);
+    if (shown !== imageProvider) {
+      setImageProvider(shown);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // conn.status is deliberate: a reconnect re-hydrates imageProvider from the
+    // server, and the pre-selection has to be applied to the value that arrives.
   }, [imageKeys, imageProvider, conn.status]);
 
   // ---- Deep links (card 131): the hash is the address of what is shown ----
