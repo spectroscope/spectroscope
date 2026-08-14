@@ -1,34 +1,27 @@
-// The right-docked area inside the Chat tab — since card 219 a DOCK of
-// independent panels rather than one tab box. The owner's own first-cut
-// scoping: each surface stands on its own (terminal, files and the agent
-// context used to share one box), each shows and hides independently and is
-// collapsible, and the browser is one of them, with a fullscreen mode.
+// The workspace inside the Chat tab — card 219 made it a set of independent
+// panels, card 228 (criterion 0) lays them out as a GRID of cards: two or
+// three columns following the workspace width, each panel its own card with
+// fold, expand and close, none of them inside a shared section. The panel
+// MODEL is card 219's unchanged — independent show/hide, fold-without-
+// unmount, persistence in spectroscope:layout, the viewport seam.
 //
 // Three rules carry the whole file:
-// 1. Sections are keyed by panel id (`key={id}`), so opening or closing one
+// 1. Cards are keyed by panel id (`key={id}`), so opening or closing one
 //    panel never remounts a sibling — that is what keeps a running PTY alive
 //    when the roster is glanced at, and what keeps the browser hole's element
 //    identity stable (card 175's lesson, generalized).
 // 2. Collapse is display:none, never unmount. Unmounting is the deliberate
 //    act of the close button.
 // 3. The browser panel must TELL the shell about every change a
-//    ResizeObserver cannot see: covered by a modal, folded, closed, or moved
-//    by a neighbour — no CSS can cover or clip the native pane (card 201).
+//    ResizeObserver cannot see: covered by a modal, folded, closed, moved by
+//    a neighbour — or lying UNDER a sibling card gone fullscreen. No CSS can
+//    cover or clip the native pane (card 201), so all of that folds into the
+//    segment's `active` and the layout-commit nonce.
 
-import { useEffect, useRef, useState } from "react";
-import type {
-  KeyboardEvent as ReactKeyboardEvent,
-  PointerEvent as ReactPointerEvent,
-  ReactNode,
-} from "react";
+import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import type { AgentInfo, PlanStep } from "../state/reducer";
-import {
-  openDockPanel,
-  setDockWeights,
-  toggleDockCollapse,
-  toggleDockPanel,
-  useLayout,
-} from "../state/layout";
+import { openDockPanel, toggleDockCollapse, toggleDockPanel, useLayout } from "../state/layout";
 import type { DockPanelId } from "../state/layout";
 import { AgentsTab } from "./AgentsTab";
 import { PlanTab } from "./PlanTab";
@@ -40,100 +33,10 @@ import { SystemContextTab } from "./SystemContextTab";
 import { WorkspaceTab } from "../workspace/WorkspaceTab";
 import { TerminalPanel } from "../panels/TerminalPanel";
 import { BrowserSegment } from "../browser/BrowserSegment";
-import {
-  DOCK_ORDER,
-  PANEL_MIN_PX,
-  dockLabelKey,
-  dockModes,
-  dividerKeyStep,
-  pairWeightsForHeights,
-  parseDockWeights,
-  serializeDockWeights,
-  weightOf,
-} from "../panels/dockModel";
-import type { DockWeights } from "../panels/dockModel";
+import { DOCK_ORDER, dockLabelKey, dockModes } from "../panels/dockModel";
 import type { WorkspaceInfo } from "../state/reducer";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import type { Lang } from "../i18n/i18n";
-
-/** Writes a pair of weights back into the store, rounded so the persisted
- *  string stays readable. */
-function commitPair(current: string, above: DockPanelId, below: DockPanelId, wa: number, wb: number): void {
-  const next: DockWeights = { ...parseDockWeights(current) };
-  next[above] = Math.round(wa * 1000) / 1000;
-  next[below] = Math.round(wb * 1000) / 1000;
-  setDockWeights(serializeDockWeights(next));
-}
-
-/** The divider between two EXPANDED neighbours — the ws-divider idiom
- *  (pointer capture, arrow keys against a clamped share), promoted to the
- *  dock. It moves weight between its own pair only, so the rest of the stack
- *  stands still. */
-function DockDivider({
-  above,
-  below,
-  weightsRaw,
-  sections,
-  lang,
-}: {
-  above: DockPanelId;
-  below: DockPanelId;
-  weightsRaw: string;
-  sections: { current: Map<DockPanelId, HTMLElement> };
-  lang: Lang;
-}) {
-  const drag = useRef<{ y: number; wa: number; wb: number; ha: number; hb: number } | null>(null);
-  const weights = parseDockWeights(weightsRaw);
-  const onDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    const a = sections.current.get(above);
-    const b = sections.current.get(below);
-    if (a === undefined || b === undefined) return;
-    drag.current = {
-      y: e.clientY,
-      wa: weightOf(weights, above),
-      wb: weightOf(weights, below),
-      ha: a.getBoundingClientRect().height,
-      hb: b.getBoundingClientRect().height,
-    };
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  };
-  const onMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    const d = drag.current;
-    if (d === null) return;
-    const [wa, wb] = pairWeightsForHeights(d.wa, d.wb, d.ha, d.hb, e.clientY - d.y, PANEL_MIN_PX);
-    commitPair(weightsRaw, above, below, wa, wb);
-  };
-  const onUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (drag.current === null) return;
-    drag.current = null;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-  const onKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    e.preventDefault();
-    const [wa, wb] = dividerKeyStep(
-      weightOf(weights, above),
-      weightOf(weights, below),
-      e.key === "ArrowDown" ? 1 : -1,
-    );
-    commitPair(weightsRaw, above, below, wa, wb);
-  };
-  return (
-    <div
-      className="dock-divider"
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label={t(lang, "dock.divider")}
-      tabIndex={0}
-      onPointerDown={onDown}
-      onPointerMove={onMove}
-      onPointerUp={onUp}
-      onKeyDown={onKey}
-    />
-  );
-}
 
 export function RightPanel({
   agents,
@@ -181,7 +84,7 @@ export function RightPanel({
   onFocusEvent?: (agentId: string, event: RunEvent) => void;
   liveView?: boolean;
   /** Whose browser fills the browser panel — the same shown session the other
-   *  two doors post (sessionBrowser.drift.test.ts counts all three). */
+   *  door posts (sessionBrowser.drift.test.ts counts both). */
   sessionId: string | null;
   /** A modal is open over this dock. The browser panel folds it into the
    *  segment's `active`, because a dialog cannot paint over the native pane —
@@ -193,24 +96,23 @@ export function RightPanel({
   const lang = useLang();
   const layout = useLayout();
   const modes = dockModes(layout);
-  const weights = parseDockWeights(layout.dockWeights);
-  const sections = useRef(new Map<DockPanelId, HTMLElement>());
 
-  // The browser panel's fullscreen (owner: "mit einer vollbild funktion
-  // (screenshot)") — session state, deliberately unpersisted: a reload lands
-  // on the dock, never trapped in an overlay.
-  const [browserFull, setBrowserFull] = useState(false);
+  // Which card is expanded over the whole window. Card 219 built this for the
+  // browser ("mit einer vollbild funktion"); card 228 gives every card the
+  // control. Session state, deliberately unpersisted: a reload lands on the
+  // grid, never trapped in an overlay.
+  const [fullPanel, setFullPanel] = useState<DockPanelId | null>(null);
   useEffect(() => {
-    if (browserFull && modes.browser !== "open") setBrowserFull(false);
-  }, [browserFull, modes.browser]);
+    if (fullPanel !== null && modes[fullPanel] !== "open") setFullPanel(null);
+  }, [fullPanel, modes]);
   useEffect(() => {
-    if (!browserFull) return;
+    if (fullPanel === null) return;
     const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setBrowserFull(false);
+      if (e.key === "Escape") setFullPanel(null);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [browserFull]);
+  }, [fullPanel]);
 
   // Picking an agent shows its context — reveal the context panel.
   const selectAgent = (id: string): void => {
@@ -220,12 +122,9 @@ export function RightPanel({
 
   // The layout-commit signal for the browser seam: any change that can move
   // the hole without resizing it re-runs the segment's report effect.
-  const reportNonce = [
-    DOCK_ORDER.map((id) => modes[id]).join(","),
-    layout.dockWeights,
-    layout.rightPanelW,
-    browserFull,
-  ].join("|");
+  const reportNonce = [DOCK_ORDER.map((id) => modes[id]).join(","), layout.rightPanelW, fullPanel ?? ""].join(
+    "|",
+  );
 
   const offered = DOCK_ORDER.filter((id) => id !== "work" || work !== undefined);
   const openIds = offered.filter((id) => modes[id] !== "closed");
@@ -269,9 +168,16 @@ export function RightPanel({
       case "browser":
         return (
           <BrowserSegment
-            active={modes.browser === "open" && !covered}
+            active={
+              modes.browser === "open" &&
+              !covered &&
+              // A sibling card gone fullscreen paints over this hole with
+              // z-index alone — which the native pane ignores (card 201). The
+              // shell is told to hide the pane instead.
+              (fullPanel === null || fullPanel === "browser")
+            }
             sessionId={sessionId}
-            floorGuard={!browserFull}
+            floorGuard={fullPanel !== "browser"}
             reportNonce={reportNonce}
           />
         );
@@ -282,33 +188,15 @@ export function RightPanel({
    *  scrolling as prose. */
   const fills = (id: DockPanelId): boolean => id === "files" || id === "terminal" || id === "browser";
 
-  const rows: ReactNode[] = [];
-  let lastExpanded: DockPanelId | null = null;
+  const cards: ReactNode[] = [];
   for (const id of openIds) {
     const collapsed = modes[id] === "collapsed";
-    if (!collapsed && lastExpanded !== null) {
-      rows.push(
-        <DockDivider
-          key={`divider-${lastExpanded}-${id}`}
-          above={lastExpanded}
-          below={id}
-          weightsRaw={layout.dockWeights}
-          sections={sections}
-          lang={lang}
-        />,
-      );
-    }
-    const full = id === "browser" && browserFull;
-    rows.push(
+    const full = fullPanel === id;
+    cards.push(
       <section
         key={id}
         data-panel={id}
         className={`dock-panel${collapsed ? " dock-panel--collapsed" : ""}${full ? " dock-panel--full" : ""}`}
-        style={collapsed ? undefined : { flexGrow: weightOf(weights, id) }}
-        ref={(el) => {
-          if (el === null) sections.current.delete(id);
-          else sections.current.set(id, el);
-        }}
       >
         <header className="dock-panel-head">
           <button
@@ -322,29 +210,35 @@ export function RightPanel({
           </button>
           <span className="dock-panel-name">{t(lang, dockLabelKey(id))}</span>
           {(counts[id] ?? 0) > 0 && <span className="tab-count tabular">{counts[id]}</span>}
-          {id === "browser" && (
-            <button
-              type="button"
-              className="dock-full-btn"
-              aria-pressed={browserFull}
-              aria-label={t(lang, browserFull ? "dock.fullscreenExit" : "dock.fullscreen")}
-              title={t(lang, browserFull ? "dock.fullscreenExit" : "dock.fullscreen")}
-              onClick={() => setBrowserFull((f) => !f)}
+          <button
+            type="button"
+            className="dock-full-btn"
+            aria-pressed={full}
+            aria-label={
+              full
+                ? t(lang, "dock.fullscreenExit")
+                : t(lang, "dock.fullscreen", { p: t(lang, dockLabelKey(id)) })
+            }
+            title={
+              full
+                ? t(lang, "dock.fullscreenExit")
+                : t(lang, "dock.fullscreen", { p: t(lang, dockLabelKey(id)) })
+            }
+            onClick={() => setFullPanel((f) => (f === id ? null : id))}
+          >
+            <svg
+              viewBox="0 0 16 16"
+              width="12"
+              height="12"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              aria-hidden="true"
             >
-              <svg
-                viewBox="0 0 16 16"
-                width="12"
-                height="12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-                aria-hidden="true"
-              >
-                <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" />
-              </svg>
-            </button>
-          )}
+              <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" />
+            </svg>
+          </button>
           <button
             type="button"
             className="icon-button dock-panel-x"
@@ -373,7 +267,6 @@ export function RightPanel({
         </div>
       </section>,
     );
-    if (!collapsed) lastExpanded = id;
   }
 
   return (
@@ -413,8 +306,8 @@ export function RightPanel({
           </svg>
         </button>
       </div>
-      <div className="dock-body">
-        {rows.length === 0 ? <p className="dock-empty ctx-empty">{t(lang, "dock.empty")}</p> : rows}
+      <div className="dock-body dock-grid">
+        {cards.length === 0 ? <p className="dock-empty ctx-empty">{t(lang, "dock.empty")}</p> : cards}
       </div>
     </aside>
   );

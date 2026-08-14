@@ -24,9 +24,9 @@ import { Sidebar } from "./Sidebar";
 
 /** The five segments the rail switches between: browser since card 201,
  *  skills since card 225. */
-type NavMode = "sessions" | "fleets" | "stategraph" | "browser" | "skills";
+type NavMode = "sessions" | "fleets" | "stategraph" | "skills";
 
-const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph", "browser", "skills"];
+const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph", "skills"];
 
 /** Blank out block comments, keeping newlines so line numbers still line up.
  *  Prose about a scroll container is not a scroll container. */

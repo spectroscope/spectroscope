@@ -18,7 +18,7 @@
 // network and risk out-of-order writes racing each other), every select
 // commits on the discrete choice itself.
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { DESIGNS, applyAndSaveDesign, useDesignPrefs } from "../state/designPrefs";
 import type { SettingsSection } from "../state/route";
 import { SttSettings } from "./SttSettings";
@@ -31,7 +31,7 @@ import { ModelField, useProviderModels } from "./providerModelField";
 import { settingsMayAutoPick } from "./settingsModelPolicy";
 import { ReasoningControl } from "./ReasoningControl";
 import { setLang, useLang } from "../state/lang";
-import { McpSettings, SkillsSettings } from "./SkillsMcpSettings";
+import { McpSettings } from "./SkillsMcpSettings";
 import { WebSearchSettings } from "./WebSearchSettings";
 import { AllowlistSettings } from "./AllowlistSettings";
 import { HooksSettings } from "./HooksSettings";
@@ -238,12 +238,6 @@ export function SettingsPanel({
   // Whether Docker is usable here (card 137) — null until the probe answers,
   // and null forever on a server that does not carry the route.
   const [docker, setDocker] = useState<DockerStatus | null>(null);
-  // Card 224: whether the skills/catalogue block below has its height — the
-  // anchors underneath it attach only then (see the skset comment below).
-  // Stable callback: it is a dependency of that block's own load(), and an
-  // inline arrow would re-fire the fetch on every panel render.
-  const [skillsSettled, setSkillsSettled] = useState(false);
-  const markSkillsSettled = useCallback(() => setSkillsSettled(true), []);
   // Card 121: whether the operator changed the provider in THIS panel session.
   // The model auto-pick persists through putSettings, so it may only follow a
   // real gesture — opening the panel (click or deep link) rearms to "looking",
@@ -1083,28 +1077,13 @@ export function SettingsPanel({
             </>
           )}
 
-          {/* ---- Skills + MCP managers (card 90; card 224 gave them
-              addresses so the plus menu's Manage/Browse rows can land).
-              The anchors attach only once the panel's settings fetch has
-              landed: these two components render their headings immediately,
-              so an early anchor lets the one-shot deep-link scroll fire while
-              every server-backed section above is still empty — measured live,
-              the heading ended up 6000px below the viewport once the page
-              filled in. The scroll effect retries per render until the id
-              exists, so a late anchor is caught; content still loading BELOW
-              an anchor can shift it a few rows, which is the same residual
-              every fetch-gated section has. */}
-          <SkillsSettings
-            anchorId={view !== null ? sectionAnchorId("skills") : undefined}
-            catalogueAnchorId={
-              view !== null && skillsSettled ? sectionAnchorId("skills-catalogue") : undefined
-            }
-            onSettled={markSkillsSettled}
-          />
-          {/* The mcp anchor waits for the skills fetch too: the catalogue's
-              57 rows render above it from that fetch, and a scroll that fires
-              first was measured 2669px short of the heading. */}
-          <McpSettings anchorId={view !== null && skillsSettled ? sectionAnchorId("mcp") : undefined} />
+          {/* ---- MCP manager (card 90; card 224 gave it an address so the
+              plus menu's Manage row can land). The skills manager LEFT this
+              page with card 228 — the rail's Skills view is its home now, and
+              the App redirects #/settings/skills[-catalogue] there. With the
+              57-row catalogue gone from above it, the mcp anchor only waits
+              for the panel's own settings fetch. */}
+          <McpSettings anchorId={view !== null ? sectionAnchorId("mcp") : undefined} />
         </div>
       </section>
     </div>

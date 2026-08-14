@@ -71,7 +71,10 @@ export const DEFAULT_LAYOUT: LayoutState = {
   chatOpen: false,
   traceOpen: false,
   rightPanelOpen: false,
-  rightPanelW: 360,
+  // Card 228: the workspace is a grid of cards, and 620px is what opens it on
+  // two columns (the grid's column minimum is 240px). The stylesheet caps the
+  // width against the row (min(…, 60%)), so a narrow window is never overrun.
+  rightPanelW: 620,
   imagesW: 300,
   activeRightTab: "agents",
   // The dock opens on the roster alone — byte for byte the face the tabbed
@@ -229,7 +232,11 @@ export function toggleTrace(): void {
   set({ traceOpen: !state.traceOpen });
 }
 export function setRightPanelW(w: number): void {
-  set({ rightPanelW: clampW(w, 260, 720) });
+  // The ceiling went 720 → 1200 with the grid (card 228): three 240px columns
+  // plus gaps never fit under the old cap, so the third column was
+  // unreachable by construction. The live clamp against the chat's reserve
+  // stays in App's resize handler.
+  set({ rightPanelW: clampW(w, 260, 1200) });
 }
 // The image gallery holds generated images the user wants to actually SEE, so
 // its width goes as wide as the chat can spare (the resize handler already
@@ -270,7 +277,10 @@ export function openDockPanel(id: DockPanelId): void {
   if (state[field] !== "open") set({ [field]: "open" });
 }
 
-/** Stores the serialized panel weights (panels/dockModel.ts owns the format). */
+/** Stores the serialized panel weights. Card 228's grid reads no weights any
+ *  more — the field and this setter stay for blob compatibility in both
+ *  directions: a pre-grid build loading a post-grid blob still finds the
+ *  field it expects, and a stored weights string survives a round trip. */
 export function setDockWeights(serialized: string): void {
   set({ dockWeights: serialized });
 }

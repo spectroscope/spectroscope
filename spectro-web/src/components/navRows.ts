@@ -22,7 +22,7 @@ export type NavIconId =
 export type NavTrailing = "import" | "spawn" | "count" | null;
 
 export type NavActionId = "newChat" | "scenarios" | "starters";
-export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "browser" | "skills";
+export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "skills";
 
 export interface NavRowSpec {
   id: string;
@@ -69,14 +69,16 @@ export function navActionRows(): NavRowSpec[] {
 /**
  * The segments, as rows rather than as a segmented control.
  *
- * <p>Browser is the fourth (card 201). It is listed on every face, including the
- * one that cannot show a pane: the segment's own panel says why there is nothing
- * behind it, and a row that vanished on the web face would leave a reader
- * wondering whether the product has a browser at all.
+ * <p>The browser row LEFT with card 228: the rail lists places you go, and the
+ * browser is a thing a session has (card 218's own rule, applied to the last
+ * surface that contradicted it). Its two doors are the session tab and the
+ * workspace's browser card.
  *
- * <p>Skills is the fifth (card 225, owner wish): the installed capabilities one
- * glance away, like Sessions and Fleets are. It closes the list — the other
- * four answer "what runs"; a catalogue is a different kind of looking.
+ * <p>Skills closes the list (card 225, owner wish): the installed capabilities
+ * one glance away, like Sessions and Fleets are — the others answer "what
+ * runs"; a catalogue is a different kind of looking. Since card 228 the view
+ * behind the row is the skills' one home: look, switch and install in the
+ * same place.
  *
  * @param input.active       which segment is showing
  * @param input.fleetsLocked the ladder has not opened fleets yet
@@ -128,24 +130,13 @@ export function navSegmentRows(input: {
       trailing: null,
     },
     {
-      id: "browser",
-      labelKey: "nav.browser",
-      icon: "browser",
-      // Not gated on the fleet lock either: the browser starts no fleet and
-      // spawns no node. What bounds it is the net fence and the tier map.
-      disabled: false,
-      active: input.active === "browser",
-      trailing: null,
-    },
-    {
       id: "skills",
       labelKey: "nav.skills",
       icon: "skills",
       // Not gated on the fleet lock: the view reads one endpoint and starts no
-      // process — the same reasoning that leaves the state graph open. And no
-      // trailing affordance: this is the place you go to LOOK (card 225); the
-      // switches live on the settings page and, when card 224's plus menu
-      // lands, in the composer.
+      // process — the same reasoning that leaves the state graph open. No
+      // trailing affordance: the view itself carries the switches and the
+      // install buttons since card 228, so the row needs no second one.
       disabled: false,
       active: input.active === "skills",
       trailing: null,

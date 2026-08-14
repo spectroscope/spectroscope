@@ -1,8 +1,14 @@
-// The settings page's skill + MCP managers (card 90). Skills: both roots
-// listed (disabled ones included — the loader hides them, the manager must
-// not), per-skill on/off via the .disabled marker, delete for user-root
-// skills (two-step, the seeding ledger keeps them from returning). MCP: a
-// friendly list over the USER scope's mcpServers block with add/remove —
+// The skill + MCP managers (card 90). Since card 228 they live in DIFFERENT
+// homes: SkillsSettings is mounted by the rail's Skills view (SkillsPane) —
+// the skills' one place to look, switch, install and remove — while
+// McpSettings stays on the settings page. Both stay in THIS file on purpose:
+// settingsReach.test.tsx walks *Settings.tsx files, and a manager moved out
+// of its sight would save settings with no reach sentence (finding F10).
+//
+// Skills: both roots listed (disabled ones included — the loader hides them,
+// the manager must not), per-skill on/off via the .disabled marker, delete
+// for user-root skills (two-step), install from the shipped catalogue. MCP:
+// a friendly list over the USER scope's mcpServers block with add/remove —
 // the composer gear's raw project-scope editor stays the escape hatch.
 // Both managers say honestly that changes reach NEW sessions.
 
@@ -33,17 +39,20 @@ export function SkillsSettings({
   anchorId,
   catalogueAnchorId,
   onSettled,
+  headed = true,
 }: {
-  /** The #/settings/skills deep-link anchor (card 224) — the plus menu's
-   *  "Manage skills" lands here. */
+  /** A deep-link anchor id, when a page still hosts one. Unused since the
+   *  manager moved to the Skills view (card 228) — the App redirects
+   *  #/settings/skills there instead. */
   anchorId?: string;
-  /** The #/settings/skills-catalogue anchor — "Browse catalogue" lands here. */
+  /** The catalogue's anchor, same story. */
   catalogueAnchorId?: string;
   /** Fires once this block's own fetch has answered (rows or the failure
-   *  line — either way the block has its height). The panel gates the anchors
-   *  BELOW this block on it: the 57-row catalogue renders from this fetch, and
-   *  a deep-link scroll that fires before it lands is measured 2669px short. */
+   *  line — either way the block has its height). */
   onSettled?: () => void;
+  /** False when the host draws its own heading (the Skills view's h2) — two
+   *  titles for one list read as two lists. */
+  headed?: boolean;
 } = {}) {
   const lang = useLang();
   const [skills, setSkills] = useState<SkillRow[] | null | "failed">(null);
@@ -107,9 +116,11 @@ export function SkillsSettings({
 
   return (
     <div className="skset">
-      <div className="settings-label" id={anchorId}>
-        {t(lang, "skset.title")}
-      </div>
+      {headed && (
+        <div className="settings-label" id={anchorId}>
+          {t(lang, "skset.title")}
+        </div>
+      )}
       <p className="settings-note">{t(lang, "skset.note")}</p>
       {/* Card 224: when a flipped switch lands is DERIVED, the same sentence
           the plus menu renders — SkillLibrary.load runs inside buildAgentOnce,

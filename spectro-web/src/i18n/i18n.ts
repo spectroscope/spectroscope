@@ -49,11 +49,10 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",
     en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right.",
   },
-  "nav.browser": { de: "Browser", en: "Browser" },
   "nav.skills": { de: "Skills", en: "Skills" },
   "nav.skillsNote": {
-    de: "Die installierten Skills und der mitgelieferte Katalog, mit Namespace und Schalter-Stand — die Ansicht rechts ist die Liste. Geschaltet wird auf der Einstellungsseite.",
-    en: "The installed skills and the bundled catalogue, with namespace and enabled state — the view on the right is the list. Switching happens on the settings page.",
+    de: "Installierte Skills und der mitgelieferte Katalog, mit Namespace und Schalter-Stand. Schalten, Installieren und Entfernen: in der Ansicht rechts.",
+    en: "Installed skills and the bundled catalogue, with namespace and enabled state. Switch, install and remove in the view on the right.",
   },
   "browser.title": { de: "Der sichtbare Browser", en: "The visible browser" },
   "browser.noPage": { de: "noch keine Seite geöffnet", en: "no page open yet" },
@@ -66,11 +65,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Checking for a browser pane …",
   },
   "browser.noSessionNote": {
-    de: "Dieser Browser gehört zu einer Session, und diese Session hat noch keine. Schick eine erste Nachricht — dann bekommt sie ihre eigene Seite, mit eigenen Cookies, die keine andere Session sieht.",
-    en: "This browser belongs to a session, and this one does not have an id yet. Send a first message and it gets its own page, with its own cookies, that no other session can see.",
+    de: "Noch keine Session-ID. Schick eine erste Nachricht, dann bekommt die Session ihre eigene Seite und eigene Cookies. Launch-Konfigurationen können hier eine Seite öffnen (Einstellungen → Launch).",
+    en: "No session id yet. Send a first message to create one; the session gets its own page and cookies. Launch configurations can open a page here (settings → launch).",
   },
   "browser.noShellNote": {
-    de: "Kein Browser-Fenster angehängt. Der sichtbare Browser ist eine Fläche IN der Desktop-App; ein Reader, der spectro web im eigenen Browser öffnet, bekommt hier keine Seite.",
+    de: "Kein Browser-Fenster angehängt. Der sichtbare Browser ist eine Fläche in der Desktop-App; wer spectro web im eigenen Browser öffnet, bekommt hier keine Seite.",
     en: "No browser pane attached. The visible browser is a surface INSIDE the desktop app; a reader who opens spectro web in their own browser gets no page here.",
   },
   "browser.noShellHint": {
@@ -78,8 +77,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Open the desktop app and the agent drives the page there — and reaching localhost needs allowLocalhost turned on in the settings.",
   },
   "browser.fenceNote": {
-    de: "Der Netz-Zaun ist an. Private Adressen, das Tailnet und file:// bleiben bei jedem Redirect-Hop abgelehnt, und ein Hostname wird aufgelöst, bevor die Seite ihn erreicht; für localhost braucht es allowLocalhost. Was kein Zaun fängt: eine DNS-Antwort, die sich zwischen Prüfung und Verbindung ändert.",
-    en: "The net fence is on. Private addresses, the tailnet and file:// stay refused on every redirect hop, and a host name is resolved before the page reaches it; localhost needs allowLocalhost. What no fence catches: a DNS answer that changes between the check and the connection.",
+    de: "Netz-Zaun an: private Adressen, Tailnet und file:// bleiben auf jedem Redirect-Hop abgelehnt; localhost braucht allowLocalhost. Nicht gefangen: eine DNS-Antwort, die sich nach der Prüfung ändert.",
+    en: "Net fence on: private addresses, the tailnet and file:// stay refused on every redirect hop; localhost needs allowLocalhost. Not caught: a DNS answer that changes after the check.",
   },
   // Card 219 — the dock's browser panel under the shell's minimum pane size.
   "browser.floorNote": {
@@ -104,7 +103,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "No page is open yet. Type an address above or let the agent navigate — the picture appears here.",
   },
   "browser.view.desktopLiveNote": {
-    de: "Das Desktop-Fenster fährt den Browser dieser Session — ein Browser pro Session, und die Desktop-App gewinnt. Sieh dort zu; diese Fläche fährt solange nichts.",
+    de: "Das Desktop-Fenster fährt den Browser dieser Session — ein Browser pro Session, und die Desktop-App gewinnt. Sieh dort zu; diese Fläche fährt so lange nichts.",
     en: "The desktop pane is driving this session's browser — one browser per session, and the desktop face wins. Watch it in the desktop app; this surface drives nothing while it is attached.",
   },
   "browser.view.pictureLabel": {
@@ -160,12 +159,8 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Replaced: something shaped like {rule} stood here.",
   },
   "browser.replay.note": {
-    de: "Die Aufzeichnung tr\u00e4gt nur, was das Modell ohnehin gesehen hat: Aufrufe, Ergebnisse, Verweise. Cookies, Seiten-Speicher und Zugangsdaten des Browsers kommen nie hinein, und Screenshots liegen als Blobs im Bildspeicher \u2014 die Datei selbst bleibt Text.",
-    en: "The record carries only what the model already saw: calls, results, references. The browser\u2019s cookies, page storage and credentials never enter it, and screenshots live as blobs in the image store \u2014 the file itself stays text.",
-  },
-  "browser.railNote": {
-    de: "Die sichtbare Browser-Fläche der aktuellen Session, die ihr Agent fährt: navigieren, klicken, JavaScript in der Seite auswerten, Screenshot. Jede Session hat ihre eigene, mit eigenen Cookies; dieselbe Fläche steht auch als Tab in der Session. Primär für den lokalen Test-Loop.",
-    en: "The current session's own visible browser, driven by its agent: navigate, click, evaluate JavaScript in the page, screenshot. Every session has its own, with its own cookies; the same surface is also a tab inside the session. Primarily for the local verify loop.",
+    de: "Die Aufzeichnung trägt nur, was das Modell sah: Aufrufe, Ergebnisse, Verweise. Cookies, Seiten-Speicher und Zugangsdaten kommen nie hinein; Screenshots liegen im Bildspeicher, die Datei bleibt Text.",
+    en: "The record carries only what the model saw: calls, results, references. Cookies, page storage and credentials never enter it; screenshots live in the image store, the file itself stays text.",
   },
   "nav.noFleets": {
     de: "Keine laufenden Flotten. Starte Nodes gegen den Hub, dann erscheinen sie hier.",
@@ -238,7 +233,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "hdr.panelToggle": { de: "Agenten & Kontext anzeigen", en: "Show agents & context" },
   "hdr.panelHide": { de: "Panel ausblenden", en: "Hide panel" },
   "hdr.langTitle": {
-    de: "Sprache der Oberfläche: Deutsch (klick für Englisch)",
+    de: "Sprache der Oberfläche: Deutsch (Klick wechselt zu Englisch)",
     en: "UI language: English (click for German)",
   },
 
@@ -433,7 +428,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.otel": { de: "otel", en: "otel" },
   "trace.modelCol": { de: "modell", en: "model" },
   // card 137: the deep link, shown only once spans actually landed
-  "trace.langfuse": { de: "open in langfuse", en: "open in langfuse" },
+  "trace.langfuse": { de: "in Langfuse öffnen", en: "open in langfuse" },
   "trace.langfuseTitle": {
     de: "Diese Session als Trace in Langfuse öffnen. Die Trace-ID wird aus der Session-ID berechnet, genau wie beim Export.",
     en: "Open this session as a trace in Langfuse. The trace id is computed from the session id, the same way the export computes it.",
@@ -557,7 +552,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "doc.title": { de: "spectro doctor", en: "spectro doctor" },
   "doc.kicker": { de: "calibration", en: "calibration" },
   "doc.lede": {
-    de: "Eine gemessene Zeile pro Subsystem, aus Sicht dieses Browsers. Die Maschinen-Seite prüft das CLI.",
+    de: "Eine gemessene Zeile pro Subsystem, aus Sicht dieses Browsers. Das CLI prüft die Maschinen-Seite.",
     en: "One measured line per subsystem, from this browser's viewpoint. The machine side is the CLI's job.",
   },
   "doc.api": { de: "Server-API", en: "server api" },
@@ -705,7 +700,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "bus.stopNode": { de: "diesen Knoten stoppen", en: "stop this node" },
   "bus.composerPlaceholder": { de: "Nachricht an diesen Agenten …", en: "message this agent …" },
   "bus.composerNoTrigger": {
-    de: "Dieser Node kann keine Nachrichten annehmen — er hat keinen Trigger und damit keine Lauf-Schleife. Mit einem Trigger starten, dann geht es",
+    de: "Dieser Node kann keine Nachrichten annehmen — er hat keinen Trigger und damit keine Lauf-Schleife. Mit einem Trigger gestartet, nimmt er welche an",
     en: "this node cannot take messages — it has no trigger, so it has no run loop. Start it with a trigger to talk to it",
   },
   "bus.composerOffline": { de: "Node ist nicht verbunden", en: "the node is not connected" },
@@ -763,19 +758,19 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "pp.setInSettings": { de: "Key in den Einstellungen setzen →", en: "set a key in Settings →" },
   "pp.localDown": {
-    de: "backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)",
+    de: "Backend nicht erreichbar — starte ollama / LM Studio (oder tipp eine Modell-ID)",
     en: "backend not reachable — start ollama / LM Studio (or type a model id)",
   },
   // Card 193: when the server reports the tried address, name it — "start
   // ollama" is the wrong advice when the backend runs fine one hostname away.
   "pp.localDownAt": {
-    de: "backend nicht erreichbar unter {addr} — starte es dort, oder korrigiere die Adresse in den Einstellungen",
+    de: "Backend nicht erreichbar unter {addr} — starte es dort, oder korrigiere die Adresse in den Einstellungen",
     en: "backend not reachable at {addr} — start it there, or fix the address in settings",
   },
   "pp.keySave": { de: "in .env speichern", en: "save to .env" },
   "pp.keySaving": { de: "speichere …", en: "saving …" },
   "pp.keySaved": {
-    de: "gespeichert ✓ — ein neuer chat nutzt den key",
+    de: "gespeichert ✓ — ein neuer Chat nutzt den Key",
     en: "saved ✓ — a new chat will use it",
   },
   "pp.keyErr": { de: "speichern fehlgeschlagen", en: "could not save the key" },
@@ -828,11 +823,13 @@ export const dict: Record<string, { de: string; en: string }> = {
   // the dock (card 219): the right panel as independent panels
   "rp.terminal": { de: "Terminal", en: "Terminal" },
   "rp.browser": { de: "Browser", en: "Browser" },
+  // Card 228: the header's ⋮ overflow — every panel as a check row.
+  "hdr.panelsMenu": { de: "Alle Panels", en: "All panels" },
   "dock.strip": { de: "Panels", en: "Panels" },
   "dock.collapse": { de: "Panel einklappen", en: "Fold panel" },
   "dock.expand": { de: "Panel ausklappen", en: "Unfold panel" },
   "dock.closePanel": { de: "Dieses Panel schließen", en: "Close this panel" },
-  "dock.fullscreen": { de: "Browser als Vollbild", en: "Browser full screen" },
+  "dock.fullscreen": { de: "{p} als Vollbild", en: "{p} full screen" },
   "dock.fullscreenExit": { de: "Vollbild verlassen (Esc)", en: "Exit full screen (Esc)" },
   "dock.divider": { de: "Trenner ziehen, um die Höhe zu ändern", en: "Drag to resize" },
   "dock.empty": {
@@ -871,7 +868,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "ws.empty": { de: "Keine Dateien im Arbeitsverzeichnis.", en: "No files in the working directory." },
   "ws.truncated": { de: "… Liste gekappt (zu viele Einträge)", en: "… listing capped (too many entries)" },
   "ws.hint": {
-    de: "Klick links eine Datei — HTML rendert sandboxed, Markdown formatiert, Bilder inline, Rest als Text.",
+    de: "Links eine Datei anklicken — HTML rendert sandboxed, Markdown formatiert, Bilder inline, der Rest als Text.",
     en: "Click a file — HTML renders sandboxed, markdown formatted, images inline, everything else as text.",
   },
   "ws.loading": { de: "lädt …", en: "loading …" },
@@ -1368,7 +1365,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Everything open: context beside the agent, prompt beside the user — the whole instrument at a glance",
   },
   "fleetlab.live": { de: "live", en: "live" },
-  "fleetlab.behind": { de: "{n} events voraus", en: "{n} events ahead" },
+  "fleetlab.behind": { de: "{n} Events voraus", en: "{n} events ahead" },
   "map.zone.os": { de: "BETRIEBSSYSTEM", en: "OPERATING SYSTEM" },
   "map.zone.outside": { de: "AUSSERHALB", en: "OUTSIDE" },
   "map.zone.boundary": { de: "NETZGRENZE", en: "NETWORK BOUNDARY" },
@@ -1605,7 +1602,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "encoded — the recording's own base64 of the real input bytes",
   },
   "trace.llm.imported": {
-    de: "Diese Session wurde importiert — ihr eigenes Source-Gesicht ist der Draht; einen llm-wire-Mitschnitt gibt es nicht.",
+    de: "Diese Session wurde importiert — ihre eigene Quell-Ansicht ist der Draht; einen llm-wire-Mitschnitt gibt es nicht.",
     en: "This session was imported — its own source face is the wire; no llm-wire record exists.",
   },
   "trace.llm.loading": {
@@ -1668,8 +1665,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "trace.llm.res.lines": { de: "{n} Zeilen", en: "{n} lines" },
   "trace.llm.res.aborted": { de: "abgebrochen", en: "aborted" },
   "trace.llm.res.noReassembly": {
-    de: "Die Antwort wird hier NICHT zusammengesetzt: der zusammengesetzte Text ist der Chat, und ein zweiter Zusammenbau im Browser wäre eine zweite Wahrheit. Was ankam, steht Zeile für Zeile auf dem wire-Gesicht.",
-    en: "The answer is NOT reassembled here: the reassembled text is the chat, and a second reassembly in the browser would be a second truth. What arrived is on the wire face, line by line.",
+    de: "Hier wird nichts zusammengesetzt: der fertige Text steht im Chat. Was ankam, zeigt die Draht-Ansicht Zeile für Zeile.",
+    en: "Not reassembled here: the assembled text is the chat. What arrived is on the wire face, line by line.",
   },
   // Open everything at once, and back (owner 2026-08-07). Two buttons and not a
   // toggle: "back to default" has to mean the pane as it opened, folds a reader
@@ -1816,7 +1813,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Speech to text is ready — through the hosted provider, with nothing installed.",
   },
   "set.sttHint": {
-    de: "Zwei Wege: ein gehosteter Anbieter, der nichts als einen Key braucht, und whisper.cpp auf diesem Rechner, das keinen Key braucht und nichts nach außen gibt. Für den lokalen Weg lädt diese App das Modell; das Programm sucht sie nur und meldet ehrlich, was sie findet.",
+    de: "Zwei Wege: ein gehosteter Anbieter, der nichts als einen Key braucht, und whisper.cpp auf diesem Rechner, das keinen Key braucht und nichts nach außen gibt. Für den lokalen Weg lädt diese App das Modell. Das whisper-Programm installiert sie nicht — sie sucht es nur und meldet ehrlich, was sie findet.",
     en: "Two routes: a hosted provider, which needs nothing but a key, and whisper.cpp on this machine, which needs no key and sends nothing out. For the local one this app fetches the model; the binary it only probes for and reports honestly.",
   },
   "set.sttPresent": { de: "da", en: "present" },
@@ -1940,7 +1937,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   "work.miss.calls": { de: "Tool-Calls", en: "tool calls" },
   "work.miss.span": { de: "die Zeitspanne", en: "the span" },
   "work.miss.noWork": {
-    de: "nichts von dieser Bahn — die Datei nennt sie und zeichnet sie nicht auf",
+    de: "nichts von dieser Lane — die Datei nennt sie und zeichnet sie nicht auf",
     en: "nothing of this lane — the file names it and records none of it",
   },
   "work.toTrace": { de: "im Trace öffnen", en: "open in the trace" },
@@ -2240,7 +2237,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "Open frames as the thing they are — a call as its tool card, an answer as its text.",
   },
   "trace.faceTitle.insight": {
-    de: "Frames als aufgeklappten Baum aufklappen.",
+    de: "Frames als JSON-Baum aufklappen.",
     en: "Open frames as an expanded tree.",
   },
   "trace.faceTitle.compact": {
@@ -2524,7 +2521,7 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "The download could not be started — the server refused it or is unreachable.",
   },
   "lm.noBinary": {
-    de: "Auf diesem Rechner ist kein llama-server gefunden worden. Die Desktop-App bringt einen mit; beim Server-Jar installierst du ihn selbst: brew install llama.cpp",
+    de: "Auf diesem Rechner wurde kein llama-server gefunden. Die Desktop-App bringt einen mit; beim Server-Jar installierst du ihn selbst: brew install llama.cpp",
     en: "No llama-server was found on this machine. The desktop app carries one; with the server jar you install it yourself: brew install llama.cpp",
   },
   "lm.loading": { de: "Katalog wird geladen …", en: "Loading the catalogue …" },
@@ -2703,21 +2700,18 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "This output is text, not JSON — shown verbatim:",
   },
 
-  // the skills segment's surface (card 225)
+  // the skills segment's surface (card 225; the one home since card 228)
   "skv.claim": {
-    de: "Was das Produkt kann, auf einen Blick: jeder Skill mit Namespace, Beschreibung und Schalter-Stand.",
-    en: "What the product can do, at a glance: every skill with its namespace, description and enabled state.",
+    de: "Beide Skill-Wurzeln und der mitgelieferte Katalog. Schalten, Installieren und Löschen passiert hier.",
+    en: "Both skill roots and the bundled catalogue. Switch, install and remove here.",
   },
-  "skv.installedTitle": { de: "Installiert", en: "Installed" },
-  "skv.catalogueTitle": { de: "Katalog", en: "Catalogue" },
-  "skv.on": { de: "an", en: "on" },
-  "skv.off": { de: "aus", en: "off" },
-  "skv.notInstalled": { de: "nicht installiert", en: "not installed" },
-  "skv.empty": {
-    de: "Keine Skills installiert. Beim ersten Start werden die eingebauten kopiert.",
-    en: "No skills installed. The built-in ones are copied on first start.",
+  // The two install roads that exist: the catalogue button below, and a
+  // SKILL.md folder dropped under a root — the road the CLI's /skills line
+  // documents. A file-picker install has no server path yet (card 228).
+  "skv.installNote": {
+    de: "Installieren: unten aus dem Katalog, oder einen Ordner mit SKILL.md unter ~/.spectro/skills bzw. .spectro/skills im Projekt legen.",
+    en: "Install from the catalogue below, or put a folder with a SKILL.md under ~/.spectro/skills or the project's .spectro/skills.",
   },
-  "skv.manage": { de: "In den Einstellungen verwalten", en: "Manage in settings" },
 
   // skills + MCP managers (card 90)
   "skset.title": { de: "Skills", en: "Skills" },
@@ -3147,9 +3141,9 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Die Reasoning- oder Timeline-Linse einschalten.",
     en: "Switch on the reasoning or timeline lens.",
   },
-  "leveling.criterion.labStepped.label": { de: "Labor gesteppt", en: "lab stepped" },
+  "leveling.criterion.labStepped.label": { de: "Step im Labor", en: "lab stepped" },
   "leveling.criterion.labStepped.counts": {
-    de: "Im Labor mindestens einmal steppen oder abspielen.",
+    de: "Im Labor mindestens einen Step ausführen oder abspielen.",
     en: "Step or play in the lab at least once.",
   },
   "leveling.criterion.fleetEntered.label": { de: "Flotte betreten", en: "fleet entered" },
@@ -3285,8 +3279,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // without its word would ship as the bare key: sg.st.<Lifecycle>,
   // sg.marker.<Marker["kind"]> and sg.omitted.<Marker["omitted"]>.
   "sg.claim": {
-    de: "Die Topologie steht bei compile() fest, vor dem ersten Token — der Graph wird zuerst gezeichnet, der Ereignisstrom beleuchtet ihn nur. Beobachten, ohne anzufassen.",
-    en: "The topology is fixed at compile(), before the first token — so the graph is drawn first and the event stream only lights it up. Observe without touching.",
+    de: "Die Topologie steht bei compile() fest; der Ereignisstrom beleuchtet sie.",
+    en: "Topology fixed at compile(); the event stream lights it up.",
   },
   "sg.horizontal": { de: "horizontal", en: "horizontal" },
   "sg.vertical": { de: "vertikal", en: "vertical" },
@@ -3297,8 +3291,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   // fixed at compile() and arrives as a file, so there is nothing on its way.
   "sg.empty.title": { de: "Kein Graph geladen", en: "No graph loaded" },
   "sg.empty.why": {
-    de: "Diese Ansicht wartet nicht auf etwas, sie hat nichts. Ein StateGraph steht bei compile() fest und wird als Dateipaar neben dem Lauf abgelegt — ohne dieses Paar gibt es keine Topologie zu zeichnen.",
-    en: "This view is not waiting for something to arrive, it has nothing. A StateGraph is fixed at compile() and lands beside the run as a pair of files — without that pair there is no topology to draw.",
+    de: "Ein Lauf legt .graph.jsonl + .state.jsonl neben seine Session. Öffne dieses Paar hier, oder starte einen Lauf, der einen StateGraph kompiliert.",
+    en: "A run writes .graph.jsonl + .state.jsonl beside its session. Open that pair here, or start a run that compiles a StateGraph.",
   },
   "sg.empty.pair": {
     de: "Das Paar heißt <stem>.graph.jsonl für die Form und <stem>.state.jsonl für die Werte. Die Form allein genügt; die Werte sind optional.",

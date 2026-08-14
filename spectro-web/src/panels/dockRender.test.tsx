@@ -1,6 +1,8 @@
-// Card 219, first cut — what the dock RENDERS. The owner's own scoping: each
-// surface stands on its own panel, shows and hides independently, collapses
-// without dying, and the browser is one of them.
+// Card 219 built the panel MODEL (independent show/hide, fold-without-unmount,
+// keyed identity); card 228 criterion 0 changes the LAYOUT those panels land
+// in: a GRID of independent cards, two or three columns like the reference,
+// each card with expand and close — none inside a shared section, and no
+// divider pair arithmetic between vertical neighbours.
 //
 // renderToStaticMarkup, the house idiom (sessionRowDensity.test.tsx says why):
 // the suite runs in plain Node, so these assertions are about output markup.
@@ -50,7 +52,7 @@ describe("each surface stands on its own", () => {
     expect(count(v2, "dock-toggle")).toBeGreaterThan(count(v1, "dock-toggle"));
   });
 
-  it("shows several panels at once, stacked", () => {
+  it("shows several panels at once, as sibling cards", () => {
     toggleDockPanel("plan");
     toggleDockPanel("files");
     expect(panelsIn(render())).toEqual(["agents", "plan", "files"]);
@@ -71,6 +73,38 @@ describe("each surface stands on its own", () => {
     toggleDockPanel("terminal");
     toggleDockPanel("context");
     expect(panelsIn(render())).toEqual(["agents", "context", "terminal"]);
+  });
+});
+
+describe("the workspace is a grid of cards (card 228, criterion 0)", () => {
+  it("lays the cards into the grid container, not a divider stack", () => {
+    toggleDockPanel("plan");
+    toggleDockPanel("files");
+    const html = render();
+    expect(html).toContain("dock-grid");
+    // The pair-divider idiom left with the column: cards do not share edges.
+    expect(count(html, 'role="separator"')).toBe(0);
+  });
+
+  it("gives EVERY card an expand control and a close control", () => {
+    toggleDockPanel("plan");
+    toggleDockPanel("files");
+    const html = render();
+    const cards = panelsIn(html).length;
+    expect(count(html, "dock-full-btn")).toBe(cards);
+    expect(count(html, "dock-panel-x")).toBe(cards);
+  });
+
+  it("names each card's OWN panel on its expand control, not the browser's", () => {
+    // Found live on 2026-08-14: dock.fullscreen was written for card 219's
+    // single fullscreen surface, so the Files card announced "Browser full
+    // screen". The label carries the panel's name now — one key, one {p}.
+    toggleDockPanel("files");
+    const html = render();
+    expect(html).toContain('aria-label="Files full screen"');
+    expect(html).not.toContain('aria-label="Browser full screen"');
+    toggleDockPanel("browser");
+    expect(render()).toContain('aria-label="Browser full screen"');
   });
 });
 
@@ -97,33 +131,12 @@ describe("collapse hides, it does not unmount", () => {
   });
 });
 
-describe("the divider between expanded neighbours", () => {
-  it("stands between two expanded panels, keyboard reachable", () => {
-    toggleDockPanel("plan");
-    const html = render();
-    expect(count(html, 'role="separator"')).toBe(1);
-    expect(html).toMatch(/role="separator"[^>]*tabindex="0"/);
-  });
-
-  it("leaves with the pair: a collapsed neighbour needs no divider", () => {
-    toggleDockPanel("plan");
-    toggleDockCollapse("agents");
-    expect(count(render(), 'role="separator"')).toBe(0);
-  });
-});
-
 describe("the browser is one of them", () => {
-  it("renders the browser panel with the hole and a fullscreen control", () => {
+  it("renders the browser panel with the hole", () => {
     toggleDockPanel("browser");
     const html = render();
     expect(panelsIn(html)).toContain("browser");
     expect(html).toContain("browser-hole");
-    expect(html).toContain("dock-full-btn");
-  });
-
-  it("gives no other panel a fullscreen control", () => {
-    const html = render();
-    expect(html).not.toContain("dock-full-btn");
   });
 });
 

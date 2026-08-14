@@ -1,17 +1,20 @@
-/* Card 219, first cut — the dock: the right panel as a stack of independent
-   panels (work, agents, plan, context, files, terminal, browser). Colors are
-   tokens only, so all four designs resolve them; no token is minted here
-   except the dock's own fullscreen layer, declared below so
-   phantomTokens.drift.test.ts sees a definition.
+/* Card 219 built the panels; card 228 (criterion 0) lays them out as a GRID
+   of independent cards — two or three columns following the workspace width,
+   like the reference. Colors are tokens only, so all four designs resolve
+   them; no token is minted here except the dock's own fullscreen layer,
+   declared below so phantomTokens.drift.test.ts sees a definition.
 
    Layout rules that are load-bearing, not taste:
    - .dock-body never scrolls. The browser panel's hole is a rectangle a
      NATIVE view is laid over (card 201); a scrolling dock would move the hole
      without resizing it, which is exactly the change a ResizeObserver cannot
-     see. Panels scroll INSIDE their bodies instead.
-   - Open panels share the column by flex-grow weight (persisted); collapsed
-     panels keep only their header. min-height floors keep a divider from
-     folding a panel to nothing.
+     see. Cards scroll INSIDE their bodies instead, and the grid's rows share
+     the height (1fr) so every open card stays on screen.
+   - auto-fit against a minimum column width is what makes the column count
+     follow the workspace width instead of being a named breakpoint: one
+     column narrow, two from ~520px, three from ~780px.
+   - Collapsed cards keep only their header (align-self: start) and stay
+     mounted — display:none on the body, never unmount (card 175).
    - No overscroll-behavior on a max-height scroller (card 206). */
 
 /* The fullscreen layer sits under the modals (--z-modal: 1000): a dialog that
@@ -57,11 +60,16 @@
 .dock-body {
   flex: 1;
   min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
   padding: var(--sp-2);
   overflow: hidden; /* the dock never scrolls — see the file head */
+}
+/* The grid of cards (card 228, criterion 0). Rows share the height evenly so
+   every open card stays inside the no-scroll body. */
+.dock-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-auto-rows: minmax(0, 1fr);
+  gap: var(--sp-2);
 }
 .dock-empty {
   margin: var(--sp-2);
@@ -70,24 +78,21 @@
 .dock-panel {
   display: flex;
   flex-direction: column;
-  flex: 0 1 auto;
+  min-width: 0;
   min-height: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius-control);
   background: var(--surface);
   overflow: hidden;
 }
-/* Open panels share the leftover space; the inline flex-grow carries the
-   persisted weight. flex-basis 0 makes the weights proportional rather than
-   content-biased. */
 .dock-panel:not(.dock-panel--collapsed) {
-  flex-basis: 0;
-  /* A panel header (26px) plus a readable sliver — the divider's PANEL_MIN_PX
-     in dockModel.ts is derived from the same floor. */
+  /* A card header (26px) plus a readable sliver — PANEL_MIN_PX in
+     dockModel.ts is derived from the same floor. */
   min-height: 60px;
 }
+/* A folded card is its header alone; the grid cell keeps the column. */
 .dock-panel--collapsed {
-  flex: none;
+  align-self: start;
 }
 
 .dock-panel-head {
@@ -179,37 +184,11 @@
   padding: var(--sp-2);
 }
 
-/* The divider between two expanded panels — the ws-divider idiom, same look,
-   its own name so the Files tab's rules stay untouched. */
-.dock-divider {
-  flex: none;
-  height: 8px;
-  cursor: row-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  touch-action: none;
-}
-.dock-divider::before {
-  content: "";
-  width: 34px;
-  height: 3px;
-  border-radius: 2px;
-  background: var(--border);
-  transition: background var(--t-fast);
-}
-.dock-divider:hover::before,
-.dock-divider:focus-visible::before {
-  background: var(--accent);
-}
-.dock-divider:focus-visible {
-  outline: none;
-}
-
-/* Fullscreen (owner: "mit einer vollbild funktion (screenshot)"): the browser
-   panel takes the whole window, keeping only its slim header as the way back.
-   The native pane is told the new rectangle by the segment's own report — the
-   size change fires its ResizeObserver; the class here is only the frame. */
+/* Fullscreen (owner: "mit einer vollbild funktion (screenshot)"; card 228
+   gave the control to every card): the card takes the whole window, keeping
+   only its slim header as the way back. The native pane is told the new
+   rectangle by the segment's own report — the size change fires its
+   ResizeObserver; the class here is only the frame. */
 
 /* A position:fixed child cannot escape an ancestor that carries a transform
    or will-change: transform, and the scroll-reveal (designs.css) leaves

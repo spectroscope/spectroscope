@@ -41,13 +41,18 @@ describe("navSegmentRows", () => {
     navSegmentRows({ active: "sessions", fleetsLocked: false, fleetCount: 0, ...over });
 
   it("keeps the segments in the order the strip had them, skills last", () => {
-    // Browser joined as the fourth (card 201) rather than beside sessions: the
-    // three that were here answer "what has run", and a browser the agent is
-    // driving right now is a different question. Skills is the fifth (card
-    // 225): the owner wants the installed capabilities one glance away, and a
-    // catalogue is the furthest thing from "what has run", so it closes the
-    // list.
-    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph", "browser", "skills"]);
+    // Four segments since card 228: the rail lists places you go, and the
+    // browser is a thing a SESSION has (card 218's own rule) — its doors are
+    // the session tab and the workspace panel. Skills closes the list (card
+    // 225): a catalogue is the furthest thing from "what has run".
+    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph", "skills"]);
+  });
+
+  it("lists no browser segment — the browser belongs to a session, not the rail", () => {
+    // The owner spotted the contradiction in three words: the rail's browser
+    // door opened a browser that belongs to NO session. The session tab
+    // `browser` and the workspace's browser card are the doors that remain.
+    expect(at().some((r) => r.id === "browser")).toBe(false);
   });
 
   it("lists the skills segment on every face, ungated and with no row action", () => {
@@ -60,15 +65,6 @@ describe("navSegmentRows", () => {
     expect(at({ active: "skills" }).find((r) => r.id === "skills")?.active).toBe(true);
     expect(at({ active: "skills" }).find((r) => r.id === "skills")?.trailing).toBe(null);
     expect(at().find((r) => r.id === "skills")?.trailing).toBe(null);
-  });
-
-  it("offers the browser row on every face, including the one with no pane", () => {
-    // A row that vanished on the web face would leave a reader wondering
-    // whether the product has a browser at all. The segment's own panel says
-    // why there is nothing behind it.
-    const browser = at().find((r) => r.id === "browser");
-    expect(browser?.disabled).toBe(false);
-    expect(at({ active: "browser" }).find((r) => r.id === "browser")?.active).toBe(true);
   });
 
   it("gives every row a label key that exists in both languages", () => {

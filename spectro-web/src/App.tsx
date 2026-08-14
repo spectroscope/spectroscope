@@ -228,7 +228,10 @@ export function App() {
    * component state, not a route: the view is a listing of the server's roots,
    * it has no artifact to reopen and nothing a deep link could promise.
    */
-  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "browser" | "skills">("sessions");
+  // Card 228: the browser left this union — the rail lists places you go, and
+  // the browser is a thing a session has. Its doors are the session tab and
+  // the workspace's browser card.
+  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "skills">("sessions");
   /*
    * The artifacts the state graph is drawing — up here because the arm below
    * unmounts whenever `nav` moves off "stategraph". They lived in the pane,
@@ -1360,6 +1363,10 @@ export function App() {
       fleetKnown: route.kind !== "fleet" || knownFleet(route.contextId),
     });
     let opensSession = false;
+    // Card 228: a settings-skills address is answered by the skills PLACE,
+    // which has no address of its own — the bar normalizes to the live
+    // default rather than claiming a settings page that is not open.
+    let redirectedToPlace = false;
     for (const action of plan.actions) {
       switch (action.kind) {
         case "open-session":
@@ -1390,6 +1397,15 @@ export function App() {
           leaveToLiveCore();
           break;
         case "open-settings":
+          // Card 228: the skills sections left the settings page — the rail's
+          // Skills view is the manager now. An old address (a bookmark, the
+          // desktop menu, card 224's rows) redirects there instead of opening
+          // a page whose anchor no longer exists.
+          if (action.section === "skills" || action.section === "skills-catalogue") {
+            setNav("skills");
+            redirectedToPlace = true;
+            break;
+          }
           setSettingsOpen(true);
           setSettingsSection(action.section);
           break;
@@ -1410,7 +1426,9 @@ export function App() {
     // refused address fell to — replace either way, follow never authors. An
     // open-session waits for its fetch (success needs no write, a dead
     // address is corrected in its catch).
-    if (!opensSession) commitUrl(plan.effective, "apply");
+    if (!opensSession) {
+      commitUrl(redirectedToPlace ? { kind: "live", tab: null } : plan.effective, "apply");
+    }
   };
   const applyRouteRef = useRef(applyRoute);
   applyRouteRef.current = applyRoute;
@@ -1808,12 +1826,11 @@ export function App() {
         ? t(lang, "hdr.newSession")
         : t(lang, "hdr.archivedSession");
 
-  /* The segments that take the WHOLE surface. None belongs to one run — a
-     state graph is a topology, the browser is a page the agent is driving
-     right now, and the skills view is the product's own catalogue — so the
-     session tab row is suppressed on all of them. Hoisted out of the ternary
-     because the chain below is already three deep. */
-  const wholeSurface = nav === "stategraph" || nav === "browser" || nav === "skills";
+  /* The segments that take the WHOLE surface. Neither belongs to one run — a
+     state graph is a topology and the skills view is the product's own
+     catalogue — so the session tab row is suppressed on both. Hoisted out of
+     the ternary because the chain below is already three deep. */
+  const wholeSurface = nav === "stategraph" || nav === "skills";
 
   /* Card 219: whether a modal is open OVER the dock. The dock's browser panel
      folds this into the segment's `active`, because the native pane cannot be
@@ -1915,6 +1932,7 @@ export function App() {
           showPanelToggle={tab === "chat"}
           panelOpen={layout.rightPanelOpen}
           onTogglePanel={toggleRightPanel}
+          workPanelOffered={chatView === "v2"}
           settingsOpen={settingsOpen}
           onToggleSettings={() => (settingsOpen ? closeSettings() : openSettingsPage())}
           doctorOpen={doctorOpen}
@@ -2088,10 +2106,10 @@ export function App() {
               lab
             </button>
             {/* Card 218: the visible browser is a SESSION feature, so it sits in
-              the session's own tab row. The rail keeps its Browser segment as
-              the large view onto the same browser — two doors, one instance,
-              because both mount BrowserSegment with the same session id and the
-              shell keys its views by that id. */}
+              the session's own tab row. Since card 228 this is the browser's
+              first door — the rail segment left (a browser without a session
+              was the contradiction) — and the workspace's browser card is the
+              second, both mounting BrowserSegment with the same session id. */}
             <button
               type="button"
               role="tab"
@@ -2141,19 +2159,12 @@ export function App() {
             it answers a question no session tab asks, so it takes the area
             outright rather than sitting inside one run's tab row. The run is
             handed IN because this arm unmounts on every segment change. */}
-        {/* The browser takes the whole surface for the same reason the state
-            graph does: it is a page the agent is driving, not a view of one
-            run. It is also the one arm whose pixels are NOT React's — the
-            desktop shell lays a real WebContentsView over this rectangle
-            (card 201), so what is drawn here is the frame and the sign. */}
         {/* The skills view takes the whole surface too (card 225): it is the
             product's catalogue, not a lens on one run. Mounted per visit, so
-            it re-reads the roots each time the segment opens; its one action
-            opens the same settings overlay the rail's foot opens. */}
+            it re-reads the roots each time the segment opens. Since card 228
+            it IS the manager — look, switch and install in one place. */}
         {nav === "skills" ? (
-          <SkillsPane onManage={openSettingsPage} />
-        ) : nav === "browser" ? (
-          <BrowserSegment active={true} sessionId={shownSessionId} />
+          <SkillsPane />
         ) : nav === "stategraph" ? (
           <StateGraphPane
             run={stateGraphRun}
@@ -2288,8 +2299,14 @@ export function App() {
                   stopRequested,
                   // Card 224: the plus menu's Manage/Browse rows — the same
                   // open-at-a-section move the onboarding sheet makes, history
-                  // manners included.
+                  // manners included. Card 228: the skills rows point at the
+                  // rail's Skills view now — skills are a PLACE, and the
+                  // settings page no longer carries the section.
                   onOpenSettingsSection: (section: SettingsSection) => {
+                    if (section === "skills" || section === "skills-catalogue") {
+                      setNav("skills");
+                      return;
+                    }
                     setSettingsOpen(true);
                     setSettingsSection(section);
                     if (commitUrl({ kind: "settings", section }, "gesture") === "push") {
@@ -2430,18 +2447,16 @@ export function App() {
             />
           )
         ) : tab === "browser" ? (
-          /* Live: the same surface the rail shows, mounted inside the session.
-             It is not a second browser: both arms hand BrowserSegment the same
-             session id, and only one of them is ever on screen, so the shell
-             lays one view over whichever hole is showing.
+          /* Live: the session's own browser surface. It is not a second
+             browser: the workspace's browser card hands BrowserSegment the
+             same session id, and only one door is ever on screen, so the
+             shell lays one view over whichever hole is showing.
 
              Stored: the REPLAY (card 204). A session the reader reopened has no
              live browser — card 218 retires it when the session's socket goes —
              so the live surface here would be a frame around an honest but
              useless "no pane attached". What that session does have is its
-             record, beside the file, and this is where it gets watched back.
-             The rail's segment stays live in both cases: it is the view onto
-             the CURRENT session's browser, not onto whichever run is shown. */
+             record, beside the file, and this is where it gets watched back. */
           viewingLive ? (
             <BrowserSegment active={true} sessionId={shownSessionId} />
           ) : (
