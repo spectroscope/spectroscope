@@ -12,7 +12,7 @@ import type { SessionMeta } from "../events";
 import { LogPane } from "./LogPane";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
-import { webSearchCheck, type ServedWebSearch } from "./webSearchSetup";
+import { webSearchCheck, webSearchRowValue, type ServedWebSearch } from "./webSearchSetup";
 
 type Verdict = "ok" | "warn" | "error";
 
@@ -144,16 +144,7 @@ export function DoctorPanel(props: {
       // `server api` (the configured one) two rows up.
       key: "doc.webSearch",
       verdict: search.verdict,
-      value:
-        search.state === "failed"
-          ? t(lang, "doc.unreachable")
-          : search.state === "pending"
-            ? "…"
-            : search.state === "absent"
-              ? t(lang, "doc.searchNone")
-              : search.reading.detailKey
-                ? t(lang, search.reading.detailKey, { addr: search.reading.addr })
-                : search.tier,
+      value: webSearchRowValue(search, lang),
     },
     {
       key: "doc.sessions",

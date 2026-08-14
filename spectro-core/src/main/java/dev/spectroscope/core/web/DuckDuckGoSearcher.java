@@ -123,10 +123,13 @@ public final class DuckDuckGoSearcher implements WebSearcher {
         }
 
         if (hits.isEmpty() && isBotCheck(page)) {
+            // The phrase is shared, not repeated: a reader who lands here goes
+            // looking for the same words in the doctor line, the result header
+            // and the calibration panel (card 223).
             throw new IllegalStateException("duckduckgo answered with a bot check page "
-                    + "instead of results — this is the best-effort scrape tier, and it is "
-                    + "the one nobody should be relying on. Configure a SearXNG instance, or "
-                    + "a Tavily or Brave key, under Settings.");
+                    + "instead of results — this is the " + WebSearchTiers.SCRAPE + " tier, and "
+                    + "it is the one nobody should be relying on. Configure a SearXNG instance, "
+                    + "or a Tavily or Brave key, under Settings.");
         }
         return hits;
     }

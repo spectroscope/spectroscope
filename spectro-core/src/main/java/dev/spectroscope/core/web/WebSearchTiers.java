@@ -43,8 +43,23 @@ public final class WebSearchTiers {
     public static final String TAVILY = "tavily";
     /** The Brave Search API — keyed, an independent index. */
     public static final String BRAVE = "brave";
-    /** The keyless DuckDuckGo HTML scrape — best effort, last resort. */
+    /** The keyless DuckDuckGo HTML scrape — the {@link #SCRAPE}, last resort. */
     public static final String DUCKDUCKGO = "duckduckgo";
+
+    /**
+     * What this product calls the scrape, everywhere it is named.
+     *
+     * <p>The phrase is {@link DuckDuckGoSearcher}'s, not this class's: when the
+     * scrape hits a bot challenge it throws "this is the best-effort scrape
+     * tier", and that is the sentence a person has just read when they go
+     * looking for the doctor line, the result header or the calibration panel.
+     * Those three said "best effort, last resort" instead — near enough to read
+     * past, not near enough to recognise as the same subsystem. Card 223's
+     * second criterion is that they match, and a constant is how they stay
+     * matched; {@code DuckDuckGoSearcherTest} pins the searcher's own message to
+     * this value from the other end.</p>
+     */
+    public static final String SCRAPE = "best-effort scrape";
 
     /** Where Tavily's key lives. */
     public static final String TAVILY_KEY_ENV = "TAVILY_API_KEY";
@@ -146,7 +161,7 @@ public final class WebSearchTiers {
      * @return the label to print
      */
     public static String label(String tier) {
-        return DUCKDUCKGO.equals(tier) ? "duckduckgo — best effort, last resort" : tier;
+        return DUCKDUCKGO.equals(tier) ? DUCKDUCKGO + " — " + SCRAPE + ", last resort" : tier;
     }
 
     /**
@@ -155,15 +170,27 @@ public final class WebSearchTiers {
      * for a self-hosted instance and the variable for a keyed provider, so the
      * reader knows which thing to go and look at.
      *
+     * <p><b>This is the ONLY sentence.</b> The web app cannot print it verbatim
+     * — it is English and that page is bilingual — so it keeps a translated pair
+     * per tier in {@code i18n.ts}, and until card 223 nothing compared the two.
+     * They drifted: the panel had dropped the half that says what to DO, on the
+     * one surface a person opens after a search misbehaved.
+     * {@code WebSearchSentenceDriftTest} now holds the English entries to this
+     * method word for word, so editing here without editing there is a red
+     * build rather than a second sentence.</p>
+     *
      * @param choice the decided tier
      * @return the sentence
      */
     public static String describe(Choice choice) {
         return switch (choice.tier()) {
-            case SEARXNG -> "searxng, a metasearch instance you run, at " + choice.searxngUrl();
+            case SEARXNG -> "searxng — a metasearch instance you run, at " + choice.searxngUrl();
             case TAVILY -> "the Tavily API (" + TAVILY_KEY_ENV + ")";
             case BRAVE -> "the Brave Search API (" + BRAVE_KEY_ENV + ")";
-            default -> "the keyless DuckDuckGo HTML scrape — best effort, last resort, and "
+            // Leads with the searcher's own phrase, and keeps the way out in the
+            // same breath: a sentence that names a problem and not its remedy is
+            // the half this product kept losing.
+            default -> "the " + SCRAPE + " of DuckDuckGo's HTML — keyless, last resort, and "
                     + "against DuckDuckGo's own terms. Configure a SearXNG instance, or a Tavily "
                     + "or Brave key, under Settings.";
         };

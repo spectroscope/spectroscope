@@ -129,6 +129,25 @@ class DuckDuckGoSearcherTest {
 
         assertTrue(failure.getMessage().contains("bot check"),
                 "names the bot check, got: " + failure.getMessage());
+
+        // Card 223. This message is where a person MEETS the scrape, and it is
+        // the phrase they carry to the doctor line, the result header and the
+        // calibration panel. Those three used to call the same thing "best
+        // effort, last resort", which reads as a different subsystem — so the
+        // reader goes hunting for a second fault. Named once, checked from both
+        // ends: this assertion is the searcher's end.
+        assertTrue(failure.getMessage().contains(WebSearchTiers.SCRAPE),
+                "the phrase the other surfaces quote, got: " + failure.getMessage());
+        assertTrue(WebSearchTiers.label("duckduckgo").contains(WebSearchTiers.SCRAPE),
+                "the result header calls it something else: " + WebSearchTiers.label("duckduckgo"));
+        String sentence = WebSearchTiers.describe(
+                WebSearchTiers.decide(new WebSearchTiers.Configured(null, false, false)));
+        assertTrue(sentence.contains(WebSearchTiers.SCRAPE),
+                "the doctor line calls it something else: " + sentence);
+        // And the remedy travels with the diagnosis, in all three.
+        assertTrue(failure.getMessage().contains("Configure a SearXNG instance"),
+                "got: " + failure.getMessage());
+        assertTrue(sentence.contains("Configure a SearXNG instance"), "got: " + sentence);
     }
 
     @Test

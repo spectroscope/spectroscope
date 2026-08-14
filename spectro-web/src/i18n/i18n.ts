@@ -542,9 +542,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   // same dishonesty this row exists to end. The sentence itself is the settings
   // page's, not a second one about the same thing.
   "doc.webSearch": { de: "Web-Suche (konfiguriert)", en: "web search (configured)" },
+  // No wire name here. "too old for the webSearch block" told an operator to go
+  // and read the product's own JSON to find out what was wrong with their
+  // machine — on the panel that exists so they do not have to.
   "doc.searchNone": {
-    de: "der Server meldet keine Web-Suche (zu alt für den webSearch-Block)",
-    en: "the server reports no web search (too old for the webSearch block)",
+    de: "dieser Server nennt keine Such-Stufe — er ist älter als diese App",
+    en: "this server names no search tier — it is older than this app",
   },
   "doc.sessions": { de: "Session-Speicher", en: "session store" },
   "doc.sessionsN": { de: "{n} gespeicherte Sessions", en: "{n} stored sessions" },
@@ -1146,16 +1149,24 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "die Brave-Search-API (BRAVE_API_KEY)",
     en: "the Brave Search API (BRAVE_API_KEY)",
   },
-  // Card 223, criterion 2: "best-effort scrape" is a QUOTE, so it is not
-  // translated and it comes first. It is the phrase DuckDuckGoSearcher throws
-  // — "duckduckgo answered with a bot check page instead of results — this is
-  // the best-effort scrape tier" — and a reader who has just read that arrives
-  // at the calibration panel looking for those words. It leads the sentence
-  // because the doctor's value column clips with an ellipsis: a phrase in the
-  // tail is a phrase that can be cut off exactly when it matters.
+  // Card 223, criteria 1 and 2 together. These four `en` strings are not
+  // translations and not paraphrases: they are WebSearchTiers.describe() word
+  // for word, and WebSearchSentenceDriftTest (Java) fails the build if they
+  // stop being. The `de` string is the translation.
+  //
+  // The review found what the absence of that gate cost. This entry used to end
+  // at "own terms." while the server's sentence went on to say what to do about
+  // it — so the one surface a person opens after a search misbehaved was the
+  // one that dropped the remedy. Nothing compared them, because nothing could.
+  //
+  // "best-effort scrape" is a QUOTE and stays English in both: it is the phrase
+  // DuckDuckGoSearcher throws — "this is the best-effort scrape tier" — and a
+  // reader who has just met that sentence arrives here looking for those words.
+  // A translated quote is no longer a quote. It leads, rather than sitting in
+  // the tail, because it is the half that has to survive a narrow column.
   "set.tier.duckduckgo": {
-    de: "der „best-effort scrape“ von DuckDuckGos HTML — ohne Key, letzte Stufe, und gegen DuckDuckGos eigene Bedingungen.",
-    en: "the best-effort scrape of DuckDuckGo's HTML — keyless, last resort, and against DuckDuckGo's own terms.",
+    de: "der „best-effort scrape“ von DuckDuckGos HTML — ohne Key, letzte Stufe, und gegen DuckDuckGos eigene Bedingungen. Konfiguriere unter Einstellungen eine SearXNG-Instanz oder einen Tavily- oder Brave-Key.",
+    en: "the best-effort scrape of DuckDuckGo's HTML — keyless, last resort, and against DuckDuckGo's own terms. Configure a SearXNG instance, or a Tavily or Brave key, under Settings.",
   },
   "set.searxngUrl": { de: "SearXNG-Instanz (URL)", en: "SearXNG instance (URL)" },
   "set.searxngOwnInstance": {
@@ -1185,8 +1196,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.searchKeyPresent": { de: "gesetzt", en: "set" },
   "set.searchKeyAbsent": { de: "nicht gesetzt", en: "not set" },
   "set.searchScrapeNote": {
-    de: "Ist nichts davon konfiguriert, antwortet ein keyless HTML-Scrape von DuckDuckGo. Der ist Notbehelf, nicht Wahl: DuckDuckGos eigene Bedingungen verbieten ihn, und die Muster brechen still, sobald die Seite umgebaut wird.",
-    en: "With none of this configured, a keyless DuckDuckGo HTML scrape answers. That is a last resort, not a choice: DuckDuckGo's own terms prohibit it, and the patterns break silently the day the page is redesigned.",
+    // Prose about the ladder, not the active tier's sentence, so the drift gate
+    // does not reach it — but it names the same thing, so it uses the same
+    // words. Four names for one subsystem is what card 223 was cleaning up.
+    de: "Ist nichts davon konfiguriert, antwortet der „best-effort scrape“ von DuckDuckGos HTML. Der ist Notbehelf, nicht Wahl: DuckDuckGos eigene Bedingungen verbieten ihn, und die Muster brechen still, sobald die Seite umgebaut wird.",
+    en: "With none of this configured, the best-effort scrape of DuckDuckGo's HTML answers. That is a last resort, not a choice: DuckDuckGo's own terms prohibit it, and the patterns break silently the day the page is redesigned.",
   },
   "set.searchNoFallThrough": {
     de: "Keine Stufe reicht die Frage weiter. Eine konfigurierte SearXNG-Instanz, die nicht erreichbar ist, lässt die Suche fehlschlagen — mit einem Satz, der die versuchte Adresse nennt.",

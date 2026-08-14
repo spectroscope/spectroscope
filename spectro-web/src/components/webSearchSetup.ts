@@ -8,6 +8,7 @@
 // the Docker socket can bind-mount any host path into a container.
 
 import { dockerOffer, type DockerOffer, type DockerStatus } from "./dockerOffer";
+import { t, type Lang } from "../i18n/i18n";
 
 /** The shipped setup, relative to the repository root. Pinned here because the
  *  command below is only true while this path exists; webSearchSetup.test.ts
@@ -173,6 +174,47 @@ export function webSearchCheck(config: { webSearch?: ServedWebSearch } | null | 
     tier,
     reading: tierReading(tier, config.webSearch?.searxngUrl ?? ""),
   };
+}
+
+/**
+ * The calibration row's text, for a check and a language.
+ *
+ * <p><b>Why this is not four lines of JSX.</b> It was, and the review of card
+ * 223 measured what that cost: two mutations of the expression — the whole
+ * mapping replaced by the bare {@link WebSearchCheck.tier}, and the `{ addr }`
+ * argument dropped from the `t()` call — each left the full web suite green at
+ * 260 files and 3794 tests. The panel would have shipped reading `duckduckgo`,
+ * or `searxng — a metasearch instance you run, at {addr}`, and criteria 2 and 3
+ * are the two the card exists for. Rendering cannot catch it either: the panel
+ * fetches in an effect, no server render runs effects, so every state but
+ * `pending` is out of reach. Moving the mapping here is what makes it testable
+ * at all, and webSearchSetup.test.ts kills both mutations.</p>
+ *
+ * <p>Still a reader, not a decision: every branch below is a `state` the
+ * function above already decided, and the sentence is a dict key that function
+ * already chose. The one thing this adds is the interpolation, which is exactly
+ * where the second mutation hid — `t()` passes an unfilled `{addr}` through to
+ * the reader rather than throwing, so a missing argument is invisible until
+ * somebody opens the panel.</p>
+ *
+ * @param check the read answer
+ * @param lang  the reader's language
+ * @return the string for the row's value cell
+ */
+export function webSearchRowValue(check: WebSearchCheck, lang: Lang): string {
+  switch (check.state) {
+    case "failed":
+      return t(lang, "doc.unreachable");
+    case "pending":
+      return "…";
+    case "absent":
+      return t(lang, "doc.searchNone");
+    default:
+      // An unknown tier has no sentence, and its bare name is the true answer.
+      return check.reading.detailKey
+        ? t(lang, check.reading.detailKey, { addr: check.reading.addr })
+        : check.tier;
+  }
 }
 
 /**
