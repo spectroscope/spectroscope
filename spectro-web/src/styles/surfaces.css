@@ -281,15 +281,22 @@
 }
 .doctor-row:last-child { border-bottom: none; }
 .doctor-label { flex: none; width: 11rem; font-size: var(--fs-13); }
+/* The value wraps, it does not clip. Measured on the built bundle with a
+   SearXNG instance configured (card 223): the cell was 302 px wide and the
+   sentence 742 px, so "searxng — a metasearch instance you run, at
+   http://localhost:8885" rendered as "…instance you run,…" and the address —
+   the one fact the row exists to carry — was reachable only by hovering for a
+   title tooltip. `llm backend` was losing its host the same way, on the very
+   build this was found on: "anthropic · claude-opus-4-8 @ api.anthro…".
+   A panel whose whole job is to answer "what is this machine set to" may not
+   hide the answer at 60 % of its own width. */
 .doctor-value {
   flex: 1;
   min-width: 0;
   font-size: var(--fs-12);
   color: var(--text-dim);
   text-align: right;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
 }
 .doctor-cli { margin: 0; font-size: var(--fs-12); color: var(--text); }
 .doctor-cli-hint { margin: var(--sp-1) 0 0; font-size: var(--fs-12); color: var(--text-faint); }

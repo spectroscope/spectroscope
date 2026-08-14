@@ -535,6 +535,17 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "noch nicht angekündigt (provider_info fehlt)",
     en: "not announced yet (no provider_info)",
   },
+  // Web search (card 223). The label says "configured" out loud. /api/config
+  // reports what the settings resolve to, and card 222 is deciding whether a
+  // running session may hold a tier the config does not — a row that answered
+  // "which tier?" while quietly meaning "which tier was saved?" would be the
+  // same dishonesty this row exists to end. The sentence itself is the settings
+  // page's, not a second one about the same thing.
+  "doc.webSearch": { de: "Web-Suche (konfiguriert)", en: "web search (configured)" },
+  "doc.searchNone": {
+    de: "der Server meldet keine Web-Suche (zu alt für den webSearch-Block)",
+    en: "the server reports no web search (too old for the webSearch block)",
+  },
   "doc.sessions": { de: "Session-Speicher", en: "session store" },
   "doc.sessionsN": { de: "{n} gespeicherte Sessions", en: "{n} stored sessions" },
   "doc.workspace": { de: "Standard-Workspace", en: "default workspace" },
@@ -1135,9 +1146,16 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "die Brave-Search-API (BRAVE_API_KEY)",
     en: "the Brave Search API (BRAVE_API_KEY)",
   },
+  // Card 223, criterion 2: "best-effort scrape" is a QUOTE, so it is not
+  // translated and it comes first. It is the phrase DuckDuckGoSearcher throws
+  // — "duckduckgo answered with a bot check page instead of results — this is
+  // the best-effort scrape tier" — and a reader who has just read that arrives
+  // at the calibration panel looking for those words. It leads the sentence
+  // because the doctor's value column clips with an ellipsis: a phrase in the
+  // tail is a phrase that can be cut off exactly when it matters.
   "set.tier.duckduckgo": {
-    de: "der keyless HTML-Scrape von DuckDuckGo — Notbehelf, letzte Stufe, und gegen DuckDuckGos eigene Bedingungen.",
-    en: "the keyless DuckDuckGo HTML scrape — best effort, last resort, and against DuckDuckGo's own terms.",
+    de: "der „best-effort scrape“ von DuckDuckGos HTML — ohne Key, letzte Stufe, und gegen DuckDuckGos eigene Bedingungen.",
+    en: "the best-effort scrape of DuckDuckGo's HTML — keyless, last resort, and against DuckDuckGo's own terms.",
   },
   "set.searxngUrl": { de: "SearXNG-Instanz (URL)", en: "SearXNG instance (URL)" },
   "set.searxngOwnInstance": {

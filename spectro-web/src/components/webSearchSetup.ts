@@ -105,6 +105,76 @@ export function tierReading(tier: string, searxngUrl: string): TierReading {
   };
 }
 
+/** The `webSearch` block of /api/config as a READER needs it — the decision and
+ *  the address, nothing more. `WebSearchStatus` in WebSearchSettings.tsx is the
+ *  full block; this narrower shape exists so the calibration panel can be
+ *  handed the raw config object it already holds without importing a settings
+ *  page. Both fields are optional on purpose: a server older than card 203
+ *  sends no block at all, and that is a state to report, not to crash on. */
+export interface ServedWebSearch {
+  tier?: string;
+  searxngUrl?: string;
+}
+
+/** What the calibration panel needs in order to draw one row. */
+export interface WebSearchCheck {
+  /** The panel's dot. "warn" for the scrape — the same call the CLI's doctor
+   *  makes with Kind.INFO, and for the same reason: it is not a fault, it is a
+   *  state the operator should know they are in. */
+  verdict: "ok" | "warn" | "error";
+  /** Which of the four things the row is saying. */
+  state: "pending" | "failed" | "absent" | "tier";
+  /** The server's tier word, or "". Printed bare when the sentence is unknown. */
+  tier: string;
+  /** The sentence to render, as dict keys — empty keys for every non-tier state. */
+  reading: TierReading;
+}
+
+const NO_READING: TierReading = { labelKey: "", detailKey: "", addr: "" };
+
+/**
+ * Read the served answer for the calibration panel (card 223).
+ *
+ * <p>The panel drew eight rows and web search was not one of them, while
+ * `/api/config` had been carrying tier, label, sentence and instance address
+ * since card 203. Nothing was missing from the wire; nobody drew it.</p>
+ *
+ * <p>This function decides NOTHING about which tier is active. It is the third
+ * reader of one server-side resolver, next to the settings block above and
+ * `DoctorCommand.webSearchLine` on the CLI, and the only judgement it makes is
+ * which dot colour a tier deserves. A `tier === "duckduckgo"` test is the same
+ * comparison {@link tierReading} already makes two functions up; a rule about
+ * keys or addresses would be the copy card 203 removed.</p>
+ *
+ * <p>Four states, because the panel has to tell them apart. `pending` is "not
+ * asked yet" and must not read as broken; `failed` is the fetch itself; and
+ * `absent` is a server too old to carry the block — the settings page stays
+ * silent for that one, but silence is precisely the defect this card exists to
+ * fix, so the doctor says it out loud.</p>
+ *
+ * @param config the parsed /api/config body, `null` before it lands, `"failed"`
+ *               when the fetch did — the panel's own three-valued state
+ * @returns the row
+ */
+export function webSearchCheck(config: { webSearch?: ServedWebSearch } | null | "failed"): WebSearchCheck {
+  if (config === "failed") {
+    return { verdict: "error", state: "failed", tier: "", reading: NO_READING };
+  }
+  if (config === null) {
+    return { verdict: "ok", state: "pending", tier: "", reading: NO_READING };
+  }
+  const tier = config.webSearch?.tier ?? "";
+  if (tier === "") {
+    return { verdict: "warn", state: "absent", tier: "", reading: NO_READING };
+  }
+  return {
+    verdict: tier === "duckduckgo" ? "warn" : "ok",
+    state: "tier",
+    tier,
+    reading: tierReading(tier, config.webSearch?.searxngUrl ?? ""),
+  };
+}
+
 /**
  * Save the instance address on blur, then re-read the tier — in that order,
  * and only if the address actually changed.

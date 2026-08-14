@@ -19,6 +19,7 @@ import {
   commitSearxngUrl,
   searxngOffer,
   tierReading,
+  webSearchCheck,
 } from "./webSearchSetup";
 import { dict, t } from "../i18n/i18n";
 
@@ -200,5 +201,79 @@ describe("commitSearxngUrl", () => {
     expect(wrote).toBe(false);
     expect(writes).toBe(0);
     expect(rereads).toBe(0);
+  });
+});
+
+// Card 223. The calibration panel drew eight lines and web search was not one of
+// them, while /api/config had carried the whole answer since card 203. This is
+// the reader that closes the gap — and it is a READER: it takes the served
+// payload and chooses a face for it, exactly the way DoctorCommand.webSearchLine
+// does on the CLI side. There is no rule here. A rule here would be the third
+// copy of a decision card 203 spent a card reducing to one.
+describe("webSearchCheck", () => {
+  const served = (webSearch: Record<string, string>): { webSearch: Record<string, string> } => ({
+    webSearch,
+  });
+
+  it("carries the served tier through without deciding anything", () => {
+    expect(webSearchCheck(served({ tier: "searxng", searxngUrl: "http://box.local:8888" })).tier).toBe(
+      "searxng",
+    );
+    expect(webSearchCheck(served({ tier: "tavily" })).tier).toBe("tavily");
+    expect(webSearchCheck(served({ tier: "brave" })).tier).toBe("brave");
+    expect(webSearchCheck(served({ tier: "duckduckgo" })).tier).toBe("duckduckgo");
+  });
+
+  it("names the instance address, the way the settings page does", () => {
+    // Criterion 3. Same dict entry as the settings block, so the two surfaces
+    // cannot end up describing the same instance in different words.
+    const check = webSearchCheck(served({ tier: "searxng", searxngUrl: "http://box.local:8888" }));
+    expect(check.verdict).toBe("ok");
+    for (const lang of ["de", "en"] as const) {
+      const line = t(lang, check.reading.detailKey, { addr: check.reading.addr });
+      expect(line).toContain("http://box.local:8888");
+      expect(line).not.toContain("{addr}");
+    }
+  });
+
+  it("says best-effort scrape, in the words the failure message uses", () => {
+    // Criterion 2, and the whole reason this line is worth drawing. The reader
+    // arrives at this panel having just read `duckduckgo answered with a bot
+    // check page instead of results — this is the best-effort scrape tier`,
+    // thrown by DuckDuckGoSearcher. A line that called the same thing anything
+    // else would make them go and look for a second fault.
+    const check = webSearchCheck(served({ tier: "duckduckgo" }));
+    // Not an error: it is a state to know you are in, not a fault. The CLI
+    // makes the same call — Kind.INFO rather than Kind.FAIL.
+    expect(check.verdict).toBe("warn");
+    for (const lang of ["de", "en"] as const) {
+      expect(t(lang, check.reading.detailKey), lang).toContain("best-effort scrape");
+    }
+  });
+
+  it("a configured tier is quiet, only the scrape is not", () => {
+    for (const tier of ["searxng", "tavily", "brave"]) {
+      expect(webSearchCheck(served({ tier, searxngUrl: "http://box.local:8888" })).verdict).toBe("ok");
+    }
+    expect(webSearchCheck(served({ tier: "duckduckgo" })).verdict).toBe("warn");
+  });
+
+  it("keeps the panel's three non-answers apart", () => {
+    // The panel has to distinguish "not asked yet" from "asked and got
+    // nothing", or a slow server reads as a broken one.
+    expect(webSearchCheck(null).state).toBe("pending");
+    expect(webSearchCheck("failed").state).toBe("failed");
+    expect(webSearchCheck("failed").verdict).toBe("error");
+    // A server too old to carry the block. The settings page stays silent for
+    // this; the doctor may not — silence is the defect this card exists to fix.
+    expect(webSearchCheck({}).state).toBe("absent");
+    expect(dict["doc.searchNone"], "doc.searchNone").toBeDefined();
+  });
+
+  it("shows a future tier's bare name rather than a sentence about the wrong one", () => {
+    const check = webSearchCheck(served({ tier: "some-future-tier" }));
+    expect(check.state).toBe("tier");
+    expect(check.tier).toBe("some-future-tier");
+    expect(check.reading.detailKey).toBe("");
   });
 });
