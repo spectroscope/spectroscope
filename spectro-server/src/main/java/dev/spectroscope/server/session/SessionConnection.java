@@ -1265,47 +1265,19 @@ public final class SessionConnection {
         // F6 measured that reverting the model half of this to the connect-time
         // snapshot left the full gate green — the page said "live" and nothing
         // said it here.
-        registry.register(new GenerateImageTool(
-                this::liveImageBackend,
-                ImageStore.inUserHome(),
-                llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
-        // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
-        // Card 199: both browser-class tools take the net fence built from
-        // allowLocalhost, and card 222 made that fence per call, so an opt-in
-        // saved mid-session reaches the very next fetch.
-        Tool webFetch = new WebFetchTool(new DefaultHttpFetcher(), this::liveFence);
-        registry.register(webFetch);
-        // web_search branch: the ONE tier WebSearchTiers resolves from the
-        // configuration (card 203) + browse_page through the system Chrome
-        // headless (renders JS). Both network egress -> permission-gated.
-        // The tier is resolved PER CALL (card 222): a SearXNG address saved
-        // while this session is open decides the next search, and the result
-        // header and the model-facing description name that same machine.
-        Tool webSearch = WebSearchTool.fromConfig(this::liveConfig);
-        registry.register(webSearch);
-        // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
-        // env; read fresh per call, like the image model above, so a binary saved
-        // mid-session — and a pre-run provider switch that carries one along —
-        // both reach the next render.
-        Tool browsePage = new BrowsePageTool(
-                () -> BrowsePageTool.findChrome(liveConfig().chromeEnv()),
-                new DefaultChromeRunner(),
-                this::liveFence);
-        registry.register(browsePage);
-        // Card 201: the seven measured browser tools, driving the VISIBLE pane in
-        // the desktop window over the control channel. Registered on the server
-        // face unconditionally: the shell can attach after the registry is built
-        // (it reconnects across a server restart), so a registry that only
-        // carried them "when attached" would hand the agent a browser that
-        // exists and no way to say so. The fence and the image store are read
-        // per call, like the neighbours above.
-        // Card 204: and they record what they did. The recorder is read per
-        // call, like the fence and the face above — this registry is built once
-        // and a resume opens a NEW recorder under the same session id, so a
-        // recorder captured here would be the one that has already been closed.
-        // Card 227: wrapped in the bridge's agent guard, so "an agent browser
-        // call is in flight" is measured on the very seam that records it —
-        // the fight rule's ground truth, counted from open to end.
+        //
+        // The belt's membership and order live in SettingsToolBelt (card 231
+        // criterion 3), shared with ContextDescriber, so the introspection list
+        // cannot under-report a family again. What stays HERE is the live
+        // wiring: every configuration-shaped seam is a reader over liveConfig()
+        // (card 222), and the browser tap carries card 227's agent guard.
+        //
+        // Card 204: the browser recorder is read per call, like the fence and
+        // the face — this registry is built once and a resume opens a NEW
+        // recorder under the same session id, so a recorder captured here would
+        // be the one that has already been closed. Card 227: wrapped in the
+        // bridge's agent guard, so "an agent browser call is in flight" is
+        // measured on the very seam that records it.
         java.util.function.Supplier<dev.spectroscope.core.wire.BrowserWireTap> recorderTap =
                 () -> browserWire == null
                         ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire;
@@ -1314,25 +1286,25 @@ public final class SessionConnection {
                         ? recorderTap
                         : () -> browserBridge.agentGuard(
                                 () -> store == null ? null : store.id(), recorderTap);
-        new dev.spectroscope.core.browser.BrowserTools(
-                this::ownBrowser,
-                this::liveFence,
+        SettingsToolBelt.Belt belt = SettingsToolBelt.assemble(new SettingsToolBelt.Seams(
+                this::liveImageBackend,
                 ImageStore.inUserHome(),
-                guardedTap)
-                .all().forEach(registry::register);
-        // Card 202: the five launch tools, which start the app the browser above
-        // is meant to look at. Registered beside the browser family and on the
-        // same two suppliers: this session's own browser, and a fence read per
-        // call so an allowLocalhost opt-in saved mid-session reaches the next
-        // call. The supervisor is the connection's own field, so what a session
-        // starts dies when that session's socket does.
-        new dev.spectroscope.core.launch.LaunchTools(
-                launches,
+                llmWire, // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
+                new DefaultHttpFetcher(),
+                this::liveConfig,
+                this::liveFence,
+                // chromeEnv() overlays the settings-hierarchy chromeBinary onto
+                // the process env; read fresh per call, like every seam here.
+                () -> BrowsePageTool.findChrome(liveConfig().chromeEnv()),
+                new DefaultChromeRunner(),
                 this::ownBrowser,
-                this::liveFence)
-                .all().forEach(registry::register);
+                guardedTap,
+                // The supervisor is the connection's own field, so what a
+                // session starts dies when that session's socket does (card 202).
+                launches));
+        belt.tools().forEach(registry::register);
         // Card 205: the research role's web grant, in the card's order.
-        return List.of(webSearch, webFetch, browsePage);
+        return belt.webGrant();
     }
 
     /**
