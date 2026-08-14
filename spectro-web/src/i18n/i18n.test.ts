@@ -578,13 +578,12 @@ describe("the browser segment says whose browser it is", () => {
       const note = dict["browser.noSessionNote"][lang];
       expect(note.length, `${lang} says something`).toBeGreaterThan(60);
     }
-    expect(dict["browser.noSessionNote"].en).toMatch(/belongs to a session/);
-    expect(dict["browser.noSessionNote"].de).toMatch(/gehört zu einer Session/);
-  });
-
-  it("tells the rail reader that every session has its own, with its own cookies", () => {
-    expect(dict["browser.railNote"].en).toMatch(/own cookies/);
-    expect(dict["browser.railNote"].de).toMatch(/eigenen Cookies/);
+    // Card 228 (criterion 8) retired the deck voice here: the sentence names
+    // the two things a person can DO — send a message, or press a launch
+    // configuration — instead of explaining session ownership philosophy.
+    expect(dict["browser.noSessionNote"].en).toMatch(/first message/);
+    expect(dict["browser.noSessionNote"].de).toMatch(/erste Nachricht/);
+    expect(dict["browser.noSessionNote"].en).toMatch(/[Ll]aunch/);
   });
 });
 
@@ -601,5 +600,38 @@ describe("t", () => {
 
   it("passes unknown keys through unchanged (a missing entry shows loudly)", () => {
     expect(t("de", "nope.missing")).toBe("nope.missing");
+  });
+});
+
+// Card 228 (criterion 9): the register guard. UI copy on empty states,
+// placeholders and footer notes is terse and technical — what it is, why it
+// is empty, what to do next. The house voice lives in cards and docs, never
+// in an empty state. The cheap pin against drifting back: no such string
+// grows past 200 characters in either language without a named exemption
+// here that says which card blessed it.
+describe("the empty-state register stays terse (card 228)", () => {
+  // Footer and hint-bar keys that do not match the name pattern but carry
+  // the same register duty — the sweep's named specimens live here.
+  const footnotes = ["browser.fenceNote", "browser.replay.note", "sg.claim", "sg.empty.pair"];
+  const exempt: Record<string, string> = {
+    // none today — an entry here names the card that allowed it
+  };
+
+  it("keeps every empty-state, idle, placeholder and footer string under 200 chars", () => {
+    const keys = Object.keys(dict).filter(
+      (k) => /(\.empty|\.no[A-Z]|\.idle|idleNote|placeholder)/.test(k) || footnotes.includes(k),
+    );
+    // The net must actually catch the surfaces — if the naming pattern rots,
+    // this fails loudly instead of guarding nothing.
+    expect(keys.length).toBeGreaterThan(30);
+    for (const key of keys) {
+      if (key in exempt) continue;
+      for (const lang of ["de", "en"] as const) {
+        expect(
+          dict[key][lang].length,
+          `${key}.${lang} is ${dict[key][lang].length} chars — terse register, or a named exemption`,
+        ).toBeLessThanOrEqual(200);
+      }
+    }
   });
 });

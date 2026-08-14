@@ -90,3 +90,30 @@
   from { opacity: 0; transform: translateY(-4px); }
 }
 
+
+/* Card 228 (criterion 7): the header's per-panel toggle icons and the ⋮
+   overflow. The pop reuses the wsg idiom but opens DOWNWARD — it hangs off
+   the header, not the composer — and its rows are real buttons, so the
+   button chrome is reset the way .export-pop resets it. */
+.hdr-panels-pop {
+  top: calc(100% + 6px);
+  bottom: auto;
+  width: 190px;
+  padding: var(--sp-2);
+  gap: 0;
+}
+.hdr-panels-row {
+  width: 100%;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: var(--fs-13);
+  color: var(--text);
+  text-align: left;
+  align-items: center;
+}
+.hdr-panels-check {
+  width: 14px;
+  flex: none;
+  color: var(--accent);
+}

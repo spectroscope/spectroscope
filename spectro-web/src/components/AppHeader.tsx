@@ -11,6 +11,7 @@ import type { UiState } from "../state/reducer";
 import { t } from "../i18n/i18n";
 import { toggleLang, useLang } from "../state/lang";
 import { replayEyebrow } from "./replayEyebrow";
+import { DockHeaderControls } from "../panels/headerPanelControls";
 
 /** Shown as the provider chip until a real provider name is known. */
 const FALLBACK_PROVIDER_LABEL = "spectroscope";
@@ -32,6 +33,9 @@ export function AppHeader(props: {
   showPanelToggle: boolean;
   panelOpen: boolean;
   onTogglePanel: () => void;
+  /** Whether the v2 reading offers the work panel — forwarded to the header's
+   *  panel icons (card 228), the same gate the dock itself applies. */
+  workPanelOffered?: boolean;
   settingsOpen: boolean;
   onToggleSettings: () => void;
   doctorOpen: boolean;
@@ -143,6 +147,11 @@ export function AppHeader(props: {
           </svg>
         </button>
       )}
+
+      {/* Card 228 (criterion 7): one icon per panel plus the ⋮ overflow — the
+          second door to the dock's own layout truth. Shown with the workspace
+          toggle: the dock only exists on the chat tab. */}
+      {props.showPanelToggle && <DockHeaderControls workOffered={props.workPanelOffered === true} />}
 
       {/* The thinking toggle moved into the provider picker (card 88): it is
           a per-model control now, driven by the capability record — a header

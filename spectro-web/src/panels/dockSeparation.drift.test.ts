@@ -50,21 +50,36 @@ describe("every surface is one keyed section", () => {
   });
 });
 
-describe("the divider keeps the house idiom", () => {
-  it("answers the keyboard and captures the pointer", () => {
-    // Static markup drops handlers, so the wiring is read at the source: the
-    // one resize idiom this card keeps (the .ws-divider one) is pointer events
-    // WITH pointer capture plus arrow keys — Resizer.tsx's mouse-only shape
-    // must not creep back in under a new name.
-    expect(rightPanel).toMatch(/onKeyDown=\{onKey\}/);
-    expect(rightPanel).toMatch(/setPointerCapture/);
-    expect(rightPanel).toMatch(/releasePointerCapture/);
+describe("the workspace lays panels out as a grid of cards (card 228)", () => {
+  it("declares the grid in the dock stylesheet, sized for two or three columns", () => {
+    const css = readFileSync(path.join(__dirname, "..", "styles", "panel-dock.css"), "utf8");
+    const at = css.indexOf(".dock-grid");
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf("}", at));
+    expect(rule).toMatch(/display:\s*grid/);
+    // auto-fit against a min column width is what makes the column count
+    // follow the workspace width instead of being a named breakpoint.
+    expect(rule).toMatch(/repeat\(auto-fit,\s*minmax\(/);
+  });
+
+  it("keeps the divider machinery out — a grid of cards shares no edges", () => {
+    expect(rightPanel).not.toContain("DockDivider");
+    expect(rightPanel).not.toMatch(/role="separator"/);
   });
 });
 
 describe("the browser panel tells the shell when it is covered or shut", () => {
   it("derives the segment's active from the panel mode AND the covering state", () => {
     expect(rightPanel).toMatch(/active=\{[^}]*covered/);
+  });
+
+  it("counts a SIBLING'S fullscreen as covering — no CSS can paint over the pane", () => {
+    // Card 228 gave every card the expand control. A files card gone
+    // fullscreen lies over the browser hole with z-index alone, which is
+    // exactly the covering a WebContentsView ignores (card 201) — so the
+    // segment's active must fold the expanded-sibling case in, the same way
+    // it folds `covered`.
+    expect(rightPanel).toMatch(/active=\{[^}]*fullPanel/);
   });
 
   it("is handed the shown session from the app, like the other two doors", () => {

@@ -60,8 +60,8 @@ describe("layout store", () => {
     expect(__getState().rightPanelOpen).toBe(true);
     setRightPanelW(10); // clamps up to the min
     expect(__getState().rightPanelW).toBe(260);
-    setRightPanelW(99999); // clamps down to the max
-    expect(__getState().rightPanelW).toBe(720);
+    setRightPanelW(99999); // clamps down to the max (1200 since the card-228 grid)
+    expect(__getState().rightPanelW).toBe(1200);
     setActiveRightTab("context");
     expect(__getState().activeRightTab).toBe("context");
   });

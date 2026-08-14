@@ -1,12 +1,12 @@
 // Two doors, one browser — and one wire word, spelled the same in three
 // projects. Read off disk, because none of it is checked by a type.
 //
-// The owner settled card 218 in two sentences. "Lasse den browser links gerne
-// aber eben auch in einer session" — so the surface is mounted twice, once in
-// the rail and once in the session's own tab row. "Weil jede session braucht ja
-// seinen eigenen browser" — so both mounts must hand it the SAME session id, or
-// the second door becomes a second browser and the rail shows a page the session
-// on screen is not driving.
+// Card 218 settled that every session has its OWN browser, and card 228
+// finished the thought: the rail's browser door opened a browser that belongs
+// to NO session, so it left. What remains is the session tab (the door card
+// 218's rule blesses) and the workspace's browser card (card 219) — and both
+// must hand the surface the SAME session id, or the second door becomes a
+// second browser showing a page the session on screen is not driving.
 //
 // The wire half is the same kind of coupling browserMarker.drift.test.ts pins:
 // the Java server writes a field and a verb, the Electron shell reads them, and
@@ -48,35 +48,38 @@ function mounts(src: string, name: string): number {
 }
 
 describe("two doors, one browser", () => {
-  it("mounts the browser surface exactly twice: the rail and the session tab", () => {
-    expect(mounts(app, "BrowserSegment")).toBe(2);
+  it("mounts the browser surface exactly once in the app: the session tab", () => {
+    // The rail door left with card 228 — nothing outside a session may open a
+    // browser. One App mount is the pin that keeps it from creeping back.
+    expect(mounts(app, "BrowserSegment")).toBe(1);
   });
 
-  it("mounts a THIRD door in the dock (card 219), same session, exactly once", () => {
-    // The dock's browser panel is the owner's own first-cut ask: the browser
-    // in the same workspace as files, terminal and context. It is a third
-    // HOLE, never a third browser: the session id is threaded from the app
+  it("mounts the SECOND door in the workspace (card 219), same session, exactly once", () => {
+    // The workspace's browser card is the owner's own first-cut ask: the
+    // browser beside files, terminal and context. It is a second HOLE, never
+    // a second browser: the session id is threaded from the app
     // (`sessionId={shownSessionId}`, pinned in dockSeparation.drift.test.ts),
-    // and it can never be on screen with either other door — the dock lives
-    // inside the chat arm, the session tab arm renders only on tab==="browser",
-    // and the rail arm only on nav==="browser".
+    // and it can never be on screen with the tab door — the dock lives inside
+    // the chat arm, the session tab arm renders only on tab==="browser".
     const rightPanel = readFileSync(path.join(__dirname, "..", "components", "RightPanel.tsx"), "utf8");
     expect(mounts(rightPanel, "BrowserSegment")).toBe(1);
     const passed = rightPanel.match(/<BrowserSegment[\s\S]*?sessionId=\{([^}]+)\}/);
     expect(passed?.[1]).toBe("sessionId");
   });
 
-  it("hands both doors the SAME session, so the second one is a view", () => {
+  it("hands the tab door the shown session, so every door is a view", () => {
     // Anything else here — a literal, a different variable, a missing prop —
     // means two sessions' worth of browser behind two holes that look alike.
     const passed = app.match(/<BrowserSegment[^/]*?sessionId=\{([^}]+)\}/g) ?? [];
-    expect(passed).toHaveLength(2);
-    expect(new Set(passed.map((m) => m.slice(m.indexOf("sessionId="))))).toEqual(
-      new Set(["sessionId={shownSessionId}"]),
-    );
+    expect(passed).toHaveLength(1);
+    expect(passed[0]).toContain("sessionId={shownSessionId}");
   });
 
   it("gives the session's tab row a browser tab that the address grammar knows", () => {
+    // This tab is also where a deep link lands: the rail segment never had an
+    // address of its own (state/route.ts knows live/session/fleet/import/
+    // settings and nothing else), so `#/browser` always meant THIS tab and
+    // still does — removing the rail row 404s nothing.
     expect(VIEW_TABS).toContain("browser");
     expect(app).toContain('onClick={() => changeTab("browser")}');
   });
