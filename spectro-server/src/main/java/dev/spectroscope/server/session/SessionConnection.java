@@ -130,8 +130,23 @@ public final class SessionConnection {
 
     /** True once {@link #onSetImageProvider} has been called — same contract as
      *  {@link #modeTouched}: a live pre-build dropdown choice survives the
-     *  session-moment reseed of {@link #imageProviderName}. */
+     *  session-moment reseed of {@link #imageProviderName}, and outranks the
+     *  live per-call reading the belt makes (see {@link #liveImageProvider()}). */
     private volatile boolean imageProviderTouched;
+
+    /** The belt {@link #buildAgentOnce} hung on the agent, or null before the
+     *  first prompt. Card 222, review finding F4: the registry was a local
+     *  variable, so deleting {@code registerSettingsTools(registry)} from the
+     *  build removed web_search, web_fetch, browse_page, generate_image and the
+     *  twelve browser/launch tools from every real session with the whole gate
+     *  staying green. Holding it is what makes that call site assertable. */
+    private volatile ToolRegistry belt;
+
+    /** The last refusal {@link #liveConfig()} reported, so a settings file the
+     *  session may not read is announced when it breaks and not once per tool
+     *  call. Holds the MESSAGE rather than a flag: a second, different breakage
+     *  is news and gets said. */
+    private volatile String reportedUnreadable;
 
     private SessionStore store;               // created on the first prompt (or on resume)
     // The tracing seam (KONZEPT §4.3): persistence rides a required port, so
@@ -912,8 +927,13 @@ public final class SessionConnection {
      * prompt in the same tab continues the conversation, like the CLI REPL),
      * and the spawn tools inside the registry reference exactly this manager
      * instance — a rebuilt manager would leave them pointing at a dead one.
+     *
+     * <p>Package-private, like {@link #adoptSessionConfig} and
+     * {@link #registerSettingsTools} beside it: card 222's review found that
+     * nothing pinned this method's own call sites. Deleting one line of it took
+     * six tool families out of every session and left the gate green.</p>
      */
-    private void buildAgentOnce() {
+    void buildAgentOnce() {
         if (agent != null) {
             return;
         }
@@ -980,6 +1000,7 @@ public final class SessionConnection {
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
         subagents.devTools().forEach(registry::register);
+        this.belt = registry;   // card 222 F4: what this session actually carries
 
         agent = new Agent(AgentOptions.builder()
                 .provider(provider)
@@ -1000,6 +1021,14 @@ public final class SessionConnection {
         // the build — the boolean seed above cannot carry mode "off" or an
         // effort level.
         applyReasoning(agent);
+    }
+
+    /** The tool belt this session's agent carries, for the test that pins the
+     *  registrations to the build rather than to a registry a test made itself.
+     *  @return the registry {@link #buildAgentOnce} built, or null before the
+     *          first prompt */
+    ToolRegistry belt() {
+        return belt;
     }
 
     /**
@@ -1030,7 +1059,9 @@ public final class SessionConnection {
                 sessionConfig = sessionConfig.withProvider(switched.provider(), switched.model());
             }
         } catch (IllegalArgumentException invalidWorkspaceScope) {
-            sendError("workspace settings ignored: " + invalidWorkspaceScope.getMessage());
+            // Through the same door as the belt's per-call reading, so the
+            // session moment and the first tool call cannot say it twice.
+            reportUnreadable(invalidWorkspaceScope);
             sessionConfig = activeConfig.get();
         }
         activeConfig.set(sessionConfig);
@@ -1082,12 +1113,17 @@ public final class SessionConnection {
      *       card. So the currently active pair is carried over the fresh read.</li>
      * </ul>
      *
-     * <p>A broken settings file mid-session is not fatal and not silent-either:
-     * the last good config answers, and the reader is told once per call site by
-     * the same error frame the session moment uses.</p>
+     * <p>A settings file this session may not use — unparsable, or a workspace
+     * scope holding a key that scope is refused (see
+     * {@code SpectroConfig.rejectProcessGlobals}) — is neither fatal nor silent:
+     * the session's own config answers, and {@link #reportUnreadable} says so
+     * over the same error frame the session moment uses. Note WHICH config that
+     * is: the one adopted at the session moment, not the last live reading that
+     * happened to succeed. A file the agent broke must not leave the session
+     * standing on a value from the same hand.</p>
      *
      * @return the freshly resolved settings for this session's workspace, or the
-     *         last good config when the files cannot be read
+     *         session's own config when the files cannot be read
      */
     SpectroConfig liveConfig() {
         SpectroConfig last = activeConfig.get();
@@ -1097,9 +1133,38 @@ public final class SessionConnection {
         try {
             SpectroConfig fresh =
                     SpectroConfig.loadForWorkspace(SpectroConfig.Overrides.none(), projectDir, workspace);
+            reportedUnreadable = null;   // a good read makes the next breakage news again
             return fresh.withProvider(last.provider(), last.model());
         } catch (RuntimeException unreadable) {
+            reportUnreadable(unreadable);
             return last;
+        }
+    }
+
+    /**
+     * Says ONCE that a settings file in this session's chain is being ignored.
+     *
+     * <p>Card 222, review finding F3. The javadoc above claimed the reader was
+     * told; the body was {@code catch (RuntimeException unreadable) { return
+     * last; }} — no frame, nothing. That is criterion 4's own defect, a comment
+     * stating an intent the code cancels, reintroduced by the change ordered to
+     * remove two of them. The silence costs more than it reads: a refused
+     * workspace scope drops EVERY key in that file, so the operator's project
+     * model or image backend quietly stops applying with nothing on screen.</p>
+     *
+     * <p>Once, not once per call: the belt makes this reading on every tool
+     * call, so an unconditional frame would be a storm. The memory holds the
+     * message rather than a flag — a second, different breakage is news — and a
+     * successful read clears it, so the same file breaking again is said
+     * again.</p>
+     *
+     * @param unreadable what the settings loader refused with
+     */
+    private void reportUnreadable(RuntimeException unreadable) {
+        String message = "workspace settings ignored: " + unreadable.getMessage();
+        if (!message.equals(reportedUnreadable)) {
+            reportedUnreadable = message;
+            sendError(message);
         }
     }
 
@@ -1129,10 +1194,14 @@ public final class SessionConnection {
      * @param registry the session's registry, already carrying the standard tools
      */
     void registerSettingsTools(ToolRegistry registry) {
-        // created lazily per call — the dropdown switch and a saved imageModel
-        // both apply to the next generation, and a missing key errors readably.
+        // created lazily per call — the dropdown switch, a backend saved in the
+        // settings and a saved imageModel all apply to the next generation, and
+        // a missing key errors readably. Both halves of the settings page's
+        // image block go through a live reading: card 222's review found this
+        // tool reading the in-memory dropdown alone while the page under it
+        // promised that a SAVED backend reaches an open session.
         registry.register(new GenerateImageTool(
-                () -> ImageProviders.create(imageProviderName.get(),
+                () -> ImageProviders.create(liveImageProvider(),
                         liveConfig().imageModel(), SpectroConfig.imageEnv()),
                 ImageStore.inUserHome(),
                 llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
@@ -1185,6 +1254,29 @@ public final class SessionConnection {
                 this::ownBrowser,
                 this::liveFence)
                 .all().forEach(registry::register);
+    }
+
+    /**
+     * The image backend for the call being made.
+     *
+     * <p>Two sources, and the order between them is the point. The composer's
+     * dropdown writes {@link #imageProviderName} over the websocket and sets
+     * {@link #imageProviderTouched}; the settings page writes a file. A live
+     * choice the operator made in this session outranks a file saved under it —
+     * the same rule the session moment already applies to this seed, to the
+     * permission mode and to thinking. Where they have NOT touched the dropdown,
+     * the settings are read again on the call, like the image model beside it.</p>
+     *
+     * <p>Card 222, review finding F1: this method used to be
+     * {@code imageProviderName.get()} alone, an in-memory reference written at
+     * connect, at the session moment and by that websocket message — and by no
+     * settings write, ever. The page said "applies immediately, including to a
+     * session already open" directly under the dropdown that saves it.</p>
+     *
+     * @return the backend name {@code generate_image} should resolve now
+     */
+    private String liveImageProvider() {
+        return imageProviderTouched ? imageProviderName.get() : liveConfig().imageProvider();
     }
 
     /** The net fence as the settings define it right now — one spelling for the

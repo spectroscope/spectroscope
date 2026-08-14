@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
+import { ReachBlock } from "./settingsReach";
 import { useLang } from "../state/lang";
 import {
   approvesExecution,
@@ -134,10 +135,11 @@ export function AllowlistSettings({
       {/* ---- WHEN it takes effect (card 222). Every settings block now says
           this, and this is the one block whose answer is "next session" by
           choice rather than by cost. The sentence carries the reason with it:
-          without it, an operator reads a limitation where there is a fence. ---- */}
-      <p className="settings-note" data-testid="allowlist-reach">
-        {t(lang, "set.alApplies")}
-      </p>
+          without it, an operator reads a limitation where there is a fence.
+          It stays at the TOP of the block, because the reader's next gesture
+          is to add an entry — and it goes through <ReachBlock> so the claim is
+          checked against the table like every other one. ---- */}
+      <ReachBlock lang={lang} fields={["autoApprove"]} note="set.alApplies" />
       {failed && <p className="settings-note settings-note--warn">{t(lang, "set.alLoadFailed")}</p>}
       {view && (
         <p className="settings-note" data-testid="allowlist-map-version">

@@ -757,9 +757,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "no switch here — this model has no thinking to show",
   },
   "rc.settingsLabel": { de: "Reasoning (pro Modell)", en: "Reasoning (per model)" },
+  // The last sentence is card 222's: this control is neither saved with the
+  // session defaults above it nor bound like them — set_reasoning is replayed
+  // onto the agent that is already running — so it says its own reach instead
+  // of standing under someone else's.
   "rc.settingsNote": {
-    de: "Gilt pro Modell, gemerkt in diesem Browser. Angeboten wird nur, was das Modell laut Capability-Record kann.",
-    en: "Per model, remembered in this browser. Only what the model's capability record supports is offered.",
+    de: "Gilt pro Modell, gemerkt in diesem Browser. Angeboten wird nur, was das Modell laut Capability-Record kann. Eine offene Sitzung übernimmt die Wahl sofort.",
+    en: "Per model, remembered in this browser. Only what the model's capability record supports is offered. A session already open takes the choice right away.",
   },
 
   // right panel
@@ -1129,6 +1133,27 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.reachLive": {
     de: "Gilt sofort, auch für eine schon offene Sitzung — ab deren nächstem Tool-Aufruf.",
     en: "Applies immediately, including to a session already open — from its next tool call.",
+  },
+  // The other half, and the reason card 222 needed a review to finish: a live
+  // sentence had been written under a grid of seven fields of which one was
+  // live. This is the generic form, and it names NOTHING — read live on
+  // 127.0.0.1:8391, the first draft of it said "keeps the provider, model and
+  // address it started with" and was rendering under the OTLP endpoint pair,
+  // which is the same defect one size smaller. A sentence used by more than
+  // one block may only say what all of them share.
+  "set.reachNextSession": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
+    en: "Applies from the next session. A session already open keeps what it started with.",
+  },
+  // The session-defaults block's own wording. Provider, model, address and
+  // thinking are bound when the agent is built — measured on one socket: the
+  // settings were written to model=qwen3:latest, /api/config agreed, and the
+  // next run in the same session still started on the model from before. The
+  // picker in the header IS live for those, and naming it is the difference
+  // between a limitation and a dead end.
+  "set.provApplies": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält Provider, Modell und Adresse, mit denen sie gestartet ist — der Umschalter oben im Fenster wechselt eine laufende Sitzung sofort.",
+    en: "Applies from the next session. A session already open keeps the provider, model and address it started with — the picker in the header switches a running session right away.",
   },
   "set.hkFailOpen": {
     de: "Antwortet ein Hook nicht rechtzeitig, wird er abgebrochen und der Aufruf läuft trotzdem — ein kaputter Hook soll nicht jeden Werkzeug-Aufruf blockieren. Das steht dann als „timed-out\" in der Ablaufspur, nie als „durchgelassen\".",

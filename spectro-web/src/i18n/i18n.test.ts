@@ -402,6 +402,25 @@ describe("the settings page says when a change reaches the run", () => {
     expect(dict["set.reachLive"].de).toMatch(/Tool-Aufruf/);
   });
 
+  it("has the other half of the answer, and names the door that IS live", () => {
+    // The review's F1. This sentence exists because the live one was written
+    // under the provider grid, where it was measured to be false: settings
+    // written to model=qwen3:latest, /api/config agreeing, and the next run in
+    // the same session still on the old model. Saying only "next session"
+    // would leave a reader who wants to switch NOW with nowhere to go, so the
+    // picker is named in the same breath.
+    expect(dict["set.provApplies"].en).toMatch(/next session/);
+    expect(dict["set.provApplies"].en).toMatch(/picker/);
+    expect(dict["set.provApplies"].de).toMatch(/nächsten Sitzung/);
+    expect(dict["set.provApplies"].de).toMatch(/Umschalter/);
+    // The GENERIC one names no field at all. Read live at 127.0.0.1:8391, the
+    // first draft named the provider and was rendering under the OTLP pair —
+    // a sentence shared by several blocks may only say what they share.
+    expect(dict["set.reachNextSession"].en).toMatch(/next session/);
+    expect(dict["set.reachNextSession"].en).not.toMatch(/provider|model|address|picker/);
+    expect(dict["set.reachNextSession"].de).not.toMatch(/Provider|Modell|Adresse|Umschalter/);
+  });
+
   it("says the allowlist is the exception, and why", () => {
     // "Next session" alone reads as an oversight next to four blocks that say
     // "immediately". The reason is what turns it into a decision a reader can

@@ -50,6 +50,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { t } from "../i18n/i18n";
+import { ReachBlock } from "./settingsReach";
 import { useLang } from "../state/lang";
 import {
   composeHook,
@@ -337,7 +338,10 @@ export function HooksSettings({
       >
         {t(lang, "set.hkAdd")}
       </button>
-      <p className="settings-note">{t(lang, "set.hkApplies")}</p>
+      {/* Card 222: through <ReachBlock>, so the sentence and the table cannot
+          drift apart. Hooks are loaded once, before the SubagentManager, so
+          parent and children run the same guard for the life of the session. */}
+      <ReachBlock lang={lang} fields={["hooks"]} note="set.hkApplies" />
       <p className="settings-note">{t(lang, "set.hkFailOpen")}</p>
     </>
   );

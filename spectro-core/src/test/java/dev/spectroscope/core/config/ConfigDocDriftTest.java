@@ -130,6 +130,49 @@ class ConfigDocDriftTest {
                             + " settled for the session — a list that names only the live half"
                             + " leaves the reader guessing about the other one");
         }
+        // The review's criterion-2 correction. The first version of this
+        // chapter called provider and model "the header picker's", which is
+        // true of the picker and NOT of this page: a model saved here was
+        // measured not to reach the open session, while the page's own note
+        // said it applied immediately. The reference has to carry both halves,
+        // or the next reader re-derives the wrong one.
+        assertTrue(reference.contains("applies from the next session"),
+                "the reference never says that the provider pair saved on the settings page"
+                        + " waits for the next session — the half the review measured");
+        assertTrue(reference.contains("picker"),
+                "and it must name the picker as the live path, or the limitation reads as a"
+                        + " dead end");
+        for (String pageBound : List.of("Provider, model", "thinking")) {
+            assertTrue(reference.contains(pageBound),
+                    "the reference does not name \"" + pageBound + "\" among the settings that"
+                            + " land with the next session");
+        }
+    }
+
+    @Test
+    void everyKeyAWorkspaceScopeMayNotHoldSaysSoInItsOwnRow() throws IOException {
+        // Card 222, review finding F2. The refusal is loud at load time — the
+        // whole scope is dropped and the message names the file — so the one
+        // thing an operator needs is somewhere to look it up. Two of the five
+        // keys were added by this card, and one of them (searxngUrl) had no row
+        // in this table at all: it was refusable and unpublished in the same
+        // edit, which is how a fence becomes a mystery.
+        //
+        // Driven off the list itself, so a SIXTH key cannot be added in silence.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String reference = Files.readString(source);
+
+        List<String> forbidden = SpectroConfig.workspaceScopeForbiddenKeys();
+        assertTrue(forbidden.size() >= 5,
+                "the workspace-scope refusal list shrank to " + forbidden
+                        + " — a key leaving it is a security decision, not a cleanup");
+        for (String key : forbidden) {
+            String row = rowStartingWith(reference, "<code>" + key + "</code>");
+            assertTrue(row.contains("workspace scope"),
+                    "a workspace scope is refused when it sets \"" + key + "\" and the config"
+                            + " reference's row for it never says so. Row: " + row);
+        }
     }
 
     /** The row holding {@code marker} inside the "Every key" table — the

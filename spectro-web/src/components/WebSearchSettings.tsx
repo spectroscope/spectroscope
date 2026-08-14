@@ -25,6 +25,7 @@ import { useLang } from "../state/lang";
 import { CopyButton } from "./CopyButton";
 import { commitSearxngUrl, searxngOffer, tierReading } from "./webSearchSetup";
 import type { DockerStatus } from "./dockerOffer";
+import { ReachBlock } from "./settingsReach";
 
 /** The `webSearch` block of /api/config — mirrors SessionsController#config. */
 export interface WebSearchStatus {
@@ -237,57 +238,59 @@ export function WebSearchSettings({
         </p>
       )}
 
-      {/* ---- WHEN it takes effect (card 222). This line is the whole reason
+      {/* ---- WHEN it takes effect (card 222). This block is the whole reason
           that card exists: the tier above was right, the search that followed
           it used a different one, and the page said nothing about which
           instant it was describing. web_search resolves its tier per call, so
           the honest sentence here is "immediately" — and it has to be on the
           screen rather than in a release note, because the reader's next move
-          is to go and search. ---- */}
-      <p className="settings-note" data-testid="web-search-reach">
-        {t(lang, "set.reachLive")}
-      </p>
+          is to go and search.
 
-      {/* ---- 1. SearXNG: an instance you run ---- */}
-      <div className="settings-grid">
-        <label className="settings-field">
-          <span>{t(lang, "set.searxngUrl")}</span>
-          <input
-            type="text"
-            placeholder="http://localhost:8888"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onBlur={(e) => commit(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-            }}
+          The sentence comes from <ReachBlock> and not from a hand-written
+          line: the review found the same sentence, hand-written, sitting over
+          a grid of seven fields of which one was live. ---- */}
+      <ReachBlock lang={lang} fields={["searxngUrl"]}>
+        {/* ---- 1. SearXNG: an instance you run ---- */}
+        <div className="settings-grid">
+          <label className="settings-field">
+            <span>{t(lang, "set.searxngUrl")}</span>
+            <input
+              type="text"
+              placeholder="http://localhost:8888"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              onBlur={(e) => commit(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+              }}
+            />
+            {originRow}
+          </label>
+        </div>
+        <p className="settings-note">{t(lang, "set.searxngOwnInstance")}</p>
+        <SearxngOfferBlock status={docker} lang={lang} />
+
+        {/* ---- 2. The two keyed providers ---- */}
+        <p className="settings-note">{t(lang, "set.searchKeyedHint")}</p>
+        <div className="settings-grid">
+          <SearchKeyField
+            provider="tavily"
+            label={t(lang, "set.tavilyKey")}
+            present={status?.tavilyKey === "true"}
+            onSaved={() => void load()}
           />
-          {originRow}
-        </label>
-      </div>
-      <p className="settings-note">{t(lang, "set.searxngOwnInstance")}</p>
-      <SearxngOfferBlock status={docker} lang={lang} />
+          <SearchKeyField
+            provider="brave"
+            label={t(lang, "set.braveKey")}
+            present={status?.braveKey === "true"}
+            onSaved={() => void load()}
+          />
+        </div>
 
-      {/* ---- 2. The two keyed providers ---- */}
-      <p className="settings-note">{t(lang, "set.searchKeyedHint")}</p>
-      <div className="settings-grid">
-        <SearchKeyField
-          provider="tavily"
-          label={t(lang, "set.tavilyKey")}
-          present={status?.tavilyKey === "true"}
-          onSaved={() => void load()}
-        />
-        <SearchKeyField
-          provider="brave"
-          label={t(lang, "set.braveKey")}
-          present={status?.braveKey === "true"}
-          onSaved={() => void load()}
-        />
-      </div>
-
-      {/* ---- 3. The one nobody chose ---- */}
-      <p className="settings-note">{t(lang, "set.searchScrapeNote")}</p>
-      <p className="settings-note">{t(lang, "set.searchNoFallThrough")}</p>
+        {/* ---- 3. The one nobody chose ---- */}
+        <p className="settings-note">{t(lang, "set.searchScrapeNote")}</p>
+        <p className="settings-note">{t(lang, "set.searchNoFallThrough")}</p>
+      </ReachBlock>
     </>
   );
 }
