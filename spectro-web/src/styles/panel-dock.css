@@ -210,6 +210,21 @@
    panel takes the whole window, keeping only its slim header as the way back.
    The native pane is told the new rectangle by the segment's own report — the
    size change fires its ResizeObserver; the class here is only the frame. */
+
+/* A position:fixed child cannot escape an ancestor that carries a transform
+   or will-change: transform, and the scroll-reveal (designs.css) leaves
+   will-change on .chat-row forever — measured live on 2026-08-14: fullscreen
+   laid out at (240,111) 1200x767, a rectangle inside the chat row, not the
+   window. While a dock panel is fullscreen the row must therefore stop being
+   a containing block. Scoped with :has (Chromium-native, and the desktop
+   shell is Chromium by construction); reverts the moment fullscreen ends. */
+html.fx-scroll .chat-row[data-reveal]:has(.dock-panel--full) {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
 .dock-panel--full {
   position: fixed;
   inset: 0;
@@ -223,9 +238,14 @@
 }
 
 /* Inside a dock panel the browser segment is a tenant, not the whole surface:
-   the bar and the fence note shrink to panel scale. */
+   the bar and the fence note shrink to panel scale. The hole clips its empty
+   state — in a crowded dock the hole can be a sliver, and an unclipped empty
+   state printed itself over the fence note below it (seen live 2026-08-14). */
 .dock-panel-body--fill .browser-segment {
   min-height: 0;
+}
+.dock-panel-body--fill .browser-hole {
+  overflow: hidden;
 }
 .browser-floor-note {
   margin: auto;

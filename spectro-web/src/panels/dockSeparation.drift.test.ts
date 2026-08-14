@@ -84,4 +84,17 @@ describe("the browser panel tells the shell when it is covered or shut", () => {
     expect(rightPanel).toContain("dock-panel--full");
     expect(rightPanel).toMatch(/key === "Escape"/);
   });
+
+  it("escapes the reveal's containing block while fullscreen", () => {
+    // The scroll-reveal leaves will-change: transform on .chat-row, which
+    // traps every position:fixed descendant (measured 2026-08-14: fullscreen
+    // laid out at 1200x767 inside the row). The dock stylesheet must lift the
+    // row's containing-block properties for exactly the fullscreen case.
+    const css = readFileSync(path.join(__dirname, "..", "styles", "panel-dock.css"), "utf8");
+    const at = css.indexOf(":has(.dock-panel--full)");
+    expect(at).toBeGreaterThan(-1);
+    const rule = css.slice(at, css.indexOf("}", at));
+    expect(rule).toMatch(/will-change:\s*auto/);
+    expect(rule).toMatch(/transform:\s*none/);
+  });
 });
