@@ -44,6 +44,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "That session is already open in another window. Close it there to continue it here.",
   },
   "nav.sessionBusyDismiss": { de: "verstanden", en: "got it" },
+  // Card 241: the layout store replaced a blob it could not trust.
+  "nav.layoutReset": {
+    de: "Panel-Layout zurückgesetzt: der gespeicherte Zustand war ungültig. Sessions sind unberührt.",
+    en: "Panel layout reset: the stored state was invalid. Sessions are untouched.",
+  },
   "nav.stategraph": { de: "State-Graph", en: "State graph" },
   "nav.stategraphNote": {
     de: "Ein State-Graph liegt als Dateipaar neben der Session, nicht auf dem Server — lade ihn rechts in der Ansicht.",

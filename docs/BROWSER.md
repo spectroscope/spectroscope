@@ -83,9 +83,10 @@ the owner asked for both:
 
 - the **`browser` tab** in the session's own tab row, beside chat, spectrum,
   trace, graph, text and lab — which binds it to the session by construction and
-  gives it an address, `#/session/{id}/browser`;
-- the rail's **Browser** segment, the large view onto the **current** session's
-  browser.
+  gives it an address, `#/session/{id}/browser`. This is the whole-surface
+  state/replay door the operator opens BY HAND (card 241);
+- the workspace's **browser panel** in the dock beside the chat (cards 219/228)
+  — the surface the AGENT's actions reveal.
 
 Both mount the same component with the same session id, and the shell keys its
 views by that id, so the second door is a view and never a second instance. Only
@@ -96,13 +97,22 @@ holds that: two mounts, one `sessionId` expression.
 The segment draws a frame with an address line; the page inside it is a real
 Chromium view the shell lays over that rectangle.
 
-The agent does not need the reader to open the surface first. When a browser
-tool runs, the shell shows that session's pane and asks the app's page to switch
-to the Browser segment, so the operator ends up looking at the page the agent is
-driving. **Exactly one pane is ever on screen**: bringing one forward takes every
-other session's off. Two native overlays stacked over one rectangle is the
-failure a `div` could never make, and the operator would be watching the top one
-while the agent drove the other.
+The agent does not need the reader to open the surface first, and — card 241,
+from the owner's field report — it may not steal the surface the reader chose
+either. When a browser tool runs, the shell asks the app's page for a surface,
+and the app reveals the DOCK PANEL browser: opens it if closed, raises it if
+folded, at most once per run (an operator who closed the panel mid-run has
+answered, and the app does not re-ask). No tab and no segment flips. The pane
+itself goes on screen only when the app posts the rectangle a mounted surface
+just measured — a driving verb paints nothing, so a hidden browser stays the
+operator's decision while the agent keeps driving the page underneath (a
+screenshot of a never-shown pane can honestly fail with "the pane has not
+painted yet"). A real navigation of the app window (a reload) hides every pane;
+the fresh page starts uncovered and the first hole to report brings the pane
+back. **Exactly one pane is ever on screen**: a report for one session takes
+every other session's pane off. Two native overlays stacked over one rectangle
+is the failure a `div` could never make, and the operator would be watching the
+top one while the agent drove the other.
 
 **The desktop-only trade is REVERSED (card 226, owner's call).** Card 201
 ratified "desktop face only" and the owner reversed it on 2026-08-14, in his

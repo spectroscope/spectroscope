@@ -199,6 +199,60 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   return state;
 }
 
+/** The widths a blob must carry as FINITE NUMBERS to be trusted: a stored
+ *  `rightPanelW: "abc"` would ride the merge into a CSS custom property and
+ *  wedge the layout on every load, with nothing left for a reload to heal. */
+const WIDTH_FIELDS = ["sidebarW", "chatW", "traceW", "rightPanelW", "imagesW"] as const;
+/** The flags a blob must carry as booleans, same argument. */
+const FLAG_FIELDS = ["chatOpen", "traceOpen", "rightPanelOpen"] as const;
+
+/**
+ * Reads one stored blob, healed or replaced (card 241 recovery).
+ *
+ * <p>Two failure classes, answered differently. A blob card 219's migration
+ * already heals per field — an unknown dock mode, a non-string weights, a
+ * corrupt column arrangement — hydrates silently, exactly as shipped. A blob
+ * the store cannot TRUST — unparseable JSON, not an object, a width that is
+ * not a finite number, a flag that is not a boolean — resets the WHOLE layout
+ * to the default and says so once (`recovered`), because merging around a
+ * poisoned field would carry the poison into the next persist. Sessions are
+ * never touched here: this store owns one localStorage key and nothing else.
+ *
+ * @param raw         what localStorage held under the layout key, or null
+ * @param termOpenRaw the legacy terminal-open entry, or null
+ * @return the state to run with, and whether a broken blob was replaced
+ */
+export function readLayoutBlob(
+  raw: string | null,
+  termOpenRaw: string | null,
+): { state: LayoutState; recovered: boolean } {
+  if (raw === null) return { state: { ...DEFAULT_LAYOUT }, recovered: false };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return { state: { ...DEFAULT_LAYOUT }, recovered: true };
+  }
+  if (typeof parsed !== "object" || parsed === null) {
+    return { state: { ...DEFAULT_LAYOUT }, recovered: true };
+  }
+  const blob = parsed as Record<string, unknown>;
+  for (const field of WIDTH_FIELDS) {
+    if (field in blob && !Number.isFinite(blob[field])) {
+      return { state: { ...DEFAULT_LAYOUT }, recovered: true };
+    }
+  }
+  for (const field of FLAG_FIELDS) {
+    if (field in blob && typeof blob[field] !== "boolean") {
+      return { state: { ...DEFAULT_LAYOUT }, recovered: true };
+    }
+  }
+  return { state: hydrateLayout(parsed, termOpenRaw), recovered: false };
+}
+
+/** Whether THIS load replaced a broken blob — the one terse sentence's truth. */
+let recoveredOnLoad = false;
+
 function readSaved(): LayoutState {
   try {
     const raw = localStorage.getItem(KEY);
@@ -208,15 +262,44 @@ function readSaved(): LayoutState {
     } catch {
       /* storage blocked mid-read — migrate without the terminal fact */
     }
-    if (raw) return hydrateLayout(JSON.parse(raw), legacyTermOpen);
+    const read = readLayoutBlob(raw, legacyTermOpen);
+    recoveredOnLoad = read.recovered;
+    if (read.recovered) {
+      // Heal the stored copy too, or the next load recovers all over again.
+      try {
+        localStorage.setItem(KEY, JSON.stringify(read.state));
+      } catch {
+        /* ignore */
+      }
+    }
+    return read.state;
   } catch {
-    /* no localStorage (tests) or bad JSON — fall back to defaults */
+    /* no localStorage (tests) — fall back to defaults */
   }
   return { ...DEFAULT_LAYOUT };
 }
 
 let state: LayoutState = readSaved();
 const listeners = new Set<() => void>();
+
+/** Whether the load replaced a broken blob. Cleared by the banner's dismiss. */
+export function layoutRecovered(): boolean {
+  return recoveredOnLoad;
+}
+
+/** The banner's dismiss: the sentence was read, the store stays default. */
+export function dismissLayoutRecovered(): void {
+  if (!recoveredOnLoad) return;
+  recoveredOnLoad = false;
+  for (const l of listeners) l();
+}
+
+const neverRecovered = (): boolean => false;
+
+/** The hook behind the one terse recovery sentence (card 241). */
+export function useLayoutRecovered(): boolean {
+  return useSyncExternalStore(subscribe, layoutRecovered, neverRecovered);
+}
 
 function persist(): void {
   try {

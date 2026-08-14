@@ -26,6 +26,7 @@ function spyDeps(over?: Partial<ShellDeps>): { deps: ShellDeps; touched: string[
     fleetsLocked: false,
     openLevelPanel: mark("openLevelPanel"),
     changeTab: mark("changeTab"),
+    revealBrowserPanel: mark("revealBrowserPanel"),
     openDoctor: mark("openDoctor"),
     openKeymap: mark("openKeymap"),
     toggleImages: mark("toggleImages"),
@@ -47,10 +48,12 @@ const EXPECTED: Record<string, { arg?: string; touches: string[] }> = {
   "nav.sessions": { touches: ["setNav"] },
   "nav.fleets": { touches: ["setNav"] },
   "nav.stategraph": { touches: ["setNav"] },
-  // Sent by the shell when the AGENT reaches for the browser, so the pane
-  // never paints behind a segment the reader is not looking at. Since card
-  // 228 the destination is the session's browser TAB — the rail segment left.
-  "nav.browser": { touches: ["setNav", "changeTab"] },
+  // Sent by the shell when the AGENT reaches for the browser. Card 241, the
+  // owner's ruling after the whole-surface takeover: the agent's cue reveals
+  // the DOCK PANEL browser — opens it if closed, raises it if folded — and
+  // NEVER flips the session tab. The tab stays a door the operator opens by
+  // hand.
+  "nav.browser": { touches: ["revealBrowserPanel"] },
   // A tab is only on screen in the sessions segment, so picking one from the
   // menu while the state graph is showing has to come back first.
   "tab.set": { arg: "trace", touches: ["changeTab", "setNav"] },
@@ -72,6 +75,18 @@ describe("what a menu command does to the app", () => {
     }
     // And nothing is expected that the shell cannot send.
     expect(Object.keys(EXPECTED).sort()).toEqual([...SHELL_COMMAND_IDS].sort());
+  });
+
+  it("the agent's browser reach opens the dock panel and never the session tab", () => {
+    // Card 241, the owner's field report: "öffne einen browser mit www.test.de"
+    // flipped the session TAB to a whole-surface browser and the UI broke.
+    // The cue's whole answer is the panel reveal; the tab and the segment stay
+    // exactly where the operator put them.
+    const { deps, touched } = spyDeps();
+    runShellCommand({ id: "nav.browser" }, deps);
+    expect(touched).toEqual(["revealBrowserPanel"]);
+    expect(touched).not.toContain("changeTab");
+    expect(touched).not.toContain("setNav");
   });
 
   it("shows the ladder instead of doing nothing when fleets are locked", () => {
