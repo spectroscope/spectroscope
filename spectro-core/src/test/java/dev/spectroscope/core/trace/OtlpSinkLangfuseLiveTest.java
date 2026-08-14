@@ -18,10 +18,13 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -54,11 +57,37 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  *
  * <p>Neither the address nor the key pair is written down here: both arrive
  * from the environment, because this repo is public.</p>
+ *
+ * <p><b>It leaves litter, on purpose.</b> Every run seeds a new session id and
+ * posts a whole trace, and nothing deletes it afterwards — that is the price of
+ * the virgin-seed guard below, which is what makes a green mean anything. The
+ * instance this was measured against held 141 traces before one review pass and
+ * 155 after, 40 of the first 100 already carrying the {@code -live-<epoch>}
+ * suffix this file mints. Whoever runs it against an instance that matters
+ * should know they are writing to it.</p>
+ *
+ * <p><b>It is a MEASUREMENT, not a standing guard.</b> The annotation above
+ * means CI and every ordinary gate skip it, so nothing here defends main. What
+ * defends the exported shape on main is {@link OtlpSinkTest} at the payload
+ * layer; this file settles the half of the card's criterion that a payload
+ * cannot answer, and it answers it on the day someone runs it.</p>
  */
 @EnabledIfEnvironmentVariable(named = "SPECTRO_LIVE_LANGFUSE", matches = ".+")
 class OtlpSinkLangfuseLiveTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /** A tool call the exporter gives a span to, plus the two things about it
+     *  only the WIRE knows: which agent made it, and whether that agent had a
+     *  turn open when the result landed. Neither can be read back out of the
+     *  consumer, which is the whole reason a misparented call can look
+     *  plausible there. */
+    private record Call(String callId, String tool, String agent, boolean turnOpen) {}
+
+    /** A span the exporter can only place after the fact, because it names a
+     *  tool CALL whose own span is measured later than it: a gate, an image.
+     *  {@code seed} is the exporter's own seed for its id. */
+    private record Placed(String seed, String name, String callId, String agent) {}
 
     /** How long the consumer is given to ingest. Langfuse's OTLP endpoint
      *  accepts on the request thread and materialises through a worker and
@@ -81,11 +110,23 @@ class OtlpSinkLangfuseLiveTest {
         // older producer's and not the payload just posted. Seeding the trace
         // with a per-run id removes the question instead of arguing about it —
         // and the assertion below refuses to continue if the id is not new.
+        //
+        // 404 and not "nothing came back": the instance answers 404 for a
+        // trace that does not exist and 401 when the key pair is wrong, and a
+        // check that only asked whether the read was empty would call the
+        // second one virgin. It could not produce a green — the POST is
+        // rejected too — but it would report "the seed is virgin" when the
+        // truth is "I was not allowed to look", and this file exists because
+        // the difference between those two sentences cost a day once already.
         String sessionId = file.getFileName().toString().replace(".jsonl", "")
                 + "-live-" + System.currentTimeMillis();
-        assertNull(get(base + "/api/public/traces/" + OtlpSink.traceIdFor(sessionId), auth),
-                "the trace seed was not virgin — this run cannot tell its own "
-                        + "spans from an earlier producer's");
+        int seed = status(base + "/api/public/traces/" + OtlpSink.traceIdFor(sessionId), auth);
+        assertEquals(404, seed,
+                "the trace seed is not known to be virgin: the instance answered " + seed
+                        + " where 404 is the only answer that means 'no such trace' — "
+                        + (seed == 401 || seed == 403 ? "this is a key that may not read, "
+                        + "not an empty seed" : "this run cannot tell its own spans from an "
+                        + "earlier producer's"));
 
         List<RunEvent> events = new ArrayList<>();
         for (String line : Files.readAllLines(file)) {
@@ -225,24 +266,159 @@ class OtlpSinkLangfuseLiveTest {
                             + "spawner for it: " + chainNames(o.getKey(), parent, name));
         }
 
-        // Scope item 2: a tool sits INSIDE the turn that triggered it. Any tool
-        // observation whose chain skips every turn is the old flat shape.
-        // The tool names come from the RUN, not from a guess about the naming
-        // scheme: a tool span is named after the tool itself, so a filter on a
-        // "tool · " prefix silently matches nothing and the loop below would
-        // pass while checking zero spans.
-        List<String> toolNames = events.stream()
-                .filter(e -> e instanceof RunEvent.ToolCall)
-                .map(e -> ((RunEvent.ToolCall) e).name()).distinct().toList();
-        List<String> tools = name.entrySet().stream()
-                .filter(e -> toolNames.contains(e.getValue())).map(Map.Entry::getKey).toList();
-        assertTrue(!tools.isEmpty(), "the session exported no tool span; the run called "
-                + toolNames + " and langfuse holds " + name.values());
-        for (String tool : tools) {
-            assertTrue(chainNames(tool, parent, name).stream().anyMatch(n -> n.startsWith("turn ")),
-                    name.get(tool) + " hangs outside every turn: "
-                            + chainNames(tool, parent, name));
+        // Scope item 2: a tool sits INSIDE the turn that triggered it — the
+        // NEAREST container above it, and a turn of the agent that made the
+        // call.
+        //
+        // Both halves are here because of what this check used to be. It asked
+        // `chainNames(tool).anyMatch(n -> n.startsWith("turn "))`: the same
+        // transitive ancestor test that was removed from the spawn check one
+        // block above, left standing one block below it. A subagent's entire
+        // subtree hangs under a turn of its spawner, so ANY tool anywhere
+        // beneath a subagent satisfied it. Two probes, both measured GREEN
+        // against that wording on 2026-08-14 and both RED against this one:
+        //
+        //   - openTurnSpan returning the agent span for every agent that is
+        //     not main or conductor — every subagent's tools drawn BESIDE the
+        //     turns that issued them, the exact defect this card was opened
+        //     for, restricted to subagents. It printed "deepest chain: 7" and
+        //     exit 0.
+        //   - the same tools re-parented onto MAIN's open turn — a worker's
+        //     call drawn inside a turn of an agent that never made it. It
+        //     printed "deepest chain: 6" and exit 0.
+        //
+        // The first is caught by asking for the NEAREST container; the second
+        // only by asking WHOSE turn it is, which needs the call → agent map
+        // the wire carries. Both are read below.
+        //
+        // Which observation belongs to which call is asked of the exporter
+        // itself (its span ids are deterministic), never guessed from names: a
+        // session calls `grep` eleven times and every one of those spans is
+        // named `grep`. Identity is ours, PARENTHOOD is the consumer's, and
+        // only the second is what this test is about.
+        Map<String, String> runOwner = new HashMap<>();
+        Set<String> turnOpen = new HashSet<>();
+        Map<String, Call> openCall = new LinkedHashMap<>();
+        List<Call> calls = new ArrayList<>();
+        for (RunEvent e : events) {
+            if (e instanceof RunEvent.RunStart s) {
+                runOwner.put(s.runId(), s.agentId());
+            } else if (e instanceof RunEvent.TurnStart t) {
+                turnOpen.add(t.agentId());
+            } else if (e instanceof RunEvent.RunEnd r) {
+                turnOpen.remove(runOwner.get(r.runId()));
+            } else if (e instanceof RunEvent.ToolCall c) {
+                openCall.put(c.callId(), new Call(c.callId(), c.name(), c.agentId(), false));
+            } else if (e instanceof RunEvent.ToolResult r) {
+                Call open = openCall.remove(r.callId());
+                if (open != null) {
+                    calls.add(new Call(open.callId(), open.tool(), open.agent(),
+                            turnOpen.contains(open.agent())));
+                }
+            }
         }
+        assertTrue(!calls.isEmpty(), "the session spanned no tool call at all; langfuse holds "
+                + name.values());
+        for (Call c : calls) {
+            String span = spanIdFor("tool:" + sessionId + ":" + c.callId());
+            assertTrue(c.tool().equals(name.get(span)),
+                    "no observation for call " + c.callId() + " (" + c.tool() + "), which the "
+                            + "exporter spans as " + span + "; langfuse holds " + name.get(span));
+            String owner = nearestOwner(span, parent, name);
+            String owns = owner == null ? "nothing at all" : name.get(owner);
+            // A call made while its agent has no turn open is rare but real,
+            // and the exporter then hangs it on the agent itself. Whether a
+            // turn was open is read off the WIRE — a turn runs from an agent's
+            // turn_start to the end of its run — so this escape cannot be
+            // widened by the exporter's own opinion of where the call belongs.
+            // Measured 2026-08-14 over the 8 stored sessions that carry a
+            // spawn: 103 spanned calls, 0 of them outside a turn, so today this
+            // branch is never taken.
+            if (!c.turnOpen()) {
+                assertTrue(("agent · " + c.agent()).equals(owns),
+                        c.tool() + " (call " + c.callId() + ", made by " + c.agent()
+                                + " with no turn open) hangs under " + owns + "; its chain is "
+                                + chainNames(span, parent, name));
+                continue;
+            }
+            assertTrue(owns.startsWith("turn ") && c.agent().equals(agentOfTurn(owns)),
+                    c.tool() + " (call " + c.callId() + ", made by " + c.agent() + ") does not "
+                            + "sit in a turn of its own agent but under " + owns + "; its chain "
+                            + "is " + chainNames(span, parent, name));
+        }
+
+        // ONE LEVEL UP from the tools: a turn hangs under ITS OWN agent.
+        // Nothing asserted this before, and the tool check above cannot see
+        // it — that one reads the agent out of the turn's NAME, so a turn
+        // drawn under the wrong agent satisfies it while the picture is
+        // wrong in exactly the way this card is about.
+        for (Map.Entry<String, String> o : name.entrySet()) {
+            if (!o.getValue().startsWith("turn ")) {
+                continue;
+            }
+            String host = nearestAgent(o.getKey(), parent, name);
+            assertTrue(host != null && ("agent · " + agentOfTurn(o.getValue())).equals(name.get(host)),
+                    o.getValue() + " hangs under " + (host == null ? "no agent at all"
+                            : name.get(host)) + "; its chain is "
+                            + chainNames(o.getKey(), parent, name));
+        }
+
+        // ONE LEVEL DOWN from the tools: the gate and the image. Scope item 2
+        // names gate spans as well and only the payload layer ever checked
+        // them, and the image rides the very same code path in the exporter —
+        // both are placed after the fact, once the call they name has been
+        // measured. Leaving them out would repeat this card's own pattern:
+        // close the hole for one kind of span and leave it open for its
+        // neighbour.
+        //
+        // Either may sit inside the call's own span, or — when that span no
+        // longer contains it, which is what card 111's execution-only tool
+        // span does to a gate that waited BEFORE the execution — beside it in
+        // the same turn. Under any OTHER call's span, or in another agent's
+        // turn, it is the wrong shape.
+        Map<String, String> toolSpanOfCall = new LinkedHashMap<>();
+        for (Call c : calls) {
+            toolSpanOfCall.put(c.callId(), spanIdFor("tool:" + sessionId + ":" + c.callId()));
+        }
+        Map<String, Placed> asked = new LinkedHashMap<>();
+        Set<String> decided = new HashSet<>();
+        List<Placed> placed = new ArrayList<>();
+        for (RunEvent e : events) {
+            if (e instanceof RunEvent.PermissionRequest p) {
+                asked.putIfAbsent(p.callId(),
+                        new Placed("gate:" + sessionId + ":" + p.callId(),
+                                "gate · " + p.name(), p.callId(), p.agentId()));
+            } else if (e instanceof RunEvent.PermissionDecision d) {
+                decided.add(d.callId());
+            } else if (e instanceof RunEvent.ImageGenerated img) {
+                placed.add(new Placed("img:" + sessionId + ":" + img.callId(),
+                        "image · " + img.provider(), img.callId(), img.agentId()));
+            }
+        }
+        // Only a gate that was DECIDED gets a span — an open request is still
+        // being waited on and has no end to draw.
+        asked.forEach((callId, gate) -> {
+            if (decided.contains(callId)) {
+                placed.add(gate);
+            }
+        });
+        for (Placed p : placed) {
+            String span = spanIdFor(p.seed());
+            assertTrue(p.name().equals(name.get(span)),
+                    "no observation for " + p.name() + " on call " + p.callId()
+                            + ", which the exporter spans as " + span + "; langfuse holds "
+                            + name.get(span));
+            String owner = nearestPlacement(span, parent, name, toolSpanOfCall.values());
+            String owns = owner == null ? "nothing at all" : name.get(owner);
+            boolean ownCall = owner != null && owner.equals(toolSpanOfCall.get(p.callId()));
+            boolean ownTurn = owns.startsWith("turn ") && p.agent().equals(agentOfTurn(owns));
+            assertTrue(ownCall || ownTurn,
+                    p.name() + " (call " + p.callId() + ", from " + p.agent() + ") sits under "
+                            + owns + ", which is neither its own call nor a turn of its own "
+                            + "agent; its chain is " + chainNames(span, parent, name));
+        }
+        System.out.println("checked: " + calls.size() + " tool calls · " + placed.size()
+                + " gates and images");
     }
 
     /** Poll until the consumer has materialised the batch it accepted, and
@@ -286,17 +462,27 @@ class OtlpSinkLangfuseLiveTest {
     }
 
     private static JsonNode get(String url, String auth) throws Exception {
+        HttpResponse<String> res = send(url, auth);
+        return res.statusCode() / 100 == 2 ? JSON.readTree(res.body()) : null;
+    }
+
+    /** The status alone, for the one question where "not 2xx" is too coarse an
+     *  answer to act on. */
+    private static int status(String url, String auth) throws Exception {
+        return send(url, auth).statusCode();
+    }
+
+    private static HttpResponse<String> send(String url, String auth) throws Exception {
         HttpRequest.Builder req = HttpRequest.newBuilder(URI.create(url))
                 .timeout(Duration.ofSeconds(15)).GET();
         if (auth != null && !auth.isBlank()) {
             req.header("Authorization", "Basic " + Base64.getEncoder()
                     .encodeToString(auth.getBytes(StandardCharsets.UTF_8)));
         }
-        HttpResponse<String> res = HttpClient.newBuilder()
+        return HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
                 .connectTimeout(Duration.ofSeconds(5)).build()
                 .send(req.build(), HttpResponse.BodyHandlers.ofString());
-        return res.statusCode() / 100 == 2 ? JSON.readTree(res.body()) : null;
     }
 
     private static String idOfName(Map<String, String> name, String wanted) {
@@ -336,6 +522,62 @@ class OtlpSinkLangfuseLiveTest {
             }
         }
         return null;
+    }
+
+    /** The FIRST thing above {@code id} that can CONTAIN a call — a turn or an
+     *  agent — or null when neither stands above it. Same reason as
+     *  {@link #nearestAgent}, one level down: a subagent's whole subtree hangs
+     *  under a turn of its spawner, so "a turn is somewhere on the chain" is
+     *  true of every tool anywhere beneath a subagent, whatever was done to
+     *  its parent. */
+    private static String nearestOwner(String id, Map<String, String> parent,
+                                       Map<String, String> name) {
+        for (String at : ancestors(id, parent)) {
+            String n = name.get(at);
+            if (n != null && (n.startsWith("turn ") || n.startsWith("agent · "))) {
+                return at;
+            }
+        }
+        return null;
+    }
+
+    /** As {@link #nearestOwner}, but tool spans count too — a gate legitimately
+     *  sits inside the call it guarded. Tool spans are named after the tool, so
+     *  they are recognised by id rather than by name. */
+    private static String nearestPlacement(String id, Map<String, String> parent,
+                                           Map<String, String> name,
+                                           java.util.Collection<String> toolSpans) {
+        for (String at : ancestors(id, parent)) {
+            String n = name.get(at);
+            if (toolSpans.contains(at)
+                    || (n != null && (n.startsWith("turn ") || n.startsWith("agent · ")))) {
+                return at;
+            }
+        }
+        return null;
+    }
+
+    /** The agent a turn span belongs to, read out of its name — a turn is
+     *  named {@code turn N · aid}. */
+    private static String agentOfTurn(String turnName) {
+        int at = turnName.indexOf(" · ");
+        return at < 0 ? turnName : turnName.substring(at + " · ".length());
+    }
+
+    /** The span id the exporter itself would mint for a seed, asked of
+     *  {@link OtlpSink} rather than recomputed here.
+     *
+     * <p>The ids are deterministic by design, and that is the only reason an
+     * observation can be tied back to the call it belongs to at all: eleven
+     * calls of {@code grep} produce eleven spans all named {@code grep}, so a
+     * check that matched on names would be free to pick the convenient one.
+     * Carrying a second copy of the id scheme in this file would let the two
+     * drift apart in silence; asking the class means a rename fails loudly
+     * here instead.</p> */
+    private static String spanIdFor(String seed) throws Exception {
+        java.lang.reflect.Method id = OtlpSink.class.getDeclaredMethod("id", String.class, int.class);
+        id.setAccessible(true);
+        return (String) id.invoke(null, seed, 8);
     }
 
     private static List<String> chainNames(String id, Map<String, String> parent,
