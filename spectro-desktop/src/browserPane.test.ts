@@ -35,6 +35,11 @@ interface Recorder {
   userAgents: string[];
   cdp: [string, unknown][];
   currentUrl: string;
+  /** The fake's navigation history: loaded URLs, and where the index sits. */
+  history: string[];
+  historyIndex: number;
+  /** Which history walks the pane asked Chromium for. */
+  historyNav: string[];
   loadFails: string | null;
   /** What the page's own traffic does while loadURL is in flight. */
   duringLoad: (() => Promise<void>) | null;
@@ -58,6 +63,9 @@ function freshRecorder(): Recorder {
     userAgents: [],
     cdp: [],
     currentUrl: "about:blank",
+    history: [],
+    historyIndex: -1,
+    historyNav: [],
     loadFails: null,
     duringLoad: null,
     evalResult: null,
@@ -101,6 +109,22 @@ function fakeWebContents(): Record<string, unknown> {
       if (rec.duringLoad) await rec.duringLoad();
       if (rec.loadFails) throw new Error(rec.loadFails);
       rec.currentUrl = url;
+      rec.history = rec.history.slice(0, rec.historyIndex + 1).concat(url);
+      rec.historyIndex = rec.history.length - 1;
+    },
+    navigationHistory: {
+      canGoBack: () => rec.historyIndex > 0,
+      canGoForward: () => rec.historyIndex < rec.history.length - 1,
+      goBack: () => {
+        rec.historyIndex -= 1;
+        rec.currentUrl = rec.history[rec.historyIndex] ?? "about:blank";
+        rec.historyNav.push("back");
+      },
+      goForward: () => {
+        rec.historyIndex += 1;
+        rec.currentUrl = rec.history[rec.historyIndex] ?? "about:blank";
+        rec.historyNav.push("forward");
+      },
     },
     executeJavaScript: async (code: string) => {
       rec.evals.push(code);
@@ -207,6 +231,34 @@ describe("browserPane", () => {
 
     assert.equal(rec.segmentCalls, 2, "and so does the first tool call after leaving it");
     assert.equal(rec.addedChildren, 1, "the view joins the window once, not once per show");
+  });
+
+  it("walks history with back and forward and answers where it landed", async () => {
+    // Card 227: the desktop control row's back/forward travel the same wire
+    // as every other verb. The reply carries the address it landed on, the
+    // way the headless face's history verbs answer, so the two faces read
+    // identically to the UI.
+    await navigate("http://localhost:5173/a");
+    await navigate("http://localhost:5173/b");
+
+    const back = await pane.runVerb("back", {}, OPEN, SESSION);
+    assert.equal(back.ok, true, back.error ?? "");
+    assert.equal((back.value as { url: string }).url, "http://localhost:5173/a");
+    assert.deepEqual(rec.historyNav, ["back"], "the walk goes through Chromium's own history");
+
+    const forward = await pane.runVerb("forward", {}, OPEN, SESSION);
+    assert.equal(forward.ok, true, forward.error ?? "");
+    assert.equal((forward.value as { url: string }).url, "http://localhost:5173/b");
+  });
+
+  it("refuses a history walk with nowhere to go, in the headless face's own words", async () => {
+    await navigate("http://localhost:5173/only");
+    const back = await pane.runVerb("back", {}, OPEN, SESSION);
+    assert.equal(back.ok, false);
+    assert.match(String(back.error), /nothing earlier in this session's history/);
+    const forward = await pane.runVerb("forward", {}, OPEN, SESSION);
+    assert.equal(forward.ok, false);
+    assert.match(String(forward.error), /nothing later in this session's history/);
   });
 
   it("hides on a viewport report with visible:false and comes back on the next call", async () => {

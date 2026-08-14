@@ -33,13 +33,62 @@ export interface ViewPicture {
   ts: number;
 }
 
+/** A screenshot's bytes riding a verb answer (card 227): the desktop face has
+ *  no client-side picture to save, so the shot travels back as verb fields. */
+export interface VerbShot {
+  mediaType: string;
+  dataBase64: string;
+}
+
+/** One row of the start page (card 227): a launch configuration, with what the
+ *  session's supervisor says about it right now. */
+export interface LaunchConfigRow {
+  name: string;
+  /** Where the play button would point the browser, or null when the entry
+   *  names neither a port nor a url. */
+  address: string | null;
+  /** True for an entry spectroscope cannot run — play attaches, spawns nothing. */
+  attaches: boolean;
+  up: boolean;
+  /** The exit code of a run that ended, or null while none did. */
+  exitCode: number | null;
+}
+
+/** The start page's data: the session's configurations, or the sentence that
+ *  says why there are none to list. */
+export interface LaunchList {
+  ok: boolean;
+  sentence: string | null;
+  /** How many entries the launch file carries that could not be offered. */
+  skipped: number;
+  configs: LaunchConfigRow[];
+}
+
 /** Everything the server can say, discriminated for the component's switch. */
 export type ViewMessage =
   | { kind: "state"; state: ViewState }
   | { kind: "frame"; picture: ViewPicture }
-  | { kind: "verb"; verb: string; ok: boolean; url: string | null; error: string | null }
+  | {
+      kind: "verb";
+      verb: string;
+      ok: boolean;
+      url: string | null;
+      error: string | null;
+      shot: VerbShot | null;
+    }
   | { kind: "refused"; sentence: string }
-  | { kind: "error"; sentence: string };
+  | { kind: "error"; sentence: string }
+  | ({ kind: "launchConfigs" } & LaunchList)
+  | {
+      kind: "launchPlayed";
+      name: string;
+      ok: boolean;
+      /** Whether the configuration itself came up — card 202's split: a fence
+       *  refusal leaves the server running and only the browser away. */
+      up: boolean;
+      url: string | null;
+      sentence: string | null;
+    };
 
 /** The channel's address on the page's own origin — the same trust as /ws. */
 export function viewSocketUrl(location: { protocol: string; host: string }): string {
@@ -101,11 +150,50 @@ export function parseViewMessage(data: unknown): ViewMessage | null {
         ok: frame.ok === true,
         url: typeof frame.url === "string" ? frame.url : null,
         error: typeof frame.error === "string" ? frame.error : null,
+        shot:
+          typeof frame.mediaType === "string" && typeof frame.dataBase64 === "string"
+            ? { mediaType: frame.mediaType, dataBase64: frame.dataBase64 }
+            : null,
       };
     case "refused":
       return { kind: "refused", sentence: typeof frame.sentence === "string" ? frame.sentence : "" };
     case "error":
       return { kind: "error", sentence: typeof frame.sentence === "string" ? frame.sentence : "" };
+    case "launch_configs": {
+      // Tolerant like every boundary parse on this wire: a row without a name
+      // cannot be started by name, so it is dropped rather than rendered blind.
+      const rows: LaunchConfigRow[] = [];
+      if (Array.isArray(frame.configs)) {
+        for (const raw of frame.configs) {
+          if (typeof raw !== "object" || raw === null) continue;
+          const entry = raw as Record<string, unknown>;
+          if (typeof entry.name !== "string" || entry.name === "") continue;
+          rows.push({
+            name: entry.name,
+            address: typeof entry.address === "string" ? entry.address : null,
+            attaches: entry.attaches === true,
+            up: entry.up === true,
+            exitCode: typeof entry.exitCode === "number" ? entry.exitCode : null,
+          });
+        }
+      }
+      return {
+        kind: "launchConfigs",
+        ok: frame.ok === true,
+        sentence: typeof frame.sentence === "string" ? frame.sentence : null,
+        skipped: typeof frame.skipped === "number" ? frame.skipped : 0,
+        configs: rows,
+      };
+    }
+    case "launch_played":
+      return {
+        kind: "launchPlayed",
+        name: typeof frame.name === "string" ? frame.name : "",
+        ok: frame.ok === true,
+        up: frame.up === true,
+        url: typeof frame.url === "string" ? frame.url : null,
+        sentence: typeof frame.sentence === "string" ? frame.sentence : null,
+      };
     default:
       return null;
   }
@@ -296,6 +384,22 @@ export function keyFrame(sessionId: string, key: string): Record<string, unknown
   return { type: "input", sessionId, action: "key", text: key };
 }
 
+/** @return the start page's ask: which configurations, and what is up now */
+export function launchListFrame(sessionId: string): Record<string, unknown> {
+  return { type: "launch_list", sessionId };
+}
+
+/** @return the play button: start one configuration and open the browser on it */
+export function launchPlayFrame(sessionId: string, name: string): Record<string, unknown> {
+  return { type: "launch_play", sessionId, name };
+}
+
+/** @return the screenshot ask for a face with no client-side picture to save —
+ *          the shot comes back as verb fields (card 227) */
+export function screenshotVerbFrame(sessionId: string): Record<string, unknown> {
+  return { type: "screenshot", sessionId };
+}
+
 /** @return the frame bytes as the data URL both the img and the download ride */
 export function frameDataUrl(base64: string): string {
   return `data:image/jpeg;base64,${base64}`;
@@ -304,10 +408,12 @@ export function frameDataUrl(base64: string): string {
 /**
  * The screenshot control's file name, off the clock and nothing else.
  *
- * @param epochMs when the shot was taken
+ * @param epochMs   when the shot was taken
+ * @param mediaType what the bytes are — the desktop pane answers PNG, the
+ *                  screencast is JPEG; the default keeps the card-226 caller
  */
-export function screenshotFilename(epochMs: number): string {
+export function screenshotFilename(epochMs: number, mediaType = "image/jpeg"): string {
   const iso = new Date(epochMs).toISOString(); // 2026-08-14T12:34:56.000Z
   const stamp = `${iso.slice(0, 10).replaceAll("-", "")}-${iso.slice(11, 19).replaceAll(":", "")}`;
-  return `spectro-browser-${stamp}.jpeg`;
+  return `spectro-browser-${stamp}.${mediaType === "image/png" ? "png" : "jpeg"}`;
 }

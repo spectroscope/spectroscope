@@ -41,8 +41,11 @@ function view(overrides: Partial<WebFaceViewProps>): string {
     draft: null,
     picture: null,
     notice: null,
+    launch: null,
+    playing: null,
     send: () => {},
     onDraft: () => {},
+    onPlay: () => {},
     ...overrides,
   };
   return renderToStaticMarkup(<WebFaceView {...props} />);
@@ -94,11 +97,15 @@ describe("what the reader typed wins over what the page says", () => {
 });
 
 describe("the web mode before any page", () => {
+  // Replaced under card 227: the idle sentence gave way to the START PAGE —
+  // the empty browser now lists the session's launch configurations. The
+  // start page's own behaviour is pinned in startPage.test.tsx; this suite
+  // keeps only the mode boundary: no picture, and the start page stands.
   const markup = view({ mode: "web", url: null, picture: null });
 
-  it("shows no picture and says how one appears", () => {
+  it("shows no picture and stands the start page where the idle note stood", () => {
     expect(markup).not.toContain("<img");
-    expect(markup).toContain(esc(t(en, "browser.view.idleNote")));
+    expect(markup).toContain(esc(t(en, "browser.start.heading")));
   });
 });
 

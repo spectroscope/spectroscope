@@ -42,6 +42,10 @@ export interface BrowserActionMeta {
   callId: string;
   /** The wire name: browser_navigate, browser_eval, browser_computer, … */
   tool: string;
+  /** Whether a HUMAN drove this step (card 227): true when the recorded line
+   *  carries `actor:"operator"`. Absent means agent — every sidecar written
+   *  before that card carries no actor, and for those files it is simply true. */
+  operator: boolean;
   /** The address the call ended on, or "" when no page was open. May be a
    *  redaction marker rather than a URL — the writer replaces a
    *  credential-shaped address whole. */
@@ -90,6 +94,7 @@ export function readBrowserAction(value: unknown): BrowserActionMeta | null {
     agentId: str(v.agentId),
     callId: str(v.callId),
     tool: str(v.tool),
+    operator: v.actor === "operator",
     pageUrl: str(v.pageUrl),
     ok: v.ok === true,
     resultBytes: num(v.resultBytes),
@@ -125,7 +130,11 @@ function hostOf(url: string): string {
 export function browserStepSummary(step: BrowserActionMeta): string {
   const where = step.pageUrl === "" ? "no page" : hostOf(step.pageUrl);
   const outcome = step.ok ? `${step.durationMs} ms` : `failed · ${step.durationMs} ms`;
-  return `${step.tool} · ${where} · ${outcome}`;
+  // Card 227, criterion 4: a human's step says so — without this prefix every
+  // line of a replay reads as the model's, which for an operator's typed
+  // address would be a misattribution the record was built to prevent.
+  const who = step.operator ? "operator · " : "";
+  return `${who}${step.tool} · ${where} · ${outcome}`;
 }
 
 /**

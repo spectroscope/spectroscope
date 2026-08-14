@@ -42,14 +42,21 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
      *  Chrome for a {@code spectro web} reader otherwise, never both. */
     private final dev.spectroscope.server.browser.PrecedenceBrowserFaces browser;
 
+    /** The operator's side of every session's browser (card 227): where a live
+     *  session registers its recorder, its launch supervisor and its project
+     *  folder for the view socket's control row and start page. */
+    private final dev.spectroscope.server.browser.SessionBrowserBridge browserBridge;
+
     /** Per-connection state, keyed by the Spring session id. */
     private final Map<String, SessionConnection> connections = new ConcurrentHashMap<>();
 
     SpectroSocketHandler(FleetAggregator fleet, LiveSessions liveSessions,
-                         dev.spectroscope.server.browser.PrecedenceBrowserFaces browser) {
+                         dev.spectroscope.server.browser.PrecedenceBrowserFaces browser,
+                         dev.spectroscope.server.browser.SessionBrowserBridge browserBridge) {
         this.fleet = fleet;
         this.liveSessions = liveSessions;
         this.browser = browser;
+        this.browserBridge = browserBridge;
     }
 
     /**
@@ -72,6 +79,10 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
         // card 199's opt-in itself, so the fence is the same on every half
         // whether or not a session socket ever opened.
         connection.useBrowser(browser);
+        // Card 227: and at the bridge the view socket reads, so the operator's
+        // control row and start page can reach THIS session's recorder,
+        // supervisor and folder the moment it has an id.
+        connection.useBrowserBridge(browserBridge);
         connections.put(socket.getId(), connection);
         // A resume that cannot load its session closes the socket itself — and
         // so does a resume of a session another socket already holds.

@@ -314,6 +314,44 @@ public final class SessionConnection {
                 ? dev.spectroscope.core.browser.BrowserFaces.none() : faces;
     }
 
+    /** The operator's side of this session's browser (card 227): the view
+     *  socket resolves a session id to its sidecar recorder, its launch
+     *  supervisor and its project folder through this bridge, and the fight
+     *  rule counts agent browser calls on it. Null means no bridge — the
+     *  pre-227 behaviour, which every existing test still constructs. */
+    private dev.spectroscope.server.browser.SessionBrowserBridge browserBridge;
+
+    /**
+     * Points this connection at the operator bridge.
+     *
+     * @param bridge the bridge, or {@code null} for none
+     */
+    public void useBrowserBridge(dev.spectroscope.server.browser.SessionBrowserBridge bridge) {
+        this.browserBridge = bridge;
+    }
+
+    /**
+     * The folder this session's launch file is read from — the workspace once
+     * one is resolved, else the pinned or configured folder by the same rule
+     * {@code sendProspectiveWorkspace} mirrors, else null. Null is honest for
+     * a fresh random-workspace session: its temp folder carries no launch
+     * file, and naming one would mint a folder for a choice not yet made.
+     *
+     * @return the project folder, or null while this session has none
+     */
+    private Path launchProjectDir() {
+        Path resolved = this.workspace;
+        if (resolved != null) {
+            return resolved;
+        }
+        String pinned = store == null ? null : SessionWorkspaces.pinned(store.id());
+        String configured = pinned != null && !pinned.isBlank() ? pinned : config.workspace();
+        if (configured == null || configured.isBlank()) {
+            return null;
+        }
+        return WorkspaceResolver.locate(configured, null);
+    }
+
     /**
      * This session's own browser, resolved per call.
      *
@@ -815,6 +853,12 @@ public final class SessionConnection {
         if (browserRecord != null) {
             browserRecord.close(); // same: per-line appends, nothing buffered to lose
         }
+        // Card 227: the operator's bridge entry dies with the socket that fed
+        // it — a view-socket verb for this session now says "not open" instead
+        // of writing through a closed recorder.
+        if (browserBridge != null && store != null) {
+            browserBridge.unregister(store.id());
+        }
     }
 
     /**
@@ -856,6 +900,15 @@ public final class SessionConnection {
         // takes the file-then-socket road every other event takes rather than a
         // second path through this class.
         browserWire = BrowserWireRecorder.forSession(store.id());
+        // Card 227: the moment this session has an id and a recorder, the view
+        // socket's operator verbs can reach both — same recorder, so a human's
+        // navigation lands in the same file under the same epoch as the
+        // agent's, and the launch supervisor whose lifetime IS the session's.
+        if (browserBridge != null) {
+            browserBridge.register(store.id(),
+                    new dev.spectroscope.server.browser.SessionBrowserBridge.Live(
+                            browserWire, launches, this::launchProjectDir));
+        }
     }
 
     /**
@@ -1243,12 +1296,22 @@ public final class SessionConnection {
         // call, like the fence and the face above — this registry is built once
         // and a resume opens a NEW recorder under the same session id, so a
         // recorder captured here would be the one that has already been closed.
+        // Card 227: wrapped in the bridge's agent guard, so "an agent browser
+        // call is in flight" is measured on the very seam that records it —
+        // the fight rule's ground truth, counted from open to end.
+        java.util.function.Supplier<dev.spectroscope.core.wire.BrowserWireTap> recorderTap =
+                () -> browserWire == null
+                        ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire;
+        java.util.function.Supplier<dev.spectroscope.core.wire.BrowserWireTap> guardedTap =
+                browserBridge == null
+                        ? recorderTap
+                        : () -> browserBridge.agentGuard(
+                                () -> store == null ? null : store.id(), recorderTap);
         new dev.spectroscope.core.browser.BrowserTools(
                 this::ownBrowser,
                 this::liveFence,
                 ImageStore.inUserHome(),
-                () -> browserWire == null
-                        ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire)
+                guardedTap)
                 .all().forEach(registry::register);
         // Card 202: the five launch tools, which start the app the browser above
         // is meant to look at. Registered beside the browser family and on the

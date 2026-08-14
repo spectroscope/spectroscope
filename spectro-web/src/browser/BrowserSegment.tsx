@@ -37,9 +37,12 @@ import {
   historyFrame,
   keyFrame,
   keyName,
+  launchListFrame,
+  launchPlayFrame,
   navigateFrame,
   parseViewMessage,
   screenshotFilename,
+  screenshotVerbFrame,
   scrollFrame,
   toDevicePoint,
   typedAddress,
@@ -48,6 +51,8 @@ import {
   watchFrame,
   webFaceMode,
   wheelStep,
+  type LaunchList,
+  type VerbShot,
   type ViewPicture,
   type ViewState,
   type WebFaceMode,
@@ -61,6 +66,7 @@ import {
   toPaneRect,
   type BrowserStatus,
   type PaneRect,
+  type PanelState,
 } from "./viewport";
 
 /** How often the shell path re-asks whether a pane is on the other end. */
@@ -100,7 +106,6 @@ export function BrowserSegment(props: {
   floorGuard?: boolean;
   reportNonce?: string;
 }): React.JSX.Element {
-  const lang = useLang();
   const hole = useRef<HTMLDivElement | null>(null);
   // Whether the pane can be over THIS window at all. Read once: a page does not
   // move between hosts.
@@ -111,11 +116,16 @@ export function BrowserSegment(props: {
   const sessionId = props.sessionId;
   const floorGuard = props.floorGuard === true;
 
-  // The web face's half: what /ws/browser-view has said so far.
+  // What /ws/browser-view has said so far. Since card 227 the socket serves
+  // BOTH faces: the web face's picture, and the desktop face's control row
+  // and start page — the pictures stay the shell's, the verbs travel here.
   const [view, setView] = useState<ViewState | null>(null);
   const [picture, setPicture] = useState<ViewPicture | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  // The start page's data (card 227), and which play button is mid-press.
+  const [launch, setLaunch] = useState<LaunchList | null>(null);
+  const [playing, setPlaying] = useState<string | null>(null);
   const socketRef = useRef<WebSocket | null>(null);
   const cue = useBrowserActionCue();
 
@@ -212,15 +222,20 @@ export function BrowserSegment(props: {
     };
   }, [sessionId, inShell]);
 
-  // The picture channel (web face): watch this session's browser and keep
-  // watching across drops. Watching an idle session spawns nothing — the
-  // server asks hasPage() first — so holding the socket open is free.
+  // The view channel — both faces since card 227: watch this session's
+  // browser and keep watching across drops. Watching an idle session spawns
+  // nothing — the server asks hasPage() first — so holding the socket open is
+  // free. On the desktop face no frame ever arrives (the shell's pane carries
+  // the pixels); what travels are the control row's verbs, the state frames
+  // and the start page's data.
   useEffect(() => {
     setView(null);
     setPicture(null);
     setNotice(null);
     setDraft(null);
-    if (inShell || sessionId === null) return;
+    setLaunch(null);
+    setPlaying(null);
+    if (sessionId === null) return;
     let alive = true;
     let socket: WebSocket | null = null;
     let retry: number | null = null;
@@ -228,7 +243,11 @@ export function BrowserSegment(props: {
       if (!alive) return;
       socket = new WebSocket(viewSocketUrl(window.location));
       socketRef.current = socket;
-      socket.onopen = () => socket?.send(JSON.stringify(watchFrame(sessionId)));
+      socket.onopen = () => {
+        socket?.send(JSON.stringify(watchFrame(sessionId)));
+        // The start page's data rides the same socket (card 227).
+        socket?.send(JSON.stringify(launchListFrame(sessionId)));
+      };
       socket.onmessage = (event: MessageEvent) => {
         const msg = parseViewMessage(event.data);
         if (msg === null) return;
@@ -248,6 +267,9 @@ export function BrowserSegment(props: {
               setNotice(null);
               const url = msg.url;
               if (url !== null) setView((v) => (v === null ? v : { ...v, url }));
+              // The desktop row's screenshot: no client-side picture exists on
+              // that face, so the shot rides the answer and is saved here.
+              if (msg.verb === "screenshot" && msg.shot !== null) saveWireShot(msg.shot);
             } else if (msg.error !== null) {
               setNotice(msg.error);
             }
@@ -256,6 +278,19 @@ export function BrowserSegment(props: {
           case "refused":
           case "error":
             setNotice(msg.sentence);
+            break;
+          case "launchConfigs":
+            setLaunch(msg);
+            break;
+          case "launchPlayed":
+            setPlaying(null);
+            if (msg.ok) {
+              setNotice(null);
+            } else if (msg.sentence !== null) {
+              setNotice(msg.sentence);
+            }
+            // Whatever happened, the list's up/exited chips are stale now.
+            socket?.send(JSON.stringify(launchListFrame(sessionId)));
             break;
         }
       };
@@ -284,19 +319,20 @@ export function BrowserSegment(props: {
       socket?.close();
       if (socketRef.current === socket) socketRef.current = null;
     };
-  }, [inShell, sessionId]);
+  }, [sessionId]);
 
   // The agent drove the browser (a browser_action arrived on the main socket):
-  // re-issue watch, which restarts the cast on the page the agent is now on.
+  // re-issue watch, which restarts the cast on the page the agent is now on —
+  // and on the desktop face refreshes the state frame the address field reads.
   // The core half discloses that an agent navigation mid-watch does not
   // restart it by itself; this effect is the UI's side of that contract.
   useEffect(() => {
-    if (cue === 0 || inShell || sessionId === null) return;
+    if (cue === 0 || sessionId === null) return;
     const socket = socketRef.current;
     if (socket !== null && socket.readyState === WebSocket.OPEN) {
       socket.send(JSON.stringify(watchFrame(sessionId)));
     }
-  }, [cue, inShell, sessionId]);
+  }, [cue, sessionId]);
 
   const send = useCallback((frame: Record<string, unknown>): void => {
     const socket = socketRef.current;
@@ -304,6 +340,19 @@ export function BrowserSegment(props: {
       socket.send(JSON.stringify(frame));
     }
   }, []);
+
+  // The play button (card 227): the server starts the configuration through
+  // the SESSION's own supervisor and answers launch_played; `playing` holds
+  // the pressed name so every play button disables while one start is in
+  // flight — a second press mid-start would race the first.
+  const onPlay = useCallback(
+    (name: string): void => {
+      if (sessionId === null) return;
+      setPlaying(name);
+      send(launchPlayFrame(sessionId, name));
+    },
+    [sessionId, send],
+  );
 
   if (!inShell && sessionId !== null) {
     return (
@@ -314,48 +363,47 @@ export function BrowserSegment(props: {
         draft={draft}
         picture={picture}
         notice={notice}
+        launch={launch}
+        playing={playing}
         send={send}
         onDraft={setDraft}
+        onPlay={onPlay}
       />
     );
   }
 
-  // The desktop face, and the no-session case on either face: the hole, the
-  // read-only address line and the honest empty states — unchanged from card
-  // 201, because the shell's pane still fills this exact rectangle.
-  const state = panelState(status, inShell, sessionId);
-
+  // The desktop face, and the no-session case on either face: the hole the
+  // shell's pane fills, with card 227's control row above it and the start
+  // page inside it while no page is open.
   return (
-    <section className="browser-segment" aria-label={t(lang, "browser.title")}>
-      <header className="browser-bar">
-        <span className="browser-dot" data-attached={state === "attached"} aria-hidden="true" />
-        <span className="browser-address" title={status?.url ?? undefined}>
-          {status?.url ?? t(lang, "browser.noPage")}
-        </span>
-      </header>
-      <div className="browser-hole" ref={hole}>
-        {state !== "attached" && (
-          <div className="browser-empty">
-            <h2>{t(lang, "browser.title")}</h2>
-            <p>{t(lang, panelNoteKey(state))}</p>
-            {state === "no-shell" && <p className="browser-empty-hint">{t(lang, "browser.noShellHint")}</p>}
-          </div>
-        )}
-        {state === "attached" && floored && (
-          // The pane is hidden on purpose: this hole is under the shell's
-          // MIN_PANE floor, and a posted rectangle would be refused and
-          // replaced with a fallback the frame is not. Saying so beats an
-          // empty rectangle that reads as a bug.
-          <p className="browser-floor-note">{t(lang, "browser.floorNote")}</p>
-        )}
-      </div>
-      {/* What the fence promises, where the OPERATOR can read it. A review on
-          2026-08-13 found the settings text promising a fence that a redirect
-          walked around; the hole is closed, and what is still outside anybody's
-          reach is said here rather than only in a source comment. */}
-      <p className="browser-fence">{t(lang, "browser.fenceNote")}</p>
-    </section>
+    <DesktopFaceView
+      state={panelState(status, inShell, sessionId)}
+      floored={floored}
+      sessionId={sessionId}
+      url={view?.url ?? status?.url ?? null}
+      draft={draft}
+      notice={notice}
+      launch={launch}
+      playing={playing}
+      holeRef={hole}
+      send={send}
+      onDraft={setDraft}
+      onPlay={onPlay}
+      onShot={() => {
+        if (sessionId !== null) send(screenshotVerbFrame(sessionId));
+      }}
+    />
   );
+}
+
+/** Saves a shot that arrived as verb fields — the desktop face's screenshot
+ *  (card 227): the pixels live in the shell's pane, so the server hands the
+ *  bytes back over the wire and this anchor writes them to a file. */
+function saveWireShot(shot: VerbShot): void {
+  const anchor = document.createElement("a");
+  anchor.href = `data:${shot.mediaType};base64,${shot.dataBase64}`;
+  anchor.download = screenshotFilename(Date.now(), shot.mediaType);
+  anchor.click();
 }
 
 /** What the web face's view needs to render — a function of its props, so the
@@ -370,8 +418,13 @@ export interface WebFaceViewProps {
   picture: ViewPicture | null;
   /** A refusal or error sentence, shown where the address was typed. */
   notice: string | null;
+  /** The start page's data (card 227), or null before the server answered. */
+  launch: LaunchList | null;
+  /** The configuration a play press is starting, while it is in flight. */
+  playing: string | null;
   send(frame: Record<string, unknown>): void;
   onDraft(next: string | null): void;
+  onPlay(name: string): void;
 }
 
 /**
@@ -386,7 +439,7 @@ export interface WebFaceViewProps {
  */
 export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
   const lang = useLang();
-  const { sessionId, mode, url, draft, picture, notice, send, onDraft } = props;
+  const { sessionId, mode, url, draft, picture, notice, launch, playing, send, onDraft, onPlay } = props;
   // Wheel deltas pool here between flushes — a ref, because pooling must not
   // re-render, and the flush must read what accumulated after it was armed.
   const wheel = useRef<{ dx: number; dy: number; point: [number, number] | null; timer: number | null }>({
@@ -454,20 +507,6 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
     send(keyFrame(sessionId, name));
   };
 
-  const commit = (): void => {
-    const target = typedAddress(draft ?? "");
-    if (target === null) return;
-    // A standing refusal clears on the ANSWER, not on the ask: the navigate
-    // comes back as a verb frame (clears it) or a fresh refusal (replaces it).
-    send(navigateFrame(sessionId, target));
-    onDraft(null);
-  };
-
-  const submit = (event: React.FormEvent): void => {
-    event.preventDefault();
-    commit();
-  };
-
   const saveShot = (): void => {
     if (picture === null) return;
     const anchor = document.createElement("a");
@@ -487,61 +526,7 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
           aria-hidden="true"
         />
         {live ? (
-          <>
-            <button
-              type="button"
-              className="view-nav"
-              aria-label={t(lang, "browser.view.back")}
-              onClick={() => send(historyFrame(sessionId, "back"))}
-            >
-              ‹
-            </button>
-            <button
-              type="button"
-              className="view-nav"
-              aria-label={t(lang, "browser.view.forward")}
-              onClick={() => send(historyFrame(sessionId, "forward"))}
-            >
-              ›
-            </button>
-            <button
-              type="button"
-              className="view-nav"
-              aria-label={t(lang, "browser.view.reload")}
-              disabled={url === null}
-              onClick={() => {
-                if (url !== null) send(navigateFrame(sessionId, url));
-              }}
-            >
-              ⟳
-            </button>
-            <form
-              className="view-address"
-              onSubmit={submit}
-              // The typed address travels the fence before any engine dials;
-              // a refusal comes back as its own frame and lands in the notice.
-            >
-              <input
-                className="view-address-input"
-                aria-label={t(lang, "browser.view.address")}
-                placeholder={t(lang, "browser.view.addressHint")}
-                value={draft ?? url ?? ""}
-                onChange={(event) => onDraft(event.target.value)}
-                // Enter is handled HERE, not left to implicit form submission.
-                // Measured live on 2026-08-14: a CDP-injected Return — the way
-                // this product's own pane drives keys — never fired the
-                // implicit path, while requestSubmit() navigated fine.
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    commit();
-                  }
-                }}
-                spellCheck={false}
-                autoComplete="off"
-              />
-            </form>
-          </>
+          <NavControls sessionId={sessionId} url={url} draft={draft} send={send} onDraft={onDraft} />
         ) : (
           <span className="browser-address" title={url ?? undefined}>
             {url ?? t(lang, "browser.noPage")}
@@ -576,6 +561,11 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
             onWheel={onPictureWheel}
             onKeyDown={onPictureKey}
           />
+        ) : live && url === null ? (
+          // The empty browser is the START PAGE (card 227): the session's
+          // launch configurations, one play button each. Only where no page is
+          // open at all — a page mid-cast keeps the idle sentence below.
+          <StartPage launch={launch} playing={playing} onPlay={onPlay} />
         ) : (
           <div className="browser-empty">
             {mode === "connecting" ? (
@@ -603,6 +593,260 @@ export function WebFaceView(props: WebFaceViewProps): React.JSX.Element {
           {notice}
         </p>
       )}
+      <p className="browser-fence">{t(lang, "browser.fenceNote")}</p>
+    </section>
+  );
+}
+
+/**
+ * The control row both faces share (card 227): back, forward, reload and the
+ * address field, in this order, speaking the view channel's own frames. On
+ * the web face the verbs drive the server's headless Chrome; on the desktop
+ * face the SAME frames route to the shell's pane — one browser per session,
+ * whichever engine is live.
+ */
+function NavControls(props: {
+  sessionId: string;
+  url: string | null;
+  draft: string | null;
+  send(frame: Record<string, unknown>): void;
+  onDraft(next: string | null): void;
+}): React.JSX.Element {
+  const lang = useLang();
+  const { sessionId, url, draft, send, onDraft } = props;
+
+  const commit = (): void => {
+    const target = typedAddress(draft ?? "");
+    if (target === null) return;
+    // A standing refusal clears on the ANSWER, not on the ask: the navigate
+    // comes back as a verb frame (clears it) or a fresh refusal (replaces it).
+    send(navigateFrame(sessionId, target));
+    onDraft(null);
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="view-nav"
+        aria-label={t(lang, "browser.view.back")}
+        onClick={() => send(historyFrame(sessionId, "back"))}
+      >
+        ‹
+      </button>
+      <button
+        type="button"
+        className="view-nav"
+        aria-label={t(lang, "browser.view.forward")}
+        onClick={() => send(historyFrame(sessionId, "forward"))}
+      >
+        ›
+      </button>
+      <button
+        type="button"
+        className="view-nav"
+        aria-label={t(lang, "browser.view.reload")}
+        disabled={url === null}
+        onClick={() => {
+          if (url !== null) send(navigateFrame(sessionId, url));
+        }}
+      >
+        ⟳
+      </button>
+      <form
+        className="view-address"
+        onSubmit={(event) => {
+          event.preventDefault();
+          commit();
+        }}
+        // The typed address travels the fence before any engine dials;
+        // a refusal comes back as its own frame and lands in the notice.
+      >
+        <input
+          className="view-address-input"
+          aria-label={t(lang, "browser.view.address")}
+          placeholder={t(lang, "browser.view.addressHint")}
+          value={draft ?? url ?? ""}
+          onChange={(event) => onDraft(event.target.value)}
+          // Enter is handled HERE, not left to implicit form submission.
+          // Measured live on 2026-08-14: a CDP-injected Return — the way
+          // this product's own pane drives keys — never fired the
+          // implicit path, while requestSubmit() navigated fine.
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            }
+          }}
+          spellCheck={false}
+          autoComplete="off"
+        />
+      </form>
+    </>
+  );
+}
+
+/**
+ * The start page (card 227, criterion 2): the browser's empty state lists the
+ * session's launch configurations (card 202) — one row per config with its
+ * address, its state and a play button. Press play, the server starts the
+ * configuration through the session's own supervisor and opens the browser on
+ * its address; the answer travels back as a launch_played frame.
+ *
+ * With no configurations, one terse line says how to add one — the file is
+ * authored by hand (card 202 keeps generation out of scope), so the line
+ * names the file rather than a settings page that does not exist.
+ */
+export function StartPage(props: {
+  launch: LaunchList | null;
+  playing: string | null;
+  onPlay(name: string): void;
+}): React.JSX.Element {
+  const lang = useLang();
+  const { launch, playing, onPlay } = props;
+  return (
+    <div className="browser-start">
+      <h2>{t(lang, "browser.start.heading")}</h2>
+      {launch === null ? null : !launch.ok ? (
+        // The server's own sentence: not open here, no project folder yet,
+        // or a launch file that could not be read.
+        <p className="browser-start-note">{launch.sentence}</p>
+      ) : launch.configs.length === 0 ? (
+        <p className="browser-start-note">{t(lang, "browser.start.none")}</p>
+      ) : (
+        <ul className="browser-start-list">
+          {launch.configs.map((config) => (
+            <li key={config.name} className="browser-start-row">
+              <button
+                type="button"
+                className="browser-start-play"
+                aria-label={t(lang, "browser.start.play", { name: config.name })}
+                disabled={playing !== null}
+                onClick={() => onPlay(config.name)}
+              >
+                ▶
+              </button>
+              <span className="browser-start-name">{config.name}</span>
+              <span className="browser-start-address">{config.address ?? "—"}</span>
+              {config.attaches && (
+                <span className="browser-start-chip">{t(lang, "browser.start.attach")}</span>
+              )}
+              {config.up ? (
+                <span className="browser-start-chip" data-up="true">
+                  {t(lang, "browser.start.running")}
+                </span>
+              ) : config.exitCode !== null ? (
+                <span className="browser-start-chip" data-exit="true">
+                  {t(lang, "browser.start.exited", { code: config.exitCode })}
+                </span>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+      {launch !== null && launch.ok && launch.skipped > 0 && (
+        <p className="browser-start-skipped">{t(lang, "browser.start.skipped", { n: launch.skipped })}</p>
+      )}
+    </div>
+  );
+}
+
+/** What the desktop face's view needs to render — a function of its props,
+ *  like WebFaceView, so the suite reads every mode without a socket. */
+export interface DesktopFaceViewProps {
+  state: PanelState;
+  /** Card 219: the hole is under the shell's MIN_PANE floor, pane hidden. */
+  floored: boolean;
+  sessionId: string | null;
+  /** The page's address per the latest state frame or REST answer. */
+  url: string | null;
+  /** What the reader typed into the bar and has not committed. */
+  draft: string | null;
+  /** A refusal or error sentence, shown where the address was typed. */
+  notice: string | null;
+  /** The start page's data (card 227), or null before the server answered. */
+  launch: LaunchList | null;
+  /** The configuration a play press is starting, while it is in flight. */
+  playing: string | null;
+  /** Where BrowserSegment measures the pane's rectangle from. */
+  holeRef?: React.Ref<HTMLDivElement>;
+  send(frame: Record<string, unknown>): void;
+  onDraft(next: string | null): void;
+  onPlay(name: string): void;
+  /** The screenshot control — the shot rides the wire back (saveWireShot). */
+  onShot(): void;
+}
+
+/**
+ * The desktop face (cards 201/227): the hole the shell's native pane fills,
+ * now under the SAME control row the web face has — React above the hole, the
+ * verbs travelling the view channel to the one per-session browser. While no
+ * page is open the hole carries the start page; the pane, hidden while no
+ * page exists, covers it the moment one opens.
+ */
+export function DesktopFaceView(props: DesktopFaceViewProps): React.JSX.Element {
+  const lang = useLang();
+  const { state, floored, sessionId, url, draft, notice, launch, playing } = props;
+  const attached = state === "attached" && sessionId !== null;
+  return (
+    <section className="browser-segment" aria-label={t(lang, "browser.title")}>
+      <header className="browser-bar">
+        <span className="browser-dot" data-attached={state === "attached"} aria-hidden="true" />
+        {attached ? (
+          <>
+            <NavControls
+              sessionId={sessionId}
+              url={url}
+              draft={draft}
+              send={props.send}
+              onDraft={props.onDraft}
+            />
+            <button
+              type="button"
+              className="view-nav"
+              aria-label={t(lang, "browser.view.screenshot")}
+              disabled={url === null}
+              onClick={props.onShot}
+            >
+              ⤓
+            </button>
+          </>
+        ) : (
+          <span className="browser-address" title={url ?? undefined}>
+            {url ?? t(lang, "browser.noPage")}
+          </span>
+        )}
+      </header>
+      <div className="browser-hole" ref={props.holeRef}>
+        {state !== "attached" && (
+          <div className="browser-empty">
+            <h2>{t(lang, "browser.title")}</h2>
+            <p>{t(lang, panelNoteKey(state))}</p>
+            {state === "no-shell" && <p className="browser-empty-hint">{t(lang, "browser.noShellHint")}</p>}
+          </div>
+        )}
+        {attached && floored && (
+          // The pane is hidden on purpose: this hole is under the shell's
+          // MIN_PANE floor, and a posted rectangle would be refused and
+          // replaced with a fallback the frame is not. Saying so beats an
+          // empty rectangle that reads as a bug.
+          <p className="browser-floor-note">{t(lang, "browser.floorNote")}</p>
+        )}
+        {attached && !floored && url === null && (
+          // No page open, so the pane is hidden and this hole is really
+          // visible: the start page stands where the emptiness stood.
+          <StartPage launch={launch} playing={playing} onPlay={props.onPlay} />
+        )}
+      </div>
+      {notice !== null && (
+        <p className="view-notice" role="alert">
+          {notice}
+        </p>
+      )}
+      {/* What the fence promises, where the OPERATOR can read it. A review on
+          2026-08-13 found the settings text promising a fence that a redirect
+          walked around; the hole is closed, and what is still outside anybody's
+          reach is said here rather than only in a source comment. */}
       <p className="browser-fence">{t(lang, "browser.fenceNote")}</p>
     </section>
   );

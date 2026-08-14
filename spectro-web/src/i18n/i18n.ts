@@ -111,6 +111,22 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Live-Bild des Session-Browsers. Klicks und Tasten gehen an die Seite; Tab und Escape bleiben der App.",
     en: "Live picture of the session's browser. Clicks and keys go to the page; Tab and Escape stay with the app.",
   },
+  // Card 227 — the start page. The empty browser lists the session's launch
+  // configurations (card 202) with a play button each. Terse and technical,
+  // per card 228's register: what it is, why empty, what to do next.
+  "browser.start.heading": { de: "launch-konfigurationen", en: "launch configurations" },
+  "browser.start.play": { de: "{name} starten und öffnen", en: "Start {name} and open it" },
+  "browser.start.running": { de: "läuft", en: "running" },
+  "browser.start.exited": { de: "beendet · {code}", en: "exited · {code}" },
+  "browser.start.attach": { de: "verbindet nur", en: "attach only" },
+  "browser.start.none": {
+    de: "Keine Launch-Konfigurationen. Lege .claude/launch.json im Projektordner an — ein Eintrag pro App, mit Port.",
+    en: "No launch configurations. Add .claude/launch.json to the project folder — one entry per app, with its port.",
+  },
+  "browser.start.skipped": {
+    de: "{n} Einträge übersprungen — nicht als Konfiguration lesbar",
+    en: "{n} entries skipped — not readable as configurations",
+  },
   // Card 204 — the replay. The live pane is half a promise; these are the words
   // for the other half, and the empty state is the one that has to work hardest:
   // a session that never drove a browser and a session whose record was deleted

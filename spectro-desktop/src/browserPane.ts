@@ -624,6 +624,30 @@ export async function runVerb(
         }, pane);
       }
 
+      case "back":
+      case "forward": {
+        // Card 227: the desktop control row's history walk. Chromium's own
+        // history, never a re-load of a remembered address — a re-load would
+        // lose form state and repost, which is not what a back button does.
+        // The refusal sentences are the headless face's own, verbatim, so the
+        // UI reads one dialect whichever face is live.
+        if (!pane.view) return failed(noPage(pane), pane);
+        ensureVisible(pane);
+        const wc = ensureView(pane).webContents;
+        const nav = wc.navigationHistory;
+        if (verb === "back" ? !nav.canGoBack() : !nav.canGoForward()) {
+          return failed(verb === "back"
+            ? "there is nothing earlier in this session's history"
+            : "there is nothing later in this session's history", pane);
+        }
+        if (verb === "back") nav.goBack();
+        else nav.goForward();
+        // The walk hands back no load promise; give the pane the same beat the
+        // screenshot's paint wait takes, then answer where it landed.
+        await new Promise((resolve) => setTimeout(resolve, 120));
+        return ok({ url: wc.getURL(), title: wc.getTitle() }, pane);
+      }
+
       case "eval": {
         if (!pane.view) return failed(noPage(pane), pane);
         ensureVisible(pane);

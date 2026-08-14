@@ -14,6 +14,7 @@ const row = (over: Partial<BrowserActionMeta> = {}): BrowserActionMeta => ({
   agentId: "main",
   callId: "toolu_1",
   tool: "browser_navigate",
+  operator: false,
   pageUrl: "https://example.com",
   ok: true,
   resultBytes: 84,
@@ -50,11 +51,28 @@ describe("reading the ledger", () => {
     expect(read?.ok).toBe(false);
     expect(read?.epoch).toBe(0);
   });
+
+  it("reads who drove, and absent means agent — card 227's compatibility rule", () => {
+    // Every sidecar written before card 227 carries no actor at all; those
+    // files must read exactly as they always did, as the agent's own steps.
+    expect(readBrowserAction({ cid: "c-3", ts: 8, actor: "operator" })?.operator).toBe(true);
+    expect(readBrowserAction({ cid: "c-4", ts: 9 })?.operator).toBe(false);
+    expect(readBrowserAction({ cid: "c-5", ts: 10, actor: null })?.operator).toBe(false);
+  });
 });
 
 describe("the step summary", () => {
   it("names the tool, the page and how it went", () => {
     expect(browserStepSummary(row())).toBe("browser_navigate · example.com · 412 ms");
+  });
+
+  it("says when the OPERATOR drove — a replay must not hand a human's step to the model", () => {
+    // Criterion 4's face half: the record distinguishes (actor field), and the
+    // summary is where a reader would otherwise read every step as the agent's.
+    expect(browserStepSummary(row({ operator: true, tool: "navigate" }))).toBe(
+      "operator · navigate · example.com · 412 ms",
+    );
+    expect(browserStepSummary(row())).not.toContain("operator");
   });
 
   it("says failed when the call refused, because that is the run worth replaying", () => {

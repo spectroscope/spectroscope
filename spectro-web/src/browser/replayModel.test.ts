@@ -8,6 +8,7 @@ const step = (over: Partial<BrowserActionMeta> = {}): BrowserActionMeta => ({
   agentId: "main",
   callId: "t",
   tool: "browser_eval",
+  operator: false,
   pageUrl: "https://example.com",
   ok: true,
   resultBytes: 4,
