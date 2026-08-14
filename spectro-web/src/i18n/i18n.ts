@@ -2636,9 +2636,13 @@ export const dict: Record<string, { de: string; en: string }> = {
 
   // skills + MCP managers (card 90)
   "skset.title": { de: "Skills", en: "Skills" },
+  // When a flipped switch lands is no longer said here: the list's ReachBlock
+  // derives that sentence from SETTING_REACH (card 224) — a hand-written
+  // "next chat" beside a derived one is two claims about the same thing, the
+  // exact shape mcpset.note shed on card 222 F10.
   "skset.note": {
-    de: "Skills aus ~/.spectro/skills und dem Projekt. Änderungen greifen im nächsten Chat.",
-    en: "Skills from ~/.spectro/skills and the project. Changes apply to the next chat.",
+    de: "Skills aus ~/.spectro/skills und dem Projekt.",
+    en: "Skills from ~/.spectro/skills and the project.",
   },
   "skset.empty": {
     de: "Keine Skills. Beim ersten Start werden die eingebauten hierher kopiert.",
@@ -2681,6 +2685,22 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "External MCP servers (user scope). The raw JSON editor in the composer gear stays for the project scope.",
   },
   "mcpset.empty": { de: "Keine MCP-Server konfiguriert.", en: "No MCP servers configured." },
+
+  // the composer plus menu (card 224): the fast switch — Manage/Browse open
+  // the settings page, which stays the full account
+  "plus.title": { de: "Skills & MCP-Server", en: "Skills & MCP servers" },
+  "plus.skills": { de: "Skills", en: "Skills" },
+  "plus.mcp": { de: "MCP-Server", en: "MCP servers" },
+  "plus.manageSkills": { de: "Skills verwalten …", en: "Manage skills ..." },
+  "plus.browseSkills": { de: "Katalog durchstöbern …", en: "Browse catalogue ..." },
+  "plus.manageMcp": { de: "MCP-Server verwalten …", en: "Manage MCP servers ..." },
+  // Drawn when the mcpServers block is owned by a layer PUT /api/settings
+  // cannot write (env, launch-dir, flags): the switches turn read-only and this
+  // line says why, instead of a switch that saves nowhere and redraws green.
+  "plus.mcpReadOnly": {
+    de: "Der mcpServers-Block kommt aus der Ebene „{layer}“, die diese App nicht schreibt — Schalter nur lesend.",
+    en: "The mcpServers block comes from the “{layer}” layer, which this app cannot write — switches are read-only.",
+  },
   "mcpset.namePh": { de: "name", en: "name" },
   "mcpset.cmdPh": { de: "kommando + argumente", en: "command + args" },
   "mcpset.add": { de: "hinzufügen", en: "add" },

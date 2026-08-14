@@ -84,6 +84,11 @@ export const SETTING_REACH = {
   // McpServerRegistry.load runs inside buildAgentOnce, from the session-scoped
   // config — a server added now is connected by the next session, not this one.
   mcpServers: "next-session",
+  // Not a settings-file key: the switch writes a .disabled marker beside the
+  // skill and SkillLibrary.load reads the roots inside buildAgentOnce, per
+  // connection. Classified here anyway (card 224) so the plus menu and the
+  // settings page derive the SAME sentence for it instead of hand-writing two.
+  skills: "next-session",
   // The exporter is built where the session store is minted.
   otlpEndpoint: "next-session",
   otlpBasicAuth: "next-session",

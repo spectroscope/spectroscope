@@ -1077,9 +1077,13 @@ export function SettingsPanel({
             </>
           )}
 
-          {/* ---- Skills + MCP managers (card 90) ---- */}
-          <SkillsSettings />
-          <McpSettings />
+          {/* ---- Skills + MCP managers (card 90; card 224 gave them
+              addresses so the plus menu's Manage/Browse rows can land) ---- */}
+          <SkillsSettings
+            anchorId={sectionAnchorId("skills")}
+            catalogueAnchorId={sectionAnchorId("skills-catalogue")}
+          />
+          <McpSettings anchorId={sectionAnchorId("mcp")} />
         </div>
       </section>
     </div>

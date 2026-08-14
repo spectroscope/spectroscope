@@ -114,6 +114,10 @@ const SETTINGS_ROWS: ReadonlyArray<readonly [string, string]> = [
   ["workspace", "Default workspace"],
   ["logging", "Operator logging"],
   ["machine", "Machine"],
+  // Card 224: the plus menu's Manage/Browse targets — same order as route.ts.
+  ["skills", "Skills"],
+  ["skills-catalogue", "Skill catalogue"],
+  ["mcp", "MCP servers"],
 ];
 
 /**

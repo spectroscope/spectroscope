@@ -49,6 +49,12 @@ export const SETTINGS_SECTIONS = [
   "workspace",
   "logging",
   "machine",
+  // Card 224: the plus menu's Manage/Browse rows land HERE — the menu is the
+  // fast switch, these pages stay the full account, and each needs an address
+  // a menu entry (and a person helping another person) can point at.
+  "skills",
+  "skills-catalogue",
+  "mcp",
 ] as const;
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 

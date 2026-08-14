@@ -2245,6 +2245,16 @@ export function App() {
                   onUnqueue: unqueue,
                   onAbort: abort,
                   stopRequested,
+                  // Card 224: the plus menu's Manage/Browse rows — the same
+                  // open-at-a-section move the onboarding sheet makes, history
+                  // manners included.
+                  onOpenSettingsSection: (section: SettingsSection) => {
+                    setSettingsOpen(true);
+                    setSettingsSection(section);
+                    if (commitUrl({ kind: "settings", section }, "gesture") === "push") {
+                      settingsPushed.current = true;
+                    }
+                  },
                 };
                 return chatView === "v2" ? (
                   <ChatV2
