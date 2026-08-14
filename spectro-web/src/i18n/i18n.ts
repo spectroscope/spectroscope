@@ -1173,6 +1173,13 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Gilt sofort, auch für eine schon offene Sitzung — außer du hast in dieser Sitzung im Eingabefeld ein Bild-Backend gewählt. Diese Wahl bleibt bis zum Sitzungsende oben.",
     en: "Applies immediately, including to a session already open — unless you picked an image backend in the composer this session. That choice stays on top until the session ends.",
   },
+  // The fourth answer (card 220): a field UNATTENDED runs read and no web
+  // session ever does. Naming the three faces is the point — a reader must
+  // not have to guess whether their cron job is covered.
+  "set.reachHeadless": {
+    de: "Gilt nur für Headless-Läufe: spectro run liest ihn pro Aufruf (--mcp/--no-mcp übersteuern ihn), der Cron-Daemon und ein Fleet-Node bei ihrem Start. Eine interaktive Sitzung mountet nie über diesen Schalter.",
+    en: "Applies to headless runs only: spectro run reads it per invocation (--mcp/--no-mcp override it), the cron daemon and a fleet node at their start. An interactive session never mounts through this switch.",
+  },
   // The session-defaults block's own wording. Provider, model, address and
   // thinking are bound when the agent is built — measured on one socket: the
   // settings were written to model=qwen3:latest, /api/config agreed, and the
@@ -2685,6 +2692,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "mcpset.cmdPh": { de: "kommando + argumente", en: "command + args" },
   "mcpset.add": { de: "hinzufügen", en: "add" },
   "mcpset.remove": { de: "entfernen", en: "remove" },
+  // Card 220: the headless opt-in, worded as the permission it is. The note
+  // repeats the flag's own help text on purpose — one claim, two places, same
+  // words, so neither can soften alone.
+  "mcpset.headlessLabel": {
+    de: "In Headless-Läufen mounten (spectro run, Cron, Fleet-Nodes)",
+    en: "Mount in headless runs (spectro run, cron, fleet nodes)",
+  },
+  "mcpset.headlessNote": {
+    de: "Ein Berechtigungs-Schalter, keine Bequemlichkeit: mit --permissions auto genehmigt ein unbeaufsichtigter Lauf dann jedes Tool, das jeder konfigurierte Server anbietet — und niemand sieht zu.",
+    en: "Permission-shaped, not a convenience: with --permissions auto an unattended run then approves every tool every configured server offers, unwatched.",
+  },
 
   // microphone (voice input)
   "mic.record": { de: "Sprachnachricht aufnehmen", en: "Record a voice message" },

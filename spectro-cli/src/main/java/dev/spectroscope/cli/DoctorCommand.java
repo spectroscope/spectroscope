@@ -319,6 +319,18 @@ public final class DoctorCommand implements Callable<Integer> {
             } finally {
                 mcp.close(); // release the probe's server processes/connections
             }
+            // Card 220, AC 5: reachability names the faces it applies to, so a
+            // green row can no longer be read as "spectro run has these tools".
+            // One line rather than a per-row tail — which faces mount is a
+            // property of the config, not of one server's health — and it
+            // tracks the headlessMcp key from the SAME settings the probe read.
+            info(config.headlessMcp()
+                    ? "mcp: servers above are mounted by the repl, the web session and"
+                            + " headless runs — headlessMcp is on; spectro run --no-mcp"
+                            + " declines it per invocation"
+                    : "mcp: servers above are mounted by the repl and the web session; a"
+                            + " headless run (run/cron/node) mounts them only with --mcp or"
+                            + " headlessMcp in the settings");
         }
 
         // Vision — a hint, never unhealthy.

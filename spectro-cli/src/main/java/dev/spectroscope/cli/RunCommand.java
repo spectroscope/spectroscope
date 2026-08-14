@@ -69,6 +69,42 @@ public final class RunCommand implements Callable<Integer> {
     @Option(names = "--speak", description = "Speak the answer aloud while it streams.")
     private boolean speak = false;
 
+    /** Card 220, the flag half of the owner's combined road. Three-state on
+     *  purpose: {@code --mcp} mounts, {@code --no-mcp} declines, absent (null)
+     *  the {@code headlessMcp} settings key decides. The description is
+     *  permission-shaped, not convenience-shaped — the spec's own criterion. */
+    @Option(names = "--mcp", negatable = true,
+            description = "Mount the configured MCP servers for this run, overriding the"
+                    + " headlessMcp setting (--no-mcp declines them). With --permissions"
+                    + " auto this approves every tool every configured server offers,"
+                    + " unwatched.")
+    private Boolean mcp;
+
+    /** Visible for tests: what the command line said about MCP, three-state.
+     *  @return true for {@code --mcp}, false for {@code --no-mcp}, null when
+     *          neither was typed and the settings decide */
+    Boolean mcpFlag() {
+        return mcp;
+    }
+
+    /**
+     * The stderr warning an explicit {@code --mcp} earns when there is nothing
+     * to mount — silence would let a typo in the settings path look like a
+     * working mount, and the run's stderr is the only place a cron line's
+     * operator ever looks (HEADLESS-MCP.md §4.1).
+     *
+     * @param mcpFlag the three-state flag value
+     * @param servers the configured {@code mcpServers} entries
+     * @return the warning line, or {@code null} when there is nothing to say
+     */
+    static String emptyMcpWarning(Boolean mcpFlag, java.util.List<dev.spectroscope.core.mcp.McpServerConfig> servers) {
+        if (Boolean.TRUE.equals(mcpFlag) && (servers == null || servers.isEmpty())) {
+            return "--mcp: no MCP servers configured — nothing to mount. Add an"
+                    + " \"mcpServers\" block to your settings.";
+        }
+        return null;
+    }
+
     @ParentCommand
     private SpectroCli parent;
 
@@ -154,15 +190,26 @@ public final class RunCommand implements Callable<Integer> {
             }
         };
 
+        // Card 220: an explicit --mcp over an empty server block warns rather
+        // than silently mounting nothing (spec §4.1).
+        String mcpWarning = emptyMcpWarning(mcp, config.mcpServers());
+        if (mcpWarning != null) {
+            System.err.println(mcpWarning);
+        }
+
         // In --json mode stdout carries ONLY NDJSON; everything else goes to stderr.
         HeadlessRunner.Outcome outcome;
         try {
             // --verbose traces the wire on stderr, so --json stdout stays clean.
-            HeadlessRunner runner = verbose
+            // withMcp threads the three-state flag: an explicit --mcp/--no-mcp
+            // overrides the headlessMcp settings key for THIS invocation; null
+            // leaves the settings in charge (card 220, the owner's combined road).
+            HeadlessRunner runner = (verbose
                     ? HeadlessRunners.withProvider(mapper, config, new TracingProvider(
                             ProviderFactory.providerFromConfig(config),
                             config.provider() + " · " + config.model()))
-                    : new HeadlessRunner(mapper, config);
+                    : new HeadlessRunner(mapper, config))
+                    .withMcp(mcp);
             outcome = runner.runOnce(
                     prompt, workspace, autoApprove, maxTurns,
                     onEvent,

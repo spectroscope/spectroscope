@@ -1,7 +1,7 @@
 <!-- ============================== CH 30 ============================== -->
 <h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
 
-<p class="lead">Seven layers, 26 keys (three of them whole-block), plus a small
+<p class="lead">Seven layers, 27 keys (three of them whole-block), plus a small
 handful of true environment-only secrets. Missing files are fine at every layer;
 malformed JSON fails loudly — a broken config is a programming error, not a fallback
 case.</p>
@@ -173,7 +173,8 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>searxngUrl</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_SEARXNG_URL</code></td><td>the SearXNG instance <code>web_search</code> prefers over every other tier (chapter 13). Process-global: refused in a workspace scope, user scope only — the searcher carries no net fence, so this field alone decides an address the tool dials</td></tr>
   <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
   <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle)</td></tr>
-  <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18)</td></tr>
+  <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18). The REPL and a web session mount every entry; a headless run mounts them only with the opt-in below or its <code>--mcp</code> flag</td></tr>
+  <tr><td><code>headlessMcp</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_HEADLESS_MCP</code></td><td>the headless faces' MCP opt-in (card 220): when true, <code>spectro run</code>, every cron fire and every triggered fleet node mount the configured <code>mcpServers</code> the way the REPL does — read at each headless start, never by an interactive session. A manual <code>spectro run</code> overrides it per invocation with <code>--mcp</code>/<code>--no-mcp</code>. Under <code>--permissions auto</code> the opt-in approves every tool every configured server offers, unwatched. Process-global: refused in a workspace scope, user scope only — the switch that widens an unattended run must not live in the folder the agent writes into</td></tr>
   <tr><td><code>maxRetries</code></td><td>int · <code>2</code></td><td><code>SPECTRO_MAX_RETRIES</code></td><td>transient retry budget; 0 disables; garbage values fail readably</td></tr>
   <tr><td><code>promptCaching</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_PROMPT_CACHING</code></td><td>Anthropic cache_control breakpoints; no-op elsewhere</td></tr>
   <tr><td><code>logLevel</code></td><td><code>error</code>|<code>warn</code>|<code>info</code>|<code>debug</code>|<code>trace</code> · <code>info</code></td><td><code>SPECTRO_LOG_LEVEL</code></td><td>operator-log detail (chapter 31); process-global — one log file per JVM, refused in a workspace scope, user scope only</td></tr>

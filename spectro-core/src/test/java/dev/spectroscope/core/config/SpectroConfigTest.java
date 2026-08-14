@@ -507,7 +507,7 @@ class SpectroConfigTest {
         return new SpectroConfig(provider, "some-model", baseUrl, 100000, "ask", List.of(),
                 "gemini", true, List.of(), 2, true, List.of(), null, "info",
                 null, null, "auto", "auto", null, null, null,
-                ollamaBaseUrl, lmstudioBaseUrl, null, false);
+                ollamaBaseUrl, lmstudioBaseUrl, null, false, false);
     }
 
     // ---- logLevel ------------------------------------------------------
@@ -937,7 +937,8 @@ class SpectroConfigTest {
                 "otlpEndpoint-component", "otlpBasicAuth-component",
                 "ollamaBaseUrl-component", "lmstudioBaseUrl-component",
                 "searxngUrl-component",
-                true);   // allowLocalhost: distinct from the false default, card 199
+                true,    // allowLocalhost: distinct from the false default, card 199
+                true);   // headlessMcp: distinct from the false default, card 220
 
         SpectroConfig switched = base.withProvider("ollama", "qwen3");
 

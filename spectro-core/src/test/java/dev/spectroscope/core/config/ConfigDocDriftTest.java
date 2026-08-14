@@ -239,12 +239,65 @@ class ConfigDocDriftTest {
         return html.substring(start, end);
     }
 
+    @Test
+    void theBuiltEditionsCarryWhatThisChapterNowSays() throws IOException {
+        // Card 220's review, the one blocker: this test reads the PART, the
+        // reader gets the assembled EDITION, and nothing tied the two together.
+        // The part gained the headlessMcp row and a re-counted lead while
+        // USER-GUIDE.html still said "26 keys" and named the switch nowhere —
+        // the gate was green over a guide that lied. The editions ship in-tree,
+        // so the tie is a read: the built guide must carry the count this test
+        // computes and the key card 220 added. When this goes red after a part
+        // edit, the fix is the rebuild ritual in build_user_guide.py's
+        // docstring: python3 build_user_guide.py (and --light), then the
+        // Chrome print for each PDF.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        int rows = keyRowCount(Files.readString(source));
+
+        Path root = repoRoot();
+        for (String name : List.of("docs/USER-GUIDE.html", "docs/USER-GUIDE-LIGHT.html")) {
+            Path built = root.resolve(name);
+            assertTrue(Files.isRegularFile(built),
+                    name + " is gone — the assembled editions are tracked, and this"
+                            + " test is what keeps them from lagging the parts");
+            String edition = Files.readString(built);
+            assertTrue(edition.contains(rows + " keys"),
+                    name + " does not say \"" + rows + " keys\", which is what the"
+                            + " config reference part now lists — the edition lags the"
+                            + " parts; rebuild it (docs/guide-assets/build_user_guide.py,"
+                            + " both themes, then the PDFs)");
+            assertTrue(edition.contains("headlessMcp"),
+                    name + " never names headlessMcp — the switch that widens an"
+                            + " unattended run is in the part and not in the guide a"
+                            + " reader actually opens; rebuild it"
+                            + " (docs/guide-assets/build_user_guide.py, both themes,"
+                            + " then the PDFs)");
+        }
+    }
+
+    /** Rows of the "Every key" table — the one count the lead must restate. */
+    private static int keyRowCount(String reference) {
+        int table = reference.indexOf("id=\"ch-config-keys\"");
+        String keyTable = reference.substring(table, reference.indexOf("</table>", table));
+        return keyTable.split("<tr><td><code>", -1).length - 1;
+    }
+
     private static Path source() {
+        Path root = repoRoot();
+        if (root == null) {
+            return null;
+        }
+        Path reference = root.resolve(REFERENCE);
+        return Files.isRegularFile(reference) ? reference : null;
+    }
+
+    /** Walks up to the directory holding the Gradle settings file. */
+    private static Path repoRoot() {
         for (Path candidate = Path.of("").toAbsolutePath();
                 candidate != null; candidate = candidate.getParent()) {
             if (Files.isRegularFile(candidate.resolve("settings.gradle.kts"))) {
-                Path reference = candidate.resolve(REFERENCE);
-                return Files.isRegularFile(reference) ? reference : null;
+                return candidate;
             }
         }
         return null;

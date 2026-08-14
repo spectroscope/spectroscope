@@ -1,10 +1,31 @@
 # Headless and MCP — what an unattended run is allowed to reach
 
-**Status: proposed. Nothing here is built.** This document is the decision
-material for card 220. It names four roads, measures what each one costs,
-recommends one and says out loud what the recommendation gives up. The owner
-picks; the implementation story then cites the sections below instead of
-re-deciding them.
+**Status: DECIDED 2026-08-14, and built in the same change (card 220).** The
+owner picked the combined road, in his own words: *"Mein CLI Flag, wenn man's
+halt selber startet und 'n Settingsschalter, wenn man mit der UI arbeitet."*
+That is Road B and Road B′ together:
+
+- **One settings-level opt-in, `headlessMcp` (default false, §3 Road B′),
+  honoured by every headless face** — `spectro run`, every cron fire, every
+  triggered fleet node — because they all build the one `HeadlessRunner`, and
+  the mount sits beside the card-195 hook wiring there.
+- **`spectro run --mcp` / `--no-mcp` (§3 Road B) overrides the settings for
+  that one invocation**; absent flags, the settings decide. Cron fires and
+  nodes take no flags and read the settings — the "wenn man mit der UI
+  arbeitet" half — so §4.2's per-job key is never built.
+- What `--permissions auto` approves after a mount is stated **in the run's
+  own output** in tool terms, the doctor line names the faces (§5, the B′
+  tail), and a workspace scope may not set `headlessMcp` — the switch that
+  widens an unattended run must not live in the folder the agent writes into.
+- Card 221 (the §2.1 teardown hang) landed **first**, as §4 required, and the
+  bound is re-proven on the headless path itself
+  (`HeadlessMcpMuteServerRealProcessTest`).
+
+The rest of this document is the decision material as it stood when the owner
+picked, kept verbatim: it names four roads, measures what each one costs,
+recommends one and says out loud what the recommendation gives up. Where a
+section below says "nothing here is built" or "awaiting the owner", this block
+is the correction.
 
 Everything measured here was measured against `d83c101` on 2026-08-13, on a
 Mac with an M-series CPU, with the JDK the Gradle build uses (Temurin 21.0.12),
@@ -641,16 +662,19 @@ decides it. That half is done here and is not waiting for the owner.
 
 ## 7. Open questions the owner must answer
 
-1. **Which road: A, B, B′ or C.** Nothing below §3 is decided until this is.
-   Everything else in this document is measurement. Recommended: **B**.
-2. **If B or B′ — where the operator asks.** This is question 1 in a sharper
-   form and it is the one real choice inside the recommendation: `--mcp` on the
-   command line, so a cron line states its own reach and nothing else can widen
-   it (B, recommended); or one `headlessMcp` settings key honoured by every
-   headless face, so consent lives in one auditable place and §4.2 never has to
-   exist (B′). §4.1 argues for B and names what B′ would save.
-3. Whether cron fires and triggered nodes take §4.2's per-job key, or follow the
-   interactive run. Recommended: their own key, default false. Moot under B′.
+1. ~~**Which road: A, B, B′ or C.**~~ **Answered 2026-08-14: B and B′
+   combined** — the owner's own words are in the status block at the top. The
+   spec offered the two forms as rivals; the owner took both, each for the face
+   it fits: the flag when a person starts the run, the settings key when the
+   machine does.
+2. ~~**If B or B′ — where the operator asks.**~~ **Both places.** An explicit
+   flag overrides the settings for that invocation; absent flags, the settings
+   decide. B′'s named failure — a cron line whose reach is invisible at the
+   call site — is accepted with open eyes; the doctor faces line and the
+   run's own mount output are the mitigation.
+3. ~~Whether cron fires and triggered nodes take §4.2's per-job key.~~ **Moot,
+   as predicted: B′ covers them by construction.** They read `headlessMcp`
+   from the same config and take no flags; §4.2 was never built.
 4. ~~Whether card 221 (the mute-server hang, §2.1) blocks a mounting road or
    ships as a parallel fix.~~ **Answered by events rather than by the owner: 221
    landed first.** The recommendation was that it blocks, and card 220 names it in
