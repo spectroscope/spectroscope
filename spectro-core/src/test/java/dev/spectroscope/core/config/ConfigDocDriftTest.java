@@ -150,6 +150,57 @@ class ConfigDocDriftTest {
     }
 
     @Test
+    void theChapterCarriesTheOneConditionOnTheLivePromise() throws IOException {
+        // Card 222, review finding F5. The live promise has exactly one
+        // exception, and this is the second round in which it went unwritten.
+        // The image BACKEND has a live control of its own — the composer's
+        // dropdown — and a pick there outranks a file saved under it for the
+        // rest of the session. Worse, until this round the APP sent that pick
+        // itself, on a plain reconnect, so the exception applied with nobody
+        // having chosen anything. The exception is gone from the app and stated
+        // here, because a promise with a silent condition is the exact shape of
+        // the defect this card was opened for.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String reference = Files.readString(source);
+
+        // Scoped to the paragraph that makes the promise, not to the whole
+        // chapter: "sttProvider" appears in the 25-row key table further down,
+        // and an assertion the table already satisfies would have measured
+        // nothing. The first draft of this test did exactly that and passed
+        // against the unedited file.
+        String promise = paragraphContaining(reference, "When a saved setting lands");
+        for (String live : List.of("sttProvider", "sttLanguage")) {
+            assertTrue(promise.contains(live),
+                    "the live-promise paragraph does not name \"" + live + "\" — the settings"
+                            + " page saves it and the transcription route reads it per request."
+                            + " Paragraph: " + promise);
+        }
+
+        String exception = paragraphContaining(reference, "outranks a saved");
+        assertTrue(exception.contains("composer") && exception.contains("imageProvider"),
+                "the chapter never says that the COMPOSER's image-backend dropdown outranks a"
+                        + " saved imageProvider for the rest of the session — the one condition"
+                        + " on the promise above it, and the one the app used to trigger by"
+                        + " itself. Paragraph: " + exception);
+    }
+
+    /** The one {@code <p>} carrying {@code marker}, so an assertion about a
+     *  sentence cannot be satisfied by a table elsewhere in the chapter.
+     *  @param html   the reference chapter
+     *  @param marker text that appears in the wanted paragraph and nowhere else
+     *  @return the paragraph's markup, or "" when the marker is absent */
+    private static String paragraphContaining(String html, String marker) {
+        int at = html.indexOf(marker);
+        if (at < 0) {
+            return "";
+        }
+        int open = html.lastIndexOf("<p>", at);
+        int close = html.indexOf("</p>", at);
+        return open < 0 || close < 0 ? "" : html.substring(open, close);
+    }
+
+    @Test
     void everyKeyAWorkspaceScopeMayNotHoldSaysSoInItsOwnRow() throws IOException {
         // Card 222, review finding F2. The refusal is loud at load time — the
         // whole scope is dropped and the message names the file — so the one

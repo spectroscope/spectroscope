@@ -1145,6 +1145,16 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält, womit sie gestartet ist.",
     en: "Applies from the next session. A session already open keeps what it started with.",
   },
+  // The third answer, and the only field that needs it (card 222, F5). The
+  // image backend has a SECOND live control — the dropdown in the composer —
+  // and a pick there outranks a file saved under it for the rest of that
+  // session. The sentence names the control, because a reader who knows which
+  // one is speaking can go and change it; "sometimes" would leave them where
+  // the owner was on the day this card was written.
+  "set.reachLiveUnlessPicked": {
+    de: "Gilt sofort, auch für eine schon offene Sitzung — außer du hast in dieser Sitzung im Eingabefeld ein Bild-Backend gewählt. Diese Wahl bleibt bis zum Sitzungsende oben.",
+    en: "Applies immediately, including to a session already open — unless you picked an image backend in the composer this session. That choice stays on top until the session ends.",
+  },
   // The session-defaults block's own wording. Provider, model, address and
   // thinking are bound when the agent is built — measured on one socket: the
   // settings were written to model=qwen3:latest, /api/config agreed, and the
@@ -2627,9 +2637,12 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
 
   "mcpset.title": { de: "MCP-Server", en: "MCP servers" },
+  // When they land is no longer said here: the block's own ReachBlock derives
+  // that sentence from SETTING_REACH (card 222, F10). A hand-written "apply to
+  // the next chat" beside a derived one is two claims about the same thing.
   "mcpset.note": {
-    de: "Externe MCP-Server (User-Ebene). Greifen beim nächsten Chat; der rohe JSON-Editor im Composer-Zahnrad bleibt für die Projekt-Ebene.",
-    en: "External MCP servers (user scope). Apply to the next chat; the raw JSON editor in the composer gear stays for the project scope.",
+    de: "Externe MCP-Server (User-Ebene). Der rohe JSON-Editor im Composer-Zahnrad bleibt für die Projekt-Ebene.",
+    en: "External MCP servers (user scope). The raw JSON editor in the composer gear stays for the project scope.",
   },
   "mcpset.empty": { de: "Keine MCP-Server konfiguriert.", en: "No MCP servers configured." },
   "mcpset.namePh": { de: "name", en: "name" },

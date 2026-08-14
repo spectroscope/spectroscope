@@ -1194,15 +1194,13 @@ public final class SessionConnection {
      * @param registry the session's registry, already carrying the standard tools
      */
     void registerSettingsTools(ToolRegistry registry) {
-        // created lazily per call — the dropdown switch, a backend saved in the
-        // settings and a saved imageModel all apply to the next generation, and
-        // a missing key errors readably. Both halves of the settings page's
-        // image block go through a live reading: card 222's review found this
-        // tool reading the in-memory dropdown alone while the page under it
-        // promised that a SAVED backend reaches an open session.
+        // Built lazily per call, through ONE method, so a test can hold the
+        // answer without a picture being generated: card 222's review finding
+        // F6 measured that reverting the model half of this to the connect-time
+        // snapshot left the full gate green — the page said "live" and nothing
+        // said it here.
         registry.register(new GenerateImageTool(
-                () -> ImageProviders.create(liveImageProvider(),
-                        liveConfig().imageModel(), SpectroConfig.imageEnv()),
+                this::liveImageBackend,
                 ImageStore.inUserHome(),
                 llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
         // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
@@ -1257,15 +1255,41 @@ public final class SessionConnection {
     }
 
     /**
+     * The image backend {@code generate_image} runs on, resolved and built for
+     * the call being made — the whole of it, in one method, so a test can hold
+     * the answer without a picture being generated.
+     *
+     * @return the provider for this call
+     * @throws IllegalStateException when the resolved backend has no key — the
+     *         tool turns that into an error naming the variable
+     */
+    dev.spectroscope.core.image.ImageProvider liveImageBackend() {
+        return ImageProviders.create(
+                liveImageProvider(), liveConfig().imageModel(), SpectroConfig.imageEnv());
+    }
+
+    /**
      * The image backend for the call being made.
      *
-     * <p>Two sources, and the order between them is the point. The composer's
-     * dropdown writes {@link #imageProviderName} over the websocket and sets
-     * {@link #imageProviderTouched}; the settings page writes a file. A live
-     * choice the operator made in this session outranks a file saved under it —
-     * the same rule the session moment already applies to this seed, to the
-     * permission mode and to thinking. Where they have NOT touched the dropdown,
-     * the settings are read again on the call, like the image model beside it.</p>
+     * <p>Three sources, and the order between them is the point.</p>
+     * <ol>
+     *   <li>The composer's dropdown, when a human used it: it writes
+     *       {@link #imageProviderName} over the websocket and sets
+     *       {@link #imageProviderTouched}. A live choice the operator made in
+     *       this session outranks a file saved under it — the same rule the
+     *       session moment already applies to this seed, to the permission mode
+     *       and to thinking. This is the ONE condition the settings page's image
+     *       block still has to state, and it does.</li>
+     *   <li>Otherwise the settings, read again on the call, like the image model
+     *       beside it — so a backend saved while this session is open decides
+     *       the next generation.</li>
+     *   <li>…unless that backend has no key and another one does, in which case
+     *       the generation runs where it can actually run
+     *       ({@link ImageProviders#withAKey}). That is the owner's smart default
+     *       from 2026-07-20, and it is a FUNCTION of the settings and the keys —
+     *       re-derived here on every call, so giving the configured backend a
+     *       key makes it evaporate.</li>
+     * </ol>
      *
      * <p>Card 222, review finding F1: this method used to be
      * {@code imageProviderName.get()} alone, an in-memory reference written at
@@ -1273,10 +1297,21 @@ public final class SessionConnection {
      * settings write, ever. The page said "applies immediately, including to a
      * session already open" directly under the dropdown that saves it.</p>
      *
+     * <p>Review finding F5, one round later: the smart default was the web app's,
+     * and the app announced it with {@code set_image_provider} — the same message
+     * a human dropdown pick sends. So the app set {@link #imageProviderTouched}
+     * on its own, on a plain reconnect, and case 1 above swallowed the settings
+     * page for the rest of the session with nobody having touched anything. The
+     * rule is not a choice and is no longer remembered as one: it moved here, to
+     * the call, and the app now only pre-selects what this will resolve to.</p>
+     *
      * @return the backend name {@code generate_image} should resolve now
      */
     private String liveImageProvider() {
-        return imageProviderTouched ? imageProviderName.get() : liveConfig().imageProvider();
+        if (imageProviderTouched) {
+            return imageProviderName.get();
+        }
+        return ImageProviders.withAKey(liveConfig().imageProvider(), SpectroConfig.imageEnv());
     }
 
     /** The net fence as the settings define it right now — one spelling for the

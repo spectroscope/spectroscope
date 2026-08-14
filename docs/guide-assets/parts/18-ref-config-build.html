@@ -77,10 +77,24 @@ sections disabled: there is no durable folder to write to yet.</p>
 <p><strong>When a saved setting lands.</strong> Every tool that reads a setting reads it
 again on the call, so saving one changes what the session you already have open does next:
 the <code>web_search</code> tier (<code>searxngUrl</code> and the two search keys), the
-image backend and <code>imageModel</code>, <code>chromeBinary</code>, and the
+image backend and <code>imageModel</code>, <code>chromeBinary</code>, the
 <code>allowLocalhost</code> net fence that <code>web_fetch</code>, <code>browse_page</code>
-and the browser and launch families share. A call already in flight finishes on what it
+and the browser and launch families share, and the dictation settings
+(<code>sttProvider</code>, <code>sttLanguage</code>, <code>sttModel</code>), which the
+transcription route reads per request. A call already in flight finishes on what it
 started with; the next one asks again.</p>
+
+<p><strong>The one exception, and it is a control rather than a rule.</strong> The image
+backend also has a dropdown in the <em>composer</em> row. Picking a backend there speaks to
+the running session directly, and that choice outranks a saved
+<code>imageProvider</code> until the session ends — so if you used it, the settings page
+will not move this session's image backend, and the sentence under that dropdown on the
+settings page says so. Nothing else on the page has a second live control like this.
+(Where the configured backend has no API key and another one does, the backend with a key
+is used. That is not a remembered choice: it is re-derived from the settings and the keys
+on every call, so giving the configured backend a key ends it.)</p>
+
+
 
 <p>Four things are settled when the agent is built and stay settled for that session,
 because changing them mid-session would mean killing processes or rewriting a conversation

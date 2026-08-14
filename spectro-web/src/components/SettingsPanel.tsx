@@ -705,12 +705,18 @@ export function SettingsPanel({
                 </div>
               )}
 
-              {/* The image pair, which genuinely does reach an open session:
-                  generate_image resolves BOTH its backend and its model on the
-                  call (SessionConnection#liveImageProvider + liveConfig). The
-                  backend half only became true with this review — it used to
-                  read an in-memory reference no settings write touches. */}
-              <ReachBlock lang={lang} fields={["imageProvider", "imageModel"]}>
+              {/* The image pair reaches an open session — generate_image
+                  resolves BOTH its backend and its model on the call
+                  (SessionConnection#liveImageBackend). They are two blocks and
+                  not one because they do not land on the same terms: the
+                  BACKEND has a second live control, the dropdown in the
+                  composer, and a pick there outranks a file saved under it for
+                  the rest of the session. The model has no such control.
+                  Card 222's review finding F5 is the bill for one sentence over
+                  both — and worse, for the app sending that composer message
+                  itself, so the condition was true with nobody having picked
+                  anything. */}
+              <ReachBlock lang={lang} fields={["imageProvider"]}>
                 <div className="settings-grid">
                   <label className="settings-field">
                     <span>{t(lang, "set.imageBackend")}</span>
@@ -735,6 +741,10 @@ export function SettingsPanel({
                       onReset={() => saveUser({ imageProvider: null })}
                     />
                   </label>
+                </div>
+              </ReachBlock>
+              <ReachBlock lang={lang} fields={["imageModel"]}>
+                <div className="settings-grid">
                   <label className="settings-field">
                     <span>{t(lang, "set.imageModel")}</span>
                     <select

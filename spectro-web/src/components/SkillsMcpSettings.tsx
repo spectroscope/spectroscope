@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { fetchSettings, putSettings } from "../state/serverSettings";
 import { installSkill, skillPath, useInstallState, type CatalogueRow } from "../state/skillInstall";
+import { ReachBlock } from "./settingsReach";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
@@ -220,62 +221,71 @@ export function McpSettings() {
     <div className="skset">
       <div className="settings-label">{t(lang, "mcpset.title")}</div>
       <p className="settings-note">{t(lang, "mcpset.note")}</p>
-      {servers === "failed" ? (
-        <p className="settings-note">{t(lang, "doc.unreachable")}</p>
-      ) : servers === null ? (
-        <p className="settings-note">…</p>
-      ) : (
-        <>
-          {Object.keys(servers).length === 0 ? (
-            <p className="settings-note">{t(lang, "mcpset.empty")}</p>
-          ) : (
-            <ul className="skset-list">
-              {Object.entries(servers).map(([key, value]) => (
-                <li key={key} className="skset-row">
-                  <span className="skset-name mono">{key}</span>
-                  <span className="skset-desc mono" title={JSON.stringify(value)}>
-                    {JSON.stringify(value)}
-                  </span>
-                  <button
-                    type="button"
-                    className="skset-del"
-                    title={t(lang, "mcpset.remove")}
-                    onClick={() => remove(key)}
-                  >
-                    ✕
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="skset-add">
-            <input
-              type="text"
-              className="skset-input mono"
-              value={name}
-              placeholder={t(lang, "mcpset.namePh")}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <input
-              type="text"
-              className="skset-input skset-input--wide mono"
-              value={command}
-              placeholder={t(lang, "mcpset.cmdPh")}
-              onChange={(e) => setCommand(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  add();
-                }
-              }}
-            />
-            <button type="button" className="ghost" onClick={add}>
-              {t(lang, "mcpset.add")}
-            </button>
-          </div>
-          {error !== null && <p className="settings-error">{error}</p>}
-        </>
-      )}
+      {/* Card 222, review finding F10: this manager saved mcpServers with no
+          reach sentence derived from anything — the intro above used to claim
+          "apply to the next chat" in free text, which is the shape the whole
+          module exists to remove. The claim is measured now:
+          McpServerRegistry.load runs inside buildAgentOnce, off the
+          session-scoped config, so a server added here is connected by the next
+          session. */}
+      <ReachBlock lang={lang} fields={["mcpServers"]}>
+        {servers === "failed" ? (
+          <p className="settings-note">{t(lang, "doc.unreachable")}</p>
+        ) : servers === null ? (
+          <p className="settings-note">…</p>
+        ) : (
+          <>
+            {Object.keys(servers).length === 0 ? (
+              <p className="settings-note">{t(lang, "mcpset.empty")}</p>
+            ) : (
+              <ul className="skset-list">
+                {Object.entries(servers).map(([key, value]) => (
+                  <li key={key} className="skset-row">
+                    <span className="skset-name mono">{key}</span>
+                    <span className="skset-desc mono" title={JSON.stringify(value)}>
+                      {JSON.stringify(value)}
+                    </span>
+                    <button
+                      type="button"
+                      className="skset-del"
+                      title={t(lang, "mcpset.remove")}
+                      onClick={() => remove(key)}
+                    >
+                      ✕
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="skset-add">
+              <input
+                type="text"
+                className="skset-input mono"
+                value={name}
+                placeholder={t(lang, "mcpset.namePh")}
+                onChange={(e) => setName(e.target.value)}
+              />
+              <input
+                type="text"
+                className="skset-input skset-input--wide mono"
+                value={command}
+                placeholder={t(lang, "mcpset.cmdPh")}
+                onChange={(e) => setCommand(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    add();
+                  }
+                }}
+              />
+              <button type="button" className="ghost" onClick={add}>
+                {t(lang, "mcpset.add")}
+              </button>
+            </div>
+            {error !== null && <p className="settings-error">{error}</p>}
+          </>
+        )}
+      </ReachBlock>
     </div>
   );
 }

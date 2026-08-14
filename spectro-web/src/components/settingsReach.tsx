@@ -21,10 +21,18 @@
 import type { ReactNode } from "react";
 import { t, type Lang } from "../i18n/i18n";
 
-/** The two answers a settings field can give to "when does this take effect?".
- *  There is no third: "it depends" is what the page used to say by saying
- *  nothing. */
-export type Reach = "live" | "next-session";
+/** The answers a settings field can give to "when does this take effect?".
+ *  Vague is not among them: "it depends" is what the page used to say by saying
+ *  nothing, and a condition that exists is written down rather than dropped.
+ *
+ *  - `live` — a save decides the next tool call or the next request.
+ *  - `next-session` — the value is bound when the agent is built.
+ *  - `live-unless-picked` — live, unless the same setting also has a LIVE
+ *    control elsewhere in the window and the operator used it this session, in
+ *    which case that choice stands until they leave the session. Exactly one
+ *    field is in this state (`imageProvider`, whose second control is the
+ *    composer's dropdown), and the page says so under it. */
+export type Reach = "live" | "live-unless-picked" | "next-session";
 
 /**
  * Every saveable setting on the page, and when it reaches a session that is
@@ -49,20 +57,33 @@ export const SETTING_REACH = {
   // forwards to the live agent (Agent#setThinking); a settings write does not.
   thinking: "next-session",
   // ---- the belt reads these again on every call ----
-  imageProvider: "live",
+  // The one conditional field, and the condition is a control, not a mood: the
+  // composer's image dropdown writes the session directly (set_image_provider)
+  // and outranks a file saved under it until this session ends. Card 222's
+  // review finding F5 is what put the state here — the app itself used to send
+  // that message with no user action, so the condition was true with nobody
+  // having picked anything. It no longer does; a human still can.
+  imageProvider: "live-unless-picked",
   imageModel: "live",
   searxngUrl: "live",
   allowLocalhost: "live",
   chromeBinary: "live",
   // TranscribeController loads the config per request, so dictation picks a
-  // saved model up without a new session.
+  // saved model up without a new session. SttController reads the route and the
+  // language the same way — two suppliers, both
+  // `SpectroConfig.load(Overrides.none())` on the call.
   sttModel: "live",
+  sttProvider: "live",
+  sttLanguage: "live",
   // SettingsController applies this to the running process on PUT.
   logLevel: "live",
   // ---- settled for the session ----
   workspace: "next-session",
   autoApprove: "next-session",
   hooks: "next-session",
+  // McpServerRegistry.load runs inside buildAgentOnce, from the session-scoped
+  // config — a server added now is connected by the next session, not this one.
+  mcpServers: "next-session",
   // The exporter is built where the session store is minted.
   otlpEndpoint: "next-session",
   otlpBasicAuth: "next-session",
@@ -80,6 +101,7 @@ export type SettingKey = keyof typeof SETTING_REACH;
  */
 export const NOTE_REACH: Record<string, Reach> = {
   "set.reachLive": "live",
+  "set.reachLiveUnlessPicked": "live-unless-picked",
   "set.reachNextSession": "next-session",
   // Block-specific wordings that carry their own reason. They still have to
   // agree with the table above.
@@ -93,6 +115,7 @@ export const NOTE_REACH: Record<string, Reach> = {
 /** The generic sentence for a reach, when a block does not bring its own. */
 const GENERIC: Record<Reach, string> = {
   live: "set.reachLive",
+  "live-unless-picked": "set.reachLiveUnlessPicked",
   "next-session": "set.reachNextSession",
 };
 

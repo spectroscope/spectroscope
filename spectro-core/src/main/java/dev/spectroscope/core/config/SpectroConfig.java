@@ -206,7 +206,10 @@ public record SpectroConfig(
      *  switch instead of being rebuilt (in a different order) in each place. */
     public static final String KNOWN_PROVIDERS_DISPLAY =
             "anthropic, ollama, openai, lmstudio, openrouter, gemini, spectro-local";
-    static final Set<String> KNOWN_IMAGE_PROVIDERS = Set.of("gemini", "openai");
+    /** {@code imageProvider}'s known values — the factory's own list rather than
+     *  a second spelling of it, so a backend added there is accepted here. */
+    static final Set<String> KNOWN_IMAGE_PROVIDERS =
+            Set.copyOf(dev.spectroscope.core.image.ImageProviders.BACKENDS);
     /** {@code sttProvider}'s known values — "auto" decides by what the machine has. */
     public static final Set<String> KNOWN_STT_PROVIDERS = Set.of("auto", "local", "openai");
     /** {@code sttLanguage}'s known values — "auto" lets the model detect; a code

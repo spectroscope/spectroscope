@@ -510,4 +510,186 @@ class SessionSettingsReachTheBeltTest {
                         + " however many tool calls read it")
                 .isEqualTo(1);
     }
+
+    // ---- review finding F5: the app picked the backend and the field went dead ----
+
+    /**
+     * Writes image keys into {@code ~/.spectro/.env} — the file
+     * {@code SpectroConfig.imageEnv()} overlays onto the process environment, and
+     * the only way a test can say "this backend has a key" inside one JVM. The
+     * Gradle test task points {@code user.home} into the build directory, so this
+     * never touches the real home.
+     *
+     * @param lines the whole .env file, KEY=value per line
+     * @return what was there before, or null when there was no file
+     */
+    private static String saveDotEnv(String lines) throws IOException {
+        Path file = SpectroConfig.dotEnvPath();
+        String previous = Files.exists(file) ? Files.readString(file) : null;
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, lines);
+        return previous;
+    }
+
+    /** Puts the .env back the way it was found. */
+    private static void restoreDotEnv(String previous) throws IOException {
+        Path file = SpectroConfig.dotEnvPath();
+        if (previous == null) {
+            Files.deleteIfExists(file);
+        } else {
+            Files.writeString(file, previous);
+        }
+    }
+
+    @Test
+    void theAppsPickOfABackendWithAKeyNeverFreezesTheSettingsField(@TempDir Path workspace)
+            throws IOException {
+        assumeNoImageKeys();   // a process-env key would shadow the .env written below
+        // The owner's report with the nouns swapped, and the reason this is the
+        // third round on this field. spectro-web's App.tsx used to send
+        // set_image_provider WITH NO USER ACTION whenever the configured backend
+        // had no key and the other one did — measured by the reviewer on a
+        // hooked WebSocket.send, on a plain reconnect:
+        //
+        //   sentByTheCLIENT_withNoHumanAction:
+        //       ["{\"type\":\"set_image_provider\",\"provider\":\"openai\"}"]
+        //
+        // That frame set imageProviderTouched, and from it on the settings
+        // page's image-backend dropdown was dead for the session while the page
+        // under it promised "applies immediately, including to a session already
+        // open". The rule is not a choice: it is a function of the settings and
+        // the keys, so it is evaluated here, per call, and remembered nowhere.
+        //
+        // Asserted on the RESOLVED backend rather than by running the tool: once
+        // a key exists the tool stops refusing and dials the real endpoint. The
+        // first red run of this test proved it — "ERROR: image generation
+        // failed: OpenAI HTTP 401", a unit test spending someone's rate limit on
+        // the public internet. The key-free half of this claim is already driven
+        // through the tool by theImageBackendSavedMidSessionReachesTheOpenSession.
+        String previousEnv = saveDotEnv("OPENAI_API_KEY=only-openai-has-one\n");
+        try {
+            SessionConnection connection = sessionIn("ws-222-autopick", workspace);
+
+            assertThat(connection.liveConfig().imageProvider())
+                    .as("test premise: the settings still name the shipped default")
+                    .isEqualTo("gemini");
+            assertThat(connection.liveImageBackend().providerName())
+                    .as("the belt lands where the composer's dropdown pre-selects — the"
+                            + " backend that actually has a key")
+                    .isEqualTo("openai");
+
+            // The operator now gives gemini a key. Nothing was touched, nothing
+            // was sent, and the app's pick has to evaporate on the next call.
+            saveDotEnv("OPENAI_API_KEY=only-openai-has-one\nGEMINI_API_KEY=now-gemini-has-one\n");
+
+            assertThat(connection.liveImageBackend().providerName())
+                    .as("the app's pick is re-derived, not remembered: with a key for the"
+                            + " configured backend the settings decide again")
+                    .isEqualTo("gemini");
+        } finally {
+            restoreDotEnv(previousEnv);
+        }
+    }
+
+    @Test
+    void aBackendSavedMidSessionOutranksTheAppsPickOfOne(@TempDir Path workspace)
+            throws IOException {
+        assumeNoImageKeys();
+        // The blocking half of F5: with the app's pick in force, the settings
+        // page's dropdown has to keep working. It is the SAME reading, so this
+        // cannot rot separately — but it is the sentence the page makes, and the
+        // page is what the owner believed.
+        String previousEnv = saveDotEnv("OPENAI_API_KEY=only-openai-has-one\n");
+        try {
+            SessionConnection connection = sessionIn("ws-222-autopick-saved", workspace);
+
+            assertThat(connection.liveImageBackend().providerName())
+                    .as("test premise: the app's pick is in force")
+                    .isEqualTo("openai");
+
+            saveInWorkspace(workspace, "{\"imageProvider\": \"gemini\"}");
+            saveDotEnv("OPENAI_API_KEY=only-openai-has-one\nGEMINI_API_KEY=now-gemini-has-one\n");
+
+            assertThat(connection.liveImageBackend().providerName())
+                    .as("a backend saved on the settings page reaches the open session even"
+                            + " where the app had picked another one")
+                    .isEqualTo("gemini");
+        } finally {
+            restoreDotEnv(previousEnv);
+        }
+    }
+
+    // ---- review finding F6: two live claims were pinned by nothing ----
+
+    @Test
+    void theImageModelSavedMidSessionReachesTheNextGeneration(@TempDir Path workspace)
+            throws IOException {
+        assumeNoImageKeys();
+        // Measured: reverting this registration's imageModel to
+        // activeConfig.get().imageModel() left the FULL gate green — 2295 tests,
+        // BUILD SUCCESSFUL. The settings page says imageModel is live; nothing
+        // said it at the call site. The refusal names the variable, so the
+        // backend is readable without a key; the MODEL is only readable with
+        // one, which is what the .env below is for. No generation is ever run.
+        String previousEnv = saveDotEnv("GEMINI_API_KEY=test-only-never-dialled\n");
+        try {
+            SessionConnection connection = sessionIn("ws-222-image-model", workspace);
+            ToolRegistry belt = new ToolRegistry();
+            connection.registerSettingsTools(belt);
+
+            assertThat(connection.liveImageBackend().model())
+                    .as("test premise: nothing is saved, so the backend's own default stands")
+                    .isEqualTo(dev.spectroscope.core.image.ImageProviders.defaultModel("gemini"));
+
+            saveInWorkspace(workspace, "{\"imageModel\": \"gemini-2.5-flash-image-preview\"}");
+
+            assertThat(connection.liveImageBackend().model())
+                    .as("the model saved mid-session is the one the next generation asks for")
+                    .isEqualTo("gemini-2.5-flash-image-preview");
+        } finally {
+            restoreDotEnv(previousEnv);
+        }
+    }
+
+    @Test
+    void aChromeBinarySavedMidSessionIsTheOneBrowsePageLaunches(@TempDir Path workspace)
+            throws IOException {
+        // The other unpinned claim, and the one the reviewer measured: reverting
+        // browse_page to activeConfig.get().chromeEnv() left the full gate green.
+        // The existing chromeBinary test asks connection.liveConfig() directly,
+        // so it never touches the registration. This one drives the TOOL, and
+        // the fake browser it launches proves which binary was chosen: only the
+        // one saved mid-session prints this marker.
+        assumeTrue(!System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("win"),
+                "the fake browser below is a POSIX shell script");
+        Path fake = workspace.resolve("fake-chrome.sh");
+        Files.writeString(fake, "#!/bin/sh\necho '<html><body>launched by the saved binary"
+                + "</body></html>'\n");
+        assertThat(fake.toFile().setExecutable(true)).isTrue();
+
+        // allowLocalhost, because the fence judges the address before Chrome
+        // starts and the fake browser never dials it.
+        String previous = saveForUser("{\"allowLocalhost\": true}");
+        try {
+            SessionConnection connection = sessionIn("ws-222-chrome", workspace);
+            ToolRegistry belt = new ToolRegistry();
+            connection.registerSettingsTools(belt);
+            Tool browse = belt.get("browse_page").orElseThrow(
+                    () -> new AssertionError("the belt carries no browse_page at all"));
+            var call = JSON.createObjectNode().put("url", "http://127.0.0.1:1/");
+
+            assertThat(browse.execute(call, new Tool.ToolContext(workspace, new CancelSignal())))
+                    .as("test premise: nothing is saved, so the fake browser is not launched")
+                    .doesNotContain("launched by the saved binary");
+
+            saveForUser("{\"allowLocalhost\": true, \"chromeBinary\": \""
+                    + fake.toAbsolutePath() + "\"}");
+
+            assertThat(browse.execute(call, new Tool.ToolContext(workspace, new CancelSignal())))
+                    .as("the binary saved mid-session is the one the next render launches")
+                    .contains("launched by the saved binary");
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
 }
