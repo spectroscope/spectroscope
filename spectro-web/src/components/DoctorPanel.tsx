@@ -12,6 +12,7 @@ import type { SessionMeta } from "../events";
 import { LogPane } from "./LogPane";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
+import { webSearchCheck, webSearchRowValue, type ServedWebSearch } from "./webSearchSetup";
 
 type Verdict = "ok" | "warn" | "error";
 
@@ -19,6 +20,13 @@ interface Check {
   key: string;
   verdict: Verdict;
   value: string;
+}
+
+/** The part of /api/config this panel reads. */
+interface ConfigView {
+  provider?: string;
+  model?: string;
+  webSearch?: ServedWebSearch;
 }
 
 export function DoctorPanel(props: {
@@ -29,7 +37,10 @@ export function DoctorPanel(props: {
   permissionMode: string;
 }) {
   const lang = useLang();
-  const [config, setConfig] = useState<{ provider?: string; model?: string } | null | "failed">(null);
+  // The whole /api/config body, not a slice of it. The web-search row (card
+  // 223) is drawn from the `webSearch` block this same response has carried
+  // since card 203 — the panel already made the call and threw the answer away.
+  const [config, setConfig] = useState<ConfigView | null | "failed">(null);
   const [settings, setSettings] = useState<SettingsView | null | "failed">(null);
   const [sessions, setSessions] = useState<number | null | "failed">(null);
   const [otlp, setOtlp] = useState<
@@ -46,7 +57,7 @@ export function DoctorPanel(props: {
     setSessions(null);
     fetch("/api/config")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((c) => setConfig(c as { provider?: string; model?: string }))
+      .then((c) => setConfig(c as ConfigView))
       .catch(() => setConfig("failed"));
     fetchSettings()
       .then(setSettings)
@@ -74,6 +85,11 @@ export function DoctorPanel(props: {
   if (!props.open) return null;
 
   const pending = (v: unknown): boolean => v === null;
+  // Card 223. The tier is the server's decision and this file may not hold an
+  // opinion about it — there is no tier name anywhere below, and a drift test
+  // next door asserts there never is. All this line does is render the answer
+  // the panel was already handed.
+  const search = webSearchCheck(config);
   const checks: Check[] = [
     {
       key: "doc.otlp",
@@ -118,6 +134,17 @@ export function DoctorPanel(props: {
         props.providerInfo === null
           ? t(lang, "doc.backendNone")
           : `${props.providerInfo.provider} · ${props.providerInfo.model || "?"} @ ${props.providerInfo.host || "?"}`,
+    },
+    {
+      // The label says "configured", and that word is load-bearing: this row
+      // reports what the settings resolve to. Card 222 is deciding whether a
+      // running session may hold a different tier; if it lands a way to ask the
+      // session, that answer belongs in a row of its own beside this one — the
+      // way `llm backend` (the live announcement) already sits beside
+      // `server api` (the configured one) two rows up.
+      key: "doc.webSearch",
+      verdict: search.verdict,
+      value: webSearchRowValue(search, lang),
     },
     {
       key: "doc.sessions",

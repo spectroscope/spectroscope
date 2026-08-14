@@ -8,6 +8,7 @@
 // the Docker socket can bind-mount any host path into a container.
 
 import { dockerOffer, type DockerOffer, type DockerStatus } from "./dockerOffer";
+import { t, type Lang } from "../i18n/i18n";
 
 /** The shipped setup, relative to the repository root. Pinned here because the
  *  command below is only true while this path exists; webSearchSetup.test.ts
@@ -103,6 +104,126 @@ export function tierReading(tier: string, searxngUrl: string): TierReading {
     detailKey: `set.tier.${tier}`,
     addr: tier === "searxng" ? searxngUrl : "",
   };
+}
+
+/** The `webSearch` block of /api/config as a READER needs it — the decision and
+ *  the address, nothing more. `WebSearchStatus` in WebSearchSettings.tsx is the
+ *  full block; this narrower shape exists so the calibration panel can be
+ *  handed the raw config object it already holds without importing a settings
+ *  page. Both fields are optional on purpose: a server older than card 203
+ *  sends no block at all, and that is a state to report, not to crash on. */
+export interface ServedWebSearch {
+  tier?: string;
+  searxngUrl?: string;
+}
+
+/** What the calibration panel needs in order to draw one row. */
+export interface WebSearchCheck {
+  /** The panel's dot. "warn" for the scrape — the same call the CLI's doctor
+   *  makes with Kind.INFO, and for the same reason: it is not a fault, it is a
+   *  state the operator should know they are in. */
+  verdict: "ok" | "warn" | "error";
+  /** Which of the four things the row is saying. */
+  state: "pending" | "failed" | "absent" | "tier";
+  /** The server's tier word, or "". Printed bare when the sentence is unknown. */
+  tier: string;
+  /** The sentence to render, as dict keys — empty keys for every non-tier state. */
+  reading: TierReading;
+}
+
+const NO_READING: TierReading = { labelKey: "", detailKey: "", addr: "" };
+
+/**
+ * Read the served answer for the calibration panel (card 223).
+ *
+ * <p>The panel drew eight rows and web search was not one of them, while
+ * `/api/config` had been carrying tier, label, sentence and instance address
+ * since card 203. Nothing was missing from the wire; nobody drew it.</p>
+ *
+ * <p>This function decides NOTHING about which tier is active. It is the third
+ * reader of one server-side resolver, next to the settings block above and
+ * `DoctorCommand.webSearchLine` on the CLI, and the only judgement it makes is
+ * which dot colour a tier deserves. A `tier === "duckduckgo"` test is the same
+ * comparison {@link tierReading} already makes two functions up; a rule about
+ * keys or addresses would be the copy card 203 removed.</p>
+ *
+ * <p>Four states, because the panel has to tell them apart. `pending` is "not
+ * asked yet" and must not read as broken; `failed` is the fetch itself; and
+ * `absent` is a server too old to carry the block — the settings page stays
+ * silent for that one, but silence is precisely the defect this card exists to
+ * fix, so the doctor says it out loud.</p>
+ *
+ * @param config the parsed /api/config body, `null` before it lands, `"failed"`
+ *               when the fetch did — the panel's own three-valued state
+ * @returns the row
+ */
+export function webSearchCheck(config: { webSearch?: ServedWebSearch } | null | "failed"): WebSearchCheck {
+  if (config === "failed") {
+    return { verdict: "error", state: "failed", tier: "", reading: NO_READING };
+  }
+  if (config === null) {
+    return { verdict: "ok", state: "pending", tier: "", reading: NO_READING };
+  }
+  const tier = config.webSearch?.tier ?? "";
+  if (tier === "") {
+    return { verdict: "warn", state: "absent", tier: "", reading: NO_READING };
+  }
+  return {
+    verdict: tier === "duckduckgo" ? "warn" : "ok",
+    state: "tier",
+    tier,
+    reading: tierReading(tier, config.webSearch?.searxngUrl ?? ""),
+  };
+}
+
+/**
+ * The calibration row's text, for a check and a language.
+ *
+ * <p><b>Why this is not four lines of JSX.</b> It was, and the review of card
+ * 223 measured what that cost: two mutations of the expression — the whole
+ * mapping replaced by the bare {@link WebSearchCheck.tier}, and the `{ addr }`
+ * argument dropped from the `t()` call — each left the full web suite green at
+ * 260 files and 3794 tests. The panel would have shipped reading `duckduckgo`,
+ * or `searxng — a metasearch instance you run, at {addr}`, and criteria 2 and 3
+ * are the two the card exists for. Rendering cannot catch <i>those two</i>: the
+ * panel fetches in an effect, no server render runs effects, so the row's value
+ * cell is `…` whatever this function returns. Moving the mapping here is what
+ * makes it testable at all, and webSearchSetup.test.ts kills both mutations.</p>
+ *
+ * <p>That is as far as the argument goes, and the first version of it went
+ * further and was wrong. It read "rendering cannot reach past pending here",
+ * which the next review took to mean the panel could not be rendered at all —
+ * so nothing asserted the row was ON the screen, and `checks.slice(0, 4)` in
+ * DoctorPanel.tsx deleted it with the whole suite green. A static render emits
+ * every `.doctor-row`; only the fetched VALUES are out of reach. The row's
+ * presence is pinned by rendering in doctorPanel.drift.test.tsx, its wiring by
+ * an equality on the source there, and its text by the tests below.</p>
+ *
+ * <p>Still a reader, not a decision: every branch below is a `state` the
+ * function above already decided, and the sentence is a dict key that function
+ * already chose. The one thing this adds is the interpolation, which is exactly
+ * where the second mutation hid — `t()` passes an unfilled `{addr}` through to
+ * the reader rather than throwing, so a missing argument is invisible until
+ * somebody opens the panel.</p>
+ *
+ * @param check the read answer
+ * @param lang  the reader's language
+ * @return the string for the row's value cell
+ */
+export function webSearchRowValue(check: WebSearchCheck, lang: Lang): string {
+  switch (check.state) {
+    case "failed":
+      return t(lang, "doc.unreachable");
+    case "pending":
+      return "…";
+    case "absent":
+      return t(lang, "doc.searchNone");
+    default:
+      // An unknown tier has no sentence, and its bare name is the true answer.
+      return check.reading.detailKey
+        ? t(lang, check.reading.detailKey, { addr: check.reading.addr })
+        : check.tier;
+  }
 }
 
 /**

@@ -19,6 +19,8 @@ import {
   commitSearxngUrl,
   searxngOffer,
   tierReading,
+  webSearchCheck,
+  webSearchRowValue,
 } from "./webSearchSetup";
 import { dict, t } from "../i18n/i18n";
 
@@ -200,5 +202,178 @@ describe("commitSearxngUrl", () => {
     expect(wrote).toBe(false);
     expect(writes).toBe(0);
     expect(rereads).toBe(0);
+  });
+});
+
+// Card 223. The calibration panel drew eight lines and web search was not one of
+// them, while /api/config had carried the whole answer since card 203. This is
+// the reader that closes the gap — and it is a READER: it takes the served
+// payload and chooses a face for it, exactly the way DoctorCommand.webSearchLine
+// does on the CLI side. There is no rule here. A rule here would be the third
+// copy of a decision card 203 spent a card reducing to one.
+describe("webSearchCheck", () => {
+  const served = (webSearch: Record<string, string>): { webSearch: Record<string, string> } => ({
+    webSearch,
+  });
+
+  it("carries the served tier through without deciding anything", () => {
+    expect(webSearchCheck(served({ tier: "searxng", searxngUrl: "http://box.local:8888" })).tier).toBe(
+      "searxng",
+    );
+    expect(webSearchCheck(served({ tier: "tavily" })).tier).toBe("tavily");
+    expect(webSearchCheck(served({ tier: "brave" })).tier).toBe("brave");
+    expect(webSearchCheck(served({ tier: "duckduckgo" })).tier).toBe("duckduckgo");
+  });
+
+  it("names the instance address, the way the settings page does", () => {
+    // Criterion 3. Same dict entry as the settings block, so the two surfaces
+    // cannot end up describing the same instance in different words.
+    const check = webSearchCheck(served({ tier: "searxng", searxngUrl: "http://box.local:8888" }));
+    expect(check.verdict).toBe("ok");
+    for (const lang of ["de", "en"] as const) {
+      const line = t(lang, check.reading.detailKey, { addr: check.reading.addr });
+      expect(line).toContain("http://box.local:8888");
+      expect(line).not.toContain("{addr}");
+    }
+  });
+
+  it("says best-effort scrape, in the words the failure message uses", () => {
+    // Criterion 2, and the whole reason this line is worth drawing. The reader
+    // arrives at this panel having just read `duckduckgo answered with a bot
+    // check page instead of results — this is the best-effort scrape tier`,
+    // thrown by DuckDuckGoSearcher. A line that called the same thing anything
+    // else would make them go and look for a second fault.
+    const check = webSearchCheck(served({ tier: "duckduckgo" }));
+    // Not an error: it is a state to know you are in, not a fault. The CLI
+    // makes the same call — Kind.INFO rather than Kind.FAIL.
+    expect(check.verdict).toBe("warn");
+    for (const lang of ["de", "en"] as const) {
+      expect(t(lang, check.reading.detailKey), lang).toContain("best-effort scrape");
+    }
+  });
+
+  it("a configured tier is quiet, only the scrape is not", () => {
+    for (const tier of ["searxng", "tavily", "brave"]) {
+      expect(webSearchCheck(served({ tier, searxngUrl: "http://box.local:8888" })).verdict).toBe("ok");
+    }
+    expect(webSearchCheck(served({ tier: "duckduckgo" })).verdict).toBe("warn");
+  });
+
+  it("keeps the panel's three non-answers apart", () => {
+    // The panel has to distinguish "not asked yet" from "asked and got
+    // nothing", or a slow server reads as a broken one.
+    expect(webSearchCheck(null).state).toBe("pending");
+    expect(webSearchCheck("failed").state).toBe("failed");
+    expect(webSearchCheck("failed").verdict).toBe("error");
+    // A server too old to carry the block. The settings page stays silent for
+    // this; the doctor may not — silence is the defect this card exists to fix.
+    expect(webSearchCheck({}).state).toBe("absent");
+    expect(dict["doc.searchNone"], "doc.searchNone").toBeDefined();
+  });
+
+  it("shows a future tier's bare name rather than a sentence about the wrong one", () => {
+    const check = webSearchCheck(served({ tier: "some-future-tier" }));
+    expect(check.state).toBe("tier");
+    expect(check.tier).toBe("some-future-tier");
+    expect(check.reading.detailKey).toBe("");
+  });
+});
+
+// The STRING the calibration row shows — the review finding of card 223.
+//
+// Everything above pins the reader. The row that consults it was pinned by
+// nothing: the four-state mapping lived in JSX, and two mutations of it left
+// the whole web suite green at 260 files / 3794 tests (measured 2026-08-14).
+//
+//   value: search.tier                 -> the row reads "duckduckgo", the bare
+//                                         word, where criterion 2 wants the
+//                                         failure message's own sentence
+//   t(lang, search.reading.detailKey)  -> the row reads "searxng — a metasearch
+//                                         instance you run, at {addr}" verbatim,
+//                                         because t() leaves an uninterpolated
+//                                         placeholder standing (i18n.ts:3197),
+//                                         and criterion 3's address disappears
+//
+// Both criteria that make the card worth doing could ship dead. This is the
+// shape sessionRowDensity.test.tsx opens by describing from card 214 — a pure
+// fold pinned nine ways, and the row that is supposed to consult it pinned by
+// nothing — rebuilt one directory over, four cards later.
+//
+// The mapping is therefore no longer in the component. `renderToStaticMarkup`
+// cannot reach this cell's VALUE (the panel fetches in an effect and a server
+// render runs none, so the cell stays "…"), so the honest pin for the text is a
+// pure function tested here for what it RETURNS.
+//
+// It cannot be the only pin, and saying it was cost a round. The sentence above
+// used to end "…so the honest pin is a pure function", which read as "this
+// panel cannot be rendered" — and nothing then asserted the row reached the
+// screen at all. `checks.slice(0, 4)` in DoctorPanel.tsx deleted it with tsc
+// clean and 3800 tests green. A static render emits every `.doctor-row`; only
+// the fetched values are out of reach. doctorPanel.drift.test.tsx now renders
+// the panel for the row's presence and holds the row's source to calling this
+// function and to holding no other opinion.
+describe("webSearchRowValue", () => {
+  const served = (webSearch: Record<string, string>): { webSearch: Record<string, string> } => ({
+    webSearch,
+  });
+  const LANGS = ["de", "en"] as const;
+
+  it("shows the tier's sentence and never the bare tier word", () => {
+    // Mutation 1, dead here. "duckduckgo" alone is true and useless: it reads
+    // like a provider somebody chose, which is the exact misreading card 203's
+    // label exists to prevent, on the one surface opened after a search failed.
+    const check = webSearchCheck(served({ tier: "duckduckgo" }));
+    for (const lang of LANGS) {
+      const value = webSearchRowValue(check, lang);
+      expect(value, lang).not.toBe(check.tier);
+      expect(value, lang).toBe(t(lang, "set.tier.duckduckgo"));
+      expect(value, lang).toContain("best-effort scrape");
+    }
+  });
+
+  it("interpolates the instance address and leaves no placeholder standing", () => {
+    // Mutation 2, dead here. t() replaces what it is given and passes the rest
+    // through untouched, so a dropped argument does not throw and does not
+    // blank the row — it prints "{addr}" at the reader, in a row whose entire
+    // purpose in this state is to name that address.
+    const check = webSearchCheck(served({ tier: "searxng", searxngUrl: "http://box.local:8888" }));
+    for (const lang of LANGS) {
+      const value = webSearchRowValue(check, lang);
+      expect(value, lang).toContain("http://box.local:8888");
+      expect(value, lang).not.toMatch(/\{[a-z]+\}/i);
+    }
+  });
+
+  it("leaves no placeholder standing in any tier's sentence", () => {
+    // The guard above, generalised: whatever a future tier's sentence needs
+    // interpolated, this function is the one place that can forget to pass it.
+    for (const tier of WEB_SEARCH_TIERS) {
+      const check = webSearchCheck(served({ tier, searxngUrl: "http://box.local:8888" }));
+      for (const lang of LANGS) {
+        expect(webSearchRowValue(check, lang), `${tier}/${lang}`).not.toMatch(/\{[a-z]+\}/i);
+      }
+    }
+  });
+
+  it("keeps the three non-answers apart and translates each of them", () => {
+    for (const lang of LANGS) {
+      expect(webSearchRowValue(webSearchCheck(null), lang), lang).toBe("…");
+      expect(webSearchRowValue(webSearchCheck("failed"), lang), lang).toBe(t(lang, "doc.unreachable"));
+      expect(webSearchRowValue(webSearchCheck({}), lang), lang).toBe(t(lang, "doc.searchNone"));
+    }
+    // "not asked yet" may not read as "broken", and neither may borrow the
+    // other's words.
+    expect(webSearchRowValue(webSearchCheck(null), "en")).not.toBe(
+      webSearchRowValue(webSearchCheck("failed"), "en"),
+    );
+  });
+
+  it("prints a future tier's bare name rather than a sentence about the wrong one", () => {
+    // The one state where the bare word is the right answer: a newer server
+    // named a tier this bundle has no sentence for. True beats fluent.
+    const check = webSearchCheck(served({ tier: "some-future-tier" }));
+    for (const lang of LANGS) {
+      expect(webSearchRowValue(check, lang), lang).toBe("some-future-tier");
+    }
   });
 });

@@ -94,7 +94,7 @@ class WebSearchToolTest {
         // scrape is exactly the moment a reader needs to know which tier said
         // it. The threshold (an exact, whole sentence) is unchanged.
         Tool tool = new WebSearchTool(new FakeSearcher("duckduckgo", List.of()));
-        assertEquals("No results for \"xyzzy\" (duckduckgo — best effort, last resort).",
+        assertEquals("No results for \"xyzzy\" (duckduckgo — best-effort scrape, last resort).",
                 tool.execute(queryInput("xyzzy"), context()));
 
         Tool configured = new WebSearchTool(new FakeSearcher("searxng", List.of()));
@@ -163,7 +163,7 @@ class WebSearchToolTest {
         Tool tool = new WebSearchTool(new FakeSearcher("duckduckgo", List.of()));
         assertTrue(tool.description().contains("DuckDuckGo"),
                 "names the tier, got: " + tool.description());
-        assertTrue(tool.description().contains("best effort"),
+        assertTrue(tool.description().contains(WebSearchTiers.SCRAPE),
                 "admits what it is, got: " + tool.description());
         assertTrue(tool.description().contains("SearXNG"),
                 "names the way out, got: " + tool.description());
@@ -180,7 +180,7 @@ class WebSearchToolTest {
 
         String result = tool.execute(queryInput("q"), context());
 
-        assertTrue(result.startsWith("Results (duckduckgo — best effort, last resort)"),
+        assertTrue(result.startsWith("Results (duckduckgo — best-effort scrape, last resort)"),
                 "got: " + result);
     }
 

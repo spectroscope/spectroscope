@@ -56,7 +56,11 @@ class WebSearchTiersTest {
         assertEquals("duckduckgo", choice.tier());
         // The label is what a reader sees. The bare tier name would read like a
         // chosen provider; this one is the last resort and has to admit it.
-        assertTrue(WebSearchTiers.label("duckduckgo").contains("best effort"),
+        // It admits it in the searcher's own words since card 223 — "best
+        // effort, last resort" and "best-effort scrape tier" were two names for
+        // one thing, and a reader who met the second went looking for a second
+        // fault. The threshold is unchanged; the phrase under it moved.
+        assertTrue(WebSearchTiers.label("duckduckgo").contains(WebSearchTiers.SCRAPE),
                 "got: " + WebSearchTiers.label("duckduckgo"));
         assertEquals("searxng", WebSearchTiers.label("searxng"),
                 "a configured tier is named plainly, without an apology");
@@ -115,7 +119,7 @@ class WebSearchTiersTest {
     @Test
     void theSentenceForTheScrapeSaysWhatToDoAboutIt() {
         String sentence = WebSearchTiers.describe(WebSearchTiers.decide(new Configured(null, false, false)));
-        assertTrue(sentence.contains("best effort"), "got: " + sentence);
+        assertTrue(sentence.contains(WebSearchTiers.SCRAPE), "got: " + sentence);
         assertTrue(sentence.toLowerCase(java.util.Locale.ROOT).contains("searxng"),
                 "names the way out, got: " + sentence);
         assertFalse(sentence.contains("http://"), "there is no address to name here, got: " + sentence);

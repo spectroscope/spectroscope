@@ -69,7 +69,9 @@ class DoctorWebSearchLineTest {
 
         assertEquals(DoctorCommand.Kind.INFO, lines.get(0).kind(),
                 "a keyless install is not unhealthy");
-        assertTrue(lines.get(0).message().contains("best effort"),
+        // In the searcher's own words since card 223 — this line and the bot-check
+        // failure are read minutes apart by the same person.
+        assertTrue(lines.get(0).message().contains(WebSearchTiers.SCRAPE),
                 "got: " + lines.get(0).message());
         assertTrue(lines.get(0).message().contains("SearXNG"),
                 "names the way out, got: " + lines.get(0).message());
