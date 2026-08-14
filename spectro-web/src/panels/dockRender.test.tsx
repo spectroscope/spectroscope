@@ -12,7 +12,13 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { RightPanel } from "../components/RightPanel";
-import { __resetForTests, toggleDockCollapse, toggleDockPanel } from "../state/layout";
+import {
+  __resetForTests,
+  setDockColumnShare,
+  setDockColumnSplit,
+  toggleDockCollapse,
+  toggleDockPanel,
+} from "../state/layout";
 
 beforeEach(() => __resetForTests());
 
@@ -69,20 +75,56 @@ describe("each surface stands on its own", () => {
     // Keyed JSX children tie identity to the id rather than to the ordinal
     // position — that is what keeps the terminal's PTY alive when a panel
     // above it closes. Keys never reach the markup, so this is pinned in
-    // dockSeparation.drift.test.ts; here we pin the stable order instead.
+    // dockSeparation.drift.test.ts; here we pin the order instead — since
+    // card 236 the DOM order is the ARRANGEMENT's (the order panels were
+    // opened in, column-major), not DOCK_ORDER.
     toggleDockPanel("terminal");
     toggleDockPanel("context");
-    expect(panelsIn(render())).toEqual(["agents", "context", "terminal"]);
+    expect(panelsIn(render())).toEqual(["agents", "terminal", "context"]);
   });
 });
 
-describe("the workspace is a grid of cards (card 228, criterion 0)", () => {
-  it("lays the cards into the grid container, not a divider stack", () => {
-    toggleDockPanel("plan");
+describe("the workspace is columns of cards (card 236 over card 228)", () => {
+  // Card 228's auto-fit grid derived the column count from the width and
+  // re-flowed the cards on every breakpoint — the owner's "das Layout
+  // springt", measured live 2026-08-14. Card 236 replaces it: the arrangement
+  // comes from the layout store's column model, the width only scales pixels.
+  it("walks the fill rule in the DOM: full height → split → new column", () => {
+    // One panel: one column, no dividers.
+    let html = render();
+    expect(count(html, "data-col=")).toBe(1);
+    expect(count(html, 'role="separator"')).toBe(0);
+    // A second panel splits the first column: one column, one row divider.
     toggleDockPanel("files");
+    html = render();
+    expect(count(html, "data-col=")).toBe(1);
+    expect(count(html, 'aria-orientation="horizontal"')).toBe(1);
+    expect(count(html, 'aria-orientation="vertical"')).toBe(0);
+    // A third opens a NEW column: two columns, plus a column divider.
+    toggleDockPanel("terminal");
+    html = render();
+    expect(count(html, "data-col=")).toBe(2);
+    expect(count(html, 'aria-orientation="horizontal"')).toBe(1);
+    expect(count(html, 'aria-orientation="vertical"')).toBe(1);
+    expect(panelsIn(html)).toEqual(["agents", "files", "terminal"]);
+  });
+
+  it("projects the stored ratios as flex weights — pixels follow the store, never the window", () => {
+    toggleDockPanel("files");
+    toggleDockPanel("terminal");
+    setDockColumnSplit(0, 0.3);
+    setDockColumnShare(0, 0.25); // weights 0.5 : 1.5
     const html = render();
-    expect(html).toContain("dock-grid");
-    // The pair-divider idiom left with the column: cards do not share edges.
+    expect(html).toContain("flex-grow:0.5");
+    expect(html).toContain("flex-grow:1.5");
+    expect(html).toContain("flex-grow:0.3");
+    expect(html).toContain("flex-grow:0.7");
+  });
+
+  it("shows no row divider against a folded header — there is no height to trade", () => {
+    toggleDockPanel("files");
+    toggleDockCollapse("files");
+    const html = render();
     expect(count(html, 'role="separator"')).toBe(0);
   });
 

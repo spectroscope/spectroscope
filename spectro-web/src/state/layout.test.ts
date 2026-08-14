@@ -9,6 +9,8 @@ import {
   openRightPanel,
   setActiveRightTab,
   setChatW,
+  setDockColumnShare,
+  setDockColumnSplit,
   setDockWeights,
   setRightPanelW,
   setSidebarW,
@@ -146,6 +148,52 @@ describe("the dock panels (card 219, first cut)", () => {
   });
 });
 
+describe("the column arrangement travels with the modes (card 236)", () => {
+  it("starts with the roster alone in one column", () => {
+    expect(__getState().dockColumns).toBe("agents~1~0.5");
+  });
+
+  it("open and close walk the fill rule: full height → split → new column", () => {
+    toggleDockPanel("files");
+    expect(__getState().dockColumns).toBe("agents,files~1~0.5");
+    toggleDockPanel("terminal");
+    expect(__getState().dockColumns).toBe("agents,files~1~0.5|terminal~1~0.5");
+    toggleDockPanel("files"); // close — agents keeps its column, terminal stays put
+    expect(__getState().dockColumns).toBe("agents~1~0.5|terminal~1~0.5");
+    toggleDockPanel("terminal"); // close — the emptied column collapses
+    expect(__getState().dockColumns).toBe("agents~1~0.5");
+  });
+
+  it("openDockPanel maintains the arrangement too, idempotently", () => {
+    openDockPanel("browser");
+    expect(__getState().dockColumns).toBe("agents,browser~1~0.5");
+    const before = __getState();
+    openDockPanel("browser");
+    expect(__getState()).toBe(before);
+  });
+
+  it("folding a panel moves nothing — collapse is geometry, not assignment", () => {
+    toggleDockPanel("files");
+    const arrangement = __getState().dockColumns;
+    toggleDockCollapse("files");
+    expect(__getState().dockColumns).toBe(arrangement);
+  });
+
+  it("the split drag persists per column and the width drag re-cuts a pair", () => {
+    toggleDockPanel("files");
+    toggleDockPanel("terminal");
+    setDockColumnSplit(0, 0.3);
+    expect(__getState().dockColumns).toBe("agents,files~1~0.3|terminal~1~0.5");
+    setDockColumnShare(0, 0.25);
+    expect(__getState().dockColumns).toBe("agents,files~0.5~0.3|terminal~1.5~0.5");
+    // Junk never lands in storage.
+    const before = __getState();
+    setDockColumnSplit(9, 0.5);
+    setDockColumnShare(0, Number.NaN);
+    expect(__getState()).toBe(before);
+  });
+});
+
 describe("hydrating a stored blob (card 219 migration)", () => {
   it("loads a pre-card blob through the merge: defaults fill the dock fields", () => {
     const state = hydrateLayout({ sidebarW: 300 }, null);
@@ -184,5 +232,58 @@ describe("hydrating a stored blob (card 219 migration)", () => {
   it("survives garbage wholesale", () => {
     expect(hydrateLayout(null, null)).toEqual(DEFAULT_LAYOUT);
     expect(hydrateLayout("nonsense", null)).toEqual(DEFAULT_LAYOUT);
+  });
+});
+
+describe("hydrating pre-236 blobs (card 236 migration)", () => {
+  it("hydrates a 228-era blob through the fill rule in DOCK_ORDER, losslessly", () => {
+    // The 228 shape: dock modes exist, no dockColumns. Open panels enter the
+    // fill rule in DOCK_ORDER (work, agents, plan, context, files, terminal,
+    // browser) — deterministic, said out loud on the card.
+    const state = hydrateLayout(
+      { dockAgents: "open", dockFiles: "collapsed", dockTerminal: "open", dockBrowser: "closed" },
+      null,
+    );
+    expect(state.dockColumns).toBe("agents,files~1~0.5|terminal~1~0.5");
+    // A collapsed panel keeps its column seat — fold is geometry, not closed.
+    expect(state.dockFiles).toBe("collapsed");
+  });
+
+  it("hydrates a pre-219 blob all the way: one tab plus the legacy terminal key", () => {
+    const state = hydrateLayout({ activeRightTab: "files" }, "1");
+    expect(state.dockColumns).toBe("files,terminal~1~0.5");
+  });
+
+  it("takes a stored 236 arrangement at its word, ratios included", () => {
+    const state = hydrateLayout(
+      {
+        dockAgents: "open",
+        dockFiles: "open",
+        dockTerminal: "open",
+        dockColumns: "agents,files~2~0.3|terminal~1~0.5",
+      },
+      null,
+    );
+    expect(state.dockColumns).toBe("agents,files~2~0.3|terminal~1~0.5");
+  });
+
+  it("reconciles a stored arrangement that disagrees with the modes", () => {
+    // The columns say files; the modes say files is closed and browser is
+    // open. Modes win membership; the browser re-enters by the fill rule,
+    // joining the column that has room.
+    const state = hydrateLayout(
+      {
+        dockAgents: "open",
+        dockBrowser: "open",
+        dockColumns: "agents,files~2~0.3",
+      },
+      null,
+    );
+    expect(state.dockColumns).toBe("agents,browser~2~0.3");
+  });
+
+  it("reads a corrupt dockColumns as absent and re-derives from the modes", () => {
+    const state = hydrateLayout({ dockAgents: "open", dockColumns: 42 }, null);
+    expect(state.dockColumns).toBe("agents~1~0.5");
   });
 });

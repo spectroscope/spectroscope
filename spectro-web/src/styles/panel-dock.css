@@ -1,20 +1,23 @@
-/* Card 219 built the panels; card 228 (criterion 0) lays them out as a GRID
-   of independent cards — two or three columns following the workspace width,
-   like the reference. Colors are tokens only, so all four designs resolve
-   them; no token is minted here except the dock's own fullscreen layer,
-   declared below so phantomTokens.drift.test.ts sees a definition.
+/* Card 219 built the panels; card 228 laid them out as a width-following
+   grid; card 236 replaces that with COLUMNS the layout store owns — the
+   reference's shape: columns of one or two cards, every edge draggable, and
+   the window resize scales pixels without re-seating a card. Colors are
+   tokens only, so all four designs resolve them; no token is minted here
+   except the dock's own fullscreen layer, declared below so
+   phantomTokens.drift.test.ts sees a definition.
 
    Layout rules that are load-bearing, not taste:
    - .dock-body never scrolls. The browser panel's hole is a rectangle a
      NATIVE view is laid over (card 201); a scrolling dock would move the hole
      without resizing it, which is exactly the change a ResizeObserver cannot
-     see. Cards scroll INSIDE their bodies instead, and the grid's rows share
-     the height (1fr) so every open card stays on screen.
-   - auto-fit against a minimum column width is what makes the column count
-     follow the workspace width instead of being a named breakpoint: one
-     column narrow, two from ~520px, three from ~780px.
-   - Collapsed cards keep only their header (align-self: start) and stay
-     mounted — display:none on the body, never unmount (card 175).
+     see. Cards scroll INSIDE their bodies instead, and the columns share the
+     height so every open card stays on screen.
+   - The stylesheet PROJECTS the arrangement, it never derives one: column
+     widths and in-column heights are flex weights fed from the store, and no
+     rule here may read the viewport to decide where a card sits (that was
+     the 228 grid's jumping, measured 2026-08-14).
+   - Collapsed cards keep only their header and stay mounted — display:none
+     on the body, never unmount (card 175).
    - No overscroll-behavior on a max-height scroller (card 206). */
 
 /* The fullscreen layer sits under the modals (--z-modal: 1000): a dialog that
@@ -63,13 +66,70 @@
   padding: var(--sp-2);
   overflow: hidden; /* the dock never scrolls — see the file head */
 }
-/* The grid of cards (card 228, criterion 0). Rows share the height evenly so
-   every open card stays inside the no-scroll body. */
-.dock-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  grid-auto-rows: minmax(0, 1fr);
-  gap: var(--sp-2);
+/* The columns of cards (card 236, replacing card 228's width-following
+   grid). The grid derived its column COUNT from the width and re-flowed the
+   cards on every breakpoint — measured 2026-08-14: a 1440→760 resize moved
+   Files from beside Agents to under Agents. The arrangement comes from the layout
+   store's column model; the stylesheet only PROJECTS it: column widths are
+   flex weights, in-column heights are flex weights, and no rule in this file
+   may derive a column from the viewport. */
+.dock-columns {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  min-height: 0;
+}
+.dock-col {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 0;
+  /* PANEL_MIN_PX — the drag clamps to it, the projection enforces it. */
+  min-width: 60px;
+  min-height: 0;
+}
+.dock-col > .dock-panel {
+  flex: 1 1 0;
+}
+.dock-col > .dock-panel--collapsed {
+  flex: 0 0 auto;
+}
+
+/* The dividers, the promoted ws-divider idiom (panels.css): an 8px hit strip
+   with a 3px grip, tokens only so all four designs resolve them. */
+.dock-divider {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dock-divider::before {
+  content: "";
+  border-radius: 2px;
+  background: var(--border);
+  transition: background var(--t-fast);
+}
+.dock-divider:hover::before,
+.dock-divider:focus-visible::before {
+  background: var(--accent);
+}
+.dock-divider:focus-visible {
+  outline: none;
+}
+.dock-divider--col {
+  width: 8px;
+  cursor: col-resize;
+}
+.dock-divider--col::before {
+  width: 3px;
+  height: 34px;
+}
+.dock-divider--row {
+  height: 8px;
+  cursor: row-resize;
+}
+.dock-divider--row::before {
+  width: 34px;
+  height: 3px;
 }
 .dock-empty {
   margin: var(--sp-2);
@@ -90,10 +150,8 @@
      dockModel.ts is derived from the same floor. */
   min-height: 60px;
 }
-/* A folded card is its header alone; the grid cell keeps the column. */
-.dock-panel--collapsed {
-  align-self: start;
-}
+/* A folded card is its header alone; its column seat stays (card 236 keeps
+   collapsed panels seated — fold is geometry, not assignment). */
 
 .dock-panel-head {
   display: flex;

@@ -50,21 +50,40 @@ describe("every surface is one keyed section", () => {
   });
 });
 
-describe("the workspace lays panels out as a grid of cards (card 228)", () => {
-  it("declares the grid in the dock stylesheet, sized for two or three columns", () => {
+describe("the workspace lays panels out as COLUMNS (card 236, replacing 228's grid)", () => {
+  // Card 228's pins stood on auto-fit: the column count followed the
+  // workspace width. That premise is the measured defect of card 236 — a
+  // resize crossing a breakpoint re-seated every card — so these pins are
+  // REPLACED, not loosened: the arrangement now comes from the layout store's
+  // column model and the stylesheet must never derive a column from a width.
+  it("declares the column row in the dock stylesheet, with no width-derived columns", () => {
     const css = readFileSync(path.join(__dirname, "..", "styles", "panel-dock.css"), "utf8");
-    const at = css.indexOf(".dock-grid");
+    const at = css.indexOf(".dock-columns");
     expect(at).toBeGreaterThan(-1);
     const rule = css.slice(at, css.indexOf("}", at));
-    expect(rule).toMatch(/display:\s*grid/);
-    // auto-fit against a min column width is what makes the column count
-    // follow the workspace width instead of being a named breakpoint.
-    expect(rule).toMatch(/repeat\(auto-fit,\s*minmax\(/);
+    expect(rule).toMatch(/display:\s*flex/);
+    // The jumping's mechanism, banned at the source: no auto-fit / auto-fill
+    // track anywhere in the dock stylesheet.
+    expect(css).not.toMatch(/auto-fit|auto-fill/);
   });
 
-  it("keeps the divider machinery out — a grid of cards shares no edges", () => {
-    expect(rightPanel).not.toContain("DockDivider");
-    expect(rightPanel).not.toMatch(/role="separator"/);
+  it("drags on both axes with the promoted ws-divider idiom: capture, keys, floors", () => {
+    // Pointer capture keeps the drag when the pointer outruns the 8px strip;
+    // the arrow keys are the keyboard path; PANEL_MIN_PX is the pixel floor
+    // both axes clamp against before a ratio is stored.
+    expect(rightPanel).toMatch(/setPointerCapture/);
+    expect(rightPanel).toMatch(/releasePointerCapture/);
+    expect(rightPanel).toMatch(/ArrowLeft|ArrowRight/);
+    expect(rightPanel).toMatch(/ArrowUp|ArrowDown/);
+    expect(rightPanel).toMatch(/PANEL_MIN_PX/);
+  });
+
+  it("re-reports the browser rectangle on every arrangement commit — drags included", () => {
+    // The seam (cards 219/226/228): the segment's report effect re-runs off
+    // reportNonce. Card 236 adds the arrangement string to the nonce, so a
+    // divider drag or a column change re-posts the hole even when only its
+    // POSITION moved — the change a ResizeObserver cannot see.
+    expect(rightPanel).toMatch(/reportNonce[\s\S]{0,200}dockColumns/);
   });
 });
 

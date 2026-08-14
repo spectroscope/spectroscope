@@ -847,7 +847,8 @@ export const dict: Record<string, { de: string; en: string }> = {
   "dock.closePanel": { de: "Dieses Panel schließen", en: "Close this panel" },
   "dock.fullscreen": { de: "{p} als Vollbild", en: "{p} full screen" },
   "dock.fullscreenExit": { de: "Vollbild verlassen (Esc)", en: "Exit full screen (Esc)" },
-  "dock.divider": { de: "Trenner ziehen, um die Höhe zu ändern", en: "Drag to resize" },
+  "dock.divider": { de: "Trenner ziehen, um die Höhe zu ändern", en: "Drag to resize the height" },
+  "dock.dividerW": { de: "Trenner ziehen, um die Breite zu ändern", en: "Drag to resize the width" },
   "dock.empty": {
     de: "Kein Panel geöffnet — oben eines wählen.",
     en: "No panel open — pick one above.",
