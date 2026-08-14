@@ -53,7 +53,10 @@ public final class SettingsWriter {
     public enum Scope { USER, PROJECT, LOCAL }
 
     /** Every settings key {@link #patch} accepts — mirrors {@link SpectroConfig}'s
-     *  record components exactly; anything else is refused as unknown. */
+     *  record components exactly; anything else is refused as unknown. The mirror
+     *  is held to the record by {@code KnownKeysDriftTest} (card 232): before
+     *  that pin, this comment was the only thing keeping the two lists equal,
+     *  and card 203 F2 shipped a silent refusal through exactly that gap. */
     private static final Set<String> KNOWN_KEYS = Set.of(
             "provider", "model", "baseUrl", "compactionThreshold", "permissionMode",
             "autoApprove", "imageProvider", "thinking", "mcpServers", "maxRetries",
@@ -81,6 +84,16 @@ public final class SettingsWriter {
 
     /** Static utility — never instantiated. */
     private SettingsWriter() {
+    }
+
+    /** The keys {@link #patch} accepts, for the reflective pin only:
+     *  {@code KnownKeysDriftTest} holds this hand-mirror to {@link SpectroConfig}'s
+     *  record components, so key 27 cannot ship half-known the way card 203 F2's
+     *  silent refusal did. Package-private on purpose — production callers go
+     *  through {@link #patch}, which owns the refusal message.
+     *  @return the accepted top-level settings keys (immutable) */
+    static Set<String> knownKeys() {
+        return KNOWN_KEYS;
     }
 
     /**
