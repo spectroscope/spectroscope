@@ -660,7 +660,12 @@ class LaunchToolsTest {
         String said = tool(new LaunchTools(supervisor, BrowserFace::none, () -> fence(true)).all(),
                 "launch_start").execute(args(Map.of("name", "api")), context(project));
         assertTrue(said.startsWith("Attached to"), said);
-        assertTrue(said.contains("no browser pane is attached"), said);
+        // Card 226: the sentence names BOTH roads to a browser now — the
+        // desktop pane and the web face's server-side Chrome — because
+        // "desktop face only" is the trade the owner reversed.
+        assertTrue(said.contains("no browser is attached"), said);
+        assertTrue(said.contains("desktop app"), said);
+        assertTrue(said.contains("SPECTRO_CHROME"), said);
         supervisor.close();
     }
 }
