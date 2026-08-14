@@ -1,0 +1,137 @@
+#!/usr/bin/env bash
+# spectro-cockpit — the estate overview, in the house launcher style.
+#
+# Fourth of the root scripts, and the one that watches the other three:
+# ./spectro-serve runs the server, ./spectro-env runs the docker stacks,
+# ./spectro-app is the developer's way in — and this serves the one page that
+# says what all of it is doing right now. It sits beside them rather than
+# inside ./spectro-env because the cockpit reads MORE than the stacks: launch
+# configs, running spectro servers with their hub ports, fleet nodes. Filing it
+# under the stack switch would name it after a sixth of its job.
+#
+#   ./spectro-cockpit start     serve cockpit/ on 8890, in the background
+#   ./spectro-cockpit status    is it answering
+#   ./spectro-cockpit logs -f   follow the server log
+#   ./spectro-cockpit stop
+#
+# The page itself is cockpit/index.html; the facts behind it come from
+# cockpit/serve.py (stdlib python3, no dependencies). ./cockpit/serve.sh stays
+# as the foreground way in for a terminal you want to hold open.
+set -u
+cd "$(dirname "$0")" || exit 1
+
+PROJECT="spectro-cockpit"
+DEFAULT_PORT=8890
+RUN_DIR=".run"; LOG_DIR="logs"
+PID_FILE="$RUN_DIR/$PROJECT.pid"; PORT_FILE="$RUN_DIR/$PROJECT.port"
+LOG_FILE="$LOG_DIR/$PROJECT.log"
+
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  C_CY=$'\033[38;5;51m'; C_VI=$'\033[38;5;141m'; C_OK=$'\033[38;5;42m'
+  C_WA=$'\033[38;5;214m'; C_ER=$'\033[38;5;203m'; C_DIM=$'\033[2m'; C_B=$'\033[1m'; C_0=$'\033[0m'
+else C_CY=; C_VI=; C_OK=; C_WA=; C_ER=; C_DIM=; C_B=; C_0=; fi
+
+say()  { printf '%s\n' "$*"; }
+ok()   { printf '%s\n' "${C_OK}[ok]${C_0} $*"; }
+warn() { printf '%s\n' "${C_WA}[!]${C_0} $*"; }
+die()  { printf '%s\n' "${C_ER}[x]${C_0} $*" >&2; exit 1; }
+banner() { printf '%s\n' "${C_VI}  ${C_B}${PROJECT}${C_0}${C_VI} launcher${C_0} ${C_DIM}(spectroscope)${C_0}"; }
+
+resolve_port() {
+  if [ -n "${FLAG_PORT:-}" ]; then PORT="$FLAG_PORT"
+  elif [ -f "$PORT_FILE" ]; then PORT="$(cat "$PORT_FILE")"
+  else PORT="$DEFAULT_PORT"; fi
+}
+pid_running() { [ -f "$PID_FILE" ] && kill -0 "$(cat "$PID_FILE")" 2>/dev/null; }
+port_pid() { lsof -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null | head -1; }
+is_up() { curl -fsS --max-time 2 "http://127.0.0.1:$PORT/api/estate" >/dev/null 2>&1; }
+
+url_box() { printf '%s\n' "${C_CY}  http://localhost:$PORT${C_0}"; }
+
+cmd_start() {
+  resolve_port
+  mkdir -p "$RUN_DIR" "$LOG_DIR"
+  if pid_running; then warn "$PROJECT already running (PID $(cat "$PID_FILE"), port $PORT)"; url_box; return 0; fi
+  local other; other="$(port_pid)"
+  [ -n "$other" ] && die "port $PORT held by PID $other (not ours) — pick another --port or stop it"
+  echo "$PORT" > "$PORT_FILE"
+  say "${C_VI}starting${C_0} $PROJECT on port $PORT ..."
+  set -m
+  PORT="$PORT" python3 cockpit/serve.py >>"$LOG_FILE" 2>&1 &
+  echo $! > "$PID_FILE"
+  set +m
+  for _ in $(seq 1 20); do
+    is_up && break
+    pid_running || { warn "process exited early — see $LOG_FILE"; return 1; }
+    sleep 0.25
+  done
+  if is_up; then
+    ok "up (PID $(cat "$PID_FILE"), log $LOG_FILE)"; url_box
+    if [ -z "${FLAG_NO_OPEN:-}" ]; then open_url; fi
+    return 0
+  else
+    warn "no answer after 5s — see $LOG_FILE"; return 1
+  fi
+}
+
+kill_tree() {
+  local pid="$1" sig
+  for sig in TERM KILL; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    kill "-$sig" "-$pid" 2>/dev/null || kill "-$sig" "$pid" 2>/dev/null
+    for _ in $(seq 1 8); do kill -0 "$pid" 2>/dev/null || return 0; sleep 0.25; done
+  done
+}
+
+cmd_stop() {
+  resolve_port
+  local pid; pid="$( [ -f "$PID_FILE" ] && cat "$PID_FILE" || true )"
+  [ -n "$pid" ] && kill_tree "$pid"
+  rm -f "$PID_FILE" "$PORT_FILE"
+  if [ -n "$pid" ]; then ok "$PROJECT stopped (PID $pid)"; else warn "$PROJECT not running"; fi
+}
+
+cmd_status() {
+  resolve_port; banner
+  if is_up; then printf '  %s answering\n' "${C_OK}●${C_0}"
+    say "  pid   $( [ -f "$PID_FILE" ] && cat "$PID_FILE" || port_pid )"
+    say "  port  $PORT"; url_box
+  else printf '  %s not answering\n' "${C_DIM}○${C_0}"
+    say "  port  $PORT"; fi
+}
+
+cmd_logs() { [ -f "$LOG_FILE" ] || die "no log ($LOG_FILE)"; [ "${1:-}" = "-f" ] && exec tail -f "$LOG_FILE" || tail -n 40 "$LOG_FILE"; }
+open_url() { local u="http://localhost:$PORT/"; (command -v open >/dev/null && open "$u") || (command -v xdg-open >/dev/null && xdg-open "$u") || say "open: $u"; }
+cmd_open() { resolve_port; open_url; }
+
+cmd_help() {
+  banner; say ""
+  printf '  %-30s %s\n' "start [--port N] [--no-open]" "serve the estate page in the background"
+  printf '  %-30s %s\n' "stop"    "stop it"
+  printf '  %-30s %s\n' "restart" "stop + start"
+  printf '  %-30s %s\n' "status"  "is it answering"
+  printf '  %-30s %s\n' "logs [-f]" "last log lines (or follow)"
+  printf '  %-30s %s\n' "open"    "open the browser on the page"
+  say ""
+  say "${C_DIM}  the page: cockpit/index.html · the facts: cockpit/serve.py (/api/estate)${C_0}"
+  resolve_port; url_box
+}
+
+ARGS=(); while [ $# -gt 0 ]; do case "$1" in
+  --port) [ $# -ge 2 ] && [ -n "${2:-}" ] || die "usage: --port <n>"; FLAG_PORT="$2"; shift 2;;
+  --no-open) FLAG_NO_OPEN=1; shift;;
+  *) ARGS+=("$1"); shift;;
+esac; done
+set -- "${ARGS[@]:-}"
+
+case "${1:-overview}" in
+  start) cmd_start;;
+  stop) cmd_stop;;
+  restart) resolve_port; _keep="$PORT"; cmd_stop; FLAG_PORT="${FLAG_PORT:-$_keep}"; cmd_start;;
+  status) cmd_status;;
+  logs) shift; cmd_logs "${1:-}";;
+  open) cmd_open;;
+  help|-h|--help) cmd_help;;
+  overview) cmd_status; say ""; say "${C_DIM}  commands: start stop restart status logs open  |  '$0 help' for details${C_0}";;
+  *) die "unknown command: $1  ('$0 help')";;
+esac

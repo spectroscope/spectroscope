@@ -249,8 +249,8 @@ It also knows `node`, `cron`, `sessions`, `resume <id>`, `level` and
 **`./spectro-app` is this repository's developer wrapper; `spectro` is the
 shipped CLI.** The two names differ on purpose. What you install from a release
 is called `spectro` and always will be — that is the product's command, in every
-doc page and every kit. In a clone the wrapper stands beside two siblings, and
-naming it after the job rather than after the product is what lets the three
+doc page and every kit. In a clone the wrapper stands beside three siblings, and
+naming it after the job rather than after the product is what lets the four
 read as a set:
 
 | in the root | what it does |
@@ -258,6 +258,7 @@ read as a set:
 | [`./spectro-app`](spectro-app) | the developer's way into the product: `repl`, `run`, `web`, `desktop`, `doctor`, `tour` |
 | [`./spectro-serve`](spectro-serve) | the server's lifecycle: `start`, `stop`, `restart`, `status`, `logs`, `doctor` |
 | [`./spectro-env`](spectro-env) | the docker stacks in [`ci/`](ci/): `up`, `down`, `status`, `logs`, `open`, `doctor` |
+| [`./spectro-cockpit`](spectro-cockpit) | the estate overview in [`cockpit/`](cockpit/): one page for stacks, launch configs, servers and fleets |
 
 Raw Gradle works too (JDK 21+ as `JAVA_HOME`):
 

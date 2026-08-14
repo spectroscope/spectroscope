@@ -5,27 +5,24 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>spectroscope — cockpit</title>
 <!--
-  The cockpit: one page that shows every server this project runs, and opens any
-  of them in a tab.
+  The cockpit, reborn as the estate overview (card 238): one page that answers
+  "what is running on this machine, and how is it doing" — docker stacks,
+  launch configs, spectro servers with their HTTP and hub ports, fleet nodes.
 
-  The owner: "machst du noch eine coole startseite im spectroscope stil gerne mit
-  custom particle style und den link zu allen servern (backend, frontend und
-  build server) gerne mit einer custom html infografik zum anklicken der symbole
-  um zum server im neuen tab zu kommen."
+  THE PICTURE IS THE PRODUCT'S OWN METAPHOR. A spectroscope splits light into
+  the lines it is made of: each running thing is one spectral line, drawn at the
+  strength of its evidence. A line that answers is lit; one that does not is
+  faint and dashed, because a server you have not started is not a failure.
 
-  THE PICTURE IS THE PRODUCT'S OWN METAPHOR. A spectroscope splits light into the
-  lines it is made of. So: the repo is the source, the prism is the build, and
-  everything downstream is a spectral line — one line per server, each in one of
-  the brand's five spectral colours, each a door.
+  The first cockpit was a static page whose only sense was a no-cors fetch — it
+  could tell a door from a wall and nothing more. The facts now come from
+  serve.py's /api/estate, gathered server-side: docker is asked, ports are read,
+  spectro servers are discovered by their own health answer, and their fleet
+  endpoints are read where they answer. A thing that does not answer is drawn
+  as not answering, never omitted.
 
-  Every line is drawn at the strength of its evidence, which here means: a server
-  that answers is lit, one that does not is drawn faint. Nothing is guessed. The
-  probe is a no-cors fetch, which resolves opaque when something is listening and
-  rejects when nothing is — the only cross-origin liveness check a static page
-  can honestly make, and it is enough to tell a door from a wall.
-
-  Self-contained on purpose: no build step, no dependency, no network. It has to
-  work when everything else is down, because that is when you open it.
+  Buttons exist only where a script already exists: ./spectro-env up|down and
+  ./spectro-serve start|stop. Nothing here composes a command.
 
   BRAND RULES, from the design system: colour lives on the LINES only, the
   wordmark is lowercase and never glows, and there are no shadows.
@@ -49,8 +46,8 @@
     --sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
-  /* The paper ground, for anyone who works in daylight. Same rule as the site:
-     a theme flip changes colour and nothing else. */
+  /* The paper ground, for anyone who works in daylight. A theme flip changes
+     colour and nothing else. */
   :root[data-design="spectro-paper"] {
     --bg: #f6f4ee;
     --bg-raise: #efece3;
@@ -97,8 +94,7 @@
   }
   .mark {
     font-size: 21px; font-weight: 600; letter-spacing: -0.01em;
-    /* lowercase, always. It is the wordmark. */
-    text-transform: lowercase;
+    text-transform: lowercase; /* lowercase, always. It is the wordmark. */
   }
   .mark em { font-style: normal; color: var(--accent); }
   .tag { color: var(--muted); font-size: 13px; }
@@ -113,13 +109,23 @@
     font: inherit; font-size: 12px; padding: 5px 11px;
     border-radius: 7px; cursor: pointer;
   }
-  button.ghost:hover { color: var(--ink); border-color: var(--accent); }
+  button.ghost:hover:enabled { color: var(--ink); border-color: var(--accent); }
+  button.ghost:disabled { opacity: .45; cursor: default; }
+  button.act { font-size: 11px; padding: 3px 9px; font-family: var(--mono); }
+
+  /* ---- banners: the honest states ------------------------------------ */
+  .banner {
+    margin-top: 18px; padding: 10px 14px;
+    border: 1px solid var(--line); border-left: 3px solid var(--sp-amber);
+    border-radius: var(--radius);
+    font-size: 12.5px; color: var(--muted); font-family: var(--mono);
+  }
+  .banner.gone { border-left-color: var(--sp-red); }
+  .banner b { color: var(--ink); font-weight: 600; }
 
   /* ---- the spectrograph ---------------------------------------------- */
   .graph { margin: 30px 0 12px; }
   .graph svg { display: block; width: 100%; height: auto; overflow: visible; }
-
-  .band { transition: opacity .25s ease; }
   .node { cursor: pointer; }
   .node .disc {
     fill: var(--bg-raise);
@@ -139,8 +145,8 @@
     font-family: var(--mono); font-size: 9.5px; fill: var(--faint);
     text-anchor: middle; pointer-events: none;
   }
-  /* Down is not an error, it is a fact: drawn faint rather than red, because a
-     server you have not started is not a failure. */
+  /* Down is not an error, it is a fact: faint, never red — a server you have
+     not started is not a failure. */
   .node.down .disc { stroke-dasharray: 3 3; }
   .node.down .glyph { opacity: .3; }
   .node.down .name { fill: var(--faint); }
@@ -154,32 +160,61 @@
     letter-spacing: .09em; text-transform: uppercase;
   }
 
-  /* ---- the list, which is the same data said plainly ----------------- */
-  .rows { margin-top: 34px; display: grid; gap: 1px; background: var(--line);
+  /* ---- sections: the same facts said plainly ------------------------- */
+  h2 {
+    margin: 36px 0 10px; font-size: 12px; font-weight: 600;
+    font-family: var(--mono); color: var(--faint);
+    letter-spacing: .09em; text-transform: uppercase;
+  }
+  /* A path is literal: casing carries meaning, so the uppercase stops here. */
+  h2 code { text-transform: none; letter-spacing: 0; font-weight: 500; }
+  .rows { display: grid; gap: 1px; background: var(--line);
           border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
   .row {
-    display: grid; grid-template-columns: 30px 1fr auto auto;
-    align-items: center; gap: 14px;
-    padding: 12px 16px; background: var(--bg);
-    text-decoration: none; color: inherit;
+    display: grid; align-items: center; gap: 14px;
+    padding: 11px 16px; background: var(--bg);
+    color: inherit; text-decoration: none;
+    font-size: 13px;
   }
-  .row:hover { background: var(--bg-raise); }
-  .row .sym { font-size: 17px; text-align: center; }
-  .row .what { font-size: 13.5px; }
-  .row .what small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
-  .row .addr { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
-  .row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); }
-  .row.up .dot { background: var(--sp-teal); }
-  .row.down { opacity: .55; }
-  .row.down .addr { text-decoration: line-through; text-decoration-color: var(--faint); }
+  .row.head { padding: 7px 16px; font-family: var(--mono); font-size: 10px;
+              color: var(--faint); letter-spacing: .07em; text-transform: uppercase; }
+  .row .mono { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
+  .row small { color: var(--muted); font-size: 11.5px; }
+  .row .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint);
+              justify-self: start; }
+  .row .dot.up { background: var(--sp-teal); }
+  .row .dot.mid { background: var(--sp-amber); }
+  .row.dim { opacity: .55; }
+  .row .state { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .row a { color: inherit; }
+  .empty { padding: 13px 16px; background: var(--bg); color: var(--faint);
+           font-size: 12.5px; font-family: var(--mono); }
+
+  .servers .row  { grid-template-columns: 10px 96px 1fr 150px 220px; }
+  .stacks .row   { grid-template-columns: 10px 30px 108px 1fr 84px 96px 118px; }
+  .launch .row   { grid-template-columns: 10px 1fr 96px 84px 120px; }
+  .clash .row    { grid-template-columns: 84px 1fr; }
+  .clash { border-color: var(--sp-red); }
+  .clash .row .mono { color: var(--sp-red); }
+
+  .chip {
+    display: inline-block; margin: 1px 4px 1px 0; padding: 1px 8px;
+    border: 1px solid var(--line); border-radius: 9px;
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+  }
+  .chip.on { border-color: var(--sp-teal); color: var(--ink); }
 
   footer {
-    margin-top: 34px; padding-top: 16px; border-top: 1px solid var(--line);
+    margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--line);
     color: var(--faint); font-size: 11.5px; line-height: 1.7;
   }
   footer code { font-family: var(--mono); color: var(--muted); }
 
   @media (prefers-reduced-motion: reduce) { #particles { opacity: .5; } }
+  @media (max-width: 780px) {
+    .servers .row, .stacks .row, .launch .row { grid-template-columns: 10px 1fr; }
+    .row.head { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -189,25 +224,26 @@
   <header>
     <div>
       <div class="mark">spectro<em>scope</em></div>
-      <div class="tag">every server this machine runs, and the door to it</div>
+      <div class="tag">what runs on this machine — stacks, servers, fleets</div>
     </div>
     <div class="spacer"></div>
-    <div class="count"><span id="tally">probing …</span></div>
+    <div class="count"><span id="tally">reading …</span></div>
     <button class="ghost" id="theme">paper</button>
-    <button class="ghost" id="again">probe again</button>
+    <button class="ghost" id="again">read again</button>
   </header>
 
+  <div id="banners"></div>
   <div class="graph" id="graph"></div>
-  <div class="rows" id="rows"></div>
+  <div id="sections"></div>
 
   <footer>
-    The picture is the product's own metaphor: the repo is the source, the build is the prism,
-    and each server downstream is one spectral line. A line that answers is lit; one that does
-    not is drawn faint and dashed, because a server you have not started is not a failure.<br>
-    Liveness is a <code>no-cors</code> probe — it can tell a door from a wall, and nothing more.
-    It never reads a response, so nothing here can leak out of a service.<br>
-    Start the build stacks with <code>./spectro-env up jenkins</code> · the app with
-    <code>./spectro-serve start</code> · the board with <code>./spectro-board start</code>.
+    Each running thing is one spectral line, drawn at the strength of its evidence: answering is
+    lit, not answering is faint and dashed, and nothing is omitted.<br>
+    The facts come from <code>serve.py</code> on this page's own origin — docker is asked, listening
+    ports are read, spectro servers are found by their own health answer, and fleet state is read
+    where a server answers.<br>
+    Buttons run only scripts that already exist: <code>./spectro-env up|down &lt;stack&gt;</code>
+    and <code>./spectro-serve start|stop</code>. This page: <code>./spectro-cockpit start</code>.
   </footer>
 </div>
 
@@ -215,146 +251,257 @@
 (() => {
   'use strict';
 
-  // ---- WHAT RUNS HERE ------------------------------------------------------
-  // Three bands, because these are three different kinds of thing and mixing
-  // them is what makes a wall of bookmarks unreadable.
-  const BANDS = [
-    {
-      name: 'the product',
-      colour: 'var(--sp-teal)',
-      services: [
-        { id: 'server',  glyph: '🔭', label: 'server',    port: 8093, path: '/',        note: 'the app — chat, trace, spectrum, lab' },
-        { id: 'vite',    glyph: '⚡', label: 'web dev',   port: 8739, path: '/',        note: 'the vite dev server, when one is running' },
-        { id: 'board',   glyph: '🗂', label: 'board',     port: 8746, path: '/',        note: 'the kanban board and the knowledge graph' },
-      ],
-    },
-    {
-      name: 'the build',
-      colour: 'var(--sp-amber)',
-      services: [
-        { id: 'jenkins',   glyph: '🧰', label: 'jenkins',   port: 8881, path: '/',  note: 'a controller and a separate agent node' },
-        { id: 'concourse', glyph: '🌊', label: 'concourse', port: 8880, path: '/',  note: 'pipelines as YAML, every step its own container' },
-      ],
-    },
-    {
-      name: 'the inspection',
-      colour: 'var(--sp-violet)',
-      services: [
-        { id: 'sonar',    glyph: '🔬', label: 'sonarqube',  port: 8882, path: '/',            note: 'static analysis over Java and TypeScript' },
-        { id: 'dtrack',   glyph: '🧬', label: 'dep-track',  port: 8883, path: '/',            note: 'what our dependencies are made of' },
-        { id: 'dtrackapi',glyph: '🔌', label: 'dt api',     port: 8884, path: '/api/version', note: 'the API the frontend above talks to' },
-      ],
-    },
-  ];
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
-  // REFERENCES, not copies. The first version spread each service into a new
-  // object here, so the probes wrote `up` onto the copies while the drawing read
-  // the originals: the tally said "2 of 8 answering" beside eight lines all
-  // drawn as down. One character of syntax, and the page contradicted itself.
-  const all = BANDS.flatMap((b) => b.services.map((s) => { s.band = b; return s; }));
-  const url = (s) => `http://localhost:${s.port}${s.path}`;
+  const GLYPHS = { concourse: '🌊', jenkins: '🧰', sonar: '🔬', deptrack: '🧬',
+                   search: '🔎', renovate: '♻️' };
+  let estate = null;        // the last answer
+  let estateGone = false;   // .. or the fact that there is none
 
-  // ---- LIVENESS ------------------------------------------------------------
-  // A cross-origin page may not READ these responses, and does not need to. A
-  // no-cors fetch resolves (opaque) when something answered and rejects when the
-  // connection failed — enough to tell a door from a wall, which is the whole
-  // question. Nothing is read, so nothing can leak.
-  async function probe(s) {
+  // ---- READING -------------------------------------------------------------
+  async function read() {
     try {
-      await fetch(url(s), { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(2500) });
-      return true;
+      const resp = await fetch('/api/estate', { cache: 'no-store' });
+      estate = await resp.json();
+      estateGone = false;
     } catch {
-      return false;
+      estateGone = true;    // the estate server itself stopped answering: say so
     }
-  }
-
-  async function probeAll() {
-    const results = await Promise.all(all.map(probe));
-    all.forEach((s, i) => { s.up = results[i]; });
     paint();
   }
 
+  async function act(body, button) {
+    button.disabled = true;
+    try {
+      const resp = await fetch('/api/act', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const out = await resp.json();
+      button.textContent = resp.ok ? 'running …' : 'refused';
+      if (!resp.ok) console.warn('act refused:', out);
+    } catch {
+      button.textContent = 'no answer';
+    }
+    setTimeout(read, 1200);
+  }
+
   // ---- THE PICTURE ---------------------------------------------------------
-  // The viewBox is sized to what is DRAWN, not to a round number: the labels
-  // end around x=860, and a wider box just scales the whole picture down and
-  // leaves a third of the page empty.
-  const W = 880, ROW = 74, PAD_TOP = 46;
+  // Two bands: the spectro servers this machine answers for, and the build
+  // laboratory's stacks. Launch configs stay in the table — eighteen declared
+  // intentions would drown the picture of what actually runs.
+  function bands() {
+    const servers = (estate?.servers ?? []).map((s) => ({
+      id: 'srv' + s.port, glyph: '🔭', label: 'server',
+      portText: ':' + s.port + (s.fleet?.hubPort ? ' · hub :' + s.fleet.hubPort : ''),
+      lit: true, url: 'http://localhost:' + s.port + '/',
+      note: (s.provider ? s.provider + (s.model ? ' · ' + s.model : '') : 'spectro server'),
+    }));
+    const stacks = (estate?.stacks ?? []).filter((s) => s.port > 0).map((s) => ({
+      id: 'stk' + s.name, glyph: GLYPHS[s.name] || '⚙️', label: s.name,
+      portText: ':' + s.port + (s.state === 'up' ? '' : ' · ' + s.state),
+      lit: s.state === 'up', url: 'http://localhost:' + s.port + s.path,
+      note: s.note,
+    }));
+    return [
+      { name: 'spectro servers', colour: 'var(--sp-teal)', items: servers },
+      { name: 'the build lab', colour: 'var(--sp-amber)', items: stacks },
+    ];
+  }
+
+  const W = 880, ROW = 64, PAD_TOP = 46;
   function svg() {
-    const rows = all.length;
+    const BANDS = bands();
+    // An empty band still occupies one row: honesty needs the space to say so.
+    const rows = BANDS.reduce((n, b) => n + Math.max(b.items.length, 1), 0);
     const H = PAD_TOP + rows * ROW + 34;
     const srcX = 60, prismX = 190, fanX = 300, nodeX = 620;
     const midY = PAD_TOP + (rows * ROW) / 2 - ROW / 2;
 
-    let out = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="every server, as spectral lines">`;
-
-    // the source: the repo the light comes from
+    let out = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="the estate, as spectral lines">`;
     out += `<rect class="srcbox" x="${srcX - 46}" y="${midY - 20}" width="92" height="40" rx="8"/>`;
-    out += `<text class="lbl" x="${srcX}" y="${midY - 2}" text-anchor="middle">the repo</text>`;
+    out += `<text class="lbl" x="${srcX}" y="${midY - 2}" text-anchor="middle">this machine</text>`;
     out += `<text class="lbl" x="${srcX}" y="${midY + 12}" text-anchor="middle" opacity=".6">one source</text>`;
-    // the beam into the prism
     out += `<line class="rail" x1="${srcX + 46}" y1="${midY}" x2="${prismX - 22}" y2="${midY}" stroke="var(--muted)"/>`;
-    // the prism
     out += `<path class="prism" d="M ${prismX} ${midY - 30} L ${prismX + 34} ${midY + 26} L ${prismX - 34} ${midY + 26} Z"/>`;
-    out += `<text class="lbl" x="${prismX}" y="${midY + 44}" text-anchor="middle">the build</text>`;
+    out += `<text class="lbl" x="${prismX}" y="${midY + 44}" text-anchor="middle">the estate</text>`;
 
     let i = 0;
     for (const band of BANDS) {
-      const first = i;
-      for (const s of band.services) {
+      const ly = PAD_TOP + i * ROW - 22;
+      out += `<text class="grouplbl" x="${fanX + 60}" y="${ly}">${esc(band.name)}</text>`;
+      if (band.items.length === 0) {
         const y = PAD_TOP + i * ROW;
-        const lit = s.up === true;
-        // the fan: prism -> a bend -> the line's own rail
+        out += `<text class="port" x="${fanX + 60}" y="${y + 4}" text-anchor="start"`
+             + ` style="font-family:var(--mono);font-size:10.5px;fill:var(--faint)">none answering</text>`;
+        i++;
+        continue;
+      }
+      for (const s of band.items) {
+        const y = PAD_TOP + i * ROW;
         const d = `M ${prismX + 26} ${midY + 8} C ${fanX} ${midY + 8}, ${fanX} ${y}, ${fanX + 60} ${y} L ${nodeX - 34} ${y}`;
-        out += `<path class="rail${lit ? '' : ' down'}" d="${d}" stroke="${band.colour}"/>`;
-
-        out += `<g class="node${lit ? '' : ' down'}" data-id="${s.id}" role="link" tabindex="0"`
-             + ` aria-label="open ${s.label} on port ${s.port}">`;
-        out += `<title>${s.note} — http://localhost:${s.port}</title>`;
+        out += `<path class="rail${s.lit ? '' : ' down'}" d="${d}" stroke="${band.colour}"/>`;
+        out += `<g class="node${s.lit ? '' : ' down'}" data-url="${esc(s.url)}" role="link" tabindex="0"`
+             + ` aria-label="open ${esc(s.label)} ${esc(s.portText)}">`;
+        out += `<title>${esc(s.note)} — ${esc(s.url)}</title>`;
         out += `<circle class="disc" cx="${nodeX}" cy="${y}" r="19" stroke="${band.colour}"/>`;
         out += `<text class="glyph" x="${nodeX}" y="${y + 1}">${s.glyph}</text>`;
-        out += `<text class="name" x="${nodeX + 46}" y="${y - 3}" text-anchor="start">${s.label}</text>`;
-        out += `<text class="port" x="${nodeX + 46}" y="${y + 11}" text-anchor="start">:${s.port}${lit ? '' : ' · down'}</text>`;
+        out += `<text class="name" x="${nodeX + 46}" y="${y - 3}" text-anchor="start">${esc(s.label)}</text>`;
+        out += `<text class="port" x="${nodeX + 46}" y="${y + 11}" text-anchor="start">${esc(s.portText)}</text>`;
         out += `</g>`;
         i++;
       }
-      // the band's own label, beside its first line
-      const ly = PAD_TOP + first * ROW - 22;
-      out += `<text class="grouplbl" x="${fanX + 60}" y="${ly}">${band.name}</text>`;
     }
     out += `</svg>`;
     return out;
   }
 
+  // ---- THE SECTIONS --------------------------------------------------------
+  function banners() {
+    const out = [];
+    if (estateGone) {
+      out.push(`<div class="banner gone"><b>the cockpit server stopped answering</b> — this page
+        is showing its last reading. <code>./spectro-cockpit start</code></div>`);
+    }
+    if (estate && !estate.docker.answering) {
+      out.push(`<div class="banner"><b>docker is not answering</b> — stack states are unknowable,
+        not "down". Start Docker Desktop or <code>./spectro-env doctor</code>.</div>`);
+    }
+    return out.join('');
+  }
+
+  function collisionsHtml() {
+    const c = estate?.collisions ?? [];
+    if (c.length === 0) return '';
+    return `<h2>ports claimed twice</h2><div class="rows clash">` + c.map((x) => `
+      <div class="row">
+        <span class="mono">:${x.port}</span>
+        <span class="state">${x.claimants.map(esc).join('  ·  ')}</span>
+      </div>`).join('') + `</div>`;
+  }
+
+  function nodeChips(fleet) {
+    if (fleet === 'not answering') return `<span class="state">fleet: not answering</span>`;
+    if (!fleet || !fleet.enabled) return `<span class="state">hub off</span>`;
+    const nodes = fleet.nodes.map((n) =>
+      `<span class="chip${n.connected ? ' on' : ''}" title="last seen ${esc(n.lastSeen ?? '—')}">
+        ${esc(n.id)} · ${esc(n.role ?? '?')}${n.connected ? '' : ' · gone'}</span>`).join('');
+    return `<span class="mono">hub :${fleet.hubPort}</span> ${nodes ||
+      '<span class="state">no nodes yet</span>'}`;
+  }
+
+  function serversHtml() {
+    const list = estate?.servers ?? [];
+    const managed = estate?.managedServer;
+    const rows = list.map((s) => `
+      <div class="row">
+        <span class="dot up"></span>
+        <span class="mono">:${s.port}</span>
+        <span>${esc(s.provider ? s.provider + (s.model ? ' · ' + s.model : '') : '')}
+          ${s.config === 'not answering' ? '<small>config: not answering</small>' : ''}
+          <small>pid ${s.pid} · <a href="http://localhost:${s.port}/" target="_blank" rel="noopener">open</a></small></span>
+        <span class="mono">${managed && managed.running && managed.port === s.port ? './spectro-serve' : 'found by probe'}</span>
+        <span>${nodeChips(s.fleet)}</span>
+      </div>`).join('');
+    const managedRow = managed && !list.some((s) => managed.running && s.port === managed.port) ? `
+      <div class="row dim">
+        <span class="dot"></span>
+        <span class="mono">${managed.port ? ':' + managed.port : '—'}</span>
+        <span>the managed server <small>./spectro-serve — ${managed.running ? 'process alive, health not answering' : 'not running'}</small></span>
+        <span><button class="ghost act" data-act='{"target":"server","verb":"start"}'>start</button></span>
+        <span></span>
+      </div>` : '';
+    const stopRow = managed && managed.running ?
+      `<button class="ghost act" data-act='{"target":"server","verb":"stop"}'>stop</button>` : '';
+    return `<h2>spectro servers <span style="float:right">${stopRow}</span></h2><div class="rows servers">
+      <div class="row head"><span></span><span>port</span><span>backend</span><span>managed by</span><span>fleet</span></div>
+      ${rows || ''}${managedRow}
+      ${!rows && !managedRow ? '<div class="empty">none answering — a spectro server announces itself by answering /api/health</div>' : ''}
+    </div>`;
+  }
+
+  function stacksHtml() {
+    const list = estate?.stacks ?? [];
+    const dockerOff = estate && !estate.docker.answering;
+    const rows = list.map((s) => {
+      const up = s.state === 'up' || s.state === 'ready';
+      const dot = up ? 'up' : (s.state === 'starting' ? 'mid' : '');
+      const openable = s.port > 0 && s.state === 'up';
+      return `
+      <div class="row${up || s.state === 'starting' ? '' : ' dim'}">
+        <span class="dot ${dot}"></span>
+        <span>${GLYPHS[s.name] || '⚙️'}</span>
+        <span class="mono">${esc(s.name)}</span>
+        <span><small>${esc(s.note)}</small></span>
+        <span class="mono">${s.port ? ':' + s.port : '—'}</span>
+        <span class="state">${esc(s.state)}${s.containers != null ? ' · ' + s.containers + 'c' : ''}</span>
+        <span>
+          ${openable ? `<a class="mono" href="http://localhost:${s.port}${esc(s.path)}" target="_blank" rel="noopener">open</a>` : ''}
+          ${dockerOff ? '' : s.containers === 0
+            ? `<button class="ghost act" data-act='{"target":"stack","name":"${esc(s.name)}","verb":"up"}'>up</button>`
+            : `<button class="ghost act" data-act='{"target":"stack","name":"${esc(s.name)}","verb":"down"}'>down</button>`}
+        </span>
+      </div>`;
+    }).join('');
+    return `<h2>the build lab — <code>./spectro-env</code></h2><div class="rows stacks">
+      <div class="row head"><span></span><span></span><span>stack</span><span></span><span>port</span><span>state</span><span></span></div>
+      ${rows || '<div class="empty">no stacks in the registry</div>'}
+    </div>`;
+  }
+
+  function launchHtml() {
+    const launch = estate?.launch;
+    if (!launch) return '';
+    if (!launch.found) {
+      return `<h2>launch configs</h2><div class="rows launch">
+        <div class="empty">no .claude/launch.json above this repository</div></div>`;
+    }
+    const rows = launch.configs.map((c) => `
+      <div class="row${c.listening ? '' : ' dim'}">
+        <span class="dot ${c.listening ? 'up' : ''}"></span>
+        <span class="mono">${esc(c.name)}</span>
+        <span class="mono">${c.port ? ':' + c.port : '—'}</span>
+        <span class="state">${c.listening ? 'held' : 'free'}</span>
+        <span class="state">${c.listening ? 'by ' + esc(c.holder) : ''}</span>
+      </div>`).join('');
+    return `<h2>launch configs — <code>${esc(launch.file)}</code></h2><div class="rows launch">
+      <div class="row head"><span></span><span>name</span><span>port</span><span>port state</span><span>holder</span></div>
+      ${rows || '<div class="empty">the file has no configurations</div>'}
+      <div class="empty">a held port says something listens there — not that it is this config.</div>
+    </div>`;
+  }
+
   function paint() {
-    document.getElementById('graph').innerHTML = svg();
+    $('banners').innerHTML = banners();
+    if (!estate) { $('tally').textContent = estateGone ? 'no answer' : 'reading …'; return; }
+
+    $('graph').innerHTML = svg();
     for (const g of document.querySelectorAll('.node')) {
-      const s = all.find((x) => x.id === g.dataset.id);
-      const go = () => window.open(url(s), '_blank', 'noopener');
+      const go = () => window.open(g.dataset.url, '_blank', 'noopener');
       g.addEventListener('click', go);
       g.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } });
     }
 
-    // The same facts as a list. The picture is the point, but a list is what you
-    // read when you already know which one you want.
-    document.getElementById('rows').innerHTML = all.map((s) => `
-      <a class="row ${s.up ? 'up' : 'down'}" href="${url(s)}" target="_blank" rel="noopener">
-        <span class="sym">${s.glyph}</span>
-        <span class="what">${s.label}<small>${s.note}</small></span>
-        <span class="addr">localhost:${s.port}</span>
-        <span class="dot" title="${s.up ? 'answering' : 'not answering'}"></span>
-      </a>`).join('');
+    $('sections').innerHTML = collisionsHtml() + serversHtml() + stacksHtml() + launchHtml();
+    for (const b of document.querySelectorAll('button.act')) {
+      b.addEventListener('click', () => act(JSON.parse(b.dataset.act), b));
+    }
 
-    const up = all.filter((s) => s.up).length;
-    document.getElementById('tally').innerHTML = `<b>${up}</b> of ${all.length} answering`;
+    const lit = (estate.servers?.length ?? 0)
+      + estate.stacks.filter((s) => s.state === 'up' || s.state === 'ready').length;
+    const total = (estate.servers?.length ?? 0) + estate.stacks.length;
+    $('tally').innerHTML = `<b>${lit}</b> of ${total} answering`;
   }
 
   // ---- THE PARTICLES -------------------------------------------------------
-  // Not the website's starfield. These are SPECTRAL: most dots drift as dim
-  // motes, and a few carry one of the five brand lines — and those few, once in
-  // a while, stretch into a short horizontal streak, the way a line resolves
-  // when a spectrograph finally holds still. Colour on the lines and nowhere
-  // else, which is the brand's one rule.
-  const canvas = document.getElementById('particles');
+  // Spectral, not a starfield: most dots drift as dim motes, a few carry one of
+  // the five brand lines and once in a while stretch into a short streak, the
+  // way a line resolves when a spectrograph holds still. Colour on the lines
+  // and nowhere else.
+  const canvas = $('particles');
   const ctx = canvas.getContext('2d');
   const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
   let motes = [];
@@ -366,8 +513,7 @@
       .map((n) => cs.getPropertyValue(n).trim() || '#CE9440');
   }
 
-  // A seeded generator, so a reload does not reshuffle the sky.
-  function lcg(seed) {
+  function lcg(seed) { // seeded, so a reload does not reshuffle the sky
     let s = seed >>> 0;
     return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
   }
@@ -377,7 +523,6 @@
     const cols = palette();
     const n = Math.min(300, Math.round((innerWidth * innerHeight) / 5200));
     motes = Array.from({ length: n }, () => {
-      // One in seven carries a line. The rest are dust, and dust is grey.
       const spectral = rnd() < 0.14;
       return {
         x: rnd() * innerWidth,
@@ -387,7 +532,6 @@
         r: 0.5 + rnd() * 1.25,
         a: 0.16 + rnd() * 0.4,
         colour: spectral ? cols[(rnd() * cols.length) | 0] : null,
-        // how far through its own streak this one is; only spectral motes streak
         phase: rnd() * Math.PI * 2,
         speed: 0.0016 + rnd() * 0.004,
       };
@@ -411,7 +555,6 @@
         if (m.y < -8) m.y = innerHeight + 8; else if (m.y > innerHeight + 8) m.y = -8;
       }
       if (m.colour) {
-        // The streak: a spectral mote breathes between a dot and a short line.
         const stretch = Math.max(0, Math.sin(m.phase)) ** 3;
         const len = stretch * 22;
         ctx.globalAlpha = m.a * (0.55 + stretch * 0.45);
@@ -438,24 +581,23 @@
   const KEY = 'spectroscope:cockpit:design';
   function applyDesign(d) {
     document.documentElement.dataset.design = d;
-    document.getElementById('theme').textContent = d === 'spectro-paper' ? 'espresso' : 'paper';
+    $('theme').textContent = d === 'spectro-paper' ? 'espresso' : 'paper';
     localStorage.setItem(KEY, d);
-    seed(); // the palette changed, so the spectral motes must be re-drawn from it
+    seed(); // the palette changed, so the spectral motes re-draw from it
   }
-  document.getElementById('theme').addEventListener('click', () => {
+  $('theme').addEventListener('click', () => {
     applyDesign(document.documentElement.dataset.design === 'spectro-paper' ? 'spectro-dark' : 'spectro-paper');
   });
-  document.getElementById('again').addEventListener('click', probeAll);
+  $('again').addEventListener('click', read);
 
   addEventListener('resize', () => { cancelAnimationFrame(raf); resize(); frame(); });
 
   applyDesign(localStorage.getItem(KEY) || 'spectro-dark');
   resize();
   frame();
-  paint();
-  probeAll();
-  // A door that opened while you were looking at the page should light up.
-  setInterval(probeAll, 15000);
+  read();
+  // A door that opens while you look at the page should light up.
+  setInterval(read, 5000);
 })();
 </script>
 </body>
