@@ -18,6 +18,10 @@ import java.util.Map;
  * @param env     extra environment variables for the spawned process, may be {@code null}
  * @param url     endpoint of an HTTP/SSE server, {@code null} for stdio
  * @param type    optional transport hint, e.g. {@code "sse"} — informational only
+ * @param enabled the plus menu's off switch (card 224): {@code false} keeps the
+ *                entry configured but out of the next agent build — the registry
+ *                never dials it. {@code null} (every config written before the
+ *                flag existed) reads as on via {@link #enabledOrDefault()}
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record McpServerConfig(
@@ -26,10 +30,26 @@ public record McpServerConfig(
         List<String> args,
         Map<String, String> env,
         String url,
-        String type) {
+        String type,
+        Boolean enabled) {
+
+    /** The pre-flag shape, kept so a config-shaped literal does not have to
+     *  spell out the switch it does not use — {@code enabled} stays {@code null},
+     *  which {@link #enabledOrDefault()} reads as on. */
+    public McpServerConfig(String name, String command, List<String> args,
+                           Map<String, String> env, String url, String type) {
+        this(name, command, args, env, url, type, null);
+    }
 
     /** How this server is reached; {@code command} takes precedence over {@code url}. */
     public enum TransportKind { STDIO, HTTP_SSE }
+
+    /** Whether the next agent build should mount this server: only an explicit
+     *  {@code false} switches it off — an absent flag is on, so every entry
+     *  written before card 224 keeps working. */
+    public boolean enabledOrDefault() {
+        return !Boolean.FALSE.equals(enabled);
+    }
 
     /**
      * STDIO when a {@code command} is set, HTTP_SSE when only a {@code url} is

@@ -794,7 +794,8 @@ public record SpectroConfig(
         byName.forEach((name, entry) -> {
             McpServerConfig e = entry == null
                     ? new McpServerConfig(null, null, null, null, null, null) : entry;
-            servers.add(new McpServerConfig(name, e.command(), e.args(), e.env(), e.url(), e.type()));
+            servers.add(new McpServerConfig(name, e.command(), e.args(), e.env(), e.url(), e.type(),
+                    e.enabled()));
         });
         return List.copyOf(servers);
     }

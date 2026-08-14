@@ -99,4 +99,45 @@ class McpServerRegistryTest {
         assertEquals("http://localhost:8931/sse", registry.servers().get(0).target());
         assertEquals("mcp__remote__ping", registry.tools().get(0).name());
     }
+
+    // Card 224: the plus menu's off switch. Off means NOT DIALED — connecting to
+    // judge a server is the hang card 221 measured, and "disabled" must never
+    // cost a spawn. No handle either: a switched-off server is not a status row
+    // (that would read as "broken"), it is absent from the run — the same shape
+    // as a skill's .disabled marker, which the loader hides and the manager shows.
+    @Test
+    void aDisabledServerIsNeverDialedAndContributesNoHandle() {
+        McpServerConfig off = new McpServerConfig("notes", "java", null, null, null, null, false);
+        McpServerConfig on = new McpServerConfig("tavily", "npx",
+                List.of("-y", "tavily-mcp"), null, null, null, true);
+        Function<McpServerConfig, McpTransport> factory = cfg -> {
+            if (cfg.name().equals("notes")) {
+                throw new AssertionError("a disabled server must not be dialed");
+            }
+            return new FakeTransport(init(cfg.name()), List.of(tool("search")), (name, args) -> "ok");
+        };
+
+        McpServerRegistry registry = McpServerRegistry.load(List.of(off, on), Path.of("."), factory);
+
+        assertEquals(1, registry.tools().size());
+        assertEquals("mcp__tavily__search", registry.tools().get(0).name());
+        assertEquals(1, registry.servers().size(),
+                "a disabled server is switched off, not broken — no status row");
+        assertEquals("tavily", registry.servers().get(0).name());
+    }
+
+    // Every config written before the flag existed carries no "enabled" key —
+    // those servers stay on. Only an explicit false switches one off.
+    @Test
+    void aServerWithoutTheFlagStaysOn() {
+        McpServerConfig legacy = new McpServerConfig("notes", "java", null, null, null, null);
+        Function<McpServerConfig, McpTransport> factory = cfg ->
+                new FakeTransport(init(cfg.name()), List.of(tool("search_notes")), (name, args) -> "ok");
+
+        McpServerRegistry registry = McpServerRegistry.load(List.of(legacy), Path.of("."), factory);
+
+        assertTrue(legacy.enabledOrDefault(), "absent flag reads as on");
+        assertEquals(1, registry.tools().size());
+        assertEquals(1, registry.servers().size());
+    }
 }
