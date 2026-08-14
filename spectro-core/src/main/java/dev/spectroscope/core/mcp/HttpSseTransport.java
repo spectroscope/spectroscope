@@ -2,7 +2,6 @@ package dev.spectroscope.core.mcp;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
@@ -10,7 +9,6 @@ import org.springframework.web.client.RestClient;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -35,7 +33,6 @@ public final class HttpSseTransport implements McpTransport {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(20);
-    private static final String PROTOCOL_VERSION = "2024-11-05";
 
     private final RestClient http;
     private final String url;
@@ -73,45 +70,22 @@ public final class HttpSseTransport implements McpTransport {
      */
     @Override
     public McpInitializeResult initialize() {
-        ObjectNode params = JSON.createObjectNode();
-        params.put("protocolVersion", PROTOCOL_VERSION);
-        params.set("capabilities", JSON.createObjectNode());
-        ObjectNode clientInfo = JSON.createObjectNode();
-        clientInfo.put("name", "spectroscope");
-        clientInfo.put("version", "1.0");
-        params.set("clientInfo", clientInfo);
-
-        JsonNode result = request("initialize", params);
+        // Frames and reply mapping live ONCE for both transports — see McpProtocol.
+        JsonNode result = request("initialize", McpProtocol.initializeParams(JSON));
         // Per MCP, the client posts an 'initialized' notification after the handshake.
         notify("notifications/initialized");
-
-        String protocol = result.path("protocolVersion").asText(PROTOCOL_VERSION);
-        String serverName = result.path("serverInfo").path("name").asText(null);
-        JsonNode capabilities = result.get("capabilities");
-        return new McpInitializeResult(protocol, serverName, capabilities);
+        return McpProtocol.initializeResult(result);
     }
 
     /**
      * Fetches {@code tools/list}; a single malformed descriptor is skipped with a
-     * stderr note rather than failing the whole list.
+     * log note rather than failing the whole list.
      *
      * @return the advertised tools, in server order
      */
     @Override
     public List<McpToolDescriptor> listTools() {
-        JsonNode result = request("tools/list", null);
-        JsonNode tools = result.path("tools");
-        List<McpToolDescriptor> descriptors = new ArrayList<>();
-        if (tools.isArray()) {
-            for (JsonNode tool : tools) {
-                try {
-                    descriptors.add(JSON.treeToValue(tool, McpToolDescriptor.class));
-                } catch (IOException malformed) {
-                    LOG.warn("skipping malformed MCP tool descriptor: {}", malformed.getMessage());
-                }
-            }
-        }
-        return descriptors;
+        return McpProtocol.toolsListResult(request("tools/list", null), JSON, LOG);
     }
 
     /**
@@ -123,11 +97,8 @@ public final class HttpSseTransport implements McpTransport {
      */
     @Override
     public McpCallResult callTool(String toolName, JsonNode arguments) {
-        ObjectNode params = JSON.createObjectNode();
-        params.put("name", toolName);
-        params.set("arguments", arguments != null ? arguments : JSON.createObjectNode());
-
-        JsonNode result = request("tools/call", params);
+        JsonNode result = request("tools/call",
+                McpProtocol.toolsCallParams(JSON, toolName, arguments));
         // The same mapping the stdio transport uses; the private copy that used to
         // live here is what let an image reach the model as raw JSON (card 198).
         return McpCallResult.fromToolsCall(result);
