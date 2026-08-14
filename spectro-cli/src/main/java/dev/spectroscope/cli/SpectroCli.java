@@ -443,17 +443,24 @@ public final class SpectroCli implements Runnable {
         // Card 199: both browser-class tools take the net fence built from
         // allowLocalhost — file URLs, RFC-1918 and the 100.64/10 tailnet are
         // refused, loopback only on the deliberate opt-in for the verify loop.
-        registry.register(new WebFetchTool(new DefaultHttpFetcher(),
-                dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost())));
+        // The three are locals because they are registered TWICE-reachable (card
+        // 205): once here for the main agent, and once as the research role's web
+        // grant below — the SAME instances, so a child's call passes the same
+        // fence, broker and tiers as the parent's.
+        Tool webSearch = WebSearchTool.fromConfig(config);
+        Tool webFetch = new WebFetchTool(new DefaultHttpFetcher(),
+                dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
+        // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
+        // env, so SPECTRO_CHROME AND the configured setting both reach discovery.
+        Tool browsePage = new BrowsePageTool(
+                () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner(),
+                dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
+        registry.register(webFetch);
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
-        registry.register(WebSearchTool.fromConfig(config));
-        // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
-        // env, so SPECTRO_CHROME AND the configured setting both reach discovery.
-        registry.register(new BrowsePageTool(
-                () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner(),
-                dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost())));
+        registry.register(webSearch);
+        registry.register(browsePage);
         // The main agent's plan. Permission-free, main-only (a worker's
         // plan would clobber the flat UI snapshot), so it is NOT added to childBase.
         registry.register(new UpdatePlanTool());
@@ -473,8 +480,11 @@ public final class SpectroCli implements Runnable {
         if (!skills.skills().isEmpty()) {
             childBase.add(skills.useSkillTool());
         }
+        // Card 205: the research role's web grant — the parent's own three web
+        // tools, handed to RESEARCH children only. Same instances, same gate.
         subagents = new SubagentManager(new SubagentConfig(
-                provider, workspace, MAIN_AGENT_ID, askOnTerminal, List.copyOf(childBase), hooks));
+                provider, workspace, MAIN_AGENT_ID, askOnTerminal, List.copyOf(childBase), hooks,
+                null, List.of(webSearch, webFetch, browsePage)));
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
         }

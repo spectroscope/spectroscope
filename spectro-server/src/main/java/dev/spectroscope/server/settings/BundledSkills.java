@@ -16,12 +16,15 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * First-start skill seeding (card 90): the four repo skills ride every
+ * First-start skill seeding (card 90): the repo's own skills ride every
  * artifact as {@code bundled-skills/&lt;name&gt;/SKILL.md} classpath resources
  * (see spectro-server's processResources) and land in {@code ~/.spectro/skills}
- * exactly once. Two promises, both pinned: a user's EDIT is never overwritten
- * (absent-only copy) and a user's DELETION sticks — the {@code .seeded} ledger
- * remembers every skill ever offered, so a removed folder is not re-seeded.
+ * exactly once. A name may carry ONE directory level (card 207): a bundled
+ * {@code spectroscope/research} seeds nested and the card-182 pack rule then
+ * advertises it namespaced, as {@code spectroscope:research}. Two promises,
+ * both pinned: a user's EDIT is never overwritten (absent-only copy) and a
+ * user's DELETION sticks — the {@code .seeded} ledger remembers every skill
+ * ever offered, so a removed folder is not re-seeded.
  */
 public final class BundledSkills {
 
@@ -51,19 +54,30 @@ public final class BundledSkills {
         }
     }
 
-    /** The classpath bundle as name -> SKILL.md body. */
-    private static Map<String, String> readBundle() throws IOException {
+    /** The anchor readBundle keys names off — the classpath folder the artifact carries. */
+    private static final String BUNDLE_ROOT = "bundled-skills/";
+
+    /**
+     * The classpath bundle as name -> SKILL.md body. The name is the directory
+     * path below the bundle root: {@code verification} for a flat skill,
+     * {@code spectroscope/research} for a PACK skill (card 207) — one level of
+     * nesting, exactly the shape the card-182 pack rule reads back out of the
+     * skills root as {@code <pack>:<name>}. The path is cut at the literal
+     * anchor rather than by counting separators, because a Spring Boot fat jar
+     * spells its resource URLs with an unknowable number of segments ahead of
+     * the bundle (see SkillCatalogue.relativeAfter, same reasoning).
+     */
+    static Map<String, String> readBundle() throws IOException {
         Map<String, String> bundled = new LinkedHashMap<>();
         Resource[] found = new PathMatchingResourcePatternResolver()
-                .getResources("classpath*:bundled-skills/*/SKILL.md");
+                .getResources("classpath*:" + BUNDLE_ROOT + "**/SKILL.md");
         for (Resource resource : found) {
             String url = String.valueOf(resource.getURL());
-            // .../bundled-skills/<name>/SKILL.md — the folder is the skill name.
-            String[] parts = url.split("/");
-            if (parts.length < 2) {
-                continue;
+            String rel = SkillCatalogue.relativeAfter(url, BUNDLE_ROOT);
+            if (rel == null || !rel.endsWith("/SKILL.md")) {
+                continue; // never guessed, only skipped
             }
-            String name = parts[parts.length - 2];
+            String name = rel.substring(0, rel.length() - "/SKILL.md".length());
             try (var in = resource.getInputStream()) {
                 bundled.put(name, new String(in.readAllBytes(), StandardCharsets.UTF_8));
             }

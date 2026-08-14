@@ -7,12 +7,13 @@ import java.util.Set;
 
 /**
  * The subagent ROLE CATALOG, extracted from SubagentManager (clean-code night
- * job): every string a role is made of — the explore/worker system prompts,
- * the read-only tool set, the spawn tool descriptions and the four dev-tool
- * specs — plus the introspection views ({@link #roleProfiles} and
- * {@link #parentTools}) the System-Kontext panel renders. Single source of
- * truth: the live tools in SubagentManager and the introspection endpoints
- * read the SAME constants, so what the UI shows is what the LLM gets.
+ * job): every string a role is made of — the explore/worker/research system
+ * prompts, the per-role tool sets, the spawn tool descriptions and the five
+ * role-tool specs (four dev roles + the card-205 research role) — plus the
+ * introspection views ({@link #roleProfiles} and {@link #parentTools}) the
+ * System-Kontext panel renders. Single source of truth: the live tools in
+ * SubagentManager and the introspection endpoints read the SAME constants, so
+ * what the UI shows is what the LLM gets.
  */
 public final class RoleCatalog {
 
@@ -26,6 +27,28 @@ public final class RoleCatalog {
      */
     static final Set<String> EXPLORE_TOOL_NAMES = Set.of("list_dir", "read_file", "glob", "grep");
 
+    /**
+     * The base tools a RESEARCH child keeps (card 205): the explore read set
+     * plus use_skill, because the role's whole point is carrying the
+     * {@code spectroscope:research} skill in its belly. No write tool, no
+     * run_command — a research child reads and reaches the web, nothing else.
+     */
+    static final Set<String> RESEARCH_BASE_TOOL_NAMES =
+            Set.of("list_dir", "read_file", "glob", "grep", "use_skill");
+
+    /**
+     * The web grant of the research role, in the card's order. These names are
+     * a PROMISE about which of the parent's tools a research child inherits —
+     * the instances come from {@link SubagentConfig#webTools()}, so a face
+     * without web tools (headless, fleet) grants nothing here. The grant does
+     * not bypass the card-199 permission tiers: the child's calls run on the
+     * SAME tool instances and the SAME broker as the parent's, so web_search
+     * and web_fetch prompt as read-tier network egress and browse_page as
+     * write-tier, exactly as they do for the main agent. The role widens what
+     * a child can ASK for, never what the gate approves.
+     */
+    static final List<String> WEB_TOOL_NAMES = List.of("web_search", "web_fetch", "browse_page");
+
     static final Map<AgentType, String> SYSTEM_PROMPTS = Map.of(
             AgentType.EXPLORE,
             "You are a research subagent (type explore). You can list directories (list_dir), "
@@ -37,7 +60,15 @@ public final class RoleCatalog {
             "You are a work subagent (type worker) with full tool access. Carry out exactly the "
                     + "task you were given, nothing more. At the end, summarize briefly what you did: "
                     + "changed files, executed commands, results. Your final text is the only thing "
-                    + "your requester sees.");
+                    + "your requester sees.",
+            AgentType.RESEARCH,
+            "You are a web research subagent (type research). You can read the workspace "
+                    + "(list_dir, read_file, glob, grep) and reach the web (web_search, web_fetch, "
+                    + "browse_page) — no writing, no command execution. Web calls are "
+                    + "permission-gated like everything else; a refused call is an answer, work "
+                    + "with what you have. Carry out exactly the research task you were given. "
+                    + "Answer as a compact memo WITH SOURCES: every claim names where it came "
+                    + "from. Your final text is the only thing your requester sees.");
 
     /** Descriptions of the parent-only spawn tools — also surfaced by the
      *  System-Kontext view, so they live as constants (single source of truth). */
@@ -51,15 +82,18 @@ public final class RoleCatalog {
                     + "all of them are finished. For independent subtasks (e.g. investigating several "
                     + "directories at the same time).";
 
-    /** One development tool = a role wrapper over a worker spawn. Static so both
+    /** One development tool = a role wrapper over a child spawn. Static so both
      *  devTools() (live) and roleProfiles()/parentTools() (introspection) share
      *  the exact same strings — no duplication.
      *
-     *  @param name        the tool's wire name (build_plan, write_spec, develop, test)
-     *  @param description base model-facing text — {@link #devToolDescription} appends the worker/skill note
-     *  @param preamble    role framing composed in front of the task the worker child runs on
-     *  @param skill       the SKILL.md package the child is told to load first */
-    record DevSpec(String name, String description, String preamble, String skill) {}
+     *  @param name        the tool's wire name (build_plan, write_spec, develop, test, research)
+     *  @param description base model-facing text — {@link #devToolDescription} appends the type/skill note
+     *  @param preamble    role framing composed in front of the task the child runs on
+     *  @param skill       the SKILL.md package the child is told to load first
+     *  @param type        the child profile the role runs as — worker for the four
+     *                     dev roles, research for the card-205 role (read tools +
+     *                     the gated web grant, see {@link #WEB_TOOL_NAMES}) */
+    record DevSpec(String name, String description, String preamble, String skill, AgentType type) {}
 
     static final List<DevSpec> DEV_SPECS = List.of(
             new DevSpec("build_plan",
@@ -69,7 +103,7 @@ public final class RoleCatalog {
                             + "implementation plan for the task below and, if you have write access, "
                             + "save it as a markdown file. If a use_skill tool is available, load the "
                             + "skill 'writing-plans' first and follow it.",
-                    "writing-plans"),
+                    "writing-plans", AgentType.WORKER),
             new DevSpec("write_spec",
                     "Delegates specification to a subagent: turns a rough idea into a "
                             + "design/spec document with decisions and trade-offs.",
@@ -77,14 +111,14 @@ public final class RoleCatalog {
                             + "for the task below: goal, approach, alternatives considered, decisions. "
                             + "If a use_skill tool is available, load the skill 'brainstorming' first "
                             + "and follow its structure.",
-                    "brainstorming"),
+                    "brainstorming", AgentType.WORKER),
             new DevSpec("develop",
                     "Delegates implementation to a subagent: carries out a development task "
                             + "in small verified steps.",
                     "You are acting as an IMPLEMENTER. Carry out the development task below "
                             + "in small steps and verify each one. If a use_skill tool is available, "
                             + "load the skill 'test-driven-development' first and follow it.",
-                    "test-driven-development"),
+                    "test-driven-development", AgentType.WORKER),
             new DevSpec("test",
                     "Delegates verification to a subagent: runs and inspects, reports "
                             + "evidence, changes nothing.",
@@ -92,16 +126,32 @@ public final class RoleCatalog {
                             + "run, read what must be read, and report concrete evidence (commands, "
                             + "output, file paths). Do NOT fix anything. If a use_skill tool is "
                             + "available, load the skill 'verification' first and follow it.",
-                    "verification"));
+                    "verification", AgentType.WORKER),
+            // Card 205: the research role. Read tools + the web grant, and card
+            // 207's skill in its belly. Its web calls stay permission-gated —
+            // the description says so, because a model told otherwise would
+            // promise its requester an open web this product does not hand out.
+            new DevSpec("research",
+                    "Delegates web research to a subagent: searches, reads and verifies "
+                            + "sources for a question the workspace cannot answer, and reports "
+                            + "findings with sources. Its web tools are permission-gated like the "
+                            + "parent's own.",
+                    "You are acting as a RESEARCHER. Answer the research task below from the "
+                            + "web, with sources: search in angles, read what you cite, verify "
+                            + "load-bearing claims against a second source. You can read the "
+                            + "workspace but not change it. If a use_skill tool is available, load "
+                            + "the skill 'spectroscope:research' first and follow it.",
+                    "spectroscope:research", AgentType.RESEARCH));
 
     /**
-     * The full LLM-facing description of a dev tool (base + the worker/skill note).
+     * The full LLM-facing description of a dev tool (base + the type/skill note).
      *
      * @param spec the dev tool being described
      * @return the composed text handed to the provider and the introspection view alike
      */
     static String devToolDescription(DevSpec spec) {
-        return spec.description() + " Runs as a worker subagent (skill: " + spec.skill() + ") and reports "
+        return spec.description() + " Runs as a " + spec.type().id() + " subagent (skill: "
+                + spec.skill() + ") and reports "
                 + "progress via report_status. The subagent sees ONLY the task text — phrase "
                 + "it as a self-contained assignment.";
     }
@@ -128,10 +178,14 @@ public final class RoleCatalog {
      * The subagent role profiles for the System-Kontext view. childBaseToolNames
      * are the base tools a child inherits (StandardTools + use_skill); explore is
      * filtered to the read-only set, worker gets them all, and both get
-     * report_status. Dev tools run as workers with a role preamble + a skill.
+     * report_status. Dev tools run as workers with a role preamble + a skill —
+     * except research (card 205), which runs on the read set plus the gated web
+     * grant of {@link #WEB_TOOL_NAMES}. The research profile lists the role's
+     * PROMISE; a face that carries no web tools (headless, fleet) grants none,
+     * so its research children hold none — the unattended lanes stay closed.
      *
      * @param childBaseToolNames names of the base tools a child may inherit
-     * @return one profile per role: explore, worker, then the four dev roles
+     * @return one profile per role: explore, worker, then the five role tools
      */
     public static List<RoleProfile> roleProfiles(List<String> childBaseToolNames) {
         List<String> exploreTools = new ArrayList<>(childBaseToolNames.stream()
@@ -139,14 +193,21 @@ public final class RoleCatalog {
         exploreTools.add("report_status");
         List<String> workerTools = new ArrayList<>(childBaseToolNames);
         workerTools.add("report_status");
+        List<String> researchTools = new ArrayList<>(childBaseToolNames.stream()
+                .filter(RESEARCH_BASE_TOOL_NAMES::contains).toList());
+        researchTools.addAll(WEB_TOOL_NAMES);
+        researchTools.add("report_status");
         List<RoleProfile> out = new ArrayList<>();
         out.add(new RoleProfile("explore", "spawn", SYSTEM_PROMPTS.get(AgentType.EXPLORE),
                 List.copyOf(exploreTools), true, null));
         out.add(new RoleProfile("worker", "spawn", SYSTEM_PROMPTS.get(AgentType.WORKER),
                 List.copyOf(workerTools), false, null));
         for (DevSpec spec : DEV_SPECS) {
+            // Research is not read-only: its file surface is, but network egress
+            // is a side effect, so the badge would overpromise.
             out.add(new RoleProfile(spec.name(), "dev", spec.preamble(),
-                    List.copyOf(workerTools), false, spec.skill()));
+                    spec.type() == AgentType.RESEARCH ? List.copyOf(researchTools) : List.copyOf(workerTools),
+                    false, spec.skill()));
         }
         return out;
     }

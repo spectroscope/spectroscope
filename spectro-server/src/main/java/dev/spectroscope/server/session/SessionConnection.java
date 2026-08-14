@@ -968,7 +968,9 @@ public final class SessionConnection {
 
         ToolRegistry registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
-        registerSettingsTools(registry);
+        // The returned trio is the research role's web grant (card 205) — the
+        // SAME instances the belt carries, so a child call passes the same gate.
+        List<Tool> webTools = registerSettingsTools(registry);
         // The plan tool is main-only (see SpectroCli) — the flat UI plan
         // snapshot must not be clobbered by a subagent. describeContext lists it
         // from its own instance; this registration only feeds the live agent.
@@ -995,7 +997,8 @@ public final class SessionConnection {
         HookRunner hooks = HookRunner.load(sessionConfig.hooks());
 
         subagents = new SubagentManager(new SubagentConfig(
-                provider, workspace, "main", broker, List.copyOf(childBase), hooks));
+                provider, workspace, "main", broker, List.copyOf(childBase), hooks,
+                null, webTools));
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
@@ -1192,8 +1195,11 @@ public final class SessionConnection {
      * session actually carries.</p>
      *
      * @param registry the session's registry, already carrying the standard tools
+     * @return the three web tools (web_search, web_fetch, browse_page) it put on
+     *         the belt — the research role's web grant (card 205), so children
+     *         run on the SAME instances and the same gate as the parent
      */
-    void registerSettingsTools(ToolRegistry registry) {
+    List<Tool> registerSettingsTools(ToolRegistry registry) {
         // Built lazily per call, through ONE method, so a test can hold the
         // answer without a picture being generated: card 222's review finding
         // F6 measured that reverting the model half of this to the connect-time
@@ -1207,22 +1213,25 @@ public final class SessionConnection {
         // Card 199: both browser-class tools take the net fence built from
         // allowLocalhost, and card 222 made that fence per call, so an opt-in
         // saved mid-session reaches the very next fetch.
-        registry.register(new WebFetchTool(new DefaultHttpFetcher(), this::liveFence));
+        Tool webFetch = new WebFetchTool(new DefaultHttpFetcher(), this::liveFence);
+        registry.register(webFetch);
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
         // The tier is resolved PER CALL (card 222): a SearXNG address saved
         // while this session is open decides the next search, and the result
         // header and the model-facing description name that same machine.
-        registry.register(WebSearchTool.fromConfig(this::liveConfig));
+        Tool webSearch = WebSearchTool.fromConfig(this::liveConfig);
+        registry.register(webSearch);
         // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
         // env; read fresh per call, like the image model above, so a binary saved
         // mid-session — and a pre-run provider switch that carries one along —
         // both reach the next render.
-        registry.register(new BrowsePageTool(
+        Tool browsePage = new BrowsePageTool(
                 () -> BrowsePageTool.findChrome(liveConfig().chromeEnv()),
                 new DefaultChromeRunner(),
-                this::liveFence));
+                this::liveFence);
+        registry.register(browsePage);
         // Card 201: the seven measured browser tools, driving the VISIBLE pane in
         // the desktop window over the control channel. Registered on the server
         // face unconditionally: the shell can attach after the registry is built
@@ -1252,6 +1261,8 @@ public final class SessionConnection {
                 this::ownBrowser,
                 this::liveFence)
                 .all().forEach(registry::register);
+        // Card 205: the research role's web grant, in the card's order.
+        return List.of(webSearch, webFetch, browsePage);
     }
 
     /**

@@ -114,11 +114,12 @@ public final class SubagentManager {
     }
 
     /**
-     * The development tools for the PARENT registry — thin role wrappers over
-     * the same worker spawn (no new agent types; specialization is prompt +
-     * skill). Children never receive these either.
+     * The role tools for the PARENT registry — thin wrappers over a child
+     * spawn: the four dev roles run as workers (specialization is prompt +
+     * skill), the research role (card 205) as the research profile with the
+     * gated web grant. Children never receive these either.
      *
-     * @return build_plan, write_spec, develop and test, ready to register
+     * @return build_plan, write_spec, develop, test and research, ready to register
      */
     public List<Tool> devTools() {
         return RoleCatalog.DEV_SPECS.stream().map(spec -> (Tool) new DevTool(spec)).toList();
@@ -179,19 +180,35 @@ public final class SubagentManager {
     }
 
     /**
-     * Permission profile by construction: explore gets the read tools only, worker all base tools.
+     * Permission profile by construction: explore gets the read tools only,
+     * worker all base tools, research the read set plus use_skill plus the
+     * session's web tools (card 205). The web tools are the parent's OWN
+     * instances out of {@link SubagentConfig#webTools()}, so every child call
+     * passes the same permission broker and the same card-199 tiers as a
+     * parent call — the role grants reach, never approval. A face that hands
+     * over no web tools (headless, fleet) builds research children without
+     * web reach, which is the unattended-lanes decision of card 205.
      *
-     * @param type        decides the filter — worker keeps every base tool, explore only the read set
+     * @param type        decides the filter — worker keeps every base tool,
+     *                    explore only the read set, research read set + web grant
      * @param childId     stamped into the child's report_status messages
      * @param parentQueue where report_status publishes its status events
      * @return the child's registry: profile-filtered base tools plus report_status, never the spawn tools
      */
     private ToolRegistry registryFor(AgentType type, String childId, MergedEventStream parentQueue) {
+        Set<String> keep = switch (type) {
+            case WORKER -> null; // null = every base tool
+            case EXPLORE -> RoleCatalog.EXPLORE_TOOL_NAMES;
+            case RESEARCH -> RoleCatalog.RESEARCH_BASE_TOOL_NAMES;
+        };
         ToolRegistry registry = new ToolRegistry();
         config.baseTools().stream()
-                .filter(tool -> type == AgentType.WORKER || RoleCatalog.EXPLORE_TOOL_NAMES.contains(tool.name()))
+                .filter(tool -> keep == null || keep.contains(tool.name()))
                 .forEach(registry::register);
-        // Every child (both types) may report progress — the A2A status channel.
+        if (type == AgentType.RESEARCH) {
+            config.webTools().forEach(registry::register);
+        }
+        // Every child (all types) may report progress — the A2A status channel.
         registry.register(new ReportStatusTool(childId, parentQueue));
         return registry;
     }
@@ -526,7 +543,7 @@ public final class SubagentManager {
             return false; // the child's real actions pass the permission gate individually
         }
 
-        /** Composes preamble + report_status instruction + task and runs it as ONE labeled worker child. */
+        /** Composes preamble + report_status instruction + task and runs it as ONE labeled child of the spec's type. */
         @Override
         public String execute(JsonNode input, ToolContext context) {
             String task = input.path("task").asText("");
@@ -536,7 +553,7 @@ public final class SubagentManager {
             String composed = spec.preamble() + "\n\nReport progress at each milestone via the "
                     + "report_status tool (one short sentence each).\n\nTASK:\n" + task.strip();
             return runChildrenInParallel(List.of(
-                    new ChildRequest(AgentType.WORKER, composed, task.strip(), spec.name()))).getFirst();
+                    new ChildRequest(spec.type(), composed, task.strip(), spec.name()))).getFirst();
         }
     }
 
@@ -566,10 +583,13 @@ public final class SubagentManager {
             return false; // the child's tools ask for permission themselves
         }
 
-        /** Parses the type and runs one child (a batch of one); unknown types come back as "ERROR: ". */
+        /** Parses the type and runs one child (a batch of one); unknown types come
+         *  back as "ERROR: " — and so does the role-only research type (card 205),
+         *  which is selected as the research tool, never through this enum. */
         @Override
         public String execute(JsonNode input, ToolContext context) {
             return AgentType.fromId(input.path("type").asText())
+                    .filter(AgentType::spawnable)
                     .map(type -> runChildrenInParallel(
                             List.of(new ChildRequest(type, input.path("task").asText("")))).getFirst())
                     .orElse("ERROR: unknown agent type \"" + input.path("type").asText() + "\".");
@@ -614,7 +634,10 @@ public final class SubagentManager {
             }
             List<ChildRequest> requests = new ArrayList<>();
             for (JsonNode entry : agents) {
-                var type = AgentType.fromId(entry.path("type").asText());
+                // Role-only types (research, card 205) are refused like unknown
+                // strings — the batch spawn advertises explore|worker and grants
+                // exactly that.
+                var type = AgentType.fromId(entry.path("type").asText()).filter(AgentType::spawnable);
                 if (type.isEmpty()) {
                     return "ERROR: unknown agent type \"" + entry.path("type").asText() + "\".";
                 }
