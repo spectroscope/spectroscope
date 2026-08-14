@@ -89,9 +89,15 @@ class SubagentManagerTest {
     private record Setup(SubagentManager manager, Agent parent) {}
 
     private static Setup setup(RoutingProvider provider, long timeoutMs) {
+        return setup(provider, timeoutMs, List.of());
+    }
+
+    /** The card-205 arity: the parent session's web tools, granted to research children only. */
+    private static Setup setup(RoutingProvider provider, long timeoutMs, List<Tool> webTools) {
         SubagentManager manager = new SubagentManager(new SubagentConfig(
                 provider, Path.of("."), "main", request -> true,
-                List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"), fakeReadTool("write_file"))),
+                List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"), fakeReadTool("write_file")),
+                null, null, webTools),
                 timeoutMs);
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
@@ -229,6 +235,104 @@ class SubagentManagerTest {
         assertTrue(childResult.isError());
         assertTrue(childResult.output().contains("unknown tool"),
                 "explore must not even know write_file: " + childResult.output());
+    }
+
+    // ---- card 205: the research role's grant, proven by running -------------------------
+
+    @Test
+    void researchChildrenHoldTheWebToolsByConstruction() {
+        RoutingProvider provider = new RoutingProvider();
+        provider.parentTurns.add(toolTurn("c1", "research",
+                json("""
+                        {"task":"What is the latest LTS?"}""")));
+        provider.parentTurns.add(textTurn("Answered."));
+        // The child reaches for web_search — granted, so the fake tool answers.
+        provider.childTurns.add(toolTurn("r1", "web_search",
+                json("""
+                        {"query":"latest LTS"}""")));
+        provider.childTurns.add(textTurn("The LTS is 21, sourced."));
+
+        List<RunEvent> events = collect(
+                setup(provider, 30_000, List.of(fakeReadTool("web_search"), fakeReadTool("web_fetch"))),
+                "Research the LTS");
+
+        RunEvent.ToolResult webResult = events.stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .filter(result -> "research-1".equals(result.agentId()))
+                .findFirst().orElseThrow();
+        assertTrue(!webResult.isError(), "the research child holds web_search: " + webResult.output());
+        assertEquals("ok", webResult.output());
+    }
+
+    @Test
+    void workerChildrenAreRefusedTheWebByConstruction() {
+        RoutingProvider provider = new RoutingProvider();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Search the web"}""")));
+        provider.parentTurns.add(textTurn("The child had no web."));
+        provider.childTurns.add(toolTurn("w1", "web_search",
+                json("""
+                        {"query":"anything"}""")));
+        provider.childTurns.add(textTurn("I lack a web tool."));
+
+        List<RunEvent> events = collect(
+                setup(provider, 30_000, List.of(fakeReadTool("web_search"), fakeReadTool("web_fetch"))),
+                "Try the web via worker");
+
+        RunEvent.ToolResult childResult = events.stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .filter(result -> "worker-1".equals(result.agentId()))
+                .findFirst().orElseThrow();
+        assertTrue(childResult.isError(), "a child without the role is refused the same tools");
+        assertTrue(childResult.output().contains("unknown tool"),
+                "worker must not even know web_search: " + childResult.output());
+    }
+
+    @Test
+    void researchChildrenCannotWriteByConstruction() {
+        RoutingProvider provider = new RoutingProvider();
+        provider.parentTurns.add(toolTurn("c1", "research",
+                json("""
+                        {"task":"Research and save a file"}""")));
+        provider.parentTurns.add(textTurn("The child could not write."));
+        provider.childTurns.add(toolTurn("r1", "write_file",
+                json("""
+                        {"path":"dossier.md","content":"x"}""")));
+        provider.childTurns.add(textTurn("I lack a write tool."));
+
+        List<RunEvent> events = collect(
+                setup(provider, 30_000, List.of(fakeReadTool("web_search"))),
+                "Research with a write attempt");
+
+        RunEvent.ToolResult childResult = events.stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .filter(result -> "research-1".equals(result.agentId()))
+                .findFirst().orElseThrow();
+        assertTrue(childResult.isError());
+        assertTrue(childResult.output().contains("unknown tool"),
+                "research reads and reaches the web, it never writes: " + childResult.output());
+    }
+
+    @Test
+    void spawnAgentRefusesTheResearchTypeItsSchemaDoesNotAdvertise() {
+        RoutingProvider provider = new RoutingProvider();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"research","task":"Sneak in"}""")));
+        provider.parentTurns.add(textTurn("Refused."));
+
+        List<RunEvent> events = collect(
+                setup(provider, 30_000, List.of(fakeReadTool("web_search"))),
+                "Spawn a research child directly");
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.isError(),
+                "the spawn enum stays explore|worker — the role is selected as the research tool");
+        assertTrue(result.output().contains("unknown agent type"), result.output());
     }
 
     @Test
@@ -445,7 +549,7 @@ class SubagentManagerTest {
         provider.childTurns.add(textTurn("plan: three steps"));
 
         Setup setup = setup(provider, 30_000);
-        assertEquals(List.of("build_plan", "write_spec", "develop", "test"),
+        assertEquals(List.of("build_plan", "write_spec", "develop", "test", "research"),
                 setup.manager().devTools().stream().map(Tool::name).toList());
 
         List<RunEvent> events = collect(setup, "Plan something");

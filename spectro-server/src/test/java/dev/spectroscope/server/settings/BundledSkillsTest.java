@@ -61,4 +61,37 @@ class BundledSkillsTest {
         assertEquals("the user's own", Files.readString(home.resolve("brainstorming/SKILL.md")));
         assertFalse(seeded.contains("brainstorming"));
     }
+
+    // ---- card 207: the product's own PACK skill ships namespaced ----------------------
+
+    @Test
+    void aPackSkillSeedsIntoItsNamespacedFolder() throws IOException {
+        Map<String, String> withPack = Map.of("spectroscope/research", "# research\nbody");
+        List<String> seeded = BundledSkills.seed(withPack, home);
+        assertEquals(List.of("spectroscope/research"), seeded);
+        assertTrue(Files.readString(home.resolve("spectroscope/research/SKILL.md"))
+                .startsWith("# research"));
+        assertTrue(Files.readString(home.resolve(".seeded")).contains("spectroscope/research"));
+    }
+
+    @Test
+    void aDeletedPackSkillStaysDeleted() throws IOException {
+        Map<String, String> withPack = Map.of("spectroscope/research", "# research\nbody");
+        BundledSkills.seed(withPack, home);
+        Files.delete(home.resolve("spectroscope/research/SKILL.md"));
+        Files.delete(home.resolve("spectroscope/research"));
+        Files.delete(home.resolve("spectroscope"));
+        assertEquals(0, BundledSkills.seed(withPack, home).size(),
+                "a deleted pack skill must not come back");
+        assertFalse(Files.exists(home.resolve("spectroscope")));
+    }
+
+    @Test
+    void theShippedBundleCarriesTheNamespacedResearchSkill() throws IOException {
+        Map<String, String> bundle = BundledSkills.readBundle();
+        assertTrue(bundle.containsKey("verification"),
+                "flat bundled skills keep their bare name: " + bundle.keySet());
+        assertTrue(bundle.containsKey("spectroscope/research"),
+                "the research skill ships as the spectroscope pack (card 207): " + bundle.keySet());
+    }
 }
