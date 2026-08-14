@@ -169,7 +169,7 @@ class McpImageRealProcessTest {
         if (!Files.isExecutable(Path.of(java))) {
             return null;
         }
-        return List.of(java, "-cp", String.join(File.pathSeparator, classpath),
+        return List.of(java, "-Duser.home=" + System.getProperty("user.home"), "-cp", String.join(File.pathSeparator, classpath),
                 ImageMcpServerFixture.class.getName(), mode);
     }
 

@@ -38,6 +38,7 @@ class LaunchSupervisorReaperProofTest {
     void sigtermToTheJvmReapsTheLaunchedTreeIncludingItsGrandchild() throws Exception {
         Process child = new ProcessBuilder(
                 System.getProperty("java.home") + "/bin/java",
+                "-Duser.home=" + System.getProperty("user.home"),
                 "-cp", System.getProperty("java.class.path"),
                 LaunchReaperProofChild.class.getName())
                 .redirectErrorStream(true)

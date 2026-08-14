@@ -62,10 +62,8 @@ tasks.test {
     testLogging {
         events("failed", "skipped")
     }
-    // Bonus 2/3: the Transcriber and PiperSpeechEngine resolve their default model
-    // paths from user.home at class-load time; point it into the build directory so
-    // a test never depends on the real ~/.spectro (no ffmpeg, whisper, piper needed).
-    systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
+    // user.home is redirected by the ROOT subprojects block (card 235) — the
+    // Transcriber and PiperSpeechEngine model paths depend on it too.
 }
 
 application {

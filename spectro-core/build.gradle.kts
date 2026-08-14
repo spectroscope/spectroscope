@@ -88,9 +88,7 @@ tasks.test {
     testLogging {
         events("failed", "skipped")
     }
-    // SessionStore/SpectroConfig resolve ~/.spectro from user.home at class-load time;
-    // pointing user.home into the build directory keeps tests off the real home.
-    systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
+    // user.home is redirected by the ROOT subprojects block (card 235).
     // ProofOfChainTest and DemoScenariosTest only write outside the build
     // directory when a target is named on the command line; forwarded here
     // because a Test JVM inherits none of Gradle's own -D flags.
