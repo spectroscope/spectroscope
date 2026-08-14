@@ -977,6 +977,7 @@ renderers”.</p>
   <tr><td><code>--max-turns &lt;n&gt;</code></td><td>cancel when a turn exceeds the limit (stop reason <code>max_turns</code>)</td></tr>
   <tr><td><code>--permissions readonly|auto</code></td><td>the headless policy. Default <strong>readonly</strong> — “capability before convenience”: unattended runs deny mutations unless you opt in</td></tr>
   <tr><td><code>--image &lt;path&gt;</code></td><td>attach an image (repeatable; jpg/jpeg/png/webp/gif) — vision, chapter 17</td></tr>
+  <tr><td><code>--mcp</code> / <code>--no-mcp</code></td><td>mount the configured MCP servers for this run, overriding the <code>headlessMcp</code> setting (chapter 30) — or decline them. A permission, not a convenience: with <code>--permissions auto</code> this approves every tool every configured server offers, unwatched. Absent, the setting decides; the run prints what it mounted on stderr</td></tr>
   <tr><td><code>--verbose</code> / <code>--speak</code></td><td>as on the REPL</td></tr>
 </table>
 
@@ -4933,9 +4934,12 @@ hops.</p>
 <p><code>spectro run</code> and cron jobs share a runner with a fixed system prompt for
 unattended operation (“there is no human at the terminal: do not ask questions … if a
 tool is denied, do not retry it”), a constant-policy broker (readonly denies, auto
-allows), standard tools only (never the spawn tools), an external turn brake, and a
-result record (final text, stop reason, session id, exit-ok). Every headless run writes
-a normal session file — automation is fully auditable after the fact.</p>
+allows), standard tools (never the spawn tools; the configured MCP servers mount only
+when the <code>headlessMcp</code> setting or <code>spectro run --mcp</code> asks for
+them — chapter 30 has the switch and its auto-approval warning), an external turn
+brake, and a result record (final text, stop reason, session id, exit-ok). Every
+headless run writes a normal session file — automation is fully auditable after the
+fact.</p>
 
 <!-- ============================== CH 28 ============================== -->
 <h1 data-ch="28" id="ch-context"><span class="ch-num">Chapter 28</span>Context: compaction, caching, introspection</h1>
@@ -5037,7 +5041,7 @@ and speaks the protocol end to end.</p>
 <!-- ============================== CH 30 ============================== -->
 <h1 data-ch="30" id="ch-config"><span class="ch-num">Chapter 30</span>Configuration reference</h1>
 
-<p class="lead">Seven layers, 26 keys (three of them whole-block), plus a small
+<p class="lead">Seven layers, 27 keys (three of them whole-block), plus a small
 handful of true environment-only secrets. Missing files are fine at every layer;
 malformed JSON fails loudly — a broken config is a programming error, not a fallback
 case.</p>
@@ -5130,6 +5134,8 @@ settings page says so. Nothing else on the page has a second live control like t
 is used. That is not a remembered choice: it is re-derived from the settings and the keys
 on every call, so giving the configured backend a key ends it.)</p>
 
+
+
 <p>Four things are settled when the agent is built and stay settled for that session,
 because changing them mid-session would mean killing processes or rewriting a conversation
 that already happened: the <strong>workspace</strong>, the <strong>MCP servers</strong>,
@@ -5207,7 +5213,8 @@ in the same env layer as everything above — a settings file still outranks the
   <tr><td><code>searxngUrl</code></td><td>URL · <em>unset</em></td><td><code>SPECTRO_SEARXNG_URL</code></td><td>the SearXNG instance <code>web_search</code> prefers over every other tier (chapter 13). Process-global: refused in a workspace scope, user scope only — the searcher carries no net fence, so this field alone decides an address the tool dials</td></tr>
   <tr><td><code>imageProvider</code></td><td><code>gemini</code> | <code>openai</code> · <code>gemini</code></td><td><code>SPECTRO_IMAGE_PROVIDER</code></td><td>image-generation backend</td></tr>
   <tr><td><code>thinking</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_THINKING</code></td><td>reasoning-stream visibility (REPL <code>/think</code>, web header toggle)</td></tr>
-  <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18)</td></tr>
+  <tr><td><code>mcpServers</code></td><td>object · <code>{}</code></td><td>—</td><td>Claude-Desktop-shaped server map — whole-block (chapter 18). The REPL and a web session mount every entry; a headless run mounts them only with the opt-in below or its <code>--mcp</code> flag</td></tr>
+  <tr><td><code>headlessMcp</code></td><td>bool · <code>false</code></td><td><code>SPECTRO_HEADLESS_MCP</code></td><td>the headless faces' MCP opt-in (card 220): when true, <code>spectro run</code>, every cron fire and every triggered fleet node mount the configured <code>mcpServers</code> the way the REPL does — read at each headless start, never by an interactive session. A manual <code>spectro run</code> overrides it per invocation with <code>--mcp</code>/<code>--no-mcp</code>. Under <code>--permissions auto</code> the opt-in approves every tool every configured server offers, unwatched. Process-global: refused in a workspace scope, user scope only — the switch that widens an unattended run must not live in the folder the agent writes into</td></tr>
   <tr><td><code>maxRetries</code></td><td>int · <code>2</code></td><td><code>SPECTRO_MAX_RETRIES</code></td><td>transient retry budget; 0 disables; garbage values fail readably</td></tr>
   <tr><td><code>promptCaching</code></td><td>bool · <code>true</code></td><td><code>SPECTRO_PROMPT_CACHING</code></td><td>Anthropic cache_control breakpoints; no-op elsewhere</td></tr>
   <tr><td><code>logLevel</code></td><td><code>error</code>|<code>warn</code>|<code>info</code>|<code>debug</code>|<code>trace</code> · <code>info</code></td><td><code>SPECTRO_LOG_LEVEL</code></td><td>operator-log detail (chapter 31); process-global — one log file per JVM, refused in a workspace scope, user scope only</td></tr>

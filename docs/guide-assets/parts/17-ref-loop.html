@@ -61,9 +61,12 @@ hops.</p>
 <p><code>spectro run</code> and cron jobs share a runner with a fixed system prompt for
 unattended operation (“there is no human at the terminal: do not ask questions … if a
 tool is denied, do not retry it”), a constant-policy broker (readonly denies, auto
-allows), standard tools only (never the spawn tools), an external turn brake, and a
-result record (final text, stop reason, session id, exit-ok). Every headless run writes
-a normal session file — automation is fully auditable after the fact.</p>
+allows), standard tools (never the spawn tools; the configured MCP servers mount only
+when the <code>headlessMcp</code> setting or <code>spectro run --mcp</code> asks for
+them — chapter 30 has the switch and its auto-approval warning), an external turn
+brake, and a result record (final text, stop reason, session id, exit-ok). Every
+headless run writes a normal session file — automation is fully auditable after the
+fact.</p>
 
 <!-- ============================== CH 28 ============================== -->
 <h1 data-ch="28" id="ch-context"><span class="ch-num">Chapter 28</span>Context: compaction, caching, introspection</h1>
