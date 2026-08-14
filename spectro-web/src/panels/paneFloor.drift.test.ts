@@ -16,7 +16,12 @@ import { PANE_FLOOR, paneVisibility } from "../browser/viewport";
 
 const repo = path.join(__dirname, "..", "..", "..");
 const paneBounds = readFileSync(path.join(repo, "spectro-desktop", "src", "paneBounds.ts"), "utf8");
-const segment = readFileSync(path.join(__dirname, "..", "browser", "BrowserSegment.tsx"), "utf8");
+const segmentRaw = readFileSync(path.join(__dirname, "..", "browser", "BrowserSegment.tsx"), "utf8");
+// Comments stripped before any wiring assertion — the segment's own JSDoc
+// names these props, and a guard a comment can satisfy pins nothing (the
+// first run of this BITE proved it: the dep was removed, the @param line
+// matched, and the test stayed green).
+const segment = segmentRaw.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
 
 describe("one floor, two projects", () => {
   it("matches the shell's MIN_PANE byte for byte", () => {

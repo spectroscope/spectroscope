@@ -75,14 +75,17 @@ describe("each surface stands on its own", () => {
 });
 
 describe("collapse hides, it does not unmount", () => {
-  it("keeps a collapsed panel's body in the tree with display:none", () => {
+  it("keeps a collapsed panel's CONTENT in the tree, hidden with display:none", () => {
     toggleDockCollapse("agents");
     const html = render();
     expect(html).toContain("dock-panel--collapsed");
-    // The body is still there — hidden, not gone. Unmounting here is the
-    // 955 ms trace lesson (card 175) and would kill a terminal's shell.
     expect(html).toContain('style="display:none"');
-    expect(count(html, "dock-panel-body")).toBe(1);
+    // The surface itself is still mounted inside the hidden body — the roster
+    // renders its own empty-state. A wrapper div hidden around NOTHING would
+    // pass the two lines above; this line is the one that pins mounted-not-
+    // unmounted (the 955 ms trace lesson, card 175 — and for the terminal the
+    // difference between a folded shell and a killed one).
+    expect(html).toContain("agents-empty");
   });
 
   it("says which way its fold control points", () => {
