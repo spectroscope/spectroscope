@@ -86,6 +86,31 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Zu klein für die Seite (Minimum 320 × 240) — Panel vergrößern, dann kommt sie zurück.",
     en: "Too small for the page (minimum 320 × 240) — enlarge the panel and it comes back.",
   },
+  // Card 226 — the web face's live view. The face label is criterion 5's
+  // honesty said in the bar: one browser per session means the reader must be
+  // told WHOSE picture this is, or an idle rectangle reads as a bug.
+  "browser.view.faceWeb": { de: "Server-Browser", en: "server face" },
+  "browser.view.faceDesktop": { de: "Desktop-Fenster", en: "desktop pane" },
+  "browser.view.faceNone": { de: "kein Browser", en: "no browser" },
+  "browser.view.faceTitle": { de: "Welche Fläche diesen Browser gerade fährt", en: "which face is live for this browser" },
+  "browser.view.back": { de: "Zurück", en: "Back" },
+  "browser.view.forward": { de: "Vor", en: "Forward" },
+  "browser.view.reload": { de: "Seite neu laden", en: "Reload the page" },
+  "browser.view.screenshot": { de: "Bild als Datei sichern", en: "Save the picture as a file" },
+  "browser.view.address": { de: "Adresse", en: "Address" },
+  "browser.view.addressHint": { de: "Adresse eintippen und Enter drücken", en: "type an address and press enter" },
+  "browser.view.idleNote": {
+    de: "Noch keine Seite offen. Tippe oben eine Adresse ein oder lass den Agenten navigieren — das Bild erscheint hier.",
+    en: "No page is open yet. Type an address above or let the agent navigate — the picture appears here.",
+  },
+  "browser.view.desktopLiveNote": {
+    de: "Das Desktop-Fenster fährt den Browser dieser Session — ein Browser pro Session, und die Desktop-App gewinnt. Sieh dort zu; diese Fläche fährt solange nichts.",
+    en: "The desktop pane is driving this session's browser — one browser per session, and the desktop face wins. Watch it in the desktop app; this surface drives nothing while it is attached.",
+  },
+  "browser.view.pictureLabel": {
+    de: "Live-Bild des Session-Browsers. Klicks und Tasten gehen an die Seite; Tab und Escape bleiben der App.",
+    en: "Live picture of the session's browser. Clicks and keys go to the page; Tab and Escape stay with the app.",
+  },
   // Card 204 — the replay. The live pane is half a promise; these are the words
   // for the other half, and the empty state is the one that has to work hardest:
   // a session that never drove a browser and a session whose record was deleted

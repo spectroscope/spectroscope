@@ -52,6 +52,9 @@ public class WebSocketConfig implements WebSocketConfigurer {
     /** The desktop shell's control channel to the visible browser pane (card 201). */
     private final BrowserControlSocket browser;
 
+    /** The web face's picture channel: frames out, input and navigation in (card 226). */
+    private final dev.spectroscope.server.browser.BrowserViewSocket browserView;
+
     /** The PTY seam and the shells it has open — one set per server process. */
     private final PtyProvider ptyProvider = new HelperPtyProvider();
     private final ShellRegistry shells = new ShellRegistry();
@@ -61,9 +64,11 @@ public class WebSocketConfig implements WebSocketConfigurer {
      *
      * @param handler the socket handler that owns a SessionConnection per open socket
      */
-    public WebSocketConfig(SpectroSocketHandler handler, BrowserControlSocket browser) {
+    public WebSocketConfig(SpectroSocketHandler handler, BrowserControlSocket browser,
+            dev.spectroscope.server.browser.BrowserViewSocket browserView) {
         this.handler = handler;
         this.browser = browser;
+        this.browserView = browserView;
     }
 
     /**
@@ -90,6 +95,14 @@ public class WebSocketConfig implements WebSocketConfigurer {
         // header at all, so the same loopback fence applies and the absent Origin
         // passes it exactly as an origin-less local tool does on /ws.
         registry.addHandler(browser, "/ws/browser")
+                .addInterceptors(new LocalOriginHandshakeInterceptor())
+                .setAllowedOrigins("*");
+        // /ws/browser-view — the WEB face's picture channel (card 226): the
+        // browser segment in a reader's own browser watches the headless
+        // engine's screencast here and sends input and navigation back. Same
+        // loopback + Origin fence as /ws, same trust statement in
+        // docs/BROWSER.md.
+        registry.addHandler(browserView, "/ws/browser-view")
                 .addInterceptors(new LocalOriginHandshakeInterceptor())
                 .setAllowedOrigins("*");
     }

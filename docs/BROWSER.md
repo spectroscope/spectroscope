@@ -1,8 +1,11 @@
 # The visible browser
 
-What cards 201 and 218 built, where it lives, and the things it deliberately
-does not do. The engine decision underneath it is card 200's and is not
-re-argued here; `docs/BROWSER-ENGINE.md` is its home.
+What cards 201, 218 and 226 built, where it lives, and the things it
+deliberately does not do. The engine decision underneath the desktop face is
+card 200's and is not re-argued here; `docs/BROWSER-ENGINE.md` is its home.
+Since card 226 there are TWO faces under one seam: the desktop pane this page
+mostly describes, and the server-side headless Chrome of the web face, which
+has its own section below.
 
 ## One browser per session
 
@@ -101,19 +104,129 @@ other session's off. Two native overlays stacked over one rectangle is the
 failure a `div` could never make, and the operator would be watching the top one
 while the agent drove the other.
 
-**The trade, ratified by the owner: this is the desktop face only.** A reader
-who runs `spectro web` and points their own browser at the server gets a segment
-that says so:
+**The desktop-only trade is REVERSED (card 226, owner's call).** Card 201
+ratified "desktop face only" and the owner reversed it on 2026-08-14, in his
+own words:
 
-> No browser pane attached. The visible browser is a surface INSIDE the desktop
-> app; a reader who opens spectro web in their own browser gets no page here.
+> "Mach auf dem Browser einen nativen Inlay-Browser. Ja, ich hatte einen iframe
+> gesagt, aber es geht darum, dass integrale Funktionalität im Browser nicht
+> testbar ist — ich muss jetzt immer die Desktop-App testen, wenn ich irgendein
+> neues Feature sehen will."
 
-Card 200 closed the iframe alternative for three reasons and this card does not
-reopen it: foreign sites refuse framing, the same-origin policy forbids reading
-or scripting what is framed (which kills `browser_eval`, 41 % of the measured
-calls), and frame content cannot be rasterised. Card 200 section 5 names the
-seam that keeps a later web-face implementation cheap, and this card implemented
-that seam: `dev.spectroscope.core.browser.BrowserFace`.
+The IFRAME stays dead — card 200 measured why (foreign sites refuse framing,
+the same-origin policy kills `browser_eval` = 41 % of the measured calls, no
+rasterisation) and nothing changed there. What serves the web face instead is
+the road this product already walks elsewhere: **a real headless Chrome on the
+server, driven over CDP, streamed into the page** — see "The web face" below.
+Card 200 section 5 named the seam that made this cheap, and it held:
+`dev.spectroscope.core.browser.BrowserFace` gained a second implementation
+without a schema, a tier, a sentence or a sidecar byte changing.
+
+## The web face: a headless Chrome on the server (card 226)
+
+A reader on `spectro web` gets a browser too, since 2026-08-14: **a headless
+Chrome the server spawns, one per session, driven over CDP** —
+`dev.spectroscope.core.browser.headless`. The seven tools are unchanged; they
+drive whichever face is live through the same `BrowserFace` seam, and card
+204's sidecar records both faces identically (`HeadlessLiveDriveTest` pins the
+epoch marker, the paired lines and the screenshot-by-reference against a real
+Chrome).
+
+**Isolation, card 218's rule on this engine.** Each session's Chrome runs on
+its own `--user-data-dir`: cookie jar, localStorage, cache and credential
+store all hang off that directory and two directories share none of it. The
+directory name carries a fingerprint of the RAW session id (sanitising is
+lossy — `ab/c` and `ab:c` flatten alike) and an opening counter, so a resumed
+session gets a fresh browser, logged out, never the cookies of a run that
+ended. The lifetime is the session's: closing the session **kills the whole
+process tree and deletes the profile directory**. Card 221 taught this house
+what an orphaned child costs, so the kill captures the descendants first,
+fells every one of them, and the live test counts the survivors TWICE — zero,
+settle, zero again. A JVM shutdown hook reaps whatever a dying server leaves.
+
+**The fence on this face, honestly.** The entry check is the same
+`NetFence` every browser-class tool runs. The hook half rides CDP's `Fetch`
+domain, restricted to `resourceType: Document`, judging with the same
+`NetFence` policy behind a 30-second resolver cache (`HeadlessFence`) — so the
+top-level page, **every redirect hop of it, and every iframe** are judged
+before Chrome dials, DNS answers included. The URLs judged there come out of
+Chrome's own network stack already WHATWG-normalised, so the octal-spelling
+divergence the register lists cannot reach this hook in disguise. What this
+face does NOT do, promised rather than discovered: Subresources (scripts,
+images, XHR) are not judged on this face — policing them over CDP costs a JVM
+round trip per request, the structural cost card 200 section 4 measured, and a
+promise the engine cannot keep is not made. That sentence is pinned by
+`WebFaceFencePromiseTest` against `HeadlessBrowserFace.SUBRESOURCE_PROMISE`,
+and the live drive measures both halves: the refused redirect hop names its
+rule, and the unjudged subresource really loads with the fence never asked.
+This is the `browse_page` precedent — the limit is in the tool's own docs, not
+silently absent. The desktop pane's in-hook fence still judges every
+subresource; that difference is the honest gap between the two engines. DNS
+rebinding stays outside what either face can promise, for the same reason as
+ever: neither is the one that dials. No filter list rides this face — a
+navigate reply's `adblocked` count is honestly zero.
+
+**Precedence (criterion 5): the desktop wins.** One browser per session, never
+two engines racing. `PrecedenceBrowserFaces` resolves per call: a desktop
+shell holding `/ws/browser` serves every session; without one, the headless
+engine serves. A shell ATTACHING kills every headless Chrome on the spot —
+a Chrome kept running behind the pane the operator now watches would be an
+orphan holding a cookie jar. A shell detaching flips back; the next verb opens
+a fresh headless browser, logged out, exactly like a resume. `live()` answers
+`"desktop"`, `"web"` or `"none"`, and the picture channel below pushes that
+state to every watcher on either flip, so the web segment can always say whose
+browser is live.
+
+**The picture channel: `/ws/browser-view`.** The web segment watches the
+headless browser here and drives it by hand — the parity of clicking inside
+the desktop pane. Frames are CDP's own `Page.startScreencast` (jpeg, quality
+60, capped 1280x800), acked frame-by-frame by the face itself. **Measured on
+this machine (Chrome 151, 2026-08-14) before choosing:** screencast delivered
+277 frames/3.0 s (~92 fps, ~6.3 KB/frame) on an animating page and sends
+nothing when nothing paints; `Page.captureScreenshot` polling managed 41
+shots/s at ~6.8 KB with a 25 ms median round trip per shot and burns that trip
+even on a still page. Screencast is push, cheaper per frame and silent at
+idle, so screencast it is; polling remains the fallback if it ever proves
+unstable, and this paragraph is where to write that down.
+
+The wire, client → server (`sessionId` is the session's store id, argument
+names are `browser_computer`'s own so UI and tools speak one dialect):
+
+```
+{"type":"watch","sessionId":s}      subscribe; a state frame answers, and the
+                                    cast starts if that session has a page open
+{"type":"unwatch"}                  stop watching
+{"type":"navigate","sessionId":s,"url":u}
+{"type":"back","sessionId":s}       {"type":"forward","sessionId":s}
+{"type":"input","sessionId":s,"action":a,"coordinate":[x,y],"ref":r,
+ "text":t,"scroll_direction":d,"scroll_amount":n,"duration":sec}
+```
+
+Server → client:
+
+```
+{"type":"state","sessionId":s,"live":"desktop"|"web"|"none",
+ "url":string|null,"attached":bool}
+{"type":"frame","sessionId":s,"format":"jpeg","dataBase64":...,
+ "deviceWidth":n,"deviceHeight":n,"ts":n}
+{"type":"verb","verb":...,"ok":bool,"error"?,"url"?,"title"?,"detail"?,...}
+{"type":"refused","sentence":...}   a fence refusal, or the desktop being live
+{"type":"error","sentence":...}
+```
+
+Watching an idle session never spawns a Chrome (`hasPage()` is asked first);
+a `navigate` through this channel runs the entry fence before any engine is
+spawned, and a refusal comes back as its own `refused` frame so the segment
+can show the fence's sentence where the address was typed. One viewer per
+session — the newest wins, the shell rule again. An agent-driven navigation
+mid-watch is announced to the UI by the session's own `browser_action`
+RunEvents; re-issuing `watch` restarts the cast on the new page.
+
+**What `/ws/browser-view` trusts** is exactly what `/ws` and `/ws/browser`
+trust: loopback plus an accepted Origin, nothing more. Input carries no
+permission gate, deliberately — it is the operator's own hand, the same trust
+as clicking inside the desktop pane. `back`/`forward` exist only on this face
+(`Page.getNavigationHistory`); the seven tools do not grow them.
 
 ## The seven tools
 
@@ -368,17 +481,25 @@ model ──► BrowserTools (spectro-core)         seven tools, schemas, tiers,
          BrowserFace                          ONE browser — the seam card 200
               │                                section 5 asks for
               ▲
-         BrowserFaces.forSession(id)          the keying, card 218. The server
-              │                                picks the id; nothing the model
-              │                                writes can.
-              ▼
-    BrowserControlSocket (spectro-server)     /ws/browser, one shell at a time,
-              │                                every send on a deadline and
-              ▼  (the MAIN process dialled IN)  carrying its sessionId
-      browserControl.ts ──► browserPane.ts    a WebContentsView and an Electron
-                                   │           session PER spectroscope session
-                                   ▼
-                          the pane the operator watches
+   PrecedenceBrowserFaces.forSession(id)      card 226: which FACE is live,
+              │                                resolved per call — the desktop
+              │                                wins whenever its shell holds
+              │                                the channel
+      ┌───────┴────────────────────┐
+      ▼ (shell attached)           ▼ (no shell)
+BrowserControlSocket          HeadlessBrowserFaces (spectro-core)
+  /ws/browser, one shell        one headless Chrome PER session,
+  at a time, every send on      own profile dir, killed as a TREE
+  a deadline and carrying       when the session closes
+  its sessionId                      │ CDP over loopback
+      │                              ▼
+      ▼  (the MAIN process      HeadlessBrowserFace ──► BrowserViewSocket
+       dialled IN)                                       /ws/browser-view:
+browserControl.ts ──►                                    screencast frames out,
+browserPane.ts                                           input + navigate in —
+      │                                                  the web segment's wire
+      ▼
+the pane the operator watches
 ```
 
 **Why the keying is not a method on `BrowserFace`.** A `BrowserFace` is one

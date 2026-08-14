@@ -10,15 +10,15 @@ import com.fasterxml.jackson.databind.JsonNode;
  * desktop face</b>, driven by the Java server over a control channel the main
  * process opens back to it. That is one implementation of this interface, not
  * the contract. Everything the model can reach — the seven tools, the net fence
- * policy, the tier entries, the sentence shapes — sits above this line. A later
- * CDP implementation for the {@code spectro web} face would land underneath it
- * and change none of those.
+ * policy, the tier entries, the sentence shapes — sits above this line.
  *
- * <p><b>The trade the owner ratified is real and is stated here rather than
- * hidden:</b> a reader who runs {@code spectro web} and points their own browser
- * at the server gets no browser from this card. {@link #attached()} is false for
- * them, and every tool answers with a sentence that says so and names the
- * address it was asked for. Card 200 section 5 names the price of flipping that.
+ * <p><b>The reversibility was cashed in (card 226):</b> the owner reversed the
+ * desktop-only trade, and the promised later implementation exists —
+ * {@code dev.spectroscope.core.browser.headless.HeadlessBrowserFace}, a
+ * headless Chrome the server spawns, driven over CDP, serving the
+ * {@code spectro web} face. Which one answers a given session is the
+ * server's precedence rule (the desktop wins while its shell is attached),
+ * and nothing above this line changed for it, which is what the seam was for.
  *
  * <p><b>Verbs on the wire.</b> One string per verb, arguments as a JSON object,
  * one JSON reply. Deliberately not a typed method per tool: the wire is the
@@ -135,7 +135,8 @@ public interface BrowserFace {
      * Why no browser answered — the one sentence, so every tool says it the same
      * way and a reader can search for it.
      */
-    String DETACHED = "no browser pane is attached: the visible browser is a pane in the "
-            + "spectroscope desktop app, and this run is not connected to one "
-            + "(open the desktop app and its browser segment, or see docs/BROWSER.md)";
+    String DETACHED = "no browser is attached: this run reaches neither the desktop app's "
+            + "browser pane nor a server-side Chrome for the web face (open the desktop "
+            + "app, or install Chrome/Chromium or set SPECTRO_CHROME on the server — "
+            + "see docs/BROWSER.md)";
 }

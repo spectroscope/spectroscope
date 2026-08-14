@@ -192,6 +192,19 @@ candidate 2 and the time box has to grow to roughly 20 days.** That is an owner
 call, not a spike's call, because it trades the zero-dependency policy and the
 schedule against a face. It is listed in section 9.
 
+> **Addendum, 2026-08-14 (card 226): the owner made that call**, and the seam
+> held — candidate 2 was built UNDER this interface for the web face while the
+> Electron pane keeps the desktop face; the desktop wins whenever its shell is
+> attached. The build came in far under section 4's 19.5-day estimate because
+> it deliberately does not rebuild the parts the estimate priced: no tab
+> lifecycle (one page per session, the seam's own rule), the fence on the
+> `Fetch` domain restricted to **documents** rather than a verdict per request
+> (subresources are honestly not judged on that face — the promise is in
+> `docs/BROWSER.md`, pinned by a drift test), and the snapshot/input scripts
+> ported from the pane rather than re-invented. The structural cost this
+> section names — every intercepted request needs an explicit verdict or the
+> page hangs — is exactly why the document-only pattern was chosen.
+
 ## 6. Threat model: what the design refuses by shape
 
 The net fence (`NetFence`, card 199) blocks `file://`, every non-http(s)

@@ -71,6 +71,36 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
     static final Duration DEADLINE = Duration.ofSeconds(45);
 
     private volatile WebSocketSession shell;
+
+    /**
+     * Who wants to know when a shell arrives or leaves (card 226). The
+     * precedence directory listens: a shell attaching means the desktop face
+     * wins and every headless engine must go — one browser per session, never
+     * two engines racing — and either flip is news the web UI can show.
+     */
+    private final java.util.List<Runnable> attachListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+    private final java.util.List<Runnable> detachListeners =
+            new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /**
+     * Registers a listener for a shell attaching.
+     *
+     * @param listener runs after the new shell holds the channel
+     */
+    public void onShellAttached(Runnable listener) {
+        attachListeners.add(listener);
+    }
+
+    /**
+     * Registers a listener for the CURRENT shell going away. A replaced
+     * shell's late close fires nothing, because the channel never emptied.
+     *
+     * @param listener runs after the channel is empty
+     */
+    public void onShellDetached(Runnable listener) {
+        detachListeners.add(listener);
+    }
     /**
      * The last address each session's browser reported, so a failure sentence
      * can name the page it happened on.
@@ -148,6 +178,7 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
             }
         }
         LOG.info("browser control channel attached");
+        attachListeners.forEach(Runnable::run);
     }
 
     /**
@@ -159,7 +190,8 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
      */
     @Override
     public void afterConnectionClosed(WebSocketSession session, CloseStatus status) {
-        if (shell != null && shell.getId().equals(session.getId())) {
+        boolean wasTheShell = shell != null && shell.getId().equals(session.getId());
+        if (wasTheShell) {
             shell = null;
             // Every page in that shell died with it. Keeping the addresses would
             // let a tool name a page nothing is showing any more.
@@ -168,6 +200,9 @@ public class BrowserControlSocket extends TextWebSocketHandler implements Browse
         pending.values().forEach(future -> future.complete(null));
         pending.clear();
         LOG.info("browser control channel detached ({})", status);
+        if (wasTheShell) {
+            detachListeners.forEach(Runnable::run);
+        }
     }
 
     /**

@@ -161,6 +161,95 @@
   color: var(--text-faint);
 }
 
+/* ---- the web face's live view (card 226) ---------------------------------
+   The same frame and bar the desktop hole wears — a reader must not relearn
+   the surface between faces. What differs: the bar grows controls (back,
+   forward, reload, an address INPUT, the screenshot control) and the hole
+   holds a streamed <img> instead of a native pane. Tokens only; colour rides
+   the hairline, the dot and the focus ring, never a fill. */
+.view-nav {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 0 0.45rem;
+  line-height: 1.5;
+  font-size: 0.9rem;
+  flex: 0 0 auto;
+}
+
+.view-nav:hover:not(:disabled) {
+  color: var(--accent);
+}
+
+.view-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+/* The address form owns the bar's stretch, so the face label and the
+   screenshot control keep their corner regardless of how long a URL gets. */
+.view-address {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
+
+.view-address-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.15rem 0.45rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.78rem;
+}
+
+.view-address-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Criterion 5's honesty, worn in the bar: whose browser this picture is. */
+.view-face {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  color: var(--text-faint);
+  text-transform: lowercase;
+}
+
+/* The streamed picture. Contained, never cropped: a click is translated from
+   shown pixels to page pixels, and a cropped edge would translate to a place
+   the reader cannot see. The focus ring is the sign that keys now go to the
+   page — an outline, because the brand puts colour on lines. */
+.view-live {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.view-live:focus {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+/* A refusal or error, where the address was typed. The error token rides the
+   hairline on the left — a line, not a fill, per the non-negotiables. */
+.view-notice {
+  margin: 0;
+  padding: 0.45rem 0.75rem;
+  border: 1px solid var(--border);
+  border-top: 0;
+  border-left: 2px solid var(--error);
+  background: var(--surface);
+  font-size: 0.72rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
 /* The fence note. Always on screen, attached or not: what the operator is
    trusting is not a detail of the empty state. Hairline above, no fill. */
 .browser-fence {

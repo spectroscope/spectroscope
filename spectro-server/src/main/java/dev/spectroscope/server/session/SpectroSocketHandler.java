@@ -3,7 +3,6 @@ package dev.spectroscope.server.session;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.config.SpectroConfig;
-import dev.spectroscope.server.browser.BrowserControlSocket;
 import dev.spectroscope.server.fleet.FleetAggregator;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -38,15 +37,16 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
      */
     private final LiveSessions liveSessions;
 
-    /** The desktop shell's browser control channel (card 201) — one per server,
-     *  shared by every session, because there is one visible pane. */
-    private final BrowserControlSocket browser;
+    /** Every session's browser (cards 201, 218, 226) — the precedence directory:
+     *  the desktop pane when its shell is attached, the server's own headless
+     *  Chrome for a {@code spectro web} reader otherwise, never both. */
+    private final dev.spectroscope.server.browser.PrecedenceBrowserFaces browser;
 
     /** Per-connection state, keyed by the Spring session id. */
     private final Map<String, SessionConnection> connections = new ConcurrentHashMap<>();
 
     SpectroSocketHandler(FleetAggregator fleet, LiveSessions liveSessions,
-                         BrowserControlSocket browser) {
+                         dev.spectroscope.server.browser.PrecedenceBrowserFaces browser) {
         this.fleet = fleet;
         this.liveSessions = liveSessions;
         this.browser = browser;
@@ -66,9 +66,11 @@ public class SpectroSocketHandler extends TextWebSocketHandler {
         SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none());
         SessionConnection connection =
                 new SessionConnection(socket, mapper, config, resumeId, fleet, liveSessions);
-        // The visible browser pane (card 201). The channel reads card 199's
-        // opt-in itself, so the fence is the same on both halves whether or not
-        // a session socket ever opened.
+        // The session's browser (cards 201, 226). The precedence directory
+        // resolves per call: the desktop pane when a shell is attached, the
+        // server's headless Chrome for a web reader otherwise. Each face reads
+        // card 199's opt-in itself, so the fence is the same on every half
+        // whether or not a session socket ever opened.
         connection.useBrowser(browser);
         connections.put(socket.getId(), connection);
         // A resume that cannot load its session closes the socket itself — and

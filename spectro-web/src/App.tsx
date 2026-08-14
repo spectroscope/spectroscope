@@ -132,6 +132,7 @@ import {
   fleetPending,
   removeFleet,
 } from "./state/fleetStore";
+import { browserCuePushLive } from "./state/browserCue";
 import { liveSessionsPushLive, readSessionBusy, startLiveSessionsPoll } from "./state/liveSessions";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
@@ -470,6 +471,7 @@ export function App() {
     labPushLive(batch); // the Lab's dam collects the same stream (no-op in replay)
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
     liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
+    browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
     // A refused resume (another socket already drives that session). Drop the
     // resume rather than let the transport retry it: the socket reconnects with
     // the same URL, so a page that kept ?resume= would be refused every second
