@@ -25,8 +25,9 @@
 # rejects any commentary key next to them.
 #
 # Prereqs: a Linux machine (or container), JDK 21 (jlink + jmods), Node + npm,
-# a C compiler (PTY helper), binutils (readelf). electron-builder downloads
-# its own fpm and AppImage tooling. Env:
+# a C compiler (PTY helper), binutils (readelf), unzip (the staged-jar
+# read-back in step 1b). electron-builder downloads its own fpm and AppImage
+# tooling. Env:
 #   SKIP_BOOTJAR=1  reuse an already-staged spectro-desktop/build/spectro-server.jar
 #                   (e.g. built on another machine — Java bytecode is portable)
 set -euo pipefail
@@ -71,6 +72,13 @@ else
   [ -f "$JAR" ] || { echo "!! server jar not found: $JAR"; exit 1; }
   mkdir -p "$D/build"; cp -f "$JAR" "$D/build/spectro-server.jar"
 fi
+
+# 1b) THE STAGED JAR IS BUILT FROM THIS TREE — asserted, not assumed. On the
+#     SKIP_BOOTJAR path this is the ONLY thing standing between "reuse a jar
+#     built on another machine" and "package whatever was lying there": the
+#     staged jar's web bundle hash is read back out of the jar and held
+#     against the tree's bundle, mirroring the macOS kit's step 4b discipline.
+./scripts/verify-staged-server-jar.sh "$D/build/spectro-server.jar"
 
 # 2) jlink a full runtime from this machine's JDK (ALL-MODULE-PATH so Spring
 #    Boot's reflection is safe — same recipe as the macOS kit)

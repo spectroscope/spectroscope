@@ -620,6 +620,15 @@ public record SpectroConfig(
             new FieldProbe("allowLocalhost", p -> p.allowLocalhost),
             new FieldProbe("headlessMcp", p -> p.headlessMcp));
 
+    /** The provenance probes' field names, in {@link #FIELD_PROBES} order — for
+     *  the reflective pin only: {@code KnownKeysDriftTest} holds the probe list
+     *  to the record components (card 232), because a component without a probe
+     *  resolves fine and then reports no origin, which no other test notices.
+     *  @return every probed field name, in probe order */
+    static List<String> fieldProbeNames() {
+        return FIELD_PROBES.stream().map(FieldProbe::name).toList();
+    }
+
     /**
      * A key a workspace scope must not set: its name in the file, the probe
      * that finds it in a parsed scope, the rule it breaks and where it belongs
