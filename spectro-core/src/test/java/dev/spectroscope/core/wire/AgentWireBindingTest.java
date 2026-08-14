@@ -212,9 +212,14 @@ class AgentWireBindingTest {
         List<ExchangeMeta> metas = Collections.synchronizedList(new ArrayList<>());
         LlmWireRecorder recorder = recorder(metas);
 
-        SubagentManager manager = new SubagentManager(new SubagentConfig(
-                provider, Path.of("."), "main", request -> true,
-                List.of(echoTool()), null, recorder));
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> true)
+                .baseTools(List.of(echoTool()))
+                .llmWire(recorder)
+                .build());
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
         Agent parent = new Agent(AgentOptions.builder()

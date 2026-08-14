@@ -90,6 +90,45 @@ class DescribeContextTest {
     }
 
     @Test
+    void introspectionListsTheFiveLaunchToolsWithTheirRealDescriptions(@TempDir Path cwd) {
+        // Card 202's family was the LAST hand-kept gap in this list: the old
+        // javadoc disclosed the under-report instead of closing it. Since the
+        // live belt registers the five for EVERY session (the supervisor is the
+        // connection's own field, unconditionally), a reader told otherwise is
+        // told something false — same reasoning as the browser family above.
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+
+        ContextInfo context = ContextDescriber.describe(config, cwd);
+        Map<String, ContextInfo.ToolInfo> byName = context.tools().stream()
+                .collect(Collectors.toMap(ContextInfo.ToolInfo::name, Function.identity()));
+
+        // Read off the REAL family — a literal five-name list here would be the
+        // drift this class exists to catch. The supervisor never starts
+        // anything: name, description and gate flag are the tools' own.
+        List<dev.spectroscope.core.tools.Tool> launch =
+                new dev.spectroscope.core.launch.LaunchTools(
+                        new dev.spectroscope.core.launch.LaunchSupervisor((host, port) -> false),
+                        dev.spectroscope.core.browser.BrowserFace::none, () -> null).all();
+        assertEquals(5, launch.size(), "test premise: card 202 ships five launch tools");
+        for (dev.spectroscope.core.tools.Tool tool : launch) {
+            assertTrue(byName.containsKey(tool.name()),
+                    tool.name() + " is registered for every session and must appear in the list");
+            assertEquals(tool.description(), byName.get(tool.name()).description(),
+                    "introspection reads the real tool, not a drifted literal");
+            assertEquals(tool.needsPermission(), byName.get(tool.name()).needsPermission(),
+                    tool.name() + " must carry the gate flag the live registry gives it");
+        }
+
+        // And in registration order: after the browser family, before update_plan
+        // — exactly where registerSettingsTools puts the family live.
+        List<String> names = context.tools().stream().map(ContextInfo.ToolInfo::name).toList();
+        assertTrue(names.indexOf("browser_resize") < names.indexOf("launch_list"),
+                "the launch family follows the browser family, got: " + names);
+        assertTrue(names.indexOf("launch_logs") < names.indexOf("update_plan"),
+                "the launch family is registered before update_plan, got: " + names);
+    }
+
+    @Test
     void theBrowserFamilySitsWhereTheLiveRegistryPutsIt(@TempDir Path cwd) {
         // "in registration order" is a promise the list makes; buildAgentOnce
         // registers the family after browse_page and before update_plan.

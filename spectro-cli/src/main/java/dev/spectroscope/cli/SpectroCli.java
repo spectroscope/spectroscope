@@ -482,9 +482,16 @@ public final class SpectroCli implements Runnable {
         }
         // Card 205: the research role's web grant — the parent's own three web
         // tools, handed to RESEARCH children only. Same instances, same gate.
-        subagents = new SubagentManager(new SubagentConfig(
-                provider, workspace, MAIN_AGENT_ID, askOnTerminal, List.copyOf(childBase), hooks,
-                null, List.of(webSearch, webFetch, browsePage)));
+        subagents = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(workspace)
+                .parentAgentId(MAIN_AGENT_ID)
+                .onPermission(askOnTerminal)
+                .baseTools(List.copyOf(childBase))
+                .hooks(hooks)
+                .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
+                .webTools(List.of(webSearch, webFetch, browsePage))
+                .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
         }

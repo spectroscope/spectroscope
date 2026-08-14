@@ -94,10 +94,15 @@ class SubagentManagerTest {
 
     /** The card-205 arity: the parent session's web tools, granted to research children only. */
     private static Setup setup(RoutingProvider provider, long timeoutMs, List<Tool> webTools) {
-        SubagentManager manager = new SubagentManager(new SubagentConfig(
-                provider, Path.of("."), "main", request -> true,
-                List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"), fakeReadTool("write_file")),
-                null, null, webTools),
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> true)
+                .baseTools(List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"),
+                        fakeReadTool("write_file")))
+                .webTools(webTools)
+                .build(),
                 timeoutMs);
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
@@ -141,10 +146,15 @@ class SubagentManagerTest {
                 (cmd, env, cwd, timeout, signal) ->
                         new HookRunner.CommandRunner.Result(2, "not here", false),
                 10);
-        SubagentManager manager = new SubagentManager(new SubagentConfig(
-                provider, Path.of("."), "main", request -> true,
-                List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"), fakeReadTool("write_file")),
-                hooks), 30_000);
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> true)
+                .baseTools(List.of(fakeReadTool("list_dir"), fakeReadTool("read_file"),
+                        fakeReadTool("write_file")))
+                .hooks(hooks)
+                .build(), 30_000);
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
         Agent parent = new Agent(AgentOptions.builder()
@@ -368,9 +378,13 @@ class SubagentManagerTest {
             }
         };
 
-        SubagentManager manager = new SubagentManager(new SubagentConfig(
-                parallelChild, Path.of("."), "main", request -> true,
-                List.of(fakeReadTool("list_dir"))), 30_000);
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(parallelChild)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> true)
+                .baseTools(List.of(fakeReadTool("list_dir")))
+                .build(), 30_000);
         ToolRegistry registry = new ToolRegistry();
         manager.tools().forEach(registry::register);
         Agent parent = new Agent(AgentOptions.builder()

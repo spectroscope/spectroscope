@@ -1,18 +1,12 @@
 package dev.spectroscope.server.session;
 
-import dev.spectroscope.core.browser.BrowserFace;
-import dev.spectroscope.core.browser.BrowserTools;
 import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.WorkspaceResolver;
-import dev.spectroscope.core.image.GenerateImageTool;
 import dev.spectroscope.core.skills.SkillLibrary;
 import dev.spectroscope.core.subagents.RoleCatalog;
 import dev.spectroscope.core.tools.StandardTools;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.UpdatePlanTool;
-import dev.spectroscope.core.tools.WebFetchTool;
-import dev.spectroscope.core.web.BrowsePageTool;
-import dev.spectroscope.core.web.WebSearchTool;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -75,68 +69,37 @@ final class ContextDescriber {
 
     /**
      * Every tool the MAIN agent sees that can be described without a live
-     * session, in registration order: the standard set, the extras, use_skill
-     * when skills are installed, then the parent-only spawn + dev tools. The
-     * extras need runtime seams in the live path; for introspection a throwaway
-     * instance is enough — reading name/description/needsPermission from the REAL
-     * tool objects keeps this list from drifting (the old hand-written strings
-     * had already diverged, and update_plan was missing entirely).
+     * session, in registration order: the standard set, the settings belt,
+     * use_skill when skills are installed, then the parent-only spawn + dev
+     * tools. Reading name/description/needsPermission from the REAL tool
+     * objects keeps the WORDS from drifting (the old hand-written strings had
+     * already diverged, and update_plan was missing entirely).
      *
-     * <p><b>Reading the tools honestly is only half of it: the LIST itself
-     * drifts too.</b> Card 201's seven {@code browser_*} tools were registered in
-     * {@link SessionConnection}{@code .buildAgentOnce} and never added here, so
-     * this "every tool" promise was short by seven from the day that family
-     * landed — the same failure as the drifted literals, one level up. They are
-     * here now, built against {@link dev.spectroscope.core.browser.BrowserFace}
-     * {@code .none()}: describing a browser is not driving one, so the honest
-     * "nothing is attached" face is exactly right for this endpoint.
+     * <p><b>And the LIST itself no longer can.</b> Twice a whole family was
+     * registered in {@link SessionConnection}{@code .buildAgentOnce} and never
+     * added here — card 201's seven {@code browser_*} tools, then card 202's
+     * five {@code launch_*} tools — the same failure as the drifted literals,
+     * one level up. The belt's membership and order now live ONCE, in
+     * {@link SettingsToolBelt}, and this method describes exactly what that
+     * assembly hands the live registry: a family added there appears on both
+     * faces or on neither. The describe-time seams are honest stand-ins
+     * ({@code BrowserFace.none()}, a supervisor that has never started
+     * anything) — describing a tool is not driving one, and nothing here can
+     * act.</p>
      *
-     * <p><b>What is still missing, said plainly rather than left to be
-     * rediscovered:</b> card 202's five {@code launch_*} tools. They are built in
-     * {@code SessionConnection} against that connection's own launch supervisor,
-     * and unlike a browser face there is no honest do-nothing stand-in for one —
-     * a supervisor that cannot start anything would describe tools that read as
-     * available and are not. So this list is twelve short of the belt minus
-     * five, and the sentence above says so instead of claiming completeness it
-     * does not have.
-     *
-     * <p>The standing rule, and the reason the extras below are enumerated rather
-     * than summarized: <b>a family added to {@code buildAgentOnce} is added here
-     * in the same commit, with a {@code DescribeContextTest} case that reads its
-     * descriptions off the real tool objects — or this javadoc gains a line
-     * saying why it cannot be.</b> Nothing catches a family that is simply
-     * absent except somebody noticing.
-     *
-     * @param config the SAME resolved configuration the caller described — see
-     *               the web_search line below
+     * @param config the SAME resolved configuration the caller described — the
+     *               introspection must name the ACTIVE search tier of the config
+     *               it is describing, exactly like the live registry (card 203),
+     *               so it rides into the belt as a constant supplier rather than
+     *               a second load of the hierarchy
      * @param standardTools the shared standard set, loaded once by the caller
      * @param skills the installed skill library — decides whether use_skill appears
      * @return name/description/needsPermission triples in exact registration order
      */
     private static List<ContextInfo.ToolInfo> mainAgentTools(SpectroConfig config,
             List<Tool> standardTools, SkillLibrary skills) {
-        List<Tool> extras = new ArrayList<>(List.of(
-                new GenerateImageTool(() -> null, null),
-                new WebFetchTool(url -> null),
-                // Built from the configuration THIS CALL was handed, not from a
-                // second load of the hierarchy: the introspection must name the
-                // ACTIVE search tier of the config it is describing, exactly like
-                // the live registry does, and both ask WebSearchTiers (card 203).
-                // This line used to call SpectroConfig.load() again and so
-                // described whatever the process-wide load resolved — harmless
-                // only while every caller happened to pass an identical config,
-                // and a second copy of one decision is what this card removed.
-                WebSearchTool.fromConfig(config),
-                new BrowsePageTool()));
-        // Card 201, and it belongs here for the same reason buildAgentOnce
-        // registers it unconditionally: the model is handed these seven in
-        // EVERY session, attached shell or none, so a reader of the tab who is
-        // told otherwise is told something false. What the throwaway seams say
-        // is exactly right for this endpoint — describing a browser is not
-        // driving one: BrowserFace.none() is the honest "nothing is attached"
-        // face, and the fence and the image store are only read on a call that
-        // never comes. Name, description and gate flag are the tools' own.
-        extras.addAll(new BrowserTools(BrowserFace::none, () -> null, null).all());
+        List<Tool> extras = new ArrayList<>(
+                SettingsToolBelt.assemble(SettingsToolBelt.describeSeams(config)).tools());
         extras.add(new UpdatePlanTool());
         Stream<Tool> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()

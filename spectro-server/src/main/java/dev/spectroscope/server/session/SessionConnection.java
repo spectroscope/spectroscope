@@ -428,14 +428,9 @@ public final class SessionConnection {
         try {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
-            openLlmWire();                                // the sidecar appends across resumes too
-            tracing = new TracingPorts().require(new JsonlSink(store));
-            OtlpSink.fromConfig(activeConfig.get(), store.id())
-                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
-            // Resume appends to an existing file, so the ladder counts from its end —
-            // a receipt that names an event must name the right one.
-            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(),
-                    SessionStore.eventCount(resumeId)));
+            // Resume appends to an existing file, so the ladder counts from its
+            // end — a receipt that names an event must name the right one.
+            openSessionStack(SessionStore.eventCount(resumeId));
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
@@ -868,19 +863,42 @@ public final class SessionConnection {
     private void ensureStore() {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
-            openLlmWire();                // the sidecar shares the store's id
-            tracing = new TracingPorts().require(new JsonlSink(store));
-            OtlpSink.fromConfig(activeConfig.get(), store.id())
-                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
-            // Registered, never required: the ladder watches the same stream the UI
-            // renders, and a leveling defect must never cost a run its life.
-            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder()));
+            openSessionStack(0);          // a fresh file counts its ladder from zero
             // A fresh session becomes live the moment it has an id — that is
-            // the first moment anything can be said about it.
+            // the first moment anything can be said about it. The claim stays
+            // HERE, after the stack and only on the fresh path — the resume
+            // path claims BEFORE it loads (card 212's ordering), and that
+            // difference is behavior, not duplication.
             if (liveSessions != null) {
                 liveSessions.claim(socket.getId(), store.id());
             }
         }
+    }
+
+    /**
+     * ONE assembly of the session's store-side stack (finding 10 of the
+     * 2026-08-14 review): the llm-wire sidecar, the required JSONL sink, the
+     * optional OTLP sink with this connection's export mirror, and the leveling
+     * ladder. Both entry points — a fresh store and a resume — used to spell
+     * this chain out by hand, which meant the NEXT sink (card 137's Langfuse
+     * direction) would have been wired twice or, worse, once.
+     *
+     * <p>What stays at the entry points is what genuinely differs: who mints or
+     * loads the store, and when the live-set claim happens (the resume path
+     * claims before loading, the fresh path after minting — card 212).</p>
+     *
+     * @param levelingStartIndex where the ladder starts counting — 0 for a
+     *        fresh file, the existing event count on a resume, so a receipt
+     *        that names an event names the right one
+     */
+    private void openSessionStack(int levelingStartIndex) {
+        openLlmWire();                // the sidecar shares the store's id
+        tracing = new TracingPorts().require(new JsonlSink(store));
+        OtlpSink.fromConfig(activeConfig.get(), store.id())
+                .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
+        // Registered, never required: the ladder watches the same stream the UI
+        // renders, and a leveling defect must never cost a run its life.
+        tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(), levelingStartIndex));
     }
 
     /**
@@ -1049,9 +1067,16 @@ public final class SessionConnection {
         // Loaded before the SubagentManager so children run the same guard as the parent.
         HookRunner hooks = HookRunner.load(sessionConfig.hooks());
 
-        subagents = new SubagentManager(new SubagentConfig(
-                provider, workspace, "main", broker, List.copyOf(childBase), hooks,
-                null, webTools));
+        subagents = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(workspace)
+                .parentAgentId("main")
+                .onPermission(broker)
+                .baseTools(List.copyOf(childBase))
+                .hooks(hooks)
+                .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
+                .webTools(webTools)
+                .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
@@ -1258,47 +1283,19 @@ public final class SessionConnection {
         // F6 measured that reverting the model half of this to the connect-time
         // snapshot left the full gate green — the page said "live" and nothing
         // said it here.
-        registry.register(new GenerateImageTool(
-                this::liveImageBackend,
-                ImageStore.inUserHome(),
-                llmWire)); // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
-        // Real tool: web_fetch — permission-gated network egress, injectable HTTP seam.
-        // Card 199: both browser-class tools take the net fence built from
-        // allowLocalhost, and card 222 made that fence per call, so an opt-in
-        // saved mid-session reaches the very next fetch.
-        Tool webFetch = new WebFetchTool(new DefaultHttpFetcher(), this::liveFence);
-        registry.register(webFetch);
-        // web_search branch: the ONE tier WebSearchTiers resolves from the
-        // configuration (card 203) + browse_page through the system Chrome
-        // headless (renders JS). Both network egress -> permission-gated.
-        // The tier is resolved PER CALL (card 222): a SearXNG address saved
-        // while this session is open decides the next search, and the result
-        // header and the model-facing description name that same machine.
-        Tool webSearch = WebSearchTool.fromConfig(this::liveConfig);
-        registry.register(webSearch);
-        // chromeEnv() overlays the settings-hierarchy chromeBinary onto the process
-        // env; read fresh per call, like the image model above, so a binary saved
-        // mid-session — and a pre-run provider switch that carries one along —
-        // both reach the next render.
-        Tool browsePage = new BrowsePageTool(
-                () -> BrowsePageTool.findChrome(liveConfig().chromeEnv()),
-                new DefaultChromeRunner(),
-                this::liveFence);
-        registry.register(browsePage);
-        // Card 201: the seven measured browser tools, driving the VISIBLE pane in
-        // the desktop window over the control channel. Registered on the server
-        // face unconditionally: the shell can attach after the registry is built
-        // (it reconnects across a server restart), so a registry that only
-        // carried them "when attached" would hand the agent a browser that
-        // exists and no way to say so. The fence and the image store are read
-        // per call, like the neighbours above.
-        // Card 204: and they record what they did. The recorder is read per
-        // call, like the fence and the face above — this registry is built once
-        // and a resume opens a NEW recorder under the same session id, so a
-        // recorder captured here would be the one that has already been closed.
-        // Card 227: wrapped in the bridge's agent guard, so "an agent browser
-        // call is in flight" is measured on the very seam that records it —
-        // the fight rule's ground truth, counted from open to end.
+        //
+        // The belt's membership and order live in SettingsToolBelt (card 231
+        // criterion 3), shared with ContextDescriber, so the introspection list
+        // cannot under-report a family again. What stays HERE is the live
+        // wiring: every configuration-shaped seam is a reader over liveConfig()
+        // (card 222), and the browser tap carries card 227's agent guard.
+        //
+        // Card 204: the browser recorder is read per call, like the fence and
+        // the face — this registry is built once and a resume opens a NEW
+        // recorder under the same session id, so a recorder captured here would
+        // be the one that has already been closed. Card 227: wrapped in the
+        // bridge's agent guard, so "an agent browser call is in flight" is
+        // measured on the very seam that records it.
         java.util.function.Supplier<dev.spectroscope.core.wire.BrowserWireTap> recorderTap =
                 () -> browserWire == null
                         ? dev.spectroscope.core.wire.BrowserWireTap.none() : browserWire;
@@ -1307,25 +1304,25 @@ public final class SessionConnection {
                         ? recorderTap
                         : () -> browserBridge.agentGuard(
                                 () -> store == null ? null : store.id(), recorderTap);
-        new dev.spectroscope.core.browser.BrowserTools(
-                this::ownBrowser,
-                this::liveFence,
+        SettingsToolBelt.Belt belt = SettingsToolBelt.assemble(new SettingsToolBelt.Seams(
+                this::liveImageBackend,
                 ImageStore.inUserHome(),
-                guardedTap)
-                .all().forEach(registry::register);
-        // Card 202: the five launch tools, which start the app the browser above
-        // is meant to look at. Registered beside the browser family and on the
-        // same two suppliers: this session's own browser, and a fence read per
-        // call so an allowLocalhost opt-in saved mid-session reaches the next
-        // call. The supervisor is the connection's own field, so what a session
-        // starts dies when that session's socket does.
-        new dev.spectroscope.core.launch.LaunchTools(
-                launches,
+                llmWire, // non-null here: ensureStore() ran before buildAgentOnce() (card 184)
+                new DefaultHttpFetcher(),
+                this::liveConfig,
+                this::liveFence,
+                // chromeEnv() overlays the settings-hierarchy chromeBinary onto
+                // the process env; read fresh per call, like every seam here.
+                () -> BrowsePageTool.findChrome(liveConfig().chromeEnv()),
+                new DefaultChromeRunner(),
                 this::ownBrowser,
-                this::liveFence)
-                .all().forEach(registry::register);
+                guardedTap,
+                // The supervisor is the connection's own field, so what a
+                // session starts dies when that session's socket does (card 202).
+                launches));
+        belt.tools().forEach(registry::register);
         // Card 205: the research role's web grant, in the card's order.
-        return List.of(webSearch, webFetch, browsePage);
+        return belt.webGrant();
     }
 
     /**
@@ -1457,18 +1454,38 @@ public final class SessionConnection {
     }
 
     /**
-     * Serialize a RunEvent and push it out — the ONLY writer for this socket.
+     * Serialize a RunEvent and push it out.
      *
      * @param event the event to serialize; dropped silently when the socket is gone
      */
     private synchronized void send(RunEvent event) {
+        // A dead socket is not a run failure — the JSONL file already has it.
+        sendFrame(event);
+    }
+
+    /**
+     * The ONE transport line for this socket — every frame sender goes through
+     * here (finding 9 of the 2026-08-14 review: this exact guard + serialize +
+     * swallow triple existed ten times, and ten copies of a transport line are
+     * ten places for the next fix to miss). Callers keep their own
+     * preconditions, payload shapes and monitor ({@code synchronized}) — this
+     * is only the last line, shared.
+     *
+     * @param payload the frame object; serialized by the connection's mapper
+     * @return true when the frame left the socket — senders that latch state on
+     *         a successful announcement (workspace_info) key on this
+     */
+    private boolean sendFrame(Object payload) {
         if (!socket.isOpen()) {
-            return;
+            return false;
         }
         try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(event)));
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            return true;
         } catch (Exception ignored) {
-            // A dead socket is not a run failure — the JSONL file already has it.
+            // A dead socket never fails the caller: every frame's durable copy
+            // (the JSONL, a sidecar) or its next resend covers the loss.
+            return false;
         }
     }
 
@@ -1527,12 +1544,9 @@ public final class SessionConnection {
         }
         // No path for "random": the folder is keyed by a session id that does
         // not exist yet, and inventing one would mint the session.
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(frame)));
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint, the pane stays on its
-            // pending state until the first run announces for real.
-        }
+        // A dead socket just misses the hint, the pane stays on its
+        // pending state until the first run announces for real.
+        sendFrame(frame);
     }
 
     /**
@@ -1553,19 +1567,18 @@ public final class SessionConnection {
         }
         String pinned = SessionWorkspaces.pinned(store.id());
         boolean configured = pinned != null || config.workspace() != null;
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "workspace_info",
-                    "resolved", true,
-                    "mode", pinned != null ? "set" : (config.workspace() != null ? "default" : "random"),
-                    "exists", Files.isDirectory(workspace),
-                    "sessionId", store.id(),
-                    "path", workspace.toString(),
-                    "configured", configured))));
+        // A dead socket just misses the hint, the Files tab stays on its
+        // waiting state until the next announcement — announced latches only
+        // on a frame that actually left, exactly as before.
+        if (sendFrame(Map.of(
+                "type", "workspace_info",
+                "resolved", true,
+                "mode", pinned != null ? "set" : (config.workspace() != null ? "default" : "random"),
+                "exists", Files.isDirectory(workspace),
+                "sessionId", store.id(),
+                "path", workspace.toString(),
+                "configured", configured))) {
             workspaceAnnounced = true;
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint, the Files tab stays on its
-            // waiting state until the next announcement.
         }
     }
 
@@ -1582,15 +1595,12 @@ public final class SessionConnection {
             return;
         }
         SpectroConfig active = activeConfig.get();
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "provider_info",
-                    "provider", active.provider(),
-                    "model", active.model(),
-                    "host", active.providerHost()))));
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint — the next frame retries nothing.
-        }
+        // A dead socket just misses the hint — the next frame retries nothing.
+        sendFrame(Map.of(
+                "type", "provider_info",
+                "provider", active.provider(),
+                "model", active.model(),
+                "host", active.providerHost()));
     }
 
     /**
@@ -1604,13 +1614,10 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "permission_mode_info",
-                    "mode", permissionMode == null ? "ask" : permissionMode))));
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint — the next frame retries nothing.
-        }
+        // A dead socket just misses the hint — the next frame retries nothing.
+        sendFrame(Map.of(
+                "type", "permission_mode_info",
+                "mode", permissionMode == null ? "ask" : permissionMode));
     }
 
     /**
@@ -1657,15 +1664,12 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "live_sessions",
-                    "sessions", live,
-                    "ts", System.currentTimeMillis()))));
-        } catch (Exception ignored) {
-            // A dead socket just misses this snapshot; the next change resends
-            // the whole set, so nothing has to be replayed.
-        }
+        // A dead socket just misses this snapshot; the next change resends
+        // the whole set, so nothing has to be replayed.
+        sendFrame(Map.of(
+                "type", "live_sessions",
+                "sessions", live,
+                "ts", System.currentTimeMillis()));
     }
 
     /**
@@ -1681,13 +1685,10 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "session_busy",
-                    "sessionId", sessionId))));
-        } catch (Exception ignored) {
-            // The socket is closing anyway — the refusal stands either way.
-        }
+        // The socket is closing anyway — the refusal stands either way.
+        sendFrame(Map.of(
+                "type", "session_busy",
+                "sessionId", sessionId));
     }
 
     /**
@@ -1741,9 +1742,9 @@ public final class SessionConnection {
                         "type", "fleet_event",
                         "frame", mapper.readTree(event.envelope().toLine(mapper)));
             };
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            sendFrame(payload);
         } catch (Exception ignored) {
-            // A dead socket just misses the hint — the next frame retries nothing.
+            // An unparseable envelope just misses the hint — the next frame retries nothing.
         }
     }
 
@@ -1784,9 +1785,9 @@ public final class SessionConnection {
                 }
             }
             payload.put("ts", report.ts());
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            sendFrame(payload);
         } catch (Exception ignored) {
-            // A dead socket just misses the mirror — the export itself already ran.
+            // An unparseable body just misses the mirror — the export itself already ran.
         }
     }
 
@@ -1828,7 +1829,7 @@ public final class SessionConnection {
             payload.put("requestBytes", meta.requestBytes());
             payload.put("fidelity", meta.fidelity());
             payload.put("ts", meta.ts());
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            sendFrame(payload);
         } catch (Exception ignored) {
             // A dead socket just misses the mirror; the sidecar already has it.
         }

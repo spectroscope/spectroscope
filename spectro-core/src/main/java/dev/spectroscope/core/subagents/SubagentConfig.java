@@ -52,50 +52,69 @@ public record SubagentConfig(
     }
 
     /**
-     * Compat: the pre-webTools arity (callers without a web grant — their
-     * research children run on the read tools alone).
+     * The labeled way to build one. The telescoping compat constructors that
+     * used to sit here are gone on purpose: their unlabeled {@code null} slots
+     * are what let both faces drop the llm-wire recorder for a month while
+     * every suite stayed green (card 231). An optional seam is now set by NAME
+     * or not at all.
      *
-     * @param provider      the provider the children run on — the parent's instance
-     * @param cwd           sandbox root, same as the parent's
-     * @param parentAgentId agentId of the parent agent (CLI: "main")
-     * @param onPermission  the same blocking broker the parent uses
-     * @param baseTools     standard tools WITHOUT the spawn tools
-     * @param hooks         the same pre/post_tool_use hooks the parent runs
-     * @param llmWire       the session's backend-to-LLM recorder
+     * @return a builder whose optional seams default exactly as the record's
+     *         javadoc states: no hooks, no recorder, no web grant
      */
-    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
-                          PermissionBroker onPermission, List<Tool> baseTools,
-                          HookRunner hooks, LlmWireRecorder llmWire) {
-        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, llmWire, List.of());
+    public static Builder builder() {
+        return new Builder();
     }
 
-    /**
-     * Compat: the pre-wire arity (callers without an llm-wire recorder).
-     *
-     * @param provider      the provider the children run on — the parent's instance
-     * @param cwd           sandbox root, same as the parent's
-     * @param parentAgentId agentId of the parent agent (CLI: "main")
-     * @param onPermission  the same blocking broker the parent uses
-     * @param baseTools     standard tools WITHOUT the spawn tools
-     * @param hooks         the same pre/post_tool_use hooks the parent runs
-     */
-    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
-                          PermissionBroker onPermission, List<Tool> baseTools,
-                          HookRunner hooks) {
-        this(provider, cwd, parentAgentId, onPermission, baseTools, hooks, null, List.of());
-    }
+    /** The named-seam builder — same defaults the old arities implied, spelled out. */
+    public static final class Builder {
+        private LlmProvider provider;
+        private Path cwd;
+        private String parentAgentId;
+        private PermissionBroker onPermission;
+        private List<Tool> baseTools = List.of();
+        private HookRunner hooks;               // nullable -> none
+        private LlmWireRecorder llmWire;        // nullable -> children record nothing
+        private List<Tool> webTools = List.of();
 
-    /**
-     * Compat: no hooks (tests and callers without a hook config).
-     *
-     * @param provider      the provider the children run on — the parent's instance
-     * @param cwd           sandbox root, same as the parent's
-     * @param parentAgentId agentId of the parent agent (CLI: "main")
-     * @param onPermission  the same blocking broker the parent uses
-     * @param baseTools     standard tools WITHOUT the spawn tools
-     */
-    public SubagentConfig(LlmProvider provider, Path cwd, String parentAgentId,
-                          PermissionBroker onPermission, List<Tool> baseTools) {
-        this(provider, cwd, parentAgentId, onPermission, baseTools, null, null, List.of());
+        private Builder() {
+        }
+
+        /** @param value the provider the children run on — the parent's instance
+         *  @return this builder */
+        public Builder provider(LlmProvider value) { this.provider = value; return this; }
+
+        /** @param value sandbox root, same as the parent's
+         *  @return this builder */
+        public Builder cwd(Path value) { this.cwd = value; return this; }
+
+        /** @param value agentId of the parent agent (CLI: "main")
+         *  @return this builder */
+        public Builder parentAgentId(String value) { this.parentAgentId = value; return this; }
+
+        /** @param value the same blocking broker the parent uses
+         *  @return this builder */
+        public Builder onPermission(PermissionBroker value) { this.onPermission = value; return this; }
+
+        /** @param value standard tools WITHOUT the spawn tools
+         *  @return this builder */
+        public Builder baseTools(List<Tool> value) { this.baseTools = value; return this; }
+
+        /** @param value the same pre/post_tool_use hooks the parent runs
+         *  @return this builder */
+        public Builder hooks(HookRunner value) { this.hooks = value; return this; }
+
+        /** @param value the session's recorder — the SAME instance the parent writes on
+         *  @return this builder */
+        public Builder llmWire(LlmWireRecorder value) { this.llmWire = value; return this; }
+
+        /** @param value the parent session's web tools, research children only (card 205)
+         *  @return this builder */
+        public Builder webTools(List<Tool> value) { this.webTools = value; return this; }
+
+        /** @return the finished config, normalized by the canonical constructor */
+        public SubagentConfig build() {
+            return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
+                    baseTools, hooks, llmWire, webTools);
+        }
     }
 }
