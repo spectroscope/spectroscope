@@ -305,11 +305,14 @@ Four consequences, in order of who they hurt — and what card 221 did with each
    child outlived the JVM — `/bin/sleep 600` was still there after the hung
    `doctor` was killed, because `StdioTransport` never reached its own teardown.
    **Closed, with one honest edge:** the teardown counts the process tree before it
-   says goodbye and kills the census afterwards, so a server behind `npx`, `uvx` or
-   a shell wrapper goes too. What no census can reach is a server whose launcher
-   had already exited, or one forked after the count. §4.1's "the registry is
-   closed on every exit path" is necessary, and card 221 is what makes it
-   sufficient.
+   says goodbye, counts it again after the grace, and kills what either count named,
+   so a server behind `npx`, `uvx` or a shell wrapper goes too — and so does a helper
+   the server started while it was shutting down, which the grace exists to allow and
+   a single count taken before the goodbye could not have named. What no census can
+   reach is what nobody is left to be asked about: something started after that last
+   count, or started at all by a launcher that had already exited, since a reaped
+   process names no children. §4.1's "the registry is closed on every exit path" is
+   necessary, and card 221 is what makes it sufficient.
 
 ---
 

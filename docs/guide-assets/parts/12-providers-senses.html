@@ -431,7 +431,7 @@ is read from the settings file, so a server that never answered is listed there 
 
 <h2 id="ch-mcp-semantics">Call semantics: at-most-once</h2>
 
-<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport, and the poison shuts the server down in the three numbered steps: count the tree, close stdin, and only after a grace destroy the child process and force what ignored it. The far end going away is what releases a read parked on a pipe nobody will write to. Only then does the call degrade to an ERROR string, never re-issued, so a slow-but-successful side effect is never doubled.-->
+<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport, and the poison shuts the server down in the four numbered steps: count the tree, close stdin, count again after the grace because the goodbye may have started something, and only then destroy the tree and force what ignored it. The far end going away is what releases a read parked on a pipe nobody will write to. Only then does the call degrade to an ERROR string, never re-issued, so a slow-but-successful side effect is never doubled.-->
 
 <p>Every call is issued <em>exactly once</em> with a 20-second budget. If the transport
 died between calls, it is re-established once, lazily. But a call that fails or times
@@ -441,12 +441,14 @@ call reconnects) and the model receives a readable
 <code>ERROR: MCP tool '…' on server '…' failed: …</code>. A dead or slow server degrades;
 it never crashes the harness.</p>
 
-<p>Every close runs the same four steps, and their order is the point. First spectroscope
+<p>Every close runs the same steps, and their order is the point. First spectroscope
 asks the server's process tree who is in it, while there is still someone to ask. Then it
 <strong>closes the server's stdin</strong>. That end of stream is the ordinary way an MCP
 server is told to stop, and a server that flushes a cache or says goodbye upstream does it
-now. Then it waits a second. Only then does it <strong>destroy the server process</strong>
-and force whatever ignored that.</p>
+now. Then it waits a second — and asks the tree again, because a server given that second
+may spend it starting something, and a list drawn up before the goodbye cannot name what
+the goodbye caused. Only then does it <strong>destroy the server process</strong> and
+force whatever ignored that.</p>
 
 <p>The last two steps are also what unparks a stuck read, which is why they are not
 optional on a timeout. A read waiting on a child that has gone silent cannot be
@@ -463,12 +465,15 @@ spectroscope started. That matters more often than it sounds, because most publi
 servers are configured behind a launcher such as <code>npx</code> or a shell wrapper, and
 then the thing that actually speaks JSON-RPC is a grandchild. Kill the launcher on its
 own and the operating system hands the server to init, where it keeps running for as long
-as the machine is up, one leftover per failed connection. This is also why the census
+as the machine is up, one leftover per failed connection. This is also why the first count
 comes before the goodbye: a launcher that exits when its stdin ends would otherwise be
-gone before anyone asked it, taking the only list of its children with it. Two cases stay
-out of reach, and they are worth knowing rather than discovering. One is a server whose
-launcher had <em>already</em> exited. The other is a server forked after the census was
-taken. Nothing in <code>java.lang.Process</code> can name either.</p>
+gone before anyone asked it, taking the only list of its children with it. The second count
+is the mirror of that, and it is why there are two: the grace exists so a server can do its
+cleanup, cleanup work starts processes, and a count taken a second earlier cannot name
+them. What stays out of reach is what nobody is left to be asked about — anything started
+after that last count, and anything at all started by a launcher that had
+<em>already</em> exited, because a process the operating system has reaped names no
+children.</p>
 
 <h2 id="ch-mcp-notes">The example server: spectro-mcp-notes</h2>
 <p>The repository ships a complete, runnable MCP server as its own module — a stdio

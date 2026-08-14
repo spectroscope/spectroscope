@@ -121,13 +121,29 @@ class McpGuideDriftTest {
                         + " real server a level down, which is where the promise used to fail");
         assertFalse(chapter.contains("the child process is destroyed"),
                 "chapter 18 is back to the sentence that was true only without a wrapper");
-        // "The whole tree" is an absolute and the code is not: a census can only be taken
+        // "The whole tree" is an absolute and the code is not: a count can only be taken
         // while somebody is alive to answer it. The chapter says so rather than leaving the
-        // next person to find the two cases the hard way.
-        assertTrue(chapter.contains("can name either"),
-                "chapter 18 promises the whole tree without naming the two processes no"
-                        + " census can reach — a launcher that had already exited, and a fork"
-                        + " that came after the count");
+        // next person to find the cases the hard way — but it has to say the RIGHT ones.
+        // It claimed a fork made after the census was beyond java.lang.Process, and that
+        // was false while the parent was alive: descendants() names it, you have only to
+        // ask twice. Measured against a server that starts a helper on end-of-stream, one
+        // orphan per run at ppid 1; asking again after the grace, none. The chapter now
+        // narrows the disclaimer to what a second count still cannot reach.
+        assertTrue(chapter.contains("asks the tree again"),
+                "chapter 18 no longer says the tree is counted a second time after the"
+                        + " goodbye — which is the count that names whatever the goodbye"
+                        + " itself started");
+        assertTrue(chapter.contains("after that last count"),
+                "chapter 18 no longer says which forks stay out of reach; the honest line is"
+                        + " what comes after the LAST count, not after the first one");
+        assertFalse(chapter.contains("forked after the census was taken"),
+                "chapter 18 is back to disclaiming every fork after the census — false while"
+                        + " the parent is alive, which is exactly when a server does its"
+                        + " end-of-stream cleanup");
+        assertTrue(chapter.contains("reaped names no children"),
+                "chapter 18 disclaims a launcher that had already exited without saying why"
+                        + " nothing can be done about it, which is the only part that is"
+                        + " genuinely beyond java.lang.Process");
     }
 
     @Test
@@ -137,19 +153,23 @@ class McpGuideDriftTest {
         String diagram = sequenceSource();
         assumeTrue(diagram != null, "not running from a source checkout");
 
-        String caption = chapter.lines()
-                .filter(line -> line.contains("MERMAID:08-mcp-seq"))
-                .findFirst().orElseThrow(() ->
-                        new AssertionError("the MCP sequence diagram is gone from chapter 18"));
+        String caption = sequenceCaption(chapter);
 
         assertTrue(caption.contains("close stdin") && caption.contains("count the tree"),
                 "the caption no longer describes the teardown it illustrates: " + caption);
+        assertTrue(caption.contains("count again"),
+                "the caption describes a teardown that counts once, and the code counts"
+                        + " again after the grace: " + caption);
         // The caption was pinned on its own once, and the diagram beside it went on showing
         // "poison transport · degrade to ERROR string" — a picture of the version that
         // deadlocked, under a caption describing the fix. A guard on the words alone leaves
         // the picture free to disagree with them.
         assertTrue(diagram.contains("count the process tree"),
                 "the sequence diagram does not show the census the caption claims");
+        assertTrue(diagram.contains("count again"),
+                "the sequence diagram shows one count where the teardown takes two — the"
+                        + " second one, after the grace, is what names a helper the goodbye"
+                        + " started");
         assertTrue(diagram.contains("close stdin"),
                 "the sequence diagram does not show the end-of-stream the caption claims");
         assertTrue(diagram.contains("SIGTERM"),
@@ -196,6 +216,32 @@ class McpGuideDriftTest {
      *
      * @return the chapter text, or {@code null} when not run from a checkout
      */
+    /**
+     * The sequence diagram's caption alone — the text between {@code <!--MERMAID:08-mcp-seq|}
+     * and the end of that comment.
+     *
+     * <p>This used to be "the line containing MERMAID:08-mcp-seq", which is every line:
+     * {@link #mcpChapter()} collapses whitespace, so the chapter is one line and the
+     * caption assertions were really asking whether the phrase appeared <i>anywhere</i> in
+     * chapter 18. It went red for the right reasons by luck — the phrases happened to live
+     * only in the caption — and would have gone quiet the moment the same words turned up
+     * in the prose beside it. A guard on a picture's caption has to read the caption.
+     *
+     * @param chapter the whitespace-collapsed chapter
+     * @return the caption text
+     */
+    private static String sequenceCaption(String chapter) {
+        int start = chapter.indexOf("<!--MERMAID:08-mcp-seq");
+        if (start < 0) {
+            throw new AssertionError("the MCP sequence diagram is gone from chapter 18");
+        }
+        int end = chapter.indexOf("-->", start);
+        if (end < 0) {
+            throw new AssertionError("the MCP sequence diagram's caption comment is unterminated");
+        }
+        return chapter.substring(start, end);
+    }
+
     private static String mcpChapter() throws IOException {
         Path root = repoRoot();
         if (root == null || !Files.isRegularFile(root.resolve(CHAPTER))) {
