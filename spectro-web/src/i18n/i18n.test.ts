@@ -523,6 +523,51 @@ describe("the browser replay says what it is and what it is not", () => {
   });
 });
 
+// Card 226: the web face's live view. Criterion 5 is a sentence, not a state —
+// one browser per session means the segment must SAY whose picture it shows,
+// and the one-per-session rule itself must be readable where the desktop pane
+// preempts this surface. Both languages, because the face label is the single
+// word a reader decides by.
+describe("the web face's view says whose browser is live", () => {
+  const keys = [
+    "browser.view.faceWeb",
+    "browser.view.faceDesktop",
+    "browser.view.faceNone",
+    "browser.view.faceTitle",
+    "browser.view.back",
+    "browser.view.forward",
+    "browser.view.reload",
+    "browser.view.screenshot",
+    "browser.view.address",
+    "browser.view.addressHint",
+    "browser.view.idleNote",
+    "browser.view.desktopLiveNote",
+    "browser.view.pictureLabel",
+  ];
+
+  it("has every key in both languages", () => {
+    for (const key of keys) {
+      expect(dict[key], key).toBeTruthy();
+      expect(dict[key].en.trim(), `${key} en`).not.toBe("");
+      expect(dict[key].de.trim(), `${key} de`).not.toBe("");
+    }
+  });
+
+  it("names the one-per-session rule where the pane preempts this surface", () => {
+    expect(dict["browser.view.desktopLiveNote"].en).toMatch(/one browser per session/);
+    expect(dict["browser.view.desktopLiveNote"].en).toMatch(/desktop/i);
+    expect(dict["browser.view.desktopLiveNote"].de).toMatch(/ein Browser pro Session/);
+    expect(dict["browser.view.desktopLiveNote"].de).toMatch(/Desktop/);
+  });
+
+  it("tells the keyboard reader which keys stay with the app", () => {
+    // Tab and Escape are deliberately NOT forwarded to the page (the picture
+    // must never trap the keyboard); the label is where that promise is made.
+    expect(dict["browser.view.pictureLabel"].en).toMatch(/Tab and Escape/);
+    expect(dict["browser.view.pictureLabel"].de).toMatch(/Tab und Escape/);
+  });
+});
+
 // Card 218: the browser belongs to a session, and the two states that are new
 // because of it have to say so in both languages — a reader who sees an empty
 // frame and no sentence reads a bug, and a reader told "no browser" without
