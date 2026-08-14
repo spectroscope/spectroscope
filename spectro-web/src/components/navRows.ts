@@ -9,15 +9,7 @@
 
 /** Which glyph leads a row. Names, not paths — NavIcon owns the geometry. */
 export type NavIconId =
-  | "plus"
-  | "play"
-  | "stack"
-  | "sessions"
-  | "fleets"
-  | "stategraph"
-  | "browser"
-  | "skills"
-  | "gear";
+  "plus" | "play" | "stack" | "sessions" | "fleets" | "stategraph" | "browser" | "skills" | "gear";
 
 /**
  * The row-level action a segment row carries on its right.

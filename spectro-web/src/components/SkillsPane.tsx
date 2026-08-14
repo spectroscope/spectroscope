@@ -88,7 +88,12 @@ export function SkillsPane(props: { onManage: () => void }) {
     );
   }
   return (
-    <SkillsSurface lang={lang} skills={answer.skills} catalogue={answer.catalogue} onManage={props.onManage} />
+    <SkillsSurface
+      lang={lang}
+      skills={answer.skills}
+      catalogue={answer.catalogue}
+      onManage={props.onManage}
+    />
   );
 }
 
