@@ -3,12 +3,21 @@
 // (which rows exist, which one is dimmed, which one owns which action) can be
 // read off in a test instead of off a screenshot.
 //
-// One recipe serves seven rows: New chat, Scenarios and Starters at the top,
-// then the three segments, then Settings at the foot. Only the first six live
+// One recipe serves nine rows: New chat, Scenarios and Starters at the top,
+// then the five segments, then Settings at the foot. Only the first eight live
 // here; the settings row has no state to decide and is written where it sits.
 
 /** Which glyph leads a row. Names, not paths — NavIcon owns the geometry. */
-export type NavIconId = "plus" | "play" | "stack" | "sessions" | "fleets" | "stategraph" | "browser" | "gear";
+export type NavIconId =
+  | "plus"
+  | "play"
+  | "stack"
+  | "sessions"
+  | "fleets"
+  | "stategraph"
+  | "browser"
+  | "skills"
+  | "gear";
 
 /**
  * The row-level action a segment row carries on its right.
@@ -21,7 +30,7 @@ export type NavIconId = "plus" | "play" | "stack" | "sessions" | "fleets" | "sta
 export type NavTrailing = "import" | "spawn" | "count" | null;
 
 export type NavActionId = "newChat" | "scenarios" | "starters";
-export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "browser";
+export type NavSegmentId = "sessions" | "fleets" | "stategraph" | "browser" | "skills";
 
 export interface NavRowSpec {
   id: string;
@@ -72,6 +81,10 @@ export function navActionRows(): NavRowSpec[] {
  * one that cannot show a pane: the segment's own panel says why there is nothing
  * behind it, and a row that vanished on the web face would leave a reader
  * wondering whether the product has a browser at all.
+ *
+ * <p>Skills is the fifth (card 225, owner wish): the installed capabilities one
+ * glance away, like Sessions and Fleets are. It closes the list — the other
+ * four answer "what runs"; a catalogue is a different kind of looking.
  *
  * @param input.active       which segment is showing
  * @param input.fleetsLocked the ladder has not opened fleets yet
@@ -130,6 +143,19 @@ export function navSegmentRows(input: {
       // spawns no node. What bounds it is the net fence and the tier map.
       disabled: false,
       active: input.active === "browser",
+      trailing: null,
+    },
+    {
+      id: "skills",
+      labelKey: "nav.skills",
+      icon: "skills",
+      // Not gated on the fleet lock: the view reads one endpoint and starts no
+      // process — the same reasoning that leaves the state graph open. And no
+      // trailing affordance: this is the place you go to LOOK (card 225); the
+      // switches live on the settings page and, when card 224's plus menu
+      // lands, in the composer.
+      disabled: false,
+      active: input.active === "skills",
       trailing: null,
     },
   ];
