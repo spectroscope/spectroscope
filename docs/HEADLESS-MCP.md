@@ -214,27 +214,32 @@ fire, not only on the empty one. That does not move the recommendation; it
 strengthens it, because the road being recommended is the one that does not make
 every fire pay.
 
-### 2.1 The defect that gates every road: a mute server hangs the JVM forever
+### 2.1 The defect that gated every road: a mute server hung the JVM forever
 
 A server whose command does not exist fails in 3 ms. A server that **spawns and
-then never answers** does not fail at all.
+then never answers** did not fail at all.
 
-**This defect now has its own card — card 221, "A silent MCP server hangs doctor
-forever, and the timeout is the thing that hangs".** It carries the reproduction
-and the stack below verbatim, and the fix is specified there. Everything in this
-section is background for the decision here. It gates all four roads equally and
-so it chooses between none of them (§4).
+**This section is history as of card 221**, "A silent MCP server hangs doctor
+forever, and the timeout is the thing that hangs", which carries the reproduction
+and the stack below verbatim and lands the fix with this paragraph. It gated all
+four roads equally and so it chose between none of them (§4); what it leaves
+behind is a *number* the roads have to carry, at the end of this section.
 
-`JsonRpcChannel` applies a per-request bound at `:137` and the value is 20 s
-(`StdioTransport.java:39`, `DEFAULT_READ_TIMEOUT`). On timeout it poisons the
-channel — `poison()` (`:160`) → `tearDown()` (`:179`) → `closeQuietly(in)`
-(`:181`) — on the comment's theory that closing the stream unblocks the stuck
-`readLine`. It does not: `BufferedReader` guards `readLine` and `close` with the
-same lock, the reader virtual thread holds it while blocked in the native read,
-and `close()` waits behind it forever. The timeout handler deadlocks against the
-read it exists to abandon, which is why the 20 s bound is not merely exceeded
-but unreachable. Thread dump of the main thread, taken with `jstack` after 30 s
-on the Gradle toolchain JDK (Temurin 21.0.12):
+Everything above this heading was measured on 2026-08-13 against `d83c101`, and
+so was the hang. The numbers for the fixed behaviour at the end of this section
+were measured on 2026-08-14 against the branch that closes the card, on the same
+machine.
+
+`JsonRpcChannel` applied a per-request bound and the value is 20 s
+(`StdioTransport.DEFAULT_READ_TIMEOUT`). On timeout it poisoned the channel —
+`poison()` → `tearDown()` → `closeQuietly(in)` — on the comment's theory that
+closing the stream unblocks the stuck `readLine`. It does not: `BufferedReader`
+guards `readLine` and `close` with the same lock, the reader virtual thread holds
+it while blocked in the native read, and `close()` waits behind it forever. The
+timeout handler deadlocked against the read it existed to abandon, which is why
+the 20 s bound was not merely exceeded but unreachable. Thread dump of the main
+thread, taken with `jstack` after 30 s on the Gradle toolchain JDK (Temurin
+21.0.12):
 
 ```
 "main" … waiting on condition
@@ -255,8 +260,8 @@ again while closing this review. With
 `{"mcpServers":{"mute":{"command":"/bin/sleep","args":["600"]}}}` in a
 temporary home, `spectro doctor` printed every line up to
 `✓ hooks: 0 configured`, reached the MCP probe and stopped. Still alive at 40 s
-on JDK 21 and at 75 s on JDK 25; killed by hand in each case. Twenty seconds is
-the documented bound and it is not the observed one on either.
+on JDK 21 and at 75 s on JDK 25; killed by hand in each case. Twenty seconds was
+the documented bound and it was not the observed one on either.
 
 **It is not a JDK 21 story, and an upgrade does not carry it away.** The eleven
 frames from `DoctorCommand.call` down to `BufferedReader.close` are identical on
@@ -267,32 +272,44 @@ lock the `InputStreamReader` itself. Two JDKs, two lock mechanisms, one
 deadlock. Anyone reading the JDK 21 stack and reaching for a newer runtime as
 the fix will find the hang waiting there too.
 
-Three consequences, in order of who they hurt:
+Four consequences, in order of who they hurt — and what card 221 did with each:
 
-1. **This is a defect today, on doctor, on the REPL and on a web session**,
-   with no road chosen and nothing implemented. The web face calls the same
-   `load` at `SessionConnection.java:1045`, "connected once per socket" by its
-   own comment, so a mute server parks a websocket connection the same way —
-   the person watching sees a spinner rather than a hung terminal. It is card
-   221 and should be fixed whether or not headless ever mounts.
-2. **Every mounting road inherits it as an unattended hang** — equally, which is
+1. **It was a defect on doctor, on the REPL and on a web session**, with no road
+   chosen and nothing implemented. The web face calls the same `load` at
+   `SessionConnection.java:1045`, "connected once per socket" by its own comment,
+   so a mute server parked a websocket connection the same way — the person
+   watching saw a spinner rather than a hung terminal. **Closed** for all three:
+   they enter at the same `McpServerRegistry.load` → `McpTransports.defaultFactory`
+   funnel, and a test pins that funnel so a green probe cannot coexist with a
+   production path that skips the teardown.
+2. **Every mounting road inherited it as an unattended hang** — equally, which is
    why §4 refuses to use it to choose between them. A cron fire behind a server
-   that starts and goes quiet never returns and never logs why. The card's
-   security criterion "an unreachable server never fails the run into a different
-   posture" is currently satisfied for a server that cannot start and violated
-   for one that starts and stalls.
-3. Until card 221 lands, the cost table in §2 has no upper bound: mounting costs
+   that starts and goes quiet never returned and never logged why. **Closed**: the
+   probe now ends in bounded time and the row names the server and the exchange it
+   went unanswered on.
+3. Until card 221 landed, the cost table in §2 had no upper bound: mounting cost
    0.14–1.0 s in the good case and unbounded in the bad one, and the bad case is
-   exactly the one an unattended fire cannot survive. That is why 221 is a
-   precondition rather than a parallel fix — not because it favours a road, but
-   because without it no road's cost can be stated at all.
-4. **It also breaks this card's own security criterion about leaked processes,
-   before any road is chosen.** The card requires that a road which spawns
-   servers refuses to leave them running. Measured: the stalled server's child
-   outlives the JVM — `/bin/sleep 600` is still there after the hung `doctor` is
-   killed, because `StdioTransport` never reaches its own teardown. §4.1's "the
-   registry is closed on every exit path" is necessary and, today, not
-   sufficient; card 221 is what makes it true.
+   exactly the one an unattended fire cannot survive. **Closed, and this is the
+   number the roads carry from here:** a server that spawns and never speaks costs
+   **20 s of handshake budget plus a bounded shutdown tail of at most 5 s** — end
+   of stream, a second's grace, `SIGTERM` the process tree, `SIGKILL` what ignored
+   it, and a last grace for the reader to leave. **25 s is the worst case.**
+   Measured on the fixed build, my own `installDist`, my own temporary home, two
+   runs each: an ordinary silent server (`/bin/sleep 600`) **21.49 / 21.43 s**; a
+   launcher that ignores `SIGTERM` (`/bin/sh -c "trap '' TERM; /bin/sleep 600;
+   echo done"`) **23.43 / 23.47 s**; the same doctor with no MCP server configured
+   **1.28 / 0.43 s**. Zero leftover processes after any of them.
+4. **It also broke this card's own security criterion about leaked processes,
+   before any road was chosen.** The card requires that a road which spawns
+   servers refuses to leave them running. Measured then: the stalled server's
+   child outlived the JVM — `/bin/sleep 600` was still there after the hung
+   `doctor` was killed, because `StdioTransport` never reached its own teardown.
+   **Closed, with one honest edge:** the teardown counts the process tree before it
+   says goodbye and kills the census afterwards, so a server behind `npx`, `uvx` or
+   a shell wrapper goes too. What no census can reach is a server whose launcher
+   had already exited, or one forked after the count. §4.1's "the registry is
+   closed on every exit path" is necessary, and card 221 is what makes it
+   sufficient.
 
 ---
 
@@ -334,9 +351,9 @@ everywhere.
 **The failure it invites.** A settings edit changes what an already-registered
 cron job may do, and nobody is watching the first fire that uses it. Plus the
 per-fire cost of §2 on runs that never call a tool — roughly doubling a warm
-short fire per `npx` server. §2.1's hang is **not** listed here: it is a
-precondition for every road (§4), and a defect that gets fixed before any road
-lands cannot be a reason to prefer one road over another.
+short fire per `npx` server. §2.1's hang is **not** listed here: it was a
+precondition for every road (§4), and a defect fixed before any road lands cannot
+be a reason to prefer one road over another.
 
 ### Road B — mount on opt in
 
@@ -452,9 +469,10 @@ nobody watching. A capability that arrives without anyone typing anything is the
 one thing an unattended runner must not grow.
 
 **The hang is not a second argument against Road A, and this document is not
-allowed to count it twice.** §2.1 is declared a precondition below — card 221
-lands before any mounting road does. Once it has, a stalled server fails the same
-bounded way on every road, and it stops separating A from B at all. What is left
+allowed to count it twice.** §2.1 was declared a precondition below — card 221
+lands before any mounting road does, and it now has. A stalled server therefore
+fails the same bounded way on every road, in the 25 s of §2.1, and it stops
+separating A from B at all. What is left
 separating them is the one thing that survives the fix: **Road A widens every
 already-registered cron line with no operator edit, and B does not.** That
 asymmetry carries the recommendation on its own, and it is the only part of it
@@ -467,11 +485,13 @@ for the operator who asks for it by name, which is what "the operator asked for
 it either way" from the card 195 commit actually licenses — asking, not
 inferring.
 
-**Precondition, not a nicety.** §2.1 is a live defect today on doctor, the REPL
-and a web session. It is **card 221**, and it must land before any mounting road
-does, because the moment `HeadlessRunner` mounts, a server that starts and goes
-quiet becomes a cron fire that never returns and never explains itself. Card 220
-carries 221 in its `blocked_by` for exactly this reason.
+**Precondition, not a nicety — and it is met.** §2.1 was a live defect on doctor,
+the REPL and a web session. It is **card 221**, and it had to land before any
+mounting road did, because the moment `HeadlessRunner` mounts, a server that
+starts and goes quiet would become a cron fire that never returns and never
+explains itself. It has landed, with the bounded cost §2.1 now states. Card 220
+carries 221 in its `blocked_by` for exactly this reason; discharging that entry is
+a board decision and not this document's to take.
 
 ### 4.1 The flag, and why not the settings key
 
@@ -628,17 +648,21 @@ decides it. That half is done here and is not waiting for the owner.
    exist (B′). §4.1 argues for B and names what B′ would save.
 3. Whether cron fires and triggered nodes take §4.2's per-job key, or follow the
    interactive run. Recommended: their own key, default false. Moot under B′.
-4. Whether card 221 (the mute-server hang, §2.1) blocks a mounting road or ships
-   as a parallel fix. Recommended: **it blocks**, and card 220 already names it
-   in `blocked_by`. It is the difference between a one-second cost and an
-   unbounded one, and until it lands the cost table in §2 has no upper bound.
+4. ~~Whether card 221 (the mute-server hang, §2.1) blocks a mounting road or
+   ships as a parallel fix.~~ **Answered by events rather than by the owner: 221
+   landed first.** The recommendation was that it blocks, and card 220 names it in
+   `blocked_by`. It was the difference between a one-second cost and an unbounded
+   one; the cost table in §2 now has the upper bound §2.1 states. Left on the list
+   with its answer so nobody re-runs the reasoning.
 
 ## 8. Open questions this document deliberately leaves open
 
 - The startup cost of an HTTP/SSE server was not measured; only stdio spawns a
   process, and the roads differ on process cost. An HTTP server's connect cost
   is bounded by `HttpSseTransport`'s 20 s timeout and has the same shape of
-  question as §2.1 — and whether it deadlocks the same way was not tested.
+  question as §2.1. Card 221 went far enough to say it cannot deadlock the same
+  way — there is no child process and no reader thread there, and `RestClient`
+  bounds it — and left the connect cost itself unmeasured.
 - Whether the eleven non-MCP tools of §1.3 should be reachable headless at all
   is a larger question than this card. It is named here because it changes how
   the MCP absence reads, and it is not answered here.

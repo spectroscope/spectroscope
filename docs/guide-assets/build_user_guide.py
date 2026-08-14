@@ -22,6 +22,17 @@ Why the plates go in as WebP (2026-08-12)
   code. Conversions are cached in .webp-cache/ keyed by source mtime+size,
   so a rebuild after one reshoot re-encodes one plate, not 54.
 
+Editing a mermaid diagram (2026-08-14)
+  mermaid-src/*.mmd is the source and mermaid/*.svg is what the guide inlines,
+  so a changed .mmd shows up nowhere until render_mermaid.mjs has run:
+      npm i mermaid            # somewhere outside the repo; nothing here vendors it
+      NODE_PATH=<that node_modules> node render_mermaid.mjs
+  It re-renders all thirteen, and a different mermaid version moves the widths
+  of the twelve you did not touch (measured: 11.16.1 against whatever rendered
+  the tracked set, `max-width: 1308px` became `1282px` on 01-pipeline). Commit
+  only the diagram you changed and check the others out again, or a one-line
+  caption fix arrives as thirteen changed files.
+
 Placeholders inside parts
   <!--SHOT:name|caption-->      figure with the screenshot as data URI
   <!--SHOT:name|caption|half--> half-width variant
