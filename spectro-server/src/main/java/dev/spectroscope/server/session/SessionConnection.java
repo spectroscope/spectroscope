@@ -1051,7 +1051,7 @@ public final class SessionConnection {
 
         subagents = new SubagentManager(new SubagentConfig(
                 provider, workspace, "main", broker, List.copyOf(childBase), hooks,
-                null, webTools));
+                llmWire, webTools));
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);

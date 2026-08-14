@@ -484,7 +484,7 @@ public final class SpectroCli implements Runnable {
         // tools, handed to RESEARCH children only. Same instances, same gate.
         subagents = new SubagentManager(new SubagentConfig(
                 provider, workspace, MAIN_AGENT_ID, askOnTerminal, List.copyOf(childBase), hooks,
-                null, List.of(webSearch, webFetch, browsePage)));
+                llmWire, List.of(webSearch, webFetch, browsePage)));
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
         }
