@@ -80,7 +80,6 @@ export function BrowserSegment(props: {
   // layout, because the layout is the sidebar's width plus the header's height
   // plus whatever the design tokens say today — three numbers that go stale.
   useEffect(() => {
-    let alive = true;
     const report = (): void => {
       // Only the shell's own window may position the pane. Without this a
       // second reader in an ordinary browser would drag the native overlay to
@@ -107,27 +106,38 @@ export function BrowserSegment(props: {
     if (hole.current) observer.observe(hole.current);
     window.addEventListener("resize", report);
     return () => {
-      alive = false;
+      // Observers only — the hide POST lives in its own effect below. It used
+      // to live here, firing on every dep change; that was invisible while the
+      // deps were three slow-moving values, and became a hide/show pair per
+      // pointer move once reportNonce (card 219) made layout commits a dep.
       observer.disconnect();
       window.removeEventListener("resize", report);
-      // Leaving the surface hides the pane. Without this the native overlay
-      // stays on top of whatever the reader switched TO, which is the one
-      // failure a native overlay makes that a div never could.
-      if (!alive && inShell) {
-        void fetch("/api/browser/viewport", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...(lastSent.current ?? toPaneRect({ left: 0, top: 0, width: 0, height: 0 }, false, sessionId)),
-            visible: false,
-          }),
-        }).catch(() => {});
-      }
     };
     // reportNonce is not read inside — it is a layout-commit signal: the dock
     // bumps it when panels open, close, fold or the weights move, so the hole
     // is re-measured after React commits even when its SIZE did not change.
+    // An active flip needs no cleanup post either: this same effect re-runs
+    // and report() posts the visible:false itself (paneVisibility, wanted=false).
   }, [props.active, inShell, sessionId, floorGuard, props.reportNonce]);
+
+  // Leaving the surface hides the pane. Without this the native overlay stays
+  // on top of whatever the reader switched TO, which is the one failure a
+  // native overlay makes that a div never could. Keyed on the session, not on
+  // the layout: it must fire on unmount and on a session swap, never on a
+  // divider drag.
+  useEffect(() => {
+    return () => {
+      if (!inShell) return;
+      void fetch("/api/browser/viewport", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(lastSent.current ?? toPaneRect({ left: 0, top: 0, width: 0, height: 0 }, false, sessionId)),
+          visible: false,
+        }),
+      }).catch(() => {});
+    };
+  }, [inShell, sessionId]);
 
   // The address line asks about THIS session's browser. Asking without a
   // session id would answer with the shell's own idea of "the" page, which is
