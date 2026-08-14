@@ -428,14 +428,9 @@ public final class SessionConnection {
         try {
             initial = SessionStore.loadSession(resumeId); // reconstructs the provider messages
             store = new SessionStore(resumeId);           // appends to the existing JSONL file
-            openLlmWire();                                // the sidecar appends across resumes too
-            tracing = new TracingPorts().require(new JsonlSink(store));
-            OtlpSink.fromConfig(activeConfig.get(), store.id())
-                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
-            // Resume appends to an existing file, so the ladder counts from its end —
-            // a receipt that names an event must name the right one.
-            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(),
-                    SessionStore.eventCount(resumeId)));
+            // Resume appends to an existing file, so the ladder counts from its
+            // end — a receipt that names an event must name the right one.
+            openSessionStack(SessionStore.eventCount(resumeId));
             // A resumed session knows its workspace immediately — announce it so
             // the Files tab points at the right folder before any prompt. A pin
             // from an earlier pick (same server process) wins over the config.
@@ -868,19 +863,42 @@ public final class SessionConnection {
     private void ensureStore() {
         if (store == null) {
             store = new SessionStore();   // the store mints the id (store.id())
-            openLlmWire();                // the sidecar shares the store's id
-            tracing = new TracingPorts().require(new JsonlSink(store));
-            OtlpSink.fromConfig(activeConfig.get(), store.id())
-                    .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
-            // Registered, never required: the ladder watches the same stream the UI
-            // renders, and a leveling defect must never cost a run its life.
-            tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder()));
+            openSessionStack(0);          // a fresh file counts its ladder from zero
             // A fresh session becomes live the moment it has an id — that is
-            // the first moment anything can be said about it.
+            // the first moment anything can be said about it. The claim stays
+            // HERE, after the stack and only on the fresh path — the resume
+            // path claims BEFORE it loads (card 212's ordering), and that
+            // difference is behavior, not duplication.
             if (liveSessions != null) {
                 liveSessions.claim(socket.getId(), store.id());
             }
         }
+    }
+
+    /**
+     * ONE assembly of the session's store-side stack (finding 10 of the
+     * 2026-08-14 review): the llm-wire sidecar, the required JSONL sink, the
+     * optional OTLP sink with this connection's export mirror, and the leveling
+     * ladder. Both entry points — a fresh store and a resume — used to spell
+     * this chain out by hand, which meant the NEXT sink (card 137's Langfuse
+     * direction) would have been wired twice or, worse, once.
+     *
+     * <p>What stays at the entry points is what genuinely differs: who mints or
+     * loads the store, and when the live-set claim happens (the resume path
+     * claims before loading, the fresh path after minting — card 212).</p>
+     *
+     * @param levelingStartIndex where the ladder starts counting — 0 for a
+     *        fresh file, the existing event count on a resume, so a receipt
+     *        that names an event names the right one
+     */
+    private void openSessionStack(int levelingStartIndex) {
+        openLlmWire();                // the sidecar shares the store's id
+        tracing = new TracingPorts().require(new JsonlSink(store));
+        OtlpSink.fromConfig(activeConfig.get(), store.id())
+                .ifPresent(sink -> tracing.register(sink.withListener(this::sendOtlpExport)));
+        // Registered, never required: the ladder watches the same stream the UI
+        // renders, and a leveling defect must never cost a run its life.
+        tracing.register(new LevelingPort(store.id(), ServerLeveling.recorder(), levelingStartIndex));
     }
 
     /**
@@ -1436,18 +1454,38 @@ public final class SessionConnection {
     }
 
     /**
-     * Serialize a RunEvent and push it out — the ONLY writer for this socket.
+     * Serialize a RunEvent and push it out.
      *
      * @param event the event to serialize; dropped silently when the socket is gone
      */
     private synchronized void send(RunEvent event) {
+        // A dead socket is not a run failure — the JSONL file already has it.
+        sendFrame(event);
+    }
+
+    /**
+     * The ONE transport line for this socket — every frame sender goes through
+     * here (finding 9 of the 2026-08-14 review: this exact guard + serialize +
+     * swallow triple existed ten times, and ten copies of a transport line are
+     * ten places for the next fix to miss). Callers keep their own
+     * preconditions, payload shapes and monitor ({@code synchronized}) — this
+     * is only the last line, shared.
+     *
+     * @param payload the frame object; serialized by the connection's mapper
+     * @return true when the frame left the socket — senders that latch state on
+     *         a successful announcement (workspace_info) key on this
+     */
+    private boolean sendFrame(Object payload) {
         if (!socket.isOpen()) {
-            return;
+            return false;
         }
         try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(event)));
+            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            return true;
         } catch (Exception ignored) {
-            // A dead socket is not a run failure — the JSONL file already has it.
+            // A dead socket never fails the caller: every frame's durable copy
+            // (the JSONL, a sidecar) or its next resend covers the loss.
+            return false;
         }
     }
 
@@ -1506,12 +1544,9 @@ public final class SessionConnection {
         }
         // No path for "random": the folder is keyed by a session id that does
         // not exist yet, and inventing one would mint the session.
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(frame)));
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint, the pane stays on its
-            // pending state until the first run announces for real.
-        }
+        // A dead socket just misses the hint, the pane stays on its
+        // pending state until the first run announces for real.
+        sendFrame(frame);
     }
 
     /**
@@ -1532,19 +1567,18 @@ public final class SessionConnection {
         }
         String pinned = SessionWorkspaces.pinned(store.id());
         boolean configured = pinned != null || config.workspace() != null;
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "workspace_info",
-                    "resolved", true,
-                    "mode", pinned != null ? "set" : (config.workspace() != null ? "default" : "random"),
-                    "exists", Files.isDirectory(workspace),
-                    "sessionId", store.id(),
-                    "path", workspace.toString(),
-                    "configured", configured))));
+        // A dead socket just misses the hint, the Files tab stays on its
+        // waiting state until the next announcement — announced latches only
+        // on a frame that actually left, exactly as before.
+        if (sendFrame(Map.of(
+                "type", "workspace_info",
+                "resolved", true,
+                "mode", pinned != null ? "set" : (config.workspace() != null ? "default" : "random"),
+                "exists", Files.isDirectory(workspace),
+                "sessionId", store.id(),
+                "path", workspace.toString(),
+                "configured", configured))) {
             workspaceAnnounced = true;
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint, the Files tab stays on its
-            // waiting state until the next announcement.
         }
     }
 
@@ -1561,15 +1595,12 @@ public final class SessionConnection {
             return;
         }
         SpectroConfig active = activeConfig.get();
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "provider_info",
-                    "provider", active.provider(),
-                    "model", active.model(),
-                    "host", active.providerHost()))));
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint — the next frame retries nothing.
-        }
+        // A dead socket just misses the hint — the next frame retries nothing.
+        sendFrame(Map.of(
+                "type", "provider_info",
+                "provider", active.provider(),
+                "model", active.model(),
+                "host", active.providerHost()));
     }
 
     /**
@@ -1583,13 +1614,10 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "permission_mode_info",
-                    "mode", permissionMode == null ? "ask" : permissionMode))));
-        } catch (Exception ignored) {
-            // A dead socket just misses the hint — the next frame retries nothing.
-        }
+        // A dead socket just misses the hint — the next frame retries nothing.
+        sendFrame(Map.of(
+                "type", "permission_mode_info",
+                "mode", permissionMode == null ? "ask" : permissionMode));
     }
 
     /**
@@ -1636,15 +1664,12 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "live_sessions",
-                    "sessions", live,
-                    "ts", System.currentTimeMillis()))));
-        } catch (Exception ignored) {
-            // A dead socket just misses this snapshot; the next change resends
-            // the whole set, so nothing has to be replayed.
-        }
+        // A dead socket just misses this snapshot; the next change resends
+        // the whole set, so nothing has to be replayed.
+        sendFrame(Map.of(
+                "type", "live_sessions",
+                "sessions", live,
+                "ts", System.currentTimeMillis()));
     }
 
     /**
@@ -1660,13 +1685,10 @@ public final class SessionConnection {
         if (!socket.isOpen()) {
             return;
         }
-        try {
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(Map.of(
-                    "type", "session_busy",
-                    "sessionId", sessionId))));
-        } catch (Exception ignored) {
-            // The socket is closing anyway — the refusal stands either way.
-        }
+        // The socket is closing anyway — the refusal stands either way.
+        sendFrame(Map.of(
+                "type", "session_busy",
+                "sessionId", sessionId));
     }
 
     /**
@@ -1720,9 +1742,9 @@ public final class SessionConnection {
                         "type", "fleet_event",
                         "frame", mapper.readTree(event.envelope().toLine(mapper)));
             };
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            sendFrame(payload);
         } catch (Exception ignored) {
-            // A dead socket just misses the hint — the next frame retries nothing.
+            // An unparseable envelope just misses the hint — the next frame retries nothing.
         }
     }
 
@@ -1763,9 +1785,9 @@ public final class SessionConnection {
                 }
             }
             payload.put("ts", report.ts());
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            sendFrame(payload);
         } catch (Exception ignored) {
-            // A dead socket just misses the mirror — the export itself already ran.
+            // An unparseable body just misses the mirror — the export itself already ran.
         }
     }
 
@@ -1807,7 +1829,7 @@ public final class SessionConnection {
             payload.put("requestBytes", meta.requestBytes());
             payload.put("fidelity", meta.fidelity());
             payload.put("ts", meta.ts());
-            socket.sendMessage(new TextMessage(mapper.writeValueAsString(payload)));
+            sendFrame(payload);
         } catch (Exception ignored) {
             // A dead socket just misses the mirror; the sidecar already has it.
         }
