@@ -172,7 +172,7 @@ class PrecedenceBrowserFacesTest {
         List<Path> killed = new CopyOnWriteArrayList<>();
         BrowserControlSocket control = new BrowserControlSocket();
         HeadlessBrowserFaces web = headless(base, killed);
-        PrecedenceBrowserFaces faces = new PrecedenceBrowserFaces(control, web);
+        PrecedenceBrowserFaces faces = new PrecedenceBrowserFaces(control, web, url -> null);
         faces.forSession("s-1").send("navigate",
                 JSON.createObjectNode().put("url", "http://dev.example.com/"));
         assertEquals("web", faces.live());
@@ -187,11 +187,28 @@ class PrecedenceBrowserFacesTest {
     }
 
     @Test
+    void theSpringWiringThreadsARealFenceIntoTheEntryJudge() {
+        // The production form, exactly as Spring builds it — nothing injected.
+        // This is the wiring the view socket's navigate runs in the shipped jar,
+        // and it must judge with the fence, not with a url -> null default.
+        PrecedenceBrowserFaces faces = new PrecedenceBrowserFaces(new BrowserControlSocket());
+        dev.spectroscope.core.net.NetFence.Refusal refusal =
+                faces.judgeNavigate("http://192.168.1.1/");
+        assertTrue(refusal != null,
+                "the shipped entry judge must be the fence — a refused address must "
+                        + "be refused BEFORE any engine is spawned for it");
+        assertEquals("rfc1918", refusal.rule());
+        assertTrue(refusal.sentence().contains("192.168.1.1"), refusal.sentence());
+        assertEquals(null, faces.judgeNavigate("http://93.184.216.34/"),
+                "a public literal must pass the same judge");
+    }
+
+    @Test
     void aFlipListenerHearsAttachAndDetach(@TempDir Path base) {
         List<String> flips = new CopyOnWriteArrayList<>();
         BrowserControlSocket control = new BrowserControlSocket();
-        PrecedenceBrowserFaces faces =
-                new PrecedenceBrowserFaces(control, headless(base, new CopyOnWriteArrayList<>()));
+        PrecedenceBrowserFaces faces = new PrecedenceBrowserFaces(control,
+                headless(base, new CopyOnWriteArrayList<>()), url -> null);
         faces.onFlip(() -> flips.add(faces.live()));
 
         FakeSocket shell = new FakeSocket("shell-1", "ws://127.0.0.1:8746/ws/browser");

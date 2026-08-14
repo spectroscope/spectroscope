@@ -46,20 +46,34 @@ public class PrecedenceBrowserFaces implements BrowserFaces {
     private final List<Runnable> flipListeners = new CopyOnWriteArrayList<>();
 
     /**
-     * The Spring wiring: the desktop channel that already exists, and a
-     * production headless directory whose fence reads the {@code
-     * allowLocalhost} opt-in fresh per judgment — the same source both other
-     * fence halves read.
+     * The Spring wiring: the desktop channel that already exists, and ONE
+     * production fence serving both halves — the hop gate inside the headless
+     * directory and the entry judgment {@link #judgeNavigate} runs for an
+     * operator-typed address. It reads the {@code allowLocalhost} opt-in fresh
+     * per judgment, the same source every other fence half reads.
      *
      * @param desktop the desktop shell's control channel
      */
     @org.springframework.beans.factory.annotation.Autowired
     public PrecedenceBrowserFaces(BrowserControlSocket desktop) {
+        this(desktop, new HeadlessFence(() -> dev.spectroscope.core.config.SpectroConfig
+                .load(dev.spectroscope.core.config.SpectroConfig.Overrides.none())
+                .allowLocalhost()));
+    }
+
+    /**
+     * Builds the fence exactly once and threads it into BOTH halves: the hop
+     * gate of the production headless directory, and the entry judge of this
+     * directory. Splitting the two once shipped an entry judge that allowed
+     * everything while every test injected a live one — this constructor exists
+     * so the two halves cannot drift apart again.
+     *
+     * @param desktop the desktop shell's control channel
+     * @param fence   the one production fence
+     */
+    private PrecedenceBrowserFaces(BrowserControlSocket desktop, HeadlessFence fence) {
         this(desktop, HeadlessBrowserFaces.production(
-                () -> BrowsePageTool.findChrome(System.getenv()),
-                new HeadlessFence(() -> dev.spectroscope.core.config.SpectroConfig
-                        .load(dev.spectroscope.core.config.SpectroConfig.Overrides.none())
-                        .allowLocalhost())::judge));
+                () -> BrowsePageTool.findChrome(System.getenv()), fence::judge), fence::judge);
     }
 
     /**
@@ -67,9 +81,11 @@ public class PrecedenceBrowserFaces implements BrowserFaces {
      *
      * @param desktop the desktop control channel, listened to
      * @param web     the headless directory
+     * @param judge   the entry fence {@link #judgeNavigate} runs
      */
-    public PrecedenceBrowserFaces(BrowserControlSocket desktop, HeadlessBrowserFaces web) {
-        this(desktop, desktop::attached, web);
+    public PrecedenceBrowserFaces(BrowserControlSocket desktop, HeadlessBrowserFaces web,
+            Function<String, NetFence.Refusal> judge) {
+        this(desktop, desktop::attached, web, judge);
         desktop.onShellAttached(() -> {
             // The desktop face wins NOW — no headless engine may keep racing it.
             web.closeAllSessions();
