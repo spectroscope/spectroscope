@@ -320,9 +320,17 @@ export function App() {
       level: levelSnapshot.level,
       opened: newlyOpened(levelSnapshot.ladder, before, levelSnapshot.level),
     });
+  }, [levelSnapshot]);
+  // The auto-clear lives in its OWN effect, keyed on the toast — not on the
+  // snapshot. Keyed on the snapshot, any leveling tick inside the 7 seconds
+  // ran the cleanup (cancelling the timer) and then returned early without
+  // arming a new one: a toast with no timer, no close control and no click
+  // path, on screen until reload. Seen by the owner, 2026-08-14.
+  useEffect(() => {
+    if (!levelUp) return;
     const clear = setTimeout(() => setLevelUp(null), 7000);
     return () => clearTimeout(clear);
-  }, [levelSnapshot]); // spectrum = fleet lanes; trace = wire view; text = readable feed + raw JSONL; lab = step-through Flow map
+  }, [levelUp]); // spectrum = fleet lanes; trace = wire view; text = readable feed + raw JSONL; lab = step-through Flow map
   // Spectrum -> Trace hand-off: clicking a lane pins its agent as the trace's
   // agent filter (null = all agents). The chip row in the trace clears it.
   const [traceAgent, setTraceAgent] = useState<string | null>(null);
@@ -2533,7 +2541,12 @@ export function App() {
           </div>
         )}
         {levelUp && leveling.snapshot && (
-          <div className="lvl-toast" role="status">
+          <div
+            className="lvl-toast"
+            role="status"
+            title={lang === "de" ? "Klicken zum Schliessen" : "click to dismiss"}
+            onClick={() => setLevelUp(null)}
+          >
             {t(lang, "leveling.levelUp.title", {
               name: translated(
                 (k) => t(lang, k),

@@ -3184,7 +3184,7 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "leveling.teaser.what": { de: "Was das ist", en: "What this is" },
   "leveling.teaser.unlocks": { de: "Öffnet sich, sobald: {what}", en: "Opens once you have: {what}" },
-  "leveling.levelUp.title": { de: "{name} erreicht", en: "{name} reached" },
+  "leveling.levelUp.title": { de: "Neue Stufe: {name}", en: "Level reached: {name}" },
   "leveling.levelUp.opened": { de: "Neu offen: {surfaces}", en: "Now open: {surfaces}" },
   "leveling.intro.title": { de: "Willkommen bei spectroscope", en: "Welcome to spectroscope" },
   "leveling.intro.body": {
