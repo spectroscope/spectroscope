@@ -124,10 +124,7 @@ describe("the sentence under the menu's switches", () => {
   // kinds land at the NEXT AGENT BUILD (SkillLibrary.load and
   // McpServerRegistry.load both run inside buildAgentOnce), and the component
   // derives its sentences from that table rather than hand-writing them.
-  const source = readFileSync(
-    fileURLToPath(new URL("./PlusMenuSettings.tsx", import.meta.url)),
-    "utf8",
-  );
+  const source = readFileSync(fileURLToPath(new URL("./PlusMenuSettings.tsx", import.meta.url)), "utf8");
 
   it("classifies both kinds as next-session, like the settings page", () => {
     expect(SETTING_REACH.skills).toBe("next-session");

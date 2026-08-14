@@ -150,9 +150,7 @@ export function PlusMenu({
       if (s === "project") return putSettings("project", { mcpServers: next }, sessionId);
       return putSettings("local", { mcpServers: next }, sessionId);
     };
-    put(scope)
-      .then(load)
-      .catch(load);
+    put(scope).then(load).catch(load);
   };
 
   const pick = (section: PlusMenuSection): void => {
@@ -282,7 +280,9 @@ export function PlusMenu({
                 onClick={() => openSub(item)}
               >
                 <span className="wsg-mode-body">
-                  <span className="wsg-mode-name">{t(lang, item === "skills" ? "plus.skills" : "plus.mcp")}</span>
+                  <span className="wsg-mode-name">
+                    {t(lang, item === "skills" ? "plus.skills" : "plus.mcp")}
+                  </span>
                 </span>
                 <span className="plus-caret" aria-hidden="true">
                   ▸
@@ -294,7 +294,11 @@ export function PlusMenu({
       )}
 
       {open && sub !== null && (
-        <div className="wsg-pop plus-sub" role="menu" aria-label={t(lang, sub === "skills" ? "plus.skills" : "plus.mcp")}>
+        <div
+          className="wsg-pop plus-sub"
+          role="menu"
+          aria-label={t(lang, sub === "skills" ? "plus.skills" : "plus.mcp")}
+        >
           <div
             className="wsg-modes plus-items"
             role="group"
@@ -305,64 +309,71 @@ export function PlusMenu({
           >
             {sub === "skills" && (
               <ReachBlock lang={lang} fields={["skills"]}>
-                {skills === "failed"
-                  ? failedLine
-                  : skills === null
-                    ? loadingLine
-                    : skills.length === 0
-                      ? <p className="settings-note plus-note">{t(lang, "skset.empty")}</p>
-                      : skills.map((row, i) => (
-                          <div
-                            key={`${row.source}:${row.name}`}
-                            role="menuitemcheckbox"
-                            aria-checked={!row.disabled}
-                            className={rowClass(i === subIdx)}
-                            title={t(lang, row.disabled ? "skset.enable" : "skset.disable")}
-                            onMouseEnter={() => setSubIdx(i)}
-                            onClick={() => toggleSkill(row)}
-                          >
-                            {switchGlyph(!row.disabled)}
-                            <span className="wsg-mode-body">
-                              <span className="wsg-mode-name mono">{row.name}</span>
-                              <span className="wsg-mode-hint plus-desc">{row.description}</span>
-                            </span>
-                          </div>
-                        ))}
+                {skills === "failed" ? (
+                  failedLine
+                ) : skills === null ? (
+                  loadingLine
+                ) : skills.length === 0 ? (
+                  <p className="settings-note plus-note">{t(lang, "skset.empty")}</p>
+                ) : (
+                  skills.map((row, i) => (
+                    <div
+                      key={`${row.source}:${row.name}`}
+                      role="menuitemcheckbox"
+                      aria-checked={!row.disabled}
+                      className={rowClass(i === subIdx)}
+                      title={t(lang, row.disabled ? "skset.enable" : "skset.disable")}
+                      onMouseEnter={() => setSubIdx(i)}
+                      onClick={() => toggleSkill(row)}
+                    >
+                      {switchGlyph(!row.disabled)}
+                      <span className="wsg-mode-body">
+                        <span className="wsg-mode-name mono">{row.name}</span>
+                        <span className="wsg-mode-hint plus-desc">{row.description}</span>
+                      </span>
+                    </div>
+                  ))
+                )}
               </ReachBlock>
             )}
 
             {sub === "mcp" && (
               <ReachBlock lang={lang} fields={["mcpServers"]}>
-                {view === "failed"
-                  ? failedLine
-                  : mcp === null
-                    ? loadingLine
-                    : mcp.rows.length === 0
-                      ? <p className="settings-note plus-note">{t(lang, "mcpset.empty")}</p>
-                      : mcp.rows.map((row, i) => (
-                          <div
-                            key={row.name}
-                            role="menuitemcheckbox"
-                            aria-checked={row.enabled}
-                            aria-disabled={!mcpWritable}
-                            className={rowClass(i === subIdx)}
-                            title={t(lang, row.enabled ? "skset.disable" : "skset.enable")}
-                            onMouseEnter={() => setSubIdx(i)}
-                            onClick={() => toggleServer(row.name)}
-                          >
-                            {switchGlyph(row.enabled)}
-                            <span className="wsg-mode-body">
-                              <span className="wsg-mode-name mono">{row.name}</span>
-                              {/* What turning it on runs — "npx -y tavily-mcp".
+                {view === "failed" ? (
+                  failedLine
+                ) : mcp === null ? (
+                  loadingLine
+                ) : mcp.rows.length === 0 ? (
+                  <p className="settings-note plus-note">{t(lang, "mcpset.empty")}</p>
+                ) : (
+                  mcp.rows.map((row, i) => (
+                    <div
+                      key={row.name}
+                      role="menuitemcheckbox"
+                      aria-checked={row.enabled}
+                      aria-disabled={!mcpWritable}
+                      className={rowClass(i === subIdx)}
+                      title={t(lang, row.enabled ? "skset.disable" : "skset.enable")}
+                      onMouseEnter={() => setSubIdx(i)}
+                      onClick={() => toggleServer(row.name)}
+                    >
+                      {switchGlyph(row.enabled)}
+                      <span className="wsg-mode-body">
+                        <span className="wsg-mode-name mono">{row.name}</span>
+                        {/* What turning it on runs — "npx -y tavily-mcp".
                                   A person sees the command before the switch. */}
-                              <span className="wsg-mode-hint plus-desc mono">{row.target}</span>
-                            </span>
-                          </div>
-                        ))}
+                        <span className="wsg-mode-hint plus-desc mono">{row.target}</span>
+                      </span>
+                    </div>
+                  ))
+                )}
                 {mcp !== null && mcp.rows.length > 0 && !mcpWritable && (
                   <p className="settings-note plus-note">
                     {t(lang, "plus.mcpReadOnly", {
-                      layer: view !== null && view !== "failed" ? (view.origins["mcpServers"]?.winner ?? "?") : "?",
+                      layer:
+                        view !== null && view !== "failed"
+                          ? (view.origins["mcpServers"]?.winner ?? "?")
+                          : "?",
                     })}
                   </p>
                 )}

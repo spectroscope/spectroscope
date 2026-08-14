@@ -282,7 +282,8 @@ export function McpSettings({
             ) : (
               <ul className="skset-list">
                 {Object.entries(servers).map(([key, value]) => {
-                  const entry = typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
+                  const entry =
+                    typeof value === "object" && value !== null ? (value as Record<string, unknown>) : {};
                   const on = entry["enabled"] !== false;
                   return (
                     <li key={key} className="skset-row">
