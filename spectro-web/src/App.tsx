@@ -82,8 +82,8 @@ import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasonin
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
 import {
+  openDockPanel,
   openRightPanel,
-  setActiveRightTab,
   setImagesW,
   setRightPanelW,
   setSidebarW,
@@ -1584,7 +1584,7 @@ export function App() {
     lastChatView.current = chatView;
     if (!isFlipIntoV2(previous, chatView)) return;
     openRightPanel();
-    setActiveRightTab("work");
+    openDockPanel("work");
   }, [chatView]);
   const translation = useTranslation(viewKey);
   const labSeed = `${showingTranslation}:${translation.status}`;
@@ -1760,7 +1760,7 @@ export function App() {
   useEffect(() => {
     if (wsPath !== null) {
       openRightPanel();
-      setActiveRightTab("files");
+      openDockPanel("files");
     }
   }, [wsPath]);
 
@@ -1804,6 +1804,23 @@ export function App() {
      session tab row is suppressed on all of them. Hoisted out of the ternary
      because the chain below is already three deep. */
   const wholeSurface = nav === "stategraph" || nav === "browser" || nav === "skills";
+
+  /* Card 219: whether a modal is open OVER the dock. The dock's browser panel
+     folds this into the segment's `active`, because the native pane cannot be
+     painted over by any dialog (card 201) — it has to be told to hide before
+     the dialog is believed. Every sheet that renders over the main area is
+     listed; the two whole-surface browser doors keep their historic shape and
+     their (pre-existing) occlusion gap is recorded on the card, not repaired
+     here in passing. */
+  const dockCovered =
+    settingsOpen ||
+    keymapOpen ||
+    doctorOpen ||
+    levelPanelOpen ||
+    onboardingOpen ||
+    localChooserOpen ||
+    localNoticeOpen ||
+    spawnDialogOpen;
 
   return (
     <div
@@ -2277,7 +2294,7 @@ export function App() {
                     onOpenWork={(id) => {
                       setWorkHighlight(id);
                       openRightPanel();
-                      setActiveRightTab("work");
+                      openDockPanel("work");
                     }}
                   />
                 ) : (
@@ -2314,10 +2331,10 @@ export function App() {
                     onToggle={toggleRightPanel}
                   />
                   <RightPanel
+                    sessionId={shownSessionId}
+                    covered={dockCovered}
                     agents={view.agents}
                     plan={view.plan}
-                    activeTab={layout.activeRightTab}
-                    onTab={setActiveRightTab}
                     onClose={toggleRightPanel}
                     provider={curProvider}
                     model={curModel}

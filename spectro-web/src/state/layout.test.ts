@@ -4,13 +4,18 @@ import {
   __resetForTests,
   clampW,
   DEFAULT_LAYOUT,
+  hydrateLayout,
+  openDockPanel,
   openRightPanel,
   setActiveRightTab,
   setChatW,
+  setDockWeights,
   setRightPanelW,
   setSidebarW,
   setTraceW,
   toggleChat,
+  toggleDockCollapse,
+  toggleDockPanel,
   toggleRightPanel,
   toggleTrace,
 } from "./layout";
@@ -77,5 +82,107 @@ describe("layout store", () => {
     const before = __getState();
     openRightPanel();
     expect(__getState()).toBe(before);
+  });
+});
+
+describe("the dock panels (card 219, first cut)", () => {
+  it("starts with the roster open and everything else closed — today's face", () => {
+    expect(__getState().dockAgents).toBe("open");
+    for (const key of [
+      "dockWork",
+      "dockPlan",
+      "dockContext",
+      "dockFiles",
+      "dockTerminal",
+      "dockBrowser",
+    ] as const) {
+      expect(__getState()[key], key).toBe("closed");
+    }
+    expect(__getState().dockWeights).toBe("");
+  });
+
+  it("toggles a panel between closed and open, never through collapsed", () => {
+    toggleDockPanel("files");
+    expect(__getState().dockFiles).toBe("open");
+    toggleDockPanel("files");
+    expect(__getState().dockFiles).toBe("closed");
+    // A collapsed panel closes on toggle — the strip button is show/hide.
+    toggleDockPanel("files");
+    toggleDockCollapse("files");
+    expect(__getState().dockFiles).toBe("collapsed");
+    toggleDockPanel("files");
+    expect(__getState().dockFiles).toBe("closed");
+  });
+
+  it("collapses only an open panel and folds it back", () => {
+    toggleDockCollapse("agents");
+    expect(__getState().dockAgents).toBe("collapsed");
+    toggleDockCollapse("agents");
+    expect(__getState().dockAgents).toBe("open");
+    // Collapsing a closed panel opens nothing.
+    toggleDockCollapse("browser");
+    expect(__getState().dockBrowser).toBe("closed");
+  });
+
+  it("openDockPanel opens the dock's panel idempotently and expands a collapsed one", () => {
+    openDockPanel("context");
+    expect(__getState().dockContext).toBe("open");
+    const before = __getState();
+    openDockPanel("context");
+    expect(__getState()).toBe(before);
+    toggleDockCollapse("context");
+    openDockPanel("context");
+    expect(__getState().dockContext).toBe("open");
+  });
+
+  it("stores the weights string and stays identity-stable on a no-op", () => {
+    setDockWeights("files:2,terminal:0.5");
+    expect(__getState().dockWeights).toBe("files:2,terminal:0.5");
+    const before = __getState();
+    setDockWeights("files:2,terminal:0.5");
+    // The hand-written equality check in set() must cover the new field, or
+    // this write would store and never notify — the layout.ts:76-93 trap.
+    expect(__getState()).toBe(before);
+  });
+});
+
+describe("hydrating a stored blob (card 219 migration)", () => {
+  it("loads a pre-card blob through the merge: defaults fill the dock fields", () => {
+    const state = hydrateLayout({ sidebarW: 300 }, null);
+    expect(state.sidebarW).toBe(300);
+    expect(state.dockAgents).toBe("open");
+    expect(state.dockFiles).toBe("closed");
+    expect(state.dockWeights).toBe("");
+  });
+
+  it("carries the old active tab into the dock: the reader lands where they left", () => {
+    const state = hydrateLayout({ rightPanelOpen: true, activeRightTab: "files" }, null);
+    expect(state.dockFiles).toBe("open");
+    // Only the tab that WAS showing is open — the migration reproduces the
+    // one-surface face the reader had, not a wall of every panel at once.
+    expect(state.dockAgents).toBe("closed");
+  });
+
+  it("reopens the terminal panel for a reader who had the terminal open", () => {
+    const state = hydrateLayout({ activeRightTab: "agents" }, "1");
+    expect(state.dockTerminal).toBe("open");
+    expect(hydrateLayout({}, "0").dockTerminal).toBe("closed");
+  });
+
+  it("never migrates over stored dock fields, and normalizes junk in them", () => {
+    const state = hydrateLayout(
+      { activeRightTab: "files", dockAgents: "collapsed", dockFiles: "banana" },
+      "1",
+    );
+    // Dock fields exist, so the blob is post-card: activeRightTab and the old
+    // terminal key are history and must not reshape what the reader stored.
+    expect(state.dockAgents).toBe("collapsed");
+    expect(state.dockFiles).toBe("closed"); // junk reads as closed
+    expect(state.dockTerminal).toBe("closed");
+  });
+
+  it("survives garbage wholesale", () => {
+    expect(hydrateLayout(null, null)).toEqual(DEFAULT_LAYOUT);
+    expect(hydrateLayout("nonsense", null)).toEqual(DEFAULT_LAYOUT);
   });
 });

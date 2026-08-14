@@ -81,6 +81,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Der Netz-Zaun ist an. Private Adressen, das Tailnet und file:// bleiben bei jedem Redirect-Hop abgelehnt, und ein Hostname wird aufgelöst, bevor die Seite ihn erreicht; für localhost braucht es allowLocalhost. Was kein Zaun fängt: eine DNS-Antwort, die sich zwischen Prüfung und Verbindung ändert.",
     en: "The net fence is on. Private addresses, the tailnet and file:// stay refused on every redirect hop, and a host name is resolved before the page reaches it; localhost needs allowLocalhost. What no fence catches: a DNS answer that changes between the check and the connection.",
   },
+  // Card 219 — the dock's browser panel under the shell's minimum pane size.
+  "browser.floorNote": {
+    de: "Zu klein für die Seite (Minimum 320 × 240) — Panel vergrößern, dann kommt sie zurück.",
+    en: "Too small for the page (minimum 320 × 240) — enlarge the panel and it comes back.",
+  },
   // Card 204 — the replay. The live pane is half a promise; these are the words
   // for the other half, and the empty state is the one that has to work hardest:
   // a session that never drove a browser and a session whose record was deleted
@@ -795,6 +800,33 @@ export const dict: Record<string, { de: string; en: string }> = {
   "rp.plan": { de: "Plan", en: "Plan" },
   "rp.files": { de: "Dateien", en: "Files" },
   "rp.close": { de: "Panel schließen", en: "Close panel" },
+  // the dock (card 219): the right panel as independent panels
+  "rp.terminal": { de: "Terminal", en: "Terminal" },
+  "rp.browser": { de: "Browser", en: "Browser" },
+  "dock.strip": { de: "Panels", en: "Panels" },
+  "dock.collapse": { de: "Panel einklappen", en: "Fold panel" },
+  "dock.expand": { de: "Panel ausklappen", en: "Unfold panel" },
+  "dock.closePanel": { de: "Dieses Panel schließen", en: "Close this panel" },
+  "dock.fullscreen": { de: "Browser als Vollbild", en: "Browser full screen" },
+  "dock.fullscreenExit": { de: "Vollbild verlassen (Esc)", en: "Exit full screen (Esc)" },
+  "dock.divider": { de: "Trenner ziehen, um die Höhe zu ändern", en: "Drag to resize" },
+  "dock.empty": {
+    de: "Kein Panel geöffnet — oben eines wählen.",
+    en: "No panel open — pick one above.",
+  },
+  "dock.termNoSession": {
+    de: "Ein Terminal gehört zu einer Session. Sobald eine läuft, öffnet es im Ordner des Agenten.",
+    en: "A terminal belongs to a session. Once one is running, it opens in the agent's folder.",
+  },
+  "dock.termChecking": { de: "Prüfe, ob dieser Build ein Terminal hat …", en: "Checking whether this build has a terminal …" },
+  "dock.termOff": {
+    de: "Shells sind in diesem Prozess abgeschaltet (SPECTRO_SHELL).",
+    en: "Shells are switched off in this process (SPECTRO_SHELL).",
+  },
+  "dock.termAbsent": {
+    de: "Dieser Build hat keinen Terminal-Helfer. Das Terminal kommt mit der Desktop-App.",
+    en: "This build has no terminal helper — the terminal ships with the desktop app.",
+  },
 
   // workspace tab (phase 5)
   "ws.rootTitle": {

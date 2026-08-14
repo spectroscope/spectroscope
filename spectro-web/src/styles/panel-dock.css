@@ -1,0 +1,256 @@
+/* Card 219, first cut — the dock: the right panel as a stack of independent
+   panels (work, agents, plan, context, files, terminal, browser). Colors are
+   tokens only, so all four designs resolve them; no token is minted here
+   except the dock's own fullscreen layer, declared below so
+   phantomTokens.drift.test.ts sees a definition.
+
+   Layout rules that are load-bearing, not taste:
+   - .dock-body never scrolls. The browser panel's hole is a rectangle a
+     NATIVE view is laid over (card 201); a scrolling dock would move the hole
+     without resizing it, which is exactly the change a ResizeObserver cannot
+     see. Panels scroll INSIDE their bodies instead.
+   - Open panels share the column by flex-grow weight (persisted); collapsed
+     panels keep only their header. min-height floors keep a divider from
+     folding a panel to nothing.
+   - No overscroll-behavior on a max-height scroller (card 206). */
+
+/* The fullscreen layer sits under the modals (--z-modal: 1000): a dialog that
+   opens over it must both paint above the frame AND hide the native pane —
+   the covered wire posts visible:false, and the cheaper half is honest here. */
+:root {
+  --z-dock-full: 900;
+}
+
+.dock-head {
+  gap: var(--sp-1);
+}
+.dock-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+.dock-toggle {
+  appearance: none;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-faint);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--fs-12);
+  padding: var(--sp-1) var(--sp-2);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.dock-toggle:hover {
+  color: var(--text-dim);
+}
+.dock-toggle--on {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  overflow: hidden; /* the dock never scrolls — see the file head */
+}
+.dock-empty {
+  margin: var(--sp-2);
+}
+
+.dock-panel {
+  display: flex;
+  flex-direction: column;
+  flex: 0 1 auto;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  overflow: hidden;
+}
+/* Open panels share the leftover space; the inline flex-grow carries the
+   persisted weight. flex-basis 0 makes the weights proportional rather than
+   content-biased. */
+.dock-panel:not(.dock-panel--collapsed) {
+  flex-basis: 0;
+  /* A panel header (26px) plus a readable sliver — the divider's PANEL_MIN_PX
+     in dockModel.ts is derived from the same floor. */
+  min-height: 60px;
+}
+.dock-panel--collapsed {
+  flex: none;
+}
+
+.dock-panel-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  flex: none;
+  min-height: 26px;
+  padding: 1px var(--sp-2);
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+}
+.dock-panel--collapsed .dock-panel-head {
+  border-bottom: none;
+}
+.dock-panel-fold {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0 2px;
+  color: var(--text-faint);
+  cursor: pointer;
+  font-size: var(--fs-11);
+  line-height: 1;
+  transition: color var(--t-fast);
+}
+.dock-panel-fold:hover {
+  color: var(--text);
+}
+/* The name takes the slack, so the count chip and the controls sit at the
+   right edge whether or not a fullscreen button exists. */
+.dock-panel-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: var(--fs-11);
+  text-transform: uppercase;
+  letter-spacing: var(--track-eyebrow);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dock-panel-x,
+.dock-full-btn {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-control);
+  color: var(--text-faint);
+  cursor: pointer;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.dock-panel-x:hover,
+.dock-full-btn:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+.dock-full-btn[aria-pressed="true"] {
+  color: var(--accent);
+}
+
+.dock-panel-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--sp-2);
+}
+/* Surfaces that own their layout (file tree, PTY, browser hole) get the whole
+   box and manage their own scrolling — a scrolling wrapper here would move
+   the browser hole without resizing it. */
+.dock-panel-body--fill {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+.dock-panel-body--fill > * {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The Files surface brings its own padding contract from the tab era. */
+.dock-panel-body--fill .ws {
+  padding: var(--sp-2);
+}
+
+/* The divider between two expanded panels — the ws-divider idiom, same look,
+   its own name so the Files tab's rules stay untouched. */
+.dock-divider {
+  flex: none;
+  height: 8px;
+  cursor: row-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+.dock-divider::before {
+  content: "";
+  width: 34px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border);
+  transition: background var(--t-fast);
+}
+.dock-divider:hover::before,
+.dock-divider:focus-visible::before {
+  background: var(--accent);
+}
+.dock-divider:focus-visible {
+  outline: none;
+}
+
+/* Fullscreen (owner: "mit einer vollbild funktion (screenshot)"): the browser
+   panel takes the whole window, keeping only its slim header as the way back.
+   The native pane is told the new rectangle by the segment's own report — the
+   size change fires its ResizeObserver; the class here is only the frame. */
+
+/* A position:fixed child cannot escape an ancestor that carries a transform
+   or will-change: transform, and the scroll-reveal (designs.css) leaves
+   will-change on .chat-row forever — measured live on 2026-08-14: fullscreen
+   laid out at (240,111) 1200x767, a rectangle inside the chat row, not the
+   window. While a dock panel is fullscreen the row must therefore stop being
+   a containing block. Scoped with :has (Chromium-native, and the desktop
+   shell is Chromium by construction); reverts the moment fullscreen ends. */
+html.fx-scroll .chat-row[data-reveal]:has(.dock-panel--full) {
+  opacity: 1;
+  transform: none;
+  transition: none;
+  will-change: auto;
+}
+
+.dock-panel--full {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-dock-full);
+  border-radius: 0;
+  border: none;
+  min-height: 0;
+}
+.dock-panel--full .dock-panel-head {
+  border-bottom: 1px solid var(--border);
+}
+
+/* Inside a dock panel the browser segment is a tenant, not the whole surface:
+   the bar and the fence note shrink to panel scale. The hole clips its empty
+   state — in a crowded dock the hole can be a sliver, and an unclipped empty
+   state printed itself over the fence note below it (seen live 2026-08-14). */
+.dock-panel-body--fill .browser-segment {
+  min-height: 0;
+}
+.dock-panel-body--fill .browser-hole {
+  overflow: hidden;
+}
+.browser-floor-note {
+  margin: auto;
+  padding: var(--sp-3);
+  font-size: var(--fs-12);
+  color: var(--text-dim);
+  text-align: center;
+}
