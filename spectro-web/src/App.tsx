@@ -45,6 +45,7 @@ import {
   subscribeReportedViews,
 } from "./state/viewReport";
 import { BrowserSegment } from "./browser/BrowserSegment";
+import { SkillsPane } from "./components/SkillsPane";
 import { BrowserReplay } from "./browser/BrowserReplay";
 import { navDepth, navLanded, writeRoute, type NavCause, type NavIntent } from "./state/history";
 import { canGoBack, canGoForward, NAV_START, type NavDepth } from "./state/navDepth";
@@ -220,7 +221,13 @@ export function App() {
    * browser cannot re-read a picked file without a fresh user gesture, so any
    * persistence would restore the frame and not the picture.
    */
-  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "browser">("sessions");
+  /*
+   * `skills` is the fifth segment (card 225, owner wish): the installed
+   * catalogue one glance away. Same vocabulary decision as `stategraph` —
+   * component state, not a route: the view is a listing of the server's roots,
+   * it has no artifact to reopen and nothing a deep link could promise.
+   */
+  const [nav, setNav] = useState<"sessions" | "fleets" | "stategraph" | "browser" | "skills">("sessions");
   /*
    * The artifacts the state graph is drawing — up here because the arm below
    * unmounts whenever `nav` moves off "stategraph". They lived in the pane,
@@ -1791,11 +1798,12 @@ export function App() {
         ? t(lang, "hdr.newSession")
         : t(lang, "hdr.archivedSession");
 
-  /* The two segments that take the WHOLE surface. Neither belongs to one run —
-     a state graph is a topology and the browser is a page the agent is driving
-     right now — so the session tab row is suppressed on both. Hoisted out of
-     the ternary because the chain below is already three deep. */
-  const wholeSurface = nav === "stategraph" || nav === "browser";
+  /* The segments that take the WHOLE surface. None belongs to one run — a
+     state graph is a topology, the browser is a page the agent is driving
+     right now, and the skills view is the product's own catalogue — so the
+     session tab row is suppressed on all of them. Hoisted out of the ternary
+     because the chain below is already three deep. */
+  const wholeSurface = nav === "stategraph" || nav === "browser" || nav === "skills";
 
   return (
     <div
@@ -2111,7 +2119,13 @@ export function App() {
             run. It is also the one arm whose pixels are NOT React's — the
             desktop shell lays a real WebContentsView over this rectangle
             (card 201), so what is drawn here is the frame and the sign. */}
-        {nav === "browser" ? (
+        {/* The skills view takes the whole surface too (card 225): it is the
+            product's catalogue, not a lens on one run. Mounted per visit, so
+            it re-reads the roots each time the segment opens; its one action
+            opens the same settings overlay the rail's foot opens. */}
+        {nav === "skills" ? (
+          <SkillsPane onManage={openSettingsPage} />
+        ) : nav === "browser" ? (
           <BrowserSegment active={true} sessionId={shownSessionId} />
         ) : nav === "stategraph" ? (
           <StateGraphPane

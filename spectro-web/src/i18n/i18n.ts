@@ -50,6 +50,11 @@ export const dict: Record<string, { de: string; en: string }> = {
     en: "A state graph sits beside the session as a pair of files, not on the server — load it in the view on the right.",
   },
   "nav.browser": { de: "Browser", en: "Browser" },
+  "nav.skills": { de: "Skills", en: "Skills" },
+  "nav.skillsNote": {
+    de: "Die installierten Skills und der mitgelieferte Katalog, mit Namespace und Schalter-Stand — die Ansicht rechts ist die Liste. Geschaltet wird auf der Einstellungsseite.",
+    en: "The installed skills and the bundled catalogue, with namespace and enabled state — the view on the right is the list. Switching happens on the settings page.",
+  },
   "browser.title": { de: "Der sichtbare Browser", en: "The visible browser" },
   "browser.noPage": { de: "noch keine Seite geöffnet", en: "no page open yet" },
   "browser.attachedNote": {
@@ -2640,6 +2645,22 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Die Ausgabe ist Text, kein JSON — hier im Original:",
     en: "This output is text, not JSON — shown verbatim:",
   },
+
+  // the skills segment's surface (card 225)
+  "skv.claim": {
+    de: "Was das Produkt kann, auf einen Blick: jeder Skill mit Namespace, Beschreibung und Schalter-Stand.",
+    en: "What the product can do, at a glance: every skill with its namespace, description and enabled state.",
+  },
+  "skv.installedTitle": { de: "Installiert", en: "Installed" },
+  "skv.catalogueTitle": { de: "Katalog", en: "Catalogue" },
+  "skv.on": { de: "an", en: "on" },
+  "skv.off": { de: "aus", en: "off" },
+  "skv.notInstalled": { de: "nicht installiert", en: "not installed" },
+  "skv.empty": {
+    de: "Keine Skills installiert. Beim ersten Start werden die eingebauten kopiert.",
+    en: "No skills installed. The built-in ones are copied on first start.",
+  },
+  "skv.manage": { de: "In den Einstellungen verwalten", en: "Manage in settings" },
 
   // skills + MCP managers (card 90)
   "skset.title": { de: "Skills", en: "Skills" },

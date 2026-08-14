@@ -1,4 +1,4 @@
-// One row, used seven times: New chat, Scenarios, Starters, the three
+// One row, used nine times: New chat, Scenarios, Starters, the five
 // segments, and Settings at the foot.
 //
 // It is still a <button> — the rail's controls are pressed, and a div with an
@@ -111,6 +111,10 @@ const PATHS: Record<NavIconId, ReactNode> = {
       <circle cx="4" cy="4.6" r="0.5" fill="currentColor" stroke="none" />
     </>
   ),
+  // A four-point spark — a capability, not a process. Deliberately not the
+  // stack (Starters wears it) and not the gear: skills are what the product
+  // CAN do, and the glyph family says that with one closed stroke.
+  skills: <path d="M8 1.6 9.7 6.3 14.4 8 9.7 9.7 8 14.4 6.3 9.7 1.6 8 6.3 6.3z" />,
   // The same gear the header wears, redrawn in this box: one door's icon must
   // not be a different picture from the other's.
   gear: (

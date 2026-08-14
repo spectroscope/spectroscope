@@ -40,11 +40,26 @@ describe("navSegmentRows", () => {
   const at = (over: Partial<Parameters<typeof navSegmentRows>[0]> = {}) =>
     navSegmentRows({ active: "sessions", fleetsLocked: false, fleetCount: 0, ...over });
 
-  it("keeps the segments in the order the strip had them, browser last", () => {
+  it("keeps the segments in the order the strip had them, skills last", () => {
     // Browser joined as the fourth (card 201) rather than beside sessions: the
     // three that were here answer "what has run", and a browser the agent is
-    // driving right now is a different question.
-    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph", "browser"]);
+    // driving right now is a different question. Skills is the fifth (card
+    // 225): the owner wants the installed capabilities one glance away, and a
+    // catalogue is the furthest thing from "what has run", so it closes the
+    // list.
+    expect(at().map((r) => r.id)).toEqual(["sessions", "fleets", "stategraph", "browser", "skills"]);
+  });
+
+  it("lists the skills segment on every face, ungated and with no row action", () => {
+    // The catalogue reads one endpoint and starts no process, so the fleet
+    // lock has nothing to protect here — same reasoning as the state graph.
+    // And it is the place you go to LOOK (card 225): the fast switches live
+    // elsewhere, so the row carries no trailing affordance.
+    const locked = at({ fleetsLocked: true });
+    expect(locked.find((r) => r.id === "skills")?.disabled).toBe(false);
+    expect(at({ active: "skills" }).find((r) => r.id === "skills")?.active).toBe(true);
+    expect(at({ active: "skills" }).find((r) => r.id === "skills")?.trailing).toBe(null);
+    expect(at().find((r) => r.id === "skills")?.trailing).toBe(null);
   });
 
   it("offers the browser row on every face, including the one with no pane", () => {
@@ -96,7 +111,7 @@ describe("navSegmentRows", () => {
   });
 
   it("marks exactly one segment active", () => {
-    for (const active of ["sessions", "fleets", "stategraph"] as const) {
+    for (const active of ["sessions", "fleets", "stategraph", "skills"] as const) {
       const rows = at({ active });
       expect(rows.filter((r) => r.active).map((r) => r.id)).toEqual([active]);
     }

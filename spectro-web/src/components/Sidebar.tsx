@@ -82,9 +82,9 @@ export function Sidebar(props: {
    *  it was a private useState, pressing `fleets` re-rendered the sidebar's own
    *  list and NOTHING else — App was never told, so the whole right-hand side
    *  stood still until something was loaded. */
-  nav: "sessions" | "fleets" | "stategraph" | "browser";
+  nav: "sessions" | "fleets" | "stategraph" | "browser" | "skills";
   /** Switch segment. App owns the state so the surface can answer the press. */
-  onNav: (next: "sessions" | "fleets" | "stategraph" | "browser") => void;
+  onNav: (next: "sessions" | "fleets" | "stategraph" | "browser" | "skills") => void;
   /** Fold the sidebar away. Offered here as well as in the header because the
    *  header's own control is the first thing a narrow window takes away. */
   onCollapse?: () => void;
@@ -148,6 +148,7 @@ export function Sidebar(props: {
     fleets: () => props.onNav("fleets"),
     stategraph: () => props.onNav("stategraph"),
     browser: () => props.onNav("browser"),
+    skills: () => props.onNav("skills"),
   };
 
   /**
@@ -403,6 +404,10 @@ export function Sidebar(props: {
            drives it. What it can do is say what the segment is for, which is
            the same sentence the panel's empty state carries. */
           <p className="sidebar-note">{t(lang, "browser.railNote")}</p>
+        ) : nav === "skills" ? (
+          /* Same shape as the browser's arm: the list lives on the surface
+           (card 225), so the rail says what the segment is for and stops. */
+          <p className="sidebar-note">{t(lang, "nav.skillsNote")}</p>
         ) : nav === "stategraph" ? (
           /* The scenario rail, the fleet list's idiom — offered PERMANENTLY,
            because the empty-state shelf disappears the moment a run loads

@@ -94,6 +94,14 @@ export const SETTING_REACH = {
   // the cron daemon and a fleet node at their own start — and no interactive
   // session consults it ever, so neither "live" nor "next-session" is true.
   headlessMcp: "headless-run",
+  // Skill enablement (the .disabled marker behind /api/skills). Measured, not
+  // assumed (card 225): SkillLibrary.load runs inside SessionConnection
+  // .buildAgentOnce — the catalogue rides the system prompt and use_skill is
+  // registered at the agent's build. A toggle reaches the NEXT session; an
+  // open one keeps the library it was built with. Classified here (rather than
+  // beside either surface) so the plus menu and the settings page derive the
+  // SAME sentence for it instead of hand-writing two (card 224).
+  skills: "next-session",
   // The exporter is built where the session store is minted.
   otlpEndpoint: "next-session",
   otlpBasicAuth: "next-session",

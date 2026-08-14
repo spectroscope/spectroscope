@@ -22,10 +22,11 @@ import { describe, expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 
-/** The four segments the rail switches between, browser included (card 201). */
-type NavMode = "sessions" | "fleets" | "stategraph" | "browser";
+/** The five segments the rail switches between: browser since card 201,
+ *  skills since card 225. */
+type NavMode = "sessions" | "fleets" | "stategraph" | "browser" | "skills";
 
-const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph", "browser"];
+const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph", "browser", "skills"];
 
 /** Blank out block comments, keeping newlines so line numbers still line up.
  *  Prose about a scroll container is not a scroll container. */

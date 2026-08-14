@@ -41,9 +41,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 import { SESS_OPTS_GAP, sessOptsPlacement } from "./SessionListOptions";
 
-/** The four segments the rail switches between, as <Sidebar> declares them
- *  (browser is the fourth since card 201). */
-type NavMode = "sessions" | "fleets" | "stategraph" | "browser";
+/** The five segments the rail switches between, as <Sidebar> declares them
+ *  (browser is the fourth since card 201, skills the fifth since card 225). */
+type NavMode = "sessions" | "fleets" | "stategraph" | "browser" | "skills";
 
 /** Blank out block comments, keeping newlines so line numbers still line up.
  *  Prose about a sticky head is not a sticky head. */
@@ -159,12 +159,12 @@ describe("the options control rides the rail's sticky head", () => {
   });
 
   it("keeps the control on the sessions segment only", () => {
-    // The risk this move introduces, named: the head is drawn on all four
+    // The risk this move introduces, named: the head is drawn on all five
     // segments, so a control dropped into it without its guard would offer the
-    // session-list options while looking at fleets, a state graph or a browser
-    // pane — options for a list that is not on screen.
+    // session-list options while looking at fleets, a state graph, a browser
+    // pane or the skills view — options for a list that is not on screen.
     expect(sessions).toContain('class="sess-opts-btn"');
-    for (const other of ["fleets", "stategraph", "browser"] as const) {
+    for (const other of ["fleets", "stategraph", "browser", "skills"] as const) {
       expect(rail(other), other).not.toContain('class="sess-opts-btn"');
       expect(rail(other), other).not.toContain("sess-opts");
     }
