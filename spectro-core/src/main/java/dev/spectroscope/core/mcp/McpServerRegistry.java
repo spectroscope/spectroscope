@@ -94,6 +94,14 @@ public final class McpServerRegistry {
                     LOG.warn("skipping MCP server with no name");
                     continue;
                 }
+                // Card 224: switched off is not broken. No dial (connecting to a
+                // mute server is the hang card 221 measured), no handle (a status
+                // row would read as "unreachable" — this server is absent by
+                // choice, like a skill with a .disabled marker).
+                if (!config.enabledOrDefault()) {
+                    LOG.info("MCP server '{}' is disabled in settings — not connecting", config.name());
+                    continue;
+                }
                 McpClient client = new McpClient(config, () -> transportFactory.apply(config));
                 try {
                     client.start();

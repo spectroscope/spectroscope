@@ -35,6 +35,7 @@ import { useSlashPicker } from "./SlashPicker";
 import type { QueuedMessage } from "../state/sendQueue";
 import { ComposerGear } from "./ComposerGear";
 import { DisclosureMenu } from "./DisclosureMenu";
+import { PlusMenu, type PlusMenuSection } from "./PlusMenuSettings";
 import { TranslatePanel } from "./TranslatePanel";
 import { ExportMenu } from "./ExportMenu";
 import { openImage } from "../state/imageViewer";
@@ -95,6 +96,10 @@ export function Chat(props: {
   /** The one place client frames leave the app (App.tsx) — the composer
    *  gear uses it directly to send set_permission_mode. */
   sendClient: (msg: ClientMessage) => boolean;
+  /** Card 224: opens the settings page scrolled to a section, with App's
+   *  history manners — the plus menu's Manage/Browse rows call it. Absent in
+   *  hosts without a settings page (the Lab), which also drops the menu. */
+  onOpenSettingsSection?: (section: PlusMenuSection) => void;
   /** Opens the native folder picker (App's pickWorkspace) for the "set folder"
    *  choice in the new-chat workspace chooser; live sessions only. */
   onPickFolder?: () => void;
@@ -870,6 +875,12 @@ export function Chat(props: {
                   gear keep the right — the same ends of the line they held
                   when they shared the row with the textarea. */}
               <div className="composer-actions">
+                {/* Card 224: the plus menu, leftmost — capabilities are turned
+                    on where they are about to be used. Only where a settings
+                    page exists to keep the Manage/Browse promise. */}
+                {props.onOpenSettingsSection !== undefined && (
+                  <PlusMenu workspaceInfo={state.workspace} onOpenSettings={props.onOpenSettingsSection} />
+                )}
                 {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
                     button, per the owner's placement. */}
                 {discMenu}

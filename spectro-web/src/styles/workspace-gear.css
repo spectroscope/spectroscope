@@ -388,3 +388,62 @@
   padding: 6px var(--sp-3);
   font-size: var(--fs-12);
 }
+
+/* ---------- The composer plus menu (card 224) ---------- */
+/* Anchored at the LEFT end of the action row, so the popover left-aligns
+   (the gear's right:0 would push it off screen). The submenu is a SIBLING of
+   the root pop, not a child: .wsg-pop scrolls (overflow-y), and a flyout
+   inside a scrolling box would be clipped. Tokens only — the four designs
+   restyle the shared surfaces, and this menu inherits every one of them. */
+
+.plus-pop {
+  left: 0;
+  right: auto;
+  width: 230px;
+}
+
+.plus-sub {
+  left: 242px;
+  right: auto;
+  width: 360px;
+}
+
+.plus-row {
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.plus-row[aria-disabled="true"] {
+  opacity: 0.6;
+}
+
+.plus-caret {
+  color: var(--text-faint);
+  padding-right: var(--sp-2);
+}
+
+/* The switch inside a row is a glyph, not a nested button — the row itself
+   is the menuitemcheckbox. */
+.plus-row-switch {
+  padding: 0;
+  border: none;
+  background: none;
+  display: inline-flex;
+  flex: none;
+}
+
+.plus-desc {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 270px;
+}
+
+.plus-note {
+  margin: var(--sp-2);
+}
+
+.plus-sep {
+  border-top: 1px solid var(--border);
+  margin: 2px 0;
+}

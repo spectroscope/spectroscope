@@ -309,6 +309,32 @@ class SpectroConfigTest {
         assertEquals(dev.spectroscope.core.mcp.McpServerConfig.TransportKind.STDIO, notes.transportKind());
     }
 
+    // Card 224: the plus menu writes {"enabled": false} into an entry instead of
+    // deleting it — the server stays configured (its command stays readable on
+    // the settings page), only the next agent build skips it. An entry written
+    // before the flag existed has no "enabled" key and stays on.
+    @Test
+    void anMcpServerCanBeSwitchedOffInPlaceAndTheFlagSurvivesTheParse(@TempDir Path projectDir)
+            throws IOException {
+        writeUserConfig("""
+                {
+                  "mcpServers": {
+                    "notes": { "command": "java", "enabled": false },
+                    "tavily": { "command": "npx", "args": ["-y", "tavily-mcp"] }
+                  }
+                }
+                """);
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), projectDir);
+        assertEquals(2, config.mcpServers().size(),
+                "a disabled entry stays configured — the registry skips it, the list keeps it");
+        var notes = config.mcpServers().stream()
+                .filter(s -> s.name().equals("notes")).findFirst().orElseThrow();
+        var tavily = config.mcpServers().stream()
+                .filter(s -> s.name().equals("tavily")).findFirst().orElseThrow();
+        assertFalse(notes.enabledOrDefault(), "an explicit false switches the entry off");
+        assertTrue(tavily.enabledOrDefault(), "no flag means on — every pre-flag config");
+    }
+
     @Test
     void projectSettingsReplaceTheUserMcpServerBlockWholesale(@TempDir Path projectDir)
             throws IOException {
