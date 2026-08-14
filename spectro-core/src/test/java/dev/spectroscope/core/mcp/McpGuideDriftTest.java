@@ -57,6 +57,24 @@ class McpGuideDriftTest {
     }
 
     @Test
+    void theMcpChapterSaysTheWholeTreeGoesAndNotOnlyTheProcessItSpawned() throws IOException {
+        String chapter = mcpChapter();
+        assumeTrue(chapter != null, "not running from a source checkout");
+
+        // The sentence this replaced promised "the child process is destroyed", which was
+        // true only for a server configured without a launcher. Almost nobody configures
+        // one: npx, uvx and shell wrappers put the real server one level down, and the
+        // teardown that shipped killed the wrapper and left the server under init.
+        assertTrue(chapter.contains("whole tree"),
+                "chapter 18 no longer says the teardown reaches past the process it spawned");
+        assertTrue(chapter.contains("grandchild"),
+                "chapter 18 promises a clean teardown without saying that a launcher puts the"
+                        + " real server a level down, which is where the promise used to fail");
+        assertFalse(chapter.contains("the child process is destroyed"),
+                "chapter 18 is back to the sentence that was true only without a wrapper");
+    }
+
+    @Test
     void theSequenceCaptionSaysThePoisonKillsTheChildFirst() throws IOException {
         String chapter = mcpChapter();
         assumeTrue(chapter != null, "not running from a source checkout");

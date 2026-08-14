@@ -3868,8 +3868,8 @@ use — a config written for those drops straight in:</p>
 depends on how it is broken: a command that does not exist fails in milliseconds, while
 a command that <em>does</em> start and then goes silent spends the full
 <strong>20-second</strong> handshake budget before it is written off. Either way the
-entry is skipped, the child process is destroyed, and the line you get names the server
-and says what went wrong:
+entry is skipped, the whole process tree it started is destroyed, and the line you get
+names the server and says what went wrong:
 <code>mcp: notes UNREACHABLE at /usr/bin/notes-server — no answer to 'initialize'
 within 20000 ms</code>. Each advertised tool registers as
 <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, always permission-gated: its inputs are
@@ -3898,6 +3898,15 @@ then said nothing parked <code>spectro doctor</code>, the REPL and any web sessi
 good, and left the child running after the process that started it was gone. Against a
 server that never speaks, the probe now reports it unreachable inside the 20-second
 budget, the rest of the output prints, and no orphan survives.</p>
+
+<p>What gets destroyed is the <strong>whole tree</strong>, not only the process
+spectroscope started. That matters more often than it sounds, because most published
+servers are configured behind a launcher such as <code>npx</code> or a shell wrapper, and
+then the thing that actually speaks JSON-RPC is a grandchild. Kill the launcher on its
+own and the operating system hands the server to init, where it keeps running for as long
+as the machine is up, one leftover per failed connection. So spectroscope lists the tree
+while the launcher can still name it, kills the launcher, kills the list, and forces
+whatever ignored the polite signal.</p>
 
 <h2 id="ch-mcp-notes">The example server: spectro-mcp-notes</h2>
 <p>The repository ships a complete, runnable MCP server as its own module — a stdio
