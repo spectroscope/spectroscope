@@ -303,6 +303,11 @@
 
 /* Skills + MCP managers (card 90): quiet rows in the settings page. */
 .skset { margin-top: var(--sp-4); }
+/* .settings-label's negative bottom margin is sized for .settings-body's
+   24px flex gap. Inside this BLOCK container there is no gap to eat, so the
+   heading overlapped its own note — measured on card 224, when the plus
+   menu's Manage rows started landing people here. */
+.skset > .settings-label { margin-bottom: var(--sp-2); }
 .skset-list { list-style: none; margin: var(--sp-2) 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
 .skset-row {
   display: flex;

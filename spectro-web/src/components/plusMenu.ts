@@ -118,5 +118,23 @@ export function toggledMcpBlock(view: SettingsView, name: string): Record<string
   const entry = block[name];
   if (typeof entry !== "object" || entry === null) return null;
   const wasOn = (entry as Record<string, unknown>)["enabled"] !== false;
-  return { ...block, [name]: { ...(entry as Record<string, unknown>), enabled: !wasOn } };
+  const next: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(block)) {
+    next[key] =
+      typeof value === "object" && value !== null ? stripNulls(value as Record<string, unknown>) : value;
+  }
+  next[name] = { ...stripNulls(entry as Record<string, unknown>), enabled: !wasOn };
+  return next;
+}
+
+/** The entry without its null-valued keys. Measured live: GET /api/settings
+ *  serves a layer's mcpServers entries as BOUND records — name/env/url/type
+ *  present as null — not as the raw file JSON, and a toggle that spreads that
+ *  shape back writes four null keys the operator never typed into
+ *  settings.json. In this schema null and absent mean the same thing, so the
+ *  write drops them and the file stays the operator's own shape.
+ *  @param entry one server entry as the view serves it
+ *  @returns the same entry minus every null-valued key */
+function stripNulls(entry: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(entry).filter(([, value]) => value !== null));
 }

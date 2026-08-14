@@ -106,6 +106,35 @@ describe("what the toggle writes", () => {
     expect(next["notes"]).toEqual({ command: "java", args: ["-jar", "notes.jar"], enabled: false });
   });
 
+  it("does not write the view's null padding into the settings file", () => {
+    // Measured live on 127.0.0.1:8391: GET /api/settings serves the layer's
+    // mcpServers entries as BOUND records — name/env/url/type present as
+    // null — not as the raw file JSON. A toggle that spreads that shape back
+    // writes four null keys the operator never typed into settings.json.
+    const bound = view({
+      layers: {
+        user: {
+          mcpServers: {
+            notes: {
+              name: null,
+              command: "java",
+              args: ["-jar", "notes.jar"],
+              env: null,
+              url: null,
+              type: null,
+              enabled: null,
+            },
+          },
+        },
+      },
+      effective: {
+        mcpServers: [{ name: "notes", command: "java", args: ["-jar", "notes.jar"], enabled: null }],
+      },
+    });
+    const next = toggledMcpBlock(bound, "notes")!;
+    expect(next["notes"]).toEqual({ command: "java", args: ["-jar", "notes.jar"], enabled: false });
+  });
+
   it("writes nothing for a name the owning block does not carry", () => {
     expect(toggledMcpBlock(view(), "ghost")).toBeNull();
   });

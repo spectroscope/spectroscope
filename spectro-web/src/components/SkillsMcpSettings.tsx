@@ -32,12 +32,18 @@ const DELETE_ARM_TIMEOUT_MS = 4000;
 export function SkillsSettings({
   anchorId,
   catalogueAnchorId,
+  onSettled,
 }: {
   /** The #/settings/skills deep-link anchor (card 224) — the plus menu's
    *  "Manage skills" lands here. */
   anchorId?: string;
   /** The #/settings/skills-catalogue anchor — "Browse catalogue" lands here. */
   catalogueAnchorId?: string;
+  /** Fires once this block's own fetch has answered (rows or the failure
+   *  line — either way the block has its height). The panel gates the anchors
+   *  BELOW this block on it: the 57-row catalogue renders from this fetch, and
+   *  a deep-link scroll that fires before it lands is measured 2669px short. */
+  onSettled?: () => void;
 } = {}) {
   const lang = useLang();
   const [skills, setSkills] = useState<SkillRow[] | null | "failed">(null);
@@ -54,9 +60,13 @@ export function SkillsSettings({
         // A build without the catalogue resource answers without the field;
         // that is an empty shelf, not a failure of the whole panel.
         setCatalogue(body.catalogue ?? []);
+        onSettled?.();
       })
-      .catch(() => setSkills("failed"));
-  }, []);
+      .catch(() => {
+        setSkills("failed");
+        onSettled?.();
+      });
+  }, [onSettled]);
   useEffect(load, [load]);
 
   useEffect(() => {
