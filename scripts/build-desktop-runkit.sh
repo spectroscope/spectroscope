@@ -93,6 +93,15 @@ JAR="spectro-server/build/libs/spectro-server-${VERSION}.jar"
 [ -f "$JAR" ] || { echo "!! server jar not found: $JAR"; exit 1; }
 mkdir -p "$D/build"; cp -f "$JAR" "$D/build/spectro-server.jar"
 
+# 1b) THE STAGED JAR IS BUILT FROM THIS TREE — asserted, not assumed, the same
+#     way step 4b reads the Electron runtime back out of the built app. The
+#     version-neutral staging path sits among a dozen versioned jars and
+#     everything downstream (electron-builder, codesign, notarization) packs
+#     whatever is there without asking. The web bundle's content hash is read
+#     OUT OF the staged jar and compared to the tree's bundle; a stale jar —
+#     an old UI under a fresh version — is refused before packaging.
+./scripts/verify-staged-server-jar.sh "$D/build/spectro-server.jar"
+
 # 2) jlink a full runtime (ALL-MODULE-PATH so Spring Boot's reflection is safe)
 echo "==> [2/7] jlink JRE"
 JDK="$(/usr/libexec/java_home 2>/dev/null || dirname "$(dirname "$(command -v jlink)")")"
