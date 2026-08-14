@@ -10,6 +10,9 @@ outgrew the word "ci" — two CI servers, two analysers, a dependency updater an
 a search engine an agent queries at runtime — so the folder keeps the name and
 the command says what it does. Nothing in this directory moved with it.
 
+The one page that draws these stacks beside the servers and launch configs is
+the cockpit: `./spectro-cockpit start` (card 238).
+
 ```bash
 ./spectro-env doctor          can this machine run them
 ./spectro-env up jenkins      one

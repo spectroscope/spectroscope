@@ -22,14 +22,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * The repository root carries three executables, each named after its job:
+ * The repository root carries four executables, each named after its job:
  * {@code spectro-app} is the developer's way into the product,
- * {@code spectro-serve} owns the server lifecycle, and {@code spectro-env}
- * brings the docker stacks in {@code ci/} up and down. The shipped CLI is a
- * fourth thing and keeps the bare name {@code spectro}; it arrives in a release
- * zip as {@code bin/spectro} and is not in this tree.
+ * {@code spectro-serve} owns the server lifecycle, {@code spectro-env}
+ * brings the docker stacks in {@code ci/} up and down, and
+ * {@code spectro-cockpit} serves the estate overview in {@code cockpit/}
+ * (card 238). The shipped CLI is a fifth thing and keeps the bare name
+ * {@code spectro}; it arrives in a release zip as {@code bin/spectro} and is
+ * not in this tree.
  *
- * <p>Renaming one of those three is a two-second {@code git mv} and the
+ * <p>Renaming one of those four is a two-second {@code git mv} and the
  * references are the whole job — the move that produced this test touched
  * roughly thirty files across scripts, docs, the built user guide and a sibling
  * drift test. A page that still tells a reader to run {@code ./ci/spectro-ci}
@@ -77,10 +79,10 @@ class RootScriptNameDriftTest {
      * next renamer lands.
      */
     @Test
-    void theRootCarriesThreeToolsEachNamedAfterItsJob() throws IOException {
-        assertEquals(List.of("spectro-app", "spectro-env", "spectro-serve"),
+    void theRootCarriesFourToolsEachNamedAfterItsJob() throws IOException {
+        assertEquals(List.of("spectro-app", "spectro-cockpit", "spectro-env", "spectro-serve"),
                 List.copyOf(rootScripts()),
-                "the executables in the repository root are not the three this repo documents");
+                "the executables in the repository root are not the four this repo documents");
     }
 
     /**
@@ -163,7 +165,7 @@ class RootScriptNameDriftTest {
 
     /** A root script nobody can find is the same problem from the other side. */
     @Test
-    void theReadmeNamesAllThreeOfThem() throws IOException {
+    void theReadmeNamesAllFourOfThem() throws IOException {
         String readme = Files.readString(ROOT.resolve("README.md"));
         List<String> absent = new ArrayList<>();
         for (String script : rootScripts()) {
