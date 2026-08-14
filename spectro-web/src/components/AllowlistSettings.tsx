@@ -131,6 +131,13 @@ export function AllowlistSettings({
         {t(lang, "set.secAllowlist")}
       </div>
       <p className="settings-note">{t(lang, "set.alHint")}</p>
+      {/* ---- WHEN it takes effect (card 222). Every settings block now says
+          this, and this is the one block whose answer is "next session" by
+          choice rather than by cost. The sentence carries the reason with it:
+          without it, an operator reads a limitation where there is a fence. ---- */}
+      <p className="settings-note" data-testid="allowlist-reach">
+        {t(lang, "set.alApplies")}
+      </p>
       {failed && <p className="settings-note settings-note--warn">{t(lang, "set.alLoadFailed")}</p>}
       {view && (
         <p className="settings-note" data-testid="allowlist-map-version">

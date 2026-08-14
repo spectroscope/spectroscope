@@ -96,7 +96,7 @@ public final class BrowsePageTool implements Tool {
 
     private final Supplier<Optional<Path>> chromeLocator;
     private final ChromeRunner runner;
-    private final dev.spectroscope.core.net.NetFence fence;
+    private final Supplier<dev.spectroscope.core.net.NetFence> fence;
 
     /** The production tool: discover the system Chrome per call, run it for real. */
     public BrowsePageTool() {
@@ -116,7 +116,7 @@ public final class BrowsePageTool implements Tool {
     }
 
     /**
-     * The fully wired tool (card 199).
+     * The fully wired tool (card 199) over a fixed fence.
      *
      * @param chromeLocator yields the browser binary, or empty when none is installed
      * @param runner        the process seam that actually executes Chrome
@@ -126,6 +126,20 @@ public final class BrowsePageTool implements Tool {
      */
     public BrowsePageTool(Supplier<Optional<Path>> chromeLocator, ChromeRunner runner,
                           dev.spectroscope.core.net.NetFence fence) {
+        this(chromeLocator, runner, () -> fence);
+    }
+
+    /**
+     * The wiring a long-lived session needs: the fence is asked PER CALL, like
+     * the Chrome locator beside it (card 222).
+     *
+     * @param chromeLocator yields the browser binary, or empty when none is installed
+     * @param runner        the process seam that actually executes Chrome
+     * @param fence         yields the fence to apply to THIS call, so an
+     *                      {@code allowLocalhost} grant saved mid-session reaches it
+     */
+    public BrowsePageTool(Supplier<Optional<Path>> chromeLocator, ChromeRunner runner,
+                          Supplier<dev.spectroscope.core.net.NetFence> fence) {
         this.chromeLocator = chromeLocator;
         this.runner = runner;
         this.fence = fence;
@@ -210,7 +224,7 @@ public final class BrowsePageTool implements Tool {
         if (url.isBlank()) {
             return "ERROR: browse_page needs a non-empty url.";
         }
-        dev.spectroscope.core.net.NetFence.Refusal refusal = fence.refuse(url);
+        dev.spectroscope.core.net.NetFence.Refusal refusal = fence.get().refuse(url);
         if (refusal != null) {
             return "ERROR: browse_page " + refusal.sentence();
         }

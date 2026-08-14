@@ -729,6 +729,11 @@ export function SettingsPanel({
                   />
                 </label>
               </div>
+              {/* Card 222: generate_image resolves its backend and model per
+                  call, so both dropdowns above reach an open session. The
+                  provider and model at the top of this block are the header
+                  picker's job and carry their own live path. */}
+              <p className="settings-note">{t(lang, "set.reachLive")}</p>
 
               {/* ---- Leveling: how much of the ladder is doing work here ---- */}
               {leveling?.snapshot && (
@@ -879,6 +884,9 @@ export function SettingsPanel({
                 />
               </div>
               <p className="settings-note">{t(lang, "set.allowLocalhostNote")}</p>
+              {/* Card 222: the fence is asked per call by all five tools that
+                  take one, so the opt-in reaches an open session. */}
+              <p className="settings-note">{t(lang, "set.reachLive")}</p>
               <OriginRow
                 view={view}
                 field="allowLocalhost"
@@ -989,6 +997,9 @@ export function SettingsPanel({
                   />
                 </label>
               </div>
+              {/* Card 222: browse_page looks for the browser binary per call,
+                  so a path saved here reaches an open session. */}
+              <p className="settings-note">{t(lang, "set.reachLive")}</p>
             </>
           )}
 

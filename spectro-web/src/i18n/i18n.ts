@@ -956,6 +956,18 @@ export const dict: Record<string, { de: string; en: string }> = {
     de: "Welche Werkzeug-Aufrufe ohne Rückfrage laufen. Jeder Eintrag nennt eine Stufe: read schaut nur, write greift ein, eval-execute führt Code aus. Ein Eintrag ohne Stufe gibt nur read frei, und eine Familie mit * muss ihre Stufe nennen.",
     en: "Which tool calls run without asking. Every entry names a tier: read looks, write acts, eval-execute runs code. An entry without a tier approves read only, and a * family has to name its tier.",
   },
+  // Card 222 asked every saveable setting to say when it takes effect. The
+  // allowlist answers "next session" and it is the only place in the product
+  // where that is a decision rather than a limitation: the belt was made live
+  // so the operator's choices reach the agent, and this list is what protects
+  // the operator FROM the agent. The agent can write files in the workspace,
+  // so a live allowlist would let a run widen its own permissions between two
+  // tool calls with nobody watching. The sentence says the reason, because an
+  // operator who reads only "next session" would reasonably file it as a bug.
+  "set.alApplies": {
+    de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält ihre Liste — sonst könnte ein Lauf, der Dateien schreiben darf, sich zwischen zwei Aufrufen selbst mehr erlauben.",
+    en: "Applies from the next session. A session already open keeps its list — otherwise a run that may write files could widen its own permissions between two tool calls.",
+  },
   "set.alMapVersion": {
     de: "Stufen-Karte {ver} — sie gehört zum Build, nicht zum Server, den du ansprichst.",
     en: "Tier map {ver} — it ships with the build, not with the server you talk to.",
@@ -1103,6 +1115,20 @@ export const dict: Record<string, { de: string; en: string }> = {
   "set.hkApplies": {
     de: "Gilt ab der nächsten Sitzung. Eine offene Sitzung behält die Hooks, mit denen sie gestartet ist.",
     en: "Applies from the next session. A session already open keeps the hooks it started with.",
+  },
+  // Card 222. The owner saved a SearXNG address, this page reported the tier as
+  // searxng, and the next search in the same window went to DuckDuckGo. The
+  // page was right about the configuration and wrong about the run, and nothing
+  // on it said which of the two it was describing. Two sentences close that,
+  // and every field that can be saved carries one of them: this one where the
+  // change reaches the open session, `set.hkApplies` where it does not.
+  //
+  // The wording says "from its next tool call" rather than "immediately"
+  // because that is what the belt does — the tool asks the settings again when
+  // it is called, so a call already in flight finishes on what it started with.
+  "set.reachLive": {
+    de: "Gilt sofort, auch für eine schon offene Sitzung — ab deren nächstem Tool-Aufruf.",
+    en: "Applies immediately, including to a session already open — from its next tool call.",
   },
   "set.hkFailOpen": {
     de: "Antwortet ein Hook nicht rechtzeitig, wird er abgebrochen und der Aufruf läuft trotzdem — ein kaputter Hook soll nicht jeden Werkzeug-Aufruf blockieren. Das steht dann als „timed-out\" in der Ablaufspur, nie als „durchgelassen\".",

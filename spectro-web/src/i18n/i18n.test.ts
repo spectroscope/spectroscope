@@ -389,6 +389,31 @@ describe("the workspace gear describes baseUrl as what it now is", () => {
   });
 });
 
+// Card 222. The defect was a settings page that reported a state the run did
+// not have, and said nothing about which of the two it was describing. The fix
+// is that every saveable setting carries a sentence about WHEN it lands, so
+// these two sentences are load-bearing UI, not decoration — a build that keeps
+// the keys but empties the promise out of them is the silence coming back.
+describe("the settings page says when a change reaches the run", () => {
+  it("promises the open session, not just the next one", () => {
+    expect(dict["set.reachLive"].en).toMatch(/already open/);
+    expect(dict["set.reachLive"].en).toMatch(/next tool call/);
+    expect(dict["set.reachLive"].de).toMatch(/offene Sitzung/);
+    expect(dict["set.reachLive"].de).toMatch(/Tool-Aufruf/);
+  });
+
+  it("says the allowlist is the exception, and why", () => {
+    // "Next session" alone reads as an oversight next to four blocks that say
+    // "immediately". The reason is what turns it into a decision a reader can
+    // agree with: a run that can write files must not be able to widen its own
+    // permissions between two tool calls.
+    expect(dict["set.alApplies"].en).toMatch(/next session/);
+    expect(dict["set.alApplies"].en).toMatch(/write files/);
+    expect(dict["set.alApplies"].de).toMatch(/nächsten Sitzung/);
+    expect(dict["set.alApplies"].de).toMatch(/Dateien schreiben/);
+  });
+});
+
 // The browser segment's fence note (card 201, review finding 4). The settings
 // text used to promise a fence that a redirect walked around: with the loopback
 // opt-in OFF, a 302 to a public name resolving to 127.0.0.1 loaded and titled

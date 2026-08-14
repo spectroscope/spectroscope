@@ -237,6 +237,17 @@ export function WebSearchSettings({
         </p>
       )}
 
+      {/* ---- WHEN it takes effect (card 222). This line is the whole reason
+          that card exists: the tier above was right, the search that followed
+          it used a different one, and the page said nothing about which
+          instant it was describing. web_search resolves its tier per call, so
+          the honest sentence here is "immediately" — and it has to be on the
+          screen rather than in a release note, because the reader's next move
+          is to go and search. ---- */}
+      <p className="settings-note" data-testid="web-search-reach">
+        {t(lang, "set.reachLive")}
+      </p>
+
       {/* ---- 1. SearXNG: an instance you run ---- */}
       <div className="settings-grid">
         <label className="settings-field">

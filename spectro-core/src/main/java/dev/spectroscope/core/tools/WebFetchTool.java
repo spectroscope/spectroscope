@@ -44,7 +44,7 @@ public final class WebFetchTool implements Tool {
     public static final int MAX_REDIRECTS = 5;
 
     private final HttpFetcher fetcher;
-    private final NetFence fence;
+    private final java.util.function.Supplier<NetFence> fence;
 
     /**
      * Builds the tool over the injected network seam, fenced at the default:
@@ -57,12 +57,28 @@ public final class WebFetchTool implements Tool {
     }
 
     /**
-     * The fully wired tool.
+     * The fully wired tool over a fixed fence — the shape every test wants.
      *
      * @param fetcher {@link DefaultHttpFetcher} in production, an in-memory fake in tests
      * @param fence   where this tool may go — built from {@code allowLocalhost} in the settings
      */
     public WebFetchTool(HttpFetcher fetcher, NetFence fence) {
+        this(fetcher, () -> fence);
+    }
+
+    /**
+     * The wiring a long-lived session needs: the fence is asked PER CALL.
+     *
+     * <p>Card 222. A registry is built once per session and the settings under
+     * it are not frozen — an operator can grant {@code allowLocalhost} while the
+     * session is open, and before this constructor existed the grant reached
+     * nothing until they started a new chat. The comment at the call site
+     * claimed otherwise, which is the part that cost a day.</p>
+     *
+     * @param fetcher {@link DefaultHttpFetcher} in production, an in-memory fake in tests
+     * @param fence   yields the fence to apply to THIS call
+     */
+    public WebFetchTool(HttpFetcher fetcher, java.util.function.Supplier<NetFence> fence) {
         this.fetcher = fetcher;
         this.fence = fence;
     }
@@ -109,9 +125,14 @@ public final class WebFetchTool implements Tool {
         // The whole downstream sits in one guard (the GenerateImageTool pattern):
         // a throwing seam AND a null-returning seam both surface as an ERROR string.
         try {
+            // ONE fence for the whole redirect chain of ONE call: asked here, so
+            // a mid-session settings change reaches the next call, and not
+            // re-asked per hop, so a chain cannot be judged by two different
+            // rules halfway through.
+            NetFence callFence = fence.get();
             String hop = url;
             for (int taken = 0; ; taken++) {
-                NetFence.Refusal refusal = fence.refuse(hop);
+                NetFence.Refusal refusal = callFence.refuse(hop);
                 if (refusal != null) {
                     return "ERROR: web_fetch " + refusal.sentence();
                 }
