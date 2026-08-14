@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
@@ -11,6 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 
 /**
@@ -43,6 +45,14 @@ import java.util.concurrent.CountDownLatch;
  *       signal reached it first. The MCP stdio shutdown sequence is close stdin,
  *       wait, {@code SIGTERM}, {@code SIGKILL}, and a teardown that starts at step
  *       three cannot be told from a correct one by exit codes or by wall time.</li>
+ *   <li>{@code forker} — the polite server one step further: it uses the window the
+ *       end-of-stream buys it to <b>start a helper process</b>, and then waits for that
+ *       helper the way a server waits for its own cleanup. It announces the helper's pid
+ *       in {@code <pidfile>.fork}, written by the parent from {@link Process#pid()} so
+ *       the test can look for a process that may never have run a line of its own code.
+ *       This is the shape the polite second creates and nothing else can: a child born
+ *       <i>after</i> the census, invisible to a kill that walks a list taken before the
+ *       goodbye.</li>
  * </ul>
  *
  * <p><b>Why the file carries timestamps and not a single word.</b> On Unix the JDK's
@@ -57,6 +67,14 @@ public final class MuteMcpServerFixture {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
+    /**
+     * How long {@code forker} waits after end-of-stream before it starts its helper.
+     * Load-bearing rather than decorative: it puts the fork strictly between a census
+     * taken at the top of the release step and one taken after the exit grace, so a test
+     * can tell those two placements apart instead of racing them.
+     */
+    private static final long FORK_DELAY_MS = 300;
+
     /** Static main only — never instantiated. */
     private MuteMcpServerFixture() {
     }
@@ -65,18 +83,13 @@ public final class MuteMcpServerFixture {
      * Announce the pid, misbehave in the configured way, then block forever.
      *
      * @param args {@code args[0]} the pid file to write; {@code args[1]} {@code mute},
-     *             {@code gibberish} or {@code polite}
+     *             {@code gibberish}, {@code polite} or {@code forker}
      * @throws IOException          when the pid file cannot be written — the process then dies, which the test sees
      * @throws InterruptedException never in practice; the latch is never counted down
      */
     public static void main(String[] args) throws IOException, InterruptedException {
         if (args.length > 0) {
-            // Write-then-move so the test never reads a half-written pid.
-            Path target = Path.of(args[0]);
-            Path staging = Path.of(args[0] + ".tmp");
-            Files.writeString(staging, Long.toString(ProcessHandle.current().pid()),
-                    StandardCharsets.UTF_8);
-            Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING);
+            announce(Path.of(args[0]), ProcessHandle.current().pid());
         }
         String mode = args.length > 1 ? args[1] : "mute";
         if (mode.equals("gibberish")) {
@@ -85,6 +98,10 @@ public final class MuteMcpServerFixture {
         }
         if (mode.equals("polite")) {
             servePoliteAndRecordHowItEnded(Path.of(args[0] + ".exit"));
+            return;
+        }
+        if (mode.equals("forker")) {
+            serveThenStartAHelperOnStdinEof(Path.of(args[0] + ".fork"));
             return;
         }
         // Not a sleep with a deadline: the point is a pipe that will never carry another
@@ -121,6 +138,70 @@ public final class MuteMcpServerFixture {
         // ever mean "a signal arrived" and never "this process left tidily".
         sleepQuietly(500);
         Runtime.getRuntime().halt(0);
+    }
+
+    /**
+     * Answer the handshake, then spend the window the end-of-stream buys on a helper
+     * process and wait for it — a server doing cleanup work with a child, which is the
+     * thing the polite second exists to allow in the first place.
+     *
+     * <p>The parent writes the helper's pid, taken from {@link Process#pid()} the moment
+     * the fork succeeds. A test looking for a leftover must be able to name it even when
+     * it is killed before it runs a line of its own code, so the child announcing itself
+     * would be the wrong instrument here.
+     *
+     * <p>Waiting for the helper is what keeps this process alive past the exit grace, and
+     * that is deliberate: a server whose own process has already gone is beyond what any
+     * census can name, and the guide says so rather than promising otherwise.
+     *
+     * @param forkPidFile where the helper's pid is announced
+     * @throws IOException if stdin cannot be read or the helper cannot be started
+     */
+    private static void serveThenStartAHelperOnStdinEof(Path forkPidFile) throws IOException {
+        BufferedReader in = new BufferedReader(
+                new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        String line;
+        while ((line = in.readLine()) != null) {
+            answer(line);
+        }
+        sleepQuietly(FORK_DELAY_MS);
+        Process helper = new ProcessBuilder(helperCommand())
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .start();
+        announce(forkPidFile, helper.pid());
+        try {
+            helper.waitFor();
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /**
+     * This same fixture again, muted and without a pid file: a helper that ends for a
+     * signal and for nothing else. Reusing the fixture keeps the helper on this JDK and
+     * this classpath, so no test needs a shell or a {@code sleep} on the PATH.
+     *
+     * @return the command line that starts the helper
+     */
+    private static List<String> helperCommand() {
+        String java = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
+        return List.of(java, "-cp", System.getProperty("java.class.path"),
+                MuteMcpServerFixture.class.getName());
+    }
+
+    /**
+     * Write a pid where a test can find it, staged and moved so nobody ever reads half a
+     * number.
+     *
+     * @param target where the pid belongs
+     * @param pid    the process being announced — this one, or a child of it
+     * @throws IOException when the file cannot be written; the fixture then dies, which the test sees
+     */
+    private static void announce(Path target, long pid) throws IOException {
+        Path staging = Path.of(target + ".tmp");
+        Files.writeString(staging, Long.toString(pid), StandardCharsets.UTF_8);
+        Files.move(staging, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
     /**

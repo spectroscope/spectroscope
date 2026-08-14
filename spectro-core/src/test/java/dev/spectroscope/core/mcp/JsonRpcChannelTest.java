@@ -12,6 +12,9 @@ import java.io.PipedWriter;
 import java.io.Reader;
 import java.io.Writer;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -201,6 +204,54 @@ class JsonRpcChannelTest {
         channel.close();
         channel.close(); // idempotent — must not throw
         assertThrows(RuntimeException.class, () -> channel.request("tools/list", null));
+    }
+
+    @Test
+    void theFarEndIsCountedBeforeItsStdinIsClosedAndOnlyReleasedAfterwards() throws Exception {
+        // The teardown order is the decision card 221 landed, and one process-level test
+        // pins it — but only by racing a shell that has to notice its stdin ended and
+        // exit before the count. Moving the census a few lines later wins that race
+        // almost every time and stays green, which is the same as not being pinned.
+        // Here there is no race: the writer says when it was closed and the far end says
+        // when it was counted, so the order is read off rather than inferred.
+        List<String> order = Collections.synchronizedList(new ArrayList<>());
+        Wiring w = pipes();
+        BufferedWriter out = new BufferedWriter(new Writer() {
+            @Override
+            public void write(char[] cbuf, int off, int len) {
+                // The frames go nowhere; only the close is being watched.
+            }
+
+            @Override
+            public void flush() {
+                // Nothing is buffered downstream.
+            }
+
+            @Override
+            public void close() {
+                order.add("STDIN-CLOSED");
+            }
+        });
+        JsonRpcChannel channel = new JsonRpcChannel(w.channelIn(), out, Duration.ofMillis(200),
+                new JsonRpcChannel.FarEnd() {
+                    @Override
+                    public void census() {
+                        order.add("CENSUS");
+                    }
+
+                    @Override
+                    public void release() {
+                        order.add("RELEASE");
+                    }
+                });
+
+        channel.close();
+
+        assertEquals(List.of("CENSUS", "STDIN-CLOSED", "RELEASE"), order,
+                "the teardown must count the far end while somebody is still there to answer,"
+                        + " then say goodbye, then release — a launcher that exits when its stdin"
+                        + " ends takes the only list of its children with it, and the census"
+                        + " cannot be moved to the far side of that goodbye");
     }
 
     @Test

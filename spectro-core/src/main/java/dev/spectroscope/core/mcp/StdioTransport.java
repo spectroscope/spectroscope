@@ -321,10 +321,19 @@ public final class StdioTransport implements McpTransport {
         }
 
         /**
-         * Ask the parent to name its children while it still can. A second census that
-         * finds nothing never overwrites a first one that found something: teardown runs
-         * again on {@code close()}, by which time the parent is usually reaped and the
-         * honest answer to "what are your children" is silence, not "none".
+         * Ask the parent to name its children while it still can. A later census that
+         * finds nothing never overwrites an earlier one that found something: this runs
+         * three times over a teardown — before the goodbye, after the grace, and again on
+         * {@code close()} — and by the later ones the parent is often reaped, where the
+         * honest answer to "what are your children" is silence rather than "none".
+         *
+         * <p><b>The two guards below overlap on purpose, and each looks removable.</b>
+         * Measured: a reaped launcher reports {@code isAlive() = false} <i>and</i> zero
+         * descendants, so either guard alone blocks the clobber and deleting either one on
+         * its own leaves the whole suite green. Deleting <b>both</b> loses the wrapper that
+         * exits on end-of-stream — {@code theProcessTreeIsCountedBeforeStdinIsClosedAndNotAfter}
+         * goes red with the grandchild reparented to init. Cheap, and the pair is what is
+         * pinned.
          */
         @Override
         public void census() {
@@ -343,16 +352,19 @@ public final class StdioTransport implements McpTransport {
          * has just been given, then {@code SIGTERM} the tree, then {@code SIGKILL}
          * whatever ignored that. Bounded by
          * {@code EXIT_AFTER_EOF_GRACE + DESTROY_ESCALATION_GRACE} whatever the child does.
+         *
+         * <p>The tree is counted again here, as late as the parent allows. The goodbye is
+         * an invitation to do cleanup work, and cleanup work has children: whatever the
+         * grace bought the server, a list taken before the goodbye cannot name it. Counting
+         * once more costs a process-table walk and closes a window a second wide.
          */
         @Override
         public void release() {
-            if (leftOnItsOwn()) {
-                // It took the polite exit; there is still a census to clear, because a
-                // launcher can leave its server behind.
-                destroyTree(false);
-                return;
-            }
-            destroyTree(true);
+            boolean left = leftOnItsOwn();
+            census();
+            // Even a server that took the polite exit gets its tree destroyed: a launcher
+            // leaves on end-of-stream and its server does not.
+            destroyTree(!left);
         }
 
         /**

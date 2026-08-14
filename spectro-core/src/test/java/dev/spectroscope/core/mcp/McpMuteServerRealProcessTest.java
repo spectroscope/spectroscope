@@ -254,6 +254,54 @@ class McpMuteServerRealProcessTest {
     }
 
     @Test
+    void aServerThatStartsAHelperDuringItsGoodbyeLeavesNoOrphanEither(@TempDir Path tmp)
+            throws Exception {
+        // The polite second is a window in which the server may fork, and that is not an
+        // exotic case: it is the reason the second exists. A server told "your stdin has
+        // ended" is being invited to do its cleanup, and cleanup that shells out has a
+        // child. Counting the tree only before the goodbye names everything that existed
+        // then and nothing the goodbye caused, so the kill walks a list up to
+        // EXIT_AFTER_EOF_GRACE + DESTROY_ESCALATION_GRACE old and the helper is reparented
+        // to init. Measured before the second census existed: one orphan per run, ppid 1,
+        // accumulating for as long as the machine is up.
+        //
+        // So the census is taken TWICE — once while everything is certainly alive, and
+        // once as late as the parent allows, after the grace and before the signal. The
+        // fixture starts its helper 300 ms after end-of-stream, which is inside the
+        // 1 s grace: early enough that a census taken after the grace must see it, late
+        // enough that a census taken at the top of the release step cannot.
+        Path pidFile = tmp.resolve("forker.pid");
+        List<String> command = fixtureCommand(pidFile, "forker");
+        assumeTrue(command != null, "cannot locate the fixture classpath; skipping");
+
+        McpServerConfig forker = new McpServerConfig(
+                "forker", command.getFirst(), command.subList(1, command.size()), null, null, null);
+
+        McpServerRegistry registry = McpServerRegistry.load(
+                List.of(forker), tmp, config -> new StdioTransport(config, tmp, BOUND));
+        assertTrue(registry.servers().getFirst().reachable(),
+                "the forker fixture answers the handshake; if it did not, this test proves nothing");
+        long serverPid = pidOf(pidFile);
+
+        registry.close();
+
+        long helperPid = pidOf(Path.of(pidFile + ".fork"));
+        Optional<ProcessHandle> helper = ProcessHandle.of(helperPid);
+        boolean helperSurvived = helper.isPresent() && helper.get().isAlive();
+        // Read first, then clean up: a red run must not leave the orphan it just proved.
+        helper.ifPresent(ProcessHandle::destroyForcibly);
+
+        Optional<ProcessHandle> server = ProcessHandle.of(serverPid);
+        assertFalse(server.isPresent() && server.get().isAlive(),
+                "the server itself (pid " + serverPid + ") outlived the teardown");
+        assertFalse(helperSurvived,
+                "the helper (pid " + helperPid + ") the server started while it was saying"
+                        + " goodbye outlived the teardown: it was born after the census, so the"
+                        + " kill walked a list that could not name it, and it is now reparented"
+                        + " to init and accumulating");
+    }
+
+    @Test
     void fourMuteServersLeaveFourDeadReaderThreadsAndNotOneLiveOne(@TempDir Path tmp)
             throws Exception {
         List<Thread> readers = new ArrayList<>();
