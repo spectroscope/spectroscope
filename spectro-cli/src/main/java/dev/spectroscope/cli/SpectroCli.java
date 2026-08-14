@@ -711,9 +711,13 @@ public final class SpectroCli implements Runnable {
         System.out.println(ansi.sand("MCP servers") + ansi.dim("  (" + servers.size() + ")"));
         for (var handle : servers) {
             String mark = handle.reachable() ? ansi.green("✓") : ansi.red("✗");
+            // An unreachable row carries the reason instead of a tool count of zero —
+            // "0 tools" is the symptom, the reason is what someone can act on.
+            String tail = handle.reachable() || handle.failure() == null
+                    ? handle.toolCount() + (handle.toolCount() == 1 ? " tool" : " tools")
+                    : handle.failure();
             System.out.println("  " + mark + " " + ansi.bold(handle.name())
-                    + ansi.dim(" · " + handle.target()
-                    + " · " + handle.toolCount() + (handle.toolCount() == 1 ? " tool" : " tools")));
+                    + ansi.dim(" · " + handle.target() + " · " + tail));
         }
         // The wrapped tools carry the mcp__<server>__<tool> names the model sees.
         List<Tool> mcpTools = mcp.tools();

@@ -181,16 +181,26 @@ public final class McpClient {
     /**
      * (Re-)establish the transport: ask the supplier for a fresh one and initialize
      * it. Returns null on success, an error message on failure (leaving no transport).
+     *
+     * <p>{@code fresh} is declared outside the {@code try} so the failure path can
+     * close it. The supplier <b>spawns</b> before the handshake runs, so a handshake
+     * that throws used to leave a live child behind with nothing holding a reference
+     * to it — and this method sits on the per-call re-connect path, so that was one
+     * orphan per tool call, not one per startup. A timeout was never the leak: that
+     * path poisons the channel and the poison destroys the process. The leak is the
+     * server that answers <i>promptly</i> with something the handshake rejects.
      */
     private String establish() {
         closeQuietly(transport);
         transport = null;
+        McpTransport fresh = null;
         try {
-            McpTransport fresh = transportSupplier.get();
+            fresh = transportSupplier.get();
             this.initializeResult = fresh.initialize();
             this.transport = fresh;
             return null;
         } catch (Exception establishFailure) {
+            closeQuietly(fresh);
             transport = null;
             return rootMessage(establishFailure);
         }

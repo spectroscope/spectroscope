@@ -309,7 +309,12 @@ public final class DoctorCommand implements Callable<Integer> {
                                     ? " reachable at " + server.target()
                                             + " (" + server.toolCount()
                                             + (server.toolCount() == 1 ? " tool)" : " tools)")
-                                    : " UNREACHABLE at " + server.target()));
+                                    // Name the server AND say what went wrong. "UNREACHABLE"
+                                    // on its own tells a person their setup is broken and
+                                    // nothing about which way to look (card 221, criterion 6).
+                                    : " UNREACHABLE at " + server.target()
+                                            + (server.failure() == null ? ""
+                                                    : " — " + server.failure())));
                 }
             } finally {
                 mcp.close(); // release the probe's server processes/connections

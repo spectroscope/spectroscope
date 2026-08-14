@@ -410,16 +410,28 @@ use — a config written for those drops straight in:</p>
     "search": { "url": "http://localhost:9000/mcp", "type": "sse" }   // or HTTP/SSE
 } }</pre>
 
-<p>Servers connect eagerly at startup; one that fails to start is logged and
-<strong>skipped</strong> — a broken entry never takes the harness down. Each advertised
-tool registers as <code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, always permission-gated:
-its inputs are model output and its effects are external. <code>/mcp</code> lists
-servers and tools in the REPL; <code>spectro doctor</code> probes reachability; the
-System-context panel names the servers.</p>
+<p>Servers connect eagerly at startup. One that fails to start is logged and
+<strong>skipped</strong>, and startup carries on with the rest. How long that costs you
+depends on how it is broken: a command that does not exist fails in milliseconds, while
+a command that <em>does</em> start and then goes silent waits out the
+<strong>20-second</strong> handshake budget and then the shutdown that follows it: end of
+stream, a signal, and force, capped at <strong>5 more seconds</strong>. So
+<strong>25 seconds</strong> is the most a silent server can cost, and that is the number
+to hold us to. Measured here, an ordinary silent one is written off in 21.4 s, and one
+that ignores every step of the shutdown in 23.5 s. Either way the entry is skipped, the
+process tree it started is destroyed, and the line you get names the server and says what
+went wrong:
+<code>mcp: notes UNREACHABLE at /usr/bin/notes-server — no answer to 'initialize'
+within 20000 ms</code>. Each advertised tool registers as
+<code>mcp__&lt;server&gt;__&lt;tool&gt;</code>, always permission-gated: its inputs are
+model output and its effects are external. <code>/mcp</code> lists servers and tools in
+the REPL and <code>spectro doctor</code> probes reachability; the System-context panel in
+the web face names the servers <em>you configured</em>, which is a different question. It
+is read from the settings file, so a server that never answered is listed there too.</p>
 
 <h2 id="ch-mcp-semantics">Call semantics: at-most-once</h2>
 
-<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport and degrades to an ERROR string — never re-issued, so a slow-but-successful side effect is never doubled.-->
+<!--MERMAID:08-mcp-seq|Startup handshake and the at-most-once call: a failure or timeout poisons the transport, and the poison shuts the server down in the four numbered steps: count the tree, close stdin, count again after the grace because the goodbye may have started something, and only then destroy the tree and force what ignored it. The far end going away is what releases a read parked on a pipe nobody will write to. Only then does the call degrade to an ERROR string, never re-issued, so a slow-but-successful side effect is never doubled.-->
 
 <p>Every call is issued <em>exactly once</em> with a 20-second budget. If the transport
 died between calls, it is re-established once, lazily. But a call that fails or times
@@ -428,6 +440,40 @@ out on an established transport is <strong>not retried</strong> — a slow-but-s
 call reconnects) and the model receives a readable
 <code>ERROR: MCP tool '…' on server '…' failed: …</code>. A dead or slow server degrades;
 it never crashes the harness.</p>
+
+<p>Every close runs the same steps, and their order is the point. First spectroscope
+asks the server's process tree who is in it, while there is still someone to ask. Then it
+<strong>closes the server's stdin</strong>. That end of stream is the ordinary way an MCP
+server is told to stop, and a server that flushes a cache or says goodbye upstream does it
+now. Then it waits a second — and asks the tree again, because a server given that second
+may spend it starting something, and a list drawn up before the goodbye cannot name what
+the goodbye caused. Only then does it <strong>destroy the server process</strong> and
+force whatever ignored that.</p>
+
+<p>The last two steps are also what unparks a stuck read, which is why they are not
+optional on a timeout. A read waiting on a child that has gone silent cannot be
+cancelled: it ignores an interrupt, and it holds the stream's own lock, so closing the
+stream to abandon the read only waits on the read. When the far end dies its pipe closes
+and <strong>the read returns</strong>. Earlier versions closed the stream first, so a
+server that spawned and then said nothing parked <code>spectro doctor</code>, the REPL
+and any web session for good, and left the child running after the process that started
+it was gone. Against a server that never speaks, the probe now reports it unreachable
+inside the budget above, the rest of the output prints, and no orphan survives.</p>
+
+<p>What gets destroyed is the <strong>whole tree</strong>, not only the process
+spectroscope started. That matters more often than it sounds, because most published
+servers are configured behind a launcher such as <code>npx</code> or a shell wrapper, and
+then the thing that actually speaks JSON-RPC is a grandchild. Kill the launcher on its
+own and the operating system hands the server to init, where it keeps running for as long
+as the machine is up, one leftover per failed connection. This is also why the first count
+comes before the goodbye: a launcher that exits when its stdin ends would otherwise be
+gone before anyone asked it, taking the only list of its children with it. The second count
+is the mirror of that, and it is why there are two: the grace exists so a server can do its
+cleanup, cleanup work starts processes, and a count taken a second earlier cannot name
+them. What stays out of reach is what nobody is left to be asked about — anything started
+after that last count, and anything at all started by a launcher that had
+<em>already</em> exited, because a process the operating system has reaped names no
+children.</p>
 
 <h2 id="ch-mcp-notes">The example server: spectro-mcp-notes</h2>
 <p>The repository ships a complete, runnable MCP server as its own module — a stdio

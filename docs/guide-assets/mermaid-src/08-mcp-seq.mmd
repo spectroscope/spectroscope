@@ -15,6 +15,12 @@ sequenceDiagram
     alt success
         S-->>C: text content → tool_result
     else failure / timeout
-        C->>C: poison transport · degrade to ERROR string
+        C->>T: poison transport
+        T->>S: 1 · count the process tree
+        T->>S: 2 · close stdin (end of stream)
+        T->>S: 3 · after 1 s: count again — the goodbye may have started something
+        T->>S: 4 · SIGTERM the tree, then SIGKILL
+        S-->>T: pipe closes · the parked read returns
+        C->>C: degrade to ERROR string
         Note over C: next call reconnects lazily — never re-issued
     end

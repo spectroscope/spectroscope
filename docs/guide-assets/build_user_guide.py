@@ -22,6 +22,17 @@ Why the plates go in as WebP (2026-08-12)
   code. Conversions are cached in .webp-cache/ keyed by source mtime+size,
   so a rebuild after one reshoot re-encodes one plate, not 54.
 
+Editing a mermaid diagram (2026-08-14)
+  mermaid-src/*.mmd is the source and mermaid/*.svg is what the guide inlines,
+  so a changed .mmd shows up nowhere until render_mermaid.mjs has run:
+      npm i mermaid            # somewhere outside the repo; nothing here vendors it
+      NODE_PATH=<that node_modules> node render_mermaid.mjs
+  It re-renders all thirteen, and a different mermaid version moves the widths
+  of the twelve you did not touch (measured: 11.16.1 against whatever rendered
+  the tracked set, `max-width: 1308px` became `1282px` on 01-pipeline). Commit
+  only the diagram you changed and check the others out again, or a one-line
+  caption fix arrives as thirteen changed files.
+
 Placeholders inside parts
   <!--SHOT:name|caption-->      figure with the screenshot as data URI
   <!--SHOT:name|caption|half--> half-width variant
@@ -36,34 +47,32 @@ The PDF is rendered from the finished HTML with headless Chrome:
       --virtual-time-budget=20000 \
       --print-to-pdf=../USER-GUIDE.pdf ../USER-GUIDE.html
 
-Known lag, 2026-08-03: the editions are four rows behind the parts
-  ../USER-GUIDE.html, ../USER-GUIDE-LIGHT.html and both PDFs were last built
-  at be6bc12 (2026-07-31). Since then exactly one part changed, and it is a
-  correction: parts/16-ref-wire.html now publishes the transcript listing as
-  the object it really answers (limitBytes, truncated, per-row loadable), the
-  128 MiB cap the server really enforces, and the local-origin fence and
-  symlink check both endpoints really wear. The built editions still print the
-  old bare-array shape and "64 MB cap" at line 3531 of each, so a reader of the
-  shipped guide is told a cap the server passed and a shape no client can use.
+Both blockers of the 2026-08-03 "known lag" note are gone, measured 2026-08-14
+  The wire correction and the leveling reshoot that once made a rebuild unwise
+  have both landed: `grep -c "64 MB cap" ../USER-GUIDE.html` answers 0 and
+  `grep -c limitBytes` answers 1, and the plates were re-captured at 72bf644
+  ("The tutorial chapter's pictures stop saying 'ladder'"). The editions were
+  last built at 1addc25 on 2026-08-13. No standing reason to leave a rebuild
+  undone is known at the time of writing.
 
-  Second row, 2026-08-04: the owner renamed the leveling feature from "the
-  ladder" to "the tutorial". parts/06b-leveling.html and the three parts that
-  point at it carry the new word, and so do diagram 17 and the CLI help. The
-  plates do NOT: shots/33-leveling-intro, 34-leveling-panel, 36-leveling-teaser,
-  40-leveling-levelup and 41-leveling-settings still photograph a settings block
-  headed "Leveling" and a button reading "Start with the ladder". Rebuilding the
-  editions before capture_leveling.sh has been re-run would print a chapter whose
-  prose and whose pictures disagree, which is worse than the lag. Reshoot first,
-  then build.
+  The note that used to stand here is removed rather than updated with a new
+  date, because a stale warning is worse than none: the last one outlived both
+  of its reasons and told the next reader not to build. Whoever needs to know
+  whether the editions are behind should ask git, not this docstring:
 
-  Left unbuilt on purpose rather than forgotten. A rebuild is its own ritual
-  (both themes, both PDFs, a pdftotext check that the pages really changed),
-  and the deploy mirror behind spectroscope.ai/guide lives in a different repo,
-  so regenerating here alone would leave the published copies disagreeing with
-  this tree instead of agreeing with it. The next guide build carries the
-  correction with no extra work; whoever runs it should re-sync the mirror in
-  the same pass. WireDocDriftTest guards the parts, which is what this
-  generator reads, so the fix cannot be lost in the meantime.
+      git log -1 --format=%ad -- ../USER-GUIDE.html
+      git log -1 --format=%ad -- parts/
+
+The rebuild ritual (all four artefacts, or none)
+  python3 build_user_guide.py            # -> ../USER-GUIDE.html        (dark)
+  python3 build_user_guide.py --light    # -> ../USER-GUIDE-LIGHT.html  (paper)
+  then the Chrome command above, once per edition, into the matching PDF.
+  Give Chrome its own --user-data-dir: printing through a profile someone is
+  using disturbs their browser. Each PDF takes minutes and is ~23 MB; check the
+  md5 really moved rather than trusting the exit code, because a print that
+  never completed still exits 0 and leaves yesterday's file in place. The
+  deploy mirror behind spectroscope.ai/guide lives in a different repo and must
+  be re-synced in the same pass, or the published copies disagree with this tree.
 """
 
 import base64

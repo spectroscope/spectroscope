@@ -1,6 +1,16 @@
 // render_mermaid.mjs — pre-renders mermaid-src/*.mmd to mermaid/*.svg
 // (dark theme on the spectroscope brand tokens; the guide inlines the SVGs so the PDF
-// needs no JavaScript). Needs `npm i playwright mermaid` reachable from cwd.
+// needs no JavaScript). Needs `playwright` and `mermaid` resolvable FROM THIS FILE —
+// this directory, or any node_modules above it. A symlink is enough:
+//
+//   mkdir -p node_modules && ln -s <somewhere>/node_modules/mermaid node_modules/mermaid
+//   PW_CHANNEL=bundled node render_mermaid.mjs
+//
+// Do NOT reach for NODE_PATH to point at mermaid, however natural that looks. Measured
+// 2026-08-14: with NODE_PATH set to a foreign node_modules, `import("playwright")` never
+// returns — no error, no timeout, no browser process, and nothing on stdout because node
+// buffers it, so it reads as "rendering is slow" for as long as you are willing to wait.
+// Without NODE_PATH the same script reaches its first rendered diagram in 0.8 s.
 //
 //   OUT_DIR=<...>/guide-assets node render_mermaid.mjs
 
@@ -60,7 +70,14 @@ const THEME = {
   `,
 };
 
-const browser = await chromium.launch({ channel: "chrome", headless: true });
+// `channel: "chrome"` starts the Chrome installed on this machine, which is the browser
+// the person at the keyboard is using — playwright gives it a temporary profile, but the
+// house rule is not to reach for their running app at all. PW_CHANNEL=bundled takes
+// playwright's own chromium instead. It renders the same diagrams; text metrics come from
+// a different build, so a width may move by a pixel or two.
+const CHANNEL = process.env.PW_CHANNEL || "chrome";
+const browser = await chromium.launch(
+  CHANNEL === "bundled" ? { headless: true } : { channel: CHANNEL, headless: true });
 const page = await browser.newPage();
 await page.setContent("<html><body></body></html>");
 await page.addScriptTag({ content: mermaidJs });
