@@ -33,9 +33,18 @@ public record McpServerConfig(
         String type,
         Boolean enabled) {
 
-    /** The pre-flag shape, kept so a config-shaped literal does not have to
-     *  spell out the switch it does not use — {@code enabled} stays {@code null},
-     *  which {@link #enabledOrDefault()} reads as on. */
+    /**
+     * The pre-flag shape, kept so a config-shaped literal does not have to
+     * spell out the switch it does not use — {@code enabled} stays {@code null},
+     * which {@link #enabledOrDefault()} reads as on.
+     *
+     * @param name    the entry's key in the {@code mcpServers} block
+     * @param command executable to spawn for a stdio server, {@code null} for HTTP/SSE
+     * @param args    extra command-line arguments, may be {@code null}
+     * @param env     extra environment variables, may be {@code null}
+     * @param url     endpoint of an HTTP/SSE server, {@code null} for stdio
+     * @param type    optional transport hint — informational only
+     */
     public McpServerConfig(String name, String command, List<String> args,
                            Map<String, String> env, String url, String type) {
         this(name, command, args, env, url, type, null);

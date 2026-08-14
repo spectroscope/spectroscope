@@ -22,6 +22,12 @@ The interactive faces mount MCP servers as tools. A configured server
 each of its tools to the belt as `mcp__<server>__<tool>`, permission-gated
 like every other tool, every call and result in the event stream.
 
+An entry may carry `"enabled": false` — the off switch behind the composer's
+plus menu and the settings page. The server stays configured, its command
+stays readable, and the next agent build skips it without dialing it; a
+session already open keeps what it mounted. An entry without the flag is on,
+so every config written before the flag existed keeps working.
+
 Which faces, precisely, because the line above used to imply all of them:
 the REPL and a web session mount every configured server, and `spectro
 doctor` connects to each one to report its reachability and tool count. The
