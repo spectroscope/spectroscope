@@ -245,7 +245,26 @@ public final class StdioTransport implements McpTransport {
     }
 
     /**
-     * Graceful destroy escalating to force, mirroring StandardTools.runCommand's kill path.
+     * Graceful destroy escalating to force, mirroring StandardTools.runCommand's kill
+     * path — but over the whole process <b>tree</b>, not just the process spectroscope
+     * spawned.
+     *
+     * <p>Almost nobody configures the server itself. {@code npx}, {@code uvx},
+     * {@code sh -c}, a {@code .sh} launcher: what the config names is a wrapper, and
+     * the real server is a <b>grandchild</b>. Destroying only the direct child kills
+     * the wrapper and leaves the server reparented to init — measured on the shipped
+     * teardown, two runs, two orphans at {@code ppid 1}, and they accumulate for as
+     * long as the machine is up.
+     *
+     * <p>The tree is captured <b>before</b> the parent is reaped, which is the whole
+     * trick: {@link Process#descendants()} walks the OS process table, and once the
+     * wrapper is gone its children have been re-parented and no longer answer to it.
+     * Read the order as: take the census, kill the parent, kill the census, and only
+     * then escalate whatever is still standing.
+     *
+     * <p>What this does <b>not</b> catch is a grandchild forked after the census. That
+     * is a much smaller window than the one it closes, and there is no race-free way to
+     * kill a tree with {@code java.lang.Process} alone.
      *
      * @param process the spawned server, may be {@code null} or already dead
      */
@@ -253,7 +272,10 @@ public final class StdioTransport implements McpTransport {
         if (process == null || !process.isAlive()) {
             return;
         }
+        // The census has to be taken while the parent still owns them.
+        List<ProcessHandle> descendants = process.descendants().toList();
         process.destroy();
+        descendants.forEach(ProcessHandle::destroy);
         try {
             if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
                 process.destroyForcibly();
@@ -262,5 +284,6 @@ public final class StdioTransport implements McpTransport {
             process.destroyForcibly();
             Thread.currentThread().interrupt();
         }
+        descendants.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
     }
 }

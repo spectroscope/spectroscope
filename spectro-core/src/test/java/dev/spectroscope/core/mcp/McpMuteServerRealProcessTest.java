@@ -61,6 +61,13 @@ class McpMuteServerRealProcessTest {
     /** What the whole probe may take: the bound, plus the spawn, plus a bounded teardown. */
     private static final long BUDGET_MS = 6_000;
 
+    /**
+     * The same for a server behind a shell wrapper: two processes to start instead of
+     * one, and a teardown that may spend its full reader grace. Deliberately loose —
+     * this budget is a hang-guard, and the wrapper tests are about the pid, not the clock.
+     */
+    private static final long WRAPPED_BUDGET_MS = 12_000;
+
     @Test
     void aServerThatSpawnsAndNeverSpeaksIsReportedUnreachableWithinTheBound(@TempDir Path tmp)
             throws Exception {
@@ -115,6 +122,49 @@ class McpMuteServerRealProcessTest {
         Optional<ProcessHandle> child = ProcessHandle.of(pid);
         assertFalse(child.isPresent() && child.get().isAlive(),
                 "the spawned server (pid " + pid + ") is still running after the timeout");
+    }
+
+    @Test
+    void aMuteServerBehindAWrapperLeavesNoGrandchildBehind(@TempDir Path tmp) throws Exception {
+        // The direct child is the easy case and almost nobody configures it. npx, uvx,
+        // a .sh wrapper, /bin/sh -c: the published MCP servers arrive behind a launcher,
+        // and then the server is a GRANDCHILD. Destroying the process spectroscope
+        // spawned kills the launcher; the grandchild is reparented to init and lives on.
+        // Measured before this guard existed: two runs, two orphans, ppid 1, accumulating.
+        //
+        // It is an orphan defect and NOT a second hang, which is worth writing down
+        // because the opposite is the natural guess: the grandchild does inherit the
+        // stdout pipe, so one would expect the parked readLine to stay parked. It does
+        // not. Reaping the direct child is enough — measured at 2 ms with the grandchild
+        // still alive — because the JDK's process reaper retires the stream on exit.
+        // A test asserting the reader leaves here would be green in both directions.
+        Path pidFile = tmp.resolve("wrapped.pid");
+        List<String> command = wrappedFixtureCommand(pidFile, "mute");
+        assumeTrue(command != null, "cannot locate the fixture classpath; skipping");
+
+        McpServerConfig wrapped = new McpServerConfig(
+                "wrapped", command.getFirst(), command.subList(1, command.size()), null, null, null);
+
+        long startedAt = System.nanoTime();
+        McpServerRegistry registry = McpServerRegistry.load(
+                List.of(wrapped), tmp, config -> new StdioTransport(config, tmp, BOUND));
+        long elapsedMs = millisSince(startedAt);
+        try {
+            assertTrue(elapsedMs < WRAPPED_BUDGET_MS,
+                    "a wrapped mute server must still come back; it took " + elapsedMs + " ms");
+            assertFalse(registry.servers().getFirst().reachable(),
+                    "a server that never answered is not reachable, wrapper or not");
+        } finally {
+            registry.close();
+        }
+
+        // The pid in the file is the fixture's own — the grandchild, not the /bin/sh
+        // spectroscope spawned. Look for THAT one.
+        long grandchild = pidOf(pidFile);
+        Optional<ProcessHandle> survivor = ProcessHandle.of(grandchild);
+        assertFalse(survivor.isPresent() && survivor.get().isAlive(),
+                "the real server (grandchild pid " + grandchild + ") outlived the wrapper"
+                        + " spectroscope killed; it is now reparented to init and accumulating");
     }
 
     @Test
@@ -245,6 +295,48 @@ class McpMuteServerRealProcessTest {
         }
     }
 
+    @Test
+    void aReEstablishThatFailsItsHandshakeLeavesNoChildBehindEither(@TempDir Path tmp)
+            throws Exception {
+        // McpClient.establish() sits on the re-connect path a tool call takes after the
+        // transport died, so it runs once PER CALL. It spawned, handshook, and on a
+        // handshake that throws walked away from the transport it had just opened —
+        // the same defect the registry's skip path carried, on a hotter path. The
+        // gibberish fixture answers one line that is not JSON: initialize fails without
+        // a timeout, so nothing is poisoned and nothing destroys the child on the way out.
+        List<String> command = fixtureCommand(tmp.resolve("establish.pid"), "gibberish");
+        assumeTrue(command != null, "cannot locate the fixture classpath; skipping");
+
+        List<Long> spawned = new ArrayList<>();
+        for (int attempt = 0; attempt < 2; attempt++) {
+            Path pidFile = tmp.resolve("establish-" + attempt + ".pid");
+            List<String> attemptCommand = fixtureCommand(pidFile, "gibberish");
+            McpServerConfig babbler = new McpServerConfig("babbler", attemptCommand.getFirst(),
+                    attemptCommand.subList(1, attemptCommand.size()), null, null, null);
+            McpClient client = new McpClient(babbler,
+                    () -> new StdioTransport(babbler, tmp, BOUND), BOUND);
+            try {
+                // Never started, so call() takes the establish path — exactly what a tool
+                // call does when the previous transport was poisoned.
+                McpCallResult result = client.call("anything", null);
+                assertTrue(result.text().startsWith("ERROR:"),
+                        "a server that cannot be established degrades to an ERROR string, got: "
+                                + result.text());
+            } finally {
+                client.close();
+            }
+            spawned.add(pidOf(pidFile));
+        }
+
+        List<Long> alive = spawned.stream()
+                .filter(pid -> ProcessHandle.of(pid).map(ProcessHandle::isAlive).orElse(false))
+                .toList();
+        assertTrue(alive.isEmpty(),
+                alive.size() + " of " + spawned.size() + " servers spawned by a FAILED"
+                        + " re-establish are still running: " + alive
+                        + " — that is one leaked child per tool call on the re-connect path");
+    }
+
     // ---- the harness ---------------------------------------------------------------
 
     /** Milliseconds since a {@code System.nanoTime()} mark. */
@@ -283,6 +375,35 @@ class McpMuteServerRealProcessTest {
      */
     private static List<String> fixtureCommand(Path pidFile) throws URISyntaxException {
         return fixtureCommand(pidFile, "mute");
+    }
+
+    /**
+     * The same fixture, but behind a shell wrapper — the shape almost every published
+     * MCP server is configured in ({@code npx}, {@code uvx}, a {@code .sh} launcher).
+     * The trailing {@code ; true} is load-bearing: a shell handed a single simple
+     * command {@code exec}s it and no grandchild exists at all, which would quietly
+     * turn this into the direct-child case it is here to distinguish from.
+     *
+     * @param pidFile where the fixture announces its own pid — the GRANDCHILD's
+     * @param mode    {@code mute} or {@code gibberish}
+     * @return the {@code /bin/sh -c …} command line, or {@code null} when unavailable
+     */
+    private static List<String> wrappedFixtureCommand(Path pidFile, String mode)
+            throws URISyntaxException {
+        List<String> inner = fixtureCommand(pidFile, mode);
+        if (inner == null || !Files.isExecutable(Path.of("/bin/sh"))) {
+            return null;
+        }
+        String script = inner.stream()
+                .map(McpMuteServerRealProcessTest::shellQuote)
+                .reduce((a, b) -> a + " " + b)
+                .orElseThrow() + " ; true";
+        return List.of("/bin/sh", "-c", script);
+    }
+
+    /** POSIX single-quoting, so a temp path with a space cannot rewrite the script. */
+    private static String shellQuote(String argument) {
+        return "'" + argument.replace("'", "'\\''") + "'";
     }
 
     /**
