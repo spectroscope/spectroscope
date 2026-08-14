@@ -300,10 +300,18 @@ describe("webSearchCheck", () => {
 // nothing — rebuilt one directory over, four cards later.
 //
 // The mapping is therefore no longer in the component. `renderToStaticMarkup`
-// cannot reach past `pending` here (the panel fetches in an effect and a server
-// render runs none), so the honest pin is a pure function tested here for what
-// it RETURNS, with doctorPanel.drift.test.ts holding the row to calling it and
-// to holding no other opinion.
+// cannot reach this cell's VALUE (the panel fetches in an effect and a server
+// render runs none, so the cell stays "…"), so the honest pin for the text is a
+// pure function tested here for what it RETURNS.
+//
+// It cannot be the only pin, and saying it was cost a round. The sentence above
+// used to end "…so the honest pin is a pure function", which read as "this
+// panel cannot be rendered" — and nothing then asserted the row reached the
+// screen at all. `checks.slice(0, 4)` in DoctorPanel.tsx deleted it with tsc
+// clean and 3800 tests green. A static render emits every `.doctor-row`; only
+// the fetched values are out of reach. doctorPanel.drift.test.tsx now renders
+// the panel for the row's presence and holds the row's source to calling this
+// function and to holding no other opinion.
 describe("webSearchRowValue", () => {
   const served = (webSearch: Record<string, string>): { webSearch: Record<string, string> } => ({
     webSearch,

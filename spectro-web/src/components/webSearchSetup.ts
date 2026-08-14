@@ -185,10 +185,19 @@ export function webSearchCheck(config: { webSearch?: ServedWebSearch } | null | 
  * argument dropped from the `t()` call — each left the full web suite green at
  * 260 files and 3794 tests. The panel would have shipped reading `duckduckgo`,
  * or `searxng — a metasearch instance you run, at {addr}`, and criteria 2 and 3
- * are the two the card exists for. Rendering cannot catch it either: the panel
- * fetches in an effect, no server render runs effects, so every state but
- * `pending` is out of reach. Moving the mapping here is what makes it testable
- * at all, and webSearchSetup.test.ts kills both mutations.</p>
+ * are the two the card exists for. Rendering cannot catch <i>those two</i>: the
+ * panel fetches in an effect, no server render runs effects, so the row's value
+ * cell is `…` whatever this function returns. Moving the mapping here is what
+ * makes it testable at all, and webSearchSetup.test.ts kills both mutations.</p>
+ *
+ * <p>That is as far as the argument goes, and the first version of it went
+ * further and was wrong. It read "rendering cannot reach past pending here",
+ * which the next review took to mean the panel could not be rendered at all —
+ * so nothing asserted the row was ON the screen, and `checks.slice(0, 4)` in
+ * DoctorPanel.tsx deleted it with the whole suite green. A static render emits
+ * every `.doctor-row`; only the fetched VALUES are out of reach. The row's
+ * presence is pinned by rendering in doctorPanel.drift.test.tsx, its wiring by
+ * an equality on the source there, and its text by the tests below.</p>
  *
  * <p>Still a reader, not a decision: every branch below is a `state` the
  * function above already decided, and the sentence is a dict key that function

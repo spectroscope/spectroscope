@@ -9,17 +9,38 @@
 // was served and nobody drew it. That is card 195's blocking finding again, one
 // panel over: "the page was verified as a form, not as an answer".
 //
-// There is no DOM in this suite, so this reads the seam off disk the way
-// componentReach.drift.test.ts reads its mounts: the assertion is that the
-// panel calls the shared reader and hands it the fetched payload.
-// webSearchSetup.test.ts proves what comes out the other end.
+// The row is held at two ends, because each end let the other one through.
 //
-// The first version of this file did only that, and the review of card 223
-// measured what it was worth: replacing the row's whole value expression with
-// `search.tier` left every test here green. Asserting that a KEY appears in a
-// file says nothing about what the file draws. So the row is now pinned as an
-// EQUALITY — three fields, no logic — which is only honest because the logic
-// moved somewhere it can be tested for its output.
+// The RENDER end is first, and it is the one this file was missing. The second
+// review of card 223 measured the hole: `{checks.map(…)}` →
+// `{checks.slice(0, 4).map(…)}` in DoctorPanel.tsx drops this row out of the
+// panel entirely and touches none of the source the assertions below read —
+// `tsc -b` exit 0, all six tests here green, the whole suite at 260 files /
+// 3800 tests / 0 failures, and the shipped panel draws four rows naming no
+// search tier. That is the card's own defect, restored, past the file added to
+// prevent it.
+//
+// The reason this file gave for having no render test was wrong, and it was
+// written down three times — here, in webSearchSetup.ts's javadoc on
+// `webSearchRowValue`, and in webSearchSetup.test.ts's header. All three said a
+// server render "cannot reach past pending here". What is true is narrower:
+// DoctorPanel fetches in an effect and `renderToStaticMarkup` runs no effects,
+// so the row's VALUE is stuck at the pending "…" and cannot be asserted that
+// way. The ROW is not. A static render of this panel emits every
+// `.doctor-row` element, label and dot and all — that is the half the source
+// assertions cannot see, and it is where the slice above hid.
+//
+// The SOURCE end is the other half, and it is the one rendering cannot reach:
+// the review before that measured `search.tier` in place of the row's whole
+// value expression, and the `{ addr }` argument dropped from the `t()` call,
+// each leaving the full suite green. Asserting that a KEY appears in a file
+// says nothing about what the file draws — so the row is pinned as an EQUALITY,
+// three fields and no logic, which is only honest because the logic moved into
+// `webSearchRowValue`, where webSearchSetup.test.ts pins its output.
+//
+// So: rendering says the row is on the screen, the equality says it is wired to
+// the reader, and webSearchSetup.test.ts says what the reader returns. Cut any
+// one of the three and a mutation walks through the gap.
 //
 // Two things this file asserts the panel must NOT do. It must not spell a tier
 // name: that would be a third copy of a decision card 203 spent a whole card
@@ -30,9 +51,12 @@
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { renderToStaticMarkup } from "react-dom/server";
+import { DoctorPanel } from "./DoctorPanel";
 import { WEB_SEARCH_TIERS } from "./webSearchSetup";
-import { dict } from "../i18n/i18n";
+import { dict, t, type Lang } from "../i18n/i18n";
+import { currentLang, setLang } from "../state/lang";
 
 const panel = readFileSync(fileURLToPath(new URL("./DoctorPanel.tsx", import.meta.url)), "utf8");
 const surfaces = readFileSync(fileURLToPath(new URL("../styles/surfaces.css", import.meta.url)), "utf8");
@@ -56,7 +80,43 @@ function row(key: string): string {
     .trim();
 }
 
+/** Every row the panel DECLARES, in source order. The expected render count is
+ *  read from the list rather than typed as a number, so a tenth subsystem is a
+ *  one-line change here and a dropped one is a failure. It was nine when this
+ *  was written. */
+const declared = [...code.matchAll(/key: "(doc\.[A-Za-z]+)"/g)].map((m) => m[1]);
+
+/** The panel as a reader gets it, in one language. Open, socket up, no live
+ *  provider — the fetched states stay `pending`, which is all a server render
+ *  can reach and all this needs: it asks WHICH ROWS ARE ON THE SCREEN. */
+function panelHtml(lang: Lang): string {
+  setLang(lang);
+  return renderToStaticMarkup(
+    <DoctorPanel open={true} onClose={() => {}} status="open" providerInfo={null} permissionMode="ask" />,
+  );
+}
+
+const wasLang = currentLang();
+afterAll(() => setLang(wasLang));
+
 describe("the calibration panel names the web search tier", () => {
+  it("draws every declared row, the web-search one among them", () => {
+    // The finding this test exists for: `checks.slice(0, 4).map(…)` in
+    // DoctorPanel.tsx leaves every source assertion below green — the row's
+    // object literal is untouched, the import is untouched, the key is still in
+    // the file — and ships a panel with four rows that names no search tier.
+    // tsc -b exit 0, 260 files / 3800 tests / 0 failures, feature dead.
+    //
+    // A count alone would not be enough either: a row can be present and be the
+    // wrong one, so the label is read out of the markup in both languages.
+    expect(declared).toContain("doc.webSearch");
+    for (const lang of ["en", "de"] as const) {
+      const html = panelHtml(lang);
+      expect(html.split('class="doctor-row"').length - 1, `${lang}: rows on screen`).toBe(declared.length);
+      expect(html, `${lang}: the web-search row`).toContain(t(lang, "doc.webSearch"));
+    }
+  });
+
   it("draws a row for it at all", () => {
     // The grep from the card, inverted. It answered 0 on c00c361.
     expect(/web.?search|searxng/i.test(panel)).toBe(true);
@@ -83,13 +143,16 @@ describe("the calibration panel names the web search tier", () => {
     // 260 files / 3794 tests / 0 failures — the feature could ship reading
     // "duckduckgo", or "…at {addr}", with every gate green.
     //
-    // Nothing here can be pinned by rendering: DoctorPanel fetches in an effect
-    // and `renderToStaticMarkup` runs no effects, so a server render of this
-    // panel reaches `pending` and stops. So the mapping moved out into
-    // `webSearchRowValue`, where webSearchSetup.test.ts pins what it returns,
-    // and what is left to hold down is that this row consults it and holds no
-    // opinion beside it. An equality says that; a `toContain` would pass with a
-    // second, unpinned expression sitting next to the call.
+    // The VALUE is what rendering cannot reach — and only the value. The panel
+    // fetches in an effect, `renderToStaticMarkup` runs no effects, so this
+    // cell is `…` in the test above no matter what the mapping does. (The row
+    // itself renders fine; that is what the test above is for. This file once
+    // claimed the whole panel was out of reach, and a slice of the row list
+    // walked straight through the gap that claim excused.) So the mapping moved
+    // out into `webSearchRowValue`, where webSearchSetup.test.ts pins what it
+    // returns, and what is left to hold down here is that this row consults it
+    // and holds no opinion beside it. An equality says that; a `toContain`
+    // would pass with a second, unpinned expression sitting next to the call.
     expect(row("doc.webSearch")).toBe(
       '{ key: "doc.webSearch", verdict: search.verdict, value: webSearchRowValue(search, lang), }',
     );
