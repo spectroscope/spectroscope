@@ -74,6 +74,26 @@ local overrides, and raw-JSON editors for <code>mcpServers</code>/<code>hooks</c
 unpinned session — still in its throwaway temp folder — shows the composer gear's project
 sections disabled: there is no durable folder to write to yet.</p>
 
+<p><strong>When a saved setting lands.</strong> Every tool that reads a setting reads it
+again on the call, so saving one changes what the session you already have open does next:
+the <code>web_search</code> tier (<code>searxngUrl</code> and the two search keys), the
+image backend and <code>imageModel</code>, <code>chromeBinary</code>, and the
+<code>allowLocalhost</code> net fence that <code>web_fetch</code>, <code>browse_page</code>
+and the browser and launch families share. A call already in flight finishes on what it
+started with; the next one asks again.</p>
+
+<p>Four things are settled when the agent is built and stay settled for that session,
+because changing them mid-session would mean killing processes or rewriting a conversation
+that already happened: the <strong>workspace</strong>, the <strong>MCP servers</strong>,
+the <strong>shell hooks</strong>, and the <strong>system prompt</strong> with its skills
+and <code>SPECTRO.md</code>/<code>AGENTS.md</code>. The <strong>allowlist</strong>
+(<code>autoApprove</code>) is session-scoped too, and that one is a decision rather than a
+cost: the belt reads settings live so the operator reaches the agent, and the allowlist is
+what protects the operator from the agent — a run that may write files must not be able to
+widen its own permissions between two tool calls. The settings page says which of the two
+each block is; provider and model are the header picker's, which swaps the running
+backend directly.</p>
+
 <p><strong>Doctor never lets a shadowed variable go unnoticed.</strong> Every run,
 <code>spectro doctor</code> walks the same provenance and prints one line for every
 <code>SPECTRO_*</code> variable that IS set but is no longer the effective source, naming

@@ -104,6 +104,34 @@ class ConfigDocDriftTest {
                         + " \"Every key\" table now lists");
     }
 
+    @Test
+    void theChapterSaysWhichSettingsReachAnOpenSessionAndWhichDoNot() throws IOException {
+        // Card 222. The owner saved a SearXNG address, /api/config reported the
+        // new tier, and the next search in the same window used the old one. The
+        // page and the reference between them said nothing about WHEN a saved
+        // setting lands, and the silence is what made a right answer unusable.
+        // Whatever the answer, the reference has to carry it: this is the
+        // chapter a reader consults before they go and change something.
+        Path source = source();
+        assumeTrue(source != null, "not running from a source checkout");
+        String reference = Files.readString(source);
+
+        for (String live : List.of("searxngUrl", "imageModel", "chromeBinary", "allowLocalhost")) {
+            assertTrue(reference.contains(live),
+                    "the config reference does not name \"" + live + "\" among the settings"
+                            + " a running session picks up on its next tool call");
+        }
+        assertTrue(reference.contains("already have open") || reference.contains("already open"),
+                "the reference never says that a saved setting reaches the session already"
+                        + " open — which is the promise card 222 exists to make good");
+        for (String fixed : List.of("MCP servers", "shell hooks", "system prompt", "allowlist")) {
+            assertTrue(reference.contains(fixed),
+                    "the reference does not name \"" + fixed + "\" among the things that stay"
+                            + " settled for the session — a list that names only the live half"
+                            + " leaves the reader guessing about the other one");
+        }
+    }
+
     /** The row holding {@code marker} inside the "Every key" table — the
      *  deprecation table above it names the same keys in its own cells. */
     private static String rowStartingWith(String html, String marker) {

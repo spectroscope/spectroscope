@@ -120,6 +120,38 @@ class SessionSettingsReachTheBeltTest {
         Files.writeString(file, json);
     }
 
+    /**
+     * Saves into {@code ~/.spectro/settings.json} — the USER scope, which is
+     * where {@code allowLocalhost} has to live: it is process-global and
+     * {@code SpectroConfig} refuses it in a workspace scope on purpose, because
+     * the workspace is the folder the agent itself writes into (card 199, F4).
+     * The Gradle test task points {@code user.home} into the build directory, so
+     * this never touches the real home; the previous content is handed back for
+     * {@link #restoreUserSettings} because this file is shared across the module's
+     * tests and leaving a fence opt-in behind would be a gift to the next one.
+     *
+     * @param json the whole settings file to write
+     * @return what was there before, or null when there was no file
+     */
+    private static String saveForUser(String json) throws IOException {
+        Path file = dev.spectroscope.core.config.SettingsWriter.userSettingsFile();
+        String previous = Files.exists(file) ? Files.readString(file) : null;
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, json);
+        return previous;
+    }
+
+    /** Puts the user settings file back the way it was found.
+     *  @param previous the content {@link #saveForUser} handed back */
+    private static void restoreUserSettings(String previous) throws IOException {
+        Path file = dev.spectroscope.core.config.SettingsWriter.userSettingsFile();
+        if (previous == null) {
+            Files.deleteIfExists(file);
+        } else {
+            Files.writeString(file, previous);
+        }
+    }
+
     /** A connection whose workspace is settled, as buildAgentOnce settles it
      *  before it registers a single tool.
      *  @param socketId a name for the fake socket
@@ -198,5 +230,58 @@ class SessionSettingsReachTheBeltTest {
                 .as("and the search that follows it goes there")
                 .contains(saved.name());
         assertThat(saved.served()).hasValue(1);
+    }
+
+    @Test
+    void theNetFenceOptInSavedMidSessionReachesTheNextFetch(@TempDir Path workspace)
+            throws IOException {
+        // The same defect one tool over, and the reason this card is not a
+        // web_search card: the fence had a per-call supplier already, and the
+        // supplier read a snapshot nobody updated. Five tools share this fence.
+        Instance page = startInstance("a page on loopback");
+        String previous = saveForUser("{\"allowLocalhost\": false}");
+        try {
+            SessionConnection connection = sessionIn("ws-222-fence", workspace);
+            ToolRegistry belt = new ToolRegistry();
+            connection.registerSettingsTools(belt);
+            Tool fetch = belt.get("web_fetch").orElseThrow();
+            var call = JSON.createObjectNode().put("url", page.address() + "/");
+
+            assertThat(fetch.execute(call, new Tool.ToolContext(workspace, new CancelSignal())))
+                    .as("test premise: with the opt-in off, loopback is refused")
+                    .startsWith("ERROR: web_fetch");
+            assertThat(page.served()).hasValue(0);
+
+            saveForUser("{\"allowLocalhost\": true}");
+
+            assertThat(fetch.execute(call, new Tool.ToolContext(workspace, new CancelSignal())))
+                    .as("the opt-in reaches the fetch that follows it")
+                    .doesNotStartWith("ERROR:");
+            assertThat(page.served())
+                    .as("the page was actually reached, not merely permitted on paper")
+                    .hasValue(1);
+        } finally {
+            restoreUserSettings(previous);
+        }
+    }
+
+    @Test
+    void theSnapshotStaysPutSoTheLiveReadingIsTheOneThatMoved(@TempDir Path workspace)
+            throws IOException {
+        // The mechanism under all of the above, asserted on its own. It is worth
+        // its own test because the shape that failed the owner LOOKED right: the
+        // neighbours had per-call suppliers, and the value those suppliers read
+        // was written at connect, at the session moment and by a provider switch
+        // — and by no settings write, ever. Per-call over something frozen.
+        SessionConnection connection = sessionIn("ws-222-mechanism", workspace);
+        assertThat(connection.liveConfig().imageModel())
+                .as("test premise: nothing is configured yet")
+                .isNull();
+
+        saveInWorkspace(workspace, "{\"imageModel\": \"saved-mid-session\"}");
+
+        assertThat(connection.liveConfig().imageModel())
+                .as("the live reading sees the file that was just written")
+                .isEqualTo("saved-mid-session");
     }
 }
