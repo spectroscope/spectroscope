@@ -140,7 +140,14 @@ class OtlpSinkLangfuseLiveTest {
         }
         printTree(observations, parent, name);
 
-        // Criterion 1: the tree is deeper than one.
+        // Criterion 1: the tree is deeper than one. ON ITS OWN THIS PINS
+        // NOTHING, and it is left standing only because the criterion is worded
+        // that way. Measured on 2026-08-14 against the two defects this card
+        // was opened for: with every agent parented to the root span the run
+        // still prints "deepest chain: 5", and with tools parented to the agent
+        // span it still prints "deepest chain: 6" — both sail past `> 1`. What
+        // catches them is the parenting checks below. Nobody should trim this
+        // file back to its stated criterion.
         int deepest = 0;
         String deepestName = null;
         for (String id : parent.keySet()) {
@@ -157,29 +164,66 @@ class OtlpSinkLangfuseLiveTest {
                         + " observations " + name.values());
 
         // Scope item 1: a spawned subagent hangs under its spawner, not beside
-        // it. Read off the consumer's parent links by walking up from the
-        // subagent; the spawner has to stand somewhere on that chain, and the
-        // spawner itself has to be a genuine root.
-        RunEvent.AgentSpawn spawn = (RunEvent.AgentSpawn) events.stream()
-                .filter(e -> e instanceof RunEvent.AgentSpawn).findFirst().orElseThrow();
-        String child = idOfName(name, "agent · " + spawn.agentId());
-        assertNotNull(child, "no observation named agent · " + spawn.agentId()
-                + " in " + name.values());
-        String spawner = idOfName(name, "agent · " + spawn.parentId());
-        assertNotNull(spawner, "no observation named agent · " + spawn.parentId()
-                + " in " + name.values());
-        assertTrue(ancestors(child, parent).contains(spawner),
-                "agent · " + spawn.agentId() + " is not under agent · " + spawn.parentId()
-                        + "; its chain is " + chainNames(child, parent, name));
-        // And the spawner is genuinely a root: no agent stands above it. Not
-        // "its parent is null" — Langfuse keeps the posted root span as an
-        // observation of its own and hangs the trace row above that, so a root
-        // agent legitimately has a parent here. The claim that matters is that
-        // the parent is not another agent.
-        assertTrue(chainNames(spawner, parent, name).stream().skip(1)
-                        .noneMatch(n -> n.startsWith("agent · ")),
-                "agent · " + spawn.parentId() + " is not a root after all: "
-                        + chainNames(spawner, parent, name));
+        // it — for EVERY spawn the wire names, and under the NEAREST agent
+        // above it.
+        //
+        // Both halves of that sentence were learned the hard way on
+        // 2026-08-14. This check used to take findFirst() over the spawn events
+        // and ask whether the spawner stood anywhere on the child's chain. An
+        // ancestor test is satisfied TRANSITIVELY, so with spawnedBy mutated to
+        // hang every spawn after the first under the previously spawned agent,
+        // agent · main was still on worker-3's chain and this test stayed
+        // GREEN — as did all 30 of OtlpSinkTest — while Langfuse drew
+        // main → build_plan → worker-1 → worker-2 → worker-3, a delegation
+        // chain that never happened, at depth 10 instead of 8. The lie renders
+        // as a BETTER tree than the truth, which is exactly the kind of defect
+        // a count or a depth cannot see.
+        //
+        // Both carriers are read, the same two the exporter reads: the spawn
+        // event the orchestrator emits, and RunStart.parentId for a record that
+        // reaches us without its spawn. First mention wins; an agent is spawned
+        // once.
+        Map<String, String> spawnerOf = new LinkedHashMap<>();
+        for (RunEvent e : events) {
+            if (e instanceof RunEvent.AgentSpawn sp && sp.parentId() != null) {
+                spawnerOf.putIfAbsent(sp.agentId(), sp.parentId());
+            }
+            if (e instanceof RunEvent.RunStart s && s.parentId() != null) {
+                spawnerOf.putIfAbsent(s.agentId(), s.parentId());
+            }
+        }
+        assertTrue(!spawnerOf.isEmpty(), "the wire named no spawn parent in " + sessionId);
+        System.out.println("spawns the wire names: " + spawnerOf);
+        for (Map.Entry<String, String> e : spawnerOf.entrySet()) {
+            String child = idOfName(name, "agent · " + e.getKey());
+            assertNotNull(child, "no observation named agent · " + e.getKey()
+                    + " in " + name.values());
+            String spawner = idOfName(name, "agent · " + e.getValue());
+            assertNotNull(spawner, "no observation named agent · " + e.getValue()
+                    + " in " + name.values());
+            String nearest = nearestAgent(child, parent, name);
+            assertTrue(spawner.equals(nearest),
+                    "agent · " + e.getKey() + " is not under agent · " + e.getValue()
+                            + " but under " + (nearest == null ? "no agent at all"
+                            : name.get(nearest))
+                            + "; its chain is " + chainNames(child, parent, name));
+        }
+        // And an agent the wire never named as spawned is genuinely a root: no
+        // agent stands above it. Not "its parent is null" — Langfuse keeps the
+        // posted root span as an observation of its own and hangs the trace row
+        // above that, so a root agent legitimately has a parent here. The claim
+        // that matters is that the parent is not another agent. Stated over
+        // every root rather than over the first spawn's parent, so a fabricated
+        // chain among the roots has nowhere to hide either.
+        for (Map.Entry<String, String> o : name.entrySet()) {
+            if (!o.getValue().startsWith("agent · ")
+                    || spawnerOf.containsKey(o.getValue().substring("agent · ".length()))) {
+                continue;
+            }
+            assertNull(nearestAgent(o.getKey(), parent, name),
+                    o.getValue() + " is not a root after all, and the wire named no "
+                            + "spawner for it: " + chainNames(o.getKey(), parent, name));
+        }
 
         // Scope item 2: a tool sits INSIDE the turn that triggered it. Any tool
         // observation whose chain skips every turn is the old flat shape.
@@ -277,6 +321,21 @@ class OtlpSinkLangfuseLiveTest {
             up.add(at);
         }
         return up;
+    }
+
+    /** The FIRST agent span above {@code id}, or null when none stands above
+     *  it. Nearest and not "somewhere on the chain": an ancestor test passes
+     *  transitively, so it cannot tell a subagent under its real spawner from
+     *  one re-parented onto a sibling subagent that the spawner also made. */
+    private static String nearestAgent(String id, Map<String, String> parent,
+                                       Map<String, String> name) {
+        for (String at : ancestors(id, parent)) {
+            String n = name.get(at);
+            if (n != null && n.startsWith("agent · ")) {
+                return at;
+            }
+        }
+        return null;
     }
 
     private static List<String> chainNames(String id, Map<String, String> parent,
