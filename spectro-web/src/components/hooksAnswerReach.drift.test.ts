@@ -14,18 +14,12 @@
 // documents a connection nobody made. Each expectation below names one link in
 // the chain from App.tsx to the fetch.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
-
-const hooksTsx = read("./HooksSettings.tsx");
-const settingsTsx = read("./SettingsPanel.tsx");
-const appTsx = read("../App.tsx");
+const hooksTsx = read("./HooksSettings.tsx", import.meta.url);
+const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
+const appTsx = read("../App.tsx", import.meta.url);
 
 /** The one JSX element that mounts a component, from its tag to the closing
  *  slash — so an expectation about a prop cannot be satisfied by that prop

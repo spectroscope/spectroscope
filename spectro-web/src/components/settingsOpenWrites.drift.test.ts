@@ -8,19 +8,13 @@
 // house rule; what it can see is which props the panel hands over, and that is
 // exactly where this bug lived.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 import { t } from "../i18n/i18n";
 
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
-
-const settingsTsx = read("./SettingsPanel.tsx");
-const pickerTsx = read("./ProviderPicker.tsx");
-const fieldTsx = read("./providerModelField.tsx");
+const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
+const pickerTsx = read("./ProviderPicker.tsx", import.meta.url);
+const fieldTsx = read("./providerModelField.tsx", import.meta.url);
 
 describe("opening Settings writes nothing", () => {
   it("never hands useProviderModels an unconditional auto-pick", () => {

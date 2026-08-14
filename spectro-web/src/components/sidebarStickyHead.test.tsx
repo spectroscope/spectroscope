@@ -37,6 +37,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments as code } from "../testkit/source";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 import { SESS_OPTS_GAP, sessOptsPlacement } from "./SessionListOptions";
@@ -44,12 +45,6 @@ import { SESS_OPTS_GAP, sessOptsPlacement } from "./SessionListOptions";
 /** The five segments the rail switches between, as <Sidebar> declares them
  *  (browser is the fourth since card 201, skills the fifth since card 225). */
 type NavMode = "sessions" | "fleets" | "stategraph" | "skills";
-
-/** Blank out block comments, keeping newlines so line numbers still line up.
- *  Prose about a sticky head is not a sticky head. */
-function code(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-}
 
 const css = code(readFileSync(fileURLToPath(new URL("../styles/sidebar.css", import.meta.url)), "utf8"));
 

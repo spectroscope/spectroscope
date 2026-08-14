@@ -31,12 +31,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments } from "../testkit/source";
 
 const view = readFileSync(fileURLToPath(new URL("./TraceView.tsx", import.meta.url)), "utf8");
 
 /** Blank out comments, keeping newlines, so the prose above cannot satisfy the
  *  guard it describes. */
-const code = view.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^\s*\/\/.*$/gm, "");
+const code = blankBlockComments(view).replace(/^\s*\/\/.*$/gm, "");
 
 describe("the open row's height is measured from the block it occupies", () => {
   it("still finds the two things it is about, so a clean pass is not a broken parser", () => {

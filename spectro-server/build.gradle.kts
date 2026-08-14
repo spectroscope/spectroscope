@@ -70,9 +70,7 @@ tasks.test {
     testLogging {
         events("failed", "skipped")
     }
-    // The store/config resolve ~/.spectro from user.home at class-load time;
-    // pointing user.home into the build directory keeps tests off the real home.
-    systemProperty("user.home", layout.buildDirectory.dir("test-home").get().asFile.absolutePath)
+    // user.home is redirected by the ROOT subprojects block (card 235).
 }
 
 // Load ANTHROPIC_API_KEY & friends from a local .env file (gitignored), so no

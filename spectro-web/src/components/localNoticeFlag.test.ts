@@ -5,9 +5,8 @@
 // means "understood, go away", so every exit persists — and the deliberate way
 // back lives in Settings, not in an exit that forgets.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { beforeEach, describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 import { dict } from "../i18n/i18n";
 import {
   __setLocalNoticeTestHooks,
@@ -57,14 +56,11 @@ describe("one dismissal, whatever the exit (card 144)", () => {
 // the defect lived exactly there: the flag logic was sound, but three of the
 // four exits were routed past the write. Read the sources off disk and pin the
 // routing itself.
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
 
 describe("the four exits, read off disk (card 144)", () => {
-  const notice = read("./LocalModelNotice.tsx");
-  const app = read("../App.tsx");
-  const settings = read("./SettingsPanel.tsx");
+  const notice = read("./LocalModelNotice.tsx", import.meta.url);
+  const app = read("../App.tsx", import.meta.url);
+  const settings = read("./SettingsPanel.tsx", import.meta.url);
 
   it("the sheet knows exactly one exit prop — the distinction that forgot is gone", () => {
     expect(notice).toContain("onDismiss");

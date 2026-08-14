@@ -38,6 +38,7 @@ class ProcessBusProcessProofTest {
 
             Process child = new ProcessBuilder(
                     System.getProperty("java.home") + "/bin/java",
+                    "-Duser.home=" + System.getProperty("user.home"),
                     "-cp", System.getProperty("java.class.path"),
                     ProcessProofChild.class.getName(),
                     String.valueOf(hub.port()), CTX)

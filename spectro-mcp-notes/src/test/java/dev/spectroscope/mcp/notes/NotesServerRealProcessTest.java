@@ -53,7 +53,8 @@ class NotesServerRealProcessTest {
 
         String javaBin = javaHome + File.separator + "bin" + File.separator + "java";
         ProcessBuilder pb = new ProcessBuilder(
-                javaBin, "-cp", classpath, mainClass, notesDir.toString());
+                javaBin, "-Duser.home=" + System.getProperty("user.home"),
+                "-cp", classpath, mainClass, notesDir.toString());
         // stderr is server logs; keep it out of the protocol stream (mirrors StdioTransport).
         Path stderrLog = notesDir.resolve("server.stderr.log");
         pb.redirectError(ProcessBuilder.Redirect.to(stderrLog.toFile()));

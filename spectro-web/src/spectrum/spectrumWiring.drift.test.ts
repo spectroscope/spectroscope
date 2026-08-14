@@ -14,19 +14,13 @@
 //     a raw deltaY, so the same trackpad swipe panned on a laptop and scrolled
 //     the page on a wide monitor.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
-
-const view = read("./SpectrumView.tsx");
-const band = read("./SpectrumBand.tsx");
-const strip = read("./SpectrumStrip.tsx");
-const css = read("../styles/spectrum.css");
+const view = read("./SpectrumView.tsx", import.meta.url);
+const band = read("./SpectrumBand.tsx", import.meta.url);
+const strip = read("./SpectrumStrip.tsx", import.meta.url);
+const css = read("../styles/spectrum.css", import.meta.url);
 
 /** Every declaration block in a stylesheet, as {selector, body} pairs. Crude on
  *  purpose: this file has no nested at-rules, and a real parser would be a
@@ -129,7 +123,7 @@ describe("the wheel gesture", () => {
   // same gesture (owner: ⌘+wheel worked over a lane and nowhere else). The
   // property this pins did not move with it — it just has one home now instead
   // of one home and a copy waiting to be written.
-  const hook = read("./useWheelZoom.ts");
+  const hook = read("./useWheelZoom.ts", import.meta.url);
 
   it("settles the axis on the raw deltas, in one space", () => {
     // Scaling deltaX into a drawing's coordinates and comparing it against a

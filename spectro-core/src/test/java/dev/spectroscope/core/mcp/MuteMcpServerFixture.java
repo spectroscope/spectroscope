@@ -186,7 +186,10 @@ public final class MuteMcpServerFixture {
      */
     private static List<String> helperCommand() {
         String java = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
-        return List.of(java, "-cp", System.getProperty("java.class.path"),
+        // Card 235: this fixture's own user.home is the redirected one its parent
+        // handed it; the helper grandchild must inherit it the same explicit way.
+        return List.of(java, "-Duser.home=" + System.getProperty("user.home"),
+                "-cp", System.getProperty("java.class.path"),
                 MuteMcpServerFixture.class.getName());
     }
 

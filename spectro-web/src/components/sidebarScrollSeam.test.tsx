@@ -19,6 +19,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments as code } from "../testkit/source";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Sidebar } from "./Sidebar";
 
@@ -27,12 +28,6 @@ import { Sidebar } from "./Sidebar";
 type NavMode = "sessions" | "fleets" | "stategraph" | "skills";
 
 const SEGMENTS: NavMode[] = ["sessions", "fleets", "stategraph", "skills"];
-
-/** Blank out block comments, keeping newlines so line numbers still line up.
- *  Prose about a scroll container is not a scroll container. */
-function code(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-}
 
 const css = code(readFileSync(fileURLToPath(new URL("../styles/sidebar.css", import.meta.url)), "utf8"));
 

@@ -14,11 +14,7 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
+import { blankBlockComments as code, read, stripComments as ts } from "../testkit/source";
 
 /** Every stylesheet in the app, comments already blanked. A guard that reads
  *  one file only forbids a rule in that file, and a stylesheet is one import
@@ -50,21 +46,11 @@ function rules(sheet: string): { selector: string; decls: string }[] {
   return out;
 }
 
-/** Blank out block comments, keeping newlines so line numbers still line up. */
-function code(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
-}
-
-/** The same, plus line comments — prose about a deleted class is not the class. */
-function ts(src: string): string {
-  return code(src).replace(/\/\/[^\n]*/g, "");
-}
-
-const sidebar = read("./Sidebar.tsx");
-const navRow = read("./NavRow.tsx");
-const rows = read("./sessionRows.tsx");
-const css = code(read("../styles/sidebar.css"));
-const fleetCss = code(read("../styles/fleet.css"));
+const sidebar = read("./Sidebar.tsx", import.meta.url);
+const navRow = read("./NavRow.tsx", import.meta.url);
+const rows = read("./sessionRows.tsx", import.meta.url);
+const css = code(read("../styles/sidebar.css", import.meta.url));
+const fleetCss = code(read("../styles/fleet.css", import.meta.url));
 
 /** @return how many times `<Name` is mounted as a JSX element in `src` */
 function mounts(src: string, name: string): number {
@@ -185,7 +171,7 @@ describe("the session list has an options control at its head", () => {
     // stay the same pair, so a future edit cannot quietly undo it again.
     expect(css).toMatch(/\.sess-opt-value\.is-on\s*\{[^}]*background:\s*var\(--accent-soft\)/);
     expect(css).toMatch(/\.sess-opt-value\.is-on\s*\{[^}]*color:\s*var\(--text\)/);
-    expect(code(read("../styles/settings-trace.css"))).toMatch(
+    expect(code(read("../styles/settings-trace.css", import.meta.url))).toMatch(
       /\.settings-seg-option--active\s*\{[^}]*color:\s*var\(--text\)/,
     );
   });

@@ -623,7 +623,7 @@ class McpMuteServerRealProcessTest {
             return null;
         }
         assertNotNull(pidFile, "the fixture needs somewhere to announce its pid");
-        return List.of(java, "-cp", String.join(File.pathSeparator, classpath),
+        return List.of(java, "-Duser.home=" + System.getProperty("user.home"), "-cp", String.join(File.pathSeparator, classpath),
                 MuteMcpServerFixture.class.getName(), pidFile.toString(), mode);
     }
 }

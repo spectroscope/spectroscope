@@ -8,21 +8,15 @@
 // never re-runs after the address changed, and a first-run sheet that never
 // tells the remote-machine reader where to type the address.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 import { t } from "../i18n/i18n";
 
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
-
-const settingsTsx = read("./SettingsPanel.tsx");
-const pickerTsx = read("./ProviderPicker.tsx");
-const fieldTsx = read("./providerModelField.tsx");
-const onboardingTsx = read("./Onboarding.tsx");
-const appTsx = read("../App.tsx");
+const settingsTsx = read("./SettingsPanel.tsx", import.meta.url);
+const pickerTsx = read("./ProviderPicker.tsx", import.meta.url);
+const fieldTsx = read("./providerModelField.tsx", import.meta.url);
+const onboardingTsx = read("./Onboarding.tsx", import.meta.url);
+const appTsx = read("../App.tsx", import.meta.url);
 
 describe("the settings page carries the address beside the provider that needs it", () => {
   it("renders the field from the one provider→field mapping", () => {
