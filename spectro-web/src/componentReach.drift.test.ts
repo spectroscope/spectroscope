@@ -18,6 +18,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "./testkit/source";
 
 const SRC = fileURLToPath(new URL(".", import.meta.url));
 
@@ -38,11 +39,6 @@ const sources = new Map<string, string>(
     .filter((f) => /\.tsx?$/.test(f) && !f.includes(".test."))
     .map((f) => [f.slice(SRC.length), readFileSync(f, "utf8")]),
 );
-
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
 
 /** @return how many times `<Name` is mounted as a JSX element in `src` */
 function mounts(src: string, name: string): number {
@@ -90,9 +86,9 @@ describe("no component is built and left unattached", () => {
 // about.drift.test.ts reads the shell module: the assertion is that the argument
 // is THERE, and export/toolDetail.test.ts proves what comes out the other end.
 describe("what the tool returned reaches the card that draws it", () => {
-  const card = read("./components/ToolCard.tsx");
-  const bodyView = read("./components/ToolViewBody.tsx");
-  const html = read("./export/html.ts");
+  const card = read("./components/ToolCard.tsx", import.meta.url);
+  const bodyView = read("./components/ToolViewBody.tsx", import.meta.url);
+  const html = read("./export/html.ts", import.meta.url);
 
   it("hands the card's detail down to the body", () => {
     expect(element(card, "ToolViewBody")).toContain("detail=");
@@ -110,8 +106,8 @@ describe("what the tool returned reaches the card that draws it", () => {
 });
 
 describe("the fleet roster is mounted where its own comment says it belongs", () => {
-  const view = read("./spectrum/SpectrumView.tsx");
-  const app = read("./App.tsx");
+  const view = read("./spectrum/SpectrumView.tsx", import.meta.url);
+  const app = read("./App.tsx", import.meta.url);
 
   it("mounts it once, above the Spectrum lanes", () => {
     expect(mounts(view, "FleetRoster")).toBe(1);

@@ -21,6 +21,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments as code } from "../testkit/source";
 
 const SRC = fileURLToPath(new URL("..", import.meta.url));
 
@@ -33,11 +34,6 @@ function walk(dir: string): string[] {
     else out.push(path);
   }
   return out;
-}
-
-/** Blank out block comments, keeping newlines so line numbers still line up. */
-function code(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
 }
 
 const files = walk(SRC).map((f) => ({

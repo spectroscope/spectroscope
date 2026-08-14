@@ -34,12 +34,13 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments } from "../testkit/source";
 
 const app = readFileSync(fileURLToPath(new URL("../App.tsx", import.meta.url)), "utf8");
 
 /** Blank out comments, keeping newlines, so the prose above cannot satisfy the
  *  guard it describes. */
-const code = app.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " ")).replace(/^\s*\/\/.*$/gm, "");
+const code = blankBlockComments(app).replace(/^\s*\/\/.*$/gm, "");
 
 /** The body of a `const <name> = …;` declaration, or null when there is none. */
 function declaration(name: string): string | null {

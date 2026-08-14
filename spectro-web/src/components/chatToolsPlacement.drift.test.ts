@@ -17,15 +17,9 @@
 // can no longer stand in for "both screens have it", and they hold the prose
 // and the labels around the moved row to what the code now does.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 import { t } from "../i18n/i18n";
-
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
 
 /** @return how many times `<Name` is mounted as a JSX element in `src` */
 function mounts(src: string, name: string): number {
@@ -53,12 +47,12 @@ function composerArms(src: string): { live: string; archive: string } {
   return { live: src.slice(open, split), archive: src.slice(split, close) };
 }
 
-const chatTsx = read("./Chat.tsx");
-const chatToolsTs = read("./chatTools.ts");
-const translateTsx = read("./TranslatePanel.tsx");
-const appTsx = read("../App.tsx");
-const chatCss = read("../styles/chat.css");
-const panelsCss = read("../styles/panels.css");
+const chatTsx = read("./Chat.tsx", import.meta.url);
+const chatToolsTs = read("./chatTools.ts", import.meta.url);
+const translateTsx = read("./TranslatePanel.tsx", import.meta.url);
+const appTsx = read("../App.tsx", import.meta.url);
+const chatCss = read("../styles/chat.css", import.meta.url);
+const panelsCss = read("../styles/panels.css", import.meta.url);
 
 describe("the floating control cluster is gone", () => {
   it("leaves no positioned row in the chat", () => {

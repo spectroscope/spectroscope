@@ -18,15 +18,9 @@
 // So the strip must sit inside the BOX and outside the FIELD, and that is a
 // statement about source order this suite can actually check.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "../testkit/source";
 import { t } from "../i18n/i18n";
-
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
 
 /** @return how many times `<Name` is mounted as a JSX element in `src` */
 function mounts(src: string, name: string): number {
@@ -53,12 +47,12 @@ function composerArms(src: string): { live: string; archive: string } {
   return { live: src.slice(open, split), archive: src.slice(split, close) };
 }
 
-const chatTsx = read("./Chat.tsx");
+const chatTsx = read("./Chat.tsx", import.meta.url);
 const arms = composerArms(chatTsx);
-const composerCss = read("../styles/modal-composer.css");
-const attachCss = read("../styles/attachments-voice.css");
-const useAttachmentsTs = read("./useAttachments.ts");
-const thumbsTsx = read("./AttachmentThumbs.tsx");
+const composerCss = read("../styles/modal-composer.css", import.meta.url);
+const attachCss = read("../styles/attachments-voice.css", import.meta.url);
+const useAttachmentsTs = read("./useAttachments.ts", import.meta.url);
+const thumbsTsx = read("./AttachmentThumbs.tsx", import.meta.url);
 
 describe("the thumbnails live inside the composer's border", () => {
   it("mounts the thumbnails inside the box, not above it", () => {

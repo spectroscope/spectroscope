@@ -24,6 +24,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments as code } from "../testkit/source";
 
 const STYLES = fileURLToPath(new URL(".", import.meta.url));
 
@@ -43,11 +44,6 @@ interface FontRule {
   order: number;
   /** The declared value of `font-family` (or of the `font` shorthand). */
   value: string;
-}
-
-/** Blank out comments, keeping length so nothing shifts. */
-function code(css: string): string {
-  return css.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, " "));
 }
 
 /** Specificity of one selector: ids, classes (incl. attributes/pseudo-classes),

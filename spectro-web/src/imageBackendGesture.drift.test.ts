@@ -19,16 +19,10 @@
 // server resolves the backend with (imageBackend.ts / ImageProviders.withAKey),
 // and it tells the session nothing.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { read } from "./testkit/source";
 
-/** @return a source file in this tree, as text */
-function read(rel: string): string {
-  return readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-}
-
-const appTsx = read("./App.tsx");
+const appTsx = read("./App.tsx", import.meta.url);
 
 /** Every line that puts a set_image_provider frame on the wire. */
 function sendingLines(): string[] {
