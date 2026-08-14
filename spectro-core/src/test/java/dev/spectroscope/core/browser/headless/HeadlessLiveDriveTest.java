@@ -259,7 +259,14 @@ class HeadlessLiveDriveTest {
         // its profile directory, which is on every Chrome process's command line.
         String profileMarker = profileBase.toString();
         long before = processesMentioning(profileMarker);
-        assertTrue(before >= 2, "a Chrome is never one process — measured " + before
+        // On macOS every Chrome helper repeats the full flag set, so the marker
+        // counts the whole tree and ≥2 holds. On Linux the children fork off
+        // the zygote and do NOT repeat --user-data-dir on their command line —
+        // measured on the CI runner, where this precondition read 1 and failed
+        // the release gate before any kill ran. The marker provably names the
+        // browser process itself on both; the tree kill goes through
+        // descendants() and never reads a command line.
+        assertTrue(before >= 1, "the browser process must be up — measured " + before
                 + " with marker " + profileMarker);
 
         faces.closeSession("live-1");
