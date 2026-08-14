@@ -63,6 +63,38 @@ export function shouldReport(next: PaneRect, last: PaneRect | null): boolean {
   );
 }
 
+/**
+ * The smallest rectangle the desktop shell will honour — MIRRORED from
+ * spectro-desktop/src/paneBounds.ts MIN_PANE, held equal by
+ * panels/paneFloor.drift.test.ts. Below it, isUsable() over there rejects the
+ * report and the pane jumps to a fallback rectangle the frame is not.
+ */
+export const PANE_FLOOR = { width: 320, height: 240 };
+
+/**
+ * Whether a hole this size should carry the pane at all (card 219).
+ *
+ * <p>A dock panel can be dragged or crowded below the shell's floor. Posting
+ * that rectangle would not give a small pane — the shell refuses it and falls
+ * back to "the right two-thirds under a 48px strip", a page drawn where no
+ * frame is. So a floored hole posts `visible: false` and the panel says why
+ * (`belowFloor` drives the sentence). The whole-surface doors pass no guard
+ * and keep their historic shape: their holes cannot go under the floor without
+ * the window itself going there.
+ *
+ * @param box        the hole's measured size
+ * @param wanted     whether the panel wants the pane at all (open, uncovered)
+ * @param floorGuard whether this hole is small enough to need the floor rule
+ */
+export function paneVisibility(
+  box: { width: number; height: number },
+  wanted: boolean,
+  floorGuard: boolean,
+): { visible: boolean; belowFloor: boolean } {
+  const belowFloor = floorGuard && wanted && (box.width < PANE_FLOOR.width || box.height < PANE_FLOOR.height);
+  return { visible: wanted && !belowFloor, belowFloor };
+}
+
 /** Rounds a measured DOMRect into the integer pixels the shell positions in. */
 export function toPaneRect(
   box: { left: number; top: number; width: number; height: number },

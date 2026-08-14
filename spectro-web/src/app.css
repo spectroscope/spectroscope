@@ -12,6 +12,9 @@
 @import "./styles/modal-composer.css"; /* Permission modal, composer, usage footer, responsive */
 @import "./styles/graph.css"; /* Graph tab: flow overview + React Flow DAG, replay bar, detail */
 @import "./styles/panels.css"; /* Right panel: agents, system context, workspace, images */
+@import "./styles/panel-dock.css"; /* Card 219: the right panel as a dock of independent panels.
+   AFTER panels.css on purpose: the dock reuses .right-panel-head and must win
+   ties against the tab-era rules it replaces. */
 @import "./styles/attachments-voice.css"; /* Attachments + voice input */
 @import "./styles/settings-trace.css"; /* Design drawer + trace view */
 @import "./styles/spectrum.css"; /* Spectrum tab: fleet lanes (phase-4 design transplant) */

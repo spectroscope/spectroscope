@@ -1,4 +1,4 @@
-/* The terminal pane in the Files tab (card 93).
+/* The terminal pane (card 93; since card 219 its own dock panel, .dock-term).
    Chrome — tab strip, buttons, borders, status line — is tokens. The terminal
    surface is not: the shell paints it, and the 16 ANSI colours xterm ships are
    the palette every .zshrc was written against. Those stay untouched.
@@ -194,52 +194,14 @@
   text-align: center;
 }
 
-/* The slot in the Files column; height comes from the drag, so only the
-   minimum matters here. */
-.ws-term {
+/* The terminal's slot in the dock (card 219 — its own panel, no longer a
+   section of the Files column). Same flex contract as the old .ws-term slot:
+   the chain below (.term …) must be able to grow AND shrink (card 178), so
+   this wrapper grows, shrinks and floors at 0. The Files-head toggle rules
+   left with the toggle — the strip button in the dock head is the toggle now. */
+.dock-term {
+  flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-
-/* ---------- the toggle in the Files head ---------- */
-.ws-term-toggle {
-  flex-shrink: 0;
-  margin-left: auto;
-  padding: 1px var(--sp-2);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-chip);
-  background: transparent;
-  color: var(--text-dim);
-  font-family: var(--font-mono);
-  font-size: var(--fs-11);
-  cursor: pointer;
-  transition:
-    color var(--t-fast),
-    border-color var(--t-fast);
-}
-.ws-term-toggle:hover {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-.ws-term-toggle[aria-pressed="true"] {
-  color: var(--accent);
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-/* The refresh glyph loses its auto margin once the toggle claims it. */
-.ws-head .ws-term-toggle ~ .ws-refresh {
-  margin-left: 0;
-}
-
-/* An install with no terminal says so where the toggle would have been, rather
-   than offering a button that can only fail. Not a button: there is nothing to
-   press. */
-.ws-term-toggle--absent {
-  cursor: default;
-  opacity: 0.55;
-}
-.ws-term-toggle--absent:hover {
-  color: var(--text-dim);
-  border-color: var(--border);
 }

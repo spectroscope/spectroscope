@@ -12,14 +12,6 @@ import { useLang } from "../state/lang";
 import { hlLangForPath, tokenize } from "./highlight";
 import { fileUrl, formatBytes, previewKind } from "./preview";
 import { WS_SPLIT_KEY, clampSplitPct, readStoredSplit } from "./wsSplit";
-import { TerminalPane } from "./TerminalPane";
-import {
-  TERM_OPEN_KEY,
-  TERM_SPLIT_KEY,
-  clampTermPct,
-  readStoredTermOpen,
-  readStoredTermSplit,
-} from "./shellPrefs";
 import type { WorkspaceInfo } from "../state/reducer";
 import { listableBeforeTheFirstRun, paneState } from "./paneState";
 import type { FetchOutcome } from "./paneState";
@@ -252,58 +244,9 @@ export function WorkspaceTab({
     setSplit((s) => clampSplitPct(s + (e.key === "ArrowUp" ? -4 : 4)));
   };
 
-  // The terminal pane (card 93): shut until the operator asks for it, because
-  // opening it spawns a real shell. Its own divider measures from the bottom —
-  // the terminal keeps its height while the tree/preview split moves above it.
-  const [termOpen, setTermOpen] = useState<boolean>(() => {
-    try {
-      return readStoredTermOpen(localStorage.getItem(TERM_OPEN_KEY));
-    } catch {
-      return false;
-    }
-  });
-  const [termPct, setTermPct] = useState<number>(() => {
-    try {
-      return readStoredTermSplit(localStorage.getItem(TERM_SPLIT_KEY));
-    } catch {
-      return readStoredTermSplit(null);
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(TERM_OPEN_KEY, termOpen ? "1" : "0");
-      localStorage.setItem(TERM_SPLIT_KEY, String(Math.round(termPct)));
-    } catch {
-      /* storage blocked — the pane just reverts on the next load */
-    }
-  }, [termOpen, termPct]);
-
-  const termDragging = useRef(false);
-  const applyTermFromClientY = (clientY: number): void => {
-    const cont = containerRef.current;
-    if (cont === null) return;
-    const box = cont.getBoundingClientRect();
-    if (box.height <= 0) return;
-    setTermPct(clampTermPct(((box.bottom - clientY) / box.height) * 100));
-  };
-  const onTermDown = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    termDragging.current = true;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    e.preventDefault();
-  };
-  const onTermMove = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (termDragging.current) applyTermFromClientY(e.clientY);
-  };
-  const onTermUp = (e: ReactPointerEvent<HTMLDivElement>): void => {
-    if (!termDragging.current) return;
-    termDragging.current = false;
-    e.currentTarget.releasePointerCapture(e.pointerId);
-  };
-  const onTermKey = (e: ReactKeyboardEvent<HTMLDivElement>): void => {
-    if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-    e.preventDefault();
-    setTermPct((p) => clampTermPct(p + (e.key === "ArrowUp" ? 4 : -4)));
-  };
+  // The terminal left this surface with card 219: it is a dock panel of its
+  // own (panels/TerminalPanel.tsx), so glancing at another panel no longer
+  // kills a running shell.
 
   const sessionId = workspace?.sessionId;
   // Before the first run there is no session, but there may still be a folder:
@@ -383,23 +326,6 @@ export function WorkspaceTab({
 
   const pane = paneState(workspace, outcome, lang);
   const beforeTheRun = pane.kind === "tree" && pane.scope === "prospective";
-  // Whether this install has a terminal at all, read once from /api/config.
-  const [shell, setShell] = useState<"ready" | "off" | "unavailable" | null>(null);
-  useEffect(() => {
-    let alive = true;
-    void fetch("/api/config")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((c: { shell?: string } | null) => {
-        if (!alive || c == null) return;
-        // An older server says nothing here; treat silence as "ready" so this
-        // pane keeps behaving exactly as it did against one.
-        setShell(c.shell === "off" || c.shell === "unavailable" ? c.shell : "ready");
-      })
-      .catch(() => setShell("ready"));
-    return () => {
-      alive = false;
-    };
-  }, []);
   if (pane.kind === "unreachable") return <p className="ctx-empty">{t(lang, "ws.unreachable")}</p>;
   if (pane.kind === "loading") return <p className="ctx-empty">{pane.message}</p>;
   if (pane.kind === "pending") {
@@ -446,49 +372,6 @@ export function WorkspaceTab({
             title={canPickFolder === false ? t(lang, "ws.pickLocked") : t(lang, "ws.pickTitle")}
           >
             {t(lang, "ws.pick")}
-          </button>
-        )}
-        {/* A shell belongs to a session (ShellCwd refuses a request without
-            one), so the toggle stays away while the tree is the first run's
-            folder — offering a button that can only fail is the dishonesty
-            this pane exists to avoid.
-            Inline bilingual pair rather than an i18n key: a sibling owns
-            i18n.ts this run, and card 64 folds these ternaries back in. */}
-        {!beforeTheRun && shell !== "ready" && (
-          /* Say WHY before the press. The toggle used to be offered on every
-             install and then print "the server refused the connection" when the
-             socket closed — true, and useless. A plain `java -jar` has no
-             terminal by construction: the spectro-pty helper rides the signed
-             desktop bundle and is not in the jar. Same rule as the fleet
-             lobby's spawn button. */
-          <span
-            className="ws-term-toggle ws-term-toggle--absent"
-            title={
-              shell === "off"
-                ? lang === "de"
-                  ? "Shells sind in diesem Prozess abgeschaltet (SPECTRO_SHELL)."
-                  : "shells are switched off in this process (SPECTRO_SHELL)"
-                : lang === "de"
-                  ? "Dieser Build hat keinen Terminal-Helfer. Das Terminal kommt mit der Desktop-App."
-                  : "this build has no terminal helper — the terminal ships with the desktop app"
-            }
-          >
-            {lang === "de" ? "kein terminal" : "no terminal"}
-          </span>
-        )}
-        {!beforeTheRun && shell === "ready" && (
-          <button
-            type="button"
-            className="ws-term-toggle"
-            aria-pressed={termOpen}
-            title={
-              lang === "de"
-                ? "ein terminal im ordner des agenten, mit deinen eigenen rechten"
-                : "a terminal in the agent's folder, running with your own privileges"
-            }
-            onClick={() => setTermOpen((open) => !open)}
-          >
-            {lang === "de" ? "terminal" : "terminal"}
           </button>
         )}
         <button type="button" className="ws-refresh" onClick={load} title={t(lang, "ws.refresh")}>
@@ -541,26 +424,6 @@ export function WorkspaceTab({
           </>
         )}
       </div>
-      {termOpen && !beforeTheRun && shell === "ready" && (
-        <>
-          <div
-            className="ws-divider"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label={
-              lang === "de" ? "trenner ziehen, um das terminal zu ändern" : "drag to resize the terminal"
-            }
-            tabIndex={0}
-            onPointerDown={onTermDown}
-            onPointerMove={onTermMove}
-            onPointerUp={onTermUp}
-            onKeyDown={onTermKey}
-          />
-          <div className="ws-term" style={{ flex: `0 0 ${termPct}%` }}>
-            <TerminalPane sessionId={sessionId} />
-          </div>
-        </>
-      )}
     </div>
   );
 }

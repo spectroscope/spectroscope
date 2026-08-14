@@ -52,6 +52,20 @@ describe("two doors, one browser", () => {
     expect(mounts(app, "BrowserSegment")).toBe(2);
   });
 
+  it("mounts a THIRD door in the dock (card 219), same session, exactly once", () => {
+    // The dock's browser panel is the owner's own first-cut ask: the browser
+    // in the same workspace as files, terminal and context. It is a third
+    // HOLE, never a third browser: the session id is threaded from the app
+    // (`sessionId={shownSessionId}`, pinned in dockSeparation.drift.test.ts),
+    // and it can never be on screen with either other door — the dock lives
+    // inside the chat arm, the session tab arm renders only on tab==="browser",
+    // and the rail arm only on nav==="browser".
+    const rightPanel = readFileSync(path.join(__dirname, "..", "components", "RightPanel.tsx"), "utf8");
+    expect(mounts(rightPanel, "BrowserSegment")).toBe(1);
+    const passed = rightPanel.match(/<BrowserSegment[\s\S]*?sessionId=\{([^}]+)\}/);
+    expect(passed?.[1]).toBe("sessionId");
+  });
+
   it("hands both doors the SAME session, so the second one is a view", () => {
     // Anything else here — a literal, a different variable, a missing prop —
     // means two sessions' worth of browser behind two holes that look alike.

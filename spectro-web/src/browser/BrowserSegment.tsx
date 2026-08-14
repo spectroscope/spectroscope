@@ -31,6 +31,7 @@ import {
   isDesktopShell,
   panelNoteKey,
   panelState,
+  paneVisibility,
   shouldReport,
   toPaneRect,
   type BrowserStatus,
@@ -43,11 +44,27 @@ const STATUS_POLL_MS = 4000;
 /**
  * The browser surface for one session.
  *
- * @param props.active    whether this surface is the one on screen
- * @param props.sessionId whose browser belongs in the hole, or null when the
- *                        shown session has not minted an id yet
+ * @param props.active      whether this surface is the one on screen — the dock
+ *                          panel (card 219) also folds "collapsed" and "a modal
+ *                          covers me" into this, because no CSS can cover the
+ *                          native pane
+ * @param props.sessionId   whose browser belongs in the hole, or null when the
+ *                          shown session has not minted an id yet
+ * @param props.floorGuard  card 219: this hole can be crowded below the shell's
+ *                          MIN_PANE — post `visible: false` under the floor
+ *                          instead of a rectangle the shell would refuse
+ * @param props.reportNonce card 219: changes whenever the surrounding layout
+ *                          commits. A ResizeObserver fires on size, never on
+ *                          position, so a hole moved by a neighbour closing
+ *                          would otherwise leave the native page over the old
+ *                          rectangle.
  */
-export function BrowserSegment(props: { active: boolean; sessionId: string | null }): React.JSX.Element {
+export function BrowserSegment(props: {
+  active: boolean;
+  sessionId: string | null;
+  floorGuard?: boolean;
+  reportNonce?: string;
+}): React.JSX.Element {
   const lang = useLang();
   const hole = useRef<HTMLDivElement | null>(null);
   // Whether the pane can be over THIS window at all. Read once: a page does not
@@ -55,7 +72,9 @@ export function BrowserSegment(props: { active: boolean; sessionId: string | nul
   const inShell = isDesktopShell(navigator.userAgent);
   const lastSent = useRef<PaneRect | null>(null);
   const [status, setStatus] = useState<BrowserStatus | null>(null);
+  const [floored, setFloored] = useState(false);
   const sessionId = props.sessionId;
+  const floorGuard = props.floorGuard === true;
 
   // The rectangle. Measured from the hole itself rather than computed from the
   // layout, because the layout is the sidebar's width plus the header's height
@@ -69,7 +88,9 @@ export function BrowserSegment(props: { active: boolean; sessionId: string | nul
       if (!inShell) return;
       const box = hole.current?.getBoundingClientRect();
       if (!box) return;
-      const next = toPaneRect(box, props.active, sessionId);
+      const { visible, belowFloor } = paneVisibility(box, props.active, floorGuard);
+      setFloored(belowFloor);
+      const next = toPaneRect(box, visible, sessionId);
       if (!shouldReport(next, lastSent.current)) return;
       lastSent.current = next;
       void fetch("/api/browser/viewport", {
@@ -103,7 +124,10 @@ export function BrowserSegment(props: { active: boolean; sessionId: string | nul
         }).catch(() => {});
       }
     };
-  }, [props.active, inShell, sessionId]);
+    // reportNonce is not read inside — it is a layout-commit signal: the dock
+    // bumps it when panels open, close, fold or the weights move, so the hole
+    // is re-measured after React commits even when its SIZE did not change.
+  }, [props.active, inShell, sessionId, floorGuard, props.reportNonce]);
 
   // The address line asks about THIS session's browser. Asking without a
   // session id would answer with the shell's own idea of "the" page, which is
@@ -151,6 +175,13 @@ export function BrowserSegment(props: { active: boolean; sessionId: string | nul
             <p>{t(lang, panelNoteKey(state))}</p>
             {state === "no-shell" && <p className="browser-empty-hint">{t(lang, "browser.noShellHint")}</p>}
           </div>
+        )}
+        {state === "attached" && floored && (
+          // The pane is hidden on purpose: this hole is under the shell's
+          // MIN_PANE floor, and a posted rectangle would be refused and
+          // replaced with a fallback the frame is not. Saying so beats an
+          // empty rectangle that reads as a bug.
+          <p className="browser-floor-note">{t(lang, "browser.floorNote")}</p>
         )}
       </div>
       {/* What the fence promises, where the OPERATOR can read it. A review on
