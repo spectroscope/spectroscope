@@ -24,6 +24,9 @@ export interface ShellDeps {
   fleetsLocked: boolean;
   openLevelPanel(): void;
   changeTab(t: ViewTab): void;
+  /** Card 241: opens the dock's browser panel if closed, raises it if folded —
+   *  the ONLY thing an agent's browser reach may move. Never a tab flip. */
+  revealBrowserPanel(): void;
   openDoctor(): void;
   openKeymap(): void;
   toggleImages(): void;
@@ -88,13 +91,15 @@ export function runShellCommand(c: ShellCommand, d: ShellDeps): void {
       d.setNav("stategraph");
       return;
     case "nav.browser":
-      // Sent by the shell when the AGENT reaches for the browser, not only
-      // when a human picks a menu item: a pane that painted behind another
-      // segment would be a browser nobody can watch. The rail segment left
-      // with card 228, so the session's own browser tab is where the pane
-      // surfaces now — the same come-back-first move as tab.set.
-      d.setNav("sessions");
-      d.changeTab("browser");
+      // Sent by the shell when the AGENT reaches for the browser. Card 241:
+      // this used to flip the session tab, and that flip was the owner's
+      // crash — one prompt replaced his whole surface with a native page.
+      // The agent's cue now reveals the DOCK PANEL browser (opens if closed,
+      // raises if folded) and moves NOTHING else: not the segment, not the
+      // tab. The session tab stays a door the operator opens by hand, and
+      // whether the reveal is honoured at all is the app's own call (it
+      // ignores the cue after the operator closed the panel mid-run).
+      d.revealBrowserPanel();
       return;
     case "tab.set":
       if (c.arg === undefined || !isViewTab(c.arg)) return;

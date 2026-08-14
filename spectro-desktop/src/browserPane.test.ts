@@ -261,14 +261,23 @@ describe("browserPane", () => {
     assert.match(String(forward.error), /nothing later in this session's history/);
   });
 
-  it("hides on a viewport report with visible:false and comes back on the next call", async () => {
+  it("hides on a viewport report with visible:false and comes back on the app's next report", async () => {
+    // Since card 241 the driving verb only ASKS for a surface — painting at
+    // the last reported rectangle before the app answered was the measured
+    // crash (the owner's whole-surface takeover). The pane comes back exactly
+    // when the app posts a rectangle it just measured.
     await navigate();
+    await pane.runVerb("viewport", { x: 0, y: 0, width: 900, height: 700, visible: true }, OPEN, SESSION);
+    assert.equal(rec.setVisible.at(-1), true, "the app's report put the pane on screen");
     await pane.runVerb("viewport", { x: 0, y: 0, width: 900, height: 700, visible: false }, OPEN, SESSION);
     assert.equal(rec.setVisible.at(-1), false, "leaving the segment takes the pane off screen");
 
     await navigate("http://localhost:5173/third");
     assert.equal(rec.segmentCalls, 2, "the pane asks for its segment back rather than covering another");
-    assert.equal(rec.setVisible.at(-1), true);
+    assert.equal(rec.setVisible.at(-1), false, "but the verb itself paints nothing");
+
+    await pane.runVerb("viewport", { x: 0, y: 0, width: 900, height: 700, visible: true }, OPEN, SESSION);
+    assert.equal(rec.setVisible.at(-1), true, "the app's next report brings it back");
   });
 
   it("reports the FENCE's own sentence when the fence stopped the load", async () => {

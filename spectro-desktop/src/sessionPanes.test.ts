@@ -240,19 +240,27 @@ describe("a browser per session", () => {
   it("never leaves two panes on screen at once", async () => {
     // The one failure a native overlay makes that a div never could: two views
     // stacked over the same rectangle, the operator watching the top one and
-    // the agent driving the other.
+    // the agent driving the other. Since card 241 what puts a pane ON screen
+    // is the app's report, so the single-pane rule is proven on that road: the
+    // second report takes the first pane off before the second one paints.
     await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
     await pane.runVerb("navigate", { url: "http://localhost:5173/b" }, OPEN, B);
+    await pane.runVerb("viewport",
+      { x: 0, y: 0, width: 900, height: 700, visible: true }, OPEN, A);
+    assert.equal(pageOf(A).visible.at(-1), true, "A's report put A on screen");
 
-    assert.equal(pageOf(A).visible.at(-1), false, "A's pane came off screen");
-    assert.equal(pageOf(B).visible.at(-1), true, "B's pane went on it");
+    await pane.runVerb("viewport",
+      { x: 0, y: 0, width: 900, height: 700, visible: true }, OPEN, B);
+    assert.equal(pageOf(A).visible.at(-1), false, "B's report took A off screen");
+    assert.equal(pageOf(B).visible.at(-1), true, "and put B on it");
     assert.equal(addedChildren, 2, "each view joins the window once");
   });
 
   it("shows the session the viewport report names, not whichever agent ran last", async () => {
-    // The rail segment and the session's own browser tab both post the
-    // rectangle they reserved, and both name the session they belong to. That
-    // is what makes "the rail shows the CURRENT session's browser" true.
+    // The browser surfaces post the rectangle they reserved and name the
+    // session they belong to. That is what makes "the surface shows the
+    // CURRENT session's browser" true. Since card 241 the agent that ran last
+    // cannot even reach the screen: only the report road paints.
     await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
     await pane.runVerb("navigate", { url: "http://localhost:5173/b" }, OPEN, B);
 
@@ -260,7 +268,8 @@ describe("a browser per session", () => {
       { x: 0, y: 0, width: 900, height: 700, visible: true }, OPEN, A);
 
     assert.equal(pageOf(A).visible.at(-1), true, "A is the one on screen now");
-    assert.equal(pageOf(B).visible.at(-1), false, "and B is not");
+    assert.ok(!pageOf(B).visible.includes(true),
+      "and B, though it drove last, never reached the screen");
   });
 
   it("closes a session's browser and leaves its neighbour untouched", async () => {
@@ -406,5 +415,62 @@ describe("a closed browser is really given back", () => {
   it("is stable: the same session and the same opening name the same partition", () => {
     assert.equal(pane.partitionFor(A, 3), pane.partitionFor(A, 3));
     assert.notEqual(pane.partitionFor(A, 3), pane.partitionFor(A, 4));
+  });
+});
+
+describe("the agent drives the panel, never the surface (card 241)", () => {
+  beforeEach(() => {
+    pane.forgetPane();
+    reset();
+    pane.attachPaneTo(
+      () => WINDOW as unknown as Electron.BaseWindow,
+      () => {
+        segmentCalls += 1;
+      },
+    );
+  });
+
+  it("a driving verb asks for a surface but never paints the pane itself", async () => {
+    // The measured crash (card 241, owner's field report): a driving verb used
+    // to call setVisible(true) and lay the pane at the LAST reported rectangle
+    // before the app had answered — over whatever the operator was looking at.
+    // New contract: the verb ASKS (segment request); only the app's own
+    // viewport report, which carries a rectangle the app just measured, may
+    // put the pane on screen.
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+
+    assert.ok(!pageOf(A).visible.includes(true),
+      "the verb painted nothing: " + JSON.stringify(pageOf(A).visible));
+    assert.equal(segmentCalls, 1, "and asked the app to reveal its browser surface");
+
+    await pane.runVerb("viewport",
+      { x: 10, y: 20, width: 900, height: 700, visible: true }, OPEN, A);
+    assert.equal(pageOf(A).visible.at(-1), true,
+      "the app's report is what shows the pane");
+  });
+
+  it("a reload of the app window hides every pane until a hole reports again", async () => {
+    // The measured wedge (card 241): hidePane() had exactly ONE production
+    // caller — a viewport verb with visible:false. A reloaded page that lands
+    // anywhere but a browser surface mounts no reporter, so nothing could ever
+    // send that verb, and the native page kept painting over the fresh app
+    // until the whole program was restarted.
+    await pane.runVerb("navigate", { url: "http://localhost:5173/a" }, OPEN, A);
+    await pane.runVerb("viewport",
+      { x: 10, y: 20, width: 900, height: 700, visible: true }, OPEN, A);
+    assert.equal(pageOf(A).visible.at(-1), true, "the pane is on screen");
+
+    const listeners = new Map<string, () => void>();
+    pane.wirePaneLifecycle({
+      on: (name: string, fn: () => void) => {
+        listeners.set(name, fn);
+      },
+    } as unknown as Electron.WebContents);
+    const reload = listeners.get("did-navigate");
+    assert.ok(reload, "the app window's real navigations are wired");
+    reload();
+
+    assert.equal(pageOf(A).visible.at(-1), false,
+      "the fresh page starts with no pane over it");
   });
 });

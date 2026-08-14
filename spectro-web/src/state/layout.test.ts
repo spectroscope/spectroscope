@@ -5,6 +5,7 @@ import {
   clampW,
   DEFAULT_LAYOUT,
   hydrateLayout,
+  readLayoutBlob,
   openDockPanel,
   openRightPanel,
   setActiveRightTab,
@@ -285,5 +286,62 @@ describe("hydrating pre-236 blobs (card 236 migration)", () => {
   it("reads a corrupt dockColumns as absent and re-derives from the modes", () => {
     const state = hydrateLayout({ dockAgents: "open", dockColumns: 42 }, null);
     expect(state.dockColumns).toBe("agents~1~0.5");
+  });
+});
+
+describe("a broken blob heals itself (card 241 recovery)", () => {
+  // The owner's crash needed a restart; this store must never be the reason a
+  // reload does not come back clean. A blob the store cannot TRUST — bad JSON,
+  // not an object, widths that are not finite numbers, flags that are not
+  // booleans — resets the whole layout to the default and says so once.
+  // Field-level junk that card 219 already heals in place (unknown dock modes,
+  // a non-string weights) stays a silent per-field heal, not a reset.
+
+  it("bad JSON resets to the default and says so", () => {
+    const { state, recovered } = readLayoutBlob('{"sidebarW": 240, "chat', null);
+    expect(state).toEqual(DEFAULT_LAYOUT);
+    expect(recovered).toBe(true);
+  });
+
+  it("a non-object blob resets to the default and says so", () => {
+    for (const raw of ["42", '"layout"', "true"]) {
+      const { state, recovered } = readLayoutBlob(raw, null);
+      expect(state, raw).toEqual(DEFAULT_LAYOUT);
+      expect(recovered, raw).toBe(true);
+    }
+  });
+
+  it("a width that is not a finite number resets to the default and says so", () => {
+    for (const bad of ['{"rightPanelW":"abc"}', '{"sidebarW":null}', '{"imagesW":1e999}']) {
+      const { state, recovered } = readLayoutBlob(bad, null);
+      expect(state, bad).toEqual(DEFAULT_LAYOUT);
+      expect(recovered, bad).toBe(true);
+    }
+  });
+
+  it("a flag that is not a boolean resets to the default and says so", () => {
+    const { state, recovered } = readLayoutBlob('{"rightPanelOpen":"yes"}', null);
+    expect(state).toEqual(DEFAULT_LAYOUT);
+    expect(recovered).toBe(true);
+  });
+
+  it("a trustworthy blob loads without a word", () => {
+    const { state, recovered } = readLayoutBlob('{"sidebarW":300,"dockFiles":"open"}', null);
+    expect(state.sidebarW).toBe(300);
+    expect(state.dockFiles).toBe("open");
+    expect(recovered).toBe(false);
+  });
+
+  it("no blob at all is a first visit, not a recovery", () => {
+    const { state, recovered } = readLayoutBlob(null, null);
+    expect(state).toEqual(DEFAULT_LAYOUT);
+    expect(recovered).toBe(false);
+  });
+
+  it("junk dock modes stay the card-219 per-field heal, silent", () => {
+    const { state, recovered } = readLayoutBlob('{"dockAgents":"open","dockFiles":"banana"}', null);
+    expect(state.dockAgents).toBe("open");
+    expect(state.dockFiles).toBe("closed");
+    expect(recovered).toBe(false);
   });
 });

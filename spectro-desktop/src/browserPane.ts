@@ -362,8 +362,34 @@ function layout(pane: SessionPane): void {
 }
 
 /**
- * Shows one session's pane, opening the window and switching the segment if it
- * must — and taking every OTHER session's pane off screen first.
+ * A DRIVING verb's road (card 241): make the page real, open the window, ask
+ * the app for a surface — and paint NOTHING.
+ *
+ * <p>This used to be one function with the report road below, and that fusion
+ * was the measured crash of card 241: a driving verb called setVisible(true)
+ * and laid the pane at the LAST reported rectangle before the app had said
+ * where (or whether) a hole was on screen — the native page painted over
+ * whatever the operator was looking at, whole-surface. Now the verb only ASKS
+ * (the same segment request as before, once per hidden phase like card 201
+ * demands), and the pane appears exactly when the app's own viewport report
+ * names a rectangle it just measured. A hidden WebContentsView still loads
+ * and still answers screenshots — backgroundThrottling is off — so the agent
+ * loses nothing while the operator keeps the surface he chose.
+ */
+function requestVisible(pane: SessionPane): void {
+  const win = windowSource();
+  if (!win || win.isDestroyed()) return;
+  const created = ensureView(pane);
+  if (!pane.inWindow) {
+    win.contentView.addChildView(created);
+    pane.inWindow = true;
+  }
+  if (!pane.visible) showSegment();
+}
+
+/**
+ * The APP REPORT's road: shows one session's pane at the rectangle the app
+ * just posted, taking every OTHER session's pane off screen first.
  *
  * <p>Two flags, because they answer two different questions. "Is the view in
  * the window's tree" is asked once per view; "is the pane on screen" is asked
@@ -375,6 +401,10 @@ function layout(pane: SessionPane): void {
  * <p>The single-pane rule is card 218's own: two native overlays over one
  * rectangle is the failure a div could never make, and the operator would be
  * watching the top one while the agent drove the other.
+ *
+ * <p>No showSegment() here (card 241): this road RUNS because the app just
+ * reported its surface — asking the app to show what it is showing is the
+ * kind of echo card 222 retired.
  */
 function ensureVisible(pane: SessionPane): void {
   const win = windowSource();
@@ -385,10 +415,7 @@ function ensureVisible(pane: SessionPane): void {
     win.contentView.addChildView(created);
     pane.inWindow = true;
   }
-  if (!pane.visible) {
-    pane.visible = true;
-    showSegment();
-  }
+  pane.visible = true;
   created.setVisible(true);
   layout(pane);
 }
@@ -411,6 +438,27 @@ function hide(pane: SessionPane): void {
 /** Takes whatever is on screen off it, without destroying any page. */
 export function hidePane(): void {
   panes.forEach(hide);
+}
+
+/**
+ * Ties the panes to the APP WINDOW's page lifecycle (card 241).
+ *
+ * <p>The measured wedge behind the owner's restart: a pane's visibility lives
+ * in THIS process, and hidePane() had exactly one production caller — a
+ * viewport verb with visible:false. A reloaded page that lands anywhere but a
+ * browser surface mounts no reporter, so that verb never comes, and the native
+ * page kept painting over the fresh app. Only restarting the program healed it.
+ *
+ * <p>So the shell hides every pane the moment the app window really navigates
+ * (a reload is one; an in-page hash change is not — Electron does not fire
+ * did-navigate for same-document moves). The fresh page starts uncovered, and
+ * the first surface that mounts a hole reports a rectangle and brings the pane
+ * back where it belongs.
+ *
+ * @param appPage the app window's own webContents, wired once per window
+ */
+export function wirePaneLifecycle(appPage: Electron.WebContents): void {
+  appPage.on("did-navigate", () => hidePane());
 }
 
 /**
@@ -607,7 +655,7 @@ export async function runVerb(
         // will (fence-vectors.json carries the measured divergence).
         const verdict = refuse(url, policy);
         if (verdict) return failed(verdict.sentence, pane);
-        ensureVisible(pane);
+        requestVisible(pane);
         pane.refusals = [];
         pane.lines.length = 0;
         const wc = ensureView(pane).webContents;
@@ -632,7 +680,7 @@ export async function runVerb(
         // The refusal sentences are the headless face's own, verbatim, so the
         // UI reads one dialect whichever face is live.
         if (!pane.view) return failed(noPage(pane), pane);
-        ensureVisible(pane);
+        requestVisible(pane);
         const wc = ensureView(pane).webContents;
         const nav = wc.navigationHistory;
         if (verb === "back" ? !nav.canGoBack() : !nav.canGoForward()) {
@@ -650,7 +698,7 @@ export async function runVerb(
 
       case "eval": {
         if (!pane.view) return failed(noPage(pane), pane);
-        ensureVisible(pane);
+        requestVisible(pane);
         // The four pinned semantics are executeJavaScript's own, not ours:
         // page context, act and sense in one call, a returned Promise awaited,
         // and the resolved value handed back structured. On raw CDP two of the
@@ -664,7 +712,7 @@ export async function runVerb(
 
       case "screenshot": {
         if (!pane.view) return failed(noPage(pane), pane);
-        ensureVisible(pane);
+        requestVisible(pane);
         // capturePage() THROWS when the pane has not painted (measured in the
         // card 200 spike: UnknownVizError, not an empty image), so the paint is
         // waited for rather than hoped for.
@@ -766,7 +814,7 @@ function noPage(pane: SessionPane): string {
 /** The input verbs: real mouse and keyboard events into the pane's own renderer. */
 async function input(args: Record<string, unknown>, pane: SessionPane): Promise<PaneReply> {
   if (!pane.view) return failed(noPage(pane), pane);
-  ensureVisible(pane);
+  requestVisible(pane);
   const wc = ensureView(pane).webContents;
   const action = String(args.action ?? "");
 

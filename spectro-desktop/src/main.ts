@@ -4,7 +4,7 @@
 // BrowserWindow at it. Transport stays WebSocket — the renderer (the stage-8 UI) opens it.
 import { app, BrowserWindow, Menu, Notification, Tray, clipboard, dialog, nativeImage, session, shell } from "electron";
 import { allowsNavigation } from "./navigationGuard";
-import { attachPaneTo, forgetPane, relayoutPane } from "./browserPane";
+import { attachPaneTo, forgetPane, relayoutPane, wirePaneLifecycle } from "./browserPane";
 import { connectBrowserControl, disconnectBrowserControl } from "./browserControl";
 import { spawn, type ChildProcess } from "node:child_process";
 import * as fs from "node:fs";
@@ -260,6 +260,10 @@ function createWindow(port: number, hash?: string): BrowserWindow {
   w.on("resize", relayoutPane);
   w.on("enter-full-screen", relayoutPane);
   w.on("leave-full-screen", relayoutPane);
+  // Card 241: a real navigation of the app page (a reload is one) hides every
+  // pane — the fresh page mounts no reporter, so nothing else could ever send
+  // the visible:false that takes a stranded native page off the window.
+  wirePaneLifecycle(w.webContents);
 
   void w.loadURL(home + (hash ?? "")); // the stage-8 UI, WebSocket as always
   w.on("closed", () => { win = null; forgetPane(); });

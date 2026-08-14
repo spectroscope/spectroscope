@@ -82,6 +82,7 @@ import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasonin
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
 import {
+  dismissLayoutRecovered,
   openDockPanel,
   openRightPanel,
   setImagesW,
@@ -89,6 +90,7 @@ import {
   setSidebarW,
   toggleRightPanel,
   useLayout,
+  useLayoutRecovered,
 } from "./state/layout";
 import { TextView } from "./components/TextView";
 import { textExportViewKey } from "./components/textExportClaim";
@@ -133,6 +135,7 @@ import {
   removeFleet,
 } from "./state/fleetStore";
 import { browserCuePushLive } from "./state/browserCue";
+import { browserRevealPushLive, revealBrowserPanel } from "./state/browserReveal";
 import { liveSessionsPushLive, readSessionBusy, startLiveSessionsPoll } from "./state/liveSessions";
 import { swapTracePayloads, useTranslatedEvents, useTranslation } from "./state/translate";
 import type { ImportSource } from "./import/detect";
@@ -286,6 +289,7 @@ export function App() {
   const [refreshToken, setRefreshToken] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const layout = useLayout(); // persisted panel widths (sidebar + Lab panes)
+  const layoutReset = useLayoutRecovered(); // card 241: a broken blob was replaced
   const [tab, setTab] = useState<ViewTab>("chat"); // chat | spectrum | graph | trace | text | lab
   /* Variant B (0.7 A/B): while a fleet is entered, its OWN bar replaces the
      app tabs — "bus" or one agent id. Reset on every fleet change. */
@@ -475,6 +479,7 @@ export function App() {
     fleetPushLive(batch); // the fleet store splits out fleet_roster/fleet_event
     liveSessionsPushLive(batch); // card 212: which sessions are live server-wide
     browserCuePushLive(batch); // card 226: an agent drove the browser — the web view re-watches
+    browserRevealPushLive(batch); // card 241: …and the dock's browser panel reveals, never the tab
     // A refused resume (another socket already drives that session). Drop the
     // resume rather than let the transport retry it: the socket reconnects with
     // the same URL, so a page that kept ?resume= would be refused every second
@@ -1267,6 +1272,9 @@ export function App() {
     fleetsLocked,
     openLevelPanel: () => setLevelPanelOpen(true),
     changeTab,
+    // Card 241: the shell's nav.browser (sent when the agent reaches for the
+    // browser) lands on the same once-per-run reveal as the RunEvent cue.
+    revealBrowserPanel,
     openDoctor: () => setDoctorOpen(true),
     openKeymap: () => setKeymapOpen(true),
     toggleImages: () => setImagesOpen((open) => !open),
@@ -1969,6 +1977,18 @@ export function App() {
             <span className="dot warn" aria-hidden="true" />
             <span>{t(lang, "nav.sessionBusy")}</span>
             <button type="button" className="link" onClick={() => setSessionBusy(null)}>
+              {t(lang, "nav.sessionBusyDismiss")}
+            </button>
+          </div>
+        )}
+
+        {/* Card 241: the layout store replaced a blob it could not trust —
+            said once, tersely, and the sessions are provably elsewhere. */}
+        {layoutReset && (
+          <div className="conn-banner" role="status">
+            <span className="dot warn" aria-hidden="true" />
+            <span>{t(lang, "nav.layoutReset")}</span>
+            <button type="button" className="link" onClick={dismissLayoutRecovered}>
               {t(lang, "nav.sessionBusyDismiss")}
             </button>
           </div>
