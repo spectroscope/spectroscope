@@ -243,4 +243,36 @@ class BrowserWireRecorderTest {
         call.image("image/png", "images/x.png", "x", 1, 1, 1);
         call.end(true, "1", null);
     }
+
+    @Test
+    void anOperatorCallCarriesTheActorAndAnAgentCallStaysUnmarked(@TempDir Path dir)
+            throws Exception {
+        // Card 227 criterion 4: a replay must never attribute a human's
+        // navigation to the model. The distinction is ONE additive field on the
+        // call line, present only for the operator — so every sidecar written
+        // before this card keeps its exact bytes, and absent reads as "agent",
+        // which for those files is simply true: only agents could drive.
+        Path file = dir.resolve("s.browser.jsonl");
+        try (BrowserWireRecorder recorder = new BrowserWireRecorder(file, 1 << 20)) {
+            recorder.open("navigate", null, null,
+                            input("url", "https://example.com"), null, BrowserWireTap.OPERATOR)
+                    .end(true, "opened", "https://example.com");
+            recorder.open("browser_navigate", "main", "toolu_1",
+                            input("url", "https://example.com"), null)
+                    .end(true, "opened", "https://example.com");
+        }
+
+        List<JsonNode> lines = lines(file);
+        JsonNode operatorCall = lines.get(1);
+        JsonNode agentCall = lines.get(3);
+        assertEquals("browser_call", operatorCall.path("type").asText());
+        assertEquals("operator", operatorCall.path("actor").asText(),
+                "the operator's line says who drove");
+        assertFalse(operatorCall.has("agentId"),
+                "an operator call names no agent — there was none");
+        assertEquals("browser_call", agentCall.path("type").asText());
+        assertFalse(agentCall.has("actor"),
+                "an agent line keeps card 204's exact shape — absent means agent");
+        assertEquals("main", agentCall.path("agentId").asText());
+    }
 }

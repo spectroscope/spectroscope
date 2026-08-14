@@ -154,14 +154,15 @@ public final class BrowserWireRecorder implements AutoCloseable, BrowserWireTap 
     }
 
     @Override
-    public Call open(String tool, String agentId, String callId, JsonNode input, String pageUrl) {
+    public Call open(String tool, String agentId, String callId, JsonNode input, String pageUrl,
+                     String actor) {
         String cid = UUID.randomUUID().toString();
         long started = System.currentTimeMillis();
         int claimed;
         synchronized (lock) {
             claimed = claimEpoch();
-            CallLine line = new CallLine("browser_call", cid, claimed, agentId, callId, tool,
-                    null, null, redactString(pageUrl), redactMarker(pageUrl), started);
+            CallLine line = new CallLine("browser_call", cid, claimed, agentId, callId, actor,
+                    tool, null, null, redactString(pageUrl), redactMarker(pageUrl), started);
             JsonNode safeInput = redactNode(input);
             long payload = utf8Length(String.valueOf(safeInput));
             writeLine(fits(payload) ? line.withInput(safeInput) : line.withOmitted("ceiling"));
@@ -452,18 +453,20 @@ public final class BrowserWireRecorder implements AutoCloseable, BrowserWireTap 
                            int width, int height, long bytes) {}
 
     /** The {@code browser_call} line. Input is attached last so ceiling handling
-     *  stays in one place. */
+     *  stays in one place. {@code actor} is card 227's one additive field:
+     *  {@code "operator"} for a human's own action, absent for an agent's —
+     *  absent so an agent line keeps card 204's exact shape. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record CallLine(String type, String cid, int epoch, String agentId, String callId,
-                            String tool, JsonNode input, String omitted, String pageUrl,
-                            ObjectNode pageUrlRedacted, long ts) {
+                            String actor, String tool, JsonNode input, String omitted,
+                            String pageUrl, ObjectNode pageUrlRedacted, long ts) {
         CallLine withInput(JsonNode attached) {
-            return new CallLine(type, cid, epoch, agentId, callId, tool, attached, omitted,
-                    pageUrl, pageUrlRedacted, ts);
+            return new CallLine(type, cid, epoch, agentId, callId, actor, tool, attached,
+                    omitted, pageUrl, pageUrlRedacted, ts);
         }
 
         CallLine withOmitted(String reason) {
-            return new CallLine(type, cid, epoch, agentId, callId, tool, null, reason,
+            return new CallLine(type, cid, epoch, agentId, callId, actor, tool, null, reason,
                     pageUrl, pageUrlRedacted, ts);
         }
     }

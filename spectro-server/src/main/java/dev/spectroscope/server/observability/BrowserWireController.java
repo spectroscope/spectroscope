@@ -235,6 +235,10 @@ public class BrowserWireController {
         entry.put("epoch", node.path("epoch").asInt(0));
         entry.put("agentId", textOrNull(node, "agentId"));
         entry.put("callId", textOrNull(node, "callId"));
+        // Card 227: who drove — "operator" on a human's line, null on an
+        // agent's. Passed through as recorded, so the replay's reader owns the
+        // absent-means-agent rule in exactly one place.
+        entry.put("actor", textOrNull(node, "actor"));
         entry.put("tool", textOrNull(node, "tool"));
         entry.put("pageUrl", textOrNull(node, "pageUrl"));
         entry.put("ok", null);

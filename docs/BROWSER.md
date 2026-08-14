@@ -179,7 +179,16 @@ browser is live.
 
 **The picture channel: `/ws/browser-view`.** The web segment watches the
 headless browser here and drives it by hand — the parity of clicking inside
-the desktop pane. Frames are CDP's own `Page.startScreencast` (jpeg, quality
+the desktop pane. Since card 227 the channel carries the operator's controls
+on BOTH faces: the NAVIGATION verbs (`navigate`, `back`, `forward`, the start
+page's play) run on whichever face is live, desktop pane included — the
+desktop face's control row is React above the native hole, and its verbs
+travel here to the SAME per-session browser the agent drives. `input` stays
+web-face-only (on the desktop face the operator's hand is on the real pane; a
+second synthetic driver is the race the one-browser rule exists to prevent),
+and `screenshot` is read-only and serves both faces, handing the bytes back
+as verb fields where the desktop face has no client-side picture to save.
+Frames are CDP's own `Page.startScreencast` (jpeg, quality
 60, capped 1280x800), acked frame-by-frame by the face itself. **Measured on
 this machine (Chrome 151, 2026-08-14) before choosing:** screencast delivered
 277 frames/3.0 s (~92 fps, ~6.3 KB/frame) on an animating page and sends
@@ -198,8 +207,11 @@ names are `browser_computer`'s own so UI and tools speak one dialect):
 {"type":"unwatch"}                  stop watching
 {"type":"navigate","sessionId":s,"url":u}
 {"type":"back","sessionId":s}       {"type":"forward","sessionId":s}
+{"type":"screenshot","sessionId":s}
 {"type":"input","sessionId":s,"action":a,"coordinate":[x,y],"ref":r,
  "text":t,"scroll_direction":d,"scroll_amount":n,"duration":sec}
+{"type":"launch_list","sessionId":s}           the start page's data (card 227)
+{"type":"launch_play","sessionId":s,"name":n}  start a configuration, open it
 ```
 
 Server → client:
@@ -210,8 +222,13 @@ Server → client:
 {"type":"frame","sessionId":s,"format":"jpeg","dataBase64":...,
  "deviceWidth":n,"deviceHeight":n,"ts":n}
 {"type":"verb","verb":...,"ok":bool,"error"?,"url"?,"title"?,"detail"?,...}
-{"type":"refused","sentence":...}   a fence refusal, or the desktop being live
+{"type":"refused","sentence":...}   a fence refusal, the desktop being live
+                                    for input, or an agent call in flight
 {"type":"error","sentence":...}
+{"type":"launch_configs","sessionId":s,"ok":bool,"sentence"?,
+ "configs":[{"name","address","attaches","up","exitCode"?}],"skipped":n}
+{"type":"launch_played","sessionId":s,"name":n,"ok":bool,"up":bool,
+ "url"?,"sentence"?}
 ```
 
 Watching an idle session never spawns a Chrome (`hasPage()` is asked first);
@@ -222,11 +239,35 @@ session — the newest wins, the shell rule again. An agent-driven navigation
 mid-watch is announced to the UI by the session's own `browser_action`
 RunEvents; re-issuing `watch` restarts the cast on the new page.
 
+**The fight rule (card 227).** While an AGENT browser call is in flight for a
+session — counted on the recording seam itself, from `open` to `end` — every
+operator driving verb (`navigate`, `back`, `forward`, `input`, play) answers
+one terse `refused` sentence instead of interleaving; between calls the
+operator drives freely. `screenshot`, watching and `launch_list` pass — they
+race nothing. Every operator NAVIGATION is recorded through the session's own
+`.browser.jsonl` recorder (same file, same epoch as the agent's calls) with
+the additive `actor:"operator"` field; operator `input` is deliberately not
+recorded — a sidecar logging every human keystroke would be a keylogger, not
+a trace.
+
+**The start page (card 227).** The empty browser segment on both faces lists
+the session's launch configurations (card 202) over `launch_list`, one row
+per configuration with its address and a play button. `launch_play` starts
+the named configuration through the SESSION's own supervisor — what it starts
+dies with the session, card 202's lifetime rule — then points the session's
+browser at its address, fenced and recorded as the operator's navigation.
+Card 202's split holds here too: a fence refusal answers `up:true, ok:false`
+with the fence's own sentence, because the server came up and only the page
+stayed away.
+
 **What `/ws/browser-view` trusts** is exactly what `/ws` and `/ws/browser`
 trust: loopback plus an accepted Origin, nothing more. Input carries no
 permission gate, deliberately — it is the operator's own hand, the same trust
-as clicking inside the desktop pane. `back`/`forward` exist only on this face
-(`Page.getNavigationHistory`); the seven tools do not grow them.
+as clicking inside the desktop pane; `launch_play` runs what the project's own
+launch file names, the same trust as typing into the app's terminal.
+`back`/`forward` are the operator's verbs on either face (the headless face
+walks `Page.getNavigationHistory`, the pane walks Chromium's
+`navigationHistory`); the seven agent tools do not grow them.
 
 ## The seven tools
 
@@ -573,6 +614,14 @@ its browser (closing the session retires it, a resume opens a fresh one with
 fresh cookies), and both append here, so a replay that could not tell them apart
 would narrate two logins as one story.
 
+**Who drove (card 227):** an operator's own navigation — a typed address,
+back, forward, the start page's play — records in the same file under the same
+epoch with one additive field, `actor:"operator"`, and no `agentId`. An
+agent's line carries no `actor` at all, so every sidecar written before this
+card keeps its exact shape and absent reads as "agent" — which for those files
+is simply true. A replay must never attribute a human's click to the model;
+this field is what makes that a property of the record rather than a hope.
+
 Each call also emits an additive `browser_action` RunEvent into the session
 itself — metadata only, carrying the `cid` that joins the line to the record and
 the `sha256` that joins it to the screenshot. The byte-frozen RunEvent wire grows
@@ -647,7 +696,8 @@ file.
   opens on it **once loopback is opted into** — a launch configuration almost
   always names localhost, and the net fence above refuses localhost until
   `allowLocalhost` is set, so out of the box the app starts and no page is
-  opened. The answer says which of the two happened. `docs/LAUNCH.md`.
+  opened. The answer says which of the two happened. `docs/LAUNCH.md`. Since
+  card 227 the browser's own empty state lists them — the start page above.
 - **Tabs.** `tab_id` is on every schema and **still refused**, and card 218
   changed the reason rather than the answer. Card 201 recorded its meaning as
   "the per-session browser the owner asked for"; that work is done, and it did

@@ -25,6 +25,16 @@ import java.util.UUID;
 public interface BrowserWireTap {
 
     /**
+     * The actor marker for a call a HUMAN made (card 227): the operator's own
+     * hand on the segment's controls — a typed address, back, forward, a play
+     * button. Recorded as an additive {@code actor} field on the call line;
+     * an agent's call carries no marker at all, so every sidecar written
+     * before this card reads exactly as it did, and absent means agent —
+     * which for those files is simply true.
+     */
+    String OPERATOR = "operator";
+
+    /**
      * Announces one browser tool call, before it has an outcome.
      *
      * <p>Announced rather than reported afterwards, for the same reason the
@@ -41,7 +51,25 @@ public interface BrowserWireTap {
      * @param pageUrl what the pane was showing when the call started, or null
      * @return the handle that closes the record, never null
      */
-    Call open(String tool, String agentId, String callId, JsonNode input, String pageUrl);
+    default Call open(String tool, String agentId, String callId, JsonNode input, String pageUrl) {
+        return open(tool, agentId, callId, input, pageUrl, null);
+    }
+
+    /**
+     * Announces one call together with who drove it — the form card 227 adds.
+     *
+     * @param tool    the wire name of the tool, or the bare verb for an
+     *                operator-driven call ({@code navigate}, {@code back}, …)
+     * @param agentId the calling agent, or null for an operator call
+     * @param callId  the provider's tool_use id, or null where none exists
+     * @param input   the arguments, verbatim
+     * @param pageUrl what the pane was showing when the call started, or null
+     * @param actor   {@link #OPERATOR} for a human's own action, or null for
+     *                the agent — null keeps the line's card-204 shape
+     * @return the handle that closes the record, never null
+     */
+    Call open(String tool, String agentId, String callId, JsonNode input, String pageUrl,
+              String actor);
 
     /** One announced call, waiting for its outcome. */
     interface Call {
@@ -109,7 +137,7 @@ public interface BrowserWireTap {
      * @return a tap that writes nothing
      */
     static BrowserWireTap none() {
-        return (tool, agentId, callId, input, pageUrl) -> new Call() {
+        return (tool, agentId, callId, input, pageUrl, actor) -> new Call() {
             private final String cid = UUID.randomUUID().toString();
             private String sha;
 

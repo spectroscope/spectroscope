@@ -14,9 +14,12 @@ import {
   historyFrame,
   keyFrame,
   keyName,
+  launchListFrame,
+  launchPlayFrame,
   navigateFrame,
   parseViewMessage,
   screenshotFilename,
+  screenshotVerbFrame,
   scrollFrame,
   toDevicePoint,
   typedAddress,
@@ -89,7 +92,7 @@ describe("parsing what the server sends", () => {
   it("reads verb, refused and error frames", () => {
     expect(
       parseViewMessage(JSON.stringify({ type: "verb", verb: "navigate", ok: true, url: "https://a.test/" })),
-    ).toEqual({ kind: "verb", verb: "navigate", ok: true, url: "https://a.test/", error: null });
+    ).toEqual({ kind: "verb", verb: "navigate", ok: true, url: "https://a.test/", error: null, shot: null });
     expect(
       parseViewMessage(JSON.stringify({ type: "verb", verb: "input", ok: false, error: "no page" })),
     ).toEqual({
@@ -98,6 +101,7 @@ describe("parsing what the server sends", () => {
       ok: false,
       url: null,
       error: "no page",
+      shot: null,
     });
     expect(parseViewMessage(JSON.stringify({ type: "refused", sentence: "the fence said no" }))).toEqual({
       kind: "refused",
@@ -113,6 +117,110 @@ describe("parsing what the server sends", () => {
     expect(parseViewMessage("not json at all")).toBeNull();
     expect(parseViewMessage(JSON.stringify({ type: "run_start" }))).toBeNull();
     expect(parseViewMessage(42)).toBeNull();
+  });
+
+  it("carries a screenshot verb's bytes so the desktop row can save them", () => {
+    // Card 227: the desktop face has no client-side picture to save, so the
+    // shot travels back as verb fields — read here, never guessed.
+    const msg = parseViewMessage(
+      JSON.stringify({
+        type: "verb",
+        verb: "screenshot",
+        ok: true,
+        mediaType: "image/png",
+        dataBase64: "cGln",
+      }),
+    );
+    expect(msg).toEqual({
+      kind: "verb",
+      verb: "screenshot",
+      ok: true,
+      url: null,
+      error: null,
+      shot: { mediaType: "image/png", dataBase64: "cGln" },
+    });
+    const plain = parseViewMessage(JSON.stringify({ type: "verb", verb: "navigate", ok: true }));
+    expect(plain).toMatchObject({ kind: "verb", shot: null });
+  });
+
+  it("reads the start page's configuration list tolerantly (card 227)", () => {
+    const msg = parseViewMessage(
+      JSON.stringify({
+        type: "launch_configs",
+        sessionId: "s1",
+        ok: true,
+        skipped: 1,
+        configs: [
+          { name: "web", address: "http://localhost:5173/", attaches: false, up: true },
+          { name: "api", address: "http://localhost:9999/", attaches: true, up: false, exitCode: 137 },
+          { bogus: "no name, dropped" },
+        ],
+      }),
+    );
+    expect(msg).toEqual({
+      kind: "launchConfigs",
+      ok: true,
+      sentence: null,
+      skipped: 1,
+      configs: [
+        { name: "web", address: "http://localhost:5173/", attaches: false, up: true, exitCode: null },
+        { name: "api", address: "http://localhost:9999/", attaches: true, up: false, exitCode: 137 },
+      ],
+    });
+  });
+
+  it("reads a refused configuration list as its sentence", () => {
+    expect(
+      parseViewMessage(
+        JSON.stringify({ type: "launch_configs", ok: false, sentence: "this session is not open" }),
+      ),
+    ).toEqual({
+      kind: "launchConfigs",
+      ok: false,
+      sentence: "this session is not open",
+      skipped: 0,
+      configs: [],
+    });
+  });
+
+  it("reads a play answer with its outcome, address and sentence", () => {
+    expect(
+      parseViewMessage(
+        JSON.stringify({
+          type: "launch_played",
+          name: "web",
+          ok: true,
+          up: true,
+          url: "http://localhost:5173/",
+        }),
+      ),
+    ).toEqual({
+      kind: "launchPlayed",
+      name: "web",
+      ok: true,
+      up: true,
+      url: "http://localhost:5173/",
+      sentence: null,
+    });
+    expect(
+      parseViewMessage(
+        JSON.stringify({
+          type: "launch_played",
+          name: "web",
+          ok: false,
+          up: true,
+          sentence: "refused localhost",
+        }),
+      ),
+    ).toMatchObject({ kind: "launchPlayed", ok: false, up: true, sentence: "refused localhost" });
+  });
+});
+
+describe("the start page's frames (card 227)", () => {
+  it("asks for the list and presses play in the channel's own names", () => {
+    expect(launchListFrame("s1")).toEqual({ type: "launch_list", sessionId: "s1" });
+    expect(launchPlayFrame("s1", "web")).toEqual({ type: "launch_play", sessionId: "s1", name: "web" });
+    expect(screenshotVerbFrame("s1")).toEqual({ type: "screenshot", sessionId: "s1" });
   });
 });
 
@@ -240,6 +348,17 @@ describe("the screenshot control", () => {
   it("names the file off the clock, deterministically", () => {
     // 2026-08-14T12:34:56.000Z
     expect(screenshotFilename(Date.UTC(2026, 7, 14, 12, 34, 56))).toBe(
+      "spectro-browser-20260814-123456.jpeg",
+    );
+  });
+
+  it("names a wire shot by its own media type (card 227)", () => {
+    // The desktop row's shot arrives as verb fields, PNG from the pane —
+    // a .jpeg name on PNG bytes would be a small lie every file manager reads.
+    expect(screenshotFilename(Date.UTC(2026, 7, 14, 12, 34, 56), "image/png")).toBe(
+      "spectro-browser-20260814-123456.png",
+    );
+    expect(screenshotFilename(Date.UTC(2026, 7, 14, 12, 34, 56), "image/jpeg")).toBe(
       "spectro-browser-20260814-123456.jpeg",
     );
   });
