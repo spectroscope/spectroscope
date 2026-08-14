@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 /**
  * The primary MCP transport: spawn the server as a child process and speak
@@ -27,9 +28,11 @@ import java.util.List;
  * is wrapped by the {@link JsonRpcChannel}.
  *
  * <p>The handshake is {@code initialize} → {@code notifications/initialized} →
- * (later) {@code tools/list} / {@code tools/call}. Follows the process patterns of
- * {@code StandardTools.runCommand}: {@link ProcessBuilder}, and on {@link #close()}
- * a graceful {@code destroy} escalating to {@code destroyForcibly}.
+ * (later) {@code tools/list} / {@code tools/call}. Spawning follows the process
+ * patterns of {@code StandardTools.runCommand} ({@link ProcessBuilder}); the shutdown
+ * follows MCP's stdio sequence instead — close the client's stdin, wait, {@code SIGTERM}
+ * the tree, {@code SIGKILL} what is left — because a server here is a peer that may have
+ * something to flush, not a command whose output has already been collected.
  */
 public final class StdioTransport implements McpTransport {
 
@@ -44,6 +47,42 @@ public final class StdioTransport implements McpTransport {
      * drift apart the way a remembered number always does.
      */
     public static final Duration DEFAULT_READ_TIMEOUT = Duration.ofSeconds(20);
+
+    /**
+     * How long a server may take to leave on the end-of-stream it was just given, before
+     * a signal follows. Step two of the MCP stdio shutdown sequence (close stdin, wait,
+     * {@code SIGTERM}, {@code SIGKILL}); a server that exits on EOF is normally gone in
+     * milliseconds and never sees the rest.
+     */
+    public static final Duration EXIT_AFTER_EOF_GRACE = Duration.ofSeconds(1);
+
+    /**
+     * How long the polite signal has before the forcible one — the same escalation
+     * {@code StandardTools.runCommand} uses. Bounded for the tree as a whole, not per
+     * process.
+     */
+    public static final Duration DESTROY_ESCALATION_GRACE = Duration.ofSeconds(2);
+
+    /**
+     * What a teardown may cost after the read has already given up:
+     * {@link #EXIT_AFTER_EOF_GRACE} + {@link #DESTROY_ESCALATION_GRACE} +
+     * {@link JsonRpcChannel#READER_EXIT_GRACE}. Against a real mute server it measures
+     * under a millisecond, because the child dies on the first signal and the read
+     * returns with it; this is what a <i>pathological</i> server can spend — one that
+     * ignores end-of-stream and {@code SIGTERM} both.
+     */
+    public static final Duration TEARDOWN_TAIL =
+            EXIT_AFTER_EOF_GRACE.plus(DESTROY_ESCALATION_GRACE).plus(JsonRpcChannel.READER_EXIT_GRACE);
+
+    /**
+     * The whole write-off: the read bound plus the teardown tail. This — not
+     * {@link #DEFAULT_READ_TIMEOUT} on its own — is the number a person waits for when a
+     * server spawns and never speaks, and it is the number chapter 18 of the user guide
+     * prints. Card 221 shipped a guide that promised the read bound alone and a
+     * TERM-ignoring server measured 22.4 s against it; a documented bound that the code
+     * can exceed is the exact failure that card exists to stop.
+     */
+    public static final Duration WRITE_OFF_BUDGET = DEFAULT_READ_TIMEOUT.plus(TEARDOWN_TAIL);
 
     private static final String PROTOCOL_VERSION = "2024-11-05";
 
@@ -87,15 +126,17 @@ public final class StdioTransport implements McpTransport {
                 new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
         BufferedWriter out = new BufferedWriter(
                 new OutputStreamWriter(process.getOutputStream(), StandardCharsets.UTF_8));
-        // The channel is handed the child's destroy as its unblock hook, and this is the
+        // The channel is handed the child's process tree as its far end, and this is the
         // load-bearing line of card 221. A server that spawns and then says nothing leaves
         // the reader thread parked in readLine on a pipe that will never carry a byte;
-        // that read ignores interrupt, and the lock it holds is the one close() needs.
-        // Killing the child closes the pipe, which is the only thing that ends the read —
-        // the same reason a terminal Ctrl-C escaped in 1 s while a SIGINT to the JVM alone
-        // did not: Ctrl-C signals the process GROUP and takes the server with it.
-        this.channel = new JsonRpcChannel(in, out, readTimeout, () -> destroy(process));
-        this.onClose = () -> destroy(process);
+        // that read ignores interrupt, and the lock it holds is the one close() needs. The
+        // far end going away is the only thing that ends such a read — the same reason a
+        // terminal Ctrl-C escaped in 1 s while a SIGINT to the JVM alone did not: Ctrl-C
+        // signals the process GROUP and takes the server with it. What the channel does
+        // with the far end, and in what order, is JsonRpcChannel.tearDown().
+        ChildProcessTree tree = new ChildProcessTree(process);
+        this.channel = new JsonRpcChannel(in, out, readTimeout, tree);
+        this.onClose = tree::release;
     }
 
     /**
@@ -227,8 +268,9 @@ public final class StdioTransport implements McpTransport {
     }
 
     /**
-     * Close the channel first (releasing the streams), then run the process teardown —
-     * both defensively, because {@code close()} must never throw.
+     * Close the channel — which is what runs the whole shutdown sequence, stdin first —
+     * and then the process teardown a second time, defensively: it is idempotent, and
+     * {@code close()} must never throw whatever either of them does.
      */
     @Override
     public void close() {
@@ -245,45 +287,123 @@ public final class StdioTransport implements McpTransport {
     }
 
     /**
-     * Graceful destroy escalating to force, mirroring StandardTools.runCommand's kill
-     * path — but over the whole process <b>tree</b>, not just the process spectroscope
-     * spawned.
+     * The spawned server and everything it started, as the two steps
+     * {@link JsonRpcChannel.FarEnd} asks for.
      *
-     * <p>Almost nobody configures the server itself. {@code npx}, {@code uvx},
-     * {@code sh -c}, a {@code .sh} launcher: what the config names is a wrapper, and
-     * the real server is a <b>grandchild</b>. Destroying only the direct child kills
-     * the wrapper and leaves the server reparented to init — measured on the shipped
-     * teardown, two runs, two orphans at {@code ppid 1}, and they accumulate for as
-     * long as the machine is up.
+     * <p><b>Why a census at all.</b> Almost nobody configures the server itself.
+     * {@code npx}, {@code uvx}, {@code sh -c}, a {@code .sh} launcher: what the config
+     * names is a wrapper, and the real server is a <b>grandchild</b>. Destroying only the
+     * direct child kills the wrapper and leaves the server reparented to init — measured
+     * on the teardown that shipped before this, two runs, two orphans at {@code ppid 1},
+     * and they accumulate for as long as the machine is up.
      *
-     * <p>The tree is captured <b>before</b> the parent is reaped, which is the whole
-     * trick: {@link Process#descendants()} walks the OS process table, and once the
-     * wrapper is gone its children have been re-parented and no longer answer to it.
-     * Read the order as: take the census, kill the parent, kill the census, and only
-     * then escalate whatever is still standing.
+     * <p><b>Why the census is a separate step from the kill.</b> {@link Process#descendants()}
+     * walks the operating system's process table, so it only answers while the parent is
+     * still there to be asked. The kill is no longer the first thing that happens — the
+     * client's stdin is closed first, and a launcher that ends on end-of-stream is gone
+     * milliseconds later, taking the answer with it. So the count happens before the
+     * goodbye, and the record is kept.
      *
-     * <p>What this does <b>not</b> catch is a grandchild forked after the census. That
-     * is a much smaller window than the one it closes, and there is no race-free way to
-     * kill a tree with {@code java.lang.Process} alone.
-     *
-     * @param process the spawned server, may be {@code null} or already dead
+     * <p>What this does <b>not</b> catch: a grandchild forked after the census, and a
+     * server whose launcher had already exited by the time the teardown began. Both are
+     * beyond what {@code java.lang.Process} can name at all, and both are far smaller
+     * windows than the one this closes.
      */
-    private static void destroy(Process process) {
-        if (process == null || !process.isAlive()) {
-            return;
+    private static final class ChildProcessTree implements JsonRpcChannel.FarEnd {
+
+        private final Process process;
+        // Written by census(), read by release(); teardown can run on either the caller's
+        // thread or a later close, so it is not confined to one.
+        private volatile List<ProcessHandle> descendants = List.of();
+
+        ChildProcessTree(Process process) {
+            this.process = process;
         }
-        // The census has to be taken while the parent still owns them.
-        List<ProcessHandle> descendants = process.descendants().toList();
-        process.destroy();
-        descendants.forEach(ProcessHandle::destroy);
-        try {
-            if (!process.waitFor(2, java.util.concurrent.TimeUnit.SECONDS)) {
+
+        /**
+         * Ask the parent to name its children while it still can. A second census that
+         * finds nothing never overwrites a first one that found something: teardown runs
+         * again on {@code close()}, by which time the parent is usually reaped and the
+         * honest answer to "what are your children" is silence, not "none".
+         */
+        @Override
+        public void census() {
+            if (!process.isAlive()) {
+                return;
+            }
+            List<ProcessHandle> seen = process.descendants().toList();
+            if (!seen.isEmpty()) {
+                descendants = seen;
+            }
+        }
+
+        /**
+         * Steps two through four of the stdio shutdown: wait out
+         * {@link StdioTransport#EXIT_AFTER_EOF_GRACE} for the server to leave on the end-of-stream it
+         * has just been given, then {@code SIGTERM} the tree, then {@code SIGKILL}
+         * whatever ignored that. Bounded by
+         * {@code EXIT_AFTER_EOF_GRACE + DESTROY_ESCALATION_GRACE} whatever the child does.
+         */
+        @Override
+        public void release() {
+            if (leftOnItsOwn()) {
+                // It took the polite exit; there is still a census to clear, because a
+                // launcher can leave its server behind.
+                destroyTree(false);
+                return;
+            }
+            destroyTree(true);
+        }
+
+        /**
+         * Wait for the process to end on the end-of-stream it was just given.
+         *
+         * @return true when it left on its own inside the grace
+         */
+        private boolean leftOnItsOwn() {
+            try {
+                return process.waitFor(EXIT_AFTER_EOF_GRACE.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                return !process.isAlive();
+            }
+        }
+
+        /**
+         * Signal, wait, force — over the parent and the census together, against one
+         * shared deadline so the tree as a whole costs at most
+         * {@link StdioTransport#DESTROY_ESCALATION_GRACE}.
+         *
+         * @param parentAlive whether the parent still needs signalling
+         */
+        private void destroyTree(boolean parentAlive) {
+            if (parentAlive) {
+                process.destroy();
+            }
+            descendants.forEach(ProcessHandle::destroy);
+            awaitTreeExit();
+            if (process.isAlive()) {
                 process.destroyForcibly();
             }
-        } catch (InterruptedException interrupted) {
-            process.destroyForcibly();
-            Thread.currentThread().interrupt();
+            descendants.stream().filter(ProcessHandle::isAlive)
+                    .forEach(ProcessHandle::destroyForcibly);
         }
-        descendants.stream().filter(ProcessHandle::isAlive).forEach(ProcessHandle::destroyForcibly);
+
+        /** Give the whole tree {@link StdioTransport#DESTROY_ESCALATION_GRACE} to act on the signal. */
+        private void awaitTreeExit() {
+            long deadline = System.nanoTime() + DESTROY_ESCALATION_GRACE.toNanos();
+            try {
+                while (System.nanoTime() < deadline && stillStanding()) {
+                    Thread.sleep(20);
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+            }
+        }
+
+        /** True while anything in the tree is still running. */
+        private boolean stillStanding() {
+            return process.isAlive() || descendants.stream().anyMatch(ProcessHandle::isAlive);
+        }
     }
 }

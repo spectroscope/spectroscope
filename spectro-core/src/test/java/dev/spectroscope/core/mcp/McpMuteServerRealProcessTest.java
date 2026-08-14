@@ -58,15 +58,19 @@ class McpMuteServerRealProcessTest {
     /** Short stand-in for the shipped 20 s read bound, so the suite stays quick. */
     private static final Duration BOUND = Duration.ofSeconds(2);
 
-    /** What the whole probe may take: the bound, plus the spawn, plus a bounded teardown. */
-    private static final long BUDGET_MS = 6_000;
+    /**
+     * What the whole probe may take, in the shape the shipped budget has: the read
+     * bound plus the teardown tail. Derived rather than typed, so a change to either
+     * constant moves the test with it instead of leaving a number nobody re-derives.
+     */
+    private static final long BUDGET_MS = BOUND.plus(StdioTransport.TEARDOWN_TAIL).toMillis();
 
     /**
      * The same for a server behind a shell wrapper: two processes to start instead of
-     * one, and a teardown that may spend its full reader grace. Deliberately loose —
+     * one, and a teardown that may spend its grace on each of them. Deliberately loose —
      * this budget is a hang-guard, and the wrapper tests are about the pid, not the clock.
      */
-    private static final long WRAPPED_BUDGET_MS = 12_000;
+    private static final long WRAPPED_BUDGET_MS = BUDGET_MS + 5_000;
 
     @Test
     void aServerThatSpawnsAndNeverSpeaksIsReportedUnreachableWithinTheBound(@TempDir Path tmp)
@@ -165,6 +169,88 @@ class McpMuteServerRealProcessTest {
         assertFalse(survivor.isPresent() && survivor.get().isAlive(),
                 "the real server (grandchild pid " + grandchild + ") outlived the wrapper"
                         + " spectroscope killed; it is now reparented to init and accumulating");
+    }
+
+    @Test
+    void aHealthyCloseGivesTheServerEndOfStreamAndAWindowBeforeAnySignal(@TempDir Path tmp)
+            throws Exception {
+        // The MCP stdio shutdown sequence is: close the client's stdin, wait for the
+        // server to leave, THEN SIGTERM, THEN SIGKILL. Card 221's first fix put the
+        // destroy at the front of the teardown — right for a server that had gone mute,
+        // wrong for every other close: a server that flushes on end-of-stream lost the
+        // chance, and one that logs SIGTERM as abnormal recorded every clean disconnect
+        // as a kill. Neither shows up in a wall time or an exit code.
+        //
+        // The measurement is a GAP, not a word. On Unix, Process.destroy() signals and
+        // then closes the streams, so a killed child sees end-of-stream too, some
+        // milliseconds later — which of its own threads notices first is a coin toss.
+        // What is not a coin toss is how long it had: a whole grace period when the
+        // sequence is right, and nothing at all when the signal leads.
+        Path pidFile = tmp.resolve("polite.pid");
+        List<String> command = fixtureCommand(pidFile, "polite");
+        assumeTrue(command != null, "cannot locate the fixture classpath; skipping");
+
+        McpServerConfig polite = new McpServerConfig(
+                "polite", command.getFirst(), command.subList(1, command.size()), null, null, null);
+
+        McpServerRegistry registry = McpServerRegistry.load(
+                List.of(polite), tmp, config -> new StdioTransport(config, tmp, BOUND));
+        assertTrue(registry.servers().getFirst().reachable(),
+                "the polite fixture answers the handshake; if it did not, this test proves nothing");
+        long pid = pidOf(pidFile);
+
+        registry.close();
+
+        Optional<ProcessHandle> child = ProcessHandle.of(pid);
+        assertFalse(child.isPresent() && child.get().isAlive(),
+                "a healthy close must still end the server (pid " + pid + ")");
+
+        List<String> events = shutdownEvents(Path.of(pidFile + ".exit"));
+        Long eof = timestampOf(events, "STDIN-EOF");
+        Long signal = timestampOf(events, "SIGNAL");
+        assertNotNull(eof, "the server never saw end-of-stream at all before it was ended; it"
+                + " recorded " + events);
+        long windowMs = signal == null ? Long.MAX_VALUE : (signal - eof) / 1_000_000;
+        assertTrue(windowMs >= 200,
+                "the server was signalled " + windowMs + " ms after end-of-stream — the polite"
+                        + " half of the stdio shutdown sequence is missing, so a server that"
+                        + " flushes on EOF never gets to; it recorded " + events);
+    }
+
+    @Test
+    void theProcessTreeIsCountedBeforeStdinIsClosedAndNotAfter(@TempDir Path tmp) throws Exception {
+        // The ordering decision, pinned. Closing stdin first is what the MCP shutdown
+        // sequence asks for, but a launcher that exits on end-of-stream — a wrapper
+        // around `cat`, npx forwarding stdin, any `sh -c "server & wait"` shape — is gone
+        // by the time anything asks it to name its children, and Process.descendants()
+        // of a reaped process is empty. The grandchild is then reparented to init and
+        // lives on, which is exactly the hole the previous round closed. So the census
+        // is taken FIRST, while the launcher can still answer, and only then does stdin
+        // close. Read the teardown as: count the tree, say goodbye, wait, kill.
+        Path pidFile = tmp.resolve("selfexit.pid");
+        List<String> command = wrapperThatLeavesOnStdinEof(pidFile);
+        assumeTrue(command != null, "cannot locate the fixture classpath or /bin/sh; skipping");
+
+        McpServerConfig wrapped = new McpServerConfig(
+                "selfexit", command.getFirst(), command.subList(1, command.size()), null, null, null);
+
+        long startedAt = System.nanoTime();
+        McpServerRegistry registry = McpServerRegistry.load(
+                List.of(wrapped), tmp, config -> new StdioTransport(config, tmp, BOUND));
+        long elapsedMs = millisSince(startedAt);
+        try {
+            assertTrue(elapsedMs < WRAPPED_BUDGET_MS,
+                    "a wrapper that leaves on EOF must still come back; it took " + elapsedMs + " ms");
+        } finally {
+            registry.close();
+        }
+
+        long grandchild = pidOf(pidFile);
+        Optional<ProcessHandle> survivor = ProcessHandle.of(grandchild);
+        assertFalse(survivor.isPresent() && survivor.get().isAlive(),
+                "the real server (grandchild pid " + grandchild + ") outlived a launcher that"
+                        + " left on end-of-stream: the tree was counted after stdin closed, by"
+                        + " which time there was nobody left to name it");
     }
 
     @Test
@@ -399,6 +485,67 @@ class McpMuteServerRealProcessTest {
                 .reduce((a, b) -> a + " " + b)
                 .orElseThrow() + " ; true";
         return List.of("/bin/sh", "-c", script);
+    }
+
+    /**
+     * A launcher that hands its stdout to the server, forwards nothing, and <b>leaves
+     * the moment the client closes stdin</b> — the shape that turns a polite shutdown
+     * into an orphan factory unless the tree is counted before the goodbye. {@code cat}
+     * is what holds it open and what ends it; the fixture in the background keeps the
+     * stdout pipe, so the read is still parked when the timeout fires.
+     *
+     * @param pidFile where the backgrounded fixture announces its own pid — the GRANDCHILD's
+     * @return the {@code /bin/sh -c …} command line, or {@code null} when unavailable
+     */
+    private static List<String> wrapperThatLeavesOnStdinEof(Path pidFile) throws URISyntaxException {
+        List<String> inner = fixtureCommand(pidFile, "mute");
+        if (inner == null || !Files.isExecutable(Path.of("/bin/sh"))) {
+            return null;
+        }
+        String script = inner.stream()
+                .map(McpMuteServerRealProcessTest::shellQuote)
+                .reduce((a, b) -> a + " " + b)
+                .orElseThrow() + " & cat > /dev/null ; exit 0";
+        return List.of("/bin/sh", "-c", script);
+    }
+
+    /**
+     * What the polite fixture recorded on its way out, waiting briefly for the file —
+     * the child writes it while it is being ended, so the first look can be too early.
+     *
+     * @param logFile the fixture's {@code .exit} file
+     * @return the recorded events, each {@code "<what> <nanoTime>"}, possibly empty when
+     *         the child never got the chance to write anything
+     */
+    private static List<String> shutdownEvents(Path logFile) throws Exception {
+        // The caller has already established that the child is gone, so whatever is in
+        // the file is final; this only waits for it to appear at all.
+        long deadline = System.nanoTime() + Duration.ofSeconds(5).toNanos();
+        List<String> events = List.of();
+        while (System.nanoTime() < deadline && events.isEmpty()) {
+            if (Files.exists(logFile)) {
+                events = Files.readAllLines(logFile, StandardCharsets.UTF_8).stream()
+                        .filter(line -> !line.isBlank()).toList();
+            }
+            if (events.isEmpty()) {
+                Thread.sleep(25);
+            }
+        }
+        return events;
+    }
+
+    /**
+     * The nanoTime the fixture stamped on one event, in the fixture's own clock.
+     *
+     * @param events what {@link #shutdownEvents} collected
+     * @param what   {@code STDIN-EOF} or {@code SIGNAL}
+     * @return the stamp, or {@code null} when that event never happened
+     */
+    private static Long timestampOf(List<String> events, String what) {
+        return events.stream()
+                .filter(line -> line.startsWith(what + " "))
+                .map(line -> Long.parseLong(line.substring(what.length() + 1).trim()))
+                .findFirst().orElse(null);
     }
 
     /** POSIX single-quoting, so a temp path with a space cannot rewrite the script. */

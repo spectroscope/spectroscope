@@ -33,7 +33,7 @@ import java.util.concurrent.atomic.AtomicLong;
  * on a daemon virtual thread and {@code Future.get(timeout)}, so a server that
  * goes silent surfaces a timeout rather than hanging forever.
  *
- * <h2>Why the teardown takes an {@code unblockReader} hook</h2>
+ * <h2>Why the teardown takes a {@link FarEnd} rather than a close</h2>
  *
  * <p>A blocking read is bounded, but it cannot be <b>abandoned</b>. The reader
  * thread parked inside {@code readLine} holds the {@link BufferedReader}'s own
@@ -46,11 +46,13 @@ import java.util.concurrent.atomic.AtomicLong;
  * carries it away.
  *
  * <p>The only thing that makes such a read return is <b>the other end of the pipe
- * going away</b>. That is why teardown here runs {@code unblockReader} first and
- * only then touches the streams: {@link StdioTransport} passes a hook that
- * destroys the child process, whose death closes the pipe, which ends the read,
- * which frees the lock. A different timeout would not have helped — a longer one
- * merely postpones the deadlock and a shorter one arrives at it sooner.
+ * going away</b>. So the far end has to be dealt with before the reader's stream is
+ * touched — but "dealt with" is not "killed". The MCP stdio shutdown sequence is
+ * <b>close the client's stdin, wait, {@code SIGTERM}, {@code SIGKILL}</b>, and a
+ * teardown that jumps to step three takes away the flush of every server that ends
+ * on end-of-stream and turns every clean disconnect into an abnormal one in its log.
+ * {@link #tearDown()} therefore runs four steps in an order that is itself the
+ * decision — see there.
  */
 public final class JsonRpcChannel implements AutoCloseable {
 
@@ -59,17 +61,56 @@ public final class JsonRpcChannel implements AutoCloseable {
     private static final ObjectMapper JSON = new ObjectMapper();
 
     /**
-     * How long teardown waits for the reader thread to leave {@code readLine} after
-     * {@code unblockReader} has run. Measured against a real spawned server on both
-     * JDKs, the read returns in under a millisecond once the child is destroyed; this
-     * is slack for a loaded machine, not an expected cost.
+     * How long teardown waits for the reader thread to leave {@code readLine} after the
+     * far end has been released. Measured against a real spawned server on both JDKs,
+     * the read returns in under a millisecond once the child is gone; this is slack for
+     * a loaded machine, not an expected cost. Public because it is one of the four
+     * terms in the write-off budget the user guide prints — see
+     * {@link StdioTransport#WRITE_OFF_BUDGET}.
      */
-    private static final Duration READER_EXIT_GRACE = Duration.ofSeconds(2);
+    public static final Duration READER_EXIT_GRACE = Duration.ofSeconds(2);
+
+    /**
+     * The far end of the pipe, in the two steps a stdio shutdown needs it in. Split in
+     * two because the order is load-bearing: the tree has to be counted while the thing
+     * that owns it is still alive, and the goodbye has to be said before anything is
+     * killed. One method could not be in both places.
+     */
+    public interface FarEnd {
+
+        /** A far end nothing can reach — in-memory pipes, whose read gives up on its own. */
+        FarEnd NONE = new FarEnd() {
+            @Override
+            public void census() {
+                // nothing to count: there is no process on the other side.
+            }
+
+            @Override
+            public void release() {
+                // nothing to release: the reader is not parked on a file descriptor.
+            }
+        };
+
+        /**
+         * Write down what is over there <b>while it can still be asked</b>. A launcher
+         * that exits when its stdin ends takes the answer with it, and the operating
+         * system re-parents its children to init where nothing connects them to this
+         * channel any more.
+         */
+        void census();
+
+        /**
+         * End the far end, so a parked {@code readLine} returns: wait out a short grace
+         * for it to leave on the end-of-stream it has just been given, then signal, then
+         * force. Must return within a bounded time — a face is waiting behind it.
+         */
+        void release();
+    }
 
     private final BufferedReader in;
     private final BufferedWriter out;
     private final Duration readTimeout;
-    private final Runnable unblockReader;
+    private final FarEnd farEnd;
     private final AtomicLong nextId = new AtomicLong(1);
     private final ExecutorService reader =
             Executors.newSingleThreadExecutor(Thread.ofVirtual().name("jsonrpc-read-", 0).factory());
@@ -85,35 +126,33 @@ public final class JsonRpcChannel implements AutoCloseable {
      * Wraps an existing reader/writer pair with <b>no way to abandon a stuck read</b>.
      * Safe for in-memory pipes, whose read gives up on its own and honours an
      * interrupt. Anything backed by a real file descriptor — a process, a socket —
-     * should use {@link #JsonRpcChannel(BufferedReader, BufferedWriter, Duration, Runnable)}
-     * and hand over the lever that closes the far end.
+     * should use {@link #JsonRpcChannel(BufferedReader, BufferedWriter, Duration, FarEnd)}
+     * and hand over the far end.
      *
      * @param in          stream the responses arrive on, one JSON object per line
      * @param out         stream the requests are written to
      * @param readTimeout upper bound a single {@link #request} waits for its response line
      */
     public JsonRpcChannel(BufferedReader in, BufferedWriter out, Duration readTimeout) {
-        this(in, out, readTimeout, () -> { });
+        this(in, out, readTimeout, FarEnd.NONE);
     }
 
     /**
-     * Wraps an existing reader/writer pair together with the lever that ends a read
-     * nothing else can end.
+     * Wraps an existing reader/writer pair together with the far end that can end a
+     * read nothing else can end.
      *
-     * @param in            stream the responses arrive on, one JSON object per line
-     * @param out           stream the requests are written to
-     * @param readTimeout   upper bound a single {@link #request} waits for its response line
-     * @param unblockReader run first on every teardown, before a stream is touched; it must
-     *                      make a parked {@code readLine} return — for a spawned server that
-     *                      means destroying the process, because closing the reader from here
-     *                      would deadlock against the reader thread holding its lock
+     * @param in          stream the responses arrive on, one JSON object per line
+     * @param out         stream the requests are written to
+     * @param readTimeout upper bound a single {@link #request} waits for its response line
+     * @param farEnd      the other side of the pipe: counted, then given end-of-stream,
+     *                    then released, in that order — see {@link #tearDown()}
      */
     public JsonRpcChannel(BufferedReader in, BufferedWriter out, Duration readTimeout,
-                          Runnable unblockReader) {
+                          FarEnd farEnd) {
         this.in = in;
         this.out = out;
         this.readTimeout = readTimeout;
-        this.unblockReader = unblockReader;
+        this.farEnd = farEnd;
     }
 
     /**
@@ -247,30 +286,48 @@ public final class JsonRpcChannel implements AutoCloseable {
     }
 
     /**
-     * Release the far end, wait for the reader to leave, then close the streams —
-     * shared by {@link #poison()} and {@link #close()}.
+     * Count the far end, say goodbye to it, release it, and only then close the read
+     * side — shared by {@link #poison()} and {@link #close()}.
      *
-     * <p><b>The order is the whole fix.</b> Closing {@code in} while the reader thread
-     * is parked inside {@code readLine} parks the caller too, on the same lock, for
-     * good. So: run {@code unblockReader} first (destroying the child closes the pipe
-     * and the read returns), then wait for the reader thread to actually be gone, and
-     * only then close. If the reader has <i>not</i> left within the grace, the streams
-     * are deliberately left unclosed: a descriptor on a pipe whose far end is already
-     * destroyed is a cheap thing to lose, and closing it here is how a face hangs.
+     * <p><b>The order is the whole thing, and each step is there for a different
+     * defect.</b>
+     *
+     * <ol>
+     *   <li><b>Census first.</b> A launcher — {@code npx}, {@code uvx}, {@code sh -c} —
+     *       is what the config names, and the real server is its child. Some launchers
+     *       exit the moment their stdin ends, and a process that has exited cannot name
+     *       its children any more: the census has to happen before the goodbye, or the
+     *       grandchild is reparented to init and runs until the machine does not.</li>
+     *   <li><b>Close {@code out} second</b> — the client's stdin, and step one of the MCP
+     *       stdio shutdown sequence. This is the only end-of-stream a server ever gets;
+     *       skipping it takes the flush away from every server that ends on EOF and
+     *       writes an abnormal termination into the log of every server that notes one.
+     *       Closing the write side is safe while the read is parked: nobody holds its
+     *       lock.</li>
+     *   <li><b>Release third:</b> wait a short grace for the server to leave on that
+     *       end-of-stream, then signal, then force. This is what actually ends a parked
+     *       {@code readLine} when the server did not go on its own.</li>
+     *   <li><b>Close {@code in} last, and only if the reader really left.</b> Closing it
+     *       while the reader is still inside {@code readLine} parks this thread on the
+     *       same lock for good — card 221's original hang. If the reader has not left
+     *       within the grace, the stream is deliberately abandoned: a descriptor on a
+     *       pipe whose far end is already dead is the cheaper loss.</li>
+     * </ol>
      */
     private void tearDown() {
-        runQuietly(unblockReader);
+        runQuietly(farEnd::census);
+        // Step one of the shutdown sequence, and the reason it comes before the kill.
+        closeQuietly(out);
+        runQuietly(farEnd::release);
         reader.shutdownNow();
         if (awaitReaderExit()) {
             closeQuietly(in);
         } else {
             LOG.warn("JSON-RPC reader thread did not leave readLine within {} ms after the"
-                            + " unblock hook; leaving the stream to the OS rather than parking"
-                            + " this thread on its lock",
+                            + " far end was released; leaving the stream to the OS rather than"
+                            + " parking this thread on its lock",
                     READER_EXIT_GRACE.toMillis());
         }
-        // The write side is safe either way — no one holds its lock.
-        closeQuietly(out);
     }
 
     /**
@@ -301,16 +358,16 @@ public final class JsonRpcChannel implements AutoCloseable {
     }
 
     /**
-     * Best-effort run of the caller's unblock hook — a hook that throws must not stop
-     * the rest of the teardown.
+     * Best-effort run of one far-end step — a step that throws must not stop the rest of
+     * the teardown, least of all the ones that end the process.
      *
-     * @param hook the lever that ends a parked read; failures are logged, never thrown
+     * @param step census or release; failures are logged, never thrown
      */
-    private static void runQuietly(Runnable hook) {
+    private static void runQuietly(Runnable step) {
         try {
-            hook.run();
+            step.run();
         } catch (RuntimeException failed) {
-            LOG.warn("the JSON-RPC unblock hook failed: {}", failed.toString());
+            LOG.warn("a JSON-RPC far-end teardown step failed: {}", failed.toString());
         }
     }
 }
