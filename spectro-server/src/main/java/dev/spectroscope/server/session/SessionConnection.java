@@ -1049,9 +1049,16 @@ public final class SessionConnection {
         // Loaded before the SubagentManager so children run the same guard as the parent.
         HookRunner hooks = HookRunner.load(sessionConfig.hooks());
 
-        subagents = new SubagentManager(new SubagentConfig(
-                provider, workspace, "main", broker, List.copyOf(childBase), hooks,
-                llmWire, webTools));
+        subagents = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(workspace)
+                .parentAgentId("main")
+                .onPermission(broker)
+                .baseTools(List.copyOf(childBase))
+                .hooks(hooks)
+                .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
+                .webTools(webTools)
+                .build());
         // spawn + dev tools ONLY in the parent registry — otherwise a browser run
         // could never emit agent_spawn events, which the graph tab needs live.
         subagents.tools().forEach(registry::register);
