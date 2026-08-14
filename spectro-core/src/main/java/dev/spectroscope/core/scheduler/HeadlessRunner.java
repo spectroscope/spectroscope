@@ -11,6 +11,8 @@ import dev.spectroscope.core.config.SpectroConfig;
 import dev.spectroscope.core.config.ProviderFactory;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.hooks.HookRunner;
+import dev.spectroscope.core.mcp.McpServerConfig;
+import dev.spectroscope.core.mcp.McpServerRegistry;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.session.SessionStore;
 import dev.spectroscope.core.trace.JsonlSink;
@@ -73,6 +75,30 @@ public final class HeadlessRunner {
      *  stamped at this seam, never inside the Agent; null = no stamp, the
      *  frozen default. */
     private final String trigger;
+    /** Card 220: the per-invocation MCP override — {@code spectro run --mcp} /
+     *  {@code --no-mcp}. Null (the default everywhere else) means the
+     *  {@code headlessMcp} settings key decides; cron fires and triggered
+     *  nodes never set this, which is exactly the owner's split: flag when a
+     *  person starts the run, settings when the machine does. */
+    private final Boolean mcpOverride;
+    /** How the configured servers become a registry — the test seam, exactly
+     *  like {@code providerOverride}: production is the real
+     *  {@link McpServerRegistry#load(List, Path)}, tests inject an in-memory
+     *  transport so no process is spawned and no timeout is real. */
+    private final McpLoader mcpLoader;
+
+    /** The registry-loading seam. Package-private on purpose: only tests
+     *  replace it — every production face pays the real spawn cost or none. */
+    interface McpLoader {
+        /**
+         * Connects the configured servers the way the interactive faces do.
+         *
+         * @param servers the parsed {@code mcpServers} entries
+         * @param cwd     the run's working directory, threaded to stdio spawns
+         * @return the registry over every server that started
+         */
+        McpServerRegistry load(List<McpServerConfig> servers, Path cwd);
+    }
 
     /**
      * The production constructor — the provider is built fresh from config per run.
@@ -92,12 +118,14 @@ public final class HeadlessRunner {
      * @param providerOverride the scripted provider, or null to build from config
      */
     HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride) {
-        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null, null);
+        this(mapper, config, providerOverride, DEFAULT_AGENT_ID, null, null, null, null,
+                null, McpServerRegistry::load);
     }
 
     private HeadlessRunner(ObjectMapper mapper, SpectroConfig config, LlmProvider providerOverride,
                            String agentId, TracingPort auxiliaryPort, CancelSignal externalSignal,
-                           PermissionBroker externalBroker, String trigger) {
+                           PermissionBroker externalBroker, String trigger,
+                           Boolean mcpOverride, McpLoader mcpLoader) {
         this.mapper = mapper;
         this.config = config;
         this.providerOverride = providerOverride;
@@ -106,6 +134,8 @@ public final class HeadlessRunner {
         this.externalSignal = externalSignal;
         this.externalBroker = externalBroker;
         this.trigger = trigger;
+        this.mcpOverride = mcpOverride;
+        this.mcpLoader = mcpLoader;
     }
 
     /**
@@ -119,7 +149,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withIdentity(String agentId) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader);
     }
 
     /**
@@ -136,7 +166,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withAuxiliaryPort(TracingPort port) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, port,
-                externalSignal, externalBroker, trigger);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader);
     }
 
     /**
@@ -151,7 +181,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withCancelSignal(CancelSignal signal) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                signal, externalBroker, trigger);
+                signal, externalBroker, trigger, mcpOverride, mcpLoader);
     }
 
     /**
@@ -166,7 +196,7 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withBroker(PermissionBroker broker) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, broker, trigger);
+                externalSignal, broker, trigger, mcpOverride, mcpLoader);
     }
 
     /**
@@ -182,7 +212,41 @@ public final class HeadlessRunner {
      */
     public HeadlessRunner withTrigger(String trigger) {
         return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
-                externalSignal, externalBroker, trigger);
+                externalSignal, externalBroker, trigger, mcpOverride, mcpLoader);
+    }
+
+    /**
+     * A copy of this runner whose runs override the {@code headlessMcp}
+     * settings key for MCP mounting (card 220). {@code true} mounts the
+     * configured servers, {@code false} declines them, {@code null} — the
+     * default everywhere — lets the settings decide. This is the CLI-flag half
+     * of the owner's combined road: {@code spectro run --mcp} / {@code
+     * --no-mcp} reach exactly this seam and nothing else does; a cron fire and
+     * a triggered node have no flags and stay on the settings.
+     *
+     * <p>Under {@code --permissions auto} an override of {@code true} approves
+     * every tool every configured server offers, unwatched — which is why the
+     * flag's help text is permission-shaped, not convenience-shaped.
+     *
+     * @param mcp true = mount, false = decline, null = the settings decide
+     * @return the re-consented runner; this instance is unchanged
+     */
+    public HeadlessRunner withMcp(Boolean mcp) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, externalBroker, trigger, mcp, mcpLoader);
+    }
+
+    /**
+     * Visible for tests: replace how configured servers become a registry, so
+     * the suite drives the mount with an in-memory transport instead of a
+     * spawned process. Production code never calls this.
+     *
+     * @param loader the replacement loader
+     * @return the re-seamed runner; this instance is unchanged
+     */
+    HeadlessRunner withMcpLoader(McpLoader loader) {
+        return new HeadlessRunner(mapper, config, providerOverride, agentId, auxiliaryPort,
+                externalSignal, externalBroker, trigger, mcpOverride, loader);
     }
 
     /**
@@ -237,13 +301,54 @@ public final class HeadlessRunner {
     public Outcome runOnce(String prompt, Path cwd, boolean autoApprove, Integer maxTurns,
                            Consumer<RunEvent> onEvent, Consumer<String> log,
                            SessionStore providedStore, List<RunEvent.Attachment> attachments) {
-        ToolRegistry registry = new ToolRegistry(); // standard tools only — never the spawn tools
+        ToolRegistry registry = new ToolRegistry(); // standard tools; never the spawn tools
         StandardTools.all().forEach(registry::register);
 
         LlmProvider provider = providerOverride != null
                 ? providerOverride
                 : ProviderFactory.providerFromConfig(config); // the model lives in the provider
 
+        // Card 220, the owner's combined road: MCP mounting sits at the same
+        // seam card 195 put the hooks on — every headless face builds THIS
+        // runner, so `spectro run`, a cron fire and a triggered node cannot
+        // drift apart. Unlike hooks the wiring is consent-gated: a hook can
+        // only ever refuse a call, an MCP server can only ever add reach, and
+        // under `auto` a mount approves every tool every configured server
+        // offers with nobody watching. The flag (withMcp) overrides per
+        // invocation; absent the flag, the headlessMcp settings key decides;
+        // both off, the loader is never called and no startup cost is paid.
+        // Mounted AFTER the provider so a missing API key still fails before
+        // any server process is spawned.
+        boolean mountMcp = (mcpOverride != null ? mcpOverride : config.headlessMcp())
+                && !config.mcpServers().isEmpty();
+        McpServerRegistry mcp = null;
+        try {
+            if (mountMcp) {
+                mcp = mcpLoader.load(config.mcpServers(), cwd);
+                mcp.tools().forEach(registry::register);
+                describeMount(mcp, autoApprove, log);
+            }
+            return runWithTools(prompt, cwd, autoApprove, maxTurns, onEvent, log,
+                    providedStore, attachments, registry, provider);
+        } finally {
+            // Every exit path, the failure ones included, the way the doctor
+            // probe closes its own (card 220 security criterion): a stdio child
+            // outliving a cron fire is a defect of this road, not a cost.
+            if (mcp != null) {
+                mcp.close();
+            }
+        }
+    }
+
+    /**
+     * The run itself, after the belt is assembled — everything below this line
+     * is card-220-agnostic: with no mount the registry holds exactly the
+     * standard tools and the behaviour is byte-identical to before.
+     */
+    private Outcome runWithTools(String prompt, Path cwd, boolean autoApprove, Integer maxTurns,
+                                 Consumer<RunEvent> onEvent, Consumer<String> log,
+                                 SessionStore providedStore, List<RunEvent.Attachment> attachments,
+                                 ToolRegistry registry, LlmProvider provider) {
         // The store BEFORE the agent: the llm-wire recorder (card 184) shares the
         // session id, and the agent needs it at build time. A triggered node's
         // provided store reuses one file across fires — the recorder appends the
@@ -358,6 +463,45 @@ public final class HeadlessRunner {
                 : !errorMessage.isEmpty() ? "error: " + errorMessage
                 : stopReason;
         return new Outcome(finalText.toString(), effectiveStop, store.id(), exitOk);
+    }
+
+    /**
+     * What the mount changed, in the run's own output and in tool terms
+     * (card 220, AC 3): each reachable server with every tool it contributed,
+     * each unreachable one with the reason it was skipped — never swallowed,
+     * so a silently absent tool is not mistaken for a refused one — and then
+     * what {@code --permissions auto} approves after the mount, next to the
+     * policy THIS run actually holds.
+     *
+     * @param mcp         the just-loaded registry
+     * @param autoApprove this run's headless policy (ignored when a fleet
+     *                    node's own broker decides instead)
+     * @param log         the run's log sink — stderr for {@code spectro run},
+     *                    the daemon log for a cron fire
+     */
+    private void describeMount(McpServerRegistry mcp, boolean autoApprove, Consumer<String> log) {
+        for (McpServerRegistry.McpServerHandle server : mcp.servers()) {
+            if (server.reachable()) {
+                List<String> names = mcp.tools().stream()
+                        .map(tool -> tool.name())
+                        .filter(name -> name.startsWith("mcp__" + server.name() + "__"))
+                        .toList();
+                log.accept("mcp: " + server.name() + " mounted ("
+                        + names.size() + (names.size() == 1 ? " tool: " : " tools: ")
+                        + String.join(", ", names) + ")");
+            } else {
+                log.accept("mcp: " + server.name() + " UNREACHABLE at " + server.target()
+                        + (server.failure() == null ? "" : " — " + server.failure())
+                        + " — skipped, the run keeps the standard tools");
+            }
+        }
+        String policy = externalBroker != null ? "node broker"
+                : autoApprove ? "auto" : "readonly";
+        boolean approves = externalBroker != null || autoApprove;
+        log.accept("mcp: --permissions auto approves the " + StandardTools.all().size()
+                + " standard tools in the path sandbox plus every mounted MCP tool above,"
+                + " unwatched (this run: " + policy
+                + (approves ? ")" : " — every needsPermission call is denied)"));
     }
 
     /**

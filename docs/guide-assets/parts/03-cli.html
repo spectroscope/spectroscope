@@ -122,6 +122,7 @@ renderers”.</p>
   <tr><td><code>--max-turns &lt;n&gt;</code></td><td>cancel when a turn exceeds the limit (stop reason <code>max_turns</code>)</td></tr>
   <tr><td><code>--permissions readonly|auto</code></td><td>the headless policy. Default <strong>readonly</strong> — “capability before convenience”: unattended runs deny mutations unless you opt in</td></tr>
   <tr><td><code>--image &lt;path&gt;</code></td><td>attach an image (repeatable; jpg/jpeg/png/webp/gif) — vision, chapter 17</td></tr>
+  <tr><td><code>--mcp</code> / <code>--no-mcp</code></td><td>mount the configured MCP servers for this run, overriding the <code>headlessMcp</code> setting (chapter 30) — or decline them. A permission, not a convenience: with <code>--permissions auto</code> this approves every tool every configured server offers, unwatched. Absent, the setting decides; the run prints what it mounted on stderr</td></tr>
   <tr><td><code>--verbose</code> / <code>--speak</code></td><td>as on the REPL</td></tr>
 </table>
 

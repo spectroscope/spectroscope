@@ -60,7 +60,7 @@ public final class SettingsWriter {
             "promptCaching", "hooks", "workspace", "logLevel",
             "imageModel", "sttModel", "sttProvider", "sttLanguage", "chromeBinary",
             "otlpEndpoint", "otlpBasicAuth", "ollamaBaseUrl", "lmstudioBaseUrl",
-            "searxngUrl", "allowLocalhost");
+            "searxngUrl", "allowLocalhost", "headlessMcp");
 
     /** Fields that apply to the whole process, not one workspace — a
      *  {@code PROJECT}/{@code LOCAL} patch setting any of them is refused. This is

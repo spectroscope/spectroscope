@@ -140,6 +140,20 @@ import java.util.function.Function;
  *                            (a workspace scope may not set it — that folder is
  *                            the agent's own). Env
  *                            {@code SPECTRO_ALLOW_LOCALHOST}
+ * @param headlessMcp         card 220's settings-level opt-in (default false):
+ *                            when true, every HEADLESS face — {@code spectro
+ *                            run}, a cron fire, a triggered fleet node — mounts
+ *                            the configured {@code mcpServers} the way the REPL
+ *                            does. A manual {@code spectro run} may override it
+ *                            per invocation with {@code --mcp} / {@code
+ *                            --no-mcp}; absent flags, this field decides. Under
+ *                            {@code --permissions auto} the opt-in approves
+ *                            every tool every configured server offers,
+ *                            unwatched — which is why it is a consent switch
+ *                            and not a convenience. Process-global (a workspace
+ *                            scope may not set it — the switch that widens an
+ *                            unattended run must not live in the folder the
+ *                            agent writes into). Env {@code SPECTRO_HEADLESS_MCP}
  */
 public record SpectroConfig(
         String provider,
@@ -166,7 +180,8 @@ public record SpectroConfig(
         String ollamaBaseUrl,
         String lmstudioBaseUrl,
         String searxngUrl,
-        boolean allowLocalhost) {
+        boolean allowLocalhost,
+        boolean headlessMcp) {
 
     /** Canonical constructor guards against null block fields — callers get empty lists. */
     public SpectroConfig {
@@ -233,7 +248,8 @@ public record SpectroConfig(
             null, null, // otlpEndpoint/otlpBasicAuth: exporter off by default
             null, null, // ollamaBaseUrl/lmstudioBaseUrl: unset — the legacy baseUrl chain decides
             null, // searxngUrl: no instance — web_search resolves its tier without one
-            false); // allowLocalhost: the net fence refuses loopback until somebody says otherwise
+            false, // allowLocalhost: the net fence refuses loopback until somebody says otherwise
+            false); // headlessMcp: an unattended run mounts no MCP server until an operator opts in
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -552,7 +568,7 @@ public record SpectroConfig(
                         base.sttLanguage(), base.chromeBinary(),
                         base.otlpEndpoint(), base.otlpBasicAuth(),
                         base.ollamaBaseUrl(), base.lmstudioBaseUrl(), base.searxngUrl(),
-                        base.allowLocalhost());
+                        base.allowLocalhost(), base.headlessMcp());
             }
         }
         return base;
@@ -601,7 +617,8 @@ public record SpectroConfig(
             new FieldProbe("ollamaBaseUrl", p -> p.ollamaBaseUrl),
             new FieldProbe("lmstudioBaseUrl", p -> p.lmstudioBaseUrl),
             new FieldProbe("searxngUrl", p -> p.searxngUrl),
-            new FieldProbe("allowLocalhost", p -> p.allowLocalhost));
+            new FieldProbe("allowLocalhost", p -> p.allowLocalhost),
+            new FieldProbe("headlessMcp", p -> p.headlessMcp));
 
     /**
      * A key a workspace scope must not set: its name in the file, the probe
@@ -663,7 +680,17 @@ public record SpectroConfig(
             new ProcessGlobal("searxngUrl", p -> p.searxngUrl,
                     "is process-global and not allowed in a workspace scope",
                     "the instance web_search dials belongs in ~/.spectro/settings.json or "
-                            + "SPECTRO_SEARXNG_URL, not in a folder the agent writes into."));
+                            + "SPECTRO_SEARXNG_URL, not in a folder the agent writes into."),
+            // Card 220: the switch that lets an UNATTENDED run mount MCP servers.
+            // Same rule as allowLocalhost, sharper stakes: the workspace is the
+            // folder the agent itself writes into, so a consent switch living
+            // there could be flipped by one auto-approved write_file — and the
+            // next cron fire in that workspace would mount every configured
+            // server with nobody watching.
+            new ProcessGlobal("headlessMcp", p -> p.headlessMcp,
+                    "is process-global and not allowed in a workspace scope",
+                    "the headless MCP opt-in belongs in ~/.spectro/settings.json or "
+                            + "SPECTRO_HEADLESS_MCP, not in a folder the agent writes into."));
 
     /** The keys a workspace scope may not hold, by name. Exists for the doc
      *  guard: a key added to the list above without a word in the published
@@ -705,7 +732,7 @@ public record SpectroConfig(
                 maxRetries, promptCaching, hooks,
                 workspace, logLevel, imageModel, sttModel, sttProvider, sttLanguage,
                 chromeBinary, otlpEndpoint, otlpBasicAuth,
-                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost);
+                ollamaBaseUrl, lmstudioBaseUrl, searxngUrl, allowLocalhost, headlessMcp);
     }
 
     /** Whether {@code provider} is a selectable LLM backend — the single source
@@ -1413,6 +1440,7 @@ public record SpectroConfig(
         public String lmstudioBaseUrl;
         public String searxngUrl;
         public Boolean allowLocalhost;
+        public Boolean headlessMcp;
         // Jackson deserializes the Claude-Desktop-shaped object here; the key is the
         // server name (folded in by toServerList). LinkedHashMap preserves order.
         // A layer that defines mcpServers replaces the whole block below it — the
@@ -1451,6 +1479,7 @@ public record SpectroConfig(
             out.lmstudioBaseUrl = Optional.ofNullable(higher.lmstudioBaseUrl).orElse(lmstudioBaseUrl);
             out.searxngUrl = Optional.ofNullable(higher.searxngUrl).orElse(searxngUrl);
             out.allowLocalhost = Optional.ofNullable(higher.allowLocalhost).orElse(allowLocalhost);
+            out.headlessMcp = Optional.ofNullable(higher.headlessMcp).orElse(headlessMcp);
             // Whole-block replacement: the higher layer's mcpServers, if it defines one
             // at all, replaces this layer's block wholesale.
             out.mcpServers = Optional.ofNullable(higher.mcpServers).orElse(mcpServers);
@@ -1486,7 +1515,8 @@ public record SpectroConfig(
                     Optional.ofNullable(ollamaBaseUrl).orElse(DEFAULTS.ollamaBaseUrl()),
                     Optional.ofNullable(lmstudioBaseUrl).orElse(DEFAULTS.lmstudioBaseUrl()),
                     Optional.ofNullable(searxngUrl).orElse(DEFAULTS.searxngUrl()),
-                    Optional.ofNullable(allowLocalhost).orElse(DEFAULTS.allowLocalhost()));
+                    Optional.ofNullable(allowLocalhost).orElse(DEFAULTS.allowLocalhost()),
+                    Optional.ofNullable(headlessMcp).orElse(DEFAULTS.headlessMcp()));
         }
 
         /**
@@ -1521,6 +1551,12 @@ public record SpectroConfig(
             String allowLocalhost = env.get("SPECTRO_ALLOW_LOCALHOST");
             if (allowLocalhost != null) {
                 out.allowLocalhost = parseBool(allowLocalhost);
+            }
+            // Card 220: the headless faces' MCP opt-in. Same 1/0/true/false
+            // spelling; unset keeps the unattended belt at the standard tools.
+            String headlessMcp = env.get("SPECTRO_HEADLESS_MCP");
+            if (headlessMcp != null) {
+                out.headlessMcp = parseBool(headlessMcp);
             }
             // SPECTRO_WORKSPACE names the agent's working directory; unset keeps the
             // per-session temp folder (resolved later, when the session id exists).

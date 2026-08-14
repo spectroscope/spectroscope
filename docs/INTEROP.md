@@ -17,19 +17,25 @@ schema dialects.
 
 ## MCP: shared tool servers
 
-The interactive faces mount MCP servers as tools. A configured server
+spectroscope agents mount MCP servers as tools. A configured server
 (`mcpServers` in the settings, stdio or HTTP/SSE transport) contributes
 each of its tools to the belt as `mcp__<server>__<tool>`, permission-gated
 like every other tool, every call and result in the event stream.
 
-Which faces, precisely, because the line above used to imply all of them:
-the REPL and a web session mount every configured server, and `spectro
-doctor` connects to each one to report its reachability and tool count. The
-headless faces do not — `spectro run`, a cron fire and a triggered fleet
-node share one runner, and it builds the nine standard tools and nothing
-else. So a server `doctor` calls reachable is not a server every face has
-mounted. Whether that stays true is an open owner decision; the
-measurements, the roads and the recommendation are in
+Which faces, precisely, because this page once implied all of them and then
+for a while named too few: the REPL and a web session mount every
+configured server, and `spectro doctor` connects to each one to report its
+reachability and tool count. The headless faces — `spectro run`, a cron
+fire, a triggered fleet node — mount them **only on an explicit opt-in**
+(decided 2026-08-14, card 220): the `headlessMcp` settings key (default
+false) covers all three, and a manual `spectro run` may override it per
+invocation with `--mcp` / `--no-mcp`. The opt-in is permission-shaped on
+purpose: under `--permissions auto` it approves every tool every configured
+server offers, with nobody watching, and both the flag's help text and the
+run's own output say so in those terms. Without the opt-in a headless run
+keeps the nine standard tools inside its path sandbox, and doctor's mcp
+line names which faces its reachability applies to. The decision, the
+measurements and the roads not taken are in
 [HEADLESS-MCP.md](HEADLESS-MCP.md).
 
 A tool result that carries an **image** block reaches the model as an

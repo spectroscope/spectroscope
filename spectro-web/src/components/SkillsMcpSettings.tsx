@@ -179,16 +179,30 @@ export function McpSettings() {
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Card 220: the headless faces' opt-in — effective value, because the env
+  // layer (SPECTRO_HEADLESS_MCP) can set it too and the switch must not show
+  // "off" over a run that would mount. Null until the view arrives.
+  const [headlessMcp, setHeadlessMcp] = useState<boolean | null>(null);
 
   const load = useCallback((): void => {
     fetchSettings()
       .then((view) => {
         const block = view.layers["user"]?.["mcpServers"];
         setServers(typeof block === "object" && block !== null ? (block as Record<string, unknown>) : {});
+        setHeadlessMcp(view.effective["headlessMcp"] === true);
       })
       .catch(() => setServers("failed"));
   }, []);
   useEffect(load, [load]);
+
+  const writeHeadless = (next: boolean): void => {
+    putSettings("user", { headlessMcp: next })
+      .then(() => {
+        setError(null);
+        load();
+      })
+      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+  };
 
   const write = (next: Record<string, unknown>): void => {
     putSettings("user", { mcpServers: next })
@@ -285,6 +299,29 @@ export function McpSettings() {
             {error !== null && <p className="settings-error">{error}</p>}
           </>
         )}
+      </ReachBlock>
+      {/* Card 220: the headless opt-in lives in its OWN ReachBlock — its reach
+          ("headless-run") is not the server list's ("next-session"), and one
+          sentence about both is exactly what card 222 forbids. The switch
+          mirrors the fx-switch markup the panel's Switch uses, so all four
+          designs style it without a new class. */}
+      <ReachBlock lang={lang} fields={["headlessMcp"]}>
+        <div className="settings-toggles">
+          <button
+            type="button"
+            className={`fx-switch${headlessMcp === true ? " fx-switch--on" : ""}`}
+            role="switch"
+            aria-checked={headlessMcp === true}
+            disabled={headlessMcp === null || servers === "failed"}
+            onClick={() => writeHeadless(!(headlessMcp === true))}
+          >
+            <span className="fx-switch-label">{t(lang, "mcpset.headlessLabel")}</span>
+            <span className="fx-switch-track" aria-hidden="true">
+              <span className="fx-switch-knob" />
+            </span>
+          </button>
+        </div>
+        <p className="settings-note">{t(lang, "mcpset.headlessNote")}</p>
       </ReachBlock>
     </div>
   );

@@ -18,7 +18,7 @@ class OtlpProbeControllerTest {
     private static SpectroConfig config(String endpoint, String auth) {
         return new SpectroConfig("anthropic", "m", null, 100000, "ask", List.of(), "gemini",
                 false, List.of(), 2, false, List.of(), null, "info", null, null, "auto", "auto", null,
-                endpoint, auth, null, null, null, false);
+                endpoint, auth, null, null, null, false, false);
     }
 
     /** A legitimate operator request: loopback peer + localhost Host (the

@@ -31,8 +31,13 @@ import { t, type Lang } from "../i18n/i18n";
  *    control elsewhere in the window and the operator used it this session, in
  *    which case that choice stands until they leave the session. Exactly one
  *    field is in this state (`imageProvider`, whose second control is the
- *    composer's dropdown), and the page says so under it. */
-export type Reach = "live" | "live-unless-picked" | "next-session";
+ *    composer's dropdown), and the page says so under it.
+ *  - `headless-run` — the field steers UNATTENDED runs and no web session at
+ *    all: `spectro run` reads it per invocation, the cron daemon and a fleet
+ *    node at their start. Card 220's `headlessMcp` is the one field in this
+ *    state; calling it either live or next-session would promise a session
+ *    something the runner never reads. */
+export type Reach = "live" | "live-unless-picked" | "next-session" | "headless-run";
 
 /**
  * Every saveable setting on the page, and when it reaches a session that is
@@ -84,6 +89,11 @@ export const SETTING_REACH = {
   // McpServerRegistry.load runs inside buildAgentOnce, from the session-scoped
   // config — a server added now is connected by the next session, not this one.
   mcpServers: "next-session",
+  // Card 220: the headless faces' MCP opt-in. HeadlessRunner reads it off the
+  // config each run is built with — spectro run loads config per invocation,
+  // the cron daemon and a fleet node at their own start — and no interactive
+  // session consults it ever, so neither "live" nor "next-session" is true.
+  headlessMcp: "headless-run",
   // The exporter is built where the session store is minted.
   otlpEndpoint: "next-session",
   otlpBasicAuth: "next-session",
@@ -117,6 +127,7 @@ const GENERIC: Record<Reach, string> = {
   live: "set.reachLive",
   "live-unless-picked": "set.reachLiveUnlessPicked",
   "next-session": "set.reachNextSession",
+  "headless-run": "set.reachHeadless",
 };
 
 /**

@@ -54,13 +54,18 @@ In the REPL:
 - MCP tools are a static tool source, connected once at startup and registered
   alongside the standard tools. They are independent of the in-app provider
   switch — switching the LLM backend mid-session keeps the same MCP tools.
-- **Which faces mount them, and which do not.** The REPL and a web session
-  mount every configured server; `spectro doctor` connects to each one only to
-  report its reachability, and closes it again. The headless faces mount none:
-  `spectro run`, a cron fire and a triggered fleet node share one runner, and it
-  carries the nine standard tools and nothing else. A `doctor` line saying
-  `reachable` therefore does not mean `spectro run` has that server's tools —
-  measured on 2026-08-13, the REPL sent 23 tools to the provider and `spectro
-  run` sent 9, from the same settings file. Whether headless should mount is an
-  open owner decision; the roads and the measurements are in
+- **Which faces mount them.** The REPL and a web session mount every
+  configured server; `spectro doctor` connects to each one only to report its
+  reachability, and closes it again. The headless faces — `spectro run`, a
+  cron fire and a triggered fleet node, which share one runner — mount them
+  **only on an explicit opt-in** (decided 2026-08-14, card 220): set
+  `headlessMcp: true` next to `mcpServers` and all three mount like the REPL;
+  a manual `spectro run` overrides it per invocation with `--mcp` /
+  `--no-mcp`. The opt-in is a permission, not a convenience — under
+  `--permissions auto` it approves every tool every configured server offers,
+  unwatched, and the run's own stderr says what it mounted in tool terms.
+  Without the opt-in the headless belt stays the nine standard tools, and
+  doctor's mcp line names which faces its `reachable` applies to, so the two
+  can no longer contradict each other in front of the same settings file. The
+  decision and the measurements are in
   [`../docs/HEADLESS-MCP.md`](../docs/HEADLESS-MCP.md).
