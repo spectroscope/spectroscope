@@ -7,6 +7,18 @@
 // (DOM-less) test environment, where it simply falls back to defaults.
 
 import { useSyncExternalStore } from "react";
+import {
+  closeInColumns,
+  openInColumns,
+  parseColumns,
+  reconcileColumns,
+  serializeColumns,
+  setColumnPairShare,
+  setColumnSplit,
+} from "../panels/columnModel";
+// Runtime edge layout → dockModel only: dockModel's own imports from this
+// file are type-only and erase, so the order has ONE home and no cycle.
+import { DOCK_ORDER } from "../panels/dockModel";
 
 /** Which tab the Chat tab's right-docked panel shows — the Claude-Code
  *  right-sidebar pattern. "files" is the Phase 5 workspace panel; "work" is the
@@ -62,6 +74,13 @@ export interface LayoutState {
    *  string field keeps the equality check one line. Parsing and clamping live
    *  in panels/dockModel.ts. */
   dockWeights: string;
+  /** Card 236: the workspace's column arrangement, serialized
+   *  (`"agents,files~1~0.35|terminal~2~0.5"` — see panels/columnModel.ts).
+   *  Columns of one or two panels, a width weight and a height split per
+   *  column. The WINDOW SIZE never feeds this field — only open/close (the
+   *  fill rule) and the two divider drags write it, which is what makes a
+   *  resize scale the pixels without re-seating a single panel. */
+  dockColumns: string;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -87,6 +106,8 @@ export const DEFAULT_LAYOUT: LayoutState = {
   dockTerminal: "closed",
   dockBrowser: "closed",
   dockWeights: "",
+  // The roster alone in one column — the serialized form of the default face.
+  dockColumns: "agents~1~0.5",
 };
 
 const KEY = "spectroscope:layout";
@@ -128,6 +149,20 @@ function normalizeMode(v: unknown): DockPanelMode {
 }
 
 /**
+ * The column arrangement that agrees with the mode fields (card 236). The
+ * modes own MEMBERSHIP (which panels are visible at all); the stored
+ * arrangement keeps seats and ratios where it can, and panels it misses
+ * hydrate through the fill rule in DOCK_ORDER — the deterministic order the
+ * card asks to be named. A non-string `stored` (pre-236 blob, corrupt entry)
+ * reads as an empty arrangement and everything hydrates through the fill rule.
+ */
+function columnsAgreeingWithModes(state: LayoutState, stored: unknown): string {
+  const openIds = DOCK_ORDER.filter((id) => state[DOCK_FIELD[id]] !== "closed");
+  const parsed = typeof stored === "string" ? parseColumns(stored, DOCK_ORDER) : [];
+  return serializeColumns(reconcileColumns(parsed, openIds));
+}
+
+/**
  * A stored blob, made whole. Pure so the migration is testable without
  * touching the module's storage read.
  *
@@ -148,6 +183,10 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   if (postCard) {
     for (const f of DOCK_FIELDS) state[f] = normalizeMode(state[f]);
     if (typeof state.dockWeights !== "string") state.dockWeights = "";
+    // Card 236: a 228-era blob has modes but no arrangement — its open panels
+    // hydrate through the fill rule in DOCK_ORDER, losslessly. A 236 blob is
+    // taken at its word, reconciled against the modes it arrived with.
+    state.dockColumns = columnsAgreeingWithModes(state, blob.dockColumns);
     return state;
   }
   // Pre-card blob: migrate. Every panel closed, then the one that was showing.
@@ -156,6 +195,7 @@ export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): Layo
   const tab = blob.activeRightTab;
   state[DOCK_FIELD[tab !== undefined && tab in DOCK_FIELD ? tab : "agents"]] = "open";
   if (termOpenRaw === "1") state.dockTerminal = "open";
+  state.dockColumns = columnsAgreeingWithModes(state, null);
   return state;
 }
 
@@ -207,7 +247,8 @@ function set(patch: Partial<LayoutState>): void {
     next.dockFiles === state.dockFiles &&
     next.dockTerminal === state.dockTerminal &&
     next.dockBrowser === state.dockBrowser &&
-    next.dockWeights === state.dockWeights
+    next.dockWeights === state.dockWeights &&
+    next.dockColumns === state.dockColumns
   ) {
     return; // no change — no emit
   }
@@ -256,10 +297,17 @@ export function setActiveRightTab(tab: RightTab): void {
   set({ activeRightTab: tab });
 }
 
-/** The strip's show/hide: closed opens, anything visible closes. */
+/** The strip's show/hide: closed opens, anything visible closes. The column
+ *  arrangement moves WITH the mode (card 236): an open seats the panel by the
+ *  fill rule, a close frees its seat and collapses an emptied column. */
 export function toggleDockPanel(id: DockPanelId): void {
   const field = DOCK_FIELD[id];
-  set({ [field]: state[field] === "closed" ? "open" : "closed" });
+  const closing = state[field] !== "closed";
+  const cols = parseColumns(state.dockColumns, DOCK_ORDER);
+  set({
+    [field]: closing ? "closed" : "open",
+    dockColumns: serializeColumns(closing ? closeInColumns(cols, id) : openInColumns(cols, id)),
+  });
 }
 
 /** The header chevron: folds an open panel to its header and back. A closed
@@ -271,10 +319,16 @@ export function toggleDockCollapse(id: DockPanelId): void {
 }
 
 /** Opens (and unfolds) a panel, idempotently — the workspace announcement,
- *  the roster's agent pick and the chat's work chip land here. */
+ *  the roster's agent pick and the chat's work chip land here. Seating is
+ *  idempotent too: unfolding a collapsed panel finds it already seated and
+ *  the arrangement string comes back byte-identical. */
 export function openDockPanel(id: DockPanelId): void {
   const field = DOCK_FIELD[id];
-  if (state[field] !== "open") set({ [field]: "open" });
+  if (state[field] === "open") return;
+  set({
+    [field]: "open",
+    dockColumns: serializeColumns(openInColumns(parseColumns(state.dockColumns, DOCK_ORDER), id)),
+  });
 }
 
 /** Stores the serialized panel weights. Card 228's grid reads no weights any
@@ -283,6 +337,26 @@ export function openDockPanel(id: DockPanelId): void {
  *  field it expects, and a stored weights string survives a round trip. */
 export function setDockWeights(serialized: string): void {
   set({ dockWeights: serialized });
+}
+
+/** The in-column divider drag (card 236): one column's height split. Junk
+ *  indices and non-finite ratios change nothing — the model returns the same
+ *  array and no state is written. */
+export function setDockColumnSplit(index: number, split: number): void {
+  const cols = parseColumns(state.dockColumns, DOCK_ORDER);
+  const next = setColumnSplit(cols, index, split);
+  if (next === cols) return;
+  set({ dockColumns: serializeColumns(next) });
+}
+
+/** The column divider drag (card 236): re-cuts the width weights of columns
+ *  `leftIndex` and `leftIndex + 1`, conserving their sum — every other
+ *  column keeps its width exactly. */
+export function setDockColumnShare(leftIndex: number, leftShare: number): void {
+  const cols = parseColumns(state.dockColumns, DOCK_ORDER);
+  const next = setColumnPairShare(cols, leftIndex, leftShare);
+  if (next === cols) return;
+  set({ dockColumns: serializeColumns(next) });
 }
 
 function subscribe(cb: () => void): () => void {
