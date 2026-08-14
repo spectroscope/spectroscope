@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -57,6 +58,51 @@ class DescribeContextTest {
         assertEquals(new dev.spectroscope.core.web.BrowsePageTool().description(),
                 byName.get("browse_page").description());
         assertTrue(byName.get("browse_page").needsPermission());
+    }
+
+    @Test
+    void introspectionListsTheSevenBrowserToolsWithTheirRealDescriptions(@TempDir Path cwd) {
+        // Card 201's family was registered in buildAgentOnce and never added
+        // here, so the tab under-reported the main agent's tool set by seven.
+        // The same failure the class was written against: not a drifted string
+        // this time, a missing family.
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+
+        ContextInfo context = ContextDescriber.describe(config, cwd);
+        Map<String, ContextInfo.ToolInfo> byName = context.tools().stream()
+                .collect(Collectors.toMap(ContextInfo.ToolInfo::name, Function.identity()));
+
+        // Read off a REAL family, exactly like web_fetch and browse_page above:
+        // a literal list of seven names here would be the drift this test exists
+        // to catch, one indirection later.
+        List<dev.spectroscope.core.tools.Tool> browser =
+                new dev.spectroscope.core.browser.BrowserTools(
+                        dev.spectroscope.core.browser.BrowserFace::none, () -> null, null).all();
+        assertEquals(7, browser.size(), "test premise: card 201 ships seven browser tools");
+        for (dev.spectroscope.core.tools.Tool tool : browser) {
+            assertTrue(byName.containsKey(tool.name()),
+                    tool.name() + " is registered for every session and must appear in the list");
+            assertEquals(tool.description(), byName.get(tool.name()).description(),
+                    "introspection reads the real tool, not a drifted literal");
+            assertEquals(tool.needsPermission(), byName.get(tool.name()).needsPermission(),
+                    tool.name() + " must carry the gate flag the live registry gives it");
+        }
+    }
+
+    @Test
+    void theBrowserFamilySitsWhereTheLiveRegistryPutsIt(@TempDir Path cwd) {
+        // "in registration order" is a promise the list makes; buildAgentOnce
+        // registers the family after browse_page and before update_plan.
+        SpectroConfig config = SpectroConfig.load(SpectroConfig.Overrides.none(), cwd);
+
+        List<String> names = ContextDescriber.describe(config, cwd).tools().stream()
+                .map(ContextInfo.ToolInfo::name)
+                .toList();
+
+        assertTrue(names.indexOf("browse_page") < names.indexOf("browser_navigate"),
+                "the browser family is registered after browse_page, got: " + names);
+        assertTrue(names.indexOf("browser_resize") < names.indexOf("update_plan"),
+                "the browser family is registered before update_plan, got: " + names);
     }
 
     @Test
