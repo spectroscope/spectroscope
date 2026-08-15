@@ -64,6 +64,17 @@ describe("the composer folds instead of spilling (card 243)", () => {
     expect(blockOf(modal, ".composer-actions")).toMatch(/flex-wrap:\s*wrap/);
   });
 
+  it("the archive bar's own row wraps as the last resort too", () => {
+    // The verify round measured the miss: the fold moved the TOOLS out of the
+    // archive bar, but the bar's own controls (note, resume, export, delete,
+    // return-to-live) sat in a nowrap row — at chat 360/inner 328 the EN
+    // "Return to live" rendered 55px outside the container and 31px under the
+    // dock; DE ("Zurück zu Live") escaped even at a 1440 window with a 710px
+    // dock (inner 450). Same last resort as .composer-actions: wrap, never
+    // clip — a clipped control is an unreachable one.
+    expect(blockOf(modal, ".archive-bar .composer-inner")).toMatch(/flex-wrap:\s*wrap/);
+  });
+
   it("the menu offers the fold section and the chat hands it the tools", () => {
     const menu = read("../components/DisclosureMenu.tsx");
     expect(menu).toContain("disc-fold");

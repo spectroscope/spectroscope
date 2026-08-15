@@ -491,11 +491,18 @@
 .archive-delete--armed:hover { color: var(--error); border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 
 /* The archive bar kept its single row: it holds a note and a few buttons,
-   not a draft — the column regroup above is the live composer's shape. */
+   not a draft — the column regroup above is the live composer's shape.
+   Card 243, the same last resort as .composer-actions: with the dock
+   returned (card 242 makes stored session + 360px chat the NORMAL archive
+   state) the bar's own controls ran out of room — EN "Return to live" 55px
+   outside at inner 328, DE even at inner 450 — so the row wraps rather than
+   clips. The fold above still moves the tools chips into the menu first;
+   this only catches what remains. */
 .archive-bar .composer-inner {
   flex-direction: row;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   min-height: 42px;
 }
