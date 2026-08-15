@@ -5,9 +5,14 @@
   display: flex;
   flex-direction: column;
   flex: none;
-  /* Capped against the row (card 228): the grid default is 620px wide, and a
-     narrow window must keep the chat's reserve rather than being overrun. */
-  width: min(var(--right-panel-w, 360px), 60%);
+  /* Capped against the row: the chat keeps its reserved floor (card 242).
+     The card-228 cap said the same intent but proportionally (60%), which at
+     a 1150px window left the chat 356px — under the very reserve the drag
+     clamp holds. Now the cap IS the reserve: the panel may take everything
+     but the chat's floor and the 8px resizer between them (.lab-resizer's
+     flex-basis — without it the handle eats the floor: measured 352px), and
+     a narrow window shrinks the panel first. */
+  width: min(var(--right-panel-w, 360px), calc(100% - var(--chat-reserve) - 8px));
   min-width: 0;
   min-height: 0;
   background-color: var(--surface);

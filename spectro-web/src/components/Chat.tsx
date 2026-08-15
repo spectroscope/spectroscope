@@ -511,8 +511,14 @@ export function Chat(props: {
   // and would keep writing the recorded stream under a label promising the view
   // on screen. It is the same key the translate sheet is handed, one line down.
   const tools = chatTools({ events: props.events?.length ?? 0, translatedUnits: translated.byId.size });
-  const toolsRow = tools.row && (
-    <div className="composer-tools" role="group" aria-label={t(lang, "chat.tools")}>
+  /** The tools, buildable twice (card 243): once for the action row, once for
+   *  the three-dots menu's fold section. Two MOUNTS of the same controls whose
+   *  visibility CSS switches on the composer container's width — the pattern
+   *  the sidebar's session-model row set. State they share lives in external
+   *  stores (translate, lang), so the copies cannot disagree; the open-state
+   *  of a menu or sheet is per mount, and only the visible copy is clickable. */
+  const toolsChips = tools.row && (
+    <>
       {tools.exportControl && (
         <ExportMenu kind="chat" events={props.events ?? []} label={props.sessionLabel ?? null} viewKey={vk} />
       )}
@@ -521,6 +527,11 @@ export function Chat(props: {
           two bars cannot drift; it draws nothing at all for a live session or a
           pasted file, which have no folder to point at. */}
       <SessionFolderButtons storePath={props.storePath ?? null} />
+    </>
+  );
+  const toolsRow = tools.row && (
+    <div className="composer-tools" role="group" aria-label={t(lang, "chat.tools")}>
+      {toolsChips}
     </div>
   );
 
@@ -595,7 +606,8 @@ export function Chat(props: {
     </div>
   );
 
-  const discMenu = <DisclosureMenu />;
+  // Card 243: the menu doubles as the tools' fold-away home at narrow widths.
+  const discMenu = <DisclosureMenu fold={toolsChips !== false ? toolsChips : undefined} />;
 
   return (
     <main className={`chat${chatWidth === "wide" ? " chat--wide" : ""}`} {...attachments.dropHandlers}>

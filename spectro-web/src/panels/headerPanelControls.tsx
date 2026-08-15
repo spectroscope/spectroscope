@@ -73,11 +73,13 @@ export function DockHeaderControls({
   }, [menuOpen]);
 
   /** One press, either door: opening reveals the workspace too, closing
-   *  leaves the workspace as it is (the strip behaves the same way). */
+   *  leaves the workspace as it is (the strip behaves the same way). The open
+   *  REMEMBERS (card 242): a header icon is the user's explicit ask, so the
+   *  dock returns on the next entered session — unlike the agent's cue. */
   const press = (id: DockPanelId): void => {
     if (modes[id] === "closed") {
       openDockPanel(id);
-      openRightPanel();
+      openRightPanel(true);
     } else {
       toggleDockPanel(id);
     }

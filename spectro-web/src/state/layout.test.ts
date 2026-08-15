@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   __getState,
   __resetForTests,
+  applyDockReturn,
   clampW,
   DEFAULT_LAYOUT,
   hydrateLayout,
@@ -286,6 +287,78 @@ describe("hydrating pre-236 blobs (card 236 migration)", () => {
   it("reads a corrupt dockColumns as absent and re-derives from the modes", () => {
     const state = hydrateLayout({ dockAgents: "open", dockColumns: 42 }, null);
     expect(state.dockColumns).toBe("agents~1~0.5");
+  });
+});
+
+describe("the app starts clean (card 242): panels are asked for, never inherited", () => {
+  // Measured 2026-08-15 on a temp-home jar at a 1310px window: a real pre-0.9
+  // blob ({rightPanelOpen:true, activeRightTab:"files"} + the legacy terminal
+  // key "1") opened Files+Terminal into the greeting, and a 241-era blob added
+  // the Browser card — chat squeezed to 442px. The rule: a LAUNCH never
+  // inherits an open dock; the membership migrates as a PREFERENCE that
+  // returns when a session is entered (applyDockReturn).
+
+  it("a pre-0.9 blob migrates panels to preferences, never to open-on-launch", () => {
+    const state = hydrateLayout({ rightPanelOpen: true, activeRightTab: "files" }, "1");
+    expect(state.rightPanelOpen).toBe(false); // the greeting is clean
+    expect(state.dockFiles).toBe("open"); // the preference survives
+    expect(state.dockTerminal).toBe("open");
+    expect(state.dockReturn).toBe(true); // the user HAD left the dock open
+  });
+
+  it("a 241-era blob with the browser card launches closed too", () => {
+    const state = hydrateLayout(
+      { rightPanelOpen: true, dockFiles: "open", dockTerminal: "open", dockBrowser: "open" },
+      null,
+    );
+    expect(state.rightPanelOpen).toBe(false);
+    expect(state.dockBrowser).toBe("open"); // membership kept for the return
+    expect(state.dockReturn).toBe(true);
+  });
+
+  it("a stored dockReturn is taken at its word; junk heals to the old flag", () => {
+    expect(
+      hydrateLayout({ rightPanelOpen: false, dockReturn: true, dockAgents: "open" }, null).dockReturn,
+    ).toBe(true);
+    expect(
+      hydrateLayout({ rightPanelOpen: true, dockReturn: false, dockAgents: "open" }, null).dockReturn,
+    ).toBe(false);
+    // Junk falls back to what the pre-242 flag said — healing, not a reset.
+    expect(
+      hydrateLayout({ rightPanelOpen: true, dockReturn: "banana", dockAgents: "open" }, null).dockReturn,
+    ).toBe(true);
+  });
+
+  it("a fresh visit starts with no dock and no return memory", () => {
+    const { state } = readLayoutBlob(null, null);
+    expect(state.rightPanelOpen).toBe(false);
+    expect(state.dockReturn).toBe(false);
+  });
+
+  it("toggleRightPanel writes the return memory in both directions", () => {
+    toggleRightPanel();
+    expect(__getState().rightPanelOpen).toBe(true);
+    expect(__getState().dockReturn).toBe(true);
+    toggleRightPanel();
+    expect(__getState().rightPanelOpen).toBe(false);
+    expect(__getState().dockReturn).toBe(false);
+  });
+
+  it("openRightPanel stays transient unless asked to remember", () => {
+    openRightPanel(); // the agent's cue (card 241) — not the user's choice
+    expect(__getState().rightPanelOpen).toBe(true);
+    expect(__getState().dockReturn).toBe(false);
+    applyDockReturn(); // entering a session: only a USER-left dock returns
+    expect(__getState().rightPanelOpen).toBe(false);
+    openRightPanel(true); // the header's panel icons — an explicit ask
+    expect(__getState().rightPanelOpen).toBe(true);
+    expect(__getState().dockReturn).toBe(true);
+    applyDockReturn();
+    expect(__getState().rightPanelOpen).toBe(true);
+    // Idempotence — a repeated remember-open must not churn subscribers.
+    const before = __getState();
+    openRightPanel(true);
+    expect(__getState()).toBe(before);
   });
 });
 
