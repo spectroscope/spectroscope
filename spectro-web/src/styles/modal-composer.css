@@ -139,6 +139,10 @@
   /* The slash picker (card 183) anchors here. Nothing else in this column is
      positioned, so without it the popover would climb to the page. */
   position: relative;
+  /* Card 243: the fold below measures THIS column, not the window — the dock
+     is user-resizable, so the window says nothing about the room this row
+     actually has (the sidebar's @container made the same argument). */
+  container: composer / inline-size;
 }
 
 /* Card 183: the skill completion. Compound selector for the same reason
@@ -402,8 +406,40 @@
   align-items: center;
   gap: var(--sp-2);
   width: 100%;
+  /* Card 243, the last resort: a surface narrower than even the folded icon
+     row (the lab's chat column goes to 220px) wraps rather than clips — a
+     clipped control is an unreachable one. At every window-level width the
+     fold below keeps this row one line (folded it needs ~277px, and card 242
+     floors the chat at 360px). */
+  flex-wrap: wrap;
 }
 .composer-actions .mic-button { margin-left: auto; }
+
+/* ---- Card 243: the deliberate degradation. Measured 2026-08-15: at the
+   owner's ~1310px window the dock leaves the composer column 410px; the
+   un-folded row needs ~463px (EN), so "translation" wrapped onto a second
+   line, and at a 1150px window the mic chevron and the gear escaped the
+   rounded container (591 and 643 against an inner edge of 580). Below the
+   threshold the tools chips leave the row and reappear as a section in the
+   three-dots menu — the overflow menu the row already has. The draft box and
+   its send seat sit above this row and never shrink for it. ---- */
+
+/* The menu's fold section hides while the row shows the chips — wide screens
+   must never show them twice. */
+.disc-fold { display: none; }
+
+@container composer (max-width: 500px) {
+  .composer-actions .composer-tools,
+  .archive-bar .composer-tools {
+    display: none;
+  }
+  .disc-fold {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+}
 
 /* Card 78 #3: the waiting line — queued messages as removable chips. */
 .queue-chips {
@@ -455,11 +491,18 @@
 .archive-delete--armed:hover { color: var(--error); border-color: var(--error); background: color-mix(in srgb, var(--error) 12%, transparent); }
 
 /* The archive bar kept its single row: it holds a note and a few buttons,
-   not a draft — the column regroup above is the live composer's shape. */
+   not a draft — the column regroup above is the live composer's shape.
+   Card 243, the same last resort as .composer-actions: with the dock
+   returned (card 242 makes stored session + 360px chat the NORMAL archive
+   state) the bar's own controls ran out of room — EN "Return to live" 55px
+   outside at inner 328, DE even at inner 450 — so the row wraps rather than
+   clips. The fold above still moves the tools chips into the menu first;
+   this only catches what remains. */
 .archive-bar .composer-inner {
   flex-direction: row;
   align-items: center;
   justify-content: center;
+  flex-wrap: wrap;
   gap: var(--sp-3);
   min-height: 42px;
 }

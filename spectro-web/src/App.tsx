@@ -82,6 +82,7 @@ import { reasoningFrame, useReasoningChoice, wireChoice } from "./state/reasonin
 import { useReasoningCapability } from "./components/ReasoningControl";
 import { enqueue, removeQueued, type QueuedMessage } from "./state/sendQueue";
 import {
+  applyDockReturn,
   dismissLayoutRecovered,
   openDockPanel,
   openRightPanel,
@@ -939,6 +940,9 @@ export function App() {
       });
       setLlmWire(wire.length === 0 ? null : { sessionId: id, count: wire.length });
       setEnteredFleet(null);
+      // Card 242: entering a session brings back the dock the user left open —
+      // the launch kept the greeting clean, this is the other half of the rule.
+      applyDockReturn();
       beaconRef.current("session", id);
       // A deep link resolves its index against the events as STORED, then hands
       // the event itself to the existing focus seam. An index past the end (a
@@ -1157,6 +1161,7 @@ export function App() {
       source,
     });
     setEnteredFleet(null); // an import is a session view — leave any entered fleet
+    applyDockReturn(); // card 242: an import is an entered session too
     setImportOpen(false);
     // A file from the STORE is an address; a paste and a picked file are not,
     // and say so by carrying no path. That distinction stopped being academic

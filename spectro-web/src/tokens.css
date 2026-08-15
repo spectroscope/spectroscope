@@ -103,6 +103,11 @@
   --sidebar-w: 280px;
   --content-max: 860px; /* reading width of the chat history */
   --content-max-wide: 1118px; /* the "wide" setting: 30% more room (owner) */
+  /* Card 242: the chat's reserved floor beside the dock. The same 360 lives
+     in App.tsx as CHAT_RESERVED_MIN_WIDTH_PX (the drag clamp); this token is
+     the RENDER-time half — the old min(…, 60%) cap was proportional and let a
+     1150px window squeeze the chat to 356px (measured 2026-08-15). */
+  --chat-reserve: 360px;
   --z-sticky: 10;
   --z-dropdown: 100;
   --z-modal: 1000;

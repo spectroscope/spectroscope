@@ -22,11 +22,15 @@
    own border-top, so this row needs no ground, no line and no shadow.
 
    Right-aligned, so the eye meets Send first and finds the tools where the
-   other end-of-row controls are. It wraps rather than clips: the lab's chat
-   column goes down to 220px, and a clipped control is an unreachable one. */
+   other end-of-row controls are. It no longer wraps (card 243): wrapping was
+   the first symptom the owner photographed — "translation" stacked under
+   "export" at the squeezed width. The group now FOLDS into the three-dots
+   menu below the composer container's threshold (modal-composer.css), which
+   also covers the lab's 220px chat column, so there is nothing left for a
+   wrap to save. */
 .composer-tools {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
   align-items: center;
   gap: var(--sp-2);

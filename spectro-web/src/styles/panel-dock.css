@@ -32,12 +32,21 @@
 }
 .dock-strip {
   display: flex;
-  flex-wrap: wrap;
+  /* One line, always (card 242): at a squeezed panel the wrapped strip stole
+     two rows from the cards below (measured 2026-08-15: two lines under
+     ~500px, three under ~300px). Overflow scrolls INSIDE the strip instead —
+     the toggles keep their labels and the head keeps its height. */
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  scrollbar-width: none; /* the strip scrolls by trackpad/wheel; a bar under
+                            seven small toggles reads as chrome, not help */
   gap: 2px;
   flex: 1;
   min-width: 0;
 }
 .dock-toggle {
+  flex: none; /* a toggle never shrinks — the strip scrolls instead (card 242) */
+  white-space: nowrap;
   appearance: none;
   background: transparent;
   border: none;

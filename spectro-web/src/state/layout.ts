@@ -81,6 +81,13 @@ export interface LayoutState {
    *  fill rule) and the two divider drags write it, which is what makes a
    *  resize scale the pixels without re-seating a single panel. */
   dockColumns: string;
+  /** Card 242: the dock visibility the USER last chose — what entering a
+   *  session returns to (applyDockReturn). A launch never reads
+   *  `rightPanelOpen` from storage any more: the greeting starts clean and
+   *  panels are asked for, never inherited. Only the explicit gestures write
+   *  this (the header toggle, the dock's close, the header panel icons); the
+   *  agent's cue (card 241) and the other programmatic opens stay transient. */
+  dockReturn: boolean;
 }
 
 export const DEFAULT_LAYOUT: LayoutState = {
@@ -108,6 +115,7 @@ export const DEFAULT_LAYOUT: LayoutState = {
   dockWeights: "",
   // The roster alone in one column — the serialized form of the default face.
   dockColumns: "agents~1~0.5",
+  dockReturn: false,
 };
 
 const KEY = "spectroscope:layout";
@@ -173,12 +181,25 @@ function columnsAgreeingWithModes(state: LayoutState, stored: unknown): string {
  * localStorage key, card 93) reopens the terminal panel. That reproduces the
  * face they had rather than defaulting them onto the roster.
  *
+ * <p>Card 242 on top of both eras: the dock's VISIBILITY never survives a
+ * launch. Measured 2026-08-15 — every pre-0.9 blob carried
+ * `rightPanelOpen: true, activeRightTab: "files"`, and a 241-era session left
+ * `dockBrowser: "open"` behind, so the greeting opened crowded into a window
+ * whose chat was a 442px strip. The membership stays (it is the preference
+ * the dock returns to), `dockReturn` remembers whether the user left the dock
+ * open, and `rightPanelOpen` starts false: panels are asked for, never
+ * inherited. Junk in a stored `dockReturn` heals to what the pre-242 flag
+ * said rather than resetting the blob.
+ *
  * @param parsed      what JSON.parse returned for the stored blob, or null
  * @param termOpenRaw the legacy terminal-open entry ("1" meant open), or null
  */
 export function hydrateLayout(parsed: unknown, termOpenRaw: string | null): LayoutState {
   const blob = typeof parsed === "object" && parsed !== null ? (parsed as Partial<LayoutState>) : {};
   const state: LayoutState = { ...DEFAULT_LAYOUT, ...blob };
+  // Card 242: the launch rule, same for every era (see the javadoc above).
+  state.dockReturn = typeof blob.dockReturn === "boolean" ? blob.dockReturn : blob.rightPanelOpen === true;
+  state.rightPanelOpen = false;
   const postCard = DOCK_FIELDS.some((f) => f in blob);
   if (postCard) {
     for (const f of DOCK_FIELDS) state[f] = normalizeMode(state[f]);
@@ -331,7 +352,8 @@ function set(patch: Partial<LayoutState>): void {
     next.dockTerminal === state.dockTerminal &&
     next.dockBrowser === state.dockBrowser &&
     next.dockWeights === state.dockWeights &&
-    next.dockColumns === state.dockColumns
+    next.dockColumns === state.dockColumns &&
+    next.dockReturn === state.dockReturn
   ) {
     return; // no change — no emit
   }
@@ -369,12 +391,27 @@ export function setRightPanelW(w: number): void {
 export function setImagesW(w: number): void {
   set({ imagesW: clampW(w, 240, 1200) });
 }
+/** The user's own show/hide (header toggle, the dock's ✕) — the ONE gesture
+ *  pair that writes the return memory in both directions (card 242). */
 export function toggleRightPanel(): void {
-  set({ rightPanelOpen: !state.rightPanelOpen });
+  const next = !state.rightPanelOpen;
+  set({ rightPanelOpen: next, dockReturn: next });
 }
-/** Opens the panel if closed (idempotent) — the workspace announcement uses it. */
-export function openRightPanel(): void {
-  if (!state.rightPanelOpen) set({ rightPanelOpen: true });
+/** Opens the panel if closed (idempotent) — the workspace announcement, the
+ *  agent's browser cue and the v2 flip use it TRANSIENTLY: the open serves a
+ *  moment, not a standing layout, so it does not return on the next session
+ *  (card 242). `remember` is for the explicit asks (the header panel icons):
+ *  those also write the return memory. */
+export function openRightPanel(remember = false): void {
+  const patch: Partial<LayoutState> = {};
+  if (!state.rightPanelOpen) patch.rightPanelOpen = true;
+  if (remember && !state.dockReturn) patch.dockReturn = true;
+  if (patch.rightPanelOpen !== undefined || patch.dockReturn !== undefined) set(patch);
+}
+/** Entering a session applies the return memory: a dock the user left open in
+ *  a session comes back there — never on the greeting (card 242). */
+export function applyDockReturn(): void {
+  if (state.rightPanelOpen !== state.dockReturn) set({ rightPanelOpen: state.dockReturn });
 }
 export function setActiveRightTab(tab: RightTab): void {
   set({ activeRightTab: tab });

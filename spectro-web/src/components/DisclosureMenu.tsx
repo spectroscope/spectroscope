@@ -12,14 +12,24 @@
 // state/disclosure.ts, so the composer twin of any future copy cannot disagree.
 
 import { useEffect, useRef, useState } from "react";
-import type { KeyboardEventHandler } from "react";
+import type { KeyboardEventHandler, ReactNode } from "react";
 import { DISCLOSURE_LEVELS, setDisclosure, useDisclosure } from "../state/disclosure";
 import { CHAT_WIDTHS, setChatWidth, useChatWidth } from "../state/chatWidth";
 import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
-export function DisclosureMenu() {
+export interface DisclosureMenuProps {
+  /** Card 243: the tools chips' fold-away home. The chat hands the SAME
+   *  controls it renders in the action row (export, translation, the folder
+   *  buttons); CSS shows exactly one of the two copies — the row above the
+   *  composer container's fold threshold, this section below it
+   *  (modal-composer.css owns the threshold). Absent on an empty chat, where
+   *  the row itself withholds the tools. */
+  fold?: ReactNode;
+}
+
+export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
   const lang = useLang();
   const level = useDisclosure();
   const width = useChatWidth();
@@ -185,6 +195,18 @@ export function DisclosureMenu() {
               ))}
             </div>
           </div>
+
+          {/* Card 243: the folded tools. Hidden by default; the composer
+              container's fold threshold shows it while hiding the row's copy
+              (modal-composer.css) — never both at once. */}
+          {fold !== undefined && (
+            <div className="wsg-section disc-fold">
+              <div className="wsg-section-head">
+                <span>{t(lang, "chat.tools")}</span>
+              </div>
+              {fold}
+            </div>
+          )}
         </div>
       )}
     </div>
