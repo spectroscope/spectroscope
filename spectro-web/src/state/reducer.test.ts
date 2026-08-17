@@ -1568,3 +1568,25 @@ describe("the window says how much it dropped (card 116)", () => {
     expect(windowTrace(before)).toBe(before); // same object: nothing happened
   });
 });
+
+describe("card 244 — the run's start rides run_start into the working line", () => {
+  it("stamps runStartTs from the root run_start and clears it on run_end", () => {
+    const started = reduceAll(initialState, happyPath.slice(0, 1));
+    expect(started.runStartTs).toBe(1);
+    const ended = reduceAll(initialState, happyPath);
+    expect(ended.runStartTs).toBeNull();
+  });
+
+  it("a subagent's run_start keeps the root's stamp", () => {
+    const s = reduceAll(initialState, [
+      ...happyPath.slice(0, 1),
+      { type: "run_start", runId: "r2", agentId: "worker-1", parentId: "main", prompt: "child", ts: 40 },
+    ]);
+    expect(s.runStartTs).toBe(1);
+  });
+
+  it("normalizeReplay clears it — an archive never counts up", () => {
+    const s = normalizeReplay(reduceAll(initialState, happyPath.slice(0, 1)));
+    expect(s.runStartTs).toBeNull();
+  });
+});
