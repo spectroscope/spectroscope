@@ -193,9 +193,16 @@ describe("the consumer — the panel is a tablist over this table", () => {
     // Card 224's rows and every #/settings/{section} bookmark. Selecting the
     // room has to happen for the anchor to be visible at all: scrollIntoView on
     // a hidden page is a silent no-op that marks itself done.
-    expect(panel).toContain("settingsTabFor(section)");
+    //
+    // The panel used to read `settingsTabFor(section)` here itself, and that is
+    // exactly where the repeat-deep-link regression sat: the answer was correct
+    // and a remembered room outranked it. Both halves — which room, and whether
+    // the scroll may fire from the room on screen — now come from the position
+    // fold in settingsRoom.ts, whose own guard walks a full visit.
+    expect(panel).toContain("settingsRoomShown(");
+    expect(panel).toContain("settingsScrollTarget(");
     expect(panel).toContain("scrollIntoView(");
-    expect(panel).toContain("sectionAnchorId(section)");
+    expect(panel).toContain("sectionAnchorId(scrollTo)");
   });
 
   it("hides the inactive pages instead of unmounting them", () => {

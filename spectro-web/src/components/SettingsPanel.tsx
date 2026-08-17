@@ -31,12 +31,20 @@ import type { SettingsSection } from "../state/route";
 import {
   SETTINGS_TABS,
   settingsTabButtonId,
-  settingsTabFor,
   settingsTabLabelKey,
   settingsTabPanelId,
   stepSettingsTab,
   type SettingsTab,
 } from "./settingsTabs";
+import {
+  SETTINGS_ROOM_START,
+  settingsAddress,
+  settingsRoomAt,
+  settingsRoomPick,
+  settingsRoomShown,
+  settingsScrollTarget,
+  type SettingsRoomState,
+} from "./settingsRoom";
 import { SttSettings } from "./SttSettings";
 import { FleetSettings } from "./FleetSettings";
 import { t, type Lang } from "../i18n/i18n";
@@ -305,15 +313,29 @@ export function SettingsPanel({
   // Card 193: bumped after every address commit so the model probe re-runs —
   // its fetch is keyed on provider + status, and an address changes neither.
   const [probeEpoch, setProbeEpoch] = useState(0);
-  // Card 256: the room in view. Held as a pick REMEMBERED AGAINST the address it
-  // was made under, and derived during render — not as plain state synced by an
-  // effect. An effect runs after the first paint, so a deep-linked open would
-  // draw the DEFAULT room for one frame, which is long enough for the scroll
-  // effect below to look for its anchor inside a page that is still
-  // display:none, find nothing, and mark itself done for good.
-  const [pick, setPick] = useState<{ address: string; tab: SettingsTab } | null>(null);
-  const address = `${open ? "open" : "closed"}:${section ?? ""}`;
-  const activeTab: SettingsTab = pick?.address === address ? pick.tab : settingsTabFor(section);
+  // Card 256: the room in view. The whole position folds in settingsRoom.ts —
+  // what is remembered is the room the reader picked BY HAND, stamped with the
+  // address he picked it under, and the room on screen is derived from the two
+  // during render. Not synced by an effect: an effect runs after the first
+  // paint, so a deep-linked open would draw the DEFAULT room for one frame,
+  // which is long enough for the scroll effect below to look for its anchor
+  // inside a page that is still display:none, find nothing, and mark itself done
+  // for good.
+  //
+  // The reconciling effect below is what ENDS a visit. Review found the reason
+  // the hard way: the address repeats, so a pick stamped `open:mcp` matched
+  // again the next time that same deep link opened the panel and outranked it.
+  const [room, setRoom] = useState<SettingsRoomState>(SETTINGS_ROOM_START);
+  const address = settingsAddress(open, section);
+  const activeTab: SettingsTab = settingsRoomShown(room, address, section);
+  // Steps the memory to the address on screen — and forgets a picked room the
+  // moment that address moves, closing included (the address carries `open`).
+  // Keyed on the address, which is the only thing it reacts to; the room this
+  // render DRAWS is derived above, so the reader never sees a frame of the room
+  // this effect is about to forget.
+  useEffect(() => {
+    setRoom((prev) => settingsRoomAt(prev, address));
+  }, [address]);
   const tabButtons = useRef<Partial<Record<SettingsTab, HTMLButtonElement | null>>>({});
   const pages = useRef<Partial<Record<SettingsTab, HTMLDivElement | null>>>({});
   const holdPage = (tab: SettingsTab, el: HTMLDivElement | null): void => {
@@ -388,17 +410,26 @@ export function SettingsPanel({
   // retries per render until the anchor is in the DOM, then stops. It only
   // LOOKS: a deep-linked open writes nothing, the card-121 guard holds for
   // every opener.
+  //
+  // What it scrolls to is `scrollTo`, never `section`: the request stays true
+  // while the reader stands in a different room, and the requested anchor is in
+  // the document all the same (rooms are hidden, not unmounted). Scrolling to it
+  // from there moves nothing and marks the link served — the silent half of the
+  // regression review found. Null means "not from here", so the deep link keeps
+  // its one chance until its own room is on screen.
+  const scrollTo = settingsScrollTarget(activeTab, section);
   const scrolledFor = useRef<string | null>(null);
   useEffect(() => {
     if (!open || section == null) {
       scrolledFor.current = null;
       return;
     }
-    if (scrolledFor.current === section) return;
-    const anchor = document.getElementById(sectionAnchorId(section));
+    if (scrollTo === null) return;
+    if (scrolledFor.current === scrollTo) return;
+    const anchor = document.getElementById(sectionAnchorId(scrollTo));
     if (anchor) {
       anchor.scrollIntoView({ block: "start" });
-      scrolledFor.current = section;
+      scrolledFor.current = scrollTo;
     }
   });
 
@@ -433,7 +464,7 @@ export function SettingsPanel({
   /** Open a room. The body goes back to its top: the scroller is shared, and a
    *  fresh page inherited the scroll position of the one before it otherwise. */
   const pickTab = (tab: SettingsTab): void => {
-    setPick({ address, tab });
+    setRoom(settingsRoomPick(address, tab));
     bodyRef.current?.scrollTo({ top: 0 });
   };
 
