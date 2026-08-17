@@ -546,12 +546,13 @@ export function Chat(props: {
   // and would keep writing the recorded stream under a label promising the view
   // on screen. It is the same key the translate sheet is handed, one line down.
   const tools = chatTools({ events: props.events?.length ?? 0, translatedUnits: translated.byId.size });
-  /** The tools, buildable twice (card 243): once for the action row, once for
-   *  the three-dots menu's fold section. Two MOUNTS of the same controls whose
-   *  visibility CSS switches on the composer container's width — the pattern
-   *  the sidebar's session-model row set. State they share lives in external
-   *  stores (translate, lang), so the copies cannot disagree; the open-state
-   *  of a menu or sheet is per mount, and only the visible copy is clickable. */
+  /** The tools, built once and rendered twice: in the action row below, and in
+   *  the three-dots menu's section. Since card 255 the menu is their only home
+   *  — the row's copy is suppressed at every width (modal-composer.css), so the
+   *  menu's is the copy a reader sees and clicks. The markup keeps both because
+   *  ONE build feeding both is what stopped them disagreeing: state they share
+   *  lives in external stores (translate, lang), and the open-state of a menu or
+   *  sheet is per mount. */
   const toolsChips = tools.row && (
     <>
       {tools.exportControl && (
@@ -641,7 +642,9 @@ export function Chat(props: {
     </div>
   );
 
-  // Card 243: the menu doubles as the tools' fold-away home at narrow widths.
+  // Card 255: the menu is the tools' home, on every screen and at every width.
+  // `undefined` rather than `false` on an empty chat — the section would
+  // otherwise draw its head over nothing.
   const discMenu = <DisclosureMenu fold={toolsChips !== false ? toolsChips : undefined} />;
 
   return (
@@ -959,10 +962,10 @@ export function Chat(props: {
                 {/* Card 78 #4: the disclosure menu, LEFT of the first toolbox
                     button, per the owner's placement. */}
                 {discMenu}
-                {/* Export and translation moved down here from above the box:
-                    floating over the first message they read as decoration, and
-                    they belong with every other control that is not the draft
-                    or its seat. */}
+                {/* Export and translation, which no longer show here: card 255
+                    made the menu above their one home, and CSS suppresses this
+                    copy at every width. It stays so that one build feeds both
+                    places (see toolsChips). */}
                 {toolsRow}
                 <button
                   type="button"
@@ -1046,8 +1049,8 @@ export function Chat(props: {
         <div className="composer archive-bar">
           {jumpRail}
           {/* Same column wrapper as the live branch, so the bar keeps the width
-              it had. The tools sit INSIDE the bar now, next to the disclosure
-              menu — same move as the live branch, so the two screens do not
+              it had. The tools reach this screen through the disclosure menu,
+              exactly as they do on the live one — the two screens must not
               disagree about where export and translation live. */}
           <div className="composer-column">
             <div className="composer-inner">

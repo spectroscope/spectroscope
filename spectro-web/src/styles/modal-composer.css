@@ -139,10 +139,12 @@
   /* The slash picker (card 183) anchors here. Nothing else in this column is
      positioned, so without it the popover would climb to the page. */
   position: relative;
-  /* Card 243: the fold below measures THIS column, not the window — the dock
-     is user-resizable, so the window says nothing about the room this row
-     actually has (the sidebar's @container made the same argument). */
-  container: composer / inline-size;
+  /* Card 243 named this column a container so one @container query could move
+     the tools chips at 500px. Card 255 gave the chips a single home, so that
+     query is gone and the containment context with it: `container-type` also
+     brings layout and style containment, which decides what the composer's
+     descendants resolve against, and carrying that for no query is a cost
+     without a reader. */
 }
 
 /* Card 183: the skill completion. Compound selector for the same reason
@@ -438,30 +440,32 @@
 }
 .composer-actions .mic-button { margin-left: auto; }
 
-/* ---- Card 243: the deliberate degradation. Measured 2026-08-15: at the
-   owner's ~1310px window the dock leaves the composer column 410px; the
-   un-folded row needs ~463px (EN), so "translation" wrapped onto a second
-   line, and at a 1150px window the mic chevron and the gear escaped the
-   rounded container (591 and 643 against an inner edge of 580). Below the
-   threshold the tools chips leave the row and reappear as a section in the
-   three-dots menu — the overflow menu the row already has. The draft box and
-   its send seat sit above this row and never shrink for it. ---- */
+/* ---- Card 255: one home per control, and it is the three-dots menu. Card 243
+   moved export and translation into that menu below a 500px composer column and
+   left them in the action row above it; the owner read the two copies side by
+   side and asked for the row's to go ("wenn in den drei punkten export und
+   translation drinne sind können sie hier im haupt view weg"). So the width
+   question is gone: the row's copy is suppressed at every width, and the menu's
+   section shows whenever the chat has tools to offer.
 
-/* The menu's fold section hides while the row shows the chips — wide screens
-   must never show them twice. */
-.disc-fold { display: none; }
+   The row's copy stays MOUNTED — Chat.tsx builds the chips once and hands the
+   same nodes to the row and to the menu — and these two rules are the whole of
+   what decides which one a reader sees. Nothing else in the app gives the row a
+   shape any more, so this pair is not one override among many.
 
-@container composer (max-width: 500px) {
-  .composer-actions .composer-tools,
-  .archive-bar .composer-tools {
-    display: none;
-  }
-  .disc-fold {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: var(--sp-2);
-  }
+   Card 243's promise underneath survives untouched: no control is ever pushed
+   out of the rounded container, which is what .composer-actions and
+   .archive-bar .composer-inner wrap for. With the chips gone from both rows
+   there is that much less to wrap. ---- */
+
+.composer-tools {
+  display: none;
+}
+.disc-fold {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
 }
 
 /* Card 78 #3: the waiting line — queued messages as removable chips. */

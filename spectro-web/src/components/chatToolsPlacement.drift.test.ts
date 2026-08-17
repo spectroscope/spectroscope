@@ -131,9 +131,11 @@ describe("both bars reach the same controls", () => {
 
 describe("the archive bar tells its two exports apart", () => {
   it("gives them different words in both languages", () => {
-    // The tools row now sits one line above the archive bar's own export. They
-    // do different things: the row's trigger opens the format dialog and writes
-    // the view on screen, the bar's link downloads the stored .jsonl verbatim.
+    // The archive bar's own export sits a click away from the one in the menu
+    // (card 255 made the menu the tools' only home; before that they were one
+    // line apart). They do different things: the menu's trigger opens the
+    // format dialog and writes the view on screen, the bar's link downloads the
+    // stored .jsonl verbatim.
     // German capitalises the nominalised infinitive, so the comparison that
     // matters is case-insensitive.
     for (const lang of ["de", "en"] as const) {
@@ -149,13 +151,29 @@ describe("the archive bar tells its two exports apart", () => {
   });
 });
 
-describe("the two rows of the archive bar share an axis", () => {
-  it("centres the tools row where the bar below it centres", () => {
-    // .composer-tools is right-aligned so the eye meets Send first and finds
-    // the tools at the same end. The archive bar has no Send and centres its
-    // row (modal-composer.css), so that rationale does not survive the branch:
-    // right-aligned over centred reads as two clusters, not one bar.
-    expect(chatCss).toMatch(/\.archive-bar \.composer-tools \{[^}]*justify-content: center/);
+describe("the suppressed row is not the only mount", () => {
+  // This replaces the assertion that the archive bar centred its tools row
+  // where the bar below it centres. That was a claim about two visible rows
+  // sharing an axis, and card 255 leaves one of them invisible at every width,
+  // so the claim describes nothing a reader can see. The rule it pinned is
+  // deleted rather than loosened, and what takes its place is the failure that
+  // the new arrangement actually has.
+
+  it("hands the chips the row builds to the menu as well", () => {
+    // The row's copy is `display: none` at every width now, so the menu's
+    // section is the only copy anybody can reach. Lose the fold wiring and the
+    // chips still MOUNT — the markup tests above stay green, the export
+    // control and the translation trigger simply stop existing on screen.
+    expect(chatTsx).toMatch(/const toolsRow = [\s\S]{0,240}\{toolsChips\}/);
+    expect(chatTsx).toMatch(/<DisclosureMenu\s+fold=\{toolsChips\b/);
+  });
+
+  it("keeps the section away from a chat that has no tools", () => {
+    // The exact call shape, because the narrowing IS the behaviour: on an empty
+    // chat `toolsChips` is `false`, and a `false` handed to an optional
+    // ReactNode prop would draw the section head over nothing. `undefined` is
+    // what makes DisclosureMenu leave the section out.
+    expect(chatTsx).toContain("fold={toolsChips !== false ? toolsChips : undefined}");
   });
 });
 

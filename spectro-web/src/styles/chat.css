@@ -14,35 +14,15 @@
   --content-max: var(--content-max-wide);
 }
 
-/* The session tools (export, translate), in the bottom bar above the input.
-   They used to float top-right over the scroll area, which meant giving them a
-   surface and a hairline so the transcript did not run through them; the owner
-   called that ugly and he was right, because the fill was treating a symptom.
-   Inside the bar there is nothing to float over: the bar already carries its
-   own border-top, so this row needs no ground, no line and no shadow.
+/* The session tools (export, translate) had their rules here twice over: first
+   as a cluster floating above the first message, then — card 243 — as a
+   right-aligned row inside the bottom bar, with a centred variant for the
+   archive bar and no wrapping. Card 255 gave them one home, the three-dots
+   menu, so nothing here shapes them any more: modal-composer.css suppresses the
+   row and lays the menu's section out. The rules are gone rather than
+   overridden, because a rule for an element no reader sees is the phantom the
+   next reader styles around. */
 
-   Right-aligned, so the eye meets Send first and finds the tools where the
-   other end-of-row controls are. It no longer wraps (card 243): wrapping was
-   the first symptom the owner photographed — "translation" stacked under
-   "export" at the squeezed width. The group now FOLDS into the three-dots
-   menu below the composer container's threshold (modal-composer.css), which
-   also covers the lab's 220px chat column, so there is nothing left for a
-   wrap to save. */
-.composer-tools {
-  display: flex;
-  flex-wrap: nowrap;
-  justify-content: flex-end;
-  align-items: center;
-  gap: var(--sp-2);
-  padding-bottom: var(--sp-1);
-}
-/* The archive bar has no Send to meet, and modal-composer.css centres its row.
-   The rationale above does not survive that branch: right-aligned above centred
-   puts one control cluster on two axes, a few pixels apart, and reads as two.
-   So the row follows the bar it belongs to. */
-.archive-bar .composer-tools {
-  justify-content: center;
-}
 /* The translation's way back to the record, in the tab row (App.tsx) so it is
    reachable from the trace and the text feed too. It takes the auto margin the
    level pill would otherwise take; the pill then simply follows it. Lives in
