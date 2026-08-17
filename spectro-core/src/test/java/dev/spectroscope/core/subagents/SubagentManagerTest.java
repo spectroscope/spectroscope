@@ -10,6 +10,7 @@ import dev.spectroscope.core.RunOptions;
 import dev.spectroscope.core.config.HookConfig;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.hooks.HookRunner;
+import dev.spectroscope.core.provider.ExchangeLatency;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
@@ -275,8 +276,22 @@ class SubagentManagerTest {
         assertEquals("ok", webResult.output());
     }
 
+    /**
+     * A worker holds no tool the belt did not hand it — the card-205 web grant
+     * is a GRANT out of {@code webTools()}, not a belt entry, so a face that
+     * carries the trio only as the grant reaches research children and nobody
+     * else.
+     *
+     * <p>Card 270 sharpened what this test does and does not say. Since the
+     * server and CLI faces now hand children the parent's whole belt, a real
+     * worker child on those faces DOES hold web_search — because the belt
+     * carries it, which is the point of the card. What stays true, and is what
+     * this pins, is that the role adds nothing of its own: a tool absent from
+     * the belt is absent from the child. {@code SessionChildBeltTest} in
+     * spectro-server pins the other half, at the door where the belt is built.</p>
+     */
     @Test
-    void workerChildrenAreRefusedTheWebByConstruction() {
+    void aWorkerHoldsNoToolTheBeltDidNotHandIt() {
         RoutingProvider provider = new RoutingProvider();
         provider.parentTurns.add(toolTurn("c1", "spawn_agent",
                 json("""
@@ -409,37 +424,289 @@ class SubagentManagerTest {
         assertTrue(result.output().contains("--- Subagent 2 ---"));
     }
 
+    // ---- card 270: widening the belt must not widen the GATE ----------------
+
+    /** A guarded tool — the shape every family card 270 lets through to a child
+     *  has: the browser family, the launch family, an MCP tool. */
+    private static Tool guardedTool(String name) {
+        return new Tool() {
+            public String name() { return name; }
+            public String description() { return "guarded"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return true; }
+            public String execute(JsonNode input, ToolContext context) { return "ran"; }
+        };
+    }
+
     @Test
-    void aSlowChildHitsItsTimeoutAndBecomesAnErrorResult() {
-        RoutingProvider provider = new RoutingProvider() {
+    void aChildsGuardedToolReallyAsksAndTheGateHearsTheChildsOwnName() {
+        RoutingProvider provider = new RoutingProvider();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Drive the browser"}""")));
+        provider.parentTurns.add(textTurn("Refused."));
+        provider.childTurns.add(toolTurn("g1", "browser_navigate",
+                json("""
+                        {"url":"https://example.invalid/"}""")));
+        provider.childTurns.add(textTurn("I was not allowed."));
+
+        // The broker records WHO asked and refuses. The parent's own spawn_agent
+        // is permission-free, so anything this broker hears came from a child.
+        List<String> asked = new java.util.ArrayList<>();
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> {
+                    asked.add(request.agentId() + "|" + request.name());
+                    return false;
+                })
+                .baseTools(List.of(fakeReadTool("list_dir"), guardedTool("browser_navigate")))
+                .build(), 30_000);
+        ToolRegistry registry = new ToolRegistry();
+        manager.tools().forEach(registry::register);
+        Agent parent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("You are the parent.")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .agentId("main")
+                .onPermission(request -> true)
+                .build());
+
+        List<RunEvent> events = new ArrayList<>();
+        try (EventStream stream = manager.run(parent, "Delegate a browser call",
+                new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(events::add);
+        }
+
+        assertEquals(List.of("worker-1|browser_navigate"), asked,
+                "a widened belt is only honest if the gate still fires, under the CHILD's name");
+        RunEvent.ToolResult childResult = events.stream()
+                .filter(RunEvent.ToolResult.class::isInstance)
+                .map(RunEvent.ToolResult.class::cast)
+                .filter(result -> "worker-1".equals(result.agentId()))
+                .findFirst().orElseThrow();
+        assertTrue(childResult.isError());
+        assertTrue(childResult.output().contains("denied"), childResult.output());
+        assertTrue(events.stream()
+                        .anyMatch(event -> event instanceof RunEvent.PermissionRequest request
+                                && "worker-1".equals(request.agentId())),
+                "and the refusal is on the record as a permission_request the child raised");
+    }
+
+    // ---- card 270: the price of a child ------------------------------------
+    //
+    // Two clocks, not one. The queue grace runs from the spawn and only asks
+    // "did this backend ever start on my child"; the run budget runs from the
+    // child's FIRST TOKEN and asks "is it still getting anywhere". The single
+    // literal that used to do both could not tell "wedged" from "waiting", and
+    // on the owner's own backend — median exchange 92.2 s — it was shorter than
+    // 7 of 15 measured exchanges.
+
+    /** A child that never says a word: the backend accepted the request and
+     *  produced nothing until the signal came. */
+    private static RoutingProvider aChildThatNeverSpeaks() {
+        return new RoutingProvider() {
             @Override
             public Iterable<ProviderEvent> stream(ProviderRequest request) {
                 if (!request.system().contains("subagent")) {
                     return super.stream(request);
                 }
-                // The child "hangs" until its signal is cancelled by the timeout.
-                CancelSignal signal = request.signal();
-                while (!signal.isCancelled()) {
-                    try {
-                        Thread.sleep(20);
-                    } catch (InterruptedException interrupted) {
-                        Thread.currentThread().interrupt();
-                        break;
-                    }
-                }
+                awaitCancel(request.signal());
                 return List.of(new PStop(PStop.StopReason.ABORTED));
             }
         };
+    }
+
+    /** A child that produces one token and then wedges — the case the run
+     *  budget exists for, and the case the old literal could not tell from a
+     *  child that was merely queued. */
+    private static RoutingProvider aChildThatSpeaksOnceThenWedges() {
+        return new RoutingProvider() {
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                if (!request.system().contains("subagent")) {
+                    return super.stream(request);
+                }
+                CancelSignal signal = request.signal();
+                return () -> new java.util.Iterator<ProviderEvent>() {
+                    private int served;
+
+                    @Override
+                    public boolean hasNext() {
+                        if (served == 1) {
+                            awaitCancel(signal); // wedged AFTER the first token
+                        }
+                        return served < 2;
+                    }
+
+                    @Override
+                    public ProviderEvent next() {
+                        return served++ == 0
+                                ? new PTextDelta("starting to think")
+                                : new PStop(PStop.StopReason.ABORTED);
+                    }
+                };
+            }
+        };
+    }
+
+    /** A child the backend kept in its queue for {@code queuedMs} and which then
+     *  answered promptly — the third and fourth child of a four-wide wave on a
+     *  single loaded local model. */
+    private static RoutingProvider aChildHeldInTheQueueFor(long queuedMs) {
+        return new RoutingProvider() {
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                if (!request.system().contains("subagent")) {
+                    return super.stream(request);
+                }
+                sleep(queuedMs);
+                return textTurn("answered after the queue");
+            }
+        };
+    }
+
+    private static void awaitCancel(CancelSignal signal) {
+        while (!signal.isCancelled()) {
+            sleep(10);
+        }
+    }
+
+    private static void sleep(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    @Test
+    void theParentsOwnExchangesAreWhatPriceItsChildren() {
+        // The wiring both faces do: ONE window, handed to the parent agent as
+        // AgentOptions.latency and to the children as ChildBudget.derivedFrom.
+        // Without it the derivation is arithmetic over an empty window and every
+        // child is priced at the floor forever — which would look exactly like a
+        // working feature.
+        ExchangeLatency latency = new ExchangeLatency();
+        RoutingProvider provider = new RoutingProvider() {
+            @Override
+            public Iterable<ProviderEvent> stream(ProviderRequest request) {
+                sleep(120); // a backend that takes a measurable moment
+                return super.stream(request);
+            }
+        };
+        provider.parentTurns.add(textTurn("Nothing to delegate."));
+
+        SubagentManager manager = new SubagentManager(SubagentConfig.builder()
+                .provider(provider)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(request -> true)
+                .baseTools(List.of(fakeReadTool("list_dir")))
+                .budget(ChildBudget.derivedFrom(latency))
+                .build());
+        ToolRegistry registry = new ToolRegistry();
+        manager.tools().forEach(registry::register);
+        Agent parent = new Agent(AgentOptions.builder()
+                .provider(provider)
+                .systemPrompt("You are the parent.")
+                .registry(registry)
+                .cwd(Path.of("."))
+                .agentId("main")
+                .onPermission(request -> true)
+                .latency(latency)
+                .build());
+
+        assertTrue(manager.budget().observedP50Ms().isEmpty(),
+                "test premise: nothing is measured before the first exchange");
+
+        try (EventStream stream = manager.run(parent, "Say something",
+                new RunOptions(new CancelSignal(), null))) {
+            stream.forEach(event -> { });
+        }
+
+        assertTrue(manager.budget().observedP50Ms().isPresent(),
+                "the parent's exchange must land in the window the children are priced from");
+        assertTrue(manager.budget().observedP50Ms().orElseThrow() >= 100,
+                "and it must be the real duration: "
+                        + manager.budget().observedP50Ms().orElseThrow() + " ms");
+        assertTrue(manager.budget().derivation().contains("measured p50"),
+                manager.budget().derivation());
+    }
+
+    @Test
+    void theRunBudgetIsCountedFromTheChildsFirstTokenNotFromItsSpawn() {
+        // 550 ms behind a busy backend, then a prompt answer. The whole run
+        // budget is 400 ms, so a clock started at the spawn kills this child
+        // while it is still in the queue — which is the defect, not the child.
+        RoutingProvider provider = aChildHeldInTheQueueFor(550);
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Wait behind three others"}""")));
+        provider.parentTurns.add(textTurn("The worker came back."));
+
+        List<RunEvent> events = collect(setup(provider, 400), "Run a queued worker");
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(!result.isError(),
+                "a child must not spend its budget in the queue: " + result.output());
+        assertTrue(result.output().contains("answered after the queue"), result.output());
+    }
+
+    @Test
+    void aChildOutOfBudgetSaysSoInItsRunEndAndInTheParentsToolResult() {
+        RoutingProvider provider = aChildThatSpeaksOnceThenWedges();
         provider.parentTurns.add(toolTurn("c1", "spawn_agent",
                 json("""
                         {"type":"worker","task":"Take forever"}""")));
-        provider.parentTurns.add(textTurn("The worker timed out."));
+        provider.parentTurns.add(textTurn("The worker ran out of budget."));
 
-        List<RunEvent> events = collect(setup(provider, 300), "Run a slow worker");
+        List<RunEvent> events = collect(setup(provider, 300), "Run a wedged worker");
+
+        RunEvent.RunEnd childEnd = events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(RunEvent.RunEnd.class::cast)
+                .filter(end -> !end.runId().isBlank())
+                .filter(end -> events.stream()
+                        .anyMatch(other -> other instanceof RunEvent.RunStart start
+                                && start.runId().equals(end.runId())
+                                && "worker-1".equals(start.agentId())))
+                .findFirst().orElseThrow();
+        assertEquals("child_budget_exhausted", childEnd.stopReason(),
+                "the child's own run_end must name the budget, not read as a plain abort");
 
         RunEvent.ToolResult result = firstToolResult(events);
         assertTrue(result.isError());
-        assertTrue(result.output().contains("timeout"), result.output());
+        assertTrue(result.output().contains("out of budget"), result.output());
+        assertTrue(result.output().contains("first token"),
+                "the parent is told WHICH clock ran out: " + result.output());
+    }
+
+    @Test
+    void aChildThatNeverProducesATokenEndsOnTheQueueGraceAndSaysWhich() {
+        RoutingProvider provider = aChildThatNeverSpeaks();
+        provider.parentTurns.add(toolTurn("c1", "spawn_agent",
+                json("""
+                        {"type":"worker","task":"Never answer"}""")));
+        provider.parentTurns.add(textTurn("The worker never started."));
+
+        List<RunEvent> events = collect(setup(provider, 300), "Run a mute worker");
+
+        RunEvent.RunEnd childEnd = events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(RunEvent.RunEnd.class::cast)
+                .filter(end -> events.stream()
+                        .anyMatch(other -> other instanceof RunEvent.RunStart start
+                                && start.runId().equals(end.runId())
+                                && "worker-1".equals(start.agentId())))
+                .findFirst().orElseThrow();
+        assertEquals("child_no_first_token", childEnd.stopReason());
+
+        RunEvent.ToolResult result = firstToolResult(events);
+        assertTrue(result.isError());
+        assertTrue(result.output().contains("never produced a token"), result.output());
     }
 
     @Test

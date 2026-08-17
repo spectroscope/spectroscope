@@ -19,8 +19,13 @@ import java.util.List;
  * @param parentAgentId agentId of the parent agent (CLI: "main")
  * @param onPermission  the same blocking y/N broker the parent uses;
  *                      request.agentId() tells the prompt who is asking
- * @param baseTools     standard tools WITHOUT the spawn tools — children must
- *                      never be able to spawn (nesting depth 1 by construction)
+ * @param baseTools     the belt a child inherits, WITHOUT the spawn tools —
+ *                      children must never be able to spawn (nesting depth 1 by
+ *                      construction). Since card 270 the faces build this from
+ *                      the SAME supplier step the parent's own belt comes from
+ *                      (settings belt + MCP), so a tool added to the parent
+ *                      cannot silently miss the children; what a role gives up
+ *                      out of it is declared in {@link RoleCatalog#beltPolicy}
  * @param hooks         the same pre/post_tool_use hooks the parent runs — a
  *                      hook that blocks a tool must also block it on a child,
  *                      or delegation becomes a bypass (nullable → none)
@@ -35,6 +40,11 @@ import java.util.List;
  *                      face without web tools (headless, fleet) passes none,
  *                      and its research children hold none — the unattended
  *                      lanes stay closed (nullable → none)
+ * @param budget        what a child may spend (card 270). Default: derived from
+ *                      a fresh, unfed {@link dev.spectroscope.core.provider.ExchangeLatency},
+ *                      which means the {@link ChildBudget#FLOOR_MS} floor governs.
+ *                      A face that shares its parent agent's latency window pays
+ *                      the measured price instead of the floor
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -44,11 +54,16 @@ public record SubagentConfig(
         List<Tool> baseTools,
         HookRunner hooks,
         LlmWireRecorder llmWire,
-        List<Tool> webTools) {
+        List<Tool> webTools,
+        ChildBudget budget) {
 
-    /** Null-tolerant canonical: an absent web grant normalizes to an empty list. */
+    /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
+     *  and an absent budget to the derived one over an unfed window (the floor). */
     public SubagentConfig {
         webTools = webTools == null ? List.of() : List.copyOf(webTools);
+        budget = budget == null
+                ? ChildBudget.derivedFrom(new dev.spectroscope.core.provider.ExchangeLatency())
+                : budget;
     }
 
     /**
@@ -75,6 +90,7 @@ public record SubagentConfig(
         private HookRunner hooks;               // nullable -> none
         private LlmWireRecorder llmWire;        // nullable -> children record nothing
         private List<Tool> webTools = List.of();
+        private ChildBudget budget;             // nullable -> derived, floor governs
 
         private Builder() {
         }
@@ -111,10 +127,16 @@ public record SubagentConfig(
          *  @return this builder */
         public Builder webTools(List<Tool> value) { this.webTools = value; return this; }
 
+        /** @param value what a child may spend (card 270) — pass one derived from
+         *               the parent agent's OWN latency window so the price comes
+         *               from the backend this session is talking to
+         *  @return this builder */
+        public Builder budget(ChildBudget value) { this.budget = value; return this; }
+
         /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
-                    baseTools, hooks, llmWire, webTools);
+                    baseTools, hooks, llmWire, webTools, budget);
         }
     }
 }

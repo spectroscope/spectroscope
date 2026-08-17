@@ -141,6 +141,16 @@ public final class SpectroCli implements Runnable {
     private TracingPorts tracing;
     // The backend-to-LLM record (card 184) — opened with the store, same id.
     private LlmWireRecorder llmWire;
+    /**
+     * Card 270: ONE window of measured exchange durations for this REPL, shared
+     * by the main agent and every child. It is a field rather than a local
+     * because {@code /think} and a provider switch REBUILD the agent while the
+     * conversation continues — a window minted inside the build would forget the
+     * backend at exactly the moment the operator changed something about it, and
+     * the next child would be priced at the floor as if the session were new.
+     */
+    private final dev.spectroscope.core.provider.ExchangeLatency latency =
+            new dev.spectroscope.core.provider.ExchangeLatency();
     /** Card 199: one line per gate decision, beside the session (the wire is frozen). */
     private dev.spectroscope.core.permission.GateAudit gateAudit;
     // Live-toggleable via /think on|off; seeded from config. Applied by rebuilding
@@ -428,13 +438,23 @@ public final class SpectroCli implements Runnable {
 
     /** Assembles the tool registry: standard tools, image generation, web
      *  fetch, the plan tool, skills, MCP servers, and the subagent spawn +
-     *  dev tools. Sets the registry/subagents/mcp fields. */
+     *  dev tools. Sets the registry/subagents/mcp fields.
+     *
+     *  <p>Card 270: the list is built ONCE, in {@code shared}, and both consumers
+     *  read it — the main agent's registry and the belt the children inherit. The
+     *  two used to be assembled separately, and the child's copy was
+     *  {@code StandardTools.all()} plus {@code use_skill}: no image tool, no web
+     *  tools, and not one of the MCP servers the operator had configured. A tool
+     *  added here now reaches the children or nobody.</p> */
     private void registerTools() {
         registry = new ToolRegistry();
-        StandardTools.all().forEach(registry::register);
+        // The belt both the main agent and the children get, in registration
+        // order. update_plan and the spawn/dev verbs are added to the REGISTRY
+        // only, further down — they are main-only by decision, not by accident.
+        List<Tool> shared = new ArrayList<>(StandardTools.all());
         // the provider is created lazily per call — a missing API key only
         // matters (and errors readably) when the model actually asks for an image.
-        registry.register(new GenerateImageTool(config::imageProviderFromConfig,
+        shared.add(new GenerateImageTool(config::imageProviderFromConfig,
                 ImageStore.inUserHome(),
                 llmWire)); // image calls land on the session's llm-wire record (card 184)
         // Real tool: fetch a web page as readable text. Network egress is a side
@@ -455,17 +475,14 @@ public final class SpectroCli implements Runnable {
         Tool browsePage = new BrowsePageTool(
                 () -> BrowsePageTool.findChrome(config.chromeEnv()), new DefaultChromeRunner(),
                 dev.spectroscope.core.net.NetFence.withSystemDns(config.allowLocalhost()));
-        registry.register(webFetch);
+        shared.add(webFetch);
         // web_search branch: the ONE tier WebSearchTiers resolves from the
         // configuration (card 203) + browse_page through the system Chrome
         // headless (renders JS). Both network egress -> permission-gated.
-        registry.register(webSearch);
-        registry.register(browsePage);
-        // The main agent's plan. Permission-free, main-only (a worker's
-        // plan would clobber the flat UI snapshot), so it is NOT added to childBase.
-        registry.register(new UpdatePlanTool());
+        shared.add(webSearch);
+        shared.add(browsePage);
         if (!skills.skills().isEmpty()) {
-            registry.register(skills.useSkillTool());
+            shared.add(skills.useSkillTool());
         }
         // MCP is just another tool SOURCE. Connect eagerly to every
         // configured server and register each remote tool as mcp__<server>__<tool>
@@ -473,13 +490,12 @@ public final class SpectroCli implements Runnable {
         // and the tool_call/tool_result events flow unchanged (no new event type).
         // Registered once here; independent of the in-app provider switch.
         mcp = McpServerRegistry.load(config.mcpServers(), projectDir);
-        mcp.tools().forEach(registry::register);
-        // Children get the standard tools PLUS use_skill (when skills exist), so a
-        // dev-tool child can actually load the skill its role prompt points at.
-        List<Tool> childBase = new ArrayList<>(StandardTools.all());
-        if (!skills.skills().isEmpty()) {
-            childBase.add(skills.useSkillTool());
-        }
+        shared.addAll(mcp.tools());
+
+        shared.forEach(registry::register);
+        // The main agent's plan. Permission-free, main-only (a worker's
+        // plan would clobber the flat UI snapshot), so it is NOT in `shared`.
+        registry.register(new UpdatePlanTool());
         // Card 205: the research role's web grant — the parent's own three web
         // tools, handed to RESEARCH children only. Same instances, same gate.
         subagents = new SubagentManager(SubagentConfig.builder()
@@ -487,10 +503,11 @@ public final class SpectroCli implements Runnable {
                 .cwd(workspace)
                 .parentAgentId(MAIN_AGENT_ID)
                 .onPermission(askOnTerminal)
-                .baseTools(List.copyOf(childBase))
+                .baseTools(List.copyOf(shared)) // card 270: the parent's own belt
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(List.of(webSearch, webFetch, browsePage))
+                .budget(dev.spectroscope.core.subagents.ChildBudget.derivedFrom(latency))
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -625,6 +642,7 @@ public final class SpectroCli implements Runnable {
                 .thinking(thinking)  // reasoning visibility; toggled live by /think on|off
                 .hooks(hooks)        // external pre/post_tool_use shell hooks (config-only)
                 .llmWire(llmWire)    // the backend-to-LLM record rides the session's recorder (card 184)
+                .latency(latency)    // this REPL's own exchanges price its children (card 270)
                 .onPermission(askOnTerminal)
                 .build());
     }

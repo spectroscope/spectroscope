@@ -64,7 +64,7 @@ final class ContextDescriber {
 
         return new ContextInfo(systemPrompt, mainAgentTools(config, standardTools, skills), skillCatalog,
                 mcpServerNames, config.thinking(), config.provider(), config.model(),
-                RoleCatalog.roleProfiles(childBaseToolNames(standardTools, skills)));
+                RoleCatalog.roleProfiles(childBaseToolNames(config, standardTools, skills)));
     }
 
     /**
@@ -113,17 +113,34 @@ final class ContextDescriber {
     }
 
     /**
-     * The base tools a child inherits: the standard set plus use_skill.
+     * The belt a child inherits: the standard set, the settings belt, then
+     * use_skill — the same steps and the same order
+     * {@link SessionConnection#buildAgentOnce} hands to {@code SubagentConfig}
+     * since card 270.
      *
+     * <p>Two things it deliberately does NOT list, and both are honest absences
+     * rather than drift. {@code update_plan} is main-only. And the MCP tools are
+     * missing because this endpoint is STATELESS: no session exists, so no server
+     * has been dialled and nobody can say what its {@code tools/list} would
+     * return. A live session's children do hold them — the role profiles here
+     * describe the belt this face can know, which is why the live belt is
+     * asserted where it is built ({@code SessionChildBeltTest}) and not from
+     * this list.</p>
+     *
+     * @param config the SAME resolved configuration the caller is describing —
+     *               the settings belt reads it, exactly as the live one does
      * @param standardTools the shared standard set
      * @param skills the installed skill library — empty drops use_skill from the profile
      */
-    private static List<String> childBaseToolNames(List<Tool> standardTools, SkillLibrary skills) {
+    private static List<String> childBaseToolNames(SpectroConfig config,
+            List<Tool> standardTools, SkillLibrary skills) {
         Stream<String> standard = standardTools.stream().map(Tool::name);
+        Stream<String> settingsBelt = SettingsToolBelt
+                .assemble(SettingsToolBelt.describeSeams(config)).tools().stream().map(Tool::name);
         Stream<String> useSkill = skills.skills().isEmpty()
                 ? Stream.empty()
                 : Stream.of(skills.useSkillTool().name());
-        return Stream.concat(standard, useSkill).toList();
+        return Stream.of(standard, settingsBelt, useSkill).flatMap(names -> names).toList();
     }
 
     /**
