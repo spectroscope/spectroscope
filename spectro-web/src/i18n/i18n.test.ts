@@ -14,6 +14,7 @@ import { TRACE_FACES } from "../state/traceFace";
 import { dockerOffer, type DockerStatus } from "../components/dockerOffer";
 import { searxngOffer } from "../components/webSearchSetup";
 import { hookReadingKey, timeoutNoteKey } from "../components/hooksSetup";
+import { SETTINGS_TABS, settingsTabLabelKey } from "../components/settingsTabs";
 
 describe("i18n dict", () => {
   it("every entry has a German and an English string", () => {
@@ -79,6 +80,13 @@ describe("i18n dict", () => {
     for (const k of ["lab.face", "lab.faceAria", "lab.faceHint"]) {
       expect(dict[k], k).toBeDefined();
     }
+    // The settings rooms (card 256). Reached only as `set.tab.${SettingsTab}`,
+    // so a seventh room added to the grouping table without its two words would
+    // print the bare key across the top of the panel.
+    for (const tab of SETTINGS_TABS) {
+      expect(dict[settingsTabLabelKey(tab)], settingsTabLabelKey(tab)).toBeDefined();
+    }
+    expect(dict["set.tabs"], "set.tabs").toBeDefined();
     // The trace's type chips. They render from the dict now rather than from
     // the enum's own spelling, so a category added without its word would show
     // up as the bare key in the one row a reader filters with. The nine that

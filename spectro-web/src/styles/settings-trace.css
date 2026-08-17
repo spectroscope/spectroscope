@@ -45,7 +45,11 @@
   display: flex;
   flex-direction: column;
   width: min(680px, 94vw);
-  max-height: min(86vh, 900px);
+  /* Card 256: a fixed height, not a maximum. With tabs the surface may not
+     resize under the reader — a short room would pull the tab row up the screen
+     and a tall one push it back down, so the row a person is aiming at would
+     move as they arrive. Same numbers the max-height carried. */
+  height: min(86vh, 900px);
   background: var(--surface);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-modal, 16px);
@@ -59,6 +63,41 @@
 .settings-page .settings-head { flex: none; }
 .settings-page .settings-body { overflow-y: auto; }
 .settings-page .settings-hint { margin-left: auto; margin-right: 10px; }
+
+/* ---- The tab row (card 256) ------------------------------------------------
+   The row is the app's own underline strip (.tab-nav/.tab from graph.css), so
+   the settings switch reads like every other tab row in the product and brings
+   no colour of its own. Two rules are load-bearing:
+
+   1. It may never wrap into a second line (AC 2). At the panel's own 680px the
+      six room names fit with room to spare; below that the strip SCROLLS —
+      nowrap plus overflow-x, the terminal-tabs idiom — because a wrapped row
+      moves every tab the moment the window narrows.
+   2. `.settings-tabpanel[hidden]` needs saying out loud. The class sets
+      `display: flex`, and a class rule outranks the UA's `[hidden] { display:
+      none }` — without the line below, every room renders at once and the tabs
+      appear to do nothing. Silent, valid CSS; exactly the failure mode bus.css
+      shipped for months. */
+.settings-tabs {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  /* The strip scrolls but shows no bar: a scrollbar under six labels reads as a
+     defect, and the row is reachable by keyboard regardless. */
+  scrollbar-width: none;
+}
+.settings-tabs::-webkit-scrollbar { display: none; }
+.settings-tabs .tab { white-space: nowrap; }
+
+.settings-tabpanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-5);
+}
+.settings-tabpanel[hidden] { display: none; }
+/* The panel takes focus when a room opens, so a screen reader lands inside the
+   dialog. A ring around a whole page would only be noise — the room the reader
+   just chose is not a control. */
+.settings-tabpanel:focus { outline: none; }
 
 .settings-seg {
   display: inline-flex;
