@@ -248,6 +248,57 @@ class SpeechRendererTest {
         }
     }
 
+    /**
+     * Card 264, fix pass. The turn brake is a cancel from outside the loop, and
+     * before card 264 it reached this consumer as {@code aborted} — playback
+     * destroyed, no ghost sentences. Card 264 made the brake say {@code
+     * max_turns} on the wire (AC 6, so the caller's Outcome and the session file
+     * stop disagreeing), and that silently flipped this behaviour: {@code
+     * spectro run --max-turns 2 --speak} began SPEAKING the leftover buffer of a
+     * run that was cut off mid-work. A run that was cut short is cut short, by
+     * whichever of the two names it arrives under.
+     */
+    @Test
+    void theTurnBrakeSilencesTheLeftoverJustLikeAnAbort() throws Exception {
+        FakeEngine engine = new FakeEngine();
+        try (SpeechRenderer speech = new SpeechRenderer(engine, true)) {
+            runStart(speech);
+            // No sentence boundary: everything is still in the buffer when the brake hits.
+            delta(speech, "A half thought the brake cut off");
+            runEnd(speech, "max_turns");
+
+            speech.idle();
+
+            assertEquals(List.of(), engine.synthesized,
+                    "the brake cut the run short; the unfinished thought must not be spoken, got "
+                            + engine.synthesized);
+            assertEquals(List.of(), engine.played);
+        }
+    }
+
+    /**
+     * The other direction, so the rule above cannot quietly become "stop on
+     * everything": a run that ended on its own terms still speaks its last
+     * partial sentence — including under card 264's new verdict value, which is
+     * a run that ANSWERED and left its plan open, not a run that was cut off.
+     */
+    @Test
+    void aRunThatEndedOnItsOwnTermsStillSpeaksTheLastPartial() throws Exception {
+        for (String reason : List.of("end_turn", "unfinished")) {
+            FakeEngine engine = new FakeEngine();
+            try (SpeechRenderer speech = new SpeechRenderer(engine, true)) {
+                runStart(speech);
+                delta(speech, "The tail with no full stop");
+                runEnd(speech, reason);
+
+                speech.idle();
+
+                assertEquals(List.of("The tail with no full stop"), engine.synthesized,
+                        "stop reason " + reason + " ended the run itself — the answer is spoken");
+            }
+        }
+    }
+
     @Test
     void anAbbreviationDoesNotEndASentence() throws Exception {
         FakeEngine engine = new FakeEngine();

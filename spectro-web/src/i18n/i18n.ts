@@ -3019,6 +3019,17 @@ export const dict: Record<string, { de: string; en: string }> = {
   "footer.runActive": { de: "Lauf aktiv", en: "run active" },
   "footer.stopped": { de: "gestoppt · {r}", en: "stopped · {r}" },
   "footer.ready": { de: "bereit", en: "ready" },
+  // Card 264: a run that walked away from its own plan stops with "end_turn"
+  // like any other, so the footer names what it left behind instead. The count
+  // is the whole point — "stopped" alone is what the sidebar already says.
+  "footer.stoppedUnfinished": {
+    de: "gestoppt · {open} von {total} Schritten offen",
+    en: "stopped · {open} of {total} steps open",
+  },
+  // And the run nobody can grade: no plan was ever written, which on a model
+  // without tool calls is most of them. Quiet, because it is the normal case —
+  // but not "ready", which would claim more than the record shows.
+  "footer.readyNoPlan": { de: "bereit · kein Plan aufgezeichnet", en: "ready · no plan on record" },
   "footer.connected": { de: "verbunden", en: "connected" },
   "footer.connecting": { de: "verbinde …", en: "connecting" },
   "footer.disconnected": { de: "getrennt", en: "disconnected" },

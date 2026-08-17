@@ -44,9 +44,34 @@ public final class LevelingFold {
      * Stop reasons that mean the run came through. Everything else — an abort,
      * an error, and above all the in-band stream sentinels — is not a finished
      * run and must never light up first light.
+     *
+     * <p>An allowlist, and it stays one: {@code "unfinished"} (card 264) is
+     * absent on purpose, because a run that walked away from its own plan is
+     * precisely the run this criterion must not credit. Adding a value here is
+     * awarding progress, so a new stop reason is a decision, never a
+     * housekeeping edit.</p>
+     *
+     * <p>{@code "max_turns"} is the odd one and it is kept deliberately: a run
+     * that hit the brake earns the same progress as a finished one today, and
+     * whether it should is the open owner call on card 264. It is listed here
+     * with its reason rather than inherited silently, and
+     * {@code LevelingFoldTest.theBrakeStillCountsUntilTheOwnerSaysOtherwise}
+     * is the line that changes when the answer arrives.</p>
      */
     private static final Set<String> COMPLETED_RUN = Set.of(
             "end_turn", "max_tokens", "max_turns", "tool_use");
+
+    /**
+     * Stop reasons that prove the PROVIDER answered, which is a weaker claim
+     * than a completed run and the only one the rung below actually needs.
+     *
+     * <p>Card 264 split the two. A run that abandoned its plan still got a
+     * model to talk to — refusing it the provider-ready mark would leave a
+     * working home sitting in the dark frame, which is the ladder calling its
+     * own operator a liar. What it must not get is the completed-run mark.</p>
+     */
+    private static final Set<String> PROVIDER_ANSWERED = Set.of(
+            "end_turn", "max_tokens", "max_turns", "tool_use", "unfinished");
 
     private LevelingFold() {
     }
@@ -75,7 +100,7 @@ public final class LevelingFold {
         }
         LevelingState next = redeemLooks(ladder, rememberFacts(ladder, state, sessionId, event),
                 sessionId, event.ts());
-        if (event instanceof RunEvent.RunEnd end && COMPLETED_RUN.contains(end.stopReason())) {
+        if (event instanceof RunEvent.RunEnd end && PROVIDER_ANSWERED.contains(end.stopReason())) {
             // A run that came back is also the strongest report a provider can give
             // that it is ready, so it settles the rung below at the same time. The
             // alternative is a home sitting in the dark frame with a finished run on
@@ -84,6 +109,8 @@ public final class LevelingFold {
             next = mark(ladder, next, "provider-ready",
                     new LevelingState.Mark("provider-ready", sessionId, eventIndex,
                             end.ts(), LevelingState.Origin.OBSERVED));
+        }
+        if (event instanceof RunEvent.RunEnd end && COMPLETED_RUN.contains(end.stopReason())) {
             next = mark(ladder, next, "first-run-complete",
                     new LevelingState.Mark("first-run-complete", sessionId, eventIndex,
                             end.ts(), LevelingState.Origin.OBSERVED));

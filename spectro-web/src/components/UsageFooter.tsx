@@ -9,10 +9,11 @@
 import { useEffect, useState } from "react";
 import { AboutDialog } from "./AboutDialog";
 import { onAboutRequested } from "../state/aboutSignal";
-import type { AgentInfo, RunSubagents, UiState } from "../state/reducer";
+import type { AgentInfo, PlanStep, RunSubagents, UiState } from "../state/reducer";
 import type { ConnectionStatus } from "../transport/ws";
 import { formatTokens } from "../format";
 import { t } from "../i18n/i18n";
+import { openSteps, planVerdict } from "../state/planVerdict";
 import { useLang } from "../state/lang";
 
 /**
@@ -54,8 +55,58 @@ export function runShare(run: RunSubagents): { count: number; inTokens: number; 
   return { count: run.ids.length, inTokens: run.inputTokens, outTokens: run.outputTokens };
 }
 
+/** One chrome line, ready for {@link t}: the key and whatever it interpolates. */
+export type RunStatusLine = { key: string; vars?: Record<string, string | number> };
+
+/**
+ * What the footer says about the run that just ended (card 264).
+ *
+ * <p>It used to ask one question — is the stop reason "end_turn"? — and a run
+ * that walks away mid-plan stops with exactly that, so the owner's abandoned
+ * session read "ready". Three answers now, from the two things the state
+ * already holds:</p>
+ *
+ * - the harness's verdict on the wire ("unfinished"), which the loop computed
+ *   from its own plan ledger at the exit;
+ * - the plan snapshot, for the count the line says out loud — and for the two
+ *   cases the wire cannot carry: an end_turn with no plan at all (nobody can
+ *   grade that run, and "ready" would be a claim without evidence) and a
+ *   session recorded BEFORE this card, whose end_turn was never graded. The
+ *   same rule is applied to those rather than believing the old value, so the
+ *   line can never contradict the Plan panel sitting next to it.
+ */
+export function runStatusLine(state: {
+  running: boolean;
+  lastStopReason: string | null;
+  plan: PlanStep[] | null;
+}): RunStatusLine {
+  const { running, lastStopReason, plan } = state;
+  if (running) return { key: "footer.runActive" };
+  if (lastStopReason === null) return { key: "footer.ready" };
+  // The rule itself lives in state/planVerdict.ts, because the exported
+  // document's foot reads it too and the two faces must not drift apart.
+  switch (planVerdict(lastStopReason, plan)) {
+    case "unfinished":
+      return {
+        key: "footer.stoppedUnfinished",
+        vars: { open: openSteps(plan), total: plan === null ? 0 : plan.length },
+      };
+    case "unknown":
+      return { key: "footer.readyNoPlan" };
+    case "finished":
+      return { key: "footer.ready" };
+    default:
+      // A brake, a cap, a failure — or a verdict whose ledger this page never
+      // saw (a truncated import): the run stopped, and this line cannot say
+      // how much was left.
+      return lastStopReason === "end_turn"
+        ? { key: "footer.ready" }
+        : { key: "footer.stopped", vars: { r: lastStopReason } };
+  }
+}
+
 export function UsageFooter(props: { state: UiState; connection: ConnectionStatus }) {
-  const { usage, runUsage, runSubagents, running, lastStopReason, agents } = props.state;
+  const { usage, runUsage, runSubagents, running, agents } = props.state;
   const share = subagentShare(agents);
   const runPart = runShare(runSubagents);
   const { connection } = props;
@@ -65,11 +116,11 @@ export function UsageFooter(props: { state: UiState; connection: ConnectionStatu
   // The desktop shell's menu bar opens this same panel from outside React.
   useEffect(() => onAboutRequested(() => setAboutOpen(true)), []);
 
-  const runStatus = running
-    ? t(lang, "footer.runActive")
-    : lastStopReason !== null && lastStopReason !== "end_turn"
-      ? t(lang, "footer.stopped", { r: lastStopReason })
-      : t(lang, "footer.ready");
+  const status = runStatusLine(props.state);
+  const runStatus = t(lang, status.key, status.vars);
+  // The dot an unclosed thing already wears in the sidebar (runIndicator.ts) —
+  // same token, no new colour, and the words carry the meaning either way.
+  const statusDot = running ? "accent" : status.key === "footer.stoppedUnfinished" ? "warn" : "faint";
 
   const connTone = connection === "open" ? "ok" : connection === "connecting" ? "warn" : "error";
   const connLabel =
@@ -117,7 +168,7 @@ export function UsageFooter(props: { state: UiState; connection: ConnectionStatu
         </span>
         <span className="footer-spacer" />
         <span className="footer-status">
-          <span className={`dot ${running ? "accent" : "faint"}`} aria-hidden="true" /> {runStatus}
+          <span className={`dot ${statusDot}`} aria-hidden="true" /> {runStatus}
         </span>
         <span className="footer-status">
           <span className={`dot ${connTone}`} aria-hidden="true" /> {connLabel}

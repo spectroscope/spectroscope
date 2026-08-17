@@ -710,6 +710,7 @@ public final class SpectroCli implements Runnable {
                 // the prompt, and rebuild the tool world so subagents inherit it.
                 // MCP is reloaded by registerTools — release the old processes first.
                 store = new SessionStore(null);
+                renderer.forgetPlan(); // the new agent has no ledger; neither has the line
                 if (llmWire != null) {
                     llmWire.close(); // the old session's writer; lines are flushed
                 }

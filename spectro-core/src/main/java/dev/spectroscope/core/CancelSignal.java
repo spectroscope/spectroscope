@@ -32,16 +32,23 @@ public final class CancelSignal {
     }
 
     /**
-     * The same cancel, carrying WHY — so a run that was stopped by something
-     * other than a human can say so instead of reading as a plain abort
-     * (card 270: a child out of budget must not look like Ctrl+C).
+     * The same cancel, carrying WHY — so a run stopped by something other than a
+     * human can say so instead of reading as a plain abort.
+     *
+     * <p>Two callers need it, and they arrived from opposite ends. Card 270: a
+     * child out of budget must not look like Ctrl+C. Card 264: the headless turn
+     * brake stops a run from the outside, so the loop could only ever write
+     * {@code aborted} while the caller's own {@code Outcome} said
+     * {@code max_turns} — two truths for one event.</p>
      *
      * <p>The reason travels no further than the run's own {@code run_end}
      * stopReason: it is a new VALUE on an existing field, never a new field, so
      * the byte-frozen RunEvent shapes are untouched. A null reason keeps the
-     * pre-270 behaviour exactly — {@code "aborted"}.</p>
+     * pre-270 behaviour exactly — {@code "aborted"} — and a plain
+     * {@link #cancel()} (the stop button) carries none and must not invent one.</p>
      *
-     * @param why a short, stable, snake_case reason (e.g.
+     * @param why a short, stable, snake_case wire name to record instead of
+     *            {@code aborted} (e.g.
      *            {@link dev.spectroscope.core.subagents.ChildBudget#STOP_BUDGET_EXHAUSTED}),
      *            or null for a plain cancel
      */
@@ -73,7 +80,7 @@ public final class CancelSignal {
         return cancelled;
     }
 
-    /** Why this signal was cancelled, when the canceller said.
+    /** Why this signal was cancelled, when the canceller named it.
      *  @return the reason passed to {@link #cancel(String)}, or null for a plain
      *          cancel and for a signal that is still live */
     public String reason() {

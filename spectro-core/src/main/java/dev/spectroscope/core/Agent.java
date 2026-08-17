@@ -52,6 +52,10 @@ import java.util.function.Consumer;
  */
 public final class Agent {
 
+    /** One logger for the loop's three operator lines — run start, run end and
+     *  the plan verdict (card 264). Same logger name as before, named once. */
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Agent.class);
+
     private static final int MAX_TURNS = 15;         // runaway-loop brake
     private static final int DEFAULT_MAX_TOKENS = 32_000;
 
@@ -67,6 +71,25 @@ public final class Agent {
     /** Live effort-level override — null leaves the model's default. Providers
      *  spend it only where their capability record lists the value. */
     private volatile String effortOverride;
+
+    /**
+     * The plan ledger, latest-wins — the loop's own copy of the last
+     * {@code update_plan} this agent published (card 264).
+     *
+     * <p>It lives with the agent and not with the run, exactly like
+     * {@link #messages} and exactly like the web reducer's {@code plan}
+     * snapshot (reducer.ts:280, cleared only by a fresh chat). A second run
+     * that answers without touching the plan has closed nothing, and a footer
+     * that says "4 of 6 open" while the Plan panel shows four open steps is the
+     * app agreeing with itself.</p>
+     *
+     * <p>Null until the model calls the tool — which on a model without native
+     * tool calls is the whole session, and is why {@link PlanVerdict#UNKNOWN}
+     * exists. A resumed session starts null too: the history is replayed into
+     * {@link #messages}, the ledger is not, so a resumed run is ungradable
+     * until its model publishes a plan again.</p>
+     */
+    private volatile RunEvent.Plan lastPlan;
 
     /**
      * Flips reasoning visibility mid-session — the web header toggle. Takes
@@ -195,7 +218,7 @@ public final class Agent {
             runLoop(prompt, promptForModel, attachments, signal, emit, agentId);
         } finally {
             // One operator line per run (the JSONL stays the source of truth).
-            org.slf4j.LoggerFactory.getLogger(Agent.class).info("run finished in {} ms",
+            log.info("run finished in {} ms",
                     (System.nanoTime() - startedAtNanos) / 1_000_000);
             org.slf4j.MDC.remove("agentId");
         }
@@ -227,8 +250,7 @@ public final class Agent {
         }
         emit.accept(new RunStart(runId, agentId, options.parentId(), prompt,
                 providerLabel, options.provider().modelName(), attachments, now()));
-        org.slf4j.LoggerFactory.getLogger(Agent.class).info(
-                "run {} started (provider {})", runId, providerLabel);
+        log.info("run {} started (provider {})", runId, providerLabel);
         // images BEFORE the text — the same order the Anthropic mapping expects.
         List<ProviderContent> firstUserContent = new ArrayList<>();
         if (attachments != null) {
@@ -389,7 +411,13 @@ public final class Agent {
                 }
 
                 if (stopReason != PStop.StopReason.TOOL_USE || toolCalls.isEmpty()) {
-                    emit.accept(new RunEnd(runId, stopReasonName(stopReason), now()));
+                    // Card 264, the terminal exit: for the first time the loop
+                    // reads its own plan before it declares the run over. A turn
+                    // that produced prose and no tool call ends the run at any
+                    // turn — which is right — but calling that "end_turn" with
+                    // steps still open was the app reporting a clean finish for
+                    // a run that walked away mid-plan.
+                    emit.accept(new RunEnd(runId, verdictStop(stopReasonName(stopReason)), now()));
                     return;
                 }
 
@@ -417,7 +445,10 @@ public final class Agent {
                 results.addAll(attachedContent);
                 messages.add(new ProviderMessage(ProviderMessage.Role.USER, results));
             }
-            emit.accept(new RunEnd(runId, "max_turns", now()));
+            // The brake keeps its own name even with the plan open: the verdict
+            // is logged either way, and losing "this run hit turn 15" would
+            // trade one silence for another.
+            emit.accept(new RunEnd(runId, verdictStop("max_turns"), now()));
         } catch (RuntimeException error) {
             if (signal.isCancelled()) {
                 emit.accept(new RunEnd(runId, abortStopReason(signal), now()));
@@ -503,7 +534,8 @@ public final class Agent {
         // view_image hands images to SHOW the model through the attach sink.
         long startedAt = now();
         String output = tool.execute(call.input(),
-                new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(), emit, attach));
+                new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
+                        planLedger(emit), attach));
         long durationMs = now() - startedAt;
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
@@ -644,24 +676,77 @@ public final class Agent {
     }
 
     /**
-     * How an interrupted run closes: {@code "aborted"} by default, or whatever
-     * the canceller named (card 270).
+     * The stop reason this run should record, after the plan ledger has been
+     * read — the verdict of card 264, computed at the exit and nowhere else.
      *
-     * <p>The distinction is the whole point of the reason: a child the harness
-     * stopped because it ran out of its own budget used to be indistinguishable
-     * from a human pressing Ctrl+C, and "the run just stopped" is the one thing
-     * an observability product must not say. A new VALUE on an existing field —
-     * {@code RunEnd}'s shape is untouched, and every consumer of stopReason in
-     * this repo treats the finished reasons as an allow-list
-     * ({@code LevelingFold.COMPLETED_RUN}), so an unknown reason correctly reads
-     * as "did not finish".</p>
+     * <p>The verdict is stated on every voluntary exit, including the ones it
+     * does not rename: the log line is where {@link PlanVerdict#UNKNOWN}
+     * becomes visible, because the wire says {@code end_turn} for a finished
+     * plan and for no plan alike — their difference is the presence or absence
+     * of a {@code plan} event in the same file, which is a fact the record
+     * already carries and every surface can read.</p>
+     *
+     * <p>The sentence comes from {@link PlanVerdict#report(RunEvent.Plan)} and
+     * is pinned by {@code AgentPlanVerdictTest.theExitSaysWhichOfTheThreeVerdictsTheRunReached}
+     * — an in-memory appender, all three verdicts. It was an unpinned format
+     * string until 2026-08-17: deleting the line left the whole targeted suite
+     * green, which made "the harness says which of three" a claim rather than a
+     * behaviour. The same sentence's second half ({@link
+     * PlanVerdict#detail(RunEvent.Plan)}) is what the CLI's run-end line and the
+     * HTML export append, so the three faces cannot drift.</p>
+     *
+     * @param stopReason the wire name the exit would have written
+     * @return the stop reason to record, displaced only for an abandoned plan
+     */
+    private String verdictStop(String stopReason) {
+        RunEvent.Plan ledger = lastPlan;
+        log.info("plan verdict {}", PlanVerdict.report(ledger));
+        return PlanVerdict.stopReasonFor(stopReason, PlanVerdict.of(ledger));
+    }
+
+    /**
+     * How an interrupted run closes: {@code "aborted"} by default, or whatever
+     * the canceller named.
+     *
+     * <p>The distinction is the whole point of the reason, and two cards need
+     * it: a child the harness stopped because it ran out of its own budget used
+     * to be indistinguishable from a human pressing Ctrl+C (card 270), and the
+     * headless turn brake could only ever write {@code aborted} while its own
+     * {@code Outcome} said {@code max_turns} (card 264 AC 6). "The run just
+     * stopped" is the one thing an observability product must not say.</p>
+     *
+     * <p>A new VALUE on an existing field — {@code RunEnd}'s shape is untouched,
+     * and every consumer of stopReason in this repo treats the finished reasons
+     * as an allow-list ({@code LevelingFold.COMPLETED_RUN}), so an unknown
+     * reason correctly reads as "did not finish".</p>
      *
      * @param signal the run's cancel signal, already known to be cancelled
      * @return the reason the canceller gave, or {@code "aborted"}
      */
     private static String abortStopReason(CancelSignal signal) {
         String named = signal.reason();
-        return named != null ? named : "aborted";
+        return named == null || named.isBlank() ? "aborted" : named;
+    }
+
+    /**
+     * The loop's tap on its own event sink: every {@code plan} event this agent
+     * publishes updates the ledger on its way to the wire.
+     *
+     * <p>Only THIS agent's plans count. {@code update_plan} is main-only
+     * (SessionConnection:1056), but a child's events do travel the parent's
+     * sink, and a run must be graded by its own ledger rather than by whatever
+     * passed through it.</p>
+     *
+     * @param emit the loop's real event sink
+     * @return the sink to hand to tools — same events, same order, one field noted
+     */
+    private Consumer<RunEvent> planLedger(Consumer<RunEvent> emit) {
+        return event -> {
+            if (event instanceof RunEvent.Plan plan && options.agentId().equals(plan.agentId())) {
+                lastPlan = plan;
+            }
+            emit.accept(event);
+        };
     }
 
     /** Maps the provider-neutral stop reason onto its snake_case wire name.

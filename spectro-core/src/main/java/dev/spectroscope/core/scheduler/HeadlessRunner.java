@@ -254,9 +254,12 @@ public final class HeadlessRunner {
      * run ended regularly with {@code end_turn} and no error surfaced.
      *
      * @param finalText  the text of the last turn — the run's final answer
-     * @param stopReason end_turn | aborted | max_turns | tool_use | error: ...
+     * @param stopReason end_turn | unfinished | aborted | max_turns | tool_use | error: ...
+     *                   — read from the run's own {@code run_end}, so the caller
+     *                   and the session file always say the same thing (card 264)
      * @param sessionId  the session file id (the full history is reachable through it)
-     * @param exitOk     true iff the run ended regularly with end_turn
+     * @param exitOk     true iff the run ended regularly with end_turn — an
+     *                   abandoned plan ({@code unfinished}) is not a regular end
      */
     public record Outcome(String finalText, String stopReason, String sessionId, boolean exitOk) {
     }
@@ -422,7 +425,6 @@ public final class HeadlessRunner {
         StringBuilder finalText = new StringBuilder();
         String stopReason = "error";
         String errorMessage = "";
-        boolean turnLimitHit = false;
 
         try (EventStream events = agent.run(prompt, new RunOptions(signal, attachments))) {
             for (RunEvent rawEvent : events) {
@@ -442,8 +444,13 @@ public final class HeadlessRunner {
                     case RunEvent.TurnStart turn -> {
                         finalText.setLength(0); // only the last turn's text is the final result
                         if (maxTurns != null && turn.turn() > maxTurns) {
-                            turnLimitHit = true;
-                            signal.cancel(); // the turn brake, applied from the outside as a consumer
+                            // The turn brake, applied from the outside as a consumer —
+                            // and it says WHY (card 264, AC 6). The loop cannot know
+                            // this limit, so without the reason it wrote "aborted"
+                            // onto the wire while the Outcome below said "max_turns",
+                            // and the session file disagreed with the caller about
+                            // the same run.
+                            signal.cancel("max_turns");
                         }
                     }
                     case RunEvent.TextDelta delta -> finalText.append(delta.text());
@@ -458,10 +465,11 @@ public final class HeadlessRunner {
             llmWire.close(); // per-run handle; a triggered node reopens per fire, appending
         }
 
-        boolean exitOk = "end_turn".equals(stopReason) && !turnLimitHit && errorMessage.isEmpty();
-        String effectiveStop = turnLimitHit ? "max_turns"
-                : !errorMessage.isEmpty() ? "error: " + errorMessage
-                : stopReason;
+        // The run's own record decides, and the caller reports what it read.
+        // "end_turn" is still the only clean finish — a run that abandoned its
+        // plan arrives here as "unfinished" (card 264) and is not one.
+        boolean exitOk = "end_turn".equals(stopReason) && errorMessage.isEmpty();
+        String effectiveStop = errorMessage.isEmpty() ? stopReason : "error: " + errorMessage;
         return new Outcome(finalText.toString(), effectiveStop, store.id(), exitOk);
     }
 

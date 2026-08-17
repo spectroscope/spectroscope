@@ -28,6 +28,8 @@ import { hlLangForFence } from "../workspace/highlight";
 import { buildTextFeed, eventsToJsonl } from "../state/textFeed";
 import type { ToolCard, Turn, UiState } from "../state/reducer";
 import { initialState, reduceAll } from "../state/reducer";
+import type { PlanStep } from "../state/reducer";
+import { openSteps, planVerdict } from "../state/planVerdict";
 import { groupTurns } from "../state/threads";
 import { describeTool } from "../components/toolViews";
 import { toolTeaser } from "../components/toolTeaser";
@@ -636,11 +638,44 @@ export function chatBody(
     // provider/model come from run_start, so an archive names its backend too.
     [state.provider, state.runModel].filter((s) => s !== null && s !== "").join(" · "),
     measured ? label(lang, "totals", { in: state.usage.inputTokens, out: state.usage.outputTokens }) : "",
-    state.lastStopReason !== null ? label(lang, "ended", { reason: state.lastStopReason }) : "",
+    endedLabel(lang, state),
   ]
     .filter((s) => s !== "")
     .join(" · ");
   return { body, foot };
+}
+
+/**
+ * How the run ended, for the foot of an archived document (card 264, fix pass).
+ *
+ * The value alone was not enough. "ended: unfinished" says a plan was abandoned
+ * but not how much of it, and an ungradable run — end_turn with no ledger, the
+ * normal case on a model without tool calls — read exactly like a clean finish
+ * to somebody who was not there when it ran. The verdict comes from the same
+ * rule the live footer applies (state/planVerdict.ts), so the archive and the
+ * app cannot say two different things about one file.
+ *
+ * @param lang the document's language
+ * @param state the folded reducer state of the exported session
+ * @returns the "ended: …" text, or an empty string while nothing has ended
+ */
+function endedLabel(lang: Lang, state: { lastStopReason: string | null; plan: PlanStep[] | null }): string {
+  const reason = state.lastStopReason;
+  if (reason === null) return "";
+  switch (planVerdict(reason, state.plan)) {
+    case "unfinished":
+      return label(lang, "endedOpen", {
+        reason,
+        open: openSteps(state.plan),
+        total: state.plan === null ? 0 : state.plan.length,
+      });
+    case "unknown":
+      return label(lang, "endedNoPlan", { reason });
+    default:
+      // A finished plan agrees with end_turn, and a brake or a failure is the
+      // more urgent fact on its own.
+      return label(lang, "ended", { reason });
+  }
 }
 
 /**

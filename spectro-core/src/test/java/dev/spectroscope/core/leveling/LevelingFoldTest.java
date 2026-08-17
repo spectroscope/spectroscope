@@ -75,6 +75,30 @@ class LevelingFoldTest {
     }
 
     @Test
+    void aRunThatAbandonedItsPlanIsNotACompletedRun() {
+        // Card 264: the run the owner watched — an answer, no error, and four
+        // plan steps still open. It earned first light anyway, because the fold
+        // only ever asked HOW the provider stopped. The provider did answer, so
+        // the rung below still stands; the run did not come through, so the
+        // completed-run mark does not.
+        LevelingState after = LevelingFold.observe(LADDER, fresh(), S1, 3, end("unfinished"));
+        assertNull(after.marks().get("first-run-complete"),
+                "an abandoned run must not award the progress of a finished one");
+        assertNotNull(after.marks().get("provider-ready"),
+                "the provider did answer — withholding that would put a working home in the dark");
+    }
+
+    @Test
+    void theBrakeStillCountsUntilTheOwnerSaysOtherwise() {
+        // Owner call 2 on card 264, pinned as it stands rather than decided in
+        // passing: max_turns is a run that hit the brake and it earns the same
+        // progress as a finished one. If the owner answers "no", this test is
+        // the line that changes, and it changes on purpose.
+        LevelingState after = LevelingFold.observe(LADDER, fresh(), S1, 3, end("max_turns"));
+        assertNotNull(after.marks().get("first-run-complete"), "today's rule, stated out loud");
+    }
+
+    @Test
     void streamSentinelsAreNotRuns() {
         // EventStream.END and MergedEventStream.END_OF_STREAM are RunEnd records used as
         // in-band terminators. If they ever reach a port they must not fake first light.

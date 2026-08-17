@@ -1,5 +1,6 @@
 package dev.spectroscope.cli;
 
+import dev.spectroscope.core.PlanVerdict;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.permission.Allowlist;
 
@@ -42,6 +43,17 @@ final class EventRenderer {
     private boolean thinkingLabelShown;
     private long totalInputTokens;
     private long totalOutputTokens;
+
+    /**
+     * The plan ledger of the main agent, latest-wins (card 264).
+     *
+     * <p>The terminal is the face where {@code update_plan} really is on the
+     * belt ({@code SpectroCli:466}), so it is also the face where a run that
+     * abandoned its plan can be named. Null until the model writes one — and
+     * then the run-end line says {@code no plan on record} rather than letting
+     * {@code end_turn} imply a finish nobody measured.</p>
+     */
+    private RunEvent.Plan lastPlan;
 
     private final Map<String, String> childRunAgents = new HashMap<>();
     private final Map<String, StringBuilder> childLineBuffers = new HashMap<>();
@@ -182,7 +194,7 @@ final class EventRenderer {
             }
             case RunEvent.RunEnd end -> {
                 spinner.stop();
-                System.out.println("\n" + ansi.dim("◆ " + end.stopReason()
+                System.out.println("\n" + ansi.dim("◆ " + end.stopReason() + verdictDetail(end.stopReason())
                         + " · run " + tokens(runInputTokens) + " in / " + tokens(runOutputTokens) + " out"
                         + " · session " + tokens(totalInputTokens) + " in / " + tokens(totalOutputTokens) + " out"));
             }
@@ -205,6 +217,7 @@ final class EventRenderer {
             }
             case RunEvent.Plan plan -> {
                 spinner.stop();
+                lastPlan = plan; // latest-wins, the same ledger the loop and the reducer keep
                 System.out.println("\n" + ansi.sand("◇ plan (" + plan.steps().size() + " steps)"));
                 for (RunEvent.PlanStep step : plan.steps()) {
                     String mark = switch (step.status()) {
@@ -217,6 +230,43 @@ final class EventRenderer {
             }
             default -> { }
         }
+    }
+
+    /**
+     * What the run-end line appends about the plan (card 264, fix pass) — the
+     * same sentence half the HTML export appends, from {@link PlanVerdict}.
+     *
+     * <p>Two cases earn a word, and they are exactly the two the stop reason
+     * cannot carry: {@code unfinished} says a plan was abandoned but not how
+     * much of it, and {@code end_turn} with no ledger at all is the ungradable
+     * run that used to look like a clean finish. Everything else stays silent —
+     * a finished plan agrees with {@code end_turn}, and a brake, a cap or a
+     * failure is the more urgent fact on its own.</p>
+     *
+     * <p>When the wire and this copy of the ledger disagree — a plan left over
+     * from before {@code /clear}, or a run graded against a ledger this renderer
+     * never saw — the WIRE wins and the line says nothing. The loop graded the
+     * run with the ledger it had; a second opinion printed next to the verdict
+     * would be the app contradicting itself.</p>
+     *
+     * @param stopReason the reason the record carries
+     * @return the detail, prefixed with the separator, or an empty string
+     */
+    private String verdictDetail(String stopReason) {
+        PlanVerdict verdict = PlanVerdict.of(lastPlan);
+        if (PlanVerdict.UNFINISHED_STOP_REASON.equals(stopReason)) {
+            return verdict == PlanVerdict.UNFINISHED ? " · " + PlanVerdict.detail(lastPlan) : "";
+        }
+        if (!"end_turn".equals(stopReason)) {
+            return "";
+        }
+        return verdict == PlanVerdict.UNKNOWN ? " · " + PlanVerdict.detail(null) : "";
+    }
+
+    /** Drops the ledger when the REPL starts a fresh session ({@code /clear}
+     *  rebuilds the agent, and with it the loop's own copy). */
+    void forgetPlan() {
+        lastPlan = null;
     }
 
     /**

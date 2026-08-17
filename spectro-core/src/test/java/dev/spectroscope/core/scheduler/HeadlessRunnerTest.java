@@ -283,6 +283,55 @@ class HeadlessRunnerTest {
     }
 
     @Test
+    @Timeout(value = 15, unit = TimeUnit.SECONDS, threadMode = Timeout.ThreadMode.SEPARATE_THREAD)
+    void theBrakeSaysTheSameThingOnTheWireAsInTheOutcome(@TempDir Path cwd) {
+        // Card 264, AC 6: two truths for one event. The runner brakes by
+        // cancelling from the outside, so the loop wrote "aborted" onto the
+        // wire — into the session file, into the bus, into every consumer —
+        // while the Outcome the caller read said "max_turns". Whoever compared
+        // the two was going to lose a day.
+        //
+        // The third turn PARKS until the brake fires, which is what a real
+        // backend does for free (92 s median on the house model) and what a
+        // scripted provider does not: against an instant provider the loop runs
+        // all 15 of its own turns before the consumer has even read the third
+        // turn_start, the brake never lands, and the run ends on the loop's own
+        // MAX_TURNS — where both sides agree by accident and the defect hides.
+        LlmProvider brakeable = request -> {
+            if (request.messages().size() >= 5) { // the third turn
+                for (int spin = 0; spin < 3_000 && !request.signal().isCancelled(); spin++) {
+                    try {
+                        Thread.sleep(5);
+                    } catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+                return List.of(new LlmProvider.PStop(LlmProvider.PStop.StopReason.ABORTED));
+            }
+            return List.of(
+                    new LlmProvider.PToolCall("c" + request.messages().size(), "list_dir",
+                            JSON.createObjectNode().put("path", ".")),
+                    new LlmProvider.PStop(LlmProvider.PStop.StopReason.TOOL_USE));
+        };
+        List<RunEvent> events = new ArrayList<>();
+
+        HeadlessRunner.Outcome outcome = new HeadlessRunner(JSON, CONFIG, brakeable)
+                .runOnce("Loop forever", cwd, false, 2, events::add, line -> { });
+
+        String onTheWire = events.stream()
+                .filter(RunEvent.RunEnd.class::isInstance)
+                .map(event -> ((RunEvent.RunEnd) event).stopReason())
+                .reduce((first, second) -> second)
+                .orElseThrow();
+        assertEquals(3, events.stream().filter(RunEvent.TurnStart.class::isInstance).count(),
+                "the premise: the brake really fired, on the turn after the limit");
+        assertEquals("max_turns", onTheWire, "the record names the brake that fired");
+        assertEquals(outcome.stopReason(), onTheWire, "one run, one truth");
+        assertFalse(outcome.exitOk());
+    }
+
+    @Test
     void anInjectedCancelSignalAbortsARunningTurnFromTheOutside(@TempDir Path cwd) throws Exception {
         // The seam block 2 leans on: a fleet node injects its own CancelSignal
         // so a hub ctl{stop} can end a RUNNING turn. The provider parks in its
