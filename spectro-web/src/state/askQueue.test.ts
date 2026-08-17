@@ -145,3 +145,28 @@ describe("reduce — the pending question (card 265)", () => {
     expect(state.pendingPermissions.map((p) => p.callId)).toEqual(["c9"]);
   });
 });
+
+describe("the foreign tool name is never queued (card 265, criterion 8)", () => {
+  it("an imported AskUserQuestion call is not a question for THIS person", () => {
+    // Measured against a real Claude Code transcript on 2026-08-17: the imported
+    // input is byte-for-byte the shape this reducer reads, because that shape IS
+    // the importer's and we adopted it deliberately. So shape cannot tell the two
+    // apart — the NAME has to. Without this, the only things standing between an
+    // imported decision and a live answer button are normalizeReplay and the
+    // tool_result clear, and each of those is one edit away from a transcript
+    // that was interrupted mid-question.
+    const foreign = reduce(initialState, {
+      type: "tool_call",
+      agentId: "main",
+      callId: "imported-1",
+      name: "AskUserQuestion",
+      input: askInput,
+      ts: 1,
+    });
+    expect(foreign.pendingAsks).toEqual([]);
+  });
+
+  it("and our own name still is", () => {
+    expect(reduce(initialState, toolCall).pendingAsks).toHaveLength(1);
+  });
+});

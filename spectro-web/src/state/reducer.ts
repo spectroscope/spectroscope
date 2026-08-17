@@ -411,10 +411,24 @@ function askQuestionsOf(input: unknown): AskedQuestionWire[] | null {
  * @param queue   the current pending questions
  * @param callId  the call the question belongs to
  * @param agentId the asking agent
+ * @param name    the tool's wire name — only our own ask ever queues
  * @param input   the call's model-supplied input
  * @return the queue, unchanged unless this call added a question
  */
-function queueAsk(queue: PendingAsk[], callId: string, agentId: string, input: unknown): PendingAsk[] {
+function queueAsk(
+  queue: PendingAsk[],
+  callId: string,
+  agentId: string,
+  name: string,
+  input: unknown,
+): PendingAsk[] {
+  // OUR tool only. The input shape cannot tell a native question from an
+  // imported one — it is the importer's shape, adopted on purpose — so the name
+  // is the only thing that can. Measured against a real Claude Code transcript
+  // on 2026-08-17: its AskUserQuestion call carries exactly this shape, and
+  // without this line it queued as a live question for the person reading
+  // somebody else's already-answered decision.
+  if (name !== ASK_TOOL) return queue;
   if (queue.some((a) => a.callId === callId)) return queue;
   const questions = askQuestionsOf(input);
   if (questions === null) return queue;
@@ -857,7 +871,7 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
           // parks, so the browser holds the question even if question_asked is
           // dropped or comes from a server this build has never heard of. A run
           // parked behind a bar nobody drew looks like a run that hung.
-          pendingAsks: queueAsk(state.pendingAsks, event.callId, event.agentId, event.input),
+          pendingAsks: queueAsk(state.pendingAsks, event.callId, event.agentId, event.name, event.input),
         },
         { kind: "tool", callId: card.callId },
       );
