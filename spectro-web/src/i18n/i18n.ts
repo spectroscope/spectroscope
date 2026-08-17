@@ -2010,6 +2010,19 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "set.saved": { de: "✓ gespeichert", en: "✓ saved" },
   "set.title": { de: "Einstellungen", en: "Settings" },
+  // Card 256: the rooms the settings stand in. Reached only as
+  // `set.tab.${SettingsTab}` from settingsTabs.ts, so a seventh room added
+  // without its two words would print the bare key across the top of the panel.
+  // Room names, not sentences: the row may not wrap, and it carries six of them.
+  "set.tabs": { de: "Einstellungs-Bereiche", en: "Settings sections" },
+  "set.tab.general": { de: "Allgemein", en: "General" },
+  "set.tab.models": { de: "Modelle", en: "Models" },
+  "set.tab.tools": { de: "Werkzeuge", en: "Tools" },
+  // The protocol's own name in both languages — translating it would invent a
+  // word for something the ecosystem calls MCP.
+  "set.tab.mcp": { de: "MCP", en: "MCP" },
+  "set.tab.permissions": { de: "Freigaben", en: "Permissions" },
+  "set.tab.system": { de: "System", en: "System" },
   "set.secDesign": { de: "Design", en: "Design" },
   "set.secLanguage": { de: "Sprache", en: "Language" },
   "set.secSession": { de: "Session-Standards", en: "Session defaults" },
