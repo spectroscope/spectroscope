@@ -49,6 +49,29 @@ public final class ShellCommand {
     }
 
     /**
+     * Lays the tool environment into a spawn's map: the deliberate PATH first,
+     * the caller's entries over it.
+     *
+     * <p>This is the one place the agent's shells get their PATH, so it is where
+     * card 251's policy lands — see {@link ToolPath} for what it adds and what
+     * it refuses to guess. It lives in the JVM rather than in the desktop shell
+     * on purpose: the Electron app, {@code spectro run} and a launchd service
+     * all spawn tools through here, so one implementation cannot diverge between
+     * a Finder launch and a terminal launch the way two would.
+     *
+     * <p>The order is load-bearing in both directions. The policy has to overwrite
+     * an inherited PATH (that is the defect), and a caller that passes PATH
+     * explicitly — a hook config, a test — has to overwrite the policy.
+     *
+     * @param environment the builder's live environment map, mutated in place
+     * @param extraEnv    the caller's entries, applied last so they win
+     */
+    static void applyEnvironment(Map<String, String> environment, Map<String, String> extraEnv) {
+        environment.put("PATH", ToolPath.resolve().path());
+        environment.putAll(extraEnv);
+    }
+
+    /**
      * Runs one command via {@code /bin/sh -c} and blocks until exit, timeout or
      * cancellation. Output (stdout+stderr merged) is drained concurrently and
      * clipped to the caller's cap; every failure mode comes back as data in the
@@ -70,7 +93,7 @@ public final class ShellCommand {
             ProcessBuilder builder = new ProcessBuilder("/bin/sh", "-c", command)
                     .directory(cwd.toFile())
                     .redirectErrorStream(true);
-            builder.environment().putAll(extraEnv);
+            applyEnvironment(builder.environment(), extraEnv);
             process = builder.start();
             Process running = process;
             deregister = signal.onCancel(running::destroyForcibly);
