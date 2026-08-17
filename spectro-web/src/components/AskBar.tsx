@@ -25,10 +25,22 @@ import { useLang } from "../state/lang";
  *  without a DOM — and consulted by the handler below, so it cannot rot into a
  *  decoration beside a handler that does something else.
  *
- *  @param key the KeyboardEvent key
- *  @return "submit" for Enter; "ignore" for everything else, Escape included */
-export function askKeyAction(key: string): "submit" | "ignore" {
-  return key === "Enter" ? "submit" : "ignore";
+ *  The handler lives on the SECTION, so every keystroke on the bar reaches it,
+ *  including one meant for a button that has focus. That is why WHERE the key was
+ *  pressed is half the rule: on a button, Enter is the button's own — it is the
+ *  keystroke the browser turns into a click, and the bar cancelling it once meant
+ *  an option could not be picked with the keyboard and Enter on Skip sent the
+ *  typed text as the answer.
+ *
+ *  @param key       the KeyboardEvent key
+ *  @param targetTag tag name of the element the key was pressed on (any case;
+ *                   "" when the event carries no element)
+ *  @return "submit" for Enter on the bar itself; "button" for Enter on a button,
+ *          which the bar must hand back untouched; "ignore" for everything else,
+ *          Escape included */
+export function askKeyAction(key: string, targetTag: string): "submit" | "button" | "ignore" {
+  if (key !== "Enter") return "ignore";
+  return targetTag.toLowerCase() === "button" ? "button" : "submit";
 }
 
 export function AskBar(props: {
@@ -82,7 +94,14 @@ export function AskBar(props: {
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-    if (askKeyAction(event.key) !== "submit") return;
+    // The tag off the event, never an instanceof: this runs in the browser and is
+    // reasoned about in a suite with no DOM, and a tag name is the same fact in
+    // both places.
+    const tag = (event.target as { tagName?: string } | null)?.tagName ?? "";
+    if (askKeyAction(event.key, tag) !== "submit") return;
+    // Only the bar's own Enter is cancelled — a form submit or a page scroll.
+    // Doing this for a button would cancel the click the browser was about to
+    // synthesize, which is exactly how picking an option with the keyboard broke.
     event.preventDefault();
     submit();
   };

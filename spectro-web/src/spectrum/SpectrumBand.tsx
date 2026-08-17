@@ -36,6 +36,9 @@ const TICK_SHAPE: Record<TickKind, { w: number; h: number }> = {
   reasoning: { w: 1.8, h: 16 },
   tool: { w: 2.4, h: 18 },
   gate: { w: 3, h: 24 },
+  // A hair narrower than the gate and a hair shorter: the two waits read as
+  // relatives on the band without reading as the same thing.
+  ask: { w: 2.6, h: 22 },
   subagent: { w: 2.4, h: 14 },
   lifecycle: { w: 1.2, h: 26 },
   error: { w: 3, h: 26 },
@@ -47,6 +50,10 @@ export const TICK_COLOR: Record<TickKind, string> = {
   reasoning: "var(--ev-reasoning)",
   tool: "var(--ev-tool)",
   gate: "var(--ev-gate)",
+  // The wait colour, answered or not: a question is only ever about a person,
+  // and it has no verdict a gate's red could stand for. While it is still open
+  // the mark also pulses, which is the same treatment a pending gate gets.
+  ask: "var(--ev-pending)",
   subagent: "var(--ev-subagent)",
   lifecycle: "var(--ev-lifecycle)",
   error: "var(--error)",

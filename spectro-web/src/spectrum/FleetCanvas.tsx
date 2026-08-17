@@ -53,6 +53,7 @@ const TICK_COLOR: Record<TickKind, string> = {
   reasoning: "var(--ev-reasoning)",
   tool: "var(--ev-tool)",
   gate: "var(--ev-gate)",
+  ask: "var(--ev-pending)", // card 265: a person is holding this run
   subagent: "var(--ev-subagent)",
   lifecycle: "var(--ev-lifecycle)",
   error: "var(--error)",
@@ -117,6 +118,9 @@ function SpectralNode({ data }: NodeProps) {
     isGroup ? "fleet-node-card--group" : "",
     d.detail !== "full" ? `fleet-node-card--${d.detail}` : "",
     node.pendingGate ? "fleet-node-card--gate pulse" : "",
+    // Card 265: the fleet answer to "which one is waiting for ME". Its own class
+    // and its own colour, because a question is not a gate.
+    node.pendingAsk ? "fleet-node-card--ask pulse" : "",
   ]
     .filter(Boolean)
     .join(" ");

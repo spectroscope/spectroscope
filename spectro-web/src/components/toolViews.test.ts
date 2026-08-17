@@ -698,6 +698,61 @@ describe("describeTool — the question", () => {
     ).toBe("generic");
   });
 
+  it("finds the answer to a question the model padded with whitespace", () => {
+    // The review's third finding, and the one a person hits tonight. Our own
+    // tool STRIPS the question before it publishes it and before it writes the
+    // answer anchor (AskUserQuestionTool: `entry.path("question").asText("")
+    // .strip()`), because a 500-char bound and an "is it blank" check both have
+    // to measure the real text. The renderer reads the RAW input, and `str()`
+    // does not trim — so a model that ended its question with a newline got a
+    // real answer, recorded in the session file, drawn as UNANSWERED.
+    const padded = " Which store should the importer write to?\n";
+    const v = describeTool(
+      "ask_user_question",
+      one(padded, [{ label: "Postgres" }, { label: "SQLite" }]),
+      'The user answered: "Which store should the importer write to?"="Postgres".' +
+        " Continue with that answer.",
+      false,
+    );
+    if (v.kind !== "question") throw new Error("kind");
+    expect(v.questions[0].answered).toBe("option");
+    expect(v.questions[0].answer).toBe("Postgres");
+    expect(v.questions[0].options.map((o) => o.chosen)).toEqual([true, false]);
+  });
+
+  it("marks the chosen option when the model padded the option label", () => {
+    // The same strip, one field over: the tool strips every label too, so the
+    // answer names the trimmed one and the renderer compared it against the
+    // padded original. An answered question then rendered as the person's own
+    // words with nothing marked.
+    const v = describeTool(
+      "ask_user_question",
+      one("Which store?", [{ label: " Postgres\n" }, { label: "SQLite" }]),
+      'The user answered: "Which store?"="Postgres". Continue with that answer.',
+      false,
+    );
+    if (v.kind !== "question") throw new Error("kind");
+    expect(v.questions[0].answered).toBe("option");
+    expect(v.questions[0].options.map((o) => o.chosen)).toEqual([true, false]);
+  });
+
+  it("still reads an imported answer whose anchor carries the padding", () => {
+    // The other end of the same fix, and why the trim is a FALLBACK rather than
+    // the only rule: a foreign transcript writes its own prose, and Claude Code
+    // quotes the question exactly as the model sent it. Trimming unconditionally
+    // here would have swapped one broken case for another.
+    const padded = " Which store? ";
+    const v = describeTool(
+      "AskUserQuestion",
+      one(padded, [{ label: "Postgres" }, { label: "SQLite" }]),
+      `Your questions have been answered: "${padded}"="SQLite". You can now continue with these answers in mind.`,
+      false,
+    );
+    if (v.kind !== "question") throw new Error("kind");
+    expect(v.questions[0].answered).toBe("option");
+    expect(v.questions[0].options.map((o) => o.chosen)).toEqual([false, true]);
+  });
+
   it("refuses the double-escaped payload the runtime already rejected", () => {
     // __unparsedToolInput carries the model's raw JSON as a STRING because it
     // did not parse. Unwrapping it would lay out a decision nobody was ever

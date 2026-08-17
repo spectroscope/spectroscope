@@ -72,11 +72,18 @@ describe("reduce — the pending question (card 265)", () => {
     expect(state.pendingAsks).toHaveLength(1);
   });
 
-  it("clears the question when the answer arrives, and marks the card", () => {
+  it("clears the question when the answer arrives, and keeps the human wait", () => {
+    // The wait is the ONE thing this event leaves on the card, and the reason is
+    // card 111's split: the tool's durationMs deliberately excludes it, so
+    // without this patch four minutes of standing still are in the session file
+    // and on no surface. The answer itself is NOT copied here — it reaches the
+    // card as the tool's own result prose, the same route an imported question's
+    // answer takes, which is what makes the two read alike. A second copy in
+    // this state was written and never read; it is gone.
     const state = reduceAll(initialState, [toolCall, asked, answered]);
     expect(state.pendingAsks).toHaveLength(0);
-    expect(state.cards["c1"].answers).toEqual(["Postgres"]);
     expect(state.cards["c1"].askWaitMs).toBe(240_000);
+    expect(state.cards["c1"]).not.toHaveProperty("answers");
   });
 
   it("clears the question when the call ends without one", () => {
@@ -98,15 +105,19 @@ describe("reduce — the pending question (card 265)", () => {
     expect(state.pendingAsks).toHaveLength(0);
   });
 
-  it("records a cancelled question without inventing an answer", () => {
+  it("releases a cancelled question without inventing an answer", () => {
+    // The release drops the bar and writes NO answer anywhere: an empty array on
+    // the card would be a person who said nothing, which is a different fact
+    // from nobody saying anything. The card renderer says "not answered" off the
+    // result, which is the only place that knows.
     const state = reduceAll(initialState, [
       toolCall,
       asked,
       { type: "question_answered", callId: "c1", answers: [], cancelled: true, ts: 4 },
     ]);
     expect(state.pendingAsks).toHaveLength(0);
-    expect(state.cards["c1"].answers).toEqual([]);
-    expect(state.cards["c1"].askCancelled).toBe(true);
+    expect(state.cards["c1"]).not.toHaveProperty("answers");
+    expect(state.cards["c1"]).not.toHaveProperty("askCancelled");
   });
 
   it("a replayed archive or import never shows a live question", () => {

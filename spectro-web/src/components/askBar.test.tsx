@@ -51,17 +51,39 @@ const markup = (lang: "de" | "en" = "en"): string => {
 
 describe("askKeyAction — Escape must not answer", () => {
   it("Escape means nothing at all on the ask bar", () => {
-    expect(askKeyAction("Escape")).toBe("ignore");
+    expect(askKeyAction("Escape", "INPUT")).toBe("ignore");
+    expect(askKeyAction("Escape", "BUTTON")).toBe("ignore");
   });
 
   it("Enter submits what is already chosen or typed", () => {
-    expect(askKeyAction("Enter")).toBe("submit");
+    expect(askKeyAction("Enter", "INPUT")).toBe("submit");
   });
 
   it("everything else is ignored", () => {
     for (const key of ["Tab", "a", " ", "ArrowDown", "Backspace"]) {
-      expect(askKeyAction(key)).toBe("ignore");
+      expect(askKeyAction(key, "INPUT")).toBe("ignore");
     }
+  });
+
+  it("Enter on a button belongs to that button, not to the bar", () => {
+    // The review's third finding, and one keystroke away from a wrong answer
+    // going to the model. The handler sits on the SECTION, so Enter pressed on a
+    // focused chip bubbles into it — and `preventDefault()` there cancels the
+    // keydown's default action, which for a button IS the click. So the option
+    // could not be picked with the keyboard at all, and Enter with Skip focused
+    // ran submit(): it sent the words in the text field as the answer instead of
+    // releasing the question. Handing the keystroke back is the whole fix, and
+    // it is a decision, so it is a value this fold returns rather than a branch
+    // hidden in the handler.
+    expect(askKeyAction("Enter", "BUTTON")).toBe("button");
+    expect(askKeyAction("Enter", "button")).toBe("button");
+  });
+
+  it("a keystroke from nowhere is the bar's own", () => {
+    // A synthetic event with no target, and the free-text field: both mean "the
+    // bar", because the only control that owns Enter here is a button.
+    expect(askKeyAction("Enter", "")).toBe("submit");
+    expect(askKeyAction("Enter", "TEXTAREA")).toBe("submit");
   });
 
   it("the permission dialog still denies on Escape, so the contrast is real", () => {
@@ -79,6 +101,21 @@ describe("askKeyAction — Escape must not answer", () => {
     const bar = stripComments(read("./AskBar.tsx", import.meta.url));
     expect(bar).toContain("askKeyAction(");
     expect(bar).not.toContain('"Escape"');
+  });
+
+  it("the handler asks WHERE the keystroke came from, and prevents nothing else", () => {
+    // No DOM in this suite, so the fold above cannot prove the call site passes
+    // the target. Read as ONE statement up to its semicolon (card 247's lesson —
+    // a loose substring finds the word in the neighbouring line): the guard has
+    // to carry the tag it read off the event, and preventDefault has to stay
+    // BEHIND that guard, because in front of it the button's click dies again.
+    const bar = stripComments(read("./AskBar.tsx", import.meta.url));
+    const from = bar.indexOf("askKeyAction(event.key");
+    expect(from).toBeGreaterThan(-1);
+    const statement = bar.slice(from, bar.indexOf(";", from));
+    expect(statement).toContain("tag");
+    expect(statement).toContain('!== "submit"');
+    expect(bar.indexOf("event.preventDefault()")).toBeGreaterThan(from);
   });
 });
 
@@ -182,7 +219,6 @@ describe("the wait, drawn where the tool duration is", () => {
           output: 'The user answered: "Which store?"="Postgres". Continue with that answer.',
           durationMs: 0,
           askWaitMs: 179_448,
-          answers: ["Postgres"],
           startedAt: 1,
         }}
         live={false}

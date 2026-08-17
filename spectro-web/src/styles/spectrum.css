@@ -179,6 +179,18 @@
   padding: 0 var(--sp-1);
   letter-spacing: 0.06em;
 }
+.spectrum-ask {
+  /* The ask flag beside the gate's (card 265). Same violet — this design says
+     "a person is holding it" in --ev-pending everywhere — and its own rule, so
+     the two chips can never be one selector that says one thing. The WORD tells
+     them apart; the colour only says somebody is waiting. */
+  font-size: var(--fs-11);
+  color: var(--ev-pending);
+  border: 1px solid var(--ev-pending);
+  border-radius: var(--radius-chip);
+  padding: 0 var(--sp-1);
+  letter-spacing: 0.06em;
+}
 .spectrum-task {
   font-size: var(--fs-12);
   color: var(--text-dim);

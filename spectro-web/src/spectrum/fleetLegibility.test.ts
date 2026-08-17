@@ -10,6 +10,7 @@ function anode(id: string, over: Partial<FleetGraphNode> = {}): FleetGraphNode {
     epoch: 0,
     state: "working",
     pendingGate: false,
+    pendingAsk: false,
     spawnedBy: null,
     inTokens: 0,
     outTokens: 0,
@@ -152,9 +153,31 @@ describe("collapseFleetGraph — subtree roll-up", () => {
     // absorbed descendants' tokens and pending gate roll into the group
     expect(group.inTokens).toBe(7);
     expect(group.pendingGate).toBe(true);
+    // Card 265: this graph has no question anywhere, so the group says so.
+    expect(group.pendingAsk).toBe(false);
     // the w->t spawn edges are internal to the group and disappear; only panel->group remains
     expect(out.edges).toHaveLength(1);
     expect(out.edges[0]).toMatchObject({ source: "panel", target: group.id, kind: "spawn" });
+  });
+
+  it("rolls a parked QUESTION up into the group the same way (card 265)", () => {
+    // A monitor that folds five agents into one card must not swallow the one
+    // fact that stops the fleet. "One of these is waiting for you" is exactly
+    // what the collapsed card exists to still say — the same rule the gate flag
+    // already had, and the reason the two flags travel side by side.
+    const graph: FleetGraph = {
+      nodes: [
+        anode("panel", { role: "conductor" }),
+        anode("w1", { role: "worker", spawnedBy: "panel" }),
+        anode("w2", { role: "worker", spawnedBy: "panel", pendingAsk: true }),
+        anode("w3", { role: "worker", spawnedBy: "panel" }),
+      ],
+      edges: [spawn("panel", "w1"), spawn("panel", "w2"), spawn("panel", "w3")],
+    };
+
+    const group = collapseFleetGraph(graph, { minGroup: 3 }).nodes.find((n) => n.kind === "group")!;
+    expect(group.pendingAsk).toBe(true);
+    expect(group.pendingGate).toBe(false);
   });
 
   it("keeps a nested fan-out that forms its own group as a separate node", () => {

@@ -34,6 +34,10 @@ export interface LegibleNode {
   epoch: number;
   state: FleetGraphNode["state"];
   pendingGate: boolean;
+  /** Card 265: true when this agent — or, in a group, ANY agent folded into it —
+   *  is parked on a question. A monitor that hides the one node the fleet is
+   *  waiting on behind a collapsed card has hidden the only thing worth doing. */
+  pendingAsk: boolean;
   spawnedBy: string | null;
   inTokens: number;
   outTokens: number;
@@ -85,6 +89,7 @@ function asAgent(n: FleetGraphNode): LegibleNode {
     epoch: n.epoch,
     state: n.state,
     pendingGate: n.pendingGate,
+    pendingAsk: n.pendingAsk,
     spawnedBy: n.spawnedBy,
     inTokens: n.inTokens,
     outTokens: n.outTokens,
@@ -99,6 +104,7 @@ function absorbInto(group: LegibleNode, n: FleetGraphNode): void {
   group.epoch = Math.max(group.epoch, n.epoch);
   group.state = higherState(group.state, n.state);
   group.pendingGate = group.pendingGate || n.pendingGate;
+  group.pendingAsk = group.pendingAsk || n.pendingAsk;
   group.inTokens += n.inTokens;
   group.outTokens += n.outTokens;
   if (n.firstTs !== null && (group.firstTs === null || n.firstTs < group.firstTs)) group.firstTs = n.firstTs;
@@ -184,6 +190,7 @@ export function collapseFleetGraph(graph: FleetGraph, opts: CollapseOpts = {}): 
       epoch: 0,
       state: "idle",
       pendingGate: false,
+      pendingAsk: false,
       spawnedBy: first.spawnedBy,
       inTokens: 0,
       outTokens: 0,

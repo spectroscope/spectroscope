@@ -654,6 +654,11 @@ export const dict: Record<string, { de: string; en: string }> = {
   },
   "sp.openTrace": { de: "Lane {id} im Trace öffnen", en: "Open lane {id} in the trace" },
   "sp.gateOpen": { de: "gate offen", en: "gate open" },
+  // Card 265 on the fleet surface: the lane says WHOSE turn it is, in words, so
+  // the violet is never the only thing carrying it. Lower case like every other
+  // lane chip, and it says "you" — the whole point of the flag is that this one
+  // lane of five cannot move without the reader.
+  "sp.askOpen": { de: "wartet auf dich", en: "waiting on you" },
   "sp.noTask": { de: "(kein Task angekündigt)", en: "(no task announced)" },
   // What THIS view hides, counted against what is visible rather than against
   // the whole stream: on a sparse stretch the number falls to zero and the line

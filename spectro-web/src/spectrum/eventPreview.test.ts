@@ -102,6 +102,42 @@ describe("eventPreview — a hovered event's type + mini preview", () => {
     expect(out.detail.endsWith("…")).toBe(true); // truncation marker
   });
 
+  it("says what was asked, and what came back (card 265)", () => {
+    // The ask tick is new on the band, and a mark you can hover into an empty
+    // popup is a mark that leads nowhere: the question IS the reason the lane
+    // stopped, so it is the preview.
+    const asked = eventPreview({
+      type: "question_asked",
+      agentId: "main",
+      callId: "q1",
+      questions: [{ question: "Which store?", multiSelect: false, options: [{ label: "Postgres" }] }],
+      ts: 1,
+    } as unknown as RunEvent);
+    expect(asked.type).toBe("question_asked");
+    expect(asked.detail).toContain("Which store?");
+
+    const answered = eventPreview({
+      type: "question_answered",
+      callId: "q1",
+      answers: ["Postgres"],
+      cancelled: false,
+      waitMs: 179_448,
+      ts: 2,
+    } as unknown as RunEvent);
+    expect(answered.detail).toContain("Postgres");
+
+    // A release says so in words rather than showing an empty answer, which
+    // would read as a person who said nothing.
+    const released = eventPreview({
+      type: "question_answered",
+      callId: "q1",
+      answers: [],
+      cancelled: true,
+      ts: 3,
+    } as unknown as RunEvent);
+    expect(released.detail).toContain("unanswered");
+  });
+
   it("falls back to the bare type for an unknown/marklessly-typed event", () => {
     const unknown = { type: "future_event", agentId: "main", ts: 1 } as unknown as RunEvent;
     expect(eventPreview(unknown)).toEqual({ type: "future_event", detail: "" });

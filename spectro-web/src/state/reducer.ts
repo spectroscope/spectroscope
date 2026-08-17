@@ -26,13 +26,15 @@ export interface ToolCard {
   images?: UserAttachment[];
   durationMs?: number;
   permission?: "pending" | "allowed" | "denied";
-  /** What the person answered a question with (card 265) — one entry per question
-   *  asked, empty when it was released without an answer. Absent on every card
-   *  that is not an ask. */
-  answers?: string[];
-  /** True when the question was released rather than answered: a cancelled run, a
-   *  closed socket, an unattended mode, a skip. Never a fabricated reply. */
-  askCancelled?: boolean;
+  /* The ANSWER is deliberately not a field here. It reaches the card the same
+     way an imported question's answer does — as the prose the tool returns,
+     which `describeTool` reads by its `"<question>"="<answer>"` anchor — and that
+     is the whole reason a native ask renders identically to a foreign one. A
+     second copy in this model was written by the reducer and read by nobody for
+     one review cycle; a state field with no reader is the dead fold the card's
+     own lesson warns about, so it is gone rather than duplicated. A released
+     question needs no flag either: with no anchor in the result the renderer
+     already reports "not answered" (`answerFace`, ToolViewBody.tsx). */
   /** How long the run stood parked on the person. Kept APART from durationMs,
    *  which records the tool's own work — card 111's rule, one surface further. */
   askWaitMs?: number;
@@ -916,9 +918,11 @@ function applyEvent(state: UiState, event: RunEvent): UiState {
     case "question_answered": {
       // The answer patches the card and drops the question off the queue. A
       // cancelled one records the release — never a fabricated answer.
+      // Only the WAIT is patched onto the card: it is the one number the event
+      // carries that no other surface has (the tool's own durationMs excludes
+      // it by design — card 111's split). The answer itself travels in the
+      // result prose, which the card renderer already reads.
       const next = patchCard(state, event.callId, {
-        answers: event.answers,
-        askCancelled: event.cancelled,
         ...(event.waitMs !== undefined ? { askWaitMs: event.waitMs } : {}),
       });
       return {

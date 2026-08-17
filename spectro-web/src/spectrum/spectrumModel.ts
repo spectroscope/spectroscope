@@ -11,6 +11,8 @@ export type TickKind =
   | "reasoning" // thinking_delta        — violet ("the line you follow")
   | "tool" // tool_call/result      — amber
   | "gate" // permission events     — red (violet while pending)
+  | "ask" // question asked/answered — violet: the only mark that means a
+  //                                  PERSON is holding the run (card 265)
   | "subagent" // spawn + agent_message — ocean
   | "lifecycle" // run/turn boundaries   — faint
   | "error"; // error / failed result — red, full height
@@ -22,7 +24,8 @@ export interface LaneTick {
   kind: TickKind;
   /** Index of the source event (stable render key, trace hand-off). */
   seq: number;
-  /** Gate request ticks: true while no decision has arrived yet. */
+  /** Request ticks (a gate, or an ask): true while no decision or answer has
+   *  arrived yet. */
   pending?: boolean;
   /** Gate decision ticks: the recorded outcome. */
   allowed?: boolean;
@@ -70,6 +73,12 @@ export interface Lane {
   lastStatus: string | null;
   /** True while a permission request on this lane awaits its decision. */
   pendingGate: boolean;
+  /** True while a QUESTION on this lane awaits an answer (card 265). Its own
+   *  flag and not the gate's: a gate is a yes/no on a side effect and has a
+   *  verdict to report, a question has none, and the two are answered by two
+   *  different surfaces. In fleet mode this is the flag that says which of five
+   *  lanes is waiting for you. */
+  pendingAsk: boolean;
   /** Every mark the stream produced, sorted by x with seq breaking a tie.
    *  Sorted is a PRECONDITION: the slicer reaches for the visible range with a
    *  binary search. How many of these reach the screen is a question for the
@@ -142,6 +151,9 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
   const runToAgent = new Map<string, string>();
   const callToAgent = new Map<string, string>();
   const undecided = new Set<string>();
+  /** callIds of questions no answer has arrived for (card 265). Separate from
+   *  `undecided`, so a parked question never lights the gate flag. */
+  const unanswered = new Set<string>();
   let rootRunId: string | null = null;
   let running = false;
 
@@ -157,6 +169,7 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
           state: "submitted",
           lastStatus: null,
           pendingGate: false,
+          pendingAsk: false,
           inTokens: 0,
           outTokens: 0,
           thinking: "",
@@ -237,6 +250,26 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
         undecided.delete(event.callId);
         if (agent !== undefined) {
           tick(agent, { ts, kind: "gate", seq, callId: event.callId, allowed: event.allowed });
+        }
+        break;
+      }
+      // Card 265, the concept's leg 26. The tool_call for the ask already stamped
+      // this lane; these two marks say WHY it stands still and for how long.
+      case "question_asked": {
+        callToAgent.set(event.callId, event.agentId);
+        unanswered.add(event.callId);
+        tick(event.agentId, { ts, kind: "ask", seq, callId: event.callId, isRequest: true });
+        break;
+      }
+      case "question_answered": {
+        // Answered and RELEASED both land here: either way the run is moving
+        // again, so the lane must stop claiming it waits. Whether an answer came
+        // is the transcript's business (`cancelled` travels on the event), not
+        // this flag's.
+        const agent = callToAgent.get(event.callId);
+        unanswered.delete(event.callId);
+        if (agent !== undefined) {
+          tick(agent, { ts, kind: "ask", seq, callId: event.callId });
         }
         break;
       }
@@ -330,9 +363,15 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
     // A request whose decision never arrived stays pending; everything else
     // reflects the recorded outcome.
     for (const t of ticks) {
-      if (t.isRequest === true) t.pending = t.callId !== undefined && undecided.has(t.callId);
+      if (t.isRequest !== true) continue;
+      const open = t.kind === "ask" ? unanswered : undecided;
+      t.pending = t.callId !== undefined && open.has(t.callId);
     }
-    const pendingGate = ticks.some((t) => t.pending === true);
+    // Two waits, two flags, each read off its OWN marks: one boolean for both
+    // would raise the permission bar for a question and the question bar for a
+    // permission.
+    const pendingGate = ticks.some((t) => t.kind === "gate" && t.pending === true);
+    const pendingAsk = ticks.some((t) => t.kind === "ask" && t.pending === true);
     const marks: LaneTick[] = ticks.map((t) => {
       const raw = (t.ts - t0) / span;
       return {
@@ -365,7 +404,7 @@ export function buildSpectrum(events: RunEvent[]): SpectrumModel {
         };
       })
       .sort((p, q) => p.x - q.x || p.seq - q.seq);
-    return { ...lane, pendingGate, ticks: marks, wire: exchanges };
+    return { ...lane, pendingGate, pendingAsk, ticks: marks, wire: exchanges };
   });
 
   return { lanes, t0, t1, running, totalEvents: events.length };

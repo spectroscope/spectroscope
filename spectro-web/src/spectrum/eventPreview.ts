@@ -85,6 +85,15 @@ export function eventPreview(event: RunEvent): EventPreview {
     case "plan":
       detail = `${event.steps.length} step(s)`;
       break;
+    // Card 265: the question is why the lane stopped, so it is the preview.
+    case "question_asked":
+      detail = event.questions.map((q) => q.question).join(" · ");
+      break;
+    case "question_answered":
+      // A release is stated in words. An empty answer list drawn as an answer
+      // would read as a person who said nothing, which is a different fact.
+      detail = event.cancelled ? "unanswered (released)" : event.answers.join(", ");
+      break;
     default:
       detail = ""; // an unknown/future wire type: the bare type, no preview
   }

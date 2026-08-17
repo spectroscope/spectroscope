@@ -114,6 +114,71 @@ describe("buildFleetGraph", () => {
     expect(g.nodes.find((n) => n.id === "worker-2")!.pendingGate).toBe(false);
   });
 
+  // Card 265, the concept's §3.5 leg: "a pendingAsk lane flag beside the existing
+  // gate flag, and an ask tick. In fleet mode that is the view that sells the
+  // feature — five agents on the bus, one is waiting for you." The gate twin has
+  // been on this node since the bus shipped; the ask arrived without it, so on the
+  // one surface where a parked run is worth seeing it was invisible.
+  const asked: FleetModel = {
+    ...model,
+    events: [
+      ...model.events,
+      {
+        type: "question_asked",
+        agentId: "worker-2",
+        callId: "q1",
+        questions: [{ question: "Which store?", multiSelect: false, options: [{ label: "Postgres" }] }],
+        ts: 9,
+      } as unknown as RunEvent,
+    ],
+  };
+
+  it("marks the agent a person is holding, apart from a gate", () => {
+    const g = buildFleetGraph(asked);
+    const w2 = g.nodes.find((n) => n.id === "worker-2")!;
+    expect(w2.pendingAsk).toBe(true);
+    // Two different waits: a gate is a yes/no on a side effect, a question has no
+    // verdict at all. One flag standing for both would put the wrong bar on the
+    // wrong node.
+    expect(g.nodes.find((n) => n.id === "worker-1")!.pendingAsk).toBe(false);
+  });
+
+  it("clears the ask once the answer lands", () => {
+    const answered: FleetModel = {
+      ...asked,
+      events: [
+        ...asked.events,
+        {
+          type: "question_answered",
+          callId: "q1",
+          answers: ["Postgres"],
+          cancelled: false,
+          ts: 10,
+        } as unknown as RunEvent,
+      ],
+    };
+    expect(buildFleetGraph(answered).nodes.find((n) => n.id === "worker-2")!.pendingAsk).toBe(false);
+  });
+
+  it("clears the ask when it was released without an answer", () => {
+    // A skip, a closed socket, an unattended mode: released, never answered. The
+    // run is moving again either way, so the lane must stop claiming it waits.
+    const released: FleetModel = {
+      ...asked,
+      events: [
+        ...asked.events,
+        {
+          type: "question_answered",
+          callId: "q1",
+          answers: [],
+          cancelled: true,
+          ts: 10,
+        } as unknown as RunEvent,
+      ],
+    };
+    expect(buildFleetGraph(released).nodes.find((n) => n.id === "worker-2")!.pendingAsk).toBe(false);
+  });
+
   it("is empty for an empty fleet", () => {
     const g = buildFleetGraph({ roster: [], events: [], frames: [], epochBySender: {} });
     expect(g.nodes).toEqual([]);

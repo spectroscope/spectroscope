@@ -24,6 +24,11 @@ export interface FleetGraphNode {
   state: "idle" | "working" | "completed" | "failed";
   /** True while one of this agent's tool calls awaits a permission decision. */
   pendingGate: boolean;
+  /** True while one of this agent's questions awaits an answer (card 265). Its
+   *  own flag beside the gate's: five agents on the bus and one of them waiting
+   *  for YOU is the picture this view exists for, and a gate is a different wait
+   *  with a different answer. */
+  pendingAsk: boolean;
   /** The agent that spawned it (from a spawn payload), or null for a root. */
   spawnedBy: string | null;
   inTokens: number;
@@ -58,6 +63,7 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
         epoch: model.epochBySender[id] ?? 0,
         state: "idle",
         pendingGate: false,
+        pendingAsk: false,
         spawnedBy: null,
         inTokens: 0,
         outTokens: 0,
@@ -89,6 +95,10 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
 
   const undecided = new Set<string>();
   const gateAgent = new Map<string, string>();
+  // The question twin of the pair above (card 265). Two sets, because a parked
+  // question must never light the gate's flag on the canvas.
+  const unanswered = new Set<string>();
+  const askAgent = new Map<string, string>();
 
   // Every event stamps its ACTOR's activity window: the agentId it carries, or
   // the sender of a message (the receiver hasn't acted yet — its own events
@@ -138,6 +148,16 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
         undecided.delete(event.callId);
         break;
       }
+      case "question_asked": {
+        unanswered.add(event.callId);
+        askAgent.set(event.callId, event.agentId);
+        break;
+      }
+      case "question_answered": {
+        // Answered or released — either way the run moves again.
+        unanswered.delete(event.callId);
+        break;
+      }
       case "usage": {
         const node = ensure(event.agentId);
         node.inTokens += event.inputTokens;
@@ -152,6 +172,11 @@ export function buildFleetGraph(model: FleetModel): FleetGraph {
   for (const callId of undecided) {
     const agentId = gateAgent.get(callId);
     if (agentId !== undefined) ensure(agentId).pendingGate = true;
+  }
+
+  for (const callId of unanswered) {
+    const agentId = askAgent.get(callId);
+    if (agentId !== undefined) ensure(agentId).pendingAsk = true;
   }
 
   return { nodes: [...nodes.values()], edges };

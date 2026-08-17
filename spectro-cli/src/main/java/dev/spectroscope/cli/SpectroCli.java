@@ -191,9 +191,8 @@ public final class SpectroCli implements Runnable {
      */
     @Override
     public void run() {
-        projectDir = Path.of(System.getProperty("user.dir"));
         SpectroConfig.ensureSeeded(System.getenv()); // first boot: materialize the env base once
-        config = SpectroConfig.load(cliOverrides(), projectDir);
+        anchorAt(Path.of(System.getProperty("user.dir")));
         LogSetup.apply(config.logLevel()); // config-effective level onto the root
 
         if ("sessions".equals(subcommand)) {
@@ -211,6 +210,70 @@ public final class SpectroCli implements Runnable {
             return;
         }
 
+        BufferedReader console =
+                new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+        List<ProviderMessage> initialMessages = openInteractiveSession(console);
+        if (initialMessages == null) {
+            System.err.println("Session \"" + resume + "\" not found — \"sessions\" lists all ids.");
+            return;
+        }
+
+        AtomicReference<CancelSignal> currentSignal = new AtomicReference<>();
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            CancelSignal signal = currentSignal.get();
+            if (signal != null) {
+                signal.cancel();
+            }
+            mcp.close(); // tear down MCP server processes/connections on exit
+        }));
+
+        // voice output as a SECOND event consumer next to the CLI renderer —
+        // the core is untouched. --speak overrides the config; /speak on|off toggles at
+        // runtime. The tts block is read HERE (spectro-cli), not in spectro-core, so the
+        // "spectro-core unchanged" acceptance criterion holds.
+        TtsConfig tts = TtsConfig.load();
+        SpeechRenderer speech = new SpeechRenderer(tts.voice(), speak || tts.enabled());
+
+        printBanner(store, initialMessages.size());
+        replLoop(console, speech, currentSignal);
+    }
+
+    /**
+     * The project anchor and the effective configuration for it — {@code run()}'s
+     * first act, and the one every later step reads from.
+     *
+     * <p>Package-private so a test can put a CLI in the state the REPL is in
+     * before it assembles anything, without repeating the two lines it takes to
+     * get there.</p>
+     *
+     * @param project the PROJECT anchor (the process cwd in a real run): config
+     *                layers, skills, MCP and SPECTRO.md all resolve from it
+     */
+    void anchorAt(Path project) {
+        projectDir = project;
+        config = SpectroConfig.load(cliOverrides(), project);
+    }
+
+    /**
+     * Everything between the effective config and the REPL: the session store and
+     * its three records, the workspace, the session-moment config, the two things
+     * this console answers with — the permission broker AND, since card 265, the
+     * asker — the tool belt, and the agent.
+     *
+     * <p>Driven whole by {@link #run()} and package-private on purpose. Card 265's
+     * fence is the REGISTRATION, so "this face carries the ask" can only be read
+     * off the belt the product really builds; card 222's finding F4 was exactly
+     * this hole one file over, where a whole tool family was deleted from the live
+     * assembly and every suite stayed green because each test built its own
+     * belt.</p>
+     *
+     * @param console the shared stdin reader — the permission broker's, the
+     *                asker's and the voice channel's, so nothing else may read
+     *                stdin
+     * @return the resumed history (empty for a fresh session), or {@code null}
+     *         when {@code --resume} names a session that does not exist
+     */
+    List<ProviderMessage> openInteractiveSession(BufferedReader console) {
         // The store first: the auto workspace is keyed by the session id, so a
         // resume lands in the SAME folder it worked in before.
         store = new SessionStore(resume);
@@ -228,13 +291,9 @@ public final class SpectroCli implements Runnable {
             try {
                 initialMessages = SessionStore.loadSession(resume);
             } catch (IOException notFound) {
-                System.err.println("Session \"" + resume + "\" not found — \"sessions\" lists all ids.");
-                return;
+                return null;
             }
         }
-
-        BufferedReader console =
-                new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
 
         // ONE broker for parent and children. The allowlist answers first; only
         // unlisted requests fall through to the human. Either way the decision
@@ -266,25 +325,20 @@ public final class SpectroCli implements Runnable {
 
         registerTools();
         agent = buildAgent(initialMessages);
+        return initialMessages;
+    }
 
-        AtomicReference<CancelSignal> currentSignal = new AtomicReference<>();
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            CancelSignal signal = currentSignal.get();
-            if (signal != null) {
-                signal.cancel();
-            }
-            mcp.close(); // tear down MCP server processes/connections on exit
-        }));
-
-        // voice output as a SECOND event consumer next to the CLI renderer —
-        // the core is untouched. --speak overrides the config; /speak on|off toggles at
-        // runtime. The tts block is read HERE (spectro-cli), not in spectro-core, so the
-        // "spectro-core unchanged" acceptance criterion holds.
-        TtsConfig tts = TtsConfig.load();
-        SpeechRenderer speech = new SpeechRenderer(tts.voice(), speak || tts.enabled());
-
-        printBanner(store, initialMessages.size());
-        replLoop(console, speech, currentSignal);
+    /**
+     * The assembled tool belt — what the model is really advertised.
+     *
+     * <p>The server face has the same reader for the same reason
+     * ({@code SessionConnection.belt()}): a fence made of registration is only
+     * provable by reading the registry the face built.</p>
+     *
+     * @return the live registry, or null before the first assembly
+     */
+    ToolRegistry belt() {
+        return registry;
     }
 
     /** Whether this provider's API key is present in the environment. A local
@@ -441,8 +495,11 @@ public final class SpectroCli implements Runnable {
 
     /** Assembles the tool registry: standard tools, image generation, web
      *  fetch, the plan tool, skills, MCP servers, and the subagent spawn +
-     *  dev tools. Sets the registry/subagents/mcp fields. */
-    private void registerTools() {
+     *  dev tools. Sets the registry/subagents/mcp fields.
+     *
+     *  <p>Package-private (card 265): the ask's fence lives in here, and the belt
+     *  it produces is the only honest evidence of what this face advertises.</p> */
+    void registerTools() {
         registry = new ToolRegistry();
         StandardTools.all().forEach(registry::register);
         // the provider is created lazily per call — a missing API key only

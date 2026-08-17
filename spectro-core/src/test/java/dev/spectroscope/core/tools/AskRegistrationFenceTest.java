@@ -27,8 +27,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * <p>The structural half is here, in the core: nothing that a headless run, a
  * library lane or a subagent assembles its belt from may carry the tool. The
  * two faces that DO carry it are pinned where they build their belts —
- * {@code SessionAskTest} drives the server's real {@code buildAgentOnce}, and
- * {@code SpectroCliAskerTest} the CLI's own assembly.</p>
+ * {@code dev.spectroscope.server.session.SessionAskTest} drives the server's
+ * real {@code buildAgentOnce}, and {@code dev.spectroscope.cli.SpectroCliAskerTest}
+ * the CLI's own {@code openInteractiveSession}.</p>
+ *
+ * <p>Only the first of those two was true until 2026-08-17: this javadoc named a
+ * CLI test that did not exist, and the whole registration block could be deleted
+ * from {@code SpectroCli} with the entire Java gate staying green — the review
+ * found the hole by grepping for the name written here and getting nothing. A
+ * cross-reference in a comment is checked by nobody, so both are spelled as full
+ * class paths: one grep says whether they are still there.</p>
  */
 class AskRegistrationFenceTest {
 
