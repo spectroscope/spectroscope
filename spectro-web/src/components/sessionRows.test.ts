@@ -50,6 +50,12 @@ describe("sessionSignal", () => {
     expect(sessionSignal(session({ stopReason: "aborted" })).outcome).toBe("cut");
     expect(sessionSignal(session({ stopReason: "max_turns" })).outcome).toBe("cut");
     expect(sessionSignal(session({ stopReason: "max_tokens" })).outcome).toBe("cut");
+    // Card 264, fix pass: this glyph is a reader the card's AC 3 never named. It
+    // needs no change — the fall-through already reads an unfamiliar reason as a
+    // cut — but "indifferent by construction" is a claim about behaviour, and an
+    // abandoned run showing the clean glyph in the sidebar is the exact failure
+    // the card exists to end.
+    expect(sessionSignal(session({ stopReason: "unfinished" })).outcome).toBe("cut");
   });
 
   it("says open when no run_end closed the file, and never guesses clean", () => {

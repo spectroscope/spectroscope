@@ -234,6 +234,53 @@ class AgentPlanVerdictTest {
                 "how it stopped is the more urgent fact, and the verdict must not eat it");
     }
 
+    // ── the exit STATES the verdict, and that is pinned (fix pass) ──────────
+
+    /**
+     * The verdict of a run whose plan is missing or complete cannot ride the
+     * wire — both keep {@code end_turn} on purpose — so the loop says it in its
+     * own log, and until this test the whole "says which of three" of AC 1 was
+     * an unpinned format string: deleting it left every targeted test green.
+     * Records are captured in memory, the way {@code LoggedTest} does it.
+     */
+    @Test
+    void theExitSaysWhichOfTheThreeVerdictsTheRunReached() {
+        assertEquals("plan verdict unfinished (1 of 2 steps open)",
+                verdictLineOf(ScriptedProvider.of(callTurn(planCall("c1", "completed", "pending")), answerTurn())));
+        assertEquals("plan verdict finished (all 2 steps completed)",
+                verdictLineOf(ScriptedProvider.of(callTurn(planCall("c1", "completed", "completed")), answerTurn())));
+        // The house backend's case: end_turn on the wire either way, and the log
+        // is the only place the difference is stated.
+        assertEquals("plan verdict unknown (no plan on record)",
+                verdictLineOf(ScriptedProvider.of(answerTurn())));
+    }
+
+    /** Runs one scripted agent with an in-memory appender on the loop's logger.
+     *  @param provider the scripted turns
+     *  @return the single {@code plan verdict …} line the exit stated */
+    private static String verdictLineOf(LlmProvider provider) {
+        ch.qos.logback.classic.Logger logger =
+                (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(Agent.class);
+        ch.qos.logback.classic.Level before = logger.getLevel();
+        ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> records =
+                new ch.qos.logback.core.read.ListAppender<>();
+        records.start();
+        logger.setLevel(ch.qos.logback.classic.Level.INFO);
+        logger.addAppender(records);
+        try {
+            run(agent(provider, null));
+            List<String> verdicts = records.list.stream()
+                    .map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage)
+                    .filter(line -> line.startsWith("plan verdict "))
+                    .toList();
+            assertEquals(1, verdicts.size(), "exactly one verdict per run, got " + verdicts);
+            return verdicts.getFirst();
+        } finally {
+            logger.detachAppender(records);
+            logger.setLevel(before);
+        }
+    }
+
     @Test
     void theTurnBrakeKeepsSayingMaxTurnsEvenWithStepsOpen() {
         // Whether a braked run counts as completed is the owner's open call on

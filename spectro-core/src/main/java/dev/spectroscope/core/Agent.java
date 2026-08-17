@@ -52,6 +52,10 @@ import java.util.function.Consumer;
  */
 public final class Agent {
 
+    /** One logger for the loop's three operator lines — run start, run end and
+     *  the plan verdict (card 264). Same logger name as before, named once. */
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(Agent.class);
+
     private static final int MAX_TURNS = 15;         // runaway-loop brake
     private static final int DEFAULT_MAX_TOKENS = 32_000;
 
@@ -214,7 +218,7 @@ public final class Agent {
             runLoop(prompt, promptForModel, attachments, signal, emit, agentId);
         } finally {
             // One operator line per run (the JSONL stays the source of truth).
-            org.slf4j.LoggerFactory.getLogger(Agent.class).info("run finished in {} ms",
+            log.info("run finished in {} ms",
                     (System.nanoTime() - startedAtNanos) / 1_000_000);
             org.slf4j.MDC.remove("agentId");
         }
@@ -246,8 +250,7 @@ public final class Agent {
         }
         emit.accept(new RunStart(runId, agentId, options.parentId(), prompt,
                 providerLabel, options.provider().modelName(), attachments, now()));
-        org.slf4j.LoggerFactory.getLogger(Agent.class).info(
-                "run {} started (provider {})", runId, providerLabel);
+        log.info("run {} started (provider {})", runId, providerLabel);
         // images BEFORE the text — the same order the Anthropic mapping expects.
         List<ProviderContent> firstUserContent = new ArrayList<>();
         if (attachments != null) {
@@ -668,15 +671,22 @@ public final class Agent {
      * of a {@code plan} event in the same file, which is a fact the record
      * already carries and every surface can read.</p>
      *
+     * <p>The sentence comes from {@link PlanVerdict#report(RunEvent.Plan)} and
+     * is pinned by {@code AgentPlanVerdictTest.theExitSaysWhichOfTheThreeVerdictsTheRunReached}
+     * — an in-memory appender, all three verdicts. It was an unpinned format
+     * string until 2026-08-17: deleting the line left the whole targeted suite
+     * green, which made "the harness says which of three" a claim rather than a
+     * behaviour. The same sentence's second half ({@link
+     * PlanVerdict#detail(RunEvent.Plan)}) is what the CLI's run-end line and the
+     * HTML export append, so the three faces cannot drift.</p>
+     *
      * @param stopReason the wire name the exit would have written
      * @return the stop reason to record, displaced only for an abandoned plan
      */
     private String verdictStop(String stopReason) {
         RunEvent.Plan ledger = lastPlan;
-        PlanVerdict verdict = PlanVerdict.of(ledger);
-        org.slf4j.LoggerFactory.getLogger(Agent.class).info("plan verdict {} ({} of {} steps open)",
-                verdict.wireName(), PlanVerdict.openSteps(ledger), PlanVerdict.totalSteps(ledger));
-        return PlanVerdict.stopReasonFor(stopReason, verdict);
+        log.info("plan verdict {}", PlanVerdict.report(ledger));
+        return PlanVerdict.stopReasonFor(stopReason, PlanVerdict.of(ledger));
     }
 
     /** What a cancelled run records: the canceller's own word when it gave one

@@ -32,6 +32,26 @@ import java.util.regex.Pattern;
  */
 public final class SpeechRenderer implements AutoCloseable {
 
+    /**
+     * The stop reasons that mean the run was cut short from outside — playback
+     * dies and the buffer is dropped, because the half-sentence in it was never
+     * finished (card 264, fix pass).
+     *
+     * <p>{@code aborted} is Ctrl+C and the stop button. {@code max_turns} is a
+     * brake: either the loop's own runaway ceiling ({@code Agent.MAX_TURNS}) or
+     * {@code spectro run --max-turns N}, which reached this consumer as {@code
+     * aborted} until card 264 gave the headless brake its own name on the wire
+     * (AC 6). That rename silently flipped the behaviour here — the brake began
+     * SPEAKING the leftover buffer — and the two brakes now answer alike, which
+     * is what a brake means for a voice: stop talking.</p>
+     *
+     * <p>Everything else ends the run on its own terms and keeps its last
+     * partial sentence: {@code end_turn}, card 264's {@code unfinished} (the
+     * model DID answer, it just left its plan open), {@code max_tokens}, and an
+     * {@code error}, whose text so far is the only thing the listener gets.</p>
+     */
+    private static final List<String> CUT_SHORT = List.of("aborted", "max_turns");
+
     /** Synthesis may run at most this many sentences ahead of playback. */
     private static final int MAX_PREPARED = 3;
     private static final String FENCE = "```";
@@ -132,8 +152,9 @@ public final class SpeechRenderer implements AutoCloseable {
                 }
             }
             case RunEnd end -> {
-                // Abort (Ctrl+C): no ghost sentences; otherwise speak the remaining buffer.
-                if ("aborted".equals(end.stopReason())) {
+                // A run that was CUT SHORT: no ghost sentences. A run that ended
+                // on its own terms: speak the remaining buffer.
+                if (CUT_SHORT.contains(end.stopReason())) {
                     stop();
                 } else {
                     synchronized (lock) {

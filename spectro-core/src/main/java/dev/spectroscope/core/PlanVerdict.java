@@ -112,6 +112,65 @@ public enum PlanVerdict {
     }
 
     /**
+     * The verdict as one sentence, for a reader that has nothing else to say —
+     * {@code unfinished (4 of 6 steps open)}, {@code finished (all 6 steps
+     * completed)}, {@code unknown (no plan on record)}.
+     *
+     * <p>Card 264's AC 1 asks the harness to say WHICH of the three a run
+     * reached. Two of the three keep {@code end_turn} on the wire on purpose, so
+     * the sentence is where the difference is stated — and a sentence built by
+     * hand in three places would drift in three directions. It is built here,
+     * once, and pinned in {@code PlanVerdictTest}.</p>
+     *
+     * @param plan the latest plan event of the run, or null when none was written
+     * @return the verdict's wire name with its detail in parentheses
+     */
+    public static String report(RunEvent.Plan plan) {
+        return report(of(plan), openSteps(plan), totalSteps(plan));
+    }
+
+    /**
+     * The same sentence for a reader that already counted.
+     *
+     * @param verdict    what the ledger says
+     * @param openSteps  how many steps are still open
+     * @param totalSteps how many steps the ledger has
+     * @return the verdict's wire name with its detail in parentheses
+     */
+    public static String report(PlanVerdict verdict, int openSteps, int totalSteps) {
+        return verdict.wireName() + " (" + detail(verdict, openSteps, totalSteps) + ")";
+    }
+
+    /**
+     * The detail alone, for a reader that appends it to a line it already has:
+     * the CLI's run-end line and the exported document's foot both put this
+     * behind the stop reason, so neither has to invent its own wording.
+     *
+     * @param plan the latest plan event of the run, or null when none was written
+     * @return {@code 4 of 6 steps open}, {@code all 6 steps completed} or
+     *         {@code no plan on record}
+     */
+    public static String detail(RunEvent.Plan plan) {
+        return detail(of(plan), openSteps(plan), totalSteps(plan));
+    }
+
+    /**
+     * The detail for a reader that already counted.
+     *
+     * @param verdict    what the ledger says
+     * @param openSteps  how many steps are still open
+     * @param totalSteps how many steps the ledger has
+     * @return the detail half of the verdict's sentence
+     */
+    public static String detail(PlanVerdict verdict, int openSteps, int totalSteps) {
+        return switch (verdict) {
+            case UNKNOWN -> "no plan on record";
+            case FINISHED -> "all " + totalSteps + " steps completed";
+            case UNFINISHED -> openSteps + " of " + totalSteps + " steps open";
+        };
+    }
+
+    /**
      * Projects the verdict onto the stop reason the run is about to record.
      *
      * <p><b>Only {@code end_turn} is displaced.</b> It is the single value that

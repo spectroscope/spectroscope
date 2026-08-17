@@ -78,6 +78,10 @@ const LABELS: Record<Lang, Record<string, string>> = {
     pending: "pending",
     totals: "{in} in · {out} out",
     ended: "ended: {reason}",
+    // Card 264: the two cases the reason alone cannot carry — what an abandoned
+    // run left open, and a run nobody can grade because no plan was written.
+    endedOpen: "ended: {reason} · {open} of {total} steps open",
+    endedNoPlan: "ended: {reason} · no plan on record",
     empty: "This session carries no events.",
     theme: "dark",
     lines: "{n} lines",
@@ -158,6 +162,8 @@ const LABELS: Record<Lang, Record<string, string>> = {
     pending: "offen",
     totals: "{in} rein · {out} raus",
     ended: "beendet: {reason}",
+    endedOpen: "beendet: {reason} · {open} von {total} Schritten offen",
+    endedNoPlan: "beendet: {reason} · kein Plan aufgezeichnet",
     empty: "Diese Session trägt keine Events.",
     theme: "dunkel",
     lines: "{n} Zeilen",

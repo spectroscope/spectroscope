@@ -520,4 +520,60 @@ describe("an abandoned run in the exported document", () => {
   it("says it in German too", () => {
     expect(chatToHtml(events, { now: NOW, lang: "de" })).toContain("beendet: unfinished");
   });
+
+  // Fix pass: verbatim was not enough. The archived file is read by somebody who
+  // was not there, and "unfinished" without a count says less than the Plan panel
+  // sitting in the same document — while an ungradable run said nothing at all.
+  it("says how much was left open, in both languages", () => {
+    expect(chatToHtml(events, { now: NOW })).toContain("ended: unfinished · 1 of 2 steps open");
+    expect(chatToHtml(events, { now: NOW, lang: "de" })).toContain(
+      "beendet: unfinished · 1 von 2 Schritten offen",
+    );
+  });
+
+  it("marks the run nobody can grade as exactly that", () => {
+    const noPlan: RunEvent[] = [
+      {
+        type: "run_start",
+        runId: "r1",
+        agentId: "main",
+        prompt: "fix the bug",
+        provider: "lmstudio",
+        ts: T0,
+      },
+      { type: "text_delta", agentId: "main", text: "Done, I think.", ts: T0 + 1 },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T0 + 2 },
+    ];
+    expect(chatToHtml(noPlan, { now: NOW })).toContain("ended: end_turn · no plan on record");
+    expect(chatToHtml(noPlan, { now: NOW, lang: "de" })).toContain(
+      "beendet: end_turn · kein Plan aufgezeichnet",
+    );
+  });
+
+  it("stays silent where the reason and the ledger agree", () => {
+    const finished: RunEvent[] = [
+      {
+        type: "run_start",
+        runId: "r1",
+        agentId: "main",
+        prompt: "fix the bug",
+        provider: "lmstudio",
+        ts: T0,
+      },
+      {
+        type: "plan",
+        agentId: "main",
+        steps: [
+          { text: "write the failing test", status: "completed" },
+          { text: "make it pass", status: "completed" },
+        ],
+        ts: T0 + 1,
+      },
+      { type: "run_end", runId: "r1", stopReason: "end_turn", ts: T0 + 2 },
+    ];
+    const html = chatToHtml(finished, { now: NOW });
+    expect(html).toContain("ended: end_turn");
+    expect(html).not.toContain("steps open");
+    expect(html).not.toContain("no plan on record");
+  });
 });

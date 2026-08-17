@@ -95,6 +95,47 @@ class PlanVerdictTest {
         assertEquals("end_turn", PlanVerdict.stopReasonFor("end_turn", PlanVerdict.UNKNOWN));
     }
 
+    // ── the sentence every reader states (fix pass, verifier finding 1) ────
+
+    /**
+     * The verdict was a fact only inside an slf4j format string: deleting that
+     * one line left the whole suite green, and a reader who wanted to know
+     * which of the three a run reached had to re-derive it. The sentence is a
+     * pure function now, and the three readers that say it out loud
+     * ({@code Agent}'s exit log, the CLI's run-end line, the HTML export) all
+     * call this.
+     */
+    @Test
+    void theVerdictSaysWhichOfTheThreeItIsAndWithWhatCount() {
+        assertEquals("unfinished (4 of 6 steps open)",
+                PlanVerdict.report(plan("completed", "completed", "in_progress", "pending", "pending", "pending")));
+        assertEquals("finished (all 2 steps completed)", PlanVerdict.report(plan("completed", "completed")));
+        assertEquals("unknown (no plan on record)", PlanVerdict.report(null));
+        assertEquals("unknown (no plan on record)",
+                PlanVerdict.report(new RunEvent.Plan("main", List.of(), 1000L)));
+    }
+
+    /**
+     * The half a reader appends to a line it already has — the CLI's run-end
+     * line and the exported document's foot both put this behind the stop
+     * reason, so the two faces cannot drift into two different sentences.
+     */
+    @Test
+    void theDetailIsTheHalfAReaderAppendsToItsOwnLine() {
+        assertEquals("4 of 6 steps open",
+                PlanVerdict.detail(plan("completed", "completed", "in_progress", "pending", "pending", "pending")));
+        assertEquals("all 2 steps completed", PlanVerdict.detail(plan("completed", "completed")));
+        assertEquals("no plan on record", PlanVerdict.detail(null));
+    }
+
+    /** The same sentence from parts, for a reader that already counted. */
+    @Test
+    void theSentenceIsBuiltFromTheVerdictAndTheTwoCounts() {
+        assertEquals("unfinished (1 of 3 steps open)", PlanVerdict.report(PlanVerdict.UNFINISHED, 1, 3));
+        assertEquals("finished (all 3 steps completed)", PlanVerdict.report(PlanVerdict.FINISHED, 0, 3));
+        assertEquals("unknown (no plan on record)", PlanVerdict.report(PlanVerdict.UNKNOWN, 0, 0));
+    }
+
     @Test
     void everyVerdictHasAWireName() {
         assertEquals("finished", PlanVerdict.FINISHED.wireName());

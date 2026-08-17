@@ -13,6 +13,7 @@ import type { AgentInfo, PlanStep, RunSubagents, UiState } from "../state/reduce
 import type { ConnectionStatus } from "../transport/ws";
 import { formatTokens } from "../format";
 import { t } from "../i18n/i18n";
+import { openSteps, planVerdict } from "../state/planVerdict";
 import { useLang } from "../state/lang";
 
 /**
@@ -82,15 +83,26 @@ export function runStatusLine(state: {
   const { running, lastStopReason, plan } = state;
   if (running) return { key: "footer.runActive" };
   if (lastStopReason === null) return { key: "footer.ready" };
-  const open = plan === null ? 0 : plan.filter((step) => step.status !== "completed").length;
-  const abandoned = lastStopReason === "unfinished" || (lastStopReason === "end_turn" && open > 0);
-  if (abandoned && plan !== null) {
-    return { key: "footer.stoppedUnfinished", vars: { open, total: plan.length } };
+  // The rule itself lives in state/planVerdict.ts, because the exported
+  // document's foot reads it too and the two faces must not drift apart.
+  switch (planVerdict(lastStopReason, plan)) {
+    case "unfinished":
+      return {
+        key: "footer.stoppedUnfinished",
+        vars: { open: openSteps(plan), total: plan === null ? 0 : plan.length },
+      };
+    case "unknown":
+      return { key: "footer.readyNoPlan" };
+    case "finished":
+      return { key: "footer.ready" };
+    default:
+      // A brake, a cap, a failure — or a verdict whose ledger this page never
+      // saw (a truncated import): the run stopped, and this line cannot say
+      // how much was left.
+      return lastStopReason === "end_turn"
+        ? { key: "footer.ready" }
+        : { key: "footer.stopped", vars: { r: lastStopReason } };
   }
-  // A verdict whose ledger this page never saw (a truncated import) still says
-  // the run stopped — it just cannot say how much was left.
-  if (lastStopReason !== "end_turn") return { key: "footer.stopped", vars: { r: lastStopReason } };
-  return plan === null ? { key: "footer.readyNoPlan" } : { key: "footer.ready" };
 }
 
 export function UsageFooter(props: { state: UiState; connection: ConnectionStatus }) {
