@@ -118,3 +118,31 @@ describe("the live trace window reaches the screen honestly", () => {
     }
   });
 });
+
+describe("card 246 — the live-trace switch reaches both live seams", () => {
+  it("the socket fold strips before it windows, asking the store", () => {
+    expect(body("onEvents")).toContain(
+      "windowTrace(stripLiveTrace(reduceAll(s, batch), currentLiveTraceWanted()))",
+    );
+  });
+
+  it("the outgoing fold strips by the same rule", () => {
+    expect(body("sendClient")).toContain(
+      "windowTrace(stripLiveTrace(recordOutgoing(s, msg), currentLiveTraceWanted()))",
+    );
+  });
+
+  it("flipping the switch off frees what is already held", () => {
+    // The seams only run on the NEXT frame; the effect runs on the flip.
+    expect(app).toContain("setLive((s) => stripLiveTrace(s, false))");
+  });
+
+  it("the sessions pane is told when the live trace is off — the fleet is not", () => {
+    const main = traceMounts().find((m) => m.includes("llmWireSessionId="));
+    expect(main).toBeDefined();
+    expect(main).toContain("liveTraceOff={replay === null && !liveTraceWanted}");
+    const fleet = traceMounts().find((m) => !m.includes("llmWireSessionId="));
+    expect(fleet).toBeDefined();
+    expect(fleet).not.toContain("liveTraceOff");
+  });
+});

@@ -1493,6 +1493,10 @@ export function TraceView(props: {
    *  coincidence — the reader could not tell whether 5000 was the maximum or
    *  simply where the session ended. Zero, and absent, for anything finite. */
   droppedRows?: number;
+  /** Card 246: true when this is the LIVE record and the operator turned the
+   *  live trace off — the empty state then says so instead of implying the
+   *  session produced nothing. Absent for archives and the fleet pane. */
+  liveTraceOff?: boolean;
   /** Lane hand-off from the Spectrum tab: show only this agent's frames
    *  (frames without an agentId — decisions, run ends — stay visible).
    *  null = all agents. Controlled by App so the pin survives tab switches. */
@@ -2647,7 +2651,9 @@ export function TraceView(props: {
           aria-label={t(lang, "trace.logAria")}
         >
           {entries.length === 0 ? (
-            <p className="trace-empty">{t(lang, "trace.empty")}</p>
+            <p className="trace-empty">
+              {t(lang, props.liveTraceOff === true ? "trace.liveOff" : "trace.empty")}
+            </p>
           ) : (
             <div className={traceTableClass(cols)}>
               <div className="trace-head" aria-hidden="true" ref={headRef}>

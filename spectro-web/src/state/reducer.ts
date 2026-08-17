@@ -442,6 +442,17 @@ export function windowTrace(state: UiState): UiState {
   };
 }
 
+/** Card 246: the live-trace switch's fold. Not wanted → the held rows and the
+ *  drop count are freed; everything else (turns, usage, cards) stays, because
+ *  the transcript is not the trace. Wanted → the same object back, no churn.
+ *  Applied only at the LIVE seams in App.tsx — a replay or import is finite
+ *  and keeps its full trace whatever the switch says. */
+export function stripLiveTrace(state: UiState, wanted: boolean): UiState {
+  if (wanted) return state;
+  if (state.trace.length === 0 && state.traceDropped === 0) return state;
+  return { ...state, trace: [], traceDropped: 0 };
+}
+
 /** Stamp usage + duration onto the LAST assistant turn of an agent (the answer
  *  the usage belongs to). No matching turn → the turns are returned unchanged. */
 function stampAssistantUsage(

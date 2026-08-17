@@ -7,6 +7,7 @@ import {
   recordOutgoing,
   reduce,
   reduceAll,
+  stripLiveTrace,
   traceFromEvents,
   windowTrace,
 } from "./reducer";
@@ -1588,5 +1589,28 @@ describe("card 244 — the run's start rides run_start into the working line", (
   it("normalizeReplay clears it — an archive never counts up", () => {
     const s = normalizeReplay(reduceAll(initialState, happyPath.slice(0, 1)));
     expect(s.runStartTs).toBeNull();
+  });
+});
+
+describe("card 246 — stripLiveTrace, the live-trace switch's fold", () => {
+  it("wanted leaves the state untouched — the same object, no churn", () => {
+    const s = reduceAll(initialState, happyPath);
+    expect(stripLiveTrace(s, true)).toBe(s);
+  });
+
+  it("not wanted frees the held rows and the drop count", () => {
+    const s = reduceAll(initialState, happyPath);
+    expect(s.trace.length).toBeGreaterThan(0);
+    const stripped = stripLiveTrace(s, false);
+    expect(stripped.trace).toEqual([]);
+    expect(stripped.traceDropped).toBe(0);
+    // The transcript is NOT the trace: turns, usage and the rest stay.
+    expect(stripped.turns).toEqual(s.turns);
+    expect(stripped.usage).toEqual(s.usage);
+  });
+
+  it("not wanted on an already-empty trace returns the same object", () => {
+    const bare = { ...initialState, trace: [], traceDropped: 0 };
+    expect(stripLiveTrace(bare, false)).toBe(bare);
   });
 });
