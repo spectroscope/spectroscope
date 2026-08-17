@@ -35,6 +35,11 @@ import java.util.List;
  *                      face without web tools (headless, fleet) passes none,
  *                      and its research children hold none — the unattended
  *                      lanes stay closed (nullable → none)
+ * @param budget        what a child may spend (card 270). Default: derived from
+ *                      a fresh, unfed {@link dev.spectroscope.core.provider.ExchangeLatency},
+ *                      which means the {@link ChildBudget#FLOOR_MS} floor governs.
+ *                      A face that shares its parent agent's latency window pays
+ *                      the measured price instead of the floor
  */
 public record SubagentConfig(
         LlmProvider provider,
@@ -44,11 +49,16 @@ public record SubagentConfig(
         List<Tool> baseTools,
         HookRunner hooks,
         LlmWireRecorder llmWire,
-        List<Tool> webTools) {
+        List<Tool> webTools,
+        ChildBudget budget) {
 
-    /** Null-tolerant canonical: an absent web grant normalizes to an empty list. */
+    /** Null-tolerant canonical: an absent web grant normalizes to an empty list,
+     *  and an absent budget to the derived one over an unfed window (the floor). */
     public SubagentConfig {
         webTools = webTools == null ? List.of() : List.copyOf(webTools);
+        budget = budget == null
+                ? ChildBudget.derivedFrom(new dev.spectroscope.core.provider.ExchangeLatency())
+                : budget;
     }
 
     /**
@@ -75,6 +85,7 @@ public record SubagentConfig(
         private HookRunner hooks;               // nullable -> none
         private LlmWireRecorder llmWire;        // nullable -> children record nothing
         private List<Tool> webTools = List.of();
+        private ChildBudget budget;             // nullable -> derived, floor governs
 
         private Builder() {
         }
@@ -111,10 +122,16 @@ public record SubagentConfig(
          *  @return this builder */
         public Builder webTools(List<Tool> value) { this.webTools = value; return this; }
 
+        /** @param value what a child may spend (card 270) — pass one derived from
+         *               the parent agent's OWN latency window so the price comes
+         *               from the backend this session is talking to
+         *  @return this builder */
+        public Builder budget(ChildBudget value) { this.budget = value; return this; }
+
         /** @return the finished config, normalized by the canonical constructor */
         public SubagentConfig build() {
             return new SubagentConfig(provider, cwd, parentAgentId, onPermission,
-                    baseTools, hooks, llmWire, webTools);
+                    baseTools, hooks, llmWire, webTools, budget);
         }
     }
 }

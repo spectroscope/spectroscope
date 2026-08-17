@@ -72,8 +72,28 @@ class SubagentConfigTest {
     @Test
     void anAbsentWebGrantNormalizesToEmptyThroughTheCanonicalConstructorToo() {
         SubagentConfig config = new SubagentConfig(
-                PROVIDER, Path.of("."), "main", ALLOW, List.of(), null, null, null);
+                PROVIDER, Path.of("."), "main", ALLOW, List.of(), null, null, null, null);
         assertTrue(config.webTools().isEmpty(),
                 "the canonical constructor keeps the record's own normalization");
+    }
+
+    @Test
+    void anAbsentBudgetNormalizesToTheDerivedOneWhoseFloorGoverns() {
+        // Card 270: a config that names no budget still gets a real one. Nothing
+        // has been measured through it, so the floor is what a child gets — never
+        // a zero, and never the 120 s literal the card replaced.
+        SubagentConfig config = SubagentConfig.builder()
+                .provider(PROVIDER)
+                .cwd(Path.of("."))
+                .parentAgentId("main")
+                .onPermission(ALLOW)
+                .baseTools(List.of())
+                .build();
+
+        assertEquals(ChildBudget.FLOOR_MS, config.budget().runBudgetMs());
+        assertTrue(config.budget().observedP50Ms().isEmpty(),
+                "an unfed window has measured nothing and says so");
+        assertTrue(config.budget().derivation().contains("nothing measured"),
+                config.budget().derivation());
     }
 }

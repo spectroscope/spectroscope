@@ -317,6 +317,13 @@ public final class Agent {
                         fenced.messages(), advertisedTools, maxTokens,
                         effectiveReasoning(), effortOverride, signal, tap);
 
+                // Card 270: this is the one place every exchange of every agent
+                // passes, so it is where the session's measured exchange time
+                // comes from. The window feeds ChildBudget — a child's price is
+                // derived from what THIS backend has actually been doing, not
+                // from a literal. Wall clock around the whole stream, which is
+                // the same span llm_exchange's durationMs reports.
+                long exchangeStartedAt = now();
                 // Blocking for-each over the provider stream — text deltas are passed
                 // through one by one; tool calls and usage arrive at the end of the turn.
                 for (ProviderEvent event : options.provider().stream(request)) {
@@ -357,8 +364,16 @@ public final class Agent {
                     }
                 }
 
+                // An aborted exchange is not a measurement of how long this
+                // backend takes to answer — it is a measurement of when someone
+                // stopped it. Only a completed stream is observed.
+                if (options.latency() != null && !signal.isCancelled()
+                        && stopReason != PStop.StopReason.ABORTED) {
+                    options.latency().observe(now() - exchangeStartedAt);
+                }
+
                 if (stopReason == PStop.StopReason.ABORTED || signal.isCancelled()) {
-                    emit.accept(new RunEnd(runId, "aborted", now()));
+                    emit.accept(new RunEnd(runId, abortStopReason(signal), now()));
                     return;
                 }
 
@@ -405,7 +420,7 @@ public final class Agent {
             emit.accept(new RunEnd(runId, "max_turns", now()));
         } catch (RuntimeException error) {
             if (signal.isCancelled()) {
-                emit.accept(new RunEnd(runId, "aborted", now()));
+                emit.accept(new RunEnd(runId, abortStopReason(signal), now()));
                 return;
             }
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
@@ -626,6 +641,27 @@ public final class Agent {
     /** The single timestamp source of the loop — epoch millis, the wire format's {@code ts}. */
     private static long now() {
         return System.currentTimeMillis();
+    }
+
+    /**
+     * How an interrupted run closes: {@code "aborted"} by default, or whatever
+     * the canceller named (card 270).
+     *
+     * <p>The distinction is the whole point of the reason: a child the harness
+     * stopped because it ran out of its own budget used to be indistinguishable
+     * from a human pressing Ctrl+C, and "the run just stopped" is the one thing
+     * an observability product must not say. A new VALUE on an existing field —
+     * {@code RunEnd}'s shape is untouched, and every consumer of stopReason in
+     * this repo treats the finished reasons as an allow-list
+     * ({@code LevelingFold.COMPLETED_RUN}), so an unknown reason correctly reads
+     * as "did not finish".</p>
+     *
+     * @param signal the run's cancel signal, already known to be cancelled
+     * @return the reason the canceller gave, or {@code "aborted"}
+     */
+    private static String abortStopReason(CancelSignal signal) {
+        String named = signal.reason();
+        return named != null ? named : "aborted";
     }
 
     /** Maps the provider-neutral stop reason onto its snake_case wire name.

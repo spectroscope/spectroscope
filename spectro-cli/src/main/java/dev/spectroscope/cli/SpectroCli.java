@@ -141,6 +141,16 @@ public final class SpectroCli implements Runnable {
     private TracingPorts tracing;
     // The backend-to-LLM record (card 184) — opened with the store, same id.
     private LlmWireRecorder llmWire;
+    /**
+     * Card 270: ONE window of measured exchange durations for this REPL, shared
+     * by the main agent and every child. It is a field rather than a local
+     * because {@code /think} and a provider switch REBUILD the agent while the
+     * conversation continues — a window minted inside the build would forget the
+     * backend at exactly the moment the operator changed something about it, and
+     * the next child would be priced at the floor as if the session were new.
+     */
+    private final dev.spectroscope.core.provider.ExchangeLatency latency =
+            new dev.spectroscope.core.provider.ExchangeLatency();
     /** Card 199: one line per gate decision, beside the session (the wire is frozen). */
     private dev.spectroscope.core.permission.GateAudit gateAudit;
     // Live-toggleable via /think on|off; seeded from config. Applied by rebuilding
@@ -491,6 +501,7 @@ public final class SpectroCli implements Runnable {
                 .hooks(hooks)
                 .llmWire(llmWire) // the SAME recorder the parent writes on (card 231)
                 .webTools(List.of(webSearch, webFetch, browsePage))
+                .budget(dev.spectroscope.core.subagents.ChildBudget.derivedFrom(latency))
                 .build());
         for (Tool tool : subagents.tools()) {
             registry.register(tool);
@@ -625,6 +636,7 @@ public final class SpectroCli implements Runnable {
                 .thinking(thinking)  // reasoning visibility; toggled live by /think on|off
                 .hooks(hooks)        // external pre/post_tool_use shell hooks (config-only)
                 .llmWire(llmWire)    // the backend-to-LLM record rides the session's recorder (card 184)
+                .latency(latency)    // this REPL's own exchanges price its children (card 270)
                 .onPermission(askOnTerminal)
                 .build());
     }
