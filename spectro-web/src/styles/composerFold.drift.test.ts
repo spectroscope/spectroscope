@@ -1,85 +1,146 @@
-// Card 243's no-overflow rule, read off disk like the other style guards.
+// The session tools live in the three-dots menu, at every width (card 255).
+// Read off disk like the other style guards.
 //
-// Measured 2026-08-15 on a temp-home jar: at the owner's ~1310px window with
-// the dock open the composer's inner column is 410px, and at a 1150px window
-// it is 324px — there the mic device chevron and the gear ESCAPED the rounded
-// container (right edges 591 and 643 against an inner right edge of 580), and
-// the tools group wrapped "translation" onto a second line first
-// (.composer-tools carried flex-wrap: wrap).
+// Card 243 built this as a WIDTH decision: chips in the action row while the
+// composer column was wide, chips in the menu's section below 500px, exactly
+// one copy visible. The owner's answer to that build was that the menu is
+// enough — "wenn in den drei punkten export und translation drinne sind können
+// sie hier im haupt view weg" — so the threshold is gone, and with it the
+// arithmetic that picked 500px. The assertions that pinned the threshold are
+// REPLACED rather than relaxed: their premise (a width at which the row is the
+// home) no longer exists, and a loosened guard would have kept passing while
+// the rule underneath it changed.
 //
-// The deliberate degradation: below the fold threshold the tools chips leave
-// the row and reappear as a section in the three-dots menu (the overflow menu
-// the row already has); the icons keep one line; and if a surface is narrower
-// than even the icon row (the lab's 220px chat column), the row wraps rather
-// than clips — a clipped control is an unreachable one. The draft box and its
-// send seat sit ABOVE this row and never shrink for it.
+// Measured on a temp-home jar at 1440x900 before the flip: at composer column
+// 860px the row's copy was `display: flex` and 179.7px wide, at column 488px it
+// was `display: none` and the menu carried the section. After the flip both
+// widths report `display: none`, and there is no @container left to ask.
 //
-// The threshold: the un-folded row needs ~463px (chips 44+44+179+44+44+16+44
-// plus six 8px gaps, EN labels); 500 carries the German labels too. Folded,
-// the row needs ~277px, under the 360px chat floor card 242 pins.
+// What survives from card 243 is the promise underneath the fold: no control is
+// ever pushed out of the rounded container, because a clipped control is an
+// unreachable one. That promise now rests on the two wrap rules alone (the
+// lab's chat column goes to 220px), so they are pinned here as before.
 
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { blankBlockComments as code, read } from "../testkit/source";
 
-const read = (rel: string): string =>
-  readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
-
-/** The declarations of the FIRST block whose selector line contains `sel`,
- *  searched from `from` (to look inside an at-rule block). */
-function blockOf(css: string, sel: string, from = 0): string {
-  const at = css.indexOf(sel, from);
+/** The declarations of the FIRST block whose selector line contains `sel`. */
+function blockOf(css: string, sel: string): string {
+  const at = css.indexOf(sel);
   expect(at, `selector ${sel} exists`).toBeGreaterThan(-1);
   const open = css.indexOf("{", at);
   return css.slice(open + 1, css.indexOf("}", open));
 }
 
-describe("the composer folds instead of spilling (card 243)", () => {
-  const modal = read("./modal-composer.css");
-  const chat = read("./chat.css");
+/**
+ * The stylesheet with every at-rule BLOCK removed, so what is left is what
+ * applies unconditionally.
+ *
+ * This is the shape of the guard, not a convenience: "the row is never a home"
+ * is a claim about rules that answer to no query, and a rule wrapped back into
+ * an `@container` or an `@media` would satisfy a plain substring check while
+ * reintroducing exactly the width dependency this card removed. Removed here,
+ * such a rule simply disappears from the text and the assertion fails.
+ */
+function unconditional(css: string): string {
+  let out = "";
+  let i = 0;
+  while (i < css.length) {
+    const at = css.indexOf("@", i);
+    if (at < 0) return out + css.slice(i);
+    out += css.slice(i, at);
+    const open = css.indexOf("{", at);
+    const semi = css.indexOf(";", at);
+    // A statement at-rule (`@import "x.css";`) carries no block: skip the
+    // statement, not the next rule's braces.
+    if (open < 0 || (semi > -1 && semi < open)) {
+      if (semi < 0) return out;
+      i = semi + 1;
+      continue;
+    }
+    let depth = 0;
+    let j = open;
+    for (; j < css.length; j++) {
+      if (css[j] === "{") depth++;
+      else if (css[j] === "}" && --depth === 0) break;
+    }
+    i = j + 1;
+  }
+  return out;
+}
 
-  it("the composer column is the container the fold measures", () => {
-    expect(blockOf(modal, ".composer-inner")).toMatch(/container:\s*composer\s*\/\s*inline-size/);
+describe("the tools have one home, and it is the menu (card 255)", () => {
+  const modal = code(read("./modal-composer.css", import.meta.url));
+  const chat = code(read("./chat.css", import.meta.url));
+
+  it("hides the row's copy without asking how wide anything is", () => {
+    expect(blockOf(unconditional(modal), ".composer-tools")).toMatch(/display:\s*none/);
   });
 
-  it("below the fold threshold the tools chips leave the row for the menu", () => {
-    const q = modal.indexOf("@container composer (max-width: 500px)");
-    expect(q, "the fold query exists at the measured threshold").toBeGreaterThan(-1);
-    expect(blockOf(modal, ".composer-tools", q)).toMatch(/display:\s*none/);
-    expect(blockOf(modal, ".disc-fold", q)).not.toMatch(/display:\s*none/);
+  it("keeps no width query for the composer at all", () => {
+    // The 500px threshold was the whole of card 243's decision. Leaving the
+    // query in place with a different body is the drift that would read as
+    // this card being done while the row came back on some screen.
+    expect(modal).not.toContain("@container composer");
   });
 
-  it("the folded chips hide in the menu above the threshold", () => {
-    // The default: the menu section is absent until the fold engages — wide
-    // screens must never show the chips twice.
-    const firstDiscFold = blockOf(modal, ".disc-fold");
-    expect(firstDiscFold).toMatch(/display:\s*none/);
+  it("drops the container the threshold measured", () => {
+    // `container: composer / inline-size` existed for that one query. A
+    // containment context nobody asks about is not free: `container-type`
+    // brings layout and style containment with it, so it changes what the
+    // composer's descendants — the slash picker, the export dialog's fixed
+    // backdrop — resolve against, for no reader's benefit.
+    expect(blockOf(modal, ".composer-inner")).not.toMatch(/container(-type)?:/);
   });
 
-  it("the tools group no longer stacks lines of its own", () => {
-    expect(blockOf(chat, ".composer-tools")).toMatch(/flex-wrap:\s*nowrap/);
+  it("shows the menu's section without a query to switch it on", () => {
+    const section = blockOf(unconditional(modal), ".disc-fold");
+    expect(section).toMatch(/display:\s*flex/);
+    expect(section).toMatch(/flex-direction:\s*column/);
   });
 
-  it("the action row wraps as the last resort — nothing clips or escapes", () => {
+  it("leaves no rule that hides the menu's section again", () => {
+    // Card 243 hid it by default and revealed it below the threshold. Both
+    // halves are gone; a leftover `display: none` would empty the only home
+    // the chips have, and nothing else in the app would look wrong.
+    for (const [i, part] of modal.split(".disc-fold").entries()) {
+      if (i === 0) continue;
+      expect(part.slice(0, part.indexOf("}")), "a .disc-fold block hides it").not.toMatch(
+        /display:\s*none/,
+      );
+    }
+  });
+
+  it("gives the suppressed row no shape in any stylesheet", () => {
+    // chat.css used to lay the row out (nowrap, right-aligned, and a centred
+    // variant for the archive bar). Those rules described something a reader
+    // saw; nobody sees it now, and a rule for an invisible element is the
+    // phantom the next reader styles around. The element stays in the markup —
+    // the chat builds the chips once and hands them to the menu — so this is
+    // about its shape, not its existence.
+    expect(chat).not.toContain(".composer-tools");
+  });
+
+  it("wraps the action row as the last resort — nothing clips or escapes", () => {
     expect(blockOf(modal, ".composer-actions")).toMatch(/flex-wrap:\s*wrap/);
   });
 
-  it("the archive bar's own row wraps as the last resort too", () => {
-    // The verify round measured the miss: the fold moved the TOOLS out of the
-    // archive bar, but the bar's own controls (note, resume, export, delete,
-    // return-to-live) sat in a nowrap row — at chat 360/inner 328 the EN
-    // "Return to live" rendered 55px outside the container and 31px under the
-    // dock; DE ("Zurück zu Live") escaped even at a 1440 window with a 710px
-    // dock (inner 450). Same last resort as .composer-actions: wrap, never
-    // clip — a clipped control is an unreachable one.
+  it("wraps the archive bar's own row too", () => {
+    // Card 243's verify round measured this one: the tools left the archive
+    // bar, but the bar's own controls (note, resume, export, delete,
+    // return-to-live) sat in a nowrap row — at chat 360 / inner 328 the EN
+    // "Return to live" rendered 55px outside the container, and DE escaped
+    // even at a 1440 window with a 710px dock. Same last resort as the action
+    // row: wrap, never clip.
     expect(blockOf(modal, ".archive-bar .composer-inner")).toMatch(/flex-wrap:\s*wrap/);
   });
 
-  it("the menu offers the fold section and the chat hands it the tools", () => {
-    const menu = read("../components/DisclosureMenu.tsx");
+  it("keeps the menu offering the section, and the chat handing it the tools", () => {
+    const menu = read("../components/DisclosureMenu.tsx", import.meta.url);
     expect(menu).toContain("disc-fold");
     expect(menu).toMatch(/fold\??:/); // the prop, typed
-    const chatTsx = read("../components/Chat.tsx");
-    expect(chatTsx).toMatch(/<DisclosureMenu[\s\S]{0,200}fold=/);
+    expect(read("../components/Chat.tsx", import.meta.url)).toMatch(
+      /<DisclosureMenu[\s\S]{0,200}fold=/,
+    );
   });
 });

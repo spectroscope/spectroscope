@@ -17,16 +17,17 @@ import { DISCLOSURE_LEVELS, setDisclosure, useDisclosure } from "../state/disclo
 import { CHAT_WIDTHS, setChatWidth, useChatWidth } from "../state/chatWidth";
 import { CHAT_VIEW_MODES, setChatView, useChatView } from "../state/chatView";
 import { setLiveTraceWanted, useLiveTraceWanted } from "../state/liveTrace";
+import { dismissesMenu, MODAL_LAYER } from "./menuDismiss";
 import { t } from "../i18n/i18n";
 import { useLang } from "../state/lang";
 
 export interface DisclosureMenuProps {
-  /** Card 243: the tools chips' fold-away home. The chat hands the SAME
-   *  controls it renders in the action row (export, translation, the folder
-   *  buttons); CSS shows exactly one of the two copies — the row above the
-   *  composer container's fold threshold, this section below it
-   *  (modal-composer.css owns the threshold). Absent on an empty chat, where
-   *  the row itself withholds the tools. */
+  /** The session tools' home (card 243, sole home since card 255): export, the
+   *  translation trigger, the folder buttons. The chat builds them once and
+   *  hands the same nodes to its action row and to this section; the row's copy
+   *  is suppressed at every width (modal-composer.css), so this is the copy a
+   *  reader reaches. Absent on an empty chat, where the chat has no tools to
+   *  hand over — a section head over nothing is worse than no section. */
   fold?: ReactNode;
 }
 
@@ -51,11 +52,20 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
     listRef.current?.focus();
   }, [open, level]);
 
-  // Close on outside click / Escape — same mechanics as ComposerGear.
+  // Close on outside click / Escape — same mechanics as ComposerGear, plus the
+  // modal question card 255 had to add: the tools section opens sheets, and
+  // TranslatePanel portals its sheet to the body, so every press in it is
+  // "outside" this anchor. Closing here unmounts the section, the sheet with
+  // it, and the press never becomes a click.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent): void => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+      const target = e.target instanceof Element ? e.target : null;
+      const press = {
+        inAnchor: ref.current !== null && ref.current.contains(target),
+        inModal: target !== null && target.closest(MODAL_LAYER) !== null,
+      };
+      if (dismissesMenu(press)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === "Escape") setOpen(false);
@@ -108,6 +118,23 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
 
       {open && (
         <div className="wsg-pop disc-pop" role="dialog" aria-label={t(lang, "disc.title")}>
+          {/* The session tools. Card 243 showed this section only below the
+              composer column's 500px threshold and put it last, under four
+              reading settings; card 255 dropped the threshold and made it the
+              only home export and translation have, so it moved to the top.
+              Measured at 1440x900 while it still sat last: the popover caps at
+              480px against 828px of content, and the section's box started
+              333px below the visible edge — a home nobody reaches without
+              scrolling a menu that shows no sign of holding one. */}
+          {fold !== undefined && (
+            <div className="wsg-section disc-fold">
+              <div className="wsg-section-head">
+                <span>{t(lang, "chat.tools")}</span>
+              </div>
+              {fold}
+            </div>
+          )}
+
           <div className="wsg-section">
             <div className="wsg-section-head">
               <span>{t(lang, "disc.title")}</span>
@@ -224,18 +251,6 @@ export function DisclosureMenu({ fold }: DisclosureMenuProps = {}) {
               </div>
             </div>
           </div>
-
-          {/* Card 243: the folded tools. Hidden by default; the composer
-              container's fold threshold shows it while hiding the row's copy
-              (modal-composer.css) — never both at once. */}
-          {fold !== undefined && (
-            <div className="wsg-section disc-fold">
-              <div className="wsg-section-head">
-                <span>{t(lang, "chat.tools")}</span>
-              </div>
-              {fold}
-            </div>
-          )}
         </div>
       )}
     </div>
