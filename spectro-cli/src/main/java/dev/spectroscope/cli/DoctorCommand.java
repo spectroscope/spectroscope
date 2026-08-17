@@ -11,6 +11,7 @@ import dev.spectroscope.core.provider.OllamaOptions;
 import dev.spectroscope.core.provider.OllamaProvider;
 import dev.spectroscope.core.scheduler.CronScheduler;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.tools.ToolPath;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParentCommand;
@@ -103,6 +104,12 @@ public final class DoctorCommand implements Callable<Integer> {
         String javaVersion = System.getProperty("java.version", "unknown");
         int major = parseMajor(javaVersion);
         report(major >= 21, "Java " + javaVersion + (major >= 21 ? "" : " — 21+ required"));
+
+        // The PATH every run_command shell gets, printed before anything that
+        // depends on it (card 251). A Finder-launched app inherits launchd's four
+        // directories and the owner's toolchain is invisible to the agent; that
+        // was a hunt once and is a lookup from here on.
+        emit(toolPathLines(ToolPath.resolve()));
 
         // Config hierarchy
         Path cwd = Path.of(System.getProperty("user.dir"));
@@ -463,6 +470,39 @@ public final class DoctorCommand implements Callable<Integer> {
                 report(line.kind() == Kind.PASS, line.message());
             }
         }
+    }
+
+    /**
+     * The PATH report: what the agent's shells get, and what the policy had to
+     * add to reach it.
+     *
+     * <p>Two lines rather than one, because they answer different questions. The
+     * summary says whether this launch needed help at all — from a terminal that
+     * already exports the toolchain the policy is a no-op, and knowing that tells
+     * an operator the app is not the problem. The verbatim value is the lookup
+     * itself, printed whole: a PATH that is summarised cannot be grepped for the
+     * directory somebody's tool is missing from.
+     *
+     * <p>Notes, never verdicts. An unusual PATH is not an unhealthy install, and
+     * a machine without homebrew must not fail doctor.
+     *
+     * <p>The honest limit of this line: it reports the PATH of the process
+     * PRINTING it. Run from a terminal it shows the terminal's; the desktop app's
+     * server JVM has its own, and {@link ToolPath} is what makes the two agree
+     * about which directories are searched.
+     *
+     * @param resolved the policy's answer for this process
+     * @return the summary line and the verbatim PATH line
+     */
+    static List<Line> toolPathLines(ToolPath.Result resolved) {
+        int entries = resolved.path().isBlank() ? 0 : resolved.path().split(":", -1).length;
+        String provenance = resolved.added().isEmpty()
+                ? "nothing added, this shell already exports the toolchain"
+                : resolved.added().size() + " added by policy: " + String.join(", ", resolved.added());
+        return List.of(
+                new Line(Kind.INFO, "tool PATH (every run_command shell and hook): "
+                        + entries + " entries · " + provenance),
+                new Line(Kind.INFO, "tool PATH = " + resolved.path()));
     }
 
     /**
