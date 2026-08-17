@@ -35,6 +35,15 @@ describe("runState", () => {
     expect(runState({ live: false, running: false, stopReason: "aborted" })).toBe("idle");
   });
 
+  it("is indifferent to card 264's verdict, on purpose", () => {
+    // The circle answers "did a run_end close this file", never "did the run
+    // finish its plan" — those are different questions and the second one has
+    // its own line in the footer. A run that abandoned its plan still closed
+    // the file, so the row is idle and the word "open" keeps meaning what it
+    // has always meant here.
+    expect(runState({ live: false, running: false, stopReason: "unfinished" })).toBe("idle");
+  });
+
   it("gives the unfinished state its own colour and never the pulsing one", () => {
     // An unfinished file is a fact about the file, so it wears the warn token
     // rather than the accent every live thing in this UI wears.

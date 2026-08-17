@@ -302,7 +302,13 @@ public sealed interface RunEvent permits RunEvent.LlmExchange, RunEvent.RunStart
      * Closes the run on every path — the consumer's signal to stop iterating.
      *
      * @param runId      id of the run being closed, matching its {@link RunStart}
-     * @param stopReason why it ended: end_turn, max_tokens, max_turns, aborted or error
+     * @param stopReason why it ended: end_turn, max_tokens, max_turns, aborted,
+     *                   error — or {@code unfinished}, the verdict of card 264:
+     *                   the loop read its own plan ledger at the exit and found
+     *                   steps still open, so this run did not finish. The field
+     *                   was never an enum on the wire, which is what let the
+     *                   verdict travel on it without moving a single key
+     *                   ({@code PlanVerdict}, {@code RunEndVerdictAdditivityTest})
      * @param ts         epoch millis of emission
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)

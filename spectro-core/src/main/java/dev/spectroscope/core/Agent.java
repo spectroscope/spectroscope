@@ -69,6 +69,25 @@ public final class Agent {
     private volatile String effortOverride;
 
     /**
+     * The plan ledger, latest-wins — the loop's own copy of the last
+     * {@code update_plan} this agent published (card 264).
+     *
+     * <p>It lives with the agent and not with the run, exactly like
+     * {@link #messages} and exactly like the web reducer's {@code plan}
+     * snapshot (reducer.ts:280, cleared only by a fresh chat). A second run
+     * that answers without touching the plan has closed nothing, and a footer
+     * that says "4 of 6 open" while the Plan panel shows four open steps is the
+     * app agreeing with itself.</p>
+     *
+     * <p>Null until the model calls the tool — which on a model without native
+     * tool calls is the whole session, and is why {@link PlanVerdict#UNKNOWN}
+     * exists. A resumed session starts null too: the history is replayed into
+     * {@link #messages}, the ledger is not, so a resumed run is ungradable
+     * until its model publishes a plan again.</p>
+     */
+    private volatile RunEvent.Plan lastPlan;
+
+    /**
      * Flips reasoning visibility mid-session — the web header toggle. Takes
      * effect immediately (even mid-run: the emission filter reads it per
      * delta); the next provider request also stops/starts asking for
@@ -358,7 +377,7 @@ public final class Agent {
                 }
 
                 if (stopReason == PStop.StopReason.ABORTED || signal.isCancelled()) {
-                    emit.accept(new RunEnd(runId, "aborted", now()));
+                    emit.accept(new RunEnd(runId, abortReason(signal), now()));
                     return;
                 }
 
@@ -374,7 +393,13 @@ public final class Agent {
                 }
 
                 if (stopReason != PStop.StopReason.TOOL_USE || toolCalls.isEmpty()) {
-                    emit.accept(new RunEnd(runId, stopReasonName(stopReason), now()));
+                    // Card 264, the terminal exit: for the first time the loop
+                    // reads its own plan before it declares the run over. A turn
+                    // that produced prose and no tool call ends the run at any
+                    // turn — which is right — but calling that "end_turn" with
+                    // steps still open was the app reporting a clean finish for
+                    // a run that walked away mid-plan.
+                    emit.accept(new RunEnd(runId, verdictStop(stopReasonName(stopReason)), now()));
                     return;
                 }
 
@@ -402,10 +427,13 @@ public final class Agent {
                 results.addAll(attachedContent);
                 messages.add(new ProviderMessage(ProviderMessage.Role.USER, results));
             }
-            emit.accept(new RunEnd(runId, "max_turns", now()));
+            // The brake keeps its own name even with the plan open: the verdict
+            // is logged either way, and losing "this run hit turn 15" would
+            // trade one silence for another.
+            emit.accept(new RunEnd(runId, verdictStop("max_turns"), now()));
         } catch (RuntimeException error) {
             if (signal.isCancelled()) {
-                emit.accept(new RunEnd(runId, "aborted", now()));
+                emit.accept(new RunEnd(runId, abortReason(signal), now()));
                 return;
             }
             emit.accept(new ErrorEvent(agentId, error.getMessage(), now()));
@@ -488,7 +516,8 @@ public final class Agent {
         // view_image hands images to SHOW the model through the attach sink.
         long startedAt = now();
         String output = tool.execute(call.input(),
-                new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(), emit, attach));
+                new Tool.ToolContext(options.cwd(), signal, agentId, call.callId(),
+                        planLedger(emit), attach));
         long durationMs = now() - startedAt;
         // post_tool_use runs AFTER execute — advisory only, never rewrites the
         // result. Only a hook the deadline killed comes back: a non-zero exit is
@@ -626,6 +655,58 @@ public final class Agent {
     /** The single timestamp source of the loop — epoch millis, the wire format's {@code ts}. */
     private static long now() {
         return System.currentTimeMillis();
+    }
+
+    /**
+     * The stop reason this run should record, after the plan ledger has been
+     * read — the verdict of card 264, computed at the exit and nowhere else.
+     *
+     * <p>The verdict is stated on every voluntary exit, including the ones it
+     * does not rename: the log line is where {@link PlanVerdict#UNKNOWN}
+     * becomes visible, because the wire says {@code end_turn} for a finished
+     * plan and for no plan alike — their difference is the presence or absence
+     * of a {@code plan} event in the same file, which is a fact the record
+     * already carries and every surface can read.</p>
+     *
+     * @param stopReason the wire name the exit would have written
+     * @return the stop reason to record, displaced only for an abandoned plan
+     */
+    private String verdictStop(String stopReason) {
+        RunEvent.Plan ledger = lastPlan;
+        PlanVerdict verdict = PlanVerdict.of(ledger);
+        org.slf4j.LoggerFactory.getLogger(Agent.class).info("plan verdict {} ({} of {} steps open)",
+                verdict.wireName(), PlanVerdict.openSteps(ledger), PlanVerdict.totalSteps(ledger));
+        return PlanVerdict.stopReasonFor(stopReason, verdict);
+    }
+
+    /** What a cancelled run records: the canceller's own word when it gave one
+     *  (the headless turn brake, card 264 AC 6), else the plain abort.
+     *  @param signal the run's cancel signal
+     *  @return the {@code run_end.stopReason} for an interrupted run */
+    private static String abortReason(CancelSignal signal) {
+        String named = signal.reason();
+        return named == null || named.isBlank() ? "aborted" : named;
+    }
+
+    /**
+     * The loop's tap on its own event sink: every {@code plan} event this agent
+     * publishes updates the ledger on its way to the wire.
+     *
+     * <p>Only THIS agent's plans count. {@code update_plan} is main-only
+     * (SessionConnection:1056), but a child's events do travel the parent's
+     * sink, and a run must be graded by its own ledger rather than by whatever
+     * passed through it.</p>
+     *
+     * @param emit the loop's real event sink
+     * @return the sink to hand to tools — same events, same order, one field noted
+     */
+    private Consumer<RunEvent> planLedger(Consumer<RunEvent> emit) {
+        return event -> {
+            if (event instanceof RunEvent.Plan plan && options.agentId().equals(plan.agentId())) {
+                lastPlan = plan;
+            }
+            emit.accept(event);
+        };
     }
 
     /** Maps the provider-neutral stop reason onto its snake_case wire name.

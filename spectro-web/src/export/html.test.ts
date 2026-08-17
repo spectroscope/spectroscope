@@ -490,3 +490,34 @@ describe("pictures a tool handed back, in the exported file", () => {
     expect(chatToHtml(events, { now: NOW })).toContain("[image/png · 18 B]");
   });
 });
+
+// Card 264, AC 3: this footer is a reader that switches on stopReason, and it
+// is indifferent by construction — it prints the reason the record carries.
+// Pinned anyway, because "indifferent" is a claim about behaviour and the
+// verdict is only worth having if it survives into the file somebody archives.
+describe("an abandoned run in the exported document", () => {
+  const T0 = 1700000000000;
+  const events: RunEvent[] = [
+    { type: "run_start", runId: "r1", agentId: "main", prompt: "fix the bug", provider: "lmstudio", ts: T0 },
+    {
+      type: "plan",
+      agentId: "main",
+      steps: [
+        { text: "write the failing test", status: "completed" },
+        { text: "make it pass", status: "pending" },
+      ],
+      ts: T0 + 1,
+    },
+    { type: "text_delta", agentId: "main", text: "I wrote the test.", ts: T0 + 2 },
+    { type: "run_end", runId: "r1", stopReason: "unfinished", ts: T0 + 3 },
+  ];
+
+  it("names the verdict instead of the clean finish it never was", () => {
+    const html = chatToHtml(events, { now: NOW });
+    expect(html).toContain("ended: unfinished");
+  });
+
+  it("says it in German too", () => {
+    expect(chatToHtml(events, { now: NOW, lang: "de" })).toContain("beendet: unfinished");
+  });
+});

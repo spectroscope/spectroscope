@@ -164,6 +164,24 @@ class SessionStoreTest {
         assertEquals(4L, row.endedAt(), "and the span ends at the last event, not the folded one");
     }
 
+    @Test
+    void theVerdictReachesTheSessionListVerbatim() {
+        // Card 264, AC 3: this row is a reader that switches on stopReason and
+        // it is INDIFFERENT on purpose — SessionInfo carries the fact and lets
+        // the reader decide what it means (SessionStore.java:349-353). A run
+        // that abandoned its plan must therefore arrive here as itself, not
+        // folded into "end_turn" and not dropped.
+        String id = freshId();
+        SessionStore store = new SessionStore(id);
+        store.append(new RunEvent.RunStart("r1", "main", null, "Fix the bug", "lmstudio", null, 1L));
+        store.append(new RunEvent.Plan("main", List.of(
+                new RunEvent.PlanStep("write the failing test", "completed"),
+                new RunEvent.PlanStep("make it pass", "pending")), 2L));
+        store.append(new RunEvent.RunEnd("r1", "unfinished", 3L));
+
+        assertEquals("unfinished", listedRow(id).stopReason());
+    }
+
     // ---- the sidecar index (the cold half) ----------------------
 
     @Test

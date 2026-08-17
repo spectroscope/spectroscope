@@ -17,6 +17,7 @@ public final class CancelSignal {
     private static final Logger log = LoggerFactory.getLogger(CancelSignal.class);
 
     private volatile boolean cancelled = false;
+    private volatile String reason;
     private final List<Runnable> listeners = new ArrayList<>();
 
     /**
@@ -27,10 +28,28 @@ public final class CancelSignal {
      * up the cancelling thread (which used to kill the WebSocket session, card 78).
      */
     public synchronized void cancel() {
+        cancel(null);
+    }
+
+    /**
+     * Cancels and says why, for a caller whose reason the loop cannot know.
+     *
+     * <p>Card 264: the headless turn brake stops a run from the outside, so the
+     * loop could only ever write {@code aborted} while the caller's own
+     * {@code Outcome} said {@code max_turns} — two truths for one event. The
+     * reason travels with the signal so the run's record and the caller's
+     * report are the same sentence. The first reason wins, exactly as the first
+     * cancel does; a plain {@link #cancel()} (the stop button) carries none and
+     * must not invent one.</p>
+     *
+     * @param why the wire name to record instead of {@code aborted}, or null
+     */
+    public synchronized void cancel(String why) {
         if (cancelled) {
-            return; // idempotent
+            return; // idempotent, and so is the reason
         }
         cancelled = true;
+        reason = why;
         // Copy the listener list so a listener that registers another one cannot break us.
         for (Runnable listener : new ArrayList<>(listeners)) {
             fireIsolated(listener);
@@ -51,6 +70,12 @@ public final class CancelSignal {
      *  @return true once {@link #cancel()} has been called */
     public boolean isCancelled() {
         return cancelled;
+    }
+
+    /** Why this signal fired, when the canceller named it.
+     *  @return the reason passed to {@link #cancel(String)}, or null for a plain stop */
+    public String reason() {
+        return reason;
     }
 
     /**

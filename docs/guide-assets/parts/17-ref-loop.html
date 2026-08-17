@@ -26,7 +26,12 @@ hops.</p>
       <li>abort check — a cancelled run ends here with <code>aborted</code>;</li>
       <li>history append: the assistant message (text + tool-call blocks) goes in
           <em>before</em> any results — the API's ordering rule;</li>
-      <li>no tool calls → <code>run_end</code> with the mapped stop reason; otherwise:</li>
+      <li>no tool calls → the exit reads the run's own <code>plan</code> ledger and
+          <code>run_end</code> carries the mapped stop reason — or
+          <code>unfinished</code>, when the last <code>update_plan</code> still had open
+          steps and the mapped reason would have been <code>end_turn</code>. Only that one
+          value is displaced: a brake, a token cap or an abort already says a limit
+          intervened, and the verdict must not eat the reason;</li>
       <li>the tool round: every call passes the guard pipeline below, in order; all results
           of the round return to the model in <em>one</em> user message — denials and errors
           included, as data the model can read and react to.</li>
