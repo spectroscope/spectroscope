@@ -63,6 +63,66 @@ class VisionFenceTest {
         assertEquals(0, VisionFence.imageCount(withheld));
     }
 
+    /** Answers a fixed sight and counts how often it was asked. */
+    private static final class Asked implements LlmProvider {
+        final LlmProvider.Vision sight;
+        int questions;
+
+        Asked(LlmProvider.Vision sight) {
+            this.sight = sight;
+        }
+
+        @Override
+        public Vision vision() {
+            questions++;
+            return sight;
+        }
+
+        @Override
+        public Iterable<ProviderEvent> stream(ProviderRequest request) {
+            throw new UnsupportedOperationException("never streamed in this test");
+        }
+    }
+
+    private static final List<ProviderMessage> WITH_IMAGE = List.of(
+            new ProviderMessage(ProviderMessage.Role.USER,
+                    List.of(SHOT, new TextContent("what is this?"))));
+
+    @Test
+    void onlyBlindnessClosesTheFenceAndItSaysHowMuchItKeptBack() {
+        // The one decision every request builder asks — the turn loop and the
+        // compaction summarizer alike. Blind withholds and reports the count;
+        // SEES and UNKNOWN hand the SAME list straight back, so an untouched
+        // request stays byte-identical to what it was before this card.
+        VisionFence.Fenced blind = VisionFence.fence(new Asked(LlmProvider.Vision.BLIND), WITH_IMAGE);
+        assertEquals(1, blind.withheld());
+        assertEquals(0, VisionFence.imageCount(blind.messages()));
+
+        for (LlmProvider.Vision sight : List.of(LlmProvider.Vision.SEES, LlmProvider.Vision.UNKNOWN)) {
+            VisionFence.Fenced sends = VisionFence.fence(new Asked(sight), WITH_IMAGE);
+            assertEquals(0, sends.withheld(), sight + " withholds nothing");
+            assertSame(WITH_IMAGE, sends.messages(), sight + " sends the history as it stands");
+        }
+        // A caller without a provider is "nothing known", which sends.
+        assertSame(WITH_IMAGE, VisionFence.fence(null, WITH_IMAGE).messages());
+    }
+
+    @Test
+    void aTextOnlyHistoryNeverEvenAsksWhetherTheModelCanSee() {
+        // The order of the two questions is the cost claim: asking a provider can
+        // mean a round trip (ollama probes /api/show), and nearly every turn of
+        // nearly every session carries no picture at all.
+        Asked provider = new Asked(LlmProvider.Vision.BLIND);
+        List<ProviderMessage> plain = List.of(new ProviderMessage(
+                ProviderMessage.Role.USER, List.of(new TextContent("hi"))));
+
+        VisionFence.Fenced fenced = VisionFence.fence(provider, plain);
+
+        assertEquals(0, provider.questions, "no image, no question");
+        assertSame(plain, fenced.messages());
+        assertEquals(0, fenced.withheld());
+    }
+
     @Test
     void aHistoryWithoutImagesComesBackUntouched() {
         // The fence runs on every turn of every run. An identity that allocates a

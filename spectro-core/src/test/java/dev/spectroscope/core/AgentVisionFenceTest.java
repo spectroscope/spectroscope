@@ -1,22 +1,32 @@
 package dev.spectroscope.core;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.LlmProvider.ImageContent;
+import dev.spectroscope.core.provider.LlmProvider.PStop;
+import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
+import dev.spectroscope.core.provider.LlmProvider.PToolCall;
+import dev.spectroscope.core.provider.LlmProvider.PUsage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderContent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderEvent;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
+import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.SessionStore;
+import dev.spectroscope.core.tools.Tool;
 import dev.spectroscope.core.tools.ToolRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -42,10 +52,17 @@ class AgentVisionFenceTest {
 
     private static final byte[] PNG = {(byte) 0x89, 'P', 'N', 'G'};
 
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     /** Answers what the harness knows about its model's sight, and records
-     *  every request it was handed — the request IS the assertion here. */
+     *  every request it was handed — the request IS the assertion here.
+     *
+     *  <p>Turns come off a script when one is loaded, so a run can be driven
+     *  through several turns (and through compaction); an empty script answers
+     *  with one plain text turn, which is what most of these tests want.</p> */
     private static final class SightedProvider implements LlmProvider {
         final List<ProviderRequest> requests = new ArrayList<>();
+        final Queue<List<ProviderEvent>> script = new ArrayDeque<>();
         private final Vision vision;
         private final String model;
 
@@ -67,21 +84,57 @@ class AgentVisionFenceTest {
         @Override
         public Iterable<ProviderEvent> stream(ProviderRequest request) {
             requests.add(request);
-            return List.of(new PTextDelta("answered"),
-                    new PStop(PStop.StopReason.END_TURN));
+            List<ProviderEvent> scripted = script.poll();
+            return scripted != null ? scripted
+                    : List.of(new PTextDelta("answered"), new PStop(PStop.StopReason.END_TURN));
         }
     }
 
+    /** One echo tool call, so a scripted turn can hand the loop real work and
+     *  earn a SECOND turn; inputTokens feeds the compaction trigger. */
+    private static List<ProviderEvent> toolTurn(String callId, int inputTokens) {
+        return List.of(new PToolCall(callId, "echo", JSON.createObjectNode().put("value", callId)),
+                new PUsage(inputTokens, 2),
+                new PStop(PStop.StopReason.TOOL_USE));
+    }
+
+    /** A turn that answers and ends the run. */
+    private static List<ProviderEvent> textTurn(String text) {
+        return List.of(new PTextDelta(text), new PUsage(5, 2),
+                new PStop(PStop.StopReason.END_TURN));
+    }
+
+    /** A permissionless echo tool so scripted tool turns have something to run. */
+    private static Tool echoTool() {
+        return new Tool() {
+            public String name() { return "echo"; }
+            public String description() { return "echoes"; }
+            public JsonNode inputSchema() { return JSON.createObjectNode(); }
+            public boolean needsPermission() { return false; }
+            public String execute(JsonNode input, ToolContext context) { return "ok"; }
+        };
+    }
+
     private static Agent agentWith(LlmProvider provider, List<ProviderMessage> initial) {
-        return new Agent(AgentOptions.builder()
+        return agentWith(provider, initial, null);
+    }
+
+    private static Agent agentWith(LlmProvider provider, List<ProviderMessage> initial,
+                                   Integer compactionThreshold) {
+        ToolRegistry registry = new ToolRegistry();
+        registry.register(echoTool());
+        AgentOptions.Builder builder = AgentOptions.builder()
                 .provider(provider)
                 .systemPrompt("test")
-                .registry(new ToolRegistry())
+                .registry(registry)
                 .cwd(Path.of("."))
                 .agentId("main")
                 .onPermission(request -> true)
-                .initialMessages(initial)
-                .build());
+                .initialMessages(initial);
+        if (compactionThreshold != null) {
+            builder.compactionThreshold(compactionThreshold);
+        }
+        return new Agent(builder.build());
     }
 
     private static List<RunEvent> run(Agent agent, String prompt,
@@ -218,9 +271,19 @@ class AgentVisionFenceTest {
     void theRefusalIsSaidOncePerRunAndNotOncePerTurn() {
         // The image sits in the history, so every turn of a tool-using run
         // withholds it again. A line per turn would bury the transcript.
+        //
+        // This needs a run that really takes several turns, or it pins nothing:
+        // with a provider that ends the turn immediately the loop asks once, and
+        // "one line" is true whether the flag exists or not. So the script runs
+        // two tool rounds before it answers — three provider calls, three closings
+        // of the fence, and a per-turn line would be three lines.
         SessionStore.StoredBlob blob = SessionStore.saveBlob(freshId(), PNG, "image/png");
         SightedProvider provider =
                 new SightedProvider(LlmProvider.Vision.BLIND, "deepseek-v4-flash");
+        provider.script.add(toolTurn("c1", 5));
+        provider.script.add(toolTurn("c2", 5));
+        provider.script.add(textTurn("done"));
+
         List<RunEvent> events = run(agentWith(provider, List.of(
                         new ProviderMessage(ProviderMessage.Role.USER, List.of(
                                 new ImageContent("image/png", "aWJt"),
@@ -228,6 +291,10 @@ class AgentVisionFenceTest {
                 "and now?", List.of(new RunEvent.Attachment("image", "image/png",
                         blob.blobPath(), blob.sha256())));
 
+        assertEquals(3, provider.requests.size(),
+                "premise: three turns — otherwise once-per-run and once-per-turn are the same thing");
+        provider.requests.forEach(request -> assertEquals(0, imagesIn(request),
+                "every turn is fenced, not just the first"));
         assertEquals(1, events.stream()
                         .filter(RunEvent.ImagesWithheld.class::isInstance)
                         .count(),
@@ -237,5 +304,54 @@ class AgentVisionFenceTest {
                         .map(RunEvent.ImagesWithheld.class::cast)
                         .findFirst().orElseThrow().images(),
                 "and it counts every image it kept back, history and prompt alike");
+    }
+
+    // ---- (c) the second request nobody fenced ------------------------------
+
+    @Test
+    void theCompactionSummarizerNeverHandsAnImageToABlindModel() {
+        // The hole an adversarial verifier found after the branch was built: the
+        // fence sat where the TURN request is assembled, and the compaction
+        // summarizer assembles its own request out of the same history. A long
+        // session on a blind model therefore still wedged — later, at compaction
+        // time, instead of on the first turn.
+        //
+        // Three tool rounds grow the history past the kept window while the usage
+        // events hold the trigger over the threshold; turn 4 compacts (the
+        // summarizer pops the fourth scripted turn) and then answers.
+        SightedProvider provider =
+                new SightedProvider(LlmProvider.Vision.BLIND, "deepseek-v4-flash");
+        provider.script.add(toolTurn("c1", 100));
+        provider.script.add(toolTurn("c2", 100));
+        provider.script.add(toolTurn("c3", 100));
+        provider.script.add(textTurn("summary of everything so far"));
+        provider.script.add(textTurn("done"));
+
+        List<RunEvent> events = run(agentWith(provider, List.of(
+                        new ProviderMessage(ProviderMessage.Role.USER, List.of(
+                                new ImageContent("image/png", "aWJt"),
+                                new TextContent("what is on this screenshot?")))), 10),
+                "keep going", null);
+
+        assertTrue(events.stream().anyMatch(RunEvent.Compaction.class::isInstance),
+                "premise: the scripted run must really compact");
+        ProviderRequest summarizer = provider.requests.stream()
+                .filter(request -> request.system().contains("note-taker"))
+                .findFirst().orElseThrow(() -> new AssertionError(
+                        "premise: the summarizer's own call must be among the requests"));
+        assertEquals(0, imagesIn(summarizer),
+                "the summarizer builds its own request — and it must be fenced too");
+        assertTrue(summarizer.messages().stream()
+                        .flatMap(message -> message.content().stream())
+                        .anyMatch(piece -> piece instanceof TextContent text
+                                && text.text().equals(VisionFence.WITHHELD_MARKER)),
+                "and it is told what it did not get, or the summary invents a screenshot");
+        provider.requests.forEach(request -> assertEquals(0, imagesIn(request),
+                "no request of this run may carry an image — turn or summary"));
+        assertEquals(1, events.stream()
+                        .filter(RunEvent.ImagesWithheld.class::isInstance)
+                        .count(),
+                "still one honest line, said by the turn path before compaction can fire");
+        assertEquals("end_turn", ((RunEvent.RunEnd) events.getLast()).stopReason());
     }
 }

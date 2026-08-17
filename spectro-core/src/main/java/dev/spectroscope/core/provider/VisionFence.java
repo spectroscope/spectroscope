@@ -19,6 +19,14 @@ import java.util.List;
  * and not removed: a model handed "what is on this screenshot?" with no
  * screenshot in the request answers about a picture it never saw, and that is
  * the failure mode the ollama document arm already refuses to allow.</p>
+ *
+ * <p><b>{@link #fence} is the whole decision, and every place that builds a
+ * provider request out of a history asks it.</b> The first cut of this card put
+ * the decision inline in the agent's turn loop, and an adversarial verifier
+ * found what that costs: the compaction summarizer assembles its OWN request
+ * from the same messages, so a long session on a blind model still wedged —
+ * later, at compaction time, instead of on the first turn. A second copy of the
+ * rule would have had the same shape. One method answers it for both.</p>
  */
 public final class VisionFence {
 
@@ -32,8 +40,48 @@ public final class VisionFence {
             "[spectroscope: an image was attached here, but this model cannot process images, "
             + "so it was NOT sent. Say that you did not receive it instead of guessing what it showed.]";
 
+    /**
+     * The outcome of one fencing decision: the history to send, and how many
+     * images it cost.
+     *
+     * @param messages what to hand the provider — the input list itself when
+     *                 nothing was withheld, a fenced copy when something was
+     * @param withheld how many image blocks were kept back; 0 means the request
+     *                 is untouched, which is the only case a caller may stay
+     *                 silent about
+     */
+    public record Fenced(List<ProviderMessage> messages, int withheld) {}
+
     /** Static utility — never instantiated. */
     private VisionFence() {}
+
+    /**
+     * The whole fence in one call: does this provider's model see, and if not,
+     * what goes out instead.
+     *
+     * <p>Every place that builds a {@link LlmProvider.ProviderRequest} out of a
+     * conversation asks THIS — the agent's turn loop and the compaction
+     * summarizer both, because the summarizer's request is a second door into the
+     * same provider and an unfenced door is the whole defect back again.</p>
+     *
+     * <p>Order of the two questions is deliberate: the images are counted first,
+     * so a text-only history never asks {@link LlmProvider#vision()} at all.
+     * That question can cost a round trip (ollama probes {@code /api/show}), and
+     * nearly every turn of nearly every session carries no picture.</p>
+     *
+     * @param provider the provider the request is destined for; null is treated
+     *                 as "nothing known", which sends
+     * @param messages the history about to be sent; never mutated
+     * @return what to send, plus the number of images kept back (0 when the
+     *         history came back untouched)
+     */
+    public static Fenced fence(LlmProvider provider, List<ProviderMessage> messages) {
+        int images = imageCount(messages);
+        if (images == 0 || provider == null || provider.vision() != LlmProvider.Vision.BLIND) {
+            return new Fenced(messages, 0);
+        }
+        return new Fenced(withhold(messages), images);
+    }
 
     /**
      * How many image blocks a history carries, everywhere in it.

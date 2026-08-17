@@ -3,11 +3,13 @@ package dev.spectroscope.core.session;
 import dev.spectroscope.core.CancelSignal;
 import dev.spectroscope.core.events.RunEvent;
 import dev.spectroscope.core.provider.LlmProvider;
+import dev.spectroscope.core.provider.LlmProvider.ImageContent;
 import dev.spectroscope.core.provider.LlmProvider.PStop;
 import dev.spectroscope.core.provider.LlmProvider.PTextDelta;
 import dev.spectroscope.core.provider.LlmProvider.ProviderMessage;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
+import dev.spectroscope.core.provider.VisionFence;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -26,9 +28,20 @@ class CompactionTest {
     private static final class SummaryProvider implements LlmProvider {
         final List<ProviderRequest> requests = new ArrayList<>();
         private final String summary;
+        private final Vision vision;
 
         SummaryProvider(String summary) {
+            this(summary, Vision.UNKNOWN);
+        }
+
+        SummaryProvider(String summary, Vision vision) {
             this.summary = summary;
+            this.vision = vision;
+        }
+
+        @Override
+        public Vision vision() {
+            return vision;
         }
 
         @Override
@@ -117,6 +130,69 @@ class CompactionTest {
         RunEvent.ErrorEvent error = assertInstanceOf(RunEvent.ErrorEvent.class, result.event());
         assertTrue(error.message().contains("Compaction failed"));
         assertEquals(messages, result.messages(), "on failure the history stays unchanged");
+    }
+
+    /** Every image block a history carries, at any depth. */
+    private static long imagesIn(LlmProvider.ProviderRequest request) {
+        return request.messages().stream()
+                .flatMap(message -> message.content().stream())
+                .filter(ImageContent.class::isInstance)
+                .count();
+    }
+
+    /** A history of `count` alternating messages with an image planted at `at`. */
+    private static List<ProviderMessage> historyWithImagesAt(int count, int... at) {
+        List<ProviderMessage> messages = new ArrayList<>(history(count));
+        for (int index : at) {
+            messages.set(index, new ProviderMessage(messages.get(index).role(),
+                    List.of(new ImageContent("image/png", "aWJt"),
+                            new TextContent("what is on message-" + index + "?"))));
+        }
+        return messages;
+    }
+
+    @Test
+    void theSummaryCallNeverHandsAnImageToAModelThatCannotSee() {
+        // The hole an adversarial verifier found in card 252: the fence sat where
+        // the TURN request is built, and the summarizer builds its OWN request out
+        // of the same history — so a long session on a blind model still wedged,
+        // at compaction time instead of on the first turn. Two images: one in the
+        // part that gets summarized away, one in the kept window.
+        SummaryProvider blind = new SummaryProvider("The user is building a harness.",
+                LlmProvider.Vision.BLIND);
+        List<ProviderMessage> messages = historyWithImagesAt(10, 0, 8);
+
+        Compaction.Result result = Compaction.maybeCompact(
+                blind, messages, 5_000, 1_000, "main", new CancelSignal());
+
+        assertInstanceOf(RunEvent.Compaction.class, result.event(),
+                "premise: this history really does compact");
+        assertEquals(1, blind.requests.size(), "premise: the summarizer really did call out");
+        assertEquals(0, imagesIn(blind.requests.getFirst()),
+                "the summarizer must not hand an image to a model that cannot see");
+        assertTrue(blind.requests.getFirst().messages().stream()
+                        .flatMap(message -> message.content().stream())
+                        .anyMatch(piece -> piece instanceof TextContent text
+                                && text.text().equals(VisionFence.WITHHELD_MARKER)),
+                "and the summarizer is told what it did not get, or it invents a screenshot");
+
+        // The other half of the fence's contract: the HISTORY is not rewritten.
+        // The image in the kept window survives compaction untouched, so the
+        // session file, the user's bubble and every later resume keep it.
+        assertEquals(1, VisionFence.imageCount(result.messages()),
+                "the kept window keeps its image — the fence copies, it never rewrites");
+    }
+
+    @Test
+    void theSummaryCallStillCarriesTheImageWhenNothingIsKnownAboutTheModelsSight() {
+        // The same permissive direction the turn path takes: UNKNOWN is not BLIND.
+        SummaryProvider unknown = new SummaryProvider("summary");
+        Compaction.Result result = Compaction.maybeCompact(
+                unknown, historyWithImagesAt(10, 0), 5_000, 1_000, "main", new CancelSignal());
+
+        assertInstanceOf(RunEvent.Compaction.class, result.event());
+        assertEquals(1, imagesIn(unknown.requests.getFirst()),
+                "unknown sight sends the image — the provider decides, not a guess");
     }
 
     @Test

@@ -32,7 +32,6 @@ import dev.spectroscope.core.provider.LlmProvider.ProviderRequest;
 import dev.spectroscope.core.provider.LlmProvider.TextContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolCallContent;
 import dev.spectroscope.core.provider.LlmProvider.ToolResultContent;
-import dev.spectroscope.core.provider.LlmProvider;
 import dev.spectroscope.core.provider.VisionFence;
 import dev.spectroscope.core.session.Compaction;
 import dev.spectroscope.core.tools.Tool;
@@ -299,27 +298,23 @@ public final class Agent {
                 // turn number turn_start carries; the provider records the real
                 // exchange through it and knows neither agent nor turn itself.
                 LlmWireTap tap = recorder == null ? null : recorder.bound(agentId, turn);
-                // Card 252, the fence. Asked per turn and only when there is
-                // something to withhold, so a text-only session never pays for
-                // it — and asked of the PROVIDER, because it is the only party
-                // that can know (ollama probes /api/show; an openai-compatible
-                // endpoint remembers its own refusal). UNKNOWN sends: see
-                // LlmProvider#vision for why the permissive direction is the safe
-                // one. The history itself is untouched — withhold() copies, so
-                // run_start, the session file and the user's bubble keep the image.
-                List<ProviderMessage> forProvider = List.copyOf(messages);
-                int withheldImages = VisionFence.imageCount(forProvider);
-                if (withheldImages > 0
-                        && options.provider().vision() == LlmProvider.Vision.BLIND) {
-                    forProvider = VisionFence.withhold(forProvider);
-                    if (!saidTheImagesWereWithheld) {
-                        saidTheImagesWereWithheld = true; // once per run, not per turn
-                        emit.accept(new RunEvent.ImagesWithheld(agentId, withheldImages,
-                                options.provider().modelName(), "no_vision", now()));
-                    }
+                // Card 252, the fence. Asked per turn, and asked of the PROVIDER,
+                // because it is the only party that can know (ollama probes
+                // /api/show; an openai-compatible endpoint remembers its own
+                // refusal). UNKNOWN sends: see LlmProvider#vision for why the
+                // permissive direction is the safe one. The history itself is
+                // untouched — the fence copies, so run_start, the session file and
+                // the user's bubble keep the image. The same call guards the
+                // compaction summarizer inside Compaction.maybeCompact above: one
+                // decision, every door.
+                VisionFence.Fenced fenced = VisionFence.fence(options.provider(), List.copyOf(messages));
+                if (fenced.withheld() > 0 && !saidTheImagesWereWithheld) {
+                    saidTheImagesWereWithheld = true; // once per run, not per turn
+                    emit.accept(new RunEvent.ImagesWithheld(agentId, fenced.withheld(),
+                            options.provider().modelName(), "no_vision", now()));
                 }
                 ProviderRequest request = new ProviderRequest(options.systemPrompt(),
-                        forProvider, advertisedTools, maxTokens,
+                        fenced.messages(), advertisedTools, maxTokens,
                         effectiveReasoning(), effortOverride, signal, tap);
 
                 // Blocking for-each over the provider stream — text deltas are passed
